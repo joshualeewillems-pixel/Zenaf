@@ -46,6 +46,11 @@ def run(repo: Path) -> CheckerRun:
         )
 
     for f in gateway:
+        # Charter informational only: /run primary trace is client AiActionTrace (workspaceRunWithTrace).
+        # Do not surface as philosophy partial — matrix row 1 already documents this split.
+        led = (f.get("ledger") or "").lower()
+        if "client-primary gateway" in led:
+            continue
         out.findings.append(
             Finding(
                 kind=FindingKind.HEURISTIC_SUSPICION,

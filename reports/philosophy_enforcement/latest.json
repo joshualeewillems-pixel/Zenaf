@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-04-04T17:07:49.728629+00:00",
+  "generated_at_utc": "2026-04-04T17:11:48.313625+00:00",
   "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
   "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
   "program_state": {
@@ -34,64 +34,13 @@
       "philosophy_id": 1,
       "name": "Traceability",
       "slug": "traceability",
-      "status": "partial",
-      "findings": [
-        {
-          "kind": "heuristic_suspicion",
-          "message": "Charter 4.1 / 4.3",
-          "location": "api/main.py POST /run, /run/stream",
-          "detail": "LLM gateway: primary trace is client AiActionTrace (workspaceRunWithTrace). Server council persists artifacts separately; not evaluated per-mode here.",
-          "checker_id": "trace_or_exempt"
-        },
-        {
-          "kind": "heuristic_suspicion",
-          "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-          "location": "POST /vision-execution/core-profiles/{profile_id}/reconcile (api/routes/vision_execution.py:reconcile_core_profile:359)",
-          "detail": "path_literals=['vision-execution', 'core-profiles', 'reconcile']",
-          "checker_id": "trace_coverage"
-        },
-        {
-          "kind": "heuristic_suspicion",
-          "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-          "location": "POST /vision-execution/core-profiles/{profile_id}/conversation (api/routes/vision_execution.py:core_profile_conversation:454)",
-          "detail": "path_literals=['vision-execution', 'core-profiles', 'conversation']",
-          "checker_id": "trace_coverage"
-        },
-        {
-          "kind": "heuristic_suspicion",
-          "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-          "location": "POST /vision-execution/extract-segment-summary (api/routes/vision_execution.py:extract_segment_summary:1847)",
-          "detail": "path_literals=['vision-execution', 'extract-segment-summary']",
-          "checker_id": "trace_coverage"
-        },
-        {
-          "kind": "heuristic_suspicion",
-          "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-          "location": "POST /vision-execution/extract-meeting-segments (api/routes/vision_execution.py:extract_meeting_segments:1899)",
-          "detail": "path_literals=['vision-execution', 'extract-meeting-segments']",
-          "checker_id": "trace_coverage"
-        },
-        {
-          "kind": "heuristic_suspicion",
-          "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-          "location": "POST /vision-execution/extract-meeting-synthesis (api/routes/vision_execution.py:extract_meeting_synthesis:1961)",
-          "detail": "path_literals=['vision-execution', 'extract-meeting-synthesis']",
-          "checker_id": "trace_coverage"
-        }
-      ],
-      "suggested_next_action": "Review heuristic hits; extend allowlists in scripts/philosophy_enforcement/config/ when benign.",
+      "status": "pass",
+      "findings": [],
+      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
       "checker_runs": [
         {
           "checker_id": "trace_or_exempt",
-          "findings": [
-            {
-              "kind": "heuristic_suspicion",
-              "message": "Charter 4.1 / 4.3",
-              "location": "api/main.py POST /run, /run/stream",
-              "detail": "LLM gateway: primary trace is client AiActionTrace (workspaceRunWithTrace). Server council persists artifacts separately; not evaluated per-mode here.",
-              "checker_id": "trace_or_exempt"
-            }
-          ],
+          "findings": [],
           "error": null
         },
         {
@@ -101,43 +50,7 @@
         },
         {
           "checker_id": "trace_coverage",
-          "findings": [
-            {
-              "kind": "heuristic_suspicion",
-              "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-              "location": "POST /vision-execution/core-profiles/{profile_id}/reconcile (api/routes/vision_execution.py:reconcile_core_profile:359)",
-              "detail": "path_literals=['vision-execution', 'core-profiles', 'reconcile']",
-              "checker_id": "trace_coverage"
-            },
-            {
-              "kind": "heuristic_suspicion",
-              "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-              "location": "POST /vision-execution/core-profiles/{profile_id}/conversation (api/routes/vision_execution.py:core_profile_conversation:454)",
-              "detail": "path_literals=['vision-execution', 'core-profiles', 'conversation']",
-              "checker_id": "trace_coverage"
-            },
-            {
-              "kind": "heuristic_suspicion",
-              "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-              "location": "POST /vision-execution/extract-segment-summary (api/routes/vision_execution.py:extract_segment_summary:1847)",
-              "detail": "path_literals=['vision-execution', 'extract-segment-summary']",
-              "checker_id": "trace_coverage"
-            },
-            {
-              "kind": "heuristic_suspicion",
-              "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-              "location": "POST /vision-execution/extract-meeting-segments (api/routes/vision_execution.py:extract_meeting_segments:1899)",
-              "detail": "path_literals=['vision-execution', 'extract-meeting-segments']",
-              "checker_id": "trace_coverage"
-            },
-            {
-              "kind": "heuristic_suspicion",
-              "message": "AI route: no frontend/src reference matched by path literals \u2014 verify CLI/server-only or add client trace when UI calls this",
-              "location": "POST /vision-execution/extract-meeting-synthesis (api/routes/vision_execution.py:extract_meeting_synthesis:1961)",
-              "detail": "path_literals=['vision-execution', 'extract-meeting-synthesis']",
-              "checker_id": "trace_coverage"
-            }
-          ],
+          "findings": [],
           "error": null
         }
       ]
@@ -304,9 +217,9 @@
     }
   ],
   "summary": {
-    "pass": 4,
+    "pass": 5,
     "fail": 0,
-    "partial": 1,
+    "partial": 0,
     "not_yet_automated": 10
   }
 }

@@ -21,6 +21,7 @@ def register(cid: str):
 def load_all_checkers() -> None:
     """Import side effects register checkers."""
     from . import check_canonical_identity  # noqa: F401
+    from . import check_product_honesty  # noqa: F401
     from . import check_trace_coverage  # noqa: F401
     from . import canonical_identity_leaks  # noqa: F401
     from . import execution_seam_bypasses  # noqa: F401

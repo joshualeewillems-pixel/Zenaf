@@ -6,13 +6,17 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 ## Wave 2C — Finalize Canonical Identity
 
 - **Status:** `service.py` uses `next(iter(profiles), None)` (no `profiles[0]`); checker scans `local_ai/`.
-- **Git:** Commit pending with message `Auto: Completed Wave 2C Canonical Identity`.
+- **Git:** Branch `auto/rogue-run` — commit `30ec4bf` `Auto: Completed Wave 2C Canonical Identity` (included `rogue_run_log.md`).
 
 ---
 
 ## Wave 2B — Product Honesty
 
-- (filled as run progresses)
+- **Branch:** `auto/wave-2b-honesty`
+- **Commits:** `3b1baf8` program state 2B+2D; (Wave 2B completion commit follows).
+- **Track A:** `check_product_honesty.py`, `config/check_product_honesty.json`, registered in `checkers/__init__.py`, matrix JSON + `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md` row 11.
+- **Track B:** `VisionExecutionView.tsx` — renamed handler to `handleClarifyLocalTemplates`, button `Suggest text (local, no LLM)`, title tooltip discloses no model call.
+- **Enforcement:** `python scripts/philosophy_enforcement/run_all.py` → philosophy 11 **pass**, 0 fail.
 
 ---
 

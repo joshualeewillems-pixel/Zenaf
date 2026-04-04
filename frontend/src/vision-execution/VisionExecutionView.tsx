@@ -3079,7 +3079,8 @@ function IdeaDetailPanel({
     } catch (e) { setSaveError(e instanceof Error ? e.message : 'Save failed') } finally { setSaving(false) }
   }
 
-  const handleClarifyWithAI = async () => {
+  /** Local template suggestions only — no LLM or API call (product honesty). */
+  const handleClarifyLocalTemplates = async () => {
     setClarifyLoading(true)
     try {
       await new Promise((r) => setTimeout(r, 600))
@@ -3485,8 +3486,14 @@ function IdeaDetailPanel({
           >
             <DetailField label="Short note" value={(form.summary as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, summary: v }))} textarea rows={2} />
           </VeFocusRegion>
-          <button type="button" onClick={handleClarifyWithAI} disabled={clarifyLoading} className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs">
-            {clarifyLoading ? 'Clarifying…' : 'Clarify with AI'}
+          <button
+            type="button"
+            onClick={handleClarifyLocalTemplates}
+            disabled={clarifyLoading}
+            title="Fills empty fields with local templates only — no model call."
+            className="px-2 py-1 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs"
+          >
+            {clarifyLoading ? 'Applying…' : 'Suggest text (local, no LLM)'}
           </button>
           <VeFocusRegion
             entity_type="idea"

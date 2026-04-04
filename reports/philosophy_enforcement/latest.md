@@ -1,6 +1,6 @@
 # Philosophy enforcement report
 
-- Generated: `2026-04-04T04:49:00.348894+00:00`
+- Generated: `2026-04-04T05:21:06.014922+00:00`
 - Repo: `C:\Users\philc\OneDrive\Desktop\Atria`
 
 ## Program state (from JSON only)
@@ -11,9 +11,8 @@
 
 | Objective ID | Title | Track |
 |--------------|-------|-------|
-| 2A | Trace-or-exempt | A |
-| 2C | Canonical identity | B |
 | 2B | Product honesty | B |
+| 2D | Deterministic commit | A |
 
 **Blocked:** *(none)*
 

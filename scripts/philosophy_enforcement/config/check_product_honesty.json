@@ -1,0 +1,21 @@
+{
+  "$comment": "Track A sweep for product honesty (matrix row 11): banned cockpit copy and tier claims. Exempt: same-line comment product-honesty-exempt",
+  "scan_globs": ["frontend/src/**/*.tsx", "frontend/src/**/*.ts"],
+  "ignore_globs": ["**/*.test.tsx", "**/*.test.ts", "**/*.spec.ts", "**/*.spec.tsx"],
+  "literal_bans": [
+    {
+      "id": "clarify_with_ai_label",
+      "substring": "Clarify with AI",
+      "kind": "confirmed_violation",
+      "message": "User-visible copy promises LLM clarify; rename/disclose or wire a real routed call."
+    }
+  ],
+  "regex_bans": [
+    {
+      "id": "tier_bc_user_copy",
+      "pattern": "Tier\\s+[BC]\\b",
+      "kind": "heuristic_suspicion",
+      "message": "Tier B/C in user-facing copy — product contract is Tier A unless TRUTH_CONVERGENCE says otherwise."
+    }
+  ]
+}

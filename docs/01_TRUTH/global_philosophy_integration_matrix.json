@@ -136,7 +136,10 @@
         "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
         "docs/01_TRUTH/ACTIVE_VS_PLANNED.md"
       ],
-      "automation": { "checker_ids": ["product_honesty_phantom"] }
+      "automation": {
+        "checker_ids": ["product_honesty_phantom", "check_product_honesty"],
+        "notes": "product_honesty_phantom: handler must call api/fetch when label present. check_product_honesty: literal/regex sweep on cockpit copy (Tier B/C, Clarify with AI)."
+      }
     },
     {
       "id": 12,

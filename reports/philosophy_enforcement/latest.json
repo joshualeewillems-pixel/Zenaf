@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-04-04T04:49:00.348844+00:00",
+  "generated_at_utc": "2026-04-04T05:21:06.014869+00:00",
   "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
   "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
   "program_state": {
@@ -7,19 +7,14 @@
     "active_phase_label": "Class A convergence",
     "active_objectives": [
       {
-        "id": "2A",
-        "title": "Trace-or-exempt",
-        "track": "A"
-      },
-      {
-        "id": "2C",
-        "title": "Canonical identity",
-        "track": "B"
-      },
-      {
         "id": "2B",
         "title": "Product honesty",
         "track": "B"
+      },
+      {
+        "id": "2D",
+        "title": "Deterministic commit",
+        "track": "A"
       }
     ],
     "blocked": [],
@@ -248,6 +243,11 @@
       "checker_runs": [
         {
           "checker_id": "product_honesty_phantom",
+          "findings": [],
+          "error": null
+        },
+        {
+          "checker_id": "check_product_honesty",
           "findings": [],
           "error": null
         }

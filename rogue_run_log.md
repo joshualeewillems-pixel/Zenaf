@@ -40,6 +40,13 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 - **Enforcement:** `run_all.py` → **pass** 5, **fail** 0, **partial** 1, **not-yet-automated** 9.
 - **Git:** `04987cf` program state Phase 3; `9cf9f58` `Auto: Attempted Phase 3 Structural Unification`.
 
+### 2026-04-04 — Demotion (promotion review)
+
+- **Matrix JSON:** Removed `automation` from philosophy **3**; philosophy **7** automation back to **`execution_seam_bypasses` only**. Trimmed `related_docs` entries that pointed at the exploratory scripts as production gates.
+- **Program state:** `active_phase` reset to **2**; objectives **2B** + **2D** (Phase 3 objectives not asserted until path-level enforcement exists).
+- **Docs:** `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md` rows 3 & 7 — restored lint/bypass narrative; both scripts called out as **exploratory, not matrix-gated**.
+- **Checker registration:** `check_data_access_surface` / `check_execution_seam_surface` **removed** from `load_all_checkers()`; modules renamed entrypoint to **`run_exploratory`** and document manual invocation only.
+
 ## Circuit breaker / blocks
 
 - **None triggered** this run (no violation cluster exceeded two fix attempts; no ambiguity halt).

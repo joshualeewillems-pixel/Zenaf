@@ -1,31 +1,33 @@
 {
-  "generated_at_utc": "2026-04-04T05:25:21.378794+00:00",
+  "generated_at_utc": "2026-04-04T17:03:40.863952+00:00",
   "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
   "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
   "program_state": {
-    "active_phase": "3",
-    "active_phase_label": "Structural unification",
+    "active_phase": "2",
+    "active_phase_label": "Class A convergence",
     "active_objectives": [
       {
-        "id": "3A",
-        "title": "Structural alignment",
+        "id": "2A",
+        "title": "Trace-or-exempt",
         "track": "A"
       },
       {
-        "id": "3B",
-        "title": "Data access policy surface",
-        "track": "A"
+        "id": "2B",
+        "title": "Product honesty",
+        "track": "B"
       },
       {
-        "id": "3C",
-        "title": "Execution seam surface",
+        "id": "2D",
+        "title": "Deterministic commit",
         "track": "A"
       }
     ],
-    "blocked": [],
-    "notes": "runner signal quality: good",
-    "operating_loop": "enforcement \u2192 confirmed violations \u2192 bounded fix \u2192 rerun \u2192 converge",
-    "updated_at": "2026-04-03"
+    "blocked": [
+      "Phase 3 structural unification \u2014 do not re-promote matrix automation until Class A (trace + product honesty) is sustainably clear"
+    ],
+    "notes": "Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md).",
+    "operating_loop": "runner \u2192 enforcement \u2192 confirmed violations only \u2192 bounded fix \u2192 rerun \u2192 converge",
+    "updated_at": "2026-04-04"
   },
   "rows": [
     {
@@ -153,16 +155,10 @@
       "philosophy_id": 3,
       "name": "Data access policy",
       "slug": "data_access_policy",
-      "status": "pass",
+      "status": "not-yet-automated",
       "findings": [],
-      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
-      "checker_runs": [
-        {
-          "checker_id": "check_data_access_surface",
-          "findings": [],
-          "error": null
-        }
-      ]
+      "suggested_next_action": "Add `automation.checker_ids` for `data_access_policy` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
     },
     {
       "philosophy_id": 4,
@@ -212,11 +208,6 @@
       "checker_runs": [
         {
           "checker_id": "execution_seam_bypasses",
-          "findings": [],
-          "error": null
-        },
-        {
-          "checker_id": "check_execution_seam_surface",
           "findings": [],
           "error": null
         }
@@ -313,9 +304,9 @@
     }
   ],
   "summary": {
-    "pass": 5,
+    "pass": 4,
     "fail": 0,
     "partial": 1,
-    "not_yet_automated": 9
+    "not_yet_automated": 10
   }
 }

@@ -1,23 +1,28 @@
 """
-Execution seam (Phase 3 / objective 3C): structural gate that `seam_routing.apply_seam_routing`
-remains the declared routing helper. Complements `execution_seam_bypasses` (get_default_provider
-call-site scan + JSON structural checks).
+EXPLORATORY — NOT REGISTERED in global_philosophy_integration_matrix.json.
 
-Exemption: none — moving the seam requires CODEBASE_TRUTH_RULES + matrix update together.
+Structural smoke only: ``seam_routing`` module exists + ``apply_seam_routing`` defined.
+Does **not** verify routed VE/run paths use the seam. Production gate remains
+``execution_seam_bypasses``. Re-add ``@register`` only with path-level checks
+(e.g. allowlisted files must call ``apply_seam_routing`` / ``_run_ve_llm_with_routing``).
+
+Manual run::
+
+    from pathlib import Path
+    from scripts.philosophy_enforcement.checkers.check_execution_seam_surface import run_exploratory
+    run_exploratory(Path("."))
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from ..models import CheckerRun, Finding, FindingKind
-from . import register
 
 _SEAM_REL = "local_ai/execution_policy/seam_routing.py"
 
 
-@register("check_execution_seam_surface")
-def run(repo: Path) -> CheckerRun:
-    out = CheckerRun(checker_id="check_execution_seam_surface")
+def run_exploratory(repo: Path) -> CheckerRun:
+    out = CheckerRun(checker_id="check_execution_seam_surface_exploratory")
     fp = repo / _SEAM_REL
     if not fp.is_file():
         out.findings.append(
@@ -25,7 +30,7 @@ def run(repo: Path) -> CheckerRun:
                 kind=FindingKind.CONFIRMED_VIOLATION,
                 message="seam_routing module missing — execution seam contract broken",
                 location=_SEAM_REL,
-                checker_id="check_execution_seam_surface",
+                checker_id="check_execution_seam_surface_exploratory",
             )
         )
         return out
@@ -36,7 +41,7 @@ def run(repo: Path) -> CheckerRun:
                 kind=FindingKind.CONFIRMED_VIOLATION,
                 message="seam_routing.py missing apply_seam_routing — VE/run routing helper absent",
                 location=_SEAM_REL,
-                checker_id="check_execution_seam_surface",
+                checker_id="check_execution_seam_surface_exploratory",
             )
         )
     return out

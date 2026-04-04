@@ -1,13 +1,13 @@
 {
-  "active_phase": "3",
-  "active_phase_label": "Structural unification",
+  "active_phase": "2",
+  "active_phase_label": "Class A convergence",
   "active_objectives": [
-    { "id": "3A", "title": "Structural alignment", "track": "A" },
-    { "id": "3B", "title": "Data access policy surface", "track": "A" },
-    { "id": "3C", "title": "Execution seam surface", "track": "A" }
+    { "id": "2A", "title": "Trace-or-exempt", "track": "A" },
+    { "id": "2B", "title": "Product honesty", "track": "B" },
+    { "id": "2D", "title": "Deterministic commit", "track": "A" }
   ],
-  "blocked": [],
-  "notes": "runner signal quality: good",
-  "operating_loop": "enforcement → confirmed violations → bounded fix → rerun → converge",
-  "updated_at": "2026-04-03"
+  "blocked": ["Phase 3 structural unification — do not re-promote matrix automation until Class A (trace + product honesty) is sustainably clear"],
+  "notes": "Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md).",
+  "operating_loop": "runner → enforcement → confirmed violations only → bounded fix → rerun → converge",
+  "updated_at": "2026-04-04"
 }

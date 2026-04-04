@@ -1,23 +1,28 @@
 """
-Data access policy (Phase 3 / objective 3B): structural gate that the shared policy module
-and `request_access` entrypoint remain present. Expand with route-level checks when Tier B/C
-surfaces land.
+EXPLORATORY — NOT REGISTERED in global_philosophy_integration_matrix.json.
 
-Exemption: not used — relocate policy intentionally only with matrix + TRUTH_CONVERGENCE update.
+Structural smoke only: policy module exists + ``request_access`` symbol present.
+Does **not** enforce “reads go through data_access” (path-level). Re-add ``@register``
+only after implementing real gates (e.g. covered modules must import/call policy or
+carry ``data-access-policy-exempt`` with inventory justification).
+
+Manual run::
+
+    from pathlib import Path
+    from scripts.philosophy_enforcement.checkers.check_data_access_surface import run_exploratory
+    run_exploratory(Path("."))
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from ..models import CheckerRun, Finding, FindingKind
-from . import register
 
 _POLICY_REL = "local_ai/policy/data_access.py"
 
 
-@register("check_data_access_surface")
-def run(repo: Path) -> CheckerRun:
-    out = CheckerRun(checker_id="check_data_access_surface")
+def run_exploratory(repo: Path) -> CheckerRun:
+    out = CheckerRun(checker_id="check_data_access_surface_exploratory")
     fp = repo / _POLICY_REL
     if not fp.is_file():
         out.findings.append(
@@ -25,7 +30,7 @@ def run(repo: Path) -> CheckerRun:
                 kind=FindingKind.CONFIRMED_VIOLATION,
                 message="data_access policy module missing — Tier B/C gate cannot be centralized",
                 location=_POLICY_REL,
-                checker_id="check_data_access_surface",
+                checker_id="check_data_access_surface_exploratory",
             )
         )
         return out
@@ -36,7 +41,7 @@ def run(repo: Path) -> CheckerRun:
                 kind=FindingKind.CONFIRMED_VIOLATION,
                 message="data_access.py missing def request_access( — policy choke point broken",
                 location=_POLICY_REL,
-                checker_id="check_data_access_surface",
+                checker_id="check_data_access_surface_exploratory",
             )
         )
     return out

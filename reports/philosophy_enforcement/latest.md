@@ -1,30 +1,31 @@
 # Philosophy enforcement report
 
-- Generated: `2026-04-04T05:25:21.378842+00:00`
+- Generated: `2026-04-04T17:03:40.864014+00:00`
 - Repo: `C:\Users\philc\OneDrive\Desktop\Atria`
 
 ## Program state (from JSON only)
 
 - Source: `docs/01_TRUTH/convergence_program_state.json`
-- Active phase: **3** — Structural unification
-- Operating loop: enforcement → confirmed violations → bounded fix → rerun → converge
+- Active phase: **2** — Class A convergence
+- Operating loop: runner → enforcement → confirmed violations only → bounded fix → rerun → converge
 
 | Objective ID | Title | Track |
 |--------------|-------|-------|
-| 3A | Structural alignment | A |
-| 3B | Data access policy surface | A |
-| 3C | Execution seam surface | A |
+| 2A | Trace-or-exempt | A |
+| 2B | Product honesty | B |
+| 2D | Deterministic commit | A |
 
-**Blocked:** *(none)*
+**Blocked:**
 
+- Phase 3 structural unification — do not re-promote matrix automation until Class A (trace + product honesty) is sustainably clear
 
-**Notes:** runner signal quality: good
+**Notes:** Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md).
 
 | Philosophy | Status | Findings | Suggested next action |
 |------------|--------|----------|------------------------|
 | Traceability (1) | `partial` | *heuristic*: Charter 4.1 / 4.3 — `api/main.py POST /run, /run/stream`<br>*heuristic*: AI route: no frontend/src reference matched by path literals — verify CLI/server-only or add client trace when UI calls this — `POST /vision-execution/core-profiles/{profile_id}/reconcile (api/routes/vision_execution.py:reconcile_core_profile:359)`<br>*heuristic*: AI route: no frontend/src reference matched by path literals — verify CLI/server-only or add client trace when UI calls this — `POST /vision-execution/core-profiles/{profile_id}/conversation (api/routes/vision_execution.py:core_profile_conversation:454)`<br>*heuristic*: AI route: no frontend/src reference matched by path literals — verify CLI/server-only or add client trace when UI calls this — `POST /vision-execution/extract-segment-summary (api/routes/vision_execution.py:extract_segment_summary:1847)`<br>*heuristic*: AI route: no frontend/src reference matched by path literals — verify CLI/server-only or add client trace when UI calls this — `POST /vision-execution/extract-meeting-segments (api/routes/vision_execution.py:extract_meeting_segments:1899)`<br>*heuristic*: AI route: no frontend/src reference matched by path literals — verify CLI/server-only or add client trace when UI calls this — `POST /vision-execution/extract-meeting-synthesis (api/routes/vision_execution.py:extract_meeting_synthesis:1961)` | Review heuristic hits; extend allowlists in scripts/philosophy_enforcement/config/ when benign. |
 | Mirror graph interpretation (2) | `not-yet-automated` | — | Add `automation.checker_ids` for `mirror_graph_interpretation` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
-| Data access policy (3) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |
+| Data access policy (3) | `not-yet-automated` | — | Add `automation.checker_ids` for `data_access_policy` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
 | Judgment substrate (4) | `not-yet-automated` | — | Add `automation.checker_ids` for `judgment_substrate` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
 | Coordination spine (5) | `not-yet-automated` | — | Add `automation.checker_ids` for `coordination_spine` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
 | Canonical core identity (6) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |

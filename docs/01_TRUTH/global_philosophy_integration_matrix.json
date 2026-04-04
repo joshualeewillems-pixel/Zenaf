@@ -42,16 +42,7 @@
       "law": "Reads of sensitive depth (Tier B/C, external egress) go through data_access with explicit tier/justification.",
       "intended_scope": "Any module that could fetch raw body, external destinations, or future Tier B/C UI.",
       "enforcement_mechanism": "Lint/grep gate for get_item_with_content; CODEBASE_INVENTORY.md exceptions; TRUTH_CONVERGENCE gate for new Tier B/C API.",
-      "related_docs": [
-        "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
-        "docs/01_TRUTH/CODEBASE_INVENTORY.md",
-        "local_ai/policy/data_access.py",
-        "scripts/philosophy_enforcement/checkers/check_data_access_surface.py"
-      ],
-      "automation": {
-        "checker_ids": ["check_data_access_surface"],
-        "notes": "Structural: policy module + request_access present; extend for route-level Tier B/C when APIs land."
-      }
+      "related_docs": ["docs/01_TRUTH/TRUTH_CONVERGENCE.md", "docs/01_TRUTH/CODEBASE_INVENTORY.md"]
     },
     {
       "id": 4,
@@ -99,16 +90,8 @@
       "law": "Routed VE/run execution uses seam + principal with declared ollama/openai primaries unless extended in truth rules + main.py together.",
       "intended_scope": "User-attributed LLM calls that should honor settings and blocking.",
       "enforcement_mechanism": "No new get_default_provider call sites without CODEBASE_TRUTH_RULES update; inventory table; pytest smoke when touching api/main.py routing.",
-      "related_docs": [
-        "docs/01_TRUTH/CODEBASE_TRUTH_RULES.md",
-        "local_ai/execution_policy/seam_routing.py",
-        "api/main.py",
-        "scripts/philosophy_enforcement/checkers/check_execution_seam_surface.py"
-      ],
-      "automation": {
-        "checker_ids": ["execution_seam_bypasses", "check_execution_seam_surface"],
-        "notes": "execution_seam_bypasses: get_default_provider + JSON structural checks. check_execution_seam_surface: apply_seam_routing module contract."
-      }
+      "related_docs": ["docs/01_TRUTH/CODEBASE_TRUTH_RULES.md", "local_ai/execution_policy/seam_routing.py", "api/main.py"],
+      "automation": { "checker_ids": ["execution_seam_bypasses"] }
     },
     {
       "id": 8,

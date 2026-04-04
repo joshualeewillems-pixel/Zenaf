@@ -27,13 +27,18 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 - **Track B:** `atria_tools.py` — audit comment + `_ollama_log.info` when infer fallback produces a pending payload.
 - **Matrix:** Philosophy 8 automation in JSON + row 8 in `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md`.
 - **Enforcement:** `run_all.py` → philosophy 8 **pass**; summary pass count 4, fail 0.
+- **Git:** `ae972d4` `Auto: Completed Wave 2D Deterministic Commit`.
 
 ---
 
 ## Phase 3 — Structural (stretch)
 
-- (filled as run progresses)
+- **Branch:** `auto/wave-3-structural`
+- **Program state:** `convergence_program_state.json` — `active_phase` **3**, objectives **3A–3C**.
+- **3B — Data access:** `check_data_access_surface.py` registered; matrix philosophy **3** automation.
+- **3C — Execution seam:** `check_execution_seam_surface.py` registered; matrix philosophy **7** adds checker alongside `execution_seam_bypasses`.
+- **Enforcement:** `run_all.py` → **pass** 5, **fail** 0, **partial** 1, **not-yet-automated** 9.
 
 ## Circuit breaker / blocks
 
-- (append when max attempts or ambiguity)
+- **None triggered** this run (no violation cluster exceeded two fix attempts; no ambiguity halt).

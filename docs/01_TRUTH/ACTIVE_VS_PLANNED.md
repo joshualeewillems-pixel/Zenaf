@@ -89,7 +89,7 @@ Top-level navigation emphasizes **Perspectives** (Foundation = core profile + pe
 
 ## Implemented but Incomplete
 
-- **Intake mirror sync state:** Tables `mirror_sync` and `mailbox_action` exist and have APIs (`set_sync_state`, `get_sync_state`, `record_mailbox_action`), but poll does not call them. So sync state is not updated after poll; mailbox action log is not written by current flows.
+- **Intake mirror sync state:** Poll updates **`mirror_sync`** via `set_sync_state` after each successful readonly IMAP `SELECT` (see `email_ingestion._record_successful_poll_sync`). **`mailbox_action`** remains unwired until mailbox mutations exist (exempt tag in `mirror.py`; see Stubbed / Placeholder).
 - **Tier B/C access:** `get_item_with_content()` implements Tier B (and Tier C placeholder) with policy check. **Not** exposed via API or UI — **by product contract** (see **`TRUTH_CONVERGENCE.md`**); code may remain until you ship Tier B/C or delete it.
 - **Adapters:** Registry and LLM adapter (Ollama) are registered. Mailbox adapter protocol exists but no implementation is registered; intake uses `email_ingestion` and Gmail OAuth directly, not adapters.
 - **Policy adoption:** Architecture says "all modules that touch Tier B or Tier C … must go through shared data access policy". Only intake mirror's `get_item_with_content()` does; council and File Steward do not use the policy layer.
@@ -128,7 +128,7 @@ Top-level navigation emphasizes **Perspectives** (Foundation = core profile + pe
 - **Council / File Steward using policy:** Documented intent that these modules use the shared data access policy when touching Tier B/C or external; not implemented.
 - **Mailbox adapter:** Protocol in adapters; no concrete mailbox adapter; intake does not use adapter registry for fetch.
 - **LLM via adapters:** Hot paths still use **`get_default_provider()`** / **`get_llm_adapter_for_user()`** / council seat builders, not `local_ai.adapters.get_adapter("llm", …)` — registry remains optional for legacy tooling.
-- **Sync state and mailbox action used in poll:** No code path after poll calls `set_sync_state` or `record_mailbox_action`.
+- **Mailbox action audit in poll:** Poll does not call `record_mailbox_action` (no mailbox mutations in v1). Sync state after poll is covered by `set_sync_state` (see Implemented but Incomplete → Intake mirror sync state).
 - **API or UI for Tier B/C content:** No route that calls `get_item_with_content()` with sanitized or raw level; no UI to "view body" through policy.
 - **Configurable mirror path:** Intake mirror path is fixed at repo root; no env or config to override.
 
@@ -136,6 +136,6 @@ Top-level navigation emphasizes **Perspectives** (Foundation = core profile + pe
 
 ## Explicit Partial Wiring
 
-- **Intake:** End-to-end wired except: (1) sync state after poll, (2) mailbox actions, (3) any consumer of Tier B/C via `get_item_with_content`.
+- **Intake:** End-to-end wired except: (1) `mailbox_action` audit rows (parked until mutations), (2) any consumer of Tier B/C via `get_item_with_content`.
 - **Policy:** Implemented and used only at one call site (mirror); rest of "must use" is not wired.
 - **Adapters:** Registry and one LLM adapter; no integration with intake (mailbox) or atria_tools (LLM).

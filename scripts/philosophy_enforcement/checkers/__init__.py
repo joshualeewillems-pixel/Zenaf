@@ -22,6 +22,9 @@ def load_all_checkers() -> None:
     """Import side effects register checkers."""
     from . import check_canonical_identity  # noqa: F401
     from . import check_data_access_surface  # noqa: F401
+    from . import check_developmental_guidance  # noqa: F401
+    from . import check_http_client_frontier  # noqa: F401
+    from . import check_intake_observability  # noqa: F401
     from . import check_deterministic_commit  # noqa: F401
     from . import check_execution_seam_surface  # noqa: F401
     from . import check_mirror_interpretation  # noqa: F401

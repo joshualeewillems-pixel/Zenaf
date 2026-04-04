@@ -146,8 +146,15 @@
       "class": "B",
       "law": "VE subtree uses proxied relative VISION_EXECUTION_API; organizer uses API_BASE—no third ad-hoc origin.",
       "intended_scope": "All frontend fetchers to backend.",
-      "enforcement_mechanism": "ESLint/grep in CI; CONTRIBUTING checklist.",
-      "related_docs": ["docs/01_TRUTH/CODEBASE_TRUTH_RULES.md"]
+      "enforcement_mechanism": "ESLint/grep in CI; CONTRIBUTING checklist; philosophy checker for literal absolute fetch URLs.",
+      "related_docs": [
+        "docs/01_TRUTH/CODEBASE_TRUTH_RULES.md",
+        "scripts/philosophy_enforcement/checkers/check_http_client_frontier.py"
+      ],
+      "automation": {
+        "checker_ids": ["check_http_client_frontier"],
+        "notes": "Flags fetch('http...') / fetch(`http...`) literals in frontend/src; interpolated API_BASE/VISION_EXECUTION_API paths are OK."
+      }
     },
     {
       "id": 10,
@@ -156,8 +163,17 @@
       "class": "B",
       "law": "If schema claims sync/mailbox observability, writers exist on the real poll path—or docs say not wired.",
       "intended_scope": "Poll, queue, mirror_sync, mailbox_action.",
-      "enforcement_mechanism": "BOOT_FLOW.md + ACTIVE_VS_PLANNED; optional integration tests when poll touched.",
-      "related_docs": ["docs/01_TRUTH/ACTIVE_VS_PLANNED.md", "docs/01_TRUTH/TRUTH_CONVERGENCE.md"]
+      "enforcement_mechanism": "BOOT_FLOW.md + ACTIVE_VS_PLANNED; check_intake_observability surfaces mirror_sync / mailbox_action writer gaps; integration tests when poll touched.",
+      "related_docs": [
+        "docs/01_TRUTH/ACTIVE_VS_PLANNED.md",
+        "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
+        "docs/01_TRUTH/BOOT_FLOW.md",
+        "scripts/philosophy_enforcement/checkers/check_intake_observability.py"
+      ],
+      "automation": {
+        "checker_ids": ["check_intake_observability"],
+        "notes": "Confirms poll path calls set_sync_state when mirror_sync exists; flags missing record_mailbox_action call sites. Track B: wire or exempt in TRUTH."
+      }
     },
     {
       "id": 11,
@@ -184,8 +200,16 @@
       "class": "B",
       "law": "Guidance is hypothesis-level optional context for council—not silent routing, not durable profile truth.",
       "intended_scope": "Council preflight + cockpit panel until re-chartered.",
-      "enforcement_mechanism": "ATRIA_SYSTEM_CHARTER; forbid new consumers without SYSTEM_REFERENCE row; test scoped path omits guidance.",
-      "related_docs": ["docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md", "docs/01_TRUTH/SYSTEM_REFERENCE.md"]
+      "enforcement_mechanism": "ATRIA_SYSTEM_CHARTER; forbid new consumers without SYSTEM_REFERENCE row; test scoped path omits guidance; check_developmental_guidance allowlists Python references.",
+      "related_docs": [
+        "docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md",
+        "docs/01_TRUTH/SYSTEM_REFERENCE.md",
+        "scripts/philosophy_enforcement/checkers/check_developmental_guidance.py"
+      ],
+      "automation": {
+        "checker_ids": ["check_developmental_guidance"],
+        "notes": "local_ai/api scan: developmental_guidance identifier only in council_preflight, developmental_guidance, aspiration_layer."
+      }
     },
     {
       "id": 13,

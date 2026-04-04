@@ -20,6 +20,7 @@ import imaplib
 import json
 import os
 import re
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from email import policy
 from email.parser import BytesParser
@@ -226,6 +227,23 @@ def _external_id(message_id: str | None, uid: int | str, date_str: str) -> str:
     return hashlib.sha256(f"{uid}|{date_str}".encode()).hexdigest()
 
 
+def _mailbox_sync_id(config: MailboxConfig) -> str:
+    """Stable primary key for mirror_sync (one row per logical mailbox source)."""
+    oauth = "1" if getattr(config, "use_oauth_gmail", False) else "0"
+    raw = f"{config.host}|{config.user}|{config.mailbox}|{config.label}|{oauth}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _record_successful_poll_sync(config: MailboxConfig) -> None:
+    """
+    After a successful readonly IMAP connect + SELECT, persist last_poll_at (cursor reserved for future IMAP UIDVALIDITY/UIDNEXT).
+    Philosophy #10 / BOOT_FLOW: poll path must update mirror_sync.
+    """
+    from . import mirror
+
+    mirror.set_sync_state(_mailbox_sync_id(config), datetime.now(timezone.utc).isoformat(), None)
+
+
 def _poll_one_mailbox(
     config: MailboxConfig,
     max_messages: int = 50,
@@ -252,6 +270,8 @@ def _poll_one_mailbox(
         conn.select(config.mailbox, readonly=True)
     except Exception as e:
         return 0, 0, [f"{config.label}: connection failed: {e}"]
+
+    _record_successful_poll_sync(config)
 
     added = 0
     skipped_duplicates = 0

@@ -66,7 +66,7 @@ What happens on startup and during normal operation. Based on the current codeba
 - **No automatic poll on startup or on a timer.**  
 - Poll runs only when the client calls **POST /intake/email/poll** (e.g. from the cockpit “Email Intake” flow).  
 - Implementation: `intake_routes` → `email_ingestion.poll_ingest_emails()` → for each mailbox config, `_poll_one_mailbox()` → for each message, `run_pipeline()` → `queue_store.add_item()` (which also writes to the mirror).  
-- **Current gap:** After poll, the code does **not** call `mirror.set_sync_state()`, so `mirror_sync` is not updated with last poll time or cursor.
+- **Sync telemetry:** After a successful readonly IMAP connect + `SELECT`, `_poll_one_mailbox` calls `mirror.set_sync_state(...)` with a stable id per mailbox source and UTC `last_poll_at`. `cursor` is reserved for a future UID/cursor strategy (not set in v1).
 
 ---
 

@@ -400,6 +400,8 @@ def get_sync_state(sync_id: str) -> dict[str, Any] | None:
         conn.close()
 
 
+# intake-observability-exempt: mailbox mutations parked for v1 — no STORE/MOVE/mark-read paths yet;
+# call sites will appear when mailbox mutations ship (see ACTIVE_VS_PLANNED.md / PLATFORM_PRIMITIVES).
 def record_mailbox_action(
     action_id: str,
     item_id: str,

@@ -1,31 +1,31 @@
 {
-  "generated_at_utc": "2026-04-04T17:41:42.146276+00:00",
+  "generated_at_utc": "2026-04-04T17:54:58.895865+00:00",
   "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
   "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
   "program_state": {
-    "active_phase": "4",
-    "active_phase_label": "Operator boundaries",
+    "active_phase": "5",
+    "active_phase_label": "Perimeter Sweep",
     "active_objectives": [
       {
-        "id": "4A",
-        "title": "Studio / operator route authorization (admin gate)",
+        "id": "5A",
+        "title": "HTTP client frontier \u2014 Philosophy #9 (VE vs organizer bases, no ad-hoc origins)",
         "track": "A"
       },
       {
-        "id": "4B",
-        "title": "Trace-exempt registry alignment for Studio surfaces",
+        "id": "5B",
+        "title": "Intake observability \u2014 Philosophy #10 (sync/mailbox claims vs poll-path writers)",
         "track": "A"
       },
       {
-        "id": "4C",
-        "title": "State mutation laws for operator tooling (expand as routes grow)",
-        "track": "B"
+        "id": "5C",
+        "title": "Developmental guidance boundary \u2014 Philosophy #12 (optional council context only)",
+        "track": "A"
       }
     ],
     "blocked": [],
-    "notes": "Phase 3 structural unification (3A\u20133C) closed: mirror interpretation trunk for bounded node transform, data access and execution seam checkers green. Phase 4 Track A: operator boundaries gate live (check_operator_boundaries: studio admin deps + ai_trace_exemptions.json + studio_admin_surface registry parity). Non-negotiable loop unchanged. Overnight run may extend 4C path-level rules after baseline holds.",
+    "notes": "Phase 4 operator boundaries closed and green. Phase 5 Track A: final perimeter enforcement \u2014 static checkers for HTTP client frontier (#9), intake mirror_sync / mailbox audit wiring (#10), and developmental_guidance consumer allowlist (#12). Non-negotiable loop: enforcement \u2192 confirmed violations \u2192 bounded Track B fixes (no scope creep into feature work during Track A).",
     "operating_loop": "runner \u2192 enforcement \u2192 confirmed violations only \u2192 bounded fix \u2192 rerun \u2192 converge",
-    "updated_at": "2026-04-04"
+    "updated_at": "2026-04-03"
   },
   "rows": [
     {
@@ -160,19 +160,31 @@
       "philosophy_id": 9,
       "name": "HTTP client frontier consistency",
       "slug": "http_client_frontier",
-      "status": "not-yet-automated",
+      "status": "pass",
       "findings": [],
-      "suggested_next_action": "Add `automation.checker_ids` for `http_client_frontier` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
-      "checker_runs": []
+      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
+      "checker_runs": [
+        {
+          "checker_id": "check_http_client_frontier",
+          "findings": [],
+          "error": null
+        }
+      ]
     },
     {
       "philosophy_id": 10,
       "name": "Intake operational completeness",
       "slug": "intake_operational_completeness",
-      "status": "not-yet-automated",
+      "status": "pass",
       "findings": [],
-      "suggested_next_action": "Add `automation.checker_ids` for `intake_operational_completeness` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
-      "checker_runs": []
+      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
+      "checker_runs": [
+        {
+          "checker_id": "check_intake_observability",
+          "findings": [],
+          "error": null
+        }
+      ]
     },
     {
       "philosophy_id": 11,
@@ -198,10 +210,16 @@
       "philosophy_id": 12,
       "name": "Developmental guidance boundary",
       "slug": "developmental_guidance_boundary",
-      "status": "not-yet-automated",
+      "status": "pass",
       "findings": [],
-      "suggested_next_action": "Add `automation.checker_ids` for `developmental_guidance_boundary` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
-      "checker_runs": []
+      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
+      "checker_runs": [
+        {
+          "checker_id": "check_developmental_guidance",
+          "findings": [],
+          "error": null
+        }
+      ]
     },
     {
       "philosophy_id": 13,
@@ -248,9 +266,9 @@
     }
   ],
   "summary": {
-    "pass": 8,
+    "pass": 11,
     "fail": 0,
     "partial": 0,
-    "not_yet_automated": 7
+    "not_yet_automated": 4
   }
 }

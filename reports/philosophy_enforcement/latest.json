@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-04-04T17:35:16.761276+00:00",
+  "generated_at_utc": "2026-04-04T17:41:42.146276+00:00",
   "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
   "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
   "program_state": {
@@ -23,7 +23,7 @@
       }
     ],
     "blocked": [],
-    "notes": "Phase 3 structural unification (3A\u20133C) closed: mirror interpretation trunk for bounded node transform, data access and execution seam checkers green. Phase 4 Track A: operator/studio authorization structural gate live (check_operator_studio_authorization). Non-negotiable loop unchanged. Overnight run may extend 4C path-level rules after baseline holds.",
+    "notes": "Phase 3 structural unification (3A\u20133C) closed: mirror interpretation trunk for bounded node transform, data access and execution seam checkers green. Phase 4 Track A: operator boundaries gate live (check_operator_boundaries: studio admin deps + ai_trace_exemptions.json + studio_admin_surface registry parity). Non-negotiable loop unchanged. Overnight run may extend 4C path-level rules after baseline holds.",
     "operating_loop": "runner \u2192 enforcement \u2192 confirmed violations only \u2192 bounded fix \u2192 rerun \u2192 converge",
     "updated_at": "2026-04-04"
   },
@@ -230,7 +230,17 @@
       "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
       "checker_runs": [
         {
-          "checker_id": "check_operator_studio_authorization",
+          "checker_id": "check_operator_boundaries",
+          "findings": [],
+          "error": null
+        },
+        {
+          "checker_id": "check_operator_trace_alignment",
+          "findings": [],
+          "error": null
+        },
+        {
+          "checker_id": "check_operator_mutation_depth",
           "findings": [],
           "error": null
         }

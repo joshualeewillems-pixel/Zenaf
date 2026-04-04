@@ -214,16 +214,25 @@
       "class": "B",
       "law": "Cockpit trace law does not apply until Studio aligns with AiActionTrace contract.",
       "intended_scope": "Studio, bakeoffs, prompt tooling.",
-      "enforcement_mechanism": "Keep studio_admin_surface in exempt registry; review on Studio/cockpit merge. /studio routes must use get_current_admin_user (Phase 4 structural gate).",
+      "enforcement_mechanism": "Keep studio_admin_surface in exempt registry + ai_trace_exemptions.json; review on Studio/cockpit merge. /studio routes must use get_current_admin_user (Phase 4 Track A). LLM routes need server trace or studio_admin_surface exempt row (4B). Operator routes must not use raw db.commit without exempt (4C).",
       "related_docs": [
         "docs/01_TRUTH/GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md",
+        "docs/01_TRUTH/ai_trace_exemptions.json",
+        "docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md",
         "frontend/src/ai-actions/aiTraceExemptRegistry.ts",
         "api/routes/studio_routes.py",
-        "scripts/philosophy_enforcement/checkers/check_operator_studio_authorization.py"
+        "api/routes/auth_routes.py",
+        "scripts/philosophy_enforcement/checkers/check_operator_boundaries.py",
+        "scripts/philosophy_enforcement/checkers/check_operator_trace_alignment.py",
+        "scripts/philosophy_enforcement/checkers/check_operator_mutation_depth.py"
       ],
       "automation": {
-        "checker_ids": ["check_operator_studio_authorization"],
-        "notes": "Structural: every @router block in studio_routes.py must Depends(get_current_admin_user); forbid Depends(get_current_user) on that router file."
+        "checker_ids": [
+          "check_operator_boundaries",
+          "check_operator_trace_alignment",
+          "check_operator_mutation_depth"
+        ],
+        "notes": "Studio auth: get_current_admin_user per route block. Trace alignment (4B): each operator LLM route emits server trace or matches exempt_routes with studio_admin_surface rationale. Mutation depth (4C): no raw .commit in studio/auth admin routes without operator-mutation-exempt. TS registry lists studio_admin_surface."
       }
     }
   ]

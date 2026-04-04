@@ -14,12 +14,14 @@
         "docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md",
         "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
         "docs/01_TRUTH/AI_ACTION_SUBSTRATE_COVERAGE_MATRIX.md",
+        "docs/01_TRUTH/ai_trace_exemptions.json",
         "scripts/charter_enforcement_check.py",
+        "scripts/philosophy_enforcement/checkers/check_trace_coverage.py",
         "frontend/src/ai-actions/aiTraceExemptRegistry.ts"
       ],
       "automation": {
-        "checker_ids": ["trace_or_exempt", "schema_ui_drift"],
-        "notes": "schema_ui_drift enforces ve_integration_schema UI label anchors for VE integration surfaces (narrow static check)."
+        "checker_ids": ["trace_or_exempt", "schema_ui_drift", "trace_coverage"],
+        "notes": "schema_ui_drift enforces ve_integration_schema UI label anchors for VE integration surfaces (narrow static check). trace_coverage flags cockpit FE callers missing client AiActionTrace signals vs ai_trace_exemptions.json."
       }
     },
     {

@@ -193,6 +193,10 @@ Atria is a **decision and execution mediation** system. It **does not replace us
 3. **Prefer removal** over abstraction for dead systems.
 4. **Enforce before expand** — stabilize truth before adding surface area.
 
+### 9.1 Trunk, branch, and reuse (compositional discipline)
+
+**Guidance:** In code, **elegance** means extending existing **trunk** primitives in `local_ai` and thin **branch** surfaces (routers and module families per product area) instead of growing a second stack for the same concern. Prefer **child** flows that **compose** a parent capability when another module already owns it. Forbidden patterns and concrete rules—**Branch law**, shared primitives (e.g. JSON extraction), and “no accidental second trunk”—live in **`CODEBASE_TRUTH_RULES.md`** (especially §6 and §2).
+
 ---
 
 ## 10. Automation eligibility
@@ -212,3 +216,4 @@ Automation is **not** appropriate for: interpretation, product direction, or phi
 | `TRUTH_CONVERGENCE.md` | Locked convergence decisions |
 | `ATRIA_CHARTER_VIOLATION_LEDGER.md` | Audit status + violations |
 | `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md` | Per-philosophy scope, partials, class (A/B/C), enforcement hooks |
+| `CODEBASE_TRUTH_RULES.md` | Trunk vs branch, coordination, judgment substrate; operational detail for §9.1 |

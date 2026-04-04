@@ -1,0 +1,30 @@
+{
+  "$schema_comment": "Declared exemptions for trace_coverage checker (client AiActionTrace expectation). Update with GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX + charter.",
+  "version": 1,
+  "exempt_endpoints": [
+    {
+      "methods": ["POST"],
+      "path_contains": "/api/transcribe",
+      "reason": "Utility speech-to-text (Whisper); not a cockpit AI reasoning/action event requiring client trace."
+    },
+    {
+      "methods": ["POST"],
+      "path_contains": "/focus-actions/stub",
+      "reason": "Reserved/local UI stub path (no backend LLM); align if route is added."
+    }
+  ],
+  "exempt_routes": [
+    {
+      "methods": ["POST"],
+      "path_contains": "/studio/attachment-lane/bakeoff",
+      "reason": "Operator/Studio surface. Mirrors 'studio_admin_surface' in aiTraceExemptRegistry.ts. Exempt from client trace parity until merged with main cockpit."
+    }
+  ],
+  "exempt_inline_llm": [
+    {
+      "module_suffix": "local_ai/integration_commit.py",
+      "symbol": "infer_draft_value_from_context",
+      "reason": "Narrow auto-fill inside an already-traced council/integration path; not a standalone user-facing AI surface."
+    }
+  ]
+}

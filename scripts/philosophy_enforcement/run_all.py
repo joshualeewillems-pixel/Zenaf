@@ -2,7 +2,7 @@
 """
 Philosophy enforcement — reads docs/01_TRUTH/global_philosophy_integration_matrix.json,
 docs/01_TRUTH/convergence_program_state.json (program state for reports; not parsed from Markdown),
-runs registered static checkers, writes Markdown + JSON under reports/philosophy_enforcement/.
+runs registered static checkers (see global_philosophy_integration_matrix.json checker_ids + checkers/__init__.py imports), writes Markdown + JSON under reports/philosophy_enforcement/.
 
 Exit code: 0 normally (report-only), 2 if convergence_program_state.json is missing or invalid.
 Set PHILOSOPHY_ENFORCE_STRICT=1 to exit 1 on any confirmed violation.

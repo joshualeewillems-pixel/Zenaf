@@ -38,6 +38,7 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 - **3B — Data access:** `check_data_access_surface.py` registered; matrix philosophy **3** automation.
 - **3C — Execution seam:** `check_execution_seam_surface.py` registered; matrix philosophy **7** adds checker alongside `execution_seam_bypasses`.
 - **Enforcement:** `run_all.py` → **pass** 5, **fail** 0, **partial** 1, **not-yet-automated** 9.
+- **Git:** `04987cf` program state Phase 3; `9cf9f58` `Auto: Attempted Phase 3 Structural Unification`.
 
 ## Circuit breaker / blocks
 

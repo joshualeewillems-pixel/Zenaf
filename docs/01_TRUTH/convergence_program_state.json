@@ -1,9 +1,10 @@
 {
-  "active_phase": "2",
-  "active_phase_label": "Class A convergence",
+  "active_phase": "3",
+  "active_phase_label": "Structural unification",
   "active_objectives": [
-    { "id": "2B", "title": "Product honesty", "track": "B" },
-    { "id": "2D", "title": "Deterministic commit", "track": "A" }
+    { "id": "3A", "title": "Structural alignment", "track": "A" },
+    { "id": "3B", "title": "Data access policy surface", "track": "A" },
+    { "id": "3C", "title": "Execution seam surface", "track": "A" }
   ],
   "blocked": [],
   "notes": "runner signal quality: good",

@@ -29,8 +29,8 @@
     },
     {
       "path": "local_ai/vision_execution/node_transform_suggest.py",
-      "resolved_as": "legal_exception",
-      "rationale": "Bounded Vision Execution transform advisory JSON (suggested_action, proposed_node) for reshape intents; it does not stage meeting-extract rows and does not attach row['interpretation']. Mirror graph interpret_against_graph applies to extraction payloads only, not this API surface."
+      "resolved_as": "aligned_trunk",
+      "rationale": "Bounded VE transform responses now emit judgment_trunk (SubjectRef + JudgmentTrunk, verdict kind ve_node_transform_proposal); legacy intent/suggested_action/proposed_node are mirrors for stable client formatting. Not meeting extract — interpret_against_graph remains on extraction path only."
     }
   ]
 }

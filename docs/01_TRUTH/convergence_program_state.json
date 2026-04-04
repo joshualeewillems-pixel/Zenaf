@@ -1,13 +1,13 @@
 {
-  "active_phase": "3",
-  "active_phase_label": "Structural unification",
+  "active_phase": "4",
+  "active_phase_label": "Operator boundaries",
   "active_objectives": [
-    { "id": "3A", "title": "Mirror envelope / interpretation surface", "track": "A" },
-    { "id": "3B", "title": "Data access policy surface", "track": "A" },
-    { "id": "3C", "title": "Execution seam surface", "track": "A" }
+    { "id": "4A", "title": "Studio / operator route authorization (admin gate)", "track": "A" },
+    { "id": "4B", "title": "Trace-exempt registry alignment for Studio surfaces", "track": "A" },
+    { "id": "4C", "title": "State mutation laws for operator tooling (expand as routes grow)", "track": "B" }
   ],
   "blocked": [],
-  "notes": "Phase 2 is locked complete (all enforcement rows green at last gate). Phase 3 Track A — structural unification enforcement is active. Non-negotiable loop: enforcement → confirmed violations → bounded fix; no feature work in api/ or frontend/src/ during structural-only passes unless explicitly Track B. 2A remains monitored only via runner or exemption invalidation. Path-level gates for 3B/3C follow after structural baselines hold.",
+  "notes": "Phase 3 structural unification (3A–3C) closed: mirror interpretation trunk for bounded node transform, data access and execution seam checkers green. Phase 4 Track A: operator/studio authorization structural gate live (check_operator_studio_authorization). Non-negotiable loop unchanged. Overnight run may extend 4C path-level rules after baseline holds.",
   "operating_loop": "runner → enforcement → confirmed violations only → bounded fix → rerun → converge",
   "updated_at": "2026-04-04"
 }

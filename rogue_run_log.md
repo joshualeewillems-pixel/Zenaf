@@ -50,3 +50,22 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 ## Circuit breaker / blocks
 
 - **None triggered** this run (no violation cluster exceeded two fix attempts; no ambiguity halt).
+
+---
+
+## 2026-04-04 overnight — Phase 3A aggressive + Phase 4 transition
+
+### Wave 3A — Mirror graph envelopes (bounded node transform)
+
+- **meeting_evidence_pipeline:** Already documented in `check_mirror_interpretation.json` → `parallel_surface_heuristic_exemptions_audit` (upstream of `interpret_against_graph` in `meeting_extract` / `meeting_external_extract`); no code change.
+- **node_transform_suggest.py:** Refactored to canonical **`judgment_trunk`** (`SubjectRef` + `JudgmentTrunk`, verdict kind `ve_node_transform_proposal`). LLM prompt uses `verdict.transform_operation` + `verdict.proposed_entity`; legacy `intent` / `suggested_action` / `proposed_node` / `reason` / `confidence` are **mirrors** for existing `formatNodeTransformAgentContent` (no frontend edit).
+- **Enforcement:** `python scripts/philosophy_enforcement/run_all.py` → Philosophy **#2** `pass`, **0** heuristics.
+- **Circuit breaker:** Not triggered (smoke test: heuristic path returns `judgment_trunk` + legacy keys when LLM unavailable).
+- **Git:** Commit `Auto: Phase 3A - Aggressively refactored mirror graph envelopes` (subset: `node_transform_suggest.py`, `check_mirror_interpretation.json`).
+
+### Phase 4 — Operator boundaries (Track A attempt)
+
+- **Program state:** `convergence_program_state.json` → `active_phase` **4**, objectives **4A–4C** (Studio admin gate, trace-exempt alignment, future state-mutation depth).
+- **Checker:** `check_operator_studio_authorization.py` — every `@router` block in `api/routes/studio_routes.py` must include `Depends(get_current_admin_user)`; forbids `Depends(get_current_user)` in that file. Registered in `checkers/__init__.py`; matrix philosophy **15** `automation.checker_ids`.
+- **Enforcement:** `run_all.py` → Philosophy **#15** `pass`; suite green.
+- **Git:** Commit `Auto: Phase 4 Overnight Attempt` (state, matrix, checker, reports, this log).

@@ -214,8 +214,17 @@
       "class": "B",
       "law": "Cockpit trace law does not apply until Studio aligns with AiActionTrace contract.",
       "intended_scope": "Studio, bakeoffs, prompt tooling.",
-      "enforcement_mechanism": "Keep studio_admin_surface in exempt registry; review on Studio/cockpit merge.",
-      "related_docs": ["docs/01_TRUTH/GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md", "frontend/src/ai-actions/aiTraceExemptRegistry.ts"]
+      "enforcement_mechanism": "Keep studio_admin_surface in exempt registry; review on Studio/cockpit merge. /studio routes must use get_current_admin_user (Phase 4 structural gate).",
+      "related_docs": [
+        "docs/01_TRUTH/GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md",
+        "frontend/src/ai-actions/aiTraceExemptRegistry.ts",
+        "api/routes/studio_routes.py",
+        "scripts/philosophy_enforcement/checkers/check_operator_studio_authorization.py"
+      ],
+      "automation": {
+        "checker_ids": ["check_operator_studio_authorization"],
+        "notes": "Structural: every @router block in studio_routes.py must Depends(get_current_admin_user); forbid Depends(get_current_user) on that router file."
+      }
     }
   ]
 }

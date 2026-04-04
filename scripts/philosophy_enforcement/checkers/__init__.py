@@ -25,6 +25,7 @@ def load_all_checkers() -> None:
     from . import check_deterministic_commit  # noqa: F401
     from . import check_execution_seam_surface  # noqa: F401
     from . import check_mirror_interpretation  # noqa: F401
+    from . import check_operator_studio_authorization  # noqa: F401
     from . import check_product_honesty  # noqa: F401
     from . import check_trace_coverage  # noqa: F401
     from . import canonical_identity_leaks  # noqa: F401

@@ -1,0 +1,36 @@
+{
+  "$comment": "Phase 3A — mirror graph interpretation structural gate. Extend forbidden_assignment_globs when new VE modules land.",
+  "canonical_module": "local_ai/vision_execution/graph_interpretation.py",
+  "canonical_entrypoint_substring": "def interpret_against_graph",
+  "required_callers": [
+    {
+      "path": "local_ai/vision_execution/meeting_extract.py",
+      "must_contain": "interpret_against_graph",
+      "reason": "Primary meeting extract must run interpret_against_graph on staged rows."
+    },
+    {
+      "path": "local_ai/vision_execution/meeting_external_extract.py",
+      "must_contain": "interpret_against_graph",
+      "reason": "External meeting extract must run interpret_against_graph on staged rows."
+    }
+  ],
+  "forbidden_row_interpretation_assignment": {
+    "description": "Only graph_interpretation.py may assign extraction row['interpretation'] / summ['interpretation'] with graph ops.",
+    "scan_roots": ["local_ai/vision_execution"],
+    "ignore_path_substrings": ["graph_interpretation.py", "/__pycache__/", "test_"],
+    "pattern": "[\"']interpretation[\"']\\s*\\]\\s*="
+  },
+  "heuristic_parallel_surfaces": [],
+  "parallel_surface_heuristic_exemptions_audit": [
+    {
+      "path": "local_ai/vision_execution/meeting_evidence_pipeline.py",
+      "resolved_as": "false_positive",
+      "rationale": "This module only builds ExtractionCandidate rows and optional soft possibleMatches hints. Canonical mirror interpretation is applied later: meeting_extract.post_process_extraction then interpret_against_graph(out, ctx_dict, notes); meeting_external_extract follows the same contract on merged extraction."
+    },
+    {
+      "path": "local_ai/vision_execution/node_transform_suggest.py",
+      "resolved_as": "legal_exception",
+      "rationale": "Bounded Vision Execution transform advisory JSON (suggested_action, proposed_node) for reshape intents; it does not stage meeting-extract rows and does not attach row['interpretation']. Mirror graph interpret_against_graph applies to extraction payloads only, not this API surface."
+    }
+  ]
+}

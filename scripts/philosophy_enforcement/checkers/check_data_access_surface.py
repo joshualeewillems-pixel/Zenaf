@@ -1,28 +1,22 @@
 """
-EXPLORATORY — NOT REGISTERED in global_philosophy_integration_matrix.json.
+Data access policy (Phase 3B / Track A): structural gate that ``local_ai/policy/data_access.py``
+exists and exposes ``request_access``. Path-level Tier B/C enforcement is future work; see matrix notes.
 
-Structural smoke only: policy module exists + ``request_access`` symbol present.
-Does **not** enforce “reads go through data_access” (path-level). Re-add ``@register``
-only after implementing real gates (e.g. covered modules must import/call policy or
-carry ``data-access-policy-exempt`` with inventory justification).
-
-Manual run::
-
-    from pathlib import Path
-    from scripts.philosophy_enforcement.checkers.check_data_access_surface import run_exploratory
-    run_exploratory(Path("."))
+Does not modify product code.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 from ..models import CheckerRun, Finding, FindingKind
+from . import register
 
 _POLICY_REL = "local_ai/policy/data_access.py"
 
 
-def run_exploratory(repo: Path) -> CheckerRun:
-    out = CheckerRun(checker_id="check_data_access_surface_exploratory")
+@register("check_data_access_surface")
+def run(repo: Path) -> CheckerRun:
+    out = CheckerRun(checker_id="check_data_access_surface")
     fp = repo / _POLICY_REL
     if not fp.is_file():
         out.findings.append(
@@ -30,7 +24,7 @@ def run_exploratory(repo: Path) -> CheckerRun:
                 kind=FindingKind.CONFIRMED_VIOLATION,
                 message="data_access policy module missing — Tier B/C gate cannot be centralized",
                 location=_POLICY_REL,
-                checker_id="check_data_access_surface_exploratory",
+                checker_id="check_data_access_surface",
             )
         )
         return out
@@ -41,7 +35,12 @@ def run_exploratory(repo: Path) -> CheckerRun:
                 kind=FindingKind.CONFIRMED_VIOLATION,
                 message="data_access.py missing def request_access( — policy choke point broken",
                 location=_POLICY_REL,
-                checker_id="check_data_access_surface_exploratory",
+                checker_id="check_data_access_surface",
             )
         )
     return out
+
+
+def run_exploratory(repo: Path) -> CheckerRun:
+    """Alias for manual invocation; same as matrix-gated ``run``."""
+    return run(repo)

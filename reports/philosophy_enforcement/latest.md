@@ -1,31 +1,30 @@
 # Philosophy enforcement report
 
-- Generated: `2026-04-04T17:19:00.204496+00:00`
+- Generated: `2026-04-04T17:30:18.181095+00:00`
 - Repo: `C:\Users\philc\OneDrive\Desktop\Atria`
 
 ## Program state (from JSON only)
 
 - Source: `docs/01_TRUTH/convergence_program_state.json`
-- Active phase: **2** — Class A convergence
+- Active phase: **3** — Structural unification
 - Operating loop: runner → enforcement → confirmed violations only → bounded fix → rerun → converge
 
 | Objective ID | Title | Track |
 |--------------|-------|-------|
-| 2B | Product honesty | B |
-| 2D | Deterministic commit | A |
-| 2C | Canonical identity | B |
+| 3A | Mirror envelope / interpretation surface | A |
+| 3B | Data access policy surface | A |
+| 3C | Execution seam surface | A |
 
-**Blocked:**
+**Blocked:** *(none)*
 
-- Phase 3 structural unification — do not re-promote matrix automation until Class A (trace + product honesty) is sustainably clear
 
-**Notes:** Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md). 2A is complete enough for now—keep monitored via the runner; active focus is 2B, 2D, 2C. 2A passed via explicit client-surface exemptions in docs/01_TRUTH/ai_trace_exemptions.json; any future FE caller for exempted routes must either emit client trace or remove the exemption. Work order: 2B first (fastest to make globally true), then 2D (trust at deep interaction), then 2C (high leverage but prone to sprawl—after 2B/2D). Discipline: only 2B, 2D, and 2C may spawn new discretionary work; 2A may resurface only from runner findings or exemption invalidation (e.g. new FE caller)—not intuition.
+**Notes:** Phase 2 is locked complete (all enforcement rows green at last gate). Phase 3 Track A — structural unification enforcement is active. Non-negotiable loop: enforcement → confirmed violations → bounded fix; no feature work in api/ or frontend/src/ during structural-only passes unless explicitly Track B. 2A remains monitored only via runner or exemption invalidation. Path-level gates for 3B/3C follow after structural baselines hold.
 
 | Philosophy | Status | Findings | Suggested next action |
 |------------|--------|----------|------------------------|
 | Traceability (1) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |
-| Mirror graph interpretation (2) | `not-yet-automated` | — | Add `automation.checker_ids` for `mirror_graph_interpretation` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
-| Data access policy (3) | `not-yet-automated` | — | Add `automation.checker_ids` for `data_access_policy` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
+| Mirror graph interpretation (2) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |
+| Data access policy (3) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |
 | Judgment substrate (4) | `not-yet-automated` | — | Add `automation.checker_ids` for `judgment_substrate` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
 | Coordination spine (5) | `not-yet-automated` | — | Add `automation.checker_ids` for `coordination_spine` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
 | Canonical core identity (6) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |

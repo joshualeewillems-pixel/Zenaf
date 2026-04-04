@@ -1,0 +1,41 @@
+# Philosophy enforcement + report artifact (no auto-repair in CI).
+# Local autonomous apply: scripts/philosophy_enforcement/auto_repair.py --apply
+name: philosophy-enforcement
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch: {}
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r api/requirements.txt
+          pip install pytest
+
+      - name: Philosophy enforcement (reports)
+        run: python scripts/philosophy_enforcement/run_all.py
+
+      - name: Upload philosophy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: philosophy-enforcement-report
+          path: |
+            reports/philosophy_enforcement/latest.md
+            reports/philosophy_enforcement/latest.json
+
+      - name: Routing / seam tests (aligned with repair_registry)
+        run: python -m pytest tests/test_run_routing_context.py -q --tb=no

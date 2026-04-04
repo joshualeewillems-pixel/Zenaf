@@ -1,0 +1,4052 @@
+[
+  {
+    "id": 1,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 2,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 3,
+    "difficulty": "easy",
+    "subject": "Prior auth required",
+    "body": "Patient needs prior authorization for procedure. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Clear insurance action."
+  },
+  {
+    "id": 4,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 5,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 6,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 7,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 8,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 9,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 10,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 11,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 12,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 13,
+    "difficulty": "adversarial",
+    "subject": "Lab results ready",
+    "body": "See what you missed. View in browser. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Subject lab, body newsletter; likely_junk."
+  },
+  {
+    "id": 14,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 15,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 16,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 17,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 18,
+    "difficulty": "adversarial",
+    "subject": "Save on your prescription",
+    "body": "Refill your medication today and save 20%. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Pharmacy promo; likely_junk."
+  },
+  {
+    "id": 19,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 20,
+    "difficulty": "easy",
+    "subject": "Patient referral - James Chen",
+    "body": "We are referring this patient to your office for evaluation.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Direct referral."
+  },
+  {
+    "id": 21,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 22,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 23,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 24,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 25,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 26,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 27,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 28,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 29,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 30,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 31,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 32,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 33,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 34,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 35,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 36,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 37,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 38,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 39,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 40,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 41,
+    "difficulty": "boundary",
+    "subject": "FWD: Lab results",
+    "body": "---------- Forwarded message ---------\nCBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "FWD chain; content is lab."
+  },
+  {
+    "id": 42,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 43,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 44,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 45,
+    "difficulty": "adversarial",
+    "subject": "Monthly newsletter",
+    "body": "Topics: referral process, insurance updates, appointment reminders. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Newsletter with clinical terms."
+  },
+  {
+    "id": 46,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 47,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 48,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 49,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 50,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 51,
+    "difficulty": "adversarial",
+    "subject": "Your payment was received",
+    "body": "Thank you for your payment. This is not a bill. Do not reply.",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "notes": "Payment confirmation; not action item."
+  },
+  {
+    "id": 52,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 53,
+    "difficulty": "easy",
+    "subject": "Referral for Maria G.",
+    "body": "Referring patient for dermatology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 54,
+    "difficulty": "boundary",
+    "subject": "Re: Your message",
+    "body": "Please see below. Patient needs prior authorization. Thanks.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Re: with insurance content; body carries signal."
+  },
+  {
+    "id": 55,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 56,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 57,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 58,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 59,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 60,
+    "difficulty": "adversarial",
+    "subject": "URGENT: Your account will expire",
+    "body": "Act now to renew! Limited time offer. Click here. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Urgent subject, sales body."
+  },
+  {
+    "id": 61,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 62,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 63,
+    "difficulty": "boundary",
+    "subject": "Request a callback",
+    "body": "Would like to discuss records release for continuity of care.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Request + records context; should be records_request."
+  },
+  {
+    "id": 64,
+    "difficulty": "adversarial",
+    "subject": "Lab results available",
+    "body": "Results are ready.<br><br>Please review.<br>&nbsp;<br>Thank you.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "HTML fragments; pipeline strips tags."
+  },
+  {
+    "id": 65,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 66,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 67,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 68,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 69,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 70,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 71,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 72,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 73,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 74,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 75,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 76,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 77,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 78,
+    "difficulty": "adversarial",
+    "subject": "Your weekly health digest",
+    "body": "View in browser. This week: lab results, prescription tips, and more. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Newsletter + medical terms; likely_junk."
+  },
+  {
+    "id": 79,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 80,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 81,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 82,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 83,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 84,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 85,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 86,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 87,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 88,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 89,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 90,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 91,
+    "difficulty": "easy",
+    "subject": "Your receipt from Staples",
+    "body": "Thank you for your order. Order #99999.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Receipt"
+  },
+  {
+    "id": 92,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 93,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 94,
+    "difficulty": "adversarial",
+    "subject": "",
+    "body": "Lab.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Empty subject, one-word body; lab."
+  },
+  {
+    "id": 95,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 96,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 97,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 98,
+    "difficulty": "easy",
+    "subject": "Referral for Patient Smith",
+    "body": "Referring patient for cardiology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 99,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 100,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 101,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 102,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 103,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 104,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 105,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 106,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 107,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 108,
+    "difficulty": "boundary",
+    "subject": "Appointment reminder",
+    "body": "Your appointment is tomorrow. Unsubscribe from reminders at link below.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Appointment with unsubscribe footer; still appointment."
+  },
+  {
+    "id": 109,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 110,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 111,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 112,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 113,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 114,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 115,
+    "difficulty": "easy",
+    "subject": "Referral for James C.",
+    "body": "Referring patient for cardiology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 116,
+    "difficulty": "easy",
+    "subject": "Appointment reminder",
+    "body": "Your appointment is tomorrow at 10am. Please confirm.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Clear appointment."
+  },
+  {
+    "id": 117,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 118,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 119,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 120,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 121,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 122,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 123,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 124,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 125,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 126,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 127,
+    "difficulty": "easy",
+    "subject": "General inquiry",
+    "body": "I have a question about my prescription. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "notes": "Inquiry re prescription"
+  },
+  {
+    "id": 128,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 129,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 130,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 131,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 132,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 133,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 134,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 135,
+    "difficulty": "easy",
+    "subject": "Your receipt from Amazon",
+    "body": "Thank you for your order. Order #12345.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Clear receipt."
+  },
+  {
+    "id": 136,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 137,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 138,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 139,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 140,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 141,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 142,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 143,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 144,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 145,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 146,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 147,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 148,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 149,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 150,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 151,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 152,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 153,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 154,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 155,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 156,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 157,
+    "difficulty": "easy",
+    "subject": "Referral for Maria G.",
+    "body": "Referring patient for cardiology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 158,
+    "difficulty": "adversarial",
+    "subject": "Prescription refill",
+    "body": "Refill request received.&nbsp; Process when convenient.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Entity in body."
+  },
+  {
+    "id": 159,
+    "difficulty": "easy",
+    "subject": "Order shipped",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Ordering"
+  },
+  {
+    "id": 160,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 161,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 162,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 163,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 164,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 165,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 166,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 167,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 168,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 169,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 170,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 171,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 172,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 173,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 174,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 175,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 176,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 177,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 178,
+    "difficulty": "easy",
+    "subject": "Referral for Yuki W.",
+    "body": "Referring patient for dermatology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 179,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 180,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 181,
+    "difficulty": "easy",
+    "subject": "Refill request - Patient Smith",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Clear prescription refill."
+  },
+  {
+    "id": 182,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 183,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 184,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 185,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 186,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 187,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 188,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 189,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 190,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 191,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 192,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 193,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 194,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 195,
+    "difficulty": "adversarial",
+    "subject": "Prior auth",
+    "body": "\n",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Subject insurance, body newline only."
+  },
+  {
+    "id": 196,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 197,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 198,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 199,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 200,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 201,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 202,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 203,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 204,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 205,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 206,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 207,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 208,
+    "difficulty": "adversarial",
+    "subject": "Lab",
+    "body": "",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "notes": "Subject only; one word lab; body empty."
+  },
+  {
+    "id": 209,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 210,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 211,
+    "difficulty": "easy",
+    "subject": "Records release request",
+    "body": "Please process the attached ROI form. Patient signed release.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Clear records request."
+  },
+  {
+    "id": 212,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 213,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 214,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 215,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 216,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 217,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 218,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 219,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 220,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 221,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 222,
+    "difficulty": "adversarial",
+    "subject": "No reply",
+    "body": "Prior authorization required for procedure. Please submit to billing.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Subject no-reply, body insurance; could be missed."
+  },
+  {
+    "id": 223,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 224,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 225,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 226,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 227,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 228,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 229,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 230,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 231,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 232,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 233,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 234,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 235,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 236,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 237,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 238,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 239,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 240,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 241,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 242,
+    "difficulty": "adversarial",
+    "subject": "Important: Action required",
+    "body": "Don't miss out. 50% off today only. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Important + action but marketing."
+  },
+  {
+    "id": 243,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 244,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 245,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 246,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 247,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 248,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 249,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 250,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 251,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 252,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 253,
+    "difficulty": "adversarial",
+    "subject": "Re: Question",
+    "body": "Thanks.",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "notes": "Near-empty; ambiguous."
+  },
+  {
+    "id": 254,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 255,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 256,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 257,
+    "difficulty": "easy",
+    "subject": "MediCal eligibility inquiry",
+    "body": "Please verify eligibility for upcoming visit.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Insurance/MediCal."
+  },
+  {
+    "id": 258,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 259,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 260,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 261,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 262,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 263,
+    "difficulty": "adversarial",
+    "subject": "Notification from System",
+    "body": "New lab results are available for your patient. CBC panel ready for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Subject notification-ish, body is lab; classifier may cap confidence."
+  },
+  {
+    "id": 264,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 265,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 266,
+    "difficulty": "easy",
+    "subject": "Referral for James C.",
+    "body": "Referring patient for dermatology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 267,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 268,
+    "difficulty": "adversarial",
+    "subject": "Request for information",
+    "body": "I would like to request a callback to discuss my appointment. Not a records request.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "notes": "Request but not records."
+  },
+  {
+    "id": 269,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 270,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 271,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 272,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 273,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 274,
+    "difficulty": "easy",
+    "subject": "Referral for Yuki W.",
+    "body": "Referring patient for cardiology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 275,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 276,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 277,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 278,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 279,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 280,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 281,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 282,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 283,
+    "difficulty": "easy",
+    "subject": "Invitation: Team standup",
+    "body": "You have been invited to a meeting. Accept or decline.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Calendar invite"
+  },
+  {
+    "id": 284,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 285,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 286,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 287,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 288,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 289,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 290,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 291,
+    "difficulty": "boundary",
+    "subject": "Request a callback",
+    "body": "Would like to schedule a call to discuss my prescription refill.",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "notes": "Request + prescription; not records_request."
+  },
+  {
+    "id": 292,
+    "difficulty": "adversarial",
+    "subject": "Your daily digest",
+    "body": "URGENT: Patient referral for cardiology. Please route to referral coordinator immediately.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Subject junk (digest), body urgent referral; may get likely_junk from subject."
+  },
+  {
+    "id": 293,
+    "difficulty": "adversarial",
+    "subject": "Appointment reminder - Tomorrow 10am",
+    "body": "Your appointment is confirmed. We look forward to seeing you.\n\n---\nLimited time offer on flu shots. Unsubscribe.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Appointment + promo footer."
+  },
+  {
+    "id": 294,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 295,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 296,
+    "difficulty": "adversarial",
+    "subject": "Update",
+    "body": "Please review.",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "notes": "Very short; low signal."
+  },
+  {
+    "id": 297,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 298,
+    "difficulty": "easy",
+    "subject": "Shipment delayed",
+    "body": "Your supply order has been delayed. New ETA next week.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Clear ordering."
+  },
+  {
+    "id": 299,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 300,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 301,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 302,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 303,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 304,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 305,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 306,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 307,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 308,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 309,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 310,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 311,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 312,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 313,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 314,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 315,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 316,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 317,
+    "difficulty": "adversarial",
+    "subject": "Action required: Verify your account",
+    "body": "Please verify your email to continue. This is an automated message. Do not reply.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Urgent-sounding but software."
+  },
+  {
+    "id": 318,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 319,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 320,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 321,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 322,
+    "difficulty": "easy",
+    "subject": "Don't miss our 20% off sale",
+    "body": "Limited time offer. Unsubscribe here.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Clear marketing."
+  },
+  {
+    "id": 323,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 324,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 325,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 326,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 327,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 328,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 329,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 330,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 331,
+    "difficulty": "boundary",
+    "subject": "Routine follow-up",
+    "body": "When convenient, please review the attached lab results.",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "notes": "Low priority but has lab; often waiting_fyi."
+  },
+  {
+    "id": 332,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 333,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 334,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 335,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 336,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 337,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 338,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 339,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 340,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 341,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 342,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 343,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 344,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 345,
+    "difficulty": "easy",
+    "subject": "Lab results: metabolic panel",
+    "body": "Results are back. Please review at your earliest convenience.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Lab keywords."
+  },
+  {
+    "id": 346,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 347,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 348,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 349,
+    "difficulty": "easy",
+    "subject": "Question about my account",
+    "body": "I have a question regarding my recent statement. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "notes": "General inquiry."
+  },
+  {
+    "id": 350,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 351,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 352,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 353,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 354,
+    "difficulty": "adversarial",
+    "subject": "Re: Lab results",
+    "body": "On Mon, Mar 1, someone wrote:\n> CBC results are available for review.\nPlease advise.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Re: with quoted lab content."
+  },
+  {
+    "id": 355,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 356,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 357,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 358,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 359,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 360,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 361,
+    "difficulty": "adversarial",
+    "subject": "FWD: Invoice",
+    "body": "---------- Forwarded message ---------\nFrom: Billing\nPrior auth required for patient. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "FWD invoice subject but body is insurance."
+  },
+  {
+    "id": 362,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 363,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 364,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 365,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 366,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 367,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 368,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 369,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 370,
+    "difficulty": "adversarial",
+    "subject": "EOB for your records",
+    "body": "Explanation of benefits attached for your records. No action needed.",
+    "expected_category": "insurance",
+    "expected_lane": "waiting_fyi",
+    "notes": "EOB but no action needed."
+  },
+  {
+    "id": 371,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 372,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 373,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 374,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 375,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 376,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 377,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 378,
+    "difficulty": "adversarial",
+    "subject": "Information request",
+    "body": "Could you please send me the records release form? I need to request my medical records.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Request + records; records_request."
+  },
+  {
+    "id": 379,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 380,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 381,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 382,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 383,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 384,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 385,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 386,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 387,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 388,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 389,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 390,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 391,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 392,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 393,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 394,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 395,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 396,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 397,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 398,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 399,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 400,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 401,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 402,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 403,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 404,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 405,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 406,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 407,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 408,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 409,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 410,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 411,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 412,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 413,
+    "difficulty": "adversarial",
+    "subject": "Referral for Patient",
+    "body": "Congratulations! You've been selected. Act now. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Subject referral, body promo; likely_junk."
+  },
+  {
+    "id": 414,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 415,
+    "difficulty": "easy",
+    "subject": "Order status",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 416,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 417,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 418,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 419,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 420,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 421,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 422,
+    "difficulty": "easy",
+    "subject": "Referral for Patient Smith",
+    "body": "Referring patient for dermatology follow-up.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Varied referral"
+  },
+  {
+    "id": 423,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 424,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 425,
+    "difficulty": "easy",
+    "subject": "Lab results ready",
+    "body": "CBC panel results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Clear lab result."
+  },
+  {
+    "id": 426,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 427,
+    "difficulty": "easy",
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 428,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 429,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 430,
+    "difficulty": "easy",
+    "subject": "Re: Referral",
+    "body": "Referring patient for cardiology. Please schedule.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 431,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 432,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 433,
+    "difficulty": "easy",
+    "subject": "Your receipt",
+    "body": "Thank you for your order. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 434,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 435,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 436,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 437,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 438,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 439,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 440,
+    "difficulty": "adversarial",
+    "subject": "Pharmacy: Your refill is ready",
+    "body": "Your medication refill has been processed. Pick up at your convenience.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Real refill notice."
+  },
+  {
+    "id": 441,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 442,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 443,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 444,
+    "difficulty": "easy",
+    "subject": "Re: Lab results",
+    "body": "CBC results are available for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 445,
+    "difficulty": "easy",
+    "subject": "Re: Appointment",
+    "body": "Your appointment is tomorrow at 10am.",
+    "expected_category": "appointment",
+    "expected_lane": "waiting_fyi",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 446,
+    "difficulty": "adversarial",
+    "subject": "Prior auth required",
+    "body": "Limited time offer! Click here to save. Unsubscribe from this list.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Subject insurance, body marketing; should be likely_junk."
+  },
+  {
+    "id": 447,
+    "difficulty": "easy",
+    "subject": "Newsletter: March updates",
+    "body": "View in browser. Unsubscribe to opt out.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "notes": "Clear newsletter."
+  },
+  {
+    "id": 448,
+    "difficulty": "easy",
+    "subject": "FWD: Refill request",
+    "body": "Patient requested medication refill. Please approve.",
+    "expected_category": "prescription",
+    "expected_lane": "needs_attention",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 449,
+    "difficulty": "easy",
+    "subject": "ROI request",
+    "body": "Please process the attached records release form. Patient signed.",
+    "expected_category": "records_request",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  },
+  {
+    "id": 450,
+    "difficulty": "easy",
+    "subject": "Re: Prior auth",
+    "body": "Patient needs prior authorization. EOB attached.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "notes": "Padded variety."
+  }
+]

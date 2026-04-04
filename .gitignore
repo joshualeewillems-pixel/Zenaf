@@ -1,0 +1,18 @@
+# Local workspace identity mirror (bounded scan; not system of record)
+.atria/workspace-identity/
+
+# Local intake IMAP config (may contain password); do not commit
+intake_imap_config.json
+# Gmail OAuth tokens and client config (do not commit)
+intake_gmail_oauth.json
+intake_gmail_oauth_pkce.json
+intake_google_oauth_config.json
+
+# Nightly harness output (local)
+logs/nightly_self_exercise/
+e2e/nightly/node_modules/
+e2e/nightly/playwright-report/
+e2e/nightly/test-results/
+
+# Debug: last council enriched packet (local_ai/council_preflight.py)
+last_packet.txt

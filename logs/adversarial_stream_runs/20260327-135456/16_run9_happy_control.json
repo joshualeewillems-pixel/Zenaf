@@ -1,0 +1,179 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run9_happy_control",
+    "elapsed_s": 19.92,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "anchored",
+    "integrity_warning": null,
+    "synthesis_support_status": "supported",
+    "combined_summary": "grounded",
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move:\nAccelerate Phoenix Migration despite LedgerBridge dependency risk.\n\nPushback:\nRapid Phoenix release could expose Atria to unnecessary vulnerabilities. \n\nNext action:\nInitiate a comprehensive security audit on Phoenix components and dependencies to assess risk impact. Simultaneously, convene a strategy session to discuss and prioritize mitigative actions, including potential fallbacks or alternative solutions for LedgerBridge integration. This approach ensures strategic alignment\u2026\n\nOperator:\nCore move: Evaluate Phoenix Migration milestone against LedgerBridge dependency readiness.\n\nPushback: Without addressing LedgerBridge, proceeding with Phoenix Migration might introduce instability or delays.\n\nNext action: Schedule a review session with the development team to assess LedgerBridge's status and discuss its integration with Phoenix Migration. This ensures that both projects are executed cohesively without compromising system integrity.\n\nAnalyst:\nCore move:\nFix the mismatch between \"Phoenix Migration\" milestone sequencing and \"LedgerBridge\" dependency risk assessment in council decision-making.\n\nPushback:\nAssuming the council agrees on shipping the \"Phoenix Migration\" milestone without considering the \"LedgerBridge\" dependency might overlook potential risks, delays, or compatibility issues. The data suggests that resolving dependency issues first ensures smoother execution and reduces the risk of future disruptions. However, we're\u2026\n\nAtria synthesis:\n## Decision\nTo mitigate risks and ensure system integrity, prioritize addressing the LedgerBridge dependency before proceeding with the Phoenix Migration milestone. This decision aligns with the strategic objective of managing dependencies effectively and enhancing security.\n\n## Rejected / Deprioritized\nThe Strategist's suggestion to accelerate Phoenix Migration without fully addressing the LedgerBridge dependency risk is rejected. This approach neglects the potential vulnerabilities and instability it might introduce to the system.\n\n## One next move\nSchedule a comprehensive strategy session to thoroughly evaluate LedgerBridge's status and discuss potential mitigative actions. Concurrently, initiate a security audit on Phoenix components to assess risk impact. This dual approach ensures strategic alignment and reduces the risk of future disruptions while maintaining system integrity.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "48edff80-9725-4063-af1c-1ef28076d867"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "48edff80-9725-4063-af1c-1ef28076d867"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "supported"
+      },
+      "synthesis_integrity_state": "anchored",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 16
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run9_happy_control",
+    "elapsed_s": 19.23,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "anchored",
+    "integrity_warning": null,
+    "synthesis_support_status": "supported",
+    "combined_summary": "grounded",
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move: Accelerate Phoenix Migration despite LedgerBridge dependency.\nPushback: Potential impact on stability and user experience needs evaluation.\nNext action: Schedule a council meeting to discuss the risks and benefits of proceeding with Phoenix Migration before LedgerBridge is fully integrated. Ensure that the team has a plan in place to mitigate any potential issues and that there is a clear communication strategy to address user concerns. Focus on the long-term strategic advantage of\u2026\n\nOperator:\nCore move: Review current dependencies and update the pipeline sequence to prioritize shipping Phoenix Migration over LedgerBridge.\n\nPushback: Ensure that shipping Phoenix Migration does not create additional risk or dependencies that could impede future development.\n\nNext action: Update the project's dependency map, resequence tasks, and communicate the new timeline to the team. Coordinate with the LedgerBridge team to manage expectations and ensure a smooth transition.\n\nAnalyst:\nCore move:\nAdjust Phoenix Migration milestone sequencing based on LedgerBridge dependency status.\n\nPushback:\nMilestone order should reflect the dependency's readiness and impact on project flow.\n\nNext action:\nEvaluate LedgerBridge's progress and readiness. If not ready, delay Phoenix Migration milestone until dependency is resolved or mitigated. Communicate this to the council, highlighting the rationale and potential impacts on project timeline and resources.\n\nAtria synthesis:\n## Decision\nTo prioritize shipping Phoenix Migration before addressing the LedgerBridge dependency, one must consider the strategic advantage against the risks to stability and user experience. While the Strategist's emphasis on long-term benefits is important, it's crucial to balance these against the impact on the current release.\n\n## Rejected / Deprioritized\nThe Analyst's suggestion of adjusting the Phoenix Migration milestone sequencing based on LedgerBridge's readiness provides a more cautious approach, which should be prioritized. This ensures project flow and resource management are not compromised, aligning with the Operator's concern for dependencies and risk.\n\n## One next move\nInitiate a council meeting focusing on a detailed risk assessment of shipping Phoenix Migration before LedgerBridge is fully integrated. This should include a thorough evaluation of the potential impacts on stability, user experience, and project timeline. Simultaneously, coordinate with the LedgerBridge team to update dependency status and plan mitigations. Based on the outcomes, decide on the milestone sequencing and communicate the strategy to the team.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "c1d129c2-8fe9-4d00-901a-95dbf4b9a44c"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "c1d129c2-8fe9-4d00-901a-95dbf4b9a44c"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "supported"
+      },
+      "synthesis_integrity_state": "anchored",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 8
+  }
+}

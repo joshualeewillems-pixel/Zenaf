@@ -1,0 +1,156 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run8_folder_no_synthesis",
+    "elapsed_s": 3.93,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": null,
+    "synthesis_integrity_state": null,
+    "integrity_warning": null,
+    "synthesis_support_status": null,
+    "combined_summary": null,
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Which of these candidate parent folders would you prioritize for this folder's contents? One short reason each.",
+        "teacher_mode": "off"
+      },
+      "context": {
+        "workflow_kind": "folder",
+        "folder_path": "C:/tmp/demo-folder",
+        "context_block": "Folder candidates: Contracts, Operations, Finance\n"
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Folder advisor:\nSuggested parent folders (from the list above only):\n- Contracts \u2014 This folder likely contains documents related to agreements and deals.\n- Operations \u2014 This folder may include files related to business processes and activities.\n\nAdd to my recommendations: no\n",
+      "done": true,
+      "integrity_envelope": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [],
+        "provenance": {
+          "run_id": "96c3f33c-6892-4377-bb2a-77feb9319bfb"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [],
+        "provenance": {
+          "run_id": "96c3f33c-6892-4377-bb2a-77feb9319bfb"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 7
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run1_ambiguous_anchor",
+    "elapsed_s": 50.5,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "anchored",
+    "integrity_warning": null,
+    "synthesis_support_status": "partially_supported",
+    "combined_summary": "grounded_but_interpretive",
+    "mismatch": {
+      "state": true,
+      "support": false,
+      "combined": true
+    },
+    "all_match": false,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Summarize the tradeoffs and give one recommendation.",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "idea",
+            "entity_id": "amb-1"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move: Assessing the current tradeoffs in the project's \"truth-source order\" to optimize council packet construction.\n\nPushback: There is a mismatch between the defined \"truth-source order\" for the project and the actual sequence used in council packet construction. This discrepancy leads to confusion, delays, and misalignment among stakeholders.\n\nNext action: Realign the \"truth-source order\" with the current construction method of council packets, ensuring a consistent and transparent\u2026\n\nOperator:\nCore move: Simplify task allocation process to reduce current mismatch between task priority and actual execution order.\n\nPushback: The current system lacks clear, quantifiable metrics to prioritize tasks accurately, leading to delays and suboptimal resource allocation.\n\nNext action: Implement a task prioritization system based on effort required and impact on system stability, with clear milestones and dependencies outlined. This could involve creating a task backlog with priority levels,\u2026\n\nAnalyst:\nCore move: Summarize the tradeoffs and implications of implementing the idea \"amb-1\" in the context of the existing project \"Project\" and provide a recommendation based on a thorough analysis of the available data and evidence.\n\nPushback: Before making a recommendation, it's essential to understand the potential tradeoffs and implications of implementing the idea \"amb-1\". These tradeoffs may include the impact on project timelines, resource allocation, and the potential for scalability or\u2026\n\nAtria synthesis:\n## Decision (one direction)\n\nThe council faces tradeoffs concerning optimizing the \"truth-source order\" in project construction, task allocation and prioritization, and implementing the idea \"amb-1\" within the existing project \"Project\". To address these, we recommend focusing on streamlining the task allocation process while ensuring alignment with the \"truth-source order\" for project construction.\n\n## Rejected / deprioritized\n\nThe Strategist's proposal to assess tradeoffs in the \"truth-source order\" is less prioritized, as the Operator's focus on simplifying task allocation provides a more immediate solution to address current discrepancies. The Analyst's suggestion of summarizing tradeoffs before implementing \"amb-1\" is deemed less pressing than the need for a clear task prioritization system.\n\n## One next move\n\nThe next concrete product-side action should be to implement a task prioritization system based on both effort required and impact on system stability, ensuring that this system is clearly communicated to all stakeholders and that milestones and dependencies are outlined. This move directly addresses the Operator's pushback and prioritizes resource allocation for optimal project outcomes.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "amb-1",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "aa77298a-613c-4bab-8f5b-c4648d4fd9d9"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "amb-1",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "aa77298a-613c-4bab-8f5b-c4648d4fd9d9"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "partially_supported"
+      },
+      "synthesis_integrity_state": "anchored",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 17
+  }
+}

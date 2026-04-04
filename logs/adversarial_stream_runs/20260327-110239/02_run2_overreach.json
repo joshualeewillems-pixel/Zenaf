@@ -1,0 +1,178 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run2_overreach",
+    "elapsed_s": 32.83,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "failure_template",
+    "synthesis_integrity_state": "unanchored",
+    "integrity_warning": "synthesis_failure_template",
+    "synthesis_support_status": null,
+    "combined_summary": "unreliable",
+    "mismatch": {
+      "state": false,
+      "support": true,
+      "combined": false
+    },
+    "all_match": false,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "project",
+            "entity_id": "ovr-2"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move: Integrate seat perspectives on seat perspectives, then add a short section on EU AI Act regulatory implications for quantum-safe cryptography in our project rollout. Pushback: The integration of seat perspectives should align with our project's strategic objectives and not just focus on internal processes. Next action: Evaluate the current seat perspectives against our project's goals and ensure that they contribute to a cohesive strategy.\n\nAnalyst:\nCore move: Integrate seat perspectives on seat 3, then add a short section on EU AI Act's regulatory implications for quantum-safe cryptography in project Internal Workflow Cleanup's rollout.\n\nPushback: Without evidence on seat perspectives, integrating them could lead to inconsistency or bias. EU AI Act's specifics on quantum cryptography require clarification before inclusion.\n\nNext action: Gather seat perspectives on seat 3 and clarify EU AI Act's regulations on quantum cryptography.\n\nAtria synthesis:\n## Decision\n**SYSTEM FAILURE:** No council seat grounded its answer in the active object (title, short note, or expanded description). A product decision cannot be synthesized.\n\n## Rejected / deprioritized\nAll seats: answers that are not object-grounded are invalid for this run.\n\n## One next move\nRe-run council after ensuring seats reference the active work, or populate PRIMARY fields so grounding is possible.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "project",
+            "entity_id": "ovr-2",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "8d9f8517-b189-4540-b81d-08d3dced27c0"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "project",
+            "entity_id": "ovr-2",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "8d9f8517-b189-4540-b81d-08d3dced27c0"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "failure_template",
+        "integrity_mode": "bounded_failure",
+        "synthesis_support_status": null
+      },
+      "synthesis_integrity_state": "unanchored",
+      "synthesis_type": "failure_template",
+      "integrity_mode": "bounded_failure",
+      "integrity_warning": "synthesis_failure_template",
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 2
+  }
+}

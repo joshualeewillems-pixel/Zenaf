@@ -1,0 +1,19 @@
+{
+  "$comment": "Sync with local_ai/vision_execution/ve_integration_schema.py _UI_LABEL_BY_ENTITY_AND_KEY — distinctive user-visible labels only (skip ultra-generic strings).",
+  "schema_source": "local_ai/vision_execution/ve_integration_schema.py",
+  "ui_anchor_files": ["frontend/src/vision-execution/VisionExecutionView.tsx"],
+  "labels_must_appear": [
+    "Completion criteria",
+    "Short note",
+    "Expanded description",
+    "Intent / what this idea is trying to become",
+    "Brief (scope & outcomes)"
+  ],
+  "label_any_of_groups": [
+    {
+      "id": "next_step_ai_storage_key",
+      "note": "Schema label is still 'Next step (AI)'; UI may surface legacy field as 'Earlier AI suggestion' (see VisionExecutionView). At least one must be present until copy is unified.",
+      "any_of": ["Next step (AI)", "Earlier AI suggestion"]
+    }
+  ]
+}

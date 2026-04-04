@@ -1,0 +1,218 @@
+{
+  "generated_at_utc": "2026-04-04T02:51:57.948301+00:00",
+  "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
+  "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
+  "program_state": {
+    "active_phase": "2",
+    "active_phase_label": "Class A convergence",
+    "active_objectives": [
+      {
+        "id": "2A",
+        "title": "Trace-or-exempt",
+        "track": "A"
+      },
+      {
+        "id": "2C",
+        "title": "Canonical identity",
+        "track": "B"
+      },
+      {
+        "id": "2B",
+        "title": "Product honesty",
+        "track": "B"
+      }
+    ],
+    "blocked": [],
+    "notes": "runner signal quality: good",
+    "operating_loop": "enforcement \u2192 confirmed violations \u2192 bounded fix \u2192 rerun \u2192 converge",
+    "updated_at": "2026-04-03"
+  },
+  "rows": [
+    {
+      "philosophy_id": 1,
+      "name": "Traceability",
+      "slug": "traceability",
+      "status": "partial",
+      "findings": [
+        {
+          "kind": "heuristic_suspicion",
+          "message": "Charter 4.1 / 4.3",
+          "location": "api/main.py POST /run, /run/stream",
+          "detail": "LLM gateway: primary trace is client AiActionTrace (workspaceRunWithTrace). Server council persists artifacts separately; not evaluated per-mode here.",
+          "checker_id": "trace_or_exempt"
+        }
+      ],
+      "suggested_next_action": "Review heuristic hits; extend allowlists in scripts/philosophy_enforcement/config/ when benign.",
+      "checker_runs": [
+        {
+          "checker_id": "trace_or_exempt",
+          "findings": [
+            {
+              "kind": "heuristic_suspicion",
+              "message": "Charter 4.1 / 4.3",
+              "location": "api/main.py POST /run, /run/stream",
+              "detail": "LLM gateway: primary trace is client AiActionTrace (workspaceRunWithTrace). Server council persists artifacts separately; not evaluated per-mode here.",
+              "checker_id": "trace_or_exempt"
+            }
+          ],
+          "error": null
+        },
+        {
+          "checker_id": "schema_ui_drift",
+          "findings": [],
+          "error": null
+        }
+      ]
+    },
+    {
+      "philosophy_id": 2,
+      "name": "Mirror graph interpretation",
+      "slug": "mirror_graph_interpretation",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `mirror_graph_interpretation` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 3,
+      "name": "Data access policy",
+      "slug": "data_access_policy",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `data_access_policy` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 4,
+      "name": "Judgment substrate",
+      "slug": "judgment_substrate",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `judgment_substrate` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 5,
+      "name": "Coordination spine",
+      "slug": "coordination_spine",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `coordination_spine` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 6,
+      "name": "Canonical core identity",
+      "slug": "canonical_core_identity",
+      "status": "pass",
+      "findings": [],
+      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
+      "checker_runs": [
+        {
+          "checker_id": "canonical_identity_leaks",
+          "findings": [],
+          "error": null
+        }
+      ]
+    },
+    {
+      "philosophy_id": 7,
+      "name": "Execution seam coherence",
+      "slug": "execution_seam_coherence",
+      "status": "pass",
+      "findings": [],
+      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
+      "checker_runs": [
+        {
+          "checker_id": "execution_seam_bypasses",
+          "findings": [],
+          "error": null
+        }
+      ]
+    },
+    {
+      "philosophy_id": 8,
+      "name": "Honest commit / explicit payload",
+      "slug": "honest_commit_explicit_payload",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `honest_commit_explicit_payload` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 9,
+      "name": "HTTP client frontier consistency",
+      "slug": "http_client_frontier",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `http_client_frontier` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 10,
+      "name": "Intake operational completeness",
+      "slug": "intake_operational_completeness",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `intake_operational_completeness` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 11,
+      "name": "Product honesty (no phantom capability)",
+      "slug": "product_honesty",
+      "status": "pass",
+      "findings": [],
+      "suggested_next_action": "No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes.",
+      "checker_runs": [
+        {
+          "checker_id": "product_honesty_phantom",
+          "findings": [],
+          "error": null
+        }
+      ]
+    },
+    {
+      "philosophy_id": 12,
+      "name": "Developmental guidance boundary",
+      "slug": "developmental_guidance_boundary",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `developmental_guidance_boundary` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 13,
+      "name": "Shared artifacts / Radar / node substrate (roadmap)",
+      "slug": "shared_artifacts_roadmap",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `shared_artifacts_roadmap` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 14,
+      "name": "Soil filesystem substrate",
+      "slug": "soil_filesystem_substrate",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `soil_filesystem_substrate` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    },
+    {
+      "philosophy_id": 15,
+      "name": "Operator / Studio surfaces",
+      "slug": "operator_studio_surfaces",
+      "status": "not-yet-automated",
+      "findings": [],
+      "suggested_next_action": "Add `automation.checker_ids` for `operator_studio_surfaces` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/.",
+      "checker_runs": []
+    }
+  ],
+  "summary": {
+    "pass": 3,
+    "fail": 0,
+    "partial": 1,
+    "not_yet_automated": 11
+  }
+}

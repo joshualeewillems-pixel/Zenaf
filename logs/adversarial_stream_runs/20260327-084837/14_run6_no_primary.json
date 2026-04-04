@@ -1,0 +1,173 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "run_at": "2026-03-27T08:56:05",
+  "scenario": "run6_no_primary",
+  "request_payload": {
+    "mode": "council",
+    "params": {
+      "question": "What do you think?",
+      "teacher_mode": "off",
+      "include_synthesis": true,
+      "included_agents": [
+        "strategist",
+        "operator"
+      ]
+    },
+    "context": {
+      "context_block": "Background notes only. No authoritative object provided.\n",
+      "council_preflight": {
+        "ve_focus": {
+          "entity_type": "idea",
+          "entity_id": "weak-6"
+        }
+      }
+    },
+    "routing_context": {
+      "surface": "workspace_organizer",
+      "action_kind": "structured_evaluation",
+      "action_intent": "workspace_council",
+      "streaming": true,
+      "allows_externalization": true
+    }
+  },
+  "result_row": {
+    "idx": 14,
+    "scenario": "run6_no_primary",
+    "elapsed_s": 33.08,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "state": "unanchored",
+    "support": "unsupported_expansion",
+    "combined": "unreliable",
+    "warning": "missing_primary_anchor",
+    "mismatch": {
+      "state": true,
+      "support": false,
+      "combined": true
+    },
+    "all_match": false
+  },
+  "done_payload": {
+    "chunk": "Strategist:\nCore move:\nAddressing the mismatch between the title \"weak-6\" and the initiative's status, which appears to be inactive, requires clarification of the project's direction and focus. The primary context mentions a lack of description, which hinders strategic clarity.\n\nPushback:\nThe current status of the initiative might not align with its title, potentially leading to confusion about its purpose and direction. Without a clear description and status, it becomes challenging to determine the\u2026\n\nOperator:\nCore move: Enhance the \"truth-source order\" in the idea entity for more accurate tracking and organization.\n\nPushback: Without a clear \"truth-source order,\" the tracking and organization of ideas may become inconsistent and inefficient, leading to confusion and duplication.\n\nNext action: Establish a standardized procedure for updating the \"lineage\" of ideas in the database, ensuring each idea is consistently linked to its primary source of truth. This will involve creating a checklist or\u2026\n\nAtria synthesis:\nCONTEXT FAILURE: active object not present in model input",
+    "done": true,
+    "integrity_envelope_seat": {
+      "schema_version": 1,
+      "surface": "council_seat",
+      "default_mode": "bounded",
+      "subject_refs": [
+        {
+          "entity_type": "idea",
+          "entity_id": "weak-6",
+          "role_in_output": "primary_subject"
+        }
+      ],
+      "provenance": {
+        "run_id": "8cc376cf-3748-42a0-8138-54fe3c20bc54"
+      },
+      "policies_applied": [
+        "wash_v0",
+        "wash_safe_for_cloud",
+        "routing:allows_externalization=true",
+        "routing:effective_cloud=true"
+      ],
+      "synthesis_support_status": null
+    },
+    "integrity_envelope_synthesis": {
+      "schema_version": 1,
+      "surface": "council_synthesis",
+      "default_mode": "bounded",
+      "subject_refs": [
+        {
+          "entity_type": "idea",
+          "entity_id": "weak-6",
+          "role_in_output": "primary_subject"
+        }
+      ],
+      "provenance": {
+        "run_id": "8cc376cf-3748-42a0-8138-54fe3c20bc54"
+      },
+      "policies_applied": [
+        "wash_v0",
+        "wash_safe_for_cloud",
+        "routing:allows_externalization=true",
+        "routing:effective_cloud=true"
+      ],
+      "synthesis_support_status": "unsupported_expansion"
+    },
+    "synthesis_integrity_state": "unanchored",
+    "integrity_warning": "missing_primary_anchor",
+    "council_wash_trace": {
+      "wash_version": "council_wash_v0",
+      "wash_applied": false,
+      "cloud_payload_source": "washed",
+      "safety_allow_cloud_with_wash": true,
+      "transform_summary": [],
+      "safety_refusal_reasons": []
+    },
+    "provider_resolution": {
+      "mode": "council",
+      "execution_principal_ref": "account:anonymous",
+      "routing_context_present": true,
+      "externalization_allowed": true,
+      "cloud_blocked_reason": null,
+      "seam": {
+        "policy_resolution": {
+          "blocked": false,
+          "primary": {
+            "provider": "openai",
+            "model": "gpt-4.1-mini"
+          },
+          "fallback_chain": [],
+          "allow_cloud": true,
+          "flags": {
+            "routing_context_absent": false,
+            "surface": "workspace_organizer",
+            "action_kind": "structured_evaluation",
+            "action_intent": "workspace_council",
+            "policy_namespace": "account:anonymous",
+            "streaming": true,
+            "privacy_applied": true,
+            "privacy_require_local": false,
+            "privacy_allow_cloud_fallback": true
+          }
+        },
+        "effective_provider": "ollama",
+        "effective_model": null,
+        "routing_override_active": true,
+        "openai_key_source": "anonymous_blocked",
+        "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+        "council_seam_fallback_ollama": true
+      },
+      "council": {
+        "native": {
+          "requested_provider": "implicit (resolver council stack)",
+          "requested_model": null,
+          "effective_provider": null,
+          "effective_model": null,
+          "fallback_reason": null
+        },
+        "teacher": {
+          "requested_provider": "implicit (studio defaults / teacher off)",
+          "requested_model": null,
+          "effective_provider": null,
+          "effective_model": null,
+          "teacher_succeeded": null,
+          "teacher_skipped_reason": null,
+          "fallback_reason": null
+        },
+        "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "wash": {
+          "wash_version": "council_wash_v0",
+          "cloud_payload_source": "washed",
+          "wash_applied": false,
+          "safety_allow_cloud_with_wash": true,
+          "transform_summary": [],
+          "safety_refusal_reasons": []
+        }
+      }
+    }
+  }
+}

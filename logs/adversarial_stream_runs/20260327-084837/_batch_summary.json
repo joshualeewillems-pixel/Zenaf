@@ -1,0 +1,566 @@
+{
+  "schema": "adversarial_stream_batch_v2",
+  "ran_at": "2026-03-27T08:59:32",
+  "out_dir": "logs\\adversarial_stream_runs\\20260327-084837",
+  "total_runs": 20,
+  "aggregate": {
+    "completion_count": 20,
+    "done_true_count": 20,
+    "timeout_or_error_count": 0,
+    "avg_elapsed_completed_s": 32.71,
+    "state_counts": {
+      "unanchored": 18,
+      "null": 2
+    },
+    "support_counts": {
+      "unsupported_expansion": 18,
+      "null": 2
+    },
+    "combined_counts": {
+      "unreliable": 18,
+      "null": 2
+    }
+  },
+  "failure_groups": {},
+  "mismatch_count": 7,
+  "mismatches": [
+    {
+      "idx": 1,
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 52.33,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": true,
+        "combined": false
+      },
+      "all_match": false
+    },
+    {
+      "idx": 6,
+      "scenario": "run6_no_primary",
+      "elapsed_s": 27.56,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 8,
+      "scenario": "run9_happy_control",
+      "elapsed_s": 52.82,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 9,
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 51.35,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": true,
+        "combined": false
+      },
+      "all_match": false
+    },
+    {
+      "idx": 14,
+      "scenario": "run6_no_primary",
+      "elapsed_s": 33.08,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 16,
+      "scenario": "run9_happy_control",
+      "elapsed_s": 61.78,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 17,
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 50.69,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": true,
+        "combined": false
+      },
+      "all_match": false
+    }
+  ],
+  "heaviest_scenarios": [
+    {
+      "scenario": "run9_happy_control",
+      "avg_elapsed_s": 57.3,
+      "runs": 2,
+      "completed": 2
+    },
+    {
+      "scenario": "run1_ambiguous_anchor",
+      "avg_elapsed_s": 51.46,
+      "runs": 3,
+      "completed": 3
+    },
+    {
+      "scenario": "run2_overreach",
+      "avg_elapsed_s": 33.22,
+      "runs": 3,
+      "completed": 3
+    },
+    {
+      "scenario": "run4_fallback_like",
+      "avg_elapsed_s": 30.74,
+      "runs": 3,
+      "completed": 3
+    },
+    {
+      "scenario": "run6_no_primary",
+      "avg_elapsed_s": 30.32,
+      "runs": 2,
+      "completed": 2
+    },
+    {
+      "scenario": "run3_wash_identity",
+      "avg_elapsed_s": 27.53,
+      "runs": 3,
+      "completed": 3
+    },
+    {
+      "scenario": "run5_role_mismatch",
+      "avg_elapsed_s": 21.57,
+      "runs": 2,
+      "completed": 2
+    },
+    {
+      "scenario": "run8_folder_no_synthesis",
+      "avg_elapsed_s": 3.49,
+      "runs": 2,
+      "completed": 2
+    }
+  ],
+  "results": [
+    {
+      "idx": 1,
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 52.33,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": true,
+        "combined": false
+      },
+      "all_match": false
+    },
+    {
+      "idx": 2,
+      "scenario": "run2_overreach",
+      "elapsed_s": 32.92,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 3,
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 28.14,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 4,
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 29.65,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 5,
+      "scenario": "run5_role_mismatch",
+      "elapsed_s": 21.5,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 6,
+      "scenario": "run6_no_primary",
+      "elapsed_s": 27.56,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 7,
+      "scenario": "run8_folder_no_synthesis",
+      "elapsed_s": 3.61,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": null,
+      "support": null,
+      "combined": null,
+      "warning": null,
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 8,
+      "scenario": "run9_happy_control",
+      "elapsed_s": 52.82,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 9,
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 51.35,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": true,
+        "combined": false
+      },
+      "all_match": false
+    },
+    {
+      "idx": 10,
+      "scenario": "run2_overreach",
+      "elapsed_s": 35.09,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 11,
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 27.09,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 12,
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 30.29,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 13,
+      "scenario": "run5_role_mismatch",
+      "elapsed_s": 21.64,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 14,
+      "scenario": "run6_no_primary",
+      "elapsed_s": 33.08,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 15,
+      "scenario": "run8_folder_no_synthesis",
+      "elapsed_s": 3.37,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": null,
+      "support": null,
+      "combined": null,
+      "warning": null,
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 16,
+      "scenario": "run9_happy_control",
+      "elapsed_s": 61.78,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false
+    },
+    {
+      "idx": 17,
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 50.69,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": true,
+        "combined": false
+      },
+      "all_match": false
+    },
+    {
+      "idx": 18,
+      "scenario": "run2_overreach",
+      "elapsed_s": 31.64,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 19,
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 27.37,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    },
+    {
+      "idx": 20,
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 32.27,
+      "completed": true,
+      "done_true": true,
+      "error": null,
+      "state": "unanchored",
+      "support": "unsupported_expansion",
+      "combined": "unreliable",
+      "warning": "missing_primary_anchor",
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true
+    }
+  ]
+}

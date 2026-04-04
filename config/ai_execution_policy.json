@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "global_priority": "balanced",
+  "defaults": {
+    "local": { "provider": "ollama", "model": null },
+    "cloud": { "provider": "ollama", "model": null },
+    "allow_cloud_fallback": true,
+    "max_fallback_steps": 3
+  },
+  "priority_profiles": {
+    "balanced": {},
+    "quality": { "prefer_cloud": true },
+    "speed": { "prefer_cloud": false },
+    "cost": { "prefer_cloud": false, "prefer_smaller_model": true },
+    "privacy": { "allow_cloud": false, "require_local": true }
+  },
+  "overrides_by_action_kind": {},
+  "overrides_by_action_intent": {
+    "idea_evaluate": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "initiative_evaluate": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "workspace_council": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "workspace_next_step": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "workspace_web_research": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "workspace_reassess": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "workspace_folder_advisor": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "meeting_extract_single": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "meeting_extract_chunks": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "meeting_extract_synthesis": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "candidate_placement_suggest": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "candidate_presort_triage": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "node_transform_suggest": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "meeting_harvest": {
+      "primary": { "provider": "ollama", "model": null }
+    },
+    "meeting_harvest_normalize": {
+      "primary": { "provider": "ollama", "model": null }
+    }
+  }
+}

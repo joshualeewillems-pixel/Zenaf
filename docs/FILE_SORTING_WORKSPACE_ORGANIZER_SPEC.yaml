@@ -1,0 +1,429 @@
+# File sorting / Workspace Organizer — machine-readable architecture spec
+# Purpose: Unambiguous reference for tooling and constraint design. Clarifies ambiguities explicitly.
+# Format: YAML (parse with any YAML/JSON loader). Keys are stable for scripting.
+
+schema_version: "1.0"
+scope: "Analyze → Assess (optional) → Recommend → Council (optional) → Simulate. No code changes."
+
+# --- 0. AMBIGUITIES INDEX (machine-parseable list) ---
+ambiguities_index:
+  - id: "context_precedence"
+    summary: "When both context_block and folder_path are present, context_block wins; folder_path is redundant."
+    section: "pipeline.steps.council.context_resolution"
+  - id: "context_absent"
+    summary: "When context is null or absent, context_str is None; council packet has no Context block."
+    section: "pipeline.steps.council.context_resolution"
+  - id: "folder_list_not_in_context"
+    summary: "Actual suggested folder names are not in context_block; they appear only in the user question if prefilled."
+    section: "pipeline.steps.council.council_context_for_folder_workflow"
+  - id: "analyze_not_passed_to_recommend"
+    summary: "Analysis object is not passed to recommend; recommend re-scans the folder independently."
+    section: "data_structures.analysis_object"
+  - id: "council_output_unparsed"
+    summary: "Council is asked for structured lines but UI displays full text; no parsing of Position or other fields."
+    section: "council_output_expectations"
+  - id: "folder_path_normalization"
+    summary: "folder_path normalization (slash vs backslash, trailing slash) is not specified; backend receives string as-is after strip()."
+    section: "pipeline.steps.analyze"
+  - id: "role_limit_global"
+    summary: "Changing role_limit in atria_tools affects all council runs, not just folder workflow."
+    section: "constraint_opportunities"
+
+# --- 1. END-TO-END PIPELINE (machine-readable steps) ---
+pipeline:
+  steps:
+    - id: folder_selection
+      name: "Select folder (optional native picker)"
+      trigger:
+        ui: "User types path, or selects from Recent folders, or clicks Browse"
+      request:
+        endpoint: "POST /folder-picker"
+        query: { initial_dir: "optional; path to open dialog at" }
+      response:
+        folder_path: "string | null (null if user cancelled)"
+        error: "string (e.g. tkinter not available)"
+      code_path:
+        frontend: "frontend/src/App.tsx — FolderSelector with apiBase; onBrowse() → POST /folder-picker"
+        api: "api/main.py — folder_picker(initial_dir); subprocess tkinter askdirectory"
+      note: "Browse is optional; path can be entered manually. Dialog runs on API host (same machine in local cockpit)."
+
+    - id: analyze
+      name: "Analyze folder"
+      trigger:
+        ui: "User selects folder and clicks 'Run Analyze'"
+        # Ambiguity: path may come from folder picker state or last used path; not specified here.
+      request:
+        endpoint: "POST /run"
+        body:
+          mode: "analyze"
+          params:
+            folder_path: { type: string, required: true, description: "Absolute or relative path to folder" }
+        # context is not sent for analyze
+      response:
+        ok: boolean
+        result: "analysis_object (see data_structures.analysis_object)" | { error: string }
+      code_path:
+        frontend: "frontend/src/App.tsx — runMode('analyze', path) → fetch /run"
+        api: "api/main.py — _run_analyze(params)"
+        backend: "local_ai/atria_tools.py — analyze_file_steward_folder(path)"
+        implementation: "tools/file_steward/app.py — analyze_folder_structure(folder_path)"
+      model_calls: 0
+      ambiguities:
+        - "folder_path normalization (slash vs backslash, trailing slash) is not specified; backend receives string as-is after strip()."
+
+    - id: assess_uncertainty
+      name: "Assess uncertainty (optional)"
+      trigger:
+        ui: "User clicks 'Run Assess uncertainty'"
+      request:
+        endpoint: "POST /run"
+        body:
+          mode: "assess_uncertainty"
+          params:
+            folder_path: { type: string, required: true }
+        # suggested_folders is NOT sent; assess runs simulate with no allowed_folders
+      response:
+        ok: boolean
+        result:
+          low_confidence_count: int
+          items: "list of low-confidence proposed assignments"
+          folder_path: string
+          inferred_context_domain: string
+          simulate_tree: "tree structure for UI"
+      code_path:
+        api: "api/main.py — _run_assess_uncertainty(params) → _run_simulate(params)"
+        backend: "local_ai/atria_tools.simulate_folder_plan(path, allowed_folders=None)"
+      model_calls: 0
+      note: "Simulate may use LLM second pass if configured in File Steward; default is algorithmic only."
+
+    - id: recommend
+      name: "Recommend folders"
+      trigger:
+        ui: "User clicks 'Get suggestions' (runs analyze + recommend) or 'Run Suggest Folders'"
+      request:
+        endpoint: "POST /run"
+        body:
+          mode: "recommend"
+          params:
+            folder_path: { type: string, required: true }
+      response:
+        ok: boolean
+        result:
+          folder_path: string
+          inferred_context_domain: string
+          suggested_child_folders: [ string ]
+          notes: [ string ] | null
+          hierarchy_proposal: "optional; { buckets: [ { name: string, children: [ string ] } ] }; concatenation matches suggested_child_folders"
+        # API does NOT return folder_plan (source/confidence table); only the list.
+      code_path:
+        frontend: "frontend/src/App.tsx — runMode('recommend', path)"
+        api: "api/main.py — _run_recommend(params); normalizes raw to exclude folder_plan"
+        backend: "local_ai/atria_tools.py — recommend_child_folders(path)"
+        implementation: "tools/file_steward/app.py — recommend_child_folders(folder_path); internal infer_latent_buckets + assign_children_to_buckets → flatten"
+      model_calls: 0
+      ambiguities:
+        - "Recommend does NOT receive analyze or assess output; it re-scans the folder independently."
+
+    - id: council
+      name: "Ask Council (AI)"
+      trigger:
+        ui: "User clicks 'Ask Council' (prefills question) or sets question and clicks 'Run Council' in AI agents panel"
+      request:
+        endpoint: "POST /run/stream"
+        body:
+          mode: "council"
+          params:
+            question: { type: string, required: true }
+            included_agents: [ string ] | null  # e.g. ["strategist","operator","analyst"]
+            perspective_definitions: [ object ] | null  # when using custom/built-in perspectives
+            include_synthesis: boolean | null
+            subject_ref: object | null
+            object_snapshot: object | null
+          context:
+            folder_path: string | null
+            use_last_result: boolean | null  # frontend-only; API ignores, uses context_block
+            context_block: string | null     # if present, used as full context string
+      context_resolution:
+        # Order of precedence for building context_str passed to run_council_stream:
+        priority: 1
+        when: "context is present"
+        steps:
+          - if: "context.context_block is non-empty string"
+            then: "context_str = context.context_block.strip()"
+          - elif: "context.folder_path is non-empty string"
+            then: "context_str = 'Folder: ' + context.folder_path.strip()"
+          - else: "context_str = None (no Context block in packet)"
+        ambiguities:
+          - "If both context_block and folder_path are present, context_block wins; folder_path is then redundant."
+          - "When context is null or absent, context_str is None; council receives no Context block."
+
+      response:
+        stream: "SSE: data: { chunk: string, done: boolean }\n\n"
+        # No structured parse; UI concatenates chunks and displays as free-form text.
+      code_path:
+        frontend: "frontend/src/App.tsx — runCouncil() builds context_block via buildContextBlock() + buildAgentThreadContext(); POST /run/stream"
+        api: "api/main.py — _council_stream_gen(params, request.context)"
+        backend: "local_ai/atria_tools.py — run_council_stream(question, context=context_str, ...)"
+      model_calls: "N seats (parallel) + 1 synthesis if do_synthesis; N capped by COUNCIL_MAX_SEATS (3)"
+      council_context_for_folder_workflow:
+        # What the frontend puts in context_block when "Use current result as context" is ON and last mode was recommend:
+        template: |
+          Folder: {lastFolderPath}
+          Mode: Recommend. Context: {inferred_context_domain}. Suggested folders: {count}.
+        ambiguity: "The actual list of folder names is NOT in context_block; it appears only in the user's question if they use the prefilled 'Given these folder options — A, B, C — which...'."
+
+    - id: simulate
+      name: "Simulate folder plan"
+      trigger:
+        ui: "User runs simulation (uses approvedFolders = suggested − rejected + custom)"
+      request:
+        endpoint: "POST /run"
+        body:
+          mode: "simulate"
+          params:
+            folder_path: string
+            suggested_folders: [ string ]  # approved list from UI
+      response:
+        ok: boolean
+        result: "proposed_assignments, suggested_child_folders (= allowed + Unsorted), etc."
+      code_path:
+        api: "api/main.py — _run_simulate(params)"
+        backend: "local_ai/atria_tools.simulate_folder_plan(path, allowed_folders=params.suggested_folders)"
+      model_calls: 0
+      frontend_display_rules:
+        - "targetFolders for tree = effectiveSimulateTargetFolders (approvedFolders + Unsorted if missing)"
+        - "overrides passed to tree = filteredSimulationOverrides (only overrides whose target is in effective list)"
+        - "SimulateTreeGraphical: effectiveFolder clamps to targetFolders; order = targetFolders only (no stale lanes)"
+        - "Deleted suggested folders never appear as lanes or valid targets after re-run"
+
+# --- 2. DATA STRUCTURES (exact shapes and sources) ---
+data_structures:
+  analysis_object:
+    # Returned by analyze_folder_structure; also from analyze_file_steward_folder.
+    source: "tools/file_steward/app.py — analyze_folder_structure()"
+    shape:
+      folder_path: { type: string }
+      item_count: { type: integer }
+      file_count: { type: integer }
+      folder_count: { type: integer }
+      repeated_tokens: { type: array, items: string, max_items: 20 }
+      repeated_years: { type: array, items: string, max_items: 20 }
+      extension_breakdown: { type: object, additionalProperties: integer, max_keys_shown: 20 }
+      inferred_context_domain: { type: string }
+      suggested_child_folders: { type: array, items: string, max_items: 30 }
+    optional_when_truncated:
+      truncated: true
+      total_items_seen: integer
+      items_analyzed: integer
+    optional_on_error:
+      error: string
+    ambiguities:
+      - "analysis_object is NOT passed to recommend; recommend re-scans and rebuilds similar data internally."
+    # JSON Schema fragment (for validators/codegen):
+    json_schema_fragment:
+      type: object
+      required: [ "folder_path", "item_count", "file_count", "folder_count", "repeated_tokens", "repeated_years", "extension_breakdown", "inferred_context_domain", "suggested_child_folders" ]
+      properties:
+        folder_path: { type: string }
+        item_count: { type: integer }
+        file_count: { type: integer }
+        folder_count: { type: integer }
+        repeated_tokens: { type: array, items: { type: string } }
+        repeated_years: { type: array, items: { type: string } }
+        extension_breakdown: { type: object, additionalProperties: { type: integer } }
+        inferred_context_domain: { type: string }
+        suggested_child_folders: { type: array, items: { type: string } }
+        truncated: { type: boolean }
+        total_items_seen: { type: integer }
+        items_analyzed: { type: integer }
+        error: { type: string }
+
+  recommend_response:
+    # Returned by API _run_recommend (not raw File Steward).
+    source: "api/main.py — _run_recommend()"
+    shape:
+      folder_path: { type: string }
+      inferred_context_domain: { type: string }
+      suggested_child_folders: { type: array, items: string }
+      notes: { type: "array | null", items: string }
+      hierarchy_proposal: { type: "object | null", description: "optional; buckets[].name, buckets[].children; for future two-level UI" }
+    optional_on_error:
+      error: string
+    note: "Raw recommend_child_folders() may include folder_plan and hierarchy_proposal; API strips folder_plan. Internal recommend uses infer_latent_buckets + assign_children_to_buckets for flat list quality."
+
+  council_request_context:
+    # What frontend sends in body.context for council.
+    shape:
+      folder_path: { type: "string | undefined" }
+      use_last_result: { type: "boolean | undefined" }
+      context_block: { type: "string | undefined" }
+    note: "API does not use use_last_result; it only reads context_block and folder_path for context_str."
+
+# --- 3. FOLDER ANALYSIS INPUTS (machine-readable) ---
+folder_analysis:
+  source_file: "tools/file_steward/app.py"
+  source_function: "analyze_folder_structure"
+  filesystem_scope:
+    scope: "immediate_children_only"
+    method: "path.iterdir()"
+    skip: "should_skip_path(item) — hidden, system, configured patterns"
+    cap: { constant: "MAX_ANALYZE_ITEMS", value: 200 }
+  extracted_data:
+    - name: "file_and_folder_counts"
+      how: "Count of children by type (file vs dir)"
+      limit: null
+    - name: "tokenized_words"
+      how: "tokenize_name(item.name): regex [a-zA-Z0-9]+ length >= 3, not in STOP_WORDS, lowercased"
+      limit: null
+    - name: "repeated_tokens"
+      how: "detect_local_patterns → tokens with count >= 2"
+      limit: { constant: "MAX_REPEATED_TOKENS", value: 20 }
+    - name: "repeated_years"
+      how: "Regex (20xx|19xx) in names; years with count >= 2"
+      limit: { constant: "MAX_REPEATED_YEARS", value: 20 }
+    - name: "extensions"
+      how: "detect_local_patterns → ext_counter (lowercased suffix per file)"
+      limit: { constant: "MAX_EXTENSION_BREAKDOWN", value: 20 }
+    - name: "subfolder_structure"
+      how: "Not enumerated; only folder_count. No recursive tree."
+      limit: null
+    - name: "inferred_context_domain"
+      how: "infer_context_domain(path): ALLOWED_DOMAINS match or classify_item(path)"
+      limit: "one value"
+    - name: "suggested_child_folders_analysis"
+      how: "suggest_schema_children(domain) + build_dynamic_children(patterns)"
+      limit: { constant: "MAX_SUGGESTED_CHILD_FOLDERS", value: 30 }
+  constants:
+    MAX_ANALYZE_ITEMS: 200
+    MAX_REPEATED_TOKENS: 20
+    MAX_REPEATED_YEARS: 20
+    MAX_EXTENSION_BREAKDOWN: 20
+    MAX_SUGGESTED_CHILD_FOLDERS: 30
+
+# --- 4. RECOMMENDATION GENERATION ---
+recommendation_generation:
+  source_file: "tools/file_steward/app.py"
+  source_function: "recommend_child_folders"
+  mechanism: "purely_algorithmic_with_internal_buckets"
+  model_used: null
+  steps:
+    - "Re-scan folder (same caps as analyze)"
+    - "infer_context_domain(root)"
+    - "detect_local_patterns(items)"
+    - "suggest_schema_children(context_domain)"
+    - "build_dynamic_children(patterns)"
+    - "discover_themes(items) — score >= 0.15"
+    - "infer_latent_buckets(context_domain, patterns, theme_names, existing_children) → ordered bucket labels"
+    - "assign_children_to_buckets(schema_children, dynamic_children, theme_names, buckets) → per_bucket + unassigned"
+    - "Flatten: concat per_bucket in order, dedupe, append unassigned; truncate MAX_SUGGESTED_CHILD_FOLDERS"
+    - "If flat_from_buckets length >= 3: use as suggested_child_folders; else fallback to combined/sorted list"
+  output_field_to_ui: "suggested_child_folders"
+  optional_output: "hierarchy_proposal: { buckets: [ { name, children } ] }"
+
+# --- 5. COUNCIL INVOCATION (prompts and packet) ---
+council:
+  model_selection:
+    provider_function: "get_council_provider"
+    module: "local_ai/providers/__init__.py"
+    resolution_order:
+      - "Env ATRIA_COUNCIL_MODEL → OllamaProvider(model=...)"
+      - "Config OLLAMA_COUNCIL_MODEL → OllamaProvider(model=...)"
+      - "get_default_provider()"
+    override_from_workflow: false
+  packet:
+    source_function: "build_council_decision_packet"
+    source_file: "local_ai/atria_tools.py"
+    block_order: [ "context", "question", "working_memory", "recent_tool_summary", "constraints", "operator_priorities" ]
+    truncation_limits:
+      context: { constant: "MAX_CONTEXT_CHARS", value: 800 }
+      recent_tool_summary: { constant: "MAX_RECENT_TOOL_SUMMARY_CHARS", value: 500 }
+      operator_priorities: { constant: "MAX_OPERATOR_PRIORITY_CHARS", value: 220 }
+      working_memory: { constant: "MAX_WORKING_MEMORY_CHARS", value: 400 }
+    # In folder workflow: recent_tool_summary and key_constraints are not passed; so those blocks are omitted.
+  prompt_blocks:
+    per_seat:
+      structure: "{system_prompt}\n\n{optional_decisions_block}\n\n{packet}{role_limit}"
+      decisions_block: "Only when using built-in roles; formatted by _format_decision_context_block(role_name, 5)"
+    role_limit_literal: |
+      Return your answer in this exact structured format:
+      Position: <proceed | pause | reject | revise>
+      Primary reason: <one sentence explaining your position from your perspective>
+      Main risk: <one concrete risk you see>
+      Required guardrail: <one guardrail that must be in place>
+      Next step: <one practical next step consistent with your mandate>
+      Response:
+    role_limit_source: "local_ai/atria_tools.py (run_council and run_council_stream); variable name role_limit"
+    synthesis_prompt_literal: |
+      You are Atria synthesizing a council discussion. Below are perspectives from the council on the same question.
+      Do NOT repeat or summarize each role response. Instead, produce a short, structured synthesis with:
+      - Points of agreement (1–3 bullets)
+      - Points of disagreement or tension (1–3 bullets)
+      - Recommended action (2–4 sentences, including the key trade-off and any critical guardrails)
+      Keep the synthesis concise and decision-ready.
+    synthesis_template: "{COUNCIL_SYNTHESIS_PROMPT}\n\nQuestion: {q}\n\nSeat summaries:\n{combined}\n\nDecision recommendation:"
+    synthesis_fallback: "When no seat output: packet + 'As Atria (chief of staff / integrator), give one short decision recommendation (2–4 sentences)...'"
+  output_handling:
+    stream_format: "SSE data: { chunk: string, done: boolean }"
+    ui_interpretation: "free_form_text"
+    parsing: "None — CouncilText component only styles lines ending with ':' and 'Atria synthesis:'; no extraction of Position or other fields"
+    display_location: "Right-hand AI agents panel; also setResult(councilText) and lastCouncilResult; not in left-panel Workflow result (JSON)"
+
+# --- 6. OUTPUT EXPECTATIONS (council) ---
+council_output_expectations:
+  requested_format: "structured (Position, Primary reason, Main risk, Required guardrail, Next step, Response)"
+  ui_behavior: "Displays full concatenated stream; no parsing into fields; long narrative is shown in full (truncated to 2000 chars in one place, full in state)"
+  ambiguity: "System asks for structure but does not enforce or parse it; council can produce long narrative and it will be displayed as-is."
+
+# --- 7. PERFORMANCE ---
+performance:
+  analyze: { model_calls: 0 }
+  recommend: { model_calls: 0 }
+  council:
+    model_calls: "N_seats + 1_synthesis (when do_synthesis); N <= COUNCIL_MAX_SEATS (3)"
+    typical: "4 (3 seats + synthesis)"
+    prompt_size: "packet (context<=800 + question + working_memory<=400 + operator<=220) + system + role_limit; no conversation history"
+    bottlenecks: "Latency = max(seat times) + synthesis time; no multiple council runs unless user triggers again"
+
+# --- 8. CONSTRAINT OPPORTUNITIES (exact locations) ---
+constraint_opportunities:
+  goal: "Constrain council to: suggest only parent folder categories from list; brief reasoning; no long narrative; no restructuring logic"
+  safest_locations:
+    - option: "Global role_limit tightening"
+      file: "local_ai/atria_tools.py"
+      function: "run_council and run_council_stream"
+      symbol: "role_limit"
+      line_approx: "919-931 (run_council), 1159-1175 (run_council_stream)"
+      note: "Tightening role_limit affects all council runs, not just folder workflow."
+    - option: "Folder-scoped constraint block"
+      file: "local_ai/atria_tools.py"
+      functions: [ "build_council_decision_packet", "run_council_stream" ]
+      approach: "Add parameter (e.g. constrain_to_folder_advice: bool or context flag); when True, append Constraints block or extra instruction for folder-only advice"
+      frontend_change: "Pass flag or context field when invoking council from folder workflow (e.g. context.constrain_to_folder_advice or params.workflow_kind: 'folder')"
+  recommended: "Add folder-scoped constraint in build_council_decision_packet or prompt assembly in run_council_stream, keyed by request context, so only folder workflow is constrained."
+
+# --- 9. CROSS-REFERENCE (file → responsibilities) ---
+file_responsibilities:
+  "frontend/src/App.tsx":
+    - "runMode(analyze|recommend|assess|simulate) → POST /run"
+    - "FolderSelector: apiBase → Browse button; POST /folder-picker; effectiveSimulateTargetFolders, filteredSimulationOverrides"
+    - "SimulateTreeGraphical: targetFolders=effectiveSimulateTargetFolders; overrides=filteredSimulationOverrides; clamp effectiveFolder to target list; order = targetFolders only"
+    - "runCouncil() → POST /run/stream; buildContextBlock() for context_block"
+    - "CouncilText: display council output (light formatting, no parse)"
+    - "approvedFolders = suggested − rejected + custom; passed to simulate"
+  "api/main.py":
+    - "POST /folder-picker: folder_picker(initial_dir); subprocess tkinter askdirectory"
+    - "RunParams, RunRequest, RunResponse"
+    - "_run_analyze, _run_recommend, _run_simulate, _run_assess_uncertainty"
+    - "_council_stream_gen: context_str from context.context_block or context.folder_path"
+    - "Council stream: no recent_tool_summary or key_constraints from this path"
+  "local_ai/atria_tools.py":
+    - "analyze_file_steward_folder, recommend_child_folders, simulate_folder_plan"
+    - "build_council_decision_packet, run_council, run_council_stream"
+    - "role_limit, COUNCIL_*_PROMPT, get_council_provider()"
+  "tools/file_steward/app.py":
+    - "analyze_folder_structure, recommend_child_folders, simulate_folder_plan"
+    - "infer_latent_buckets, assign_children_to_buckets; BUCKET_ORDER, TOKEN_TO_BUCKET, EXT_TO_BUCKET, DOMAIN_TO_BUCKET, CHILD_NAME_TO_BUCKET"
+    - "detect_local_patterns, infer_context_domain, suggest_schema_children, build_dynamic_children, discover_themes, tokenize_name"
+    - "simulate_folder_plan: when allowed_folders provided, suggested_child_folders = allowed + Unsorted; clamp proposed assignments to allowed set"
+  "local_ai/providers/__init__.py":
+    - "get_council_provider(), get_default_provider()"

@@ -1,0 +1,177 @@
+{
+  "$schema_comment": "Machine-readable companion to GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md — update both together.",
+  "source_markdown": "docs/01_TRUTH/GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md",
+  "philosophies": [
+    {
+      "id": 1,
+      "slug": "traceability",
+      "name": "Traceability",
+      "class": "A",
+      "law": "Every AI-touching path emits a client trace, server trace, or a named exempt in aiTraceExemptRegistry.ts.",
+      "intended_scope": "All cockpit LLM/AI outcomes: VE API routes, /run modes, content, meeting extract, core profile LLM, transcribe, operator tools if unified.",
+      "enforcement_mechanism": "AI_ACTION_SUBSTRATE_COVERAGE_MATRIX.md + charter_enforcement_check.py manifest; charter-trace-exempt comments; optional pytest matrix/registry parity.",
+      "related_docs": [
+        "docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md",
+        "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
+        "docs/01_TRUTH/AI_ACTION_SUBSTRATE_COVERAGE_MATRIX.md",
+        "scripts/charter_enforcement_check.py",
+        "frontend/src/ai-actions/aiTraceExemptRegistry.ts"
+      ],
+      "automation": {
+        "checker_ids": ["trace_or_exempt", "schema_ui_drift"],
+        "notes": "schema_ui_drift enforces ve_integration_schema UI label anchors for VE integration surfaces (narrow static check)."
+      }
+    },
+    {
+      "id": 2,
+      "slug": "mirror_graph_interpretation",
+      "name": "Mirror graph interpretation",
+      "class": "B",
+      "law": "Evidence is classified against a graph and yields inspectable action + payload before durable writes—not only free text.",
+      "intended_scope": "Intake → VE, meetings → VE, profile reconcile, file steward, presort, harvest when graph-addressable.",
+      "enforcement_mechanism": "MIRROR_GRAPH_INTERPRETATION_SYSTEM_NOTE.md + PR checklist; shared TS/Python types when second surface.",
+      "related_docs": ["docs/01_TRUTH/MIRROR_GRAPH_INTERPRETATION_SYSTEM_NOTE.md", "docs/01_TRUTH/CODEBASE_TRUTH_RULES.md"]
+    },
+    {
+      "id": 3,
+      "slug": "data_access_policy",
+      "name": "Data access policy",
+      "class": "B",
+      "law": "Reads of sensitive depth (Tier B/C, external egress) go through data_access with explicit tier/justification.",
+      "intended_scope": "Any module that could fetch raw body, external destinations, or future Tier B/C UI.",
+      "enforcement_mechanism": "Lint/grep gate for get_item_with_content; CODEBASE_INVENTORY.md exceptions; TRUTH_CONVERGENCE gate for new Tier B/C API.",
+      "related_docs": ["docs/01_TRUTH/TRUTH_CONVERGENCE.md", "docs/01_TRUTH/CODEBASE_INVENTORY.md"]
+    },
+    {
+      "id": 4,
+      "slug": "judgment_substrate",
+      "name": "Judgment substrate",
+      "class": "B",
+      "law": "SubjectRef + JudgmentTrunk (and approved choke points) are the canonical shape for persisted interpretation rows.",
+      "intended_scope": "Council, node memory, coordination readings, new verdict persistence.",
+      "enforcement_mechanism": "CODEBASE_TRUTH_RULES.md §5b–5c; PR checklist; no revival of tombstoned adapters (grep CI).",
+      "related_docs": ["docs/01_TRUTH/CODEBASE_TRUTH_RULES.md"]
+    },
+    {
+      "id": 5,
+      "slug": "coordination_spine",
+      "name": "Coordination spine",
+      "class": "B",
+      "law": "ActivityEvent + optional execution_flow_reading judgments link execution facts to bounded interpretation.",
+      "intended_scope": "Meaningful execution checkpoints influencing guidance without new stores.",
+      "enforcement_mechanism": "tests/test_coordination_signals.py extensions; CODEBASE_TRUTH_RULES.md §5c; forbid new append_node_judgment for execution_flow_reading outside coordination_signals.py.",
+      "related_docs": ["docs/01_TRUTH/CODEBASE_TRUTH_RULES.md", "tests/test_coordination_signals.py"]
+    },
+    {
+      "id": 6,
+      "slug": "canonical_core_identity",
+      "name": "Canonical core identity",
+      "class": "B",
+      "law": "One canonical core profile per user/workspace as product truth; perspectives as lenses—not many competing cores.",
+      "intended_scope": "Core profile list/detail/training/reconcile; server perspective definitions.",
+      "enforcement_mechanism": "Resolver helper FE+BE; TRUTH_CONVERGENCE + checklist; optional eslint on raw [0] without helper.",
+      "related_docs": [
+        "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
+        "docs/01_TRUTH/SINGULAR_CORE_PROFILE_CONVERGENCE_AUDIT.md",
+        "frontend/src/vision-execution/canonicalCoreProfile.ts"
+      ],
+      "automation": { "checker_ids": ["canonical_identity_leaks"] }
+    },
+    {
+      "id": 7,
+      "slug": "execution_seam_coherence",
+      "name": "Execution seam coherence",
+      "class": "B",
+      "law": "Routed VE/run execution uses seam + principal with declared ollama/openai primaries unless extended in truth rules + main.py together.",
+      "intended_scope": "User-attributed LLM calls that should honor settings and blocking.",
+      "enforcement_mechanism": "No new get_default_provider call sites without CODEBASE_TRUTH_RULES update; inventory table; pytest smoke when touching api/main.py routing.",
+      "related_docs": ["docs/01_TRUTH/CODEBASE_TRUTH_RULES.md", "local_ai/execution_policy/seam_routing.py", "api/main.py"],
+      "automation": { "checker_ids": ["execution_seam_bypasses"] }
+    },
+    {
+      "id": 8,
+      "slug": "honest_commit_explicit_payload",
+      "name": "Honest commit / explicit payload",
+      "class": "B",
+      "law": "Confirmed writes use explicit structured payload (e.g. [DRAFT_VALUE:], patches)—not silent inference from chat text.",
+      "intended_scope": "Council integration commit, VE field apply, AI-said-save paths.",
+      "enforcement_mechanism": "charter_enforcement_check.py inference path visibility; checklist on new commit surfaces.",
+      "related_docs": ["docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md", "local_ai/integration_commit.py", "scripts/charter_enforcement_check.py"]
+    },
+    {
+      "id": 9,
+      "slug": "http_client_frontier",
+      "name": "HTTP client frontier consistency",
+      "class": "B",
+      "law": "VE subtree uses proxied relative VISION_EXECUTION_API; organizer uses API_BASE—no third ad-hoc origin.",
+      "intended_scope": "All frontend fetchers to backend.",
+      "enforcement_mechanism": "ESLint/grep in CI; CONTRIBUTING checklist.",
+      "related_docs": ["docs/01_TRUTH/CODEBASE_TRUTH_RULES.md"]
+    },
+    {
+      "id": 10,
+      "slug": "intake_operational_completeness",
+      "name": "Intake operational completeness",
+      "class": "B",
+      "law": "If schema claims sync/mailbox observability, writers exist on the real poll path—or docs say not wired.",
+      "intended_scope": "Poll, queue, mirror_sync, mailbox_action.",
+      "enforcement_mechanism": "BOOT_FLOW.md + ACTIVE_VS_PLANNED; optional integration tests when poll touched.",
+      "related_docs": ["docs/01_TRUTH/ACTIVE_VS_PLANNED.md", "docs/01_TRUTH/TRUTH_CONVERGENCE.md"]
+    },
+    {
+      "id": 11,
+      "slug": "product_honesty",
+      "name": "Product honesty (no phantom capability)",
+      "class": "A",
+      "law": "UI labels and nav match runtime behavior (Tier A only, no fake AI, no hidden tiers).",
+      "intended_scope": "User-visible cockpit strings and entry routes.",
+      "enforcement_mechanism": "charter_enforcement_check.py Clarify stub; matrix row per AI affordance; TRUTH_CONVERGENCE gate on Tier UI.",
+      "related_docs": [
+        "docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md",
+        "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
+        "docs/01_TRUTH/ACTIVE_VS_PLANNED.md"
+      ],
+      "automation": { "checker_ids": ["product_honesty_phantom"] }
+    },
+    {
+      "id": 12,
+      "slug": "developmental_guidance_boundary",
+      "name": "Developmental guidance boundary",
+      "class": "B",
+      "law": "Guidance is hypothesis-level optional context for council—not silent routing, not durable profile truth.",
+      "intended_scope": "Council preflight + cockpit panel until re-chartered.",
+      "enforcement_mechanism": "ATRIA_SYSTEM_CHARTER; forbid new consumers without SYSTEM_REFERENCE row; test scoped path omits guidance.",
+      "related_docs": ["docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md", "docs/01_TRUTH/SYSTEM_REFERENCE.md"]
+    },
+    {
+      "id": 13,
+      "slug": "shared_artifacts_roadmap",
+      "name": "Shared artifacts / Radar / node substrate (roadmap)",
+      "class": "C",
+      "law": "Planned durable artifacts and radar aggregation—not current product law.",
+      "intended_scope": "Future council runs, next-step, signals UI.",
+      "enforcement_mechanism": "Do not implement without SYSTEM_REFERENCE phase + TRUTH_CONVERGENCE update.",
+      "related_docs": ["docs/01_TRUTH/SYSTEM_REFERENCE.md", "docs/01_TRUTH/TRUTH_CONVERGENCE.md"]
+    },
+    {
+      "id": 14,
+      "slug": "soil_filesystem_substrate",
+      "name": "Soil filesystem substrate",
+      "class": "C",
+      "law": "v1 frozen: append/promote only; no read hooks, council consumption, or vectors until re-charter.",
+      "intended_scope": "Dev tooling + explicit promote only.",
+      "enforcement_mechanism": "TRUTH_CONVERGENCE/charter pointer; CI soil routes not in user nav prod; SOIL_LAYER spec.",
+      "related_docs": ["docs/01_TRUTH/ACTIVE_VS_PLANNED.md", "docs/01_TRUTH/TRUTH_CONVERGENCE.md"]
+    },
+    {
+      "id": 15,
+      "slug": "operator_studio_surfaces",
+      "name": "Operator / Studio surfaces",
+      "class": "B",
+      "law": "Cockpit trace law does not apply until Studio aligns with AiActionTrace contract.",
+      "intended_scope": "Studio, bakeoffs, prompt tooling.",
+      "enforcement_mechanism": "Keep studio_admin_surface in exempt registry; review on Studio/cockpit merge.",
+      "related_docs": ["docs/01_TRUTH/GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md", "frontend/src/ai-actions/aiTraceExemptRegistry.ts"]
+    }
+  ]
+}

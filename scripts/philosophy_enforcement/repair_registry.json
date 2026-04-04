@@ -1,0 +1,85 @@
+{
+  "$comment": "Per-checker bounds for autonomous repair. repairable true only when a Python handler is registered in repairs/__init__.py.",
+  "version": 1,
+  "policy_doc": "docs/01_TRUTH/AUTONOMOUS_REPAIR_POLICY.md",
+  "default_revert_scope": "global_confirmed_count",
+  "checkers": [
+    {
+      "checker_id": "trace_or_exempt",
+      "repairable": true,
+      "repair_priority": 10,
+      "repair_handler": "trace_exempt_registry_sync",
+      "allow_new_files": false,
+      "allow_untracked_globs": [],
+      "allowed_file_globs": ["frontend/src/ai-actions/aiTraceExemptRegistry.ts"],
+      "allowed_edit_types": ["config"],
+      "max_touched_files": 1,
+      "required_tests": [],
+      "revert_on_worse": true,
+      "notes": "Phase 1: append missing ids when route declares # charter-trace-exempt:<id> not listed in aiTraceExemptRegistry.ts. Does not add traces or edit routes."
+    },
+    {
+      "checker_id": "schema_ui_drift",
+      "repairable": false,
+      "repair_priority": 20,
+      "repair_handler": null,
+      "allowed_file_globs": [
+        "scripts/philosophy_enforcement/config/schema_ui_labels.json",
+        "local_ai/vision_execution/ve_integration_schema.py",
+        "frontend/src/vision-execution/VisionExecutionView.tsx"
+      ],
+      "allowed_edit_types": ["config"],
+      "max_touched_files": 2,
+      "required_tests": [],
+      "revert_on_worse": true,
+      "notes": "Prefer explicit label_groups in config; auto-sync from Python schema only with a dedicated handler + tests."
+    },
+    {
+      "checker_id": "canonical_identity_leaks",
+      "repairable": false,
+      "repair_priority": 30,
+      "repair_handler": null,
+      "allowed_file_globs": [
+        "frontend/src/**/*.ts",
+        "frontend/src/**/*.tsx",
+        "scripts/philosophy_enforcement/config/canonical_identity.json"
+      ],
+      "allowed_edit_types": ["config"],
+      "max_touched_files": 5,
+      "required_tests": [],
+      "revert_on_worse": true,
+      "notes": "Identity fixes are semantic; allowlist config updates are the safest future handler."
+    },
+    {
+      "checker_id": "execution_seam_bypasses",
+      "repairable": false,
+      "repair_priority": 40,
+      "repair_handler": null,
+      "allowed_file_globs": [
+        "api/**/*.py",
+        "local_ai/**/*.py",
+        "scripts/philosophy_enforcement/config/execution_seam.json"
+      ],
+      "allowed_edit_types": ["config"],
+      "max_touched_files": 3,
+      "required_tests": ["python", "-m", "pytest", "tests/test_run_routing_context.py", "-q", "--tb=no"],
+      "revert_on_worse": true,
+      "notes": "Structural seam violations need human review."
+    },
+    {
+      "checker_id": "product_honesty_phantom",
+      "repairable": false,
+      "repair_priority": 50,
+      "repair_handler": null,
+      "allowed_file_globs": [
+        "frontend/src/vision-execution/**/*.tsx",
+        "scripts/philosophy_enforcement/config/product_honesty.json"
+      ],
+      "allowed_edit_types": ["config", "docs"],
+      "max_touched_files": 2,
+      "required_tests": [],
+      "revert_on_worse": true,
+      "notes": "Copy and product honesty are human-gated; config allowlists only with explicit handler."
+    }
+  ]
+}

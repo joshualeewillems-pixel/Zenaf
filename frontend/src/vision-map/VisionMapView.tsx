@@ -1,0 +1,957 @@
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type MouseEvent,
+  type Ref,
+  type RefObject,
+  type SetStateAction,
+  type WheelEvent as ReactWheelEvent,
+} from 'react'
+import type { MapTriadDevelopmentalSnapshot } from '../developmentalGuidance/types'
+import type { ExecutionStep } from '../vision-execution/types'
+import { VISION_EXECUTION_API } from '../vision-execution/types'
+import {
+  Controls,
+  Panel,
+  ReactFlow,
+  ReactFlowProvider,
+  applyNodeChanges,
+  useEdgesState,
+  useNodesState,
+  useReactFlow,
+  type Edge,
+  type EdgeChange,
+  type Node,
+  type NodeChange,
+  type XYPosition,
+} from '@xyflow/react'
+import type { MapNodePayload } from './ontology'
+import '@xyflow/react/dist/style.css'
+import './mapAesthetics.css'
+
+import { EntityMapNode } from './EntityMapNode'
+import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX, NEST_NODE_LAYOUT_WIDTH_PX } from './NestGroupNode'
+import { MapFlowEdge } from './MapFlowEdge'
+import { MapChatShell } from './MapChatShell'
+import { resolveInspectEntityRef } from './mapTriadInspector'
+import { fetchNodeVitalityMap, fetchVisionMapEntities } from './veMapApi'
+import { fetchStudioCouncilRuns } from './fetchStudioCouncilRuns'
+import { buildLiveVisionMapGraph } from './liveProjection'
+import type { VisionMapEntityBundle } from './blockersFromVe'
+import { applyFocusToVisionMap } from './visionMapFocus'
+import { MapSandRakeControls } from './MapSandRakeControls'
+import { ZenSandCanvas, type ZenSandCanvasHandle } from './ZenSandCanvas'
+import type { VisionMapCouncilInteraction } from './visionMapCouncilInteraction'
+import {
+  clearVisionMapLayout,
+  loadVisionMapLayout,
+  saveVisionMapLayout,
+  visionMapLayoutStorageKey,
+  type VisionMapPersistedViewport,
+} from './visionMapLayoutPersistence'
+import {
+  EMPTY_NEST_STATE,
+  applyNestTransform,
+  canNestNode,
+  computeNestGrowthTriad,
+  computeNestVitality,
+  createNestGroup,
+  dissolveNestsMergedIntoAncestor,
+  getNestGroupForRoot,
+  updateNestAnchor,
+  withAddedNestGroup,
+  withRemovedNestGroup,
+  type NestGroupNodeData,
+  type NestState,
+} from './nesting'
+import { applyLocalRepulsion, expandRelativePositions } from './nestLayout'
+import { effectiveGrowthTriad } from './effectiveGrowthTriad'
+import { detectMissingDimensions } from './guidanceScripts'
+
+const nodeTypes = { entityMap: EntityMapNode, nestGroup: NestGroupNode }
+const edgeTypes = { mapFlow: MapFlowEdge }
+const TRACKPAD_ZOOM_GAIN = 2.2
+const SCENE_BASE_HEIGHT_PX = 560
+const SCENE_CONTENT_PADDING_PX = 260
+/** Fallback node size before React Flow measures (EntityMapNode-ish). */
+const DEFAULT_ENTITY_W = 228
+const DEFAULT_ENTITY_H = 180
+const INITIAL_MAP_ZOOM = 1
+const ORIENT_RETRY_MS = 600
+
+const MAP_SAND_LAYER_CLASS = 'map-sand-layer'
+
+type VisionMapMapWorldProps = {
+  sandRef: RefObject<ZenSandCanvasHandle | null>
+  reduceMotion: boolean
+  rakeEnabled: boolean
+  setRakeEnabled: Dispatch<SetStateAction<boolean>>
+  rakeFadeSec: 12 | 16 | 20
+  setRakeFadeSec: Dispatch<SetStateAction<12 | 16 | 20>>
+  loadState: 'idle' | 'loading' | 'ok' | 'error'
+  loadErr: string | null
+  onRetryLoad: () => void
+  baseGraph: { nodes: Node<MapNodePayload>[]; edges: Edge[] } | null
+  nodeCount: number
+  mapViewportReady: boolean
+  selectedNodeId: string | null
+  sceneHeightPx: number
+  nodes: Node<MapNodePayload | NestGroupNodeData>[]
+  edges: Edge[]
+  onNodesChange: (changes: NodeChange[]) => void
+  onEdgesChange: (changes: EdgeChange<Edge>[]) => void
+  onNodeClick: (_: MouseEvent, node: Node<MapNodePayload | NestGroupNodeData>) => void
+  onPaneClick: () => void
+  onViewportChange: (viewport: { zoom: number }) => void
+  onMoveEnd: () => void
+  zoomLevel: number
+  onOpenOperatorMode: () => void
+}
+
+/** Sand + rake controls + React Flow — isolated from `councilQuestionDraft` so typing in chat does not re-render the zen canvas. */
+const VisionMapMapWorld = memo(function VisionMapMapWorld({
+  sandRef,
+  reduceMotion,
+  rakeEnabled,
+  setRakeEnabled,
+  rakeFadeSec,
+  setRakeFadeSec,
+  loadState,
+  loadErr,
+  onRetryLoad,
+  baseGraph,
+  nodeCount,
+  mapViewportReady,
+  selectedNodeId,
+  sceneHeightPx,
+  nodes,
+  edges,
+  onNodesChange,
+  onEdgesChange,
+  onNodeClick,
+  onPaneClick,
+  onViewportChange,
+  onMoveEnd,
+  zoomLevel,
+  onOpenOperatorMode,
+}: VisionMapMapWorldProps) {
+  return (
+    <div
+      className={`map-world-wrap flex flex-col flex-1 min-w-0 min-h-[480px] relative overflow-hidden ${selectedNodeId ? 'map-focus-active' : ''}`}
+      style={{ height: `${sceneHeightPx}px` }}
+    >
+      <ZenSandCanvas
+        ref={sandRef as Ref<ZenSandCanvasHandle>}
+        reducedMotion={reduceMotion}
+        className={MAP_SAND_LAYER_CLASS}
+        rakeEnabled={rakeEnabled}
+        rakeFadeAfterMs={rakeFadeSec * 1000}
+      />
+      <MapSandRakeControls
+        sandRef={sandRef}
+        rakeEnabled={rakeEnabled}
+        onRakeEnabledChange={setRakeEnabled}
+        fadeSec={rakeFadeSec}
+        onFadeSecChange={setRakeFadeSec}
+      />
+      {loadState === 'loading' && !baseGraph && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-stone-100/85 text-stone-700 text-sm backdrop-blur-[2px]">
+          Loading Vision Execution…
+        </div>
+      )}
+      {loadState === 'error' && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-stone-950/88 text-stone-100 p-6 backdrop-blur-sm">
+          <div className="max-w-md rounded-xl border border-red-900/60 bg-stone-900/95 px-5 py-4 shadow-lg space-y-3 text-center">
+            <h2 className="text-sm font-semibold text-stone-100">Couldn’t load map data</h2>
+            <p className="text-xs text-stone-300 leading-relaxed">{loadErr ?? 'Something went wrong.'}</p>
+            <div className="flex flex-wrap gap-2 justify-center pt-1">
+              <button
+                type="button"
+                onClick={onRetryLoad}
+                className="px-3 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-medium"
+              >
+                Refresh data
+              </button>
+              <button
+                type="button"
+                onClick={onOpenOperatorMode}
+                className="px-3 py-2 rounded-lg border border-stone-600 text-stone-200 hover:bg-stone-800 text-xs font-medium"
+              >
+                Open operator mode
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {loadState === 'ok' && nodeCount === 0 && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-stone-100/90 text-stone-700 text-sm p-6 text-center backdrop-blur-[2px]">
+          <p>No ideas, initiatives, projects, or tasks yet.</p>
+          <button
+            type="button"
+            onClick={onOpenOperatorMode}
+            className="text-yellow-800 hover:text-yellow-700 underline text-xs font-medium"
+          >
+            Open operator mode to add data
+          </button>
+        </div>
+      )}
+      {loadState === 'ok' && nodeCount > 0 && !mapViewportReady && (
+        <div
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-stone-900 text-stone-400 text-sm"
+          aria-live="polite"
+        >
+          <span
+            className="inline-block h-5 w-5 animate-pulse rounded-full border-2 border-stone-500 border-t-amber-600/80"
+            aria-hidden
+          />
+          <span>Placing the map…</span>
+        </div>
+      )}
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
+        nodesDraggable={true}
+        nodesConnectable={false}
+        nodeDragThreshold={10}
+        selectNodesOnDrag={false}
+        panOnDrag={[0, 2]}
+        panOnScroll={true}
+        panActivationKeyCode="Space"
+        zoomActivationKeyCode="Control"
+        selectionKeyCode="Shift"
+        elementsSelectable
+        fitView={false}
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.2}
+        maxZoom={1.6}
+        zoomOnScroll={true}
+        zoomOnPinch={true}
+        proOptions={{ hideAttribution: true }}
+        debug={false}
+        colorMode="dark"
+        className={`map-graph-canvas !bg-transparent flex-1 min-h-0 h-full w-full transition-opacity duration-200 ${
+          loadState === 'ok' && nodeCount > 0 && !mapViewportReady ? 'opacity-0' : 'opacity-100'
+        }`}
+        style={{ background: 'transparent' }}
+        onMove={(_, viewport) => onViewportChange(viewport)}
+        onMoveEnd={() => onMoveEnd()}
+      >
+        <Controls showInteractive={false} position="top-left" />
+        <Panel position="top-left" className="ml-12 mt-1 pointer-events-none">
+          <div className="rounded-md border border-stone-700/70 bg-stone-900/78 px-2 py-1 text-[11px] font-medium text-stone-200">
+            {Math.round(zoomLevel * 100)}%
+          </div>
+        </Panel>
+      </ReactFlow>
+    </div>
+  )
+})
+
+export type VisionMapViewProps = {
+  onOpenOperatorMode: () => void
+  councilQuestionDraft: string
+  onVisionMapCouncilInteraction: (action: VisionMapCouncilInteraction) => void
+  /** Growth triad snapshot for developmental guidance (council preflight); cleared when selection clears. */
+  onDevelopmentalSignalsChange?: (payload: MapTriadDevelopmentalSnapshot | null) => void
+  /** Latest VE entity lists (for council triad when not on this tab); optional. */
+  onCouncilEntityBundleSnapshot?: (bundle: VisionMapEntityBundle | null) => void
+  /**
+   * Scopes saved stone positions + viewport (localStorage). Use a stable account/workspace id.
+   * @default 'default'
+   */
+  layoutPersistenceContext?: string
+}
+
+function VisionMapFlow({
+  onOpenOperatorMode,
+  councilQuestionDraft,
+  onVisionMapCouncilInteraction,
+  onDevelopmentalSignalsChange,
+  onCouncilEntityBundleSnapshot,
+  layoutPersistenceContext = 'default',
+}: VisionMapViewProps) {
+  const sandRef = useRef<ZenSandCanvasHandle>(null)
+  const loadGenerationRef = useRef(0)
+  const viewportRestoreRef = useRef<VisionMapPersistedViewport | null>(null)
+  const positionOverridesRef = useRef<Record<string, XYPosition>>({})
+  const baseGraphRef = useRef<{ nodes: Node<MapNodePayload>[]; edges: Edge[] } | null>(null)
+  const loadStateRef = useRef<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const layoutStorageKey = useMemo(
+    () => visionMapLayoutStorageKey(layoutPersistenceContext),
+    [layoutPersistenceContext],
+  )
+  const persistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [reduceMotion, setReduceMotion] = useState(false)
+  const [rakeEnabled, setRakeEnabled] = useState(true)
+  const [rakeFadeSec, setRakeFadeSec] = useState<12 | 16 | 20>(16)
+  const rf = useReactFlow()
+  const [baseGraph, setBaseGraph] = useState<{ nodes: Node<MapNodePayload>[]; edges: Edge[] } | null>(null)
+  const [entityBundle, setEntityBundle] = useState<VisionMapEntityBundle | null>(null)
+
+  useEffect(() => {
+    onCouncilEntityBundleSnapshot?.(entityBundle)
+  }, [entityBundle, onCouncilEntityBundleSnapshot])
+  const [inspectorExecSteps, setInspectorExecSteps] = useState<ExecutionStep[] | null>(null)
+  const [inspectorExecStepsLoading, setInspectorExecStepsLoading] = useState(false)
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedPayload, setSelectedPayload] = useState<MapNodePayload | null>(null)
+  const [nestState, setNestState] = useState<NestState>(EMPTY_NEST_STATE)
+  const [positionOverrides, setPositionOverrides] = useState<Record<string, XYPosition>>({})
+  const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
+  const [loadErr, setLoadErr] = useState<string | null>(null)
+  /** False until first viewport is centered on a node (avoid fit-to-full-canvas zoom-out flash). */
+  const [mapViewportReady, setMapViewportReady] = useState(false)
+
+  const [nodes, setNodes] = useNodesState<Node<MapNodePayload | NestGroupNodeData>>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+  const [zoomLevel, setZoomLevel] = useState(1)
+  const [guidancePulseNodeId, setGuidancePulseNodeId] = useState<string | null>(null)
+
+  const onViewportChange = useCallback(({ zoom }: { zoom: number }) => {
+    setZoomLevel(zoom)
+  }, [])
+
+  const flushPersistLayout = useCallback(() => {
+    const bg = baseGraphRef.current
+    const ls = loadStateRef.current
+    if (!bg || ls !== 'ok') return
+    let vp: { x: number; y: number; zoom: number }
+    try {
+      vp = rf.getViewport()
+    } catch {
+      return
+    }
+    const entityIds = new Set(bg.nodes.map((node) => node.id))
+    const positions: Record<string, { x: number; y: number }> = {}
+    for (const [id, pos] of Object.entries(positionOverridesRef.current)) {
+      if (entityIds.has(id)) positions[id] = { x: pos.x, y: pos.y }
+    }
+    saveVisionMapLayout(layoutStorageKey, { positions, viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } })
+  }, [layoutStorageKey, rf])
+
+  const schedulePersistLayout = useCallback(() => {
+    if (persistDebounceRef.current) window.clearTimeout(persistDebounceRef.current)
+    persistDebounceRef.current = window.setTimeout(() => {
+      persistDebounceRef.current = null
+      flushPersistLayout()
+    }, 400)
+  }, [flushPersistLayout])
+
+  useEffect(() => {
+    positionOverridesRef.current = positionOverrides
+  }, [positionOverrides])
+
+  useEffect(() => {
+    baseGraphRef.current = baseGraph
+  }, [baseGraph])
+
+  useEffect(() => {
+    loadStateRef.current = loadState
+  }, [loadState])
+
+  useEffect(
+    () => () => {
+      if (persistDebounceRef.current) window.clearTimeout(persistDebounceRef.current)
+    },
+    [],
+  )
+
+  const load = useCallback(async () => {
+    setLoadState('loading')
+    setMapViewportReady(false)
+    setLoadErr(null)
+    try {
+      const [entities, runs] = await Promise.all([fetchVisionMapEntities(), fetchStudioCouncilRuns(80)])
+      const { nodes: n, edges: e } = buildLiveVisionMapGraph(entities, runs)
+      const persisted = loadVisionMapLayout(layoutStorageKey)
+      const ids = new Set(n.map((node) => node.id))
+      const restoredPos: Record<string, XYPosition> = {}
+      if (persisted?.positions) {
+        for (const [id, pos] of Object.entries(persisted.positions)) {
+          if (ids.has(id)) restoredPos[id] = { x: pos.x, y: pos.y }
+        }
+      }
+      viewportRestoreRef.current = persisted?.viewport ?? null
+      setEntityBundle(entities)
+      setBaseGraph({ nodes: n, edges: e })
+      setNestState(EMPTY_NEST_STATE)
+      setPositionOverrides(restoredPos)
+      setSelectedNodeId(null)
+      setSelectedPayload(null)
+      setLoadState('ok')
+    } catch (err) {
+      setLoadState('error')
+      setLoadErr(err instanceof Error ? err.message : String(err))
+      setBaseGraph(null)
+      setEntityBundle(null)
+      viewportRestoreRef.current = null
+    }
+  }, [layoutStorageKey])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  /** After a failed load the graph is empty; reset pan/zoom so a prior 20% zoom doesn’t hide the next success. */
+  useEffect(() => {
+    if (loadState !== 'error') return
+    try {
+      void rf.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 })
+    } catch {
+      /* ignore */
+    }
+    setZoomLevel(1)
+  }, [loadState, rf])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    setReduceMotion(mq.matches)
+    const onChange = () => setReduceMotion(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  useEffect(() => {
+    if (!selectedNodeId || !baseGraph) return
+    const nestId = nestState.nodeToNestId[selectedNodeId]
+    if (!nestId) return
+    const g = nestState.groups[nestId]
+    if (!g?.collapsed) return
+    const rootNode = baseGraph.nodes.find((n) => n.id === g.rootNodeId)
+    if (!rootNode) return
+    setSelectedNodeId(g.rootNodeId)
+    setSelectedPayload(rootNode.data)
+  }, [selectedNodeId, nestState, baseGraph])
+
+  useEffect(() => {
+    if (!baseGraph) {
+      setNodes([])
+      setEdges([])
+      return
+    }
+    const baseNodes = baseGraph.nodes.map((n) => ({
+      ...n,
+      position: positionOverrides[n.id] ? { ...positionOverrides[n.id]! } : n.position,
+      data: {
+        ...n.data,
+        fertilizer_pulse: n.data.fertilizer_pulse || n.id === guidancePulseNodeId,
+      },
+    }))
+    const focusAll = applyFocusToVisionMap(
+      baseNodes as Node<MapNodePayload>[],
+      baseGraph.edges,
+      selectedNodeId,
+    )
+    const focusByNodeId: Record<string, { dimmed?: boolean; focusLineage?: boolean }> = {}
+    for (const n of focusAll.nodes) {
+      focusByNodeId[n.id] = { dimmed: n.data.dimmed, focusLineage: n.data.focusLineage }
+    }
+    const transformed = applyNestTransform(
+      focusAll.nodes as Node<MapNodePayload>[],
+      focusAll.edges,
+      nestState,
+      selectedNodeId,
+      (rootNodeId: string) => {
+        setSelectedNodeId(rootNodeId)
+        requestAnimationFrame(() => {
+          const g = getNestGroupForRoot(rootNodeId, nestState)
+          if (!g) return
+          const expandedRel = expandRelativePositions(g.relativePositions, g.relativeDepths, {
+            baseScale: 1.06,
+            depthStep: 0.07,
+            maxScale: 1.34,
+            floorRadius: 34,
+            kindById: g.memberKinds,
+          })
+          const restored: Record<string, XYPosition> = {}
+          for (const id of g.memberNodeIds) {
+            const rel = expandedRel[id]
+            if (!rel) continue
+            restored[id] = { x: g.anchorPosition.x + rel.x, y: g.anchorPosition.y + rel.y }
+          }
+          const allNodesWithPos = baseGraph.nodes.map((n) => ({
+            ...n,
+            position: restored[n.id] ?? positionOverrides[n.id] ?? n.position,
+          }))
+          const mergedPos: Record<string, XYPosition> = {}
+          for (const n of allNodesWithPos) mergedPos[n.id] = n.position
+          const repulsed = applyLocalRepulsion(
+            g.memberNodeIds,
+            allNodesWithPos as Node<MapNodePayload>[],
+            mergedPos,
+            { padding: 180, maxPush: 190, passCount: 2 },
+          )
+          setPositionOverrides((prev) => ({ ...prev, ...restored, ...repulsed }))
+          setNestState((prev) => withRemovedNestGroup(prev, rootNodeId))
+          schedulePersistLayout()
+        })
+      },
+      focusByNodeId,
+    )
+    const focused = applyFocusToVisionMap(
+      transformed.visibleEntityNodes as Node<MapNodePayload>[],
+      transformed.visibleEdges,
+      selectedNodeId,
+    )
+    setNodes([...(focused.nodes as Node<MapNodePayload>[]), ...transformed.nestNodes])
+    setEdges(focused.edges)
+  }, [
+    baseGraph,
+    selectedNodeId,
+    setNodes,
+    setEdges,
+    nestState,
+    positionOverrides,
+    guidancePulseNodeId,
+    schedulePersistLayout,
+  ])
+
+  useEffect(() => {
+    if (!guidancePulseNodeId) return
+    const timer = window.setTimeout(() => setGuidancePulseNodeId(null), 2200)
+    return () => window.clearTimeout(timer)
+  }, [guidancePulseNodeId])
+
+  /**
+   * On each new `baseGraph` (load / refresh): restore saved viewport, or else center on a random node at a fixed zoom.
+   * Nesting does not change `baseGraph`, so this does not run again.
+   */
+  useEffect(() => {
+    if (!baseGraph || baseGraph.nodes.length === 0) {
+      setMapViewportReady(true)
+      return
+    }
+    setMapViewportReady(false)
+    let cancelled = false
+    const started = performance.now()
+    const savedVp = viewportRestoreRef.current
+    viewportRestoreRef.current = null
+
+    if (
+      savedVp &&
+      Number.isFinite(savedVp.x) &&
+      Number.isFinite(savedVp.y) &&
+      Number.isFinite(savedVp.zoom) &&
+      savedVp.zoom > 0
+    ) {
+      const outerVp = window.setTimeout(() => {
+        requestAnimationFrame(() => {
+          void rf
+            .setViewport(
+              { x: savedVp.x, y: savedVp.y, zoom: savedVp.zoom },
+              { duration: 0 },
+            )
+            .then(() => {
+              if (!cancelled) {
+                setZoomLevel(savedVp.zoom)
+                setMapViewportReady(true)
+              }
+            })
+            .catch(() => {
+              if (!cancelled) setMapViewportReady(true)
+            })
+        })
+      }, 0)
+      return () => {
+        cancelled = true
+        clearTimeout(outerVp)
+      }
+    }
+
+    const orient = () => {
+      if (cancelled) return
+      const live = rf.getNodes()
+      if (live.length === 0) {
+        if (performance.now() - started < ORIENT_RETRY_MS) {
+          requestAnimationFrame(orient)
+        } else {
+          setMapViewportReady(true)
+        }
+        return
+      }
+      const pick = live[Math.floor(Math.random() * live.length)]!
+      const defaultH = pick.type === 'nestGroup' ? NEST_NODE_LAYOUT_HEIGHT_PX : DEFAULT_ENTITY_H
+      const defaultW = pick.type === 'nestGroup' ? NEST_NODE_LAYOUT_WIDTH_PX : DEFAULT_ENTITY_W
+      const w = pick.measured?.width ?? pick.width ?? defaultW
+      const h = pick.measured?.height ?? pick.height ?? defaultH
+      const cx = pick.position.x + w / 2
+      const cy = pick.position.y + h / 2
+      void rf
+        .setCenter(cx, cy, { zoom: INITIAL_MAP_ZOOM, duration: 0 })
+        .then(() => {
+          if (!cancelled) setMapViewportReady(true)
+        })
+        .catch(() => {
+          if (!cancelled) setMapViewportReady(true)
+        })
+    }
+
+    const outer = window.setTimeout(() => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(orient)
+      })
+    }, 0)
+    return () => {
+      cancelled = true
+      clearTimeout(outer)
+    }
+  }, [baseGraph, rf])
+
+  const onNodeClick = useCallback((_: MouseEvent, node: Node<MapNodePayload | NestGroupNodeData>) => {
+    if (node.type === 'nestGroup') {
+      const nestData = node.data as unknown as NestGroupNodeData
+      const rootId = nestData.rootNodeId
+      const rootNode = baseGraph?.nodes.find((n) => n.id === rootId)
+      setSelectedNodeId(rootId)
+      setSelectedPayload(rootNode?.data ?? null)
+      return
+    }
+    setSelectedNodeId(node.id)
+    setSelectedPayload((node.data as MapNodePayload) ?? null)
+  }, [baseGraph])
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNodeId(null)
+    setSelectedPayload(null)
+  }, [])
+
+  const clearSelection = useCallback(() => {
+    setSelectedNodeId(null)
+    setSelectedPayload(null)
+  }, [])
+
+  const initiativeIdForExecSteps = useMemo(() => {
+    if (!selectedPayload) return null
+    const r = resolveInspectEntityRef(selectedPayload)
+    return r.veType === 'initiative' ? r.id : null
+  }, [selectedPayload])
+
+  useEffect(() => {
+    if (!initiativeIdForExecSteps) {
+      setInspectorExecSteps(null)
+      setInspectorExecStepsLoading(false)
+      return
+    }
+    let cancelled = false
+    setInspectorExecStepsLoading(true)
+    setInspectorExecSteps(null)
+    void fetch(`${VISION_EXECUTION_API}/initiatives/${initiativeIdForExecSteps}/execution-steps`, {
+      credentials: 'include',
+    })
+      .then(async (res) => {
+        const data = (await res.json().catch(() => [])) as unknown
+        if (cancelled) return
+        if (!res.ok) {
+          setInspectorExecSteps([])
+          return
+        }
+        setInspectorExecSteps(Array.isArray(data) ? (data as ExecutionStep[]) : [])
+      })
+      .catch(() => {
+        if (!cancelled) setInspectorExecSteps([])
+      })
+      .finally(() => {
+        if (!cancelled) setInspectorExecStepsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [initiativeIdForExecSteps])
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setNodes((nds) => applyNodeChanges(changes, nds) as Node<MapNodePayload | NestGroupNodeData>[])
+      const moveChanges = changes.filter(
+        (c) => c.type === 'position' && !!(c as { position?: XYPosition }).position && !(c as { dragging?: boolean }).dragging,
+      ) as Array<{ id: string; position: XYPosition }>
+      if (moveChanges.length === 0) return
+      setPositionOverrides((prev) => {
+        const next = { ...prev }
+        for (const c of moveChanges) {
+          const n = nodes.find((nn) => nn.id === c.id)
+          if (n?.type === 'nestGroup') {
+            setNestState((cur) => updateNestAnchor(cur, c.id, c.position))
+          } else {
+            next[c.id] = { ...c.position }
+          }
+        }
+        return next
+      })
+      schedulePersistLayout()
+    },
+    [nodes, setNodes, schedulePersistLayout],
+  )
+
+  const nestSelectedGroup = useCallback(() => {
+    if (!baseGraph || !selectedNodeId) return
+    const rootNode = baseGraph.nodes.find((n) => n.id === selectedNodeId)
+    if (!rootNode || !canNestNode(rootNode)) return
+    if (getNestGroupForRoot(rootNode.id, nestState)) return
+    const nodesWithPos = baseGraph.nodes.map((n) => ({
+      ...n,
+      position: positionOverrides[n.id] ? { ...positionOverrides[n.id]! } : n.position,
+    }))
+    const group = createNestGroup(
+      rootNode.id,
+      nodesWithPos as Node<MapNodePayload>[],
+      baseGraph.edges,
+      entityBundle,
+    )
+    if (!group) return
+    setNestState((prev) => withAddedNestGroup(dissolveNestsMergedIntoAncestor(prev, group), group))
+    if (selectedNodeId && group.memberNodeIds.includes(selectedNodeId)) {
+      setSelectedNodeId(group.rootNodeId)
+      setSelectedPayload(rootNode.data)
+    }
+    schedulePersistLayout()
+  }, [baseGraph, selectedNodeId, nestState, positionOverrides, entityBundle, schedulePersistLayout])
+
+  const expandSelectedGroup = useCallback(() => {
+    if (!baseGraph || !selectedNodeId) return
+    const g = getNestGroupForRoot(selectedNodeId, nestState)
+    if (!g) return
+    const expandedRel = expandRelativePositions(g.relativePositions, g.relativeDepths, {
+      baseScale: 1.06,
+      depthStep: 0.07,
+      maxScale: 1.34,
+      floorRadius: 34,
+      kindById: g.memberKinds,
+    })
+    const restored: Record<string, XYPosition> = {}
+    for (const id of g.memberNodeIds) {
+      const rel = expandedRel[id]
+      if (!rel) continue
+      restored[id] = {
+        x: g.anchorPosition.x + rel.x,
+        y: g.anchorPosition.y + rel.y,
+      }
+    }
+    const allNodesWithPos = baseGraph.nodes.map((n) => ({
+      ...n,
+      position: restored[n.id] ?? positionOverrides[n.id] ?? n.position,
+    }))
+    const mergedPos: Record<string, XYPosition> = {}
+    for (const n of allNodesWithPos) mergedPos[n.id] = n.position
+    const repulsed = applyLocalRepulsion(
+      g.memberNodeIds,
+      allNodesWithPos as Node<MapNodePayload>[],
+      mergedPos,
+      { padding: 180, maxPush: 190, passCount: 2 },
+    )
+    setPositionOverrides((prev) => ({ ...prev, ...restored, ...repulsed }))
+    setNestState((prev) => withRemovedNestGroup(prev, selectedNodeId))
+    schedulePersistLayout()
+  }, [baseGraph, selectedNodeId, nestState, positionOverrides, schedulePersistLayout])
+
+  const canNestSelected = (() => {
+    if (!selectedNodeId || !baseGraph) return false
+    const root = baseGraph.nodes.find((n) => n.id === selectedNodeId)
+    if (!root || !canNestNode(root)) return false
+    return !getNestGroupForRoot(root.id, nestState)
+  })()
+
+  const canExpandSelected = (() => {
+    if (!selectedNodeId) return false
+    return Boolean(getNestGroupForRoot(selectedNodeId, nestState))
+  })()
+
+  const selectedNest = selectedNodeId ? getNestGroupForRoot(selectedNodeId, nestState) : null
+  const selectedNestTriad = (() => {
+    if (!selectedNest || !baseGraph) return null
+    const members = baseGraph.nodes.filter((n) => selectedNest.memberNodeIds.includes(n.id))
+    return computeNestGrowthTriad(selectedNest, members, entityBundle)
+  })()
+
+  const developmentalSnapshotForPrompt = useMemo((): MapTriadDevelopmentalSnapshot | null => {
+    if (!selectedNodeId || !selectedPayload) return null
+    const triad = selectedNestTriad ?? effectiveGrowthTriad(selectedPayload, entityBundle)
+    const missing_dimensions = detectMissingDimensions(triad)
+    return {
+      node_id: selectedNodeId,
+      is_nest_aggregate: Boolean(selectedNestTriad),
+      node_kind: selectedNestTriad ? 'nest' : selectedPayload.kind,
+      triad,
+      missing_dimensions,
+      node_label: selectedPayload.label?.trim() || null,
+      triad_scope: 'vision_map',
+    }
+  }, [selectedNodeId, selectedPayload, entityBundle, selectedNestTriad])
+
+  useEffect(() => {
+    const cb = onDevelopmentalSignalsChange
+    if (!cb) return
+    cb(developmentalSnapshotForPrompt)
+  }, [onDevelopmentalSignalsChange, developmentalSnapshotForPrompt])
+
+  const nodeCount = baseGraph?.nodes.length ?? 0
+  const hasContextSelection = Boolean(selectedPayload)
+  const sceneHeightPx = useMemo(() => {
+    if (nodes.length === 0) return SCENE_BASE_HEIGHT_PX
+    let minY = Number.POSITIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    for (const n of nodes) {
+      const y = n.position.y
+      const h = n.measured?.height ?? (n.type === 'nestGroup' ? NEST_NODE_LAYOUT_HEIGHT_PX : 180)
+      minY = Math.min(minY, y)
+      maxY = Math.max(maxY, y + h)
+    }
+    if (!Number.isFinite(minY) || !Number.isFinite(maxY)) return SCENE_BASE_HEIGHT_PX
+    return Math.max(SCENE_BASE_HEIGHT_PX, Math.ceil(maxY - minY + SCENE_CONTENT_PADDING_PX))
+  }, [nodes])
+
+  const selectedNestMetaForPanel = useMemo(() => {
+    if (!selectedNest) return null
+    return {
+      memberCount: selectedNest.memberNodeIds.length,
+      kindCounts: selectedNest.kindCounts,
+      vitality: computeNestVitality(selectedNestTriad ?? selectedNest.triad),
+    }
+  }, [selectedNest, selectedNestTriad])
+
+  const onGuidanceHarvestFeedback = useCallback((nodeId: string) => {
+    setGuidancePulseNodeId(nodeId)
+  }, [])
+
+  const handleResetStoneLayout = useCallback(() => {
+    clearVisionMapLayout(layoutStorageKey)
+    viewportRestoreRef.current = null
+    if (persistDebounceRef.current) {
+      window.clearTimeout(persistDebounceRef.current)
+      persistDebounceRef.current = null
+    }
+    setPositionOverrides({})
+    setNestState(EMPTY_NEST_STATE)
+    const bg = baseGraphRef.current
+    if (!bg?.nodes.length) {
+      setMapViewportReady(true)
+      try {
+        void rf.setViewport({ x: 0, y: 0, zoom: 1 }, { duration: 0 })
+      } catch {
+        /* ignore */
+      }
+      setZoomLevel(1)
+      return
+    }
+    setMapViewportReady(false)
+    window.setTimeout(() => {
+      const pick = bg.nodes[Math.floor(Math.random() * bg.nodes.length)]!
+      const cx = pick.position.x + DEFAULT_ENTITY_W / 2
+      const cy = pick.position.y + DEFAULT_ENTITY_H / 2
+      void rf.setCenter(cx, cy, { zoom: INITIAL_MAP_ZOOM, duration: 0 }).then(() => {
+        setMapViewportReady(true)
+        setZoomLevel(INITIAL_MAP_ZOOM)
+      })
+    }, 0)
+  }, [layoutStorageKey, rf])
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col bg-stone-900">
+      <header className="flex items-center justify-between gap-3 px-4 py-2 border-b border-stone-700 bg-stone-900/85 shrink-0 flex-wrap">
+        <div>
+          <h1 className="text-lg font-semibold text-stone-100">Vision map</h1>
+          <p className="text-xs text-stone-400">
+            Live VE projection · glow = water (owner = lush; stale = dry) · green ring = recent update or council ·
+            fruit = shipped project + deliverables · drag stones · pan empty map / Space / right-drag / two-finger trackpad ·{' '}
+            {loadState === 'ok' ? `${nodeCount} nodes` : loadState}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={loadState === 'loading'}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-800 border border-stone-600 hover:bg-stone-700 disabled:opacity-50 text-stone-100"
+          >
+            Refresh data
+          </button>
+          <button
+            type="button"
+            onClick={handleResetStoneLayout}
+            disabled={loadState !== 'ok' || nodeCount === 0}
+            title="Clear saved stone positions and viewport; use auto-layout positions again"
+            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-600 text-stone-300 hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Reset layout
+          </button>
+          <button
+            type="button"
+            onClick={onOpenOperatorMode}
+            className="px-4 py-2 rounded-lg bg-stone-700 hover:bg-stone-600 text-sm font-medium text-stone-100 border border-stone-500"
+          >
+            Operator mode (tables)
+          </button>
+        </div>
+      </header>
+
+      <div className="flex flex-1 min-h-0">
+        <VisionMapMapWorld
+          sandRef={sandRef}
+          reduceMotion={reduceMotion}
+          rakeEnabled={rakeEnabled}
+          setRakeEnabled={setRakeEnabled}
+          rakeFadeSec={rakeFadeSec}
+          setRakeFadeSec={setRakeFadeSec}
+          loadState={loadState}
+          loadErr={loadErr}
+          onRetryLoad={() => void load()}
+          baseGraph={baseGraph}
+          nodeCount={nodeCount}
+          mapViewportReady={mapViewportReady}
+          selectedNodeId={selectedNodeId}
+          sceneHeightPx={sceneHeightPx}
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onViewportChange={onViewportChange}
+          onMoveEnd={schedulePersistLayout}
+          zoomLevel={zoomLevel}
+          onOpenOperatorMode={onOpenOperatorMode}
+        />
+        {hasContextSelection ? (
+          <MapChatShell
+            selected={selectedPayload}
+            entityBundle={entityBundle}
+            developmentalSnapshotForPrompt={developmentalSnapshotForPrompt}
+            onClearSelection={clearSelection}
+            councilQuestionDraft={councilQuestionDraft}
+            onVisionMapCouncilInteraction={onVisionMapCouncilInteraction}
+            canNestSelected={canNestSelected}
+            canExpandSelected={canExpandSelected}
+            onNestSelected={nestSelectedGroup}
+            onExpandSelected={expandSelectedGroup}
+            growthTriadOverride={selectedNestTriad}
+            growthCaptionOverride={
+              selectedNestTriad ? 'This compressed cluster needs care as one living branch.' : undefined
+            }
+            selectedNestMeta={selectedNestMetaForPanel}
+            onGuidanceHarvestFeedback={onGuidanceHarvestFeedback}
+            initiativeExecutionSteps={inspectorExecSteps}
+            initiativeExecutionStepsLoading={inspectorExecStepsLoading}
+          />
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+export function VisionMapView(props: VisionMapViewProps) {
+  return (
+    <ReactFlowProvider>
+      <VisionMapFlow {...props} />
+    </ReactFlowProvider>
+  )
+}

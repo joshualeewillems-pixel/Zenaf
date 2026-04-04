@@ -1,0 +1,20 @@
+{
+  "generated_at_utc": "2026-04-04T02:12:20.385348+00:00",
+  "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
+  "dry_run": true,
+  "apply": false,
+  "no_git": false,
+  "max_iterations": 1,
+  "outcome": "dry_run",
+  "checkpoint_tag": null,
+  "confirmed_violations_before": 0,
+  "confirmed_violations_after": 0,
+  "confirmed_findings_by_checker": {},
+  "repairable_candidate_checker": null,
+  "chosen_checker": null,
+  "handler_registered_for_chosen": false,
+  "iteration_log": [],
+  "policy_doc": "docs/01_TRUTH/AUTONOMOUS_REPAIR_POLICY.md",
+  "git_repo": false,
+  "working_tree_clean": null
+}

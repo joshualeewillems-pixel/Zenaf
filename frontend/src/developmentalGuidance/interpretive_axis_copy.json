@@ -1,0 +1,28 @@
+{
+  "_doc": "Canonical strings for interpretive axes (developmental guidance read-layer). Runtime-only; not persisted; not profile or trait truth. Python loads this file from local_ai/developmental_guidance.py — keep in sync. A future versioned judgment-profile artifact, if built, would be a separate design (distilled fields + evidence + review), not a dump of this JSON.",
+  "axisNames": {
+    "clarityAmbiguity": "clarity ↔ ambiguity",
+    "actionIdeation": "action ↔ ideation",
+    "followThroughDropoff": "follow-through ↔ drop-off",
+    "structureExploration": "structure ↔ exploration",
+    "integrationFragmentation": "integration ↔ fragmentation"
+  },
+  "tilts": {
+    "soilClarity": "tension leaning toward ambiguity in how this focus is bounded and named",
+    "soilClarityMultiGapSuffix": " (several map gaps at once — one possible read is that the picture is still open-ended; not a verdict about you)",
+    "structureExplorationSoil": "tilt toward exploratory framing until scope and acceptance criteria firm up",
+    "waterFollowThrough": "tilt toward drop-off in visible ownership and follow-through cadence",
+    "fruitActionIdeation": "tilt toward ideation relative to tangible output and proof so far",
+    "structureFromStyle": "tentative read: a bit more structure might reduce thrash — advisory only",
+    "ambiguityToleranceStyle": "holding ambiguity a little longer may match how this focus is still forming — tentative",
+    "traceDismissed": "in this session only, answers and reactions may not be lining up — fragmentation as a hypothesis, not a judgment",
+    "traceWeakIntegrity": "synthesis grounding has looked uneven in recent runs — threads may feel pulled apart as one possible read, not as fact"
+  },
+  "labels": {
+    "packetSectionTitle": "Interpretive axes (ephemeral — language helpers for this packet only; not scores, traits, or stored profile):",
+    "panelSectionTitle": "Interpretive axes — this moment only; not stored",
+    "guideSentenceLeadIn": "Hypothesis-only phrasing (not a trait or score):",
+    "panelCollapsibleTitle": "Tentative read (council context)",
+    "panelIntro": "Hypotheses for this moment only — nothing here is saved as your profile or traits."
+  }
+}

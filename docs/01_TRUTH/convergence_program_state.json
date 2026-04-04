@@ -1,0 +1,13 @@
+{
+  "active_phase": "2",
+  "active_phase_label": "Class A convergence",
+  "active_objectives": [
+    { "id": "2A", "title": "Trace-or-exempt", "track": "A" },
+    { "id": "2C", "title": "Canonical identity", "track": "B" },
+    { "id": "2B", "title": "Product honesty", "track": "B" }
+  ],
+  "blocked": [],
+  "notes": "runner signal quality: good",
+  "operating_loop": "enforcement → confirmed violations → bounded fix → rerun → converge",
+  "updated_at": "2026-04-03"
+}

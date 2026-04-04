@@ -1,0 +1,179 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run9_happy_control",
+    "elapsed_s": 20.56,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "anchored",
+    "integrity_warning": null,
+    "synthesis_support_status": "supported",
+    "combined_summary": "grounded",
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move:\nReview and align the Phoenix Migration milestone sequencing with LedgerBridge dependency status.\n\nPushback:\nWhile addressing the LedgerBridge dependency is crucial, the council must consider the broader impact on Phoenix Migration milestone coordination and the potential risks involved.\n\nNext action:\n1. Analyze the current Phoenix Migration milestone sequence and its alignment with the LedgerBridge development status.\n2. Assess the risks associated with altering the current timeline\u2026\n\nOperator:\nCore move:\nFix the sequence mismatch between the Phoenix Migration milestone and the LedgerBridge dependency.\n\nPushback:\nThe current workflow fails to prioritize the LedgerBridge dependency before the Phoenix Migration milestone, potentially causing delays and issues in the project execution. This mismatch needs immediate attention to ensure smooth integration and prevent bottlenecks.\n\nNext action:\nReview the project plan and adjust the sequence to prioritize the LedgerBridge dependency before\u2026\n\nAnalyst:\nCore move:\nAddress mismatch between Phoenix Migration milestone readiness and LedgerBridge dependency status.\n\nPushback:\nThe council assumes direct alignment between Phoenix Migration's internal readiness and LedgerBridge's external availability, neglecting potential lead times and dependencies.\n\nNext action:\nRequest a detailed status report on both Phoenix Migration milestones and LedgerBridge dependencies, including lead times, to assess actual alignment. Based on this, determine if\u2026\n\nAtria synthesis:\n## Decision\nFixing the sequence mismatch between the Phoenix Migration milestone and the LedgerBridge dependency is critical to prevent delays and ensure smooth project execution. The Operator's pushback on prioritizing the LedgerBridge dependency aligns with addressing the core issue and must be prioritized.\n\n## Rejected / Deprioritized\nThe Strategist's pushback is not grounded in object-specific reasoning and focuses on alignment without addressing the immediate project risks. The Analyst's request for a detailed status report introduces unnecessary steps without directly addressing the current sequence mismatch.\n\n## One next move\nAdjust the project plan to prioritize the LedgerBridge dependency before the Phoenix Migration milestone. Conduct a detailed alignment review including potential lead times for both projects to prevent bottlenecks and ensure smooth integration.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "6aba48c4-3916-4e91-9029-f8a86ea171b3"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "6aba48c4-3916-4e91-9029-f8a86ea171b3"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "supported"
+      },
+      "synthesis_integrity_state": "anchored",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 8
+  }
+}

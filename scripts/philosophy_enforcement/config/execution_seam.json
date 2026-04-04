@@ -1,0 +1,24 @@
+{
+  "$comment": "Grounded in matrix row 7 + CODEBASE_TRUTH_RULES — baseline allowlist for get_default_provider( mentions; structural checks for seam entrypoints.",
+  "get_default_provider_call_allowed_path_substrings": [
+    "local_ai/providers/__init__.py"
+  ],
+  "get_default_provider_string_mention_allowed_path_substrings": [
+    "local_ai/execution_policy/provider_default_inspect.py",
+    "scripts/seed_vision_execution_from_repo_docs.py"
+  ],
+  "scan_roots": ["api", "local_ai"],
+  "scan_glob": "**/*.py",
+  "structural_checks": [
+    {
+      "id": "vision_execution_routes_use_routing_helper",
+      "path": "api/routes/vision_execution.py",
+      "must_contain_substrings": ["def _run_ve_llm_with_routing", "apply_seam_routing"]
+    },
+    {
+      "id": "main_run_gateway_wires_seam",
+      "path": "api/main.py",
+      "must_contain_substrings": ["def _begin_run_routing", "apply_seam_routing", "routing_context"]
+    }
+  ]
+}

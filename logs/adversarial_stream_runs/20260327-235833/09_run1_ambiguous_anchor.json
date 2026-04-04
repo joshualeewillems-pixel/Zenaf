@@ -1,0 +1,179 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run1_ambiguous_anchor",
+    "elapsed_s": 52.58,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "failure_template",
+    "synthesis_integrity_state": "unanchored",
+    "integrity_warning": "synthesis_failure_template",
+    "synthesis_support_status": null,
+    "combined_summary": "unreliable",
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Summarize the tradeoffs and give one recommendation.",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "idea",
+            "entity_id": "amb-1"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move: \nAddress the discrepancy between the specified product direction in the Project's Title and the current implementation approach in the Brief / description.\n\nPushback:\nThe current focus on execution mechanics and day-to-day operations might undermine the strategic clarity and long-term impact of the project. It's crucial to revisit the alignment between the stated goals and the operational decisions made, ensuring that every step taken moves the initiative forward in a direction that\u2026\n\nOperator:\nCore move: Address the discrepancy between truth-source order and actual council packet construction.\n\nPushback: Without a clear sequence and ownership, the current process may result in redundant discussions and delays.\n\nNext action: Implement a streamlined process for updating council packets that prioritizes information based on its relevance and urgency, ensuring a coherent flow and minimizing rework.\n\nAnalyst:\nCore move: To summarize the tradeoffs and provide a recommendation, we need to clarify the context of the project, as the title and brief are not provided. Without a clear understanding of the objective, it's challenging to identify the relevant tradeoffs and provide an informed recommendation. In this case, the context is \"Project\", which could refer to a wide range of initiatives. For a more accurate response, please provide additional details about the project's goals, scope, constraints,\u2026\n\nAtria synthesis:\n## Decision\n**SYSTEM FAILURE:** No council seat grounded its answer in the active object (title, short note, or expanded description). A product decision cannot be synthesized.\n\n## Rejected / deprioritized\nAll seats: answers that are not object-grounded are invalid for this run.\n\n## One next move\nRe-run council after ensuring seats reference the active work, or populate PRIMARY fields so grounding is possible.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "amb-1",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "185ee900-d53e-4bce-9c02-2a5c7d4d3d20"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "amb-1",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "185ee900-d53e-4bce-9c02-2a5c7d4d3d20"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "failure_template",
+        "integrity_mode": "bounded_failure",
+        "synthesis_support_status": null
+      },
+      "synthesis_integrity_state": "unanchored",
+      "synthesis_type": "failure_template",
+      "integrity_mode": "bounded_failure",
+      "integrity_warning": "synthesis_failure_template",
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 9
+  }
+}

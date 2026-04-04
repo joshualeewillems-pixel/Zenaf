@@ -1,0 +1,1874 @@
+{
+  "schema": "adversarial_stream_batch_tuned20_v1",
+  "out_dir": "logs\\adversarial_stream_runs\\20260327-114103",
+  "api": "http://127.0.0.1:8000/run/stream",
+  "completion_count": 0,
+  "done_true_count": 0,
+  "timeout_or_error_count": 0,
+  "avg_elapsed_completed_s": null,
+  "counts_by_synthesis_type": {},
+  "counts_by_synthesis_integrity_state": {},
+  "counts_by_synthesis_support_status": {},
+  "counts_by_combined_summary": {},
+  "mismatch_count": 18,
+  "mismatches": [
+    {
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 7.61,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Summarize the tradeoffs and give one recommendation.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "amb-1"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 1
+    },
+    {
+      "scenario": "run2_overreach",
+      "elapsed_s": 7.27,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "ovr-2"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 2
+    },
+    {
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 6.95,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What should we prioritize next given the primary work described above?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nPatient name: John Doe\nSSN: 123-45-6789\nEmail: john@example.com\nObjective: improve intake triage.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "wash-3"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 3
+    },
+    {
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 6.93,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "List one risk and one mitigation for the primary deliverable.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDeliverable: Ledger migration handoff\nDeadline: next sprint.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "task",
+              "entity_id": "fb-4"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 4
+    },
+    {
+      "scenario": "run5_role_mismatch",
+      "elapsed_s": 7.0,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What is the single most important decision we should make this week?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "perspective_definitions": [
+            {
+              "id": "dup-a",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            },
+            {
+              "id": "dup-b",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            }
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDecision target: staffing sequence for launch prep.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "rm-5"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 5
+    },
+    {
+      "scenario": "run6_no_primary",
+      "elapsed_s": 6.98,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What do you think?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "Background notes only. No authoritative object provided.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "weak-6"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 6
+    },
+    {
+      "scenario": "run9_happy_control",
+      "elapsed_s": 6.64,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "ctrl-9"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 8
+    },
+    {
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 6.82,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Summarize the tradeoffs and give one recommendation.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "amb-1"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 9
+    },
+    {
+      "scenario": "run2_overreach",
+      "elapsed_s": 6.85,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "ovr-2"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 10
+    },
+    {
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 6.96,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What should we prioritize next given the primary work described above?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nPatient name: John Doe\nSSN: 123-45-6789\nEmail: john@example.com\nObjective: improve intake triage.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "wash-3"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 11
+    },
+    {
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 6.92,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "List one risk and one mitigation for the primary deliverable.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDeliverable: Ledger migration handoff\nDeadline: next sprint.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "task",
+              "entity_id": "fb-4"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 12
+    },
+    {
+      "scenario": "run5_role_mismatch",
+      "elapsed_s": 7.0,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What is the single most important decision we should make this week?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "perspective_definitions": [
+            {
+              "id": "dup-a",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            },
+            {
+              "id": "dup-b",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            }
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDecision target: staffing sequence for launch prep.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "rm-5"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 13
+    },
+    {
+      "scenario": "run6_no_primary",
+      "elapsed_s": 7.08,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What do you think?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "Background notes only. No authoritative object provided.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "weak-6"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 14
+    },
+    {
+      "scenario": "run9_happy_control",
+      "elapsed_s": 6.96,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "ctrl-9"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 16
+    },
+    {
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 7.05,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Summarize the tradeoffs and give one recommendation.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "amb-1"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 17
+    },
+    {
+      "scenario": "run2_overreach",
+      "elapsed_s": 6.77,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "ovr-2"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 18
+    },
+    {
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 6.87,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What should we prioritize next given the primary work described above?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nPatient name: John Doe\nSSN: 123-45-6789\nEmail: john@example.com\nObjective: improve intake triage.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "wash-3"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 19
+    },
+    {
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 7.05,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "List one risk and one mitigation for the primary deliverable.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDeliverable: Ledger migration handoff\nDeadline: next sprint.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "task",
+              "entity_id": "fb-4"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 20
+    }
+  ],
+  "results": [
+    {
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 7.61,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Summarize the tradeoffs and give one recommendation.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "amb-1"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 1
+    },
+    {
+      "scenario": "run2_overreach",
+      "elapsed_s": 7.27,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "ovr-2"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 2
+    },
+    {
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 6.95,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What should we prioritize next given the primary work described above?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nPatient name: John Doe\nSSN: 123-45-6789\nEmail: john@example.com\nObjective: improve intake triage.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "wash-3"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 3
+    },
+    {
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 6.93,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "List one risk and one mitigation for the primary deliverable.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDeliverable: Ledger migration handoff\nDeadline: next sprint.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "task",
+              "entity_id": "fb-4"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 4
+    },
+    {
+      "scenario": "run5_role_mismatch",
+      "elapsed_s": 7.0,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What is the single most important decision we should make this week?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "perspective_definitions": [
+            {
+              "id": "dup-a",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            },
+            {
+              "id": "dup-b",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            }
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDecision target: staffing sequence for launch prep.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "rm-5"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 5
+    },
+    {
+      "scenario": "run6_no_primary",
+      "elapsed_s": 6.98,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What do you think?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "Background notes only. No authoritative object provided.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "weak-6"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 6
+    },
+    {
+      "scenario": "run8_folder_no_synthesis",
+      "elapsed_s": 6.67,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Which of these candidate parent folders would you prioritize for this folder's contents? One short reason each.",
+          "teacher_mode": "off"
+        },
+        "context": {
+          "workflow_kind": "folder",
+          "folder_path": "C:/tmp/demo-folder",
+          "context_block": "Folder candidates: Contracts, Operations, Finance\n"
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 7
+    },
+    {
+      "scenario": "run9_happy_control",
+      "elapsed_s": 6.64,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "ctrl-9"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 8
+    },
+    {
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 6.82,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Summarize the tradeoffs and give one recommendation.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "amb-1"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 9
+    },
+    {
+      "scenario": "run2_overreach",
+      "elapsed_s": 6.85,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "ovr-2"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 10
+    },
+    {
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 6.96,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What should we prioritize next given the primary work described above?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nPatient name: John Doe\nSSN: 123-45-6789\nEmail: john@example.com\nObjective: improve intake triage.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "wash-3"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 11
+    },
+    {
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 6.92,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "List one risk and one mitigation for the primary deliverable.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDeliverable: Ledger migration handoff\nDeadline: next sprint.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "task",
+              "entity_id": "fb-4"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 12
+    },
+    {
+      "scenario": "run5_role_mismatch",
+      "elapsed_s": 7.0,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What is the single most important decision we should make this week?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "perspective_definitions": [
+            {
+              "id": "dup-a",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            },
+            {
+              "id": "dup-b",
+              "name": "Operator",
+              "role": "Operator",
+              "purpose": "Execute quickly"
+            }
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDecision target: staffing sequence for launch prep.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "rm-5"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 13
+    },
+    {
+      "scenario": "run6_no_primary",
+      "elapsed_s": 7.08,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What do you think?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "Background notes only. No authoritative object provided.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "weak-6"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 14
+    },
+    {
+      "scenario": "run8_folder_no_synthesis",
+      "elapsed_s": 6.98,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": false,
+        "support": false,
+        "combined": false
+      },
+      "all_match": true,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Which of these candidate parent folders would you prioritize for this folder's contents? One short reason each.",
+          "teacher_mode": "off"
+        },
+        "context": {
+          "workflow_kind": "folder",
+          "folder_path": "C:/tmp/demo-folder",
+          "context_block": "Folder candidates: Contracts, Operations, Finance\n"
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 15
+    },
+    {
+      "scenario": "run9_happy_control",
+      "elapsed_s": 6.96,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "ctrl-9"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 16
+    },
+    {
+      "scenario": "run1_ambiguous_anchor",
+      "elapsed_s": 7.05,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Summarize the tradeoffs and give one recommendation.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "idea",
+              "entity_id": "amb-1"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 17
+    },
+    {
+      "scenario": "run2_overreach",
+      "elapsed_s": 6.77,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "project",
+              "entity_id": "ovr-2"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 18
+    },
+    {
+      "scenario": "run3_wash_identity",
+      "elapsed_s": 6.87,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": true,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "What should we prioritize next given the primary work described above?",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "operator",
+            "analyst"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nPatient name: John Doe\nSSN: 123-45-6789\nEmail: john@example.com\nObjective: improve intake triage.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "initiative",
+              "entity_id": "wash-3"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 19
+    },
+    {
+      "scenario": "run4_fallback_like",
+      "elapsed_s": 7.05,
+      "completed": false,
+      "done_true": false,
+      "error": null,
+      "synthesis_type": null,
+      "synthesis_integrity_state": null,
+      "integrity_warning": null,
+      "synthesis_support_status": null,
+      "combined_summary": null,
+      "mismatch": {
+        "state": true,
+        "support": false,
+        "combined": true
+      },
+      "all_match": false,
+      "request_payload": {
+        "mode": "council",
+        "params": {
+          "question": "List one risk and one mitigation for the primary deliverable.",
+          "teacher_mode": "off",
+          "include_synthesis": true,
+          "included_agents": [
+            "strategist",
+            "operator"
+          ]
+        },
+        "context": {
+          "context_block": "PRIMARY CONTEXT (authoritative):\n\nDeliverable: Ledger migration handoff\nDeadline: next sprint.\n",
+          "council_preflight": {
+            "ve_focus": {
+              "entity_type": "task",
+              "entity_id": "fb-4"
+            }
+          }
+        },
+        "routing_context": {
+          "surface": "workspace_organizer",
+          "action_kind": "structured_evaluation",
+          "action_intent": "workspace_council",
+          "streaming": true,
+          "allows_externalization": true
+        }
+      },
+      "done_payload": null,
+      "idx": 20
+    }
+  ]
+}

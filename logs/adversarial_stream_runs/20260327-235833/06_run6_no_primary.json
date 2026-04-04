@@ -1,0 +1,178 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run6_no_primary",
+    "elapsed_s": 18.49,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "weak",
+    "integrity_warning": null,
+    "synthesis_support_status": "unsupported_expansion",
+    "combined_summary": "weak_support",
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "What do you think?",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator"
+        ]
+      },
+      "context": {
+        "context_block": "Background notes only. No authoritative object provided.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "idea",
+            "entity_id": "weak-6"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nClarify:\n\nTo better guide your decision-making, I need more context. Are you seeking to optimize the existing system (Atria) or are you considering introducing a new feature or improvement to the system? If you're considering a change, could you provide more specifics, such as the aspect of the system you want to improve or the goal you're trying to achieve?\n\nCandidates:\n\nOption A - You mean optimizing the existing Atria system because it aims to improve the current functionalities or\u2026\n\nOperator:\nClarify:\n\nWe're trying to understand the specific project or task you're referring to in your question. Without a clear goal or context, it's hard to provide actionable steps or options. Could you clarify if this question is related to an existing initiative, such as \"this project\", or if it's about a new task that needs to be taken next, like \"next step\"? \n\nCandidates:\n\nOption A - You mean the \"workspace_organizer initiative\" because it was mentioned in the background notes and seems to be a\u2026\n\nAtria synthesis:\n## Decision (one direction)\nTo better optimize Atria system, focus on enhancing core functionalities based on user feedback and performance metrics. Prioritize features that streamline workflow and boost user productivity, ensuring the system remains adaptable to evolving needs.\n\n## Rejected / deprioritized\nOption A - The seat to reject is the 'Strategist' as it lacks object-grounding and fails to provide actionable steps. The other seat, 'Operator', also lacks grounding in the current system and context.\n\n## One next move\nConduct user surveys and performance analyses to identify bottlenecks and areas needing improvement in Atria. Based on insights gathered, create a prioritized list of feature enhancements and allocate resources accordingly. Implement changes in phases to maintain system stability and allow for user adaptation.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "weak-6",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "063488e1-5e87-4325-805a-a1f9661b9f1c"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "weak-6",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "063488e1-5e87-4325-805a-a1f9661b9f1c"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "unsupported_expansion"
+      },
+      "synthesis_integrity_state": "weak",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 6
+  }
+}

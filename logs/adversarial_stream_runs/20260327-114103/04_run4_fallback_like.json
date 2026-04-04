@@ -1,0 +1,51 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run4_fallback_like",
+    "elapsed_s": 6.93,
+    "completed": false,
+    "done_true": false,
+    "error": null,
+    "synthesis_type": null,
+    "synthesis_integrity_state": null,
+    "integrity_warning": null,
+    "synthesis_support_status": null,
+    "combined_summary": null,
+    "mismatch": {
+      "state": true,
+      "support": false,
+      "combined": true
+    },
+    "all_match": false,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "List one risk and one mitigation for the primary deliverable.",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nDeliverable: Ledger migration handoff\nDeadline: next sprint.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "task",
+            "entity_id": "fb-4"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": null,
+    "idx": 4
+  }
+}

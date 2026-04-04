@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "preferredPhrases": [
+    "Healing Haven",
+    "Living from the Heart",
+    "Jane",
+    "Heart Revolution Catalyst",
+    "evening attunement",
+    "morning attunement",
+    "What makes Healing Haven the Healing Haven"
+  ],
+  "alwaysAllow": [],
+  "blockedPhrases": [
+    "cached site assets",
+    "thumbnail names",
+    "hqdefault",
+    "saved_resource",
+    "font-awesome",
+    "www-main-desktop-*"
+  ],
+  "aliases": {
+    "Jane app": "Jane",
+    "Janice": "Jane",
+    "email drip": "healing support system",
+    "welcome letter": "patient onboarding welcome",
+    "Living from Heart": "Living from the Heart"
+  },
+  "functionalMappings": {
+    "Jane": ["clinical_ops", "patient_data", "dashboard_input"],
+    "voice to notes": ["workflow_automation", "clinical_notes"],
+    "patient onboarding welcome": ["patient_onboarding"],
+    "opt-in": ["follow_up", "retention"],
+    "healing support system": ["follow_up", "education_sequence"],
+    "evening attunement": ["state_regulation_support"],
+    "morning attunement": ["state_regulation_support"],
+    "Heart Revolution Catalyst": ["training_material", "community_activation"],
+    "Healing Haven website": ["marketing_asset", "conversion_flow"],
+    "landing page": ["marketing_asset", "conversion_flow"]
+  },
+  "functionalHints": [],
+  "structuralHints": [
+    "clinic operations infrastructure",
+    "patient communication and onboarding",
+    "Living from the Heart content and program development",
+    "community hub and events expansion",
+    "AI systems and automation infrastructure"
+  ]
+}

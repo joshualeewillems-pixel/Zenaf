@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Machine-readable inventory of major Atria modules. Generated from docs/01_TRUTH/CODEBASE_INVENTORY.md and current repo.",
+  "version": "1.0",
+  "generated": "2026-03-11",
+  "modules": [
+    {
+      "name": "api",
+      "path": "api/",
+      "status": "implemented",
+      "responsibilities": [
+        "FastAPI app and HTTP entrypoint",
+        "Startup: dependency checks and mirror load",
+        "POST /run and /run/stream dispatch by mode to atria_tools",
+        "Mount Vision Execution and Intake routers",
+        "Health and CORS"
+      ],
+      "depends_on": ["local_ai.atria_tools", "local_ai.intake", "local_ai.judgment", "local_ai.vision_execution", "local_ai.providers"],
+      "persisted_data": [],
+      "external_boundary_risk": "low",
+      "notes": "No route calls mirror.get_item_with_content(); product contract is Tier A intake only (see docs/01_TRUTH/TRUTH_CONVERGENCE.md)."
+    },
+    {
+      "name": "intake",
+      "path": "local_ai/intake/",
+      "status": "implemented",
+      "responsibilities": [
+        "Email/fax ingestion and normalization",
+        "Classification (category, priority), PHI detection and redaction",
+        "Lane derivation",
+        "Pipeline to IntakeItem and judgment creation",
+        "In-memory queue (add, get, update) with write-through to mirror",
+        "IMAP/Gmail OAuth config and poll (on-demand only)"
+      ],
+      "depends_on": ["local_ai.judgment", "local_ai.intake.mirror", "local_ai.policy.data_access"],
+      "persisted_data": ["Via mirror: queue items and judgment chain on add/update; mirror load repopulates in-memory queue and judgment store at startup"],
+      "external_boundary_risk": "medium",
+      "notes": "Poll is on-demand only. No mailbox mutation. access_policy.py is deprecated shim to policy."
+    },
+    {
+      "name": "intake_mirror",
+      "path": "local_ai/intake/mirror.py",
+      "status": "implemented",
+      "responsibilities": [
+        "SQLite intake_mirror.db: mirror_item, mirror_judgment, mirror_sync, mailbox_action",
+        "Schema init and migration",
+        "Upsert item (Tier A + sanitized_body_text); upsert judgment chain",
+        "load_into_memory: rebuild queue and judgment store from mirror",
+        "get_item_with_content: Tier B/C access gated by policy",
+        "set_sync_state / get_sync_state, record_mailbox_action (APIs exist, not called by poll)"
+      ],
+      "depends_on": ["local_ai.judgment", "local_ai.policy.data_access", "local_ai.intake.queue_store"],
+      "persisted_data": ["intake_mirror.db at repo root: mirror_item, mirror_judgment, mirror_sync, mailbox_action"],
+      "external_boundary_risk": "low",
+      "notes": "mirror_sync and mailbox_action not wired to poll. Tier C raw_content_ref is placeholder only."
+    },
+    {
+      "name": "judgment",
+      "path": "local_ai/judgment/",
+      "status": "implemented",
+      "responsibilities": [
+        "In-memory judgment store (JudgmentRecord)",
+        "create_intake_judgment, create_correction_record",
+        "get_record, get_for_entity, get_supersession_chain",
+        "Supersession chain for corrections"
+      ],
+      "depends_on": [],
+      "persisted_data": ["None in this module; persistence is via intake_mirror only"],
+      "external_boundary_risk": "none",
+      "notes": "Only intake domain in use. No generic multi-domain persistence in judgment layer."
+    },
+    {
+      "name": "policy",
+      "path": "local_ai/policy/",
+      "status": "implemented",
+      "responsibilities": [
+        "Data tiers (A/B/C) and AccessLevel",
+        "request_access(level, justification, destination)",
+        "require_access; tier_satisfies; access_level_to_tier",
+        "Local vs external destination for future egress gating"
+      ],
+      "depends_on": [],
+      "persisted_data": [],
+      "external_boundary_risk": "none",
+      "notes": "Only intake mirror get_item_with_content() calls it. Council and File Steward do not use it yet. destination=EXTERNAL unused."
+    },
+    {
+      "name": "adapters",
+      "path": "local_ai/adapters/",
+      "status": "partially_implemented",
+      "responsibilities": [
+        "Adapter registry by kind and name",
+        "LLMAdapter and MailboxAdapter protocols",
+        "Default registration: llm.ollama (OllamaProvider)"
+      ],
+      "depends_on": ["local_ai.providers.ollama"],
+      "persisted_data": [],
+      "external_boundary_risk": "low",
+      "notes": "No Mailbox adapter registered. Intake does not use adapter for fetch; tools use providers directly for LLM."
+    },
+    {
+      "name": "vision_execution",
+      "path": "local_ai/vision_execution/",
+      "status": "implemented",
+      "responsibilities": [
+        "Ideas, initiatives, projects, tasks, people, assets, decisions, capacity profiles, core profiles",
+        "SQLite storage and full CRUD",
+        "Radar, derived fields, initiative evaluation, meeting extract",
+        "Server-owned council workspace perspective JSON (user_council_workspace)"
+      ],
+      "depends_on": ["local_ai.vision_execution.models"],
+      "persisted_data": ["data/vision_execution/vision_execution.db"],
+      "external_boundary_risk": "none",
+      "notes": "DB init on first use, not at API startup. Does not use shared policy layer."
+    },
+    {
+      "name": "providers",
+      "path": "local_ai/providers/",
+      "status": "implemented",
+      "responsibilities": [
+        "get_default_provider() / get_council_provider(): OllamaProvider, or per-request policy override (OpenAI) from run_context",
+        "generate(prompt, **kwargs) for council, next step, reassess, etc."
+      ],
+      "depends_on": ["local_ai.execution_policy.run_context"],
+      "persisted_data": [],
+      "external_boundary_risk": "medium",
+      "notes": "Ollama local; OpenAI when policy primary=openai and OPENAI_API_KEY set (see docs/02_ACTIVE_DESIGN/POLICY_PROVIDER_EXECUTION.md)."
+    },
+    {
+      "name": "execution_policy",
+      "path": "local_ai/execution_policy/",
+      "status": "implemented",
+      "responsibilities": [
+        "resolve_execution_policy_for_action(context, policy) → primary + fallback_chain + flags (+ privacy)",
+        "load_execution_policy_config from config/ai_execution_policy.json or embedded fallback",
+        "run_context: push_policy_provider_override / push_ollama_model_override for POST /run when routing_context present"
+      ],
+      "depends_on": ["local_ai.config"],
+      "persisted_data": [],
+      "external_boundary_risk": "none",
+      "notes": "Tests: tests/test_execution_policy.py, tests/test_run_routing_context.py. See POLICY_PROVIDER_EXECUTION.md."
+    },
+    {
+      "name": "delegation_structured_cloud_v1",
+      "path": "local_ai/delegation/",
+      "status": "implemented",
+      "responsibilities": [
+        "Compiled delegation: workspace_next_step; initiative_evaluate; core_profile_reconcile + OpenAI + routing (vision_execution + delegation modules)",
+        "Workspace: maybe_externalize_for_cloud before generate_next_step_raw; rebind before JSON parse. Initiative compiled: maybe_externalize_structured_initiative_evaluate_for_cloud (initiative_id + user_id substrings), rebind before JSON parse",
+        "Tiered direction: general_lane.py (broad compile + optional parse); learning_capture.py non-blocking LearningRecord ring buffer after structured outcomes; privacy-aware redaction for restricted/local_only"
+      ],
+      "depends_on": ["local_ai.execution_policy.externalization", "local_ai.atria_tools"],
+      "persisted_data": [],
+      "external_boundary_risk": "medium",
+      "notes": "See COMPILED_DELEGATION_V1.md and TIERED_DELEGATION_AND_LEARNING.md; shared strict rebind in delegation/externalized_inference.py; learning_record_id on structured paths, core_profile_conversation, idea_evaluate (general capture when routed OpenAI); client outcomes via POST /vision-execution/learning-records/user-outcome; env-gated GET /vision-execution/learning-records/{stats,inspect,export} when ATRIA_LEARNING_EXPORT_ENABLED (test_learning_export.py); optional append-only JSONL ATRIA_LEARNING_PERSIST_PATH (+ ATRIA_LEARNING_PERSIST_MAX_MB) in learning_persist.py, startup in api/main.py (test_learning_persist.py); offline dedupe/summary scripts/atria_learning_jsonl_prep.py + local_ai/delegation/learning_jsonl_prep.py (test_learning_jsonl_prep.py); evidence analysis scripts/atria_learning_analysis.py + local_ai/delegation/learning_record_analysis.py (test_learning_record_analysis.py); tests include test_idea_evaluate_learning.py, test_core_profile_conversation_general_lane.py, test_learning_capture.py, test_delegation_externalized_inference.py."
+    },
+    {
+      "name": "atria_tools",
+      "path": "local_ai/atria_tools.py",
+      "status": "implemented",
+      "responsibilities": [
+        "File Steward wrappers: scan_folder, analyze_folder_structure, recommend_child_folders, assess_plan_strength, simulate_folder_plan, reassess_low_confidence",
+        "run_council / run_council_stream with optional perspective_definitions",
+        "web_research, suggest_next_step",
+        "build_council_decision_packet; _build_perspective_system_prompt"
+      ],
+      "depends_on": ["local_ai.providers", "tools.file_steward.app", "local_ai.context.phil_context"],
+      "persisted_data": [],
+      "external_boundary_risk": "medium",
+      "notes": "Uses get_council_provider/get_default_provider (honors policy override when API set run_context). File steward may use separate paths."
+    },
+    {
+      "name": "frontend",
+      "path": "frontend/",
+      "status": "implemented",
+      "responsibilities": [
+        "Cockpit UI: top nav (VE, Perspectives, Workspace, Content); App.tsx workspace modes POST /run and /run/stream",
+        "Perspectives view; server persistence for perspective agents when signed in (VE council-workspace API); localStorage cache",
+        "Vision Execution view (entities, Radar, meeting extract); app header focus context strip + voice (VeFocusRegion, council synthetic focus, inline create forms)",
+        "Shared client AI substrate: frontend/src/ai-actions (AiActionTrace, action_kind, optional action_intent, AiActionResultPanel) — wired for VE rewrite, project suggested work, initiative/idea evaluate traces",
+        "Content: briefs, /run generation, distill-source, TranscriptSorter",
+        "Intake: config, OAuth, poll, queue list, PATCH item, judgment"
+      ],
+      "depends_on": ["api"],
+      "persisted_data": ["localStorage: atria-perspective-agents (cache + anonymous)", "SQLite user_council_workspace when signed in"],
+      "external_boundary_risk": "low",
+      "notes": "Single large App.tsx. Workspace/Content /run flows: trace coverage per ai-actions/aiTraceExemptRegistry.ts. No route uses get_item_with_content (Tier B/C by product contract)."
+    },
+    {
+      "name": "file_steward",
+      "path": "tools/file_steward/",
+      "status": "implemented",
+      "responsibilities": [
+        "Folder scan, analyze, recommend children, assess plan strength, simulate folder plan",
+        "Invoked via atria_tools (lazy import); not a registered adapter"
+      ],
+      "depends_on": [],
+      "persisted_data": [],
+      "external_boundary_risk": "low",
+      "notes": "Stateless per request. No policy layer integration."
+    },
+    {
+      "name": "mailbox_ingestion",
+      "path": "local_ai/intake/email_ingestion.py, local_ai/intake/gmail_oauth.py",
+      "status": "implemented",
+      "responsibilities": [
+        "IMAP config (env or intake_imap_config.json), Gmail OAuth flow and XOAUTH2",
+        "Poll mailboxes, normalize body, run pipeline, add_item; duplicate detection by external_id"
+      ],
+      "depends_on": ["local_ai.intake.pipeline", "local_ai.intake.queue_store"],
+      "persisted_data": ["OAuth tokens and config on disk; no sync state written after poll"],
+      "external_boundary_risk": "high",
+      "notes": "Read-only mailbox access. set_sync_state not called after poll. No MailboxAdapter."
+    },
+    {
+      "name": "synthetic_evaluation",
+      "path": "scripts/ and tests/",
+      "status": "implemented",
+      "responsibilities": [
+        "Generate synthetic intake cases (JSON datasets)",
+        "Evaluate pipeline on cases; export failures; review scripts",
+        "pytest: test_intake_quality, test_intake_synthetic_regression"
+      ],
+      "depends_on": ["local_ai.intake.pipeline", "local_ai.judgment"],
+      "persisted_data": ["datasets/intake_synthetic_cases.json, intake_synthetic_failures.json, intake_synthetic_reviews.json; data/synthetic_intake_dataset.json"],
+      "external_boundary_risk": "none",
+      "notes": "Two generate scripts; canonical dataset path not formalized. Evaluation does not touch live mirror."
+    },
+    {
+      "name": "intake_access_policy_shim",
+      "path": "local_ai/intake/access_policy.py",
+      "status": "deprecated_shim",
+      "responsibilities": ["Re-export local_ai.policy.data_access for backward compatibility"],
+      "depends_on": ["local_ai.policy.data_access"],
+      "persisted_data": [],
+      "external_boundary_risk": "none",
+      "notes": "Deprecated. New code should use local_ai.policy.data_access only."
+    }
+  ],
+  "status_enum": ["implemented", "partially_implemented", "placeholder", "deprecated_shim", "planned_not_built"],
+  "external_boundary_risk_enum": ["none", "low", "medium", "high"]
+}

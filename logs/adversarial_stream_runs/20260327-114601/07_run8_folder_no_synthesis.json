@@ -1,0 +1,42 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run8_folder_no_synthesis",
+    "elapsed_s": 7.0,
+    "completed": false,
+    "done_true": false,
+    "error": null,
+    "synthesis_type": null,
+    "synthesis_integrity_state": null,
+    "integrity_warning": null,
+    "synthesis_support_status": null,
+    "combined_summary": null,
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Which of these candidate parent folders would you prioritize for this folder's contents? One short reason each.",
+        "teacher_mode": "off"
+      },
+      "context": {
+        "workflow_kind": "folder",
+        "folder_path": "C:/tmp/demo-folder",
+        "context_block": "Folder candidates: Contracts, Operations, Finance\n"
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": null,
+    "idx": 7
+  }
+}

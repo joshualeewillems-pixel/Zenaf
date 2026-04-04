@@ -1,0 +1,139 @@
+{
+  "decisions": {
+    "18": {
+      "decision": "needs_rule_change",
+      "note": "medical_keywords = [\"prescription\", \"refill\", \"medication\"]\nmarketing_keywords = [\"unsubscribe\", \"save\", \"sale\", \"offer\"]\n\nif medical_keywords and marketing_keywords:\n    treat as marketing",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "45": {
+      "decision": "keep_expected",
+      "note": "",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "51": {
+      "decision": "fix_expected",
+      "note": "Payment confirmation is legitimate notification, not marketing or spam.\nWaiting_fyi is the correct operational lane.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "5": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "9": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "27": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "37": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "42": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "47": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "66": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "75": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "80": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "97": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "104": {
+      "decision": "keep_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "117": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "121": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "125": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "134": {
+      "decision": "fix_expected",
+      "note": "Referral questions require follow-up.\nShould route to referral coordinator.\nDataset incorrectly labeled as general inquiry.",
+      "timestamp": "2026-03-12T04:49:44.447039+00:00"
+    },
+    "78": {
+      "decision": "keep_expected",
+      "note": "Newsletter containing medical terms triggered lab_result signal.\nLane correctly classified as likely_junk.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "195": {
+      "decision": "keep_expected",
+      "note": "Lane is correct (insurance_medical).\nCategory mismatch not operationally important.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "208": {
+      "decision": "fix_expected",
+      "note": "Subject alone insufficient to classify as lab result.\nEmpty content should default to waiting_fyi.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "222": {
+      "decision": "needs_rule_change",
+      "note": "Clinical or billing keywords should override junk signals.\nInsurance actions should not be routed to likely_junk.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "263": {
+      "decision": "needs_rule_change",
+      "note": "Clinical notifications should override junk heuristics.\nLab result alerts must route to needs_attention.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "268": {
+      "decision": "needs_rule_change",
+      "note": "Records request signal triggered incorrectly.\nPhrase \"not a records request\" should suppress records_request classification.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "292": {
+      "decision": "keep_expected",
+      "note": "Newsletter subject should override body urgency.\nCorrectly classified as likely_junk.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "370": {
+      "decision": "fix_expected",
+      "note": "Explanation of benefits is informational.\nShould route to waiting_fyi not insurance_medical.",
+      "timestamp": "2026-03-12T05:00:42.291859+00:00"
+    },
+    "413": {
+      "decision": "needs_rule_change",
+      "note": "Marketing signals (act now, unsubscribe) should override clinical keywords.\nReferral wording used as spam bait.",
+      "timestamp": "2026-03-12T05:01:04.414661+00:00"
+    }
+  }
+}

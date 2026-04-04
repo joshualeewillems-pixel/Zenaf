@@ -1,0 +1,7 @@
+{
+  "$comment": "Grounded in GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md §6 — forbid ad hoc first-profile picks outside the canonical helper.",
+  "forbidden_regex": "\\bprofiles\\s*\\[\\s*0\\s*\\]",
+  "scan_globs": ["frontend/src/**/*.ts", "frontend/src/**/*.tsx"],
+  "allowed_path_substrings": ["canonicalCoreProfile.ts"],
+  "finding_kind_confirmed": "confirmed_violation"
+}

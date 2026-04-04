@@ -1,0 +1,178 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run6_no_primary",
+    "elapsed_s": 18.54,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "weak",
+    "integrity_warning": null,
+    "synthesis_support_status": "unsupported_expansion",
+    "combined_summary": "weak_support",
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "What do you think?",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator"
+        ]
+      },
+      "context": {
+        "context_block": "Background notes only. No authoritative object provided.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "idea",
+            "entity_id": "weak-6"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nClarify:\nPlease provide a clear goal for this initiative, including the desired outcome, scope, and constraints. Additionally, define a success signal that will indicate when the project is completed.\n\nCandidates:\nOption A - You mean the \"Material / asset presentation initiative\" because it aligns with a recent discussion about improving asset visibility in the workspace. The goal could be to create a more user-friendly interface for accessing and managing materials and assets, ensuring that\u2026\n\nOperator:\nClarify:\nI understand that the question is vague and lacks a specific referent. Can you provide more details about the goal, scope, constraints, and success criteria for this project, or are you looking for a list of potential objects or tasks that might be relevant based on the context provided?\n\nCandidates:\nOption A - You mean the \"workspace_organizer\" initiative because it's mentioned in the runtime context, and it could involve various tasks or improvements.\nOption B - You mean updating\u2026\n\nAtria synthesis:\n## Decision\nThe primary concern lies with ensuring clarity and specificity regarding the goal, scope, constraints, and success criteria for the initiative. Without this, the direction remains vague and potentially leads to repetitive or unnecessary actions. A clear directive will allow for focused decision-making and efficient resource allocation.\n\n## Rejected / Deprioritized\nOption B, which suggests updating or maintaining workspace organization without providing a clear objective, has been deprioritized. The lack of detail makes it difficult to determine the specific actions required or their impact on the overall initiative.\n\n## One next move\nThe first step is to request a detailed breakdown of the initiative from the leadership team. This should include the desired outcome, scope, constraints, and a measurable success signal. With this information, the team can then align their efforts to support a focused and effective approach.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "weak-6",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "141e660d-3d11-4d99-aec4-215e67ec5934"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "weak-6",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "141e660d-3d11-4d99-aec4-215e67ec5934"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "unsupported_expansion"
+      },
+      "synthesis_integrity_state": "weak",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 14
+  }
+}

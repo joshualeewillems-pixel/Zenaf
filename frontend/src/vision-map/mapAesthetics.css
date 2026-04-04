@@ -1,0 +1,832 @@
+/* Vision map — zen sand (canvas) + graph / UI + vitality (respect reduced motion) */
+
+@keyframes map-stale-breathe {
+  0%,
+  100% {
+    filter: saturate(0.62) brightness(0.96);
+  }
+  50% {
+    filter: saturate(0.7) brightness(0.99);
+  }
+}
+
+.map-world-wrap {
+  position: relative;
+  isolation: isolate;
+  border-radius: 0;
+  background-color: #d6d0c5;
+  transition:
+    filter 0.45s ease,
+    box-shadow 0.45s ease;
+}
+
+.map-world-wrap.map-focus-active {
+  filter: saturate(0.97) brightness(0.985);
+  box-shadow: inset 0 0 100px rgba(39, 36, 31, 0.08);
+}
+
+/* Sand stack sits behind the graph; rake canvas is above bed but still below nodes */
+.map-sand-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.map-sand-wrap {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.map-sand-stack {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.map-sand-bed-canvas,
+.map-sand-rake-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.map-sand-rake-canvas {
+  z-index: 1;
+}
+
+/* ---- Zen stones: smooth elliptical silhouettes (jittered % border-radius), bevel, cast shadow ---- */
+.map-stone-node {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+  border-radius: 0;
+  background: transparent !important;
+  border: none !important;
+  outline: none !important;
+}
+
+.map-stone-node:active {
+  cursor: grabbing;
+}
+
+/* Shared stacks for cheap box-shadow depth (avoid filter: drop-shadow on every node during pan/zoom). */
+.map-stone-node[data-stone-tone='dark'] {
+  --stone-inset-stack:
+    inset 0 2px 1px rgba(255, 255, 255, 0.26), inset 0 -3px 2px rgba(0, 0, 0, 0.32),
+    inset 0 -22px 40px rgba(0, 0, 0, 0.14), inset 3px 0 8px rgba(0, 0, 0, 0.07),
+    inset -3px 0 8px rgba(0, 0, 0, 0.07);
+  --stone-cast: 0 16px 28px rgba(15, 23, 42, 0.22);
+}
+
+.map-stone-node[data-stone-tone='light'] {
+  --stone-inset-stack:
+    inset 0 2px 1px rgba(255, 255, 255, 0.85), inset 0 -2px 1px rgba(0, 0, 0, 0.06),
+    inset 0 -18px 36px rgba(0, 0, 0, 0.07), inset 2px 0 6px rgba(0, 0, 0, 0.045),
+    inset -2px 0 6px rgba(0, 0, 0, 0.045);
+  --stone-cast: 0 12px 22px rgba(15, 23, 42, 0.12);
+}
+
+/* Carved icons — no filter (drop-shadow per glyph adds compositing cost across the map). */
+.map-stone-glyph {
+  display: block;
+  margin-inline: auto;
+  flex-shrink: 0;
+}
+
+.map-stone-node[data-stone-tone='dark'] .map-stone-glyph {
+  color: #dcd8d0;
+}
+
+.map-stone-node[data-stone-tone='light'] .map-stone-glyph {
+  color: #2f2c28;
+}
+
+/* Rounded silhouette + overflow:hidden here; outer .map-stone-node stays rectangular so labels are not cropped */
+.map-stone-shape {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+/*
+ * Inset bevel + soft outer cast on .map-stone-shape (box-shadow only — no filter on idle stones).
+ */
+.map-stone-node > .map-stone-shape {
+  filter: none;
+  box-shadow: var(--stone-inset-stack), var(--stone-cast);
+}
+
+.map-stone-clip {
+  /* Clipping by parent .map-stone-shape overflow + border-radius (no polygon facets). */
+  border-radius: inherit;
+}
+
+.map-stone-rim-light {
+  background:
+    radial-gradient(ellipse 108% 58% at 50% 0%, rgba(255, 255, 255, 0.12) 0%, transparent 40%),
+    linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.18) 18%,
+      rgba(255, 255, 255, 0.04) 38%,
+      transparent 55%
+    );
+}
+
+.map-stone-rim-shadow {
+  box-shadow:
+    inset 0 -28px 52px rgba(0, 0, 0, 0.14),
+    inset 0 0 0 1px rgba(0, 0, 0, 0.04);
+}
+
+/* map-silhouette-* classes: markers for rim/bevel rules; outline is inline % border-radius + overflow:hidden */
+
+/* Top bevel + ontology-tinted inner lip (::before); perimeter darken + mass (::after) */
+.map-stone-shape.map-silhouette-tree::before,
+.map-stone-shape.map-silhouette-branch::before,
+.map-stone-shape.map-silhouette-flower::before,
+.map-stone-shape.map-silhouette-fruit::before,
+.map-stone-shape.map-silhouette-seed::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+  /* Match cairn “domed face” without extra layers or filters. */
+  background:
+    radial-gradient(ellipse 108% 56% at 50% 0%, rgba(255, 255, 255, 0.14) 0%, transparent 44%),
+    linear-gradient(
+      172deg,
+      rgba(255, 255, 255, 0.55) 0%,
+      rgba(255, 255, 255, 0.22) 28%,
+      rgba(255, 255, 255, 0.06) 46%,
+      transparent 64%
+    );
+}
+
+.map-stone-shape.map-silhouette-tree.map-rim-tree::before {
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.22),
+    inset 0 0 0 1px rgba(18, 28, 24, 0.42);
+}
+
+.map-stone-shape.map-silhouette-branch.map-rim-branch::before {
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(24, 28, 34, 0.5);
+}
+
+.map-stone-shape.map-silhouette-flower.map-rim-flower::before {
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.55),
+    inset 0 0 0 1px rgba(88, 82, 74, 0.18);
+}
+
+.map-stone-shape.map-silhouette-fruit.map-rim-fruit::before {
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.18),
+    inset 0 0 0 1px rgba(28, 24, 22, 0.4);
+}
+
+.map-stone-shape.map-silhouette-seed.map-rim-seed::before {
+  box-shadow:
+    inset 0 3px 2px rgba(255, 255, 255, 0.2),
+    inset 0 0 0 1px rgba(42, 30, 22, 0.45);
+}
+
+.map-stone-shape.map-silhouette-tree::after,
+.map-stone-shape.map-silhouette-branch::after,
+.map-stone-shape.map-silhouette-flower::after,
+.map-stone-shape.map-silhouette-fruit::after,
+.map-stone-shape.map-silhouette-seed::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+  background:
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 0%, transparent 24%, transparent 52%, rgba(0, 0, 0, 0.2) 100%),
+    linear-gradient(to right, rgba(0, 0, 0, 0.08) 0%, transparent 14%, transparent 86%, rgba(0, 0, 0, 0.08) 100%);
+}
+
+.map-stone-shape.map-silhouette-tree::after {
+  background:
+    radial-gradient(ellipse 92% 52% at 46% 0%, rgba(58, 72, 62, 0.12) 0%, transparent 55%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 0%, transparent 24%, transparent 52%, rgba(0, 0, 0, 0.2) 100%),
+    linear-gradient(to right, rgba(0, 0, 0, 0.08) 0%, transparent 14%, transparent 86%, rgba(0, 0, 0, 0.08) 100%);
+}
+
+.map-stone-surface.map-stone-selected {
+  transform: translateY(-4px) scale(1.022);
+  transform-origin: center center;
+  z-index: 3;
+}
+
+.map-stone-node.map-stone-selected > .map-stone-shape {
+  filter: none;
+  box-shadow:
+    var(--stone-inset-stack),
+    0 18px 34px rgba(15, 23, 42, 0.28),
+    0 8px 16px rgba(15, 23, 42, 0.18),
+    0 0 26px rgba(120, 108, 88, 0.22);
+}
+
+/* Graph + nodes/edges always above sand bed and rake layer */
+.map-graph-canvas {
+  position: relative;
+  z-index: 10;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  /* React Flow’s .dark theme sets an opaque #141414 pane; keep tokens but show sand through */
+  --xy-background-color: transparent !important;
+  background-color: transparent !important;
+  /* Kill default node chrome (dark theme can still paint borders/shadows on wrappers) */
+  --xy-node-border: none !important;
+  --xy-node-border-default: none !important;
+  --xy-node-background-color: transparent !important;
+  --xy-node-background-color-default: transparent !important;
+  --xy-node-boxshadow-hover: none !important;
+  --xy-node-boxshadow-hover-default: none !important;
+  --xy-node-boxshadow-selected: none !important;
+  --xy-node-boxshadow-selected-default: none !important;
+  --xy-selection-background-color: transparent !important;
+  --xy-selection-background-color-default: transparent !important;
+  --xy-selection-border: none !important;
+  --xy-selection-border-default: none !important;
+}
+
+.map-graph-canvas.react-flow.dark,
+.map-graph-canvas.react-flow.light {
+  --xy-background-color: transparent !important;
+  background-color: transparent !important;
+}
+
+.map-graph-canvas .react-flow__renderer,
+.map-graph-canvas .react-flow__pane,
+.map-graph-canvas .react-flow__viewport,
+.map-graph-canvas .react-flow__container {
+  background-color: transparent !important;
+}
+
+.map-graph-canvas .react-flow__renderer {
+  border-radius: 0;
+}
+
+/* RF outer wrapper: never paint a card — custom node fills its own silhouette */
+.map-graph-canvas .react-flow__node {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  overflow: visible;
+}
+
+.map-graph-canvas .react-flow__node.selectable:hover,
+.map-graph-canvas .react-flow__node.selectable.selected,
+.map-graph-canvas .react-flow__node.selectable:focus,
+.map-graph-canvas .react-flow__node.selectable:focus-visible {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* Shift+drag multi-select: no filled/bordered marquee over the sand */
+.map-graph-canvas .react-flow__nodesselection-rect,
+.map-graph-canvas .react-flow__selection {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+.map-graph-canvas .react-flow__node.selected.map-rf-node-stone,
+.map-graph-canvas .react-flow__node.selected.react-flow__node-entityMap,
+.map-graph-canvas .react-flow__node.selected:has(.map-stone-node) {
+  z-index: 1000 !important;
+}
+
+.map-graph-canvas .react-flow__node.selected.map-rf-node-nest .map-nest-cairn {
+  filter: none;
+  box-shadow: 0 21px 40px rgba(39, 36, 31, 0.26), 0 0 34px rgba(164, 132, 74, 0.16);
+}
+
+/* Condition channel: clipped overlay only (see EntityMapNode) */
+.map-cond-overlay {
+  pointer-events: none;
+}
+
+.map-cond-overlay--healthy {
+  box-shadow: inset 0 18px 42px rgba(255, 255, 255, 0.1);
+}
+
+.map-cond-overlay--blocked {
+  box-shadow:
+    inset 0 0 0 2px rgba(130, 95, 52, 0.45),
+    inset 0 -20px 44px rgba(48, 38, 28, 0.1);
+}
+
+.map-cond-overlay--warned {
+  box-shadow:
+    inset 0 0 0 2px rgba(145, 105, 62, 0.52),
+    inset 0 0 32px rgba(110, 82, 48, 0.14);
+}
+
+.map-cond-overlay--veto {
+  box-shadow:
+    inset 0 0 0 3px rgba(175, 48, 48, 0.52),
+    inset 0 0 48px rgba(85, 22, 22, 0.14);
+}
+
+.map-cond-overlay--stale {
+  background: rgba(48, 46, 42, 0.11);
+  box-shadow: inset 0 14px 44px rgba(38, 36, 34, 0.14);
+}
+
+/* Zoom panel — parchment chrome, graphite controls */
+.map-graph-canvas .react-flow__controls {
+  background: rgba(228, 221, 206, 0.95) !important;
+  border: 1px solid rgba(120, 109, 92, 0.45) !important;
+  border-radius: 10px !important;
+  box-shadow:
+    0 4px 6px rgba(39, 36, 31, 0.18),
+    0 10px 24px rgba(39, 36, 31, 0.24);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+  --xy-controls-button-background-color: transparent;
+  --xy-controls-button-background-color-hover: rgba(209, 199, 178, 0.85);
+  --xy-controls-button-color: #3a342c;
+  --xy-controls-button-color-hover: #2d2822;
+  --xy-controls-button-border-color: rgba(120, 109, 92, 0.55);
+}
+
+.map-graph-canvas .react-flow__controls-button {
+  background: transparent !important;
+  color: #3a342c !important;
+  border: none !important;
+  border-bottom: 1px solid rgba(120, 109, 92, 0.55) !important;
+}
+
+.map-graph-canvas .react-flow__controls-button svg {
+  fill: currentColor !important;
+}
+
+.map-graph-canvas .react-flow__controls-button:hover {
+  background: rgba(209, 199, 178, 0.85) !important;
+  color: #2d2822 !important;
+}
+
+.map-graph-canvas .react-flow__controls-button:hover svg {
+  fill: currentColor !important;
+}
+
+.map-graph-canvas .react-flow__controls-button:focus-visible {
+  outline: 2px solid rgba(164, 132, 74, 0.85);
+  outline-offset: 1px;
+}
+
+.map-graph-canvas .react-flow__controls-button:disabled {
+  color: #91826f !important;
+}
+
+.map-graph-canvas .react-flow__controls-button:disabled svg {
+  fill: currentColor !important;
+  fill-opacity: 0.45;
+}
+
+.map-graph-canvas .react-flow__controls-button:last-child {
+  border-bottom: none !important;
+}
+
+.map-graph-canvas .react-flow__controls.horizontal .react-flow__controls-button {
+  border-bottom: none !important;
+  border-right: 1px solid rgba(120, 109, 92, 0.55) !important;
+}
+
+.map-graph-canvas .react-flow__controls.horizontal .react-flow__controls-button:last-child {
+  border-right: none !important;
+}
+
+/* Chat / chrome: UI layer token */
+.map-ui-panel {
+  position: relative;
+  z-index: 2;
+}
+
+/* Nest group — width/height from inline style (NEST_NODE_LAYOUT_* in NestGroupNode.tsx) */
+.map-nest-node {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  user-select: none;
+  -webkit-user-select: none;
+  box-sizing: border-box;
+}
+
+.map-nest--idle {
+  opacity: 0.96;
+}
+
+.map-nest--selected {
+  opacity: 1;
+}
+
+.map-nest--soft .map-nest-cairn {
+  outline: 1px dashed rgba(148, 163, 184, 0.24);
+  outline-offset: -12px;
+  border-radius: 9999px;
+}
+
+.map-nest-cairn {
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  bottom: 25px;
+  width: min(448px, 94%);
+  max-width: 448px;
+  min-width: 399px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* Stones only — one filter pass for dry/lush; label chrome stays outside */
+.map-nest-stone-stack {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.map-nest-stone-stack--dry {
+  filter: saturate(0.68) brightness(0.9);
+}
+
+.map-nest-stone-stack--lush {
+  filter: saturate(1.08) brightness(1);
+}
+
+/* Base stone only — below upper stack in paint order */
+.map-nest-base-shell {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 423px;
+  height: 202px;
+  z-index: 8;
+  pointer-events: none;
+}
+
+/* Label + controls — sibling after upper stack so text stays above stacked stones */
+.map-nest-base-chrome {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 423px;
+  height: 202px;
+  z-index: 50;
+  pointer-events: auto;
+}
+
+.map-nest-base-inner {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  padding: 3px 15px 12px;
+  box-sizing: border-box;
+}
+
+.map-nest-base-inner .map-nest-expand-cue {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  top: auto;
+  z-index: 2;
+}
+
+.map-nest-base-inner .map-nest-badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  top: auto;
+  z-index: 2;
+}
+
+/* Pinned to lower base stone — stacks upward so it does not sit over the upper cairn layers */
+.map-nest-label--in-base {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 48px;
+  max-width: 100%;
+  padding: 0 18px 6px;
+  text-align: center;
+}
+
+.map-nest-upper-stack {
+  position: absolute;
+  inset: 0;
+  z-index: 18;
+  pointer-events: none;
+}
+
+.map-nest-layer {
+  position: absolute;
+  bottom: 0;
+  height: 37px;
+  border: none;
+  box-shadow:
+    inset 0 3px 3px rgba(255, 255, 255, 0.08),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.18),
+    inset 0 0 2px rgba(0, 0, 0, 0.12),
+    0 8px 21px rgba(15, 23, 42, 0.28);
+}
+
+.map-nest-badge {
+  min-width: 34px;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: rgba(17, 24, 39, 0.95);
+  background: rgba(231, 229, 228, 0.9);
+  border: 1px solid rgba(120, 113, 108, 0.32);
+  box-shadow: 0 3px 11px rgba(15, 23, 42, 0.22);
+}
+
+.map-nest-expand-cue {
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: rgba(231, 229, 228, 0.78);
+  text-shadow: 0 2px 3px rgba(0, 0, 0, 0.45);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 3px 5px;
+  border-radius: 9999px;
+}
+
+.map-nest-expand-cue:hover {
+  background: rgba(148, 163, 184, 0.16);
+  color: rgba(241, 245, 249, 0.95);
+}
+
+.map-nest-handle {
+  z-index: 45 !important;
+  background: rgba(87, 83, 78, 0.85) !important;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  border: 0 !important;
+  border-radius: 9999px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  opacity: 0.75;
+}
+
+/* Glow-only filter: base cast is box-shadow on .map-stone-shape so idle nodes skip composited filters. */
+@keyframes map-pulse-glow-shape {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 14px rgba(52, 64, 56, 0.26)) drop-shadow(0 0 26px rgba(72, 88, 76, 0.12));
+  }
+  50% {
+    filter: drop-shadow(0 0 20px rgba(52, 64, 56, 0.36)) drop-shadow(0 0 38px rgba(72, 92, 78, 0.18));
+  }
+}
+
+@keyframes map-pulse-glow-shape-strong {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 16px rgba(56, 112, 92, 0.28)) drop-shadow(0 0 32px rgba(48, 100, 82, 0.16));
+  }
+  50% {
+    filter: drop-shadow(0 0 24px rgba(56, 120, 100, 0.42)) drop-shadow(0 0 44px rgba(48, 110, 88, 0.22));
+  }
+}
+
+@keyframes map-fertilizer-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(88, 140, 96, 0);
+  }
+  40% {
+    box-shadow: 0 0 0 10px rgba(88, 140, 96, 0.22), 0 0 36px 12px rgba(72, 120, 88, 0.18);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(88, 140, 96, 0);
+  }
+}
+
+@keyframes map-grow-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+@keyframes map-shimmer {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes map-jitter {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  25% {
+    transform: translate(0.4px, -0.3px);
+  }
+  50% {
+    transform: translate(-0.35px, 0.35px);
+  }
+  75% {
+    transform: translate(0.25px, 0.2px);
+  }
+}
+
+@keyframes map-edge-march {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+.map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape {
+  animation: map-pulse-glow-shape 3.2s ease-in-out infinite;
+}
+
+.map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape--strong {
+  animation: map-pulse-glow-shape-strong 2.8s ease-in-out infinite;
+}
+
+.map-node-dimmed .map-stone-shape.map-vitality-pulse-shape,
+.map-node-dimmed .map-stone-shape.map-vitality-pulse-shape--strong {
+  animation: none !important;
+}
+
+/* Dry / low attention — desaturate whole node; slightly softer cast shadow on silhouette only */
+.map-stone-surface.map-water-low:not(.map-node-dimmed):not(.map-stone-selected) {
+  filter: saturate(0.82) brightness(0.97);
+}
+
+.map-stone-node.map-water-low:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  filter: none;
+  box-shadow: var(--stone-inset-stack), 0 14px 26px rgba(15, 23, 42, 0.17), 0 4px 12px rgba(15, 23, 42, 0.11);
+}
+
+.map-stone-shape.map-fertilizer-pulse {
+  animation: map-fertilizer-ring 2.4s ease-out 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-stone-shape.map-fertilizer-pulse {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(88, 140, 96, 0.2);
+  }
+
+  .map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape,
+  .map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape--strong {
+    animation: none;
+    filter: drop-shadow(0 0 14px rgba(56, 72, 62, 0.2));
+  }
+}
+
+.map-vitality-grow:not(.map-node-dimmed) {
+  animation: map-grow-drift 4s ease-in-out infinite;
+}
+
+.map-shimmer-layer {
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.07) 42%,
+    transparent 78%
+  );
+  background-size: 220% 100%;
+  animation: map-shimmer 4.5s ease-in-out infinite;
+}
+
+.map-vitality-blocked:not(.map-node-dimmed) {
+  opacity: 0.88;
+  animation: map-jitter 0.35s ease-in-out infinite;
+}
+
+.map-vitality-veto:not(.map-node-dimmed) .map-stone-shape {
+  filter: none;
+  box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 0 18px rgba(200, 55, 55, 0.32);
+}
+
+.map-node-dimmed {
+  opacity: 0.22;
+  filter: saturate(0.52) brightness(0.88);
+}
+
+.map-node-lineage:not(.map-node-dimmed) .map-stone-shape {
+  filter: none;
+  box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 0 16px rgba(72, 84, 92, 0.18);
+}
+
+.map-node-lineage.map-vitality-veto:not(.map-node-dimmed) .map-stone-shape {
+  filter: none;
+  box-shadow:
+    var(--stone-inset-stack),
+    var(--stone-cast),
+    0 0 14px rgba(72, 84, 92, 0.16),
+    0 0 18px rgba(200, 55, 55, 0.3);
+}
+
+.map-vitality-stale:not(.map-node-dimmed) {
+  animation: map-stale-breathe 5.5s ease-in-out infinite;
+}
+
+.map-edge-anim {
+  stroke-dasharray: 10 8;
+  animation: map-edge-march 1.4s linear infinite;
+}
+
+.map-edge-anim--active {
+  animation-duration: 1.05s;
+  stroke-dasharray: 9 7;
+}
+
+.map-edge-anim--normal {
+  animation-duration: 2.9s;
+}
+
+.map-edge-anim--stale {
+  animation-duration: 28s;
+  stroke-dasharray: 6 14;
+  opacity: 0.55;
+}
+
+.map-edge-anim--blocked {
+  animation: none !important;
+  stroke-dasharray: 3 7 1 7 !important;
+  opacity: 0.5;
+}
+
+.map-edge-anim--collapsed-boundary {
+  animation: none !important;
+  stroke-dasharray: 2 10 !important;
+  opacity: 0.36;
+}
+
+.map-edge--focus .map-edge-anim--active,
+.map-edge--focus .map-edge-anim--normal,
+.map-edge--focus .map-edge-anim--stale {
+  stroke-dasharray: 11 6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-stone-shape.map-vitality-pulse-shape,
+  .map-stone-shape.map-vitality-pulse-shape--strong,
+  .map-vitality-grow,
+  .map-vitality-blocked,
+  .map-vitality-stale,
+  .map-shimmer-layer {
+    animation: none !important;
+  }
+  .map-edge-anim,
+  .map-edge-anim--active,
+  .map-edge-anim--normal,
+  .map-edge-anim--stale {
+    animation: none !important;
+    stroke-dasharray: none !important;
+  }
+  .map-vitality-blocked:not(.map-node-dimmed) {
+    opacity: 0.92;
+  }
+}
+

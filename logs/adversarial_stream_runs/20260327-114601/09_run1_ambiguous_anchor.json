@@ -1,0 +1,52 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run1_ambiguous_anchor",
+    "elapsed_s": 7.01,
+    "completed": false,
+    "done_true": false,
+    "error": null,
+    "synthesis_type": null,
+    "synthesis_integrity_state": null,
+    "integrity_warning": null,
+    "synthesis_support_status": null,
+    "combined_summary": null,
+    "mismatch": {
+      "state": true,
+      "support": true,
+      "combined": true
+    },
+    "all_match": false,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Summarize the tradeoffs and give one recommendation.",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "idea",
+            "entity_id": "amb-1"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": null,
+    "idx": 9
+  }
+}

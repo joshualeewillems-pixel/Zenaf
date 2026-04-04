@@ -1,0 +1,178 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run6_no_primary",
+    "elapsed_s": 30.98,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "anchored",
+    "integrity_warning": null,
+    "synthesis_support_status": "partially_supported",
+    "combined_summary": "grounded_but_interpretive",
+    "mismatch": {
+      "state": true,
+      "support": false,
+      "combined": true
+    },
+    "all_match": false,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "What do you think?",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator"
+        ]
+      },
+      "context": {
+        "context_block": "Background notes only. No authoritative object provided.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "idea",
+            "entity_id": "weak-6"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move: Strengthening the strategic narrative around the idea \"weak-6\" to clarify its position within the broader initiative and align with long-term goals.\n\nPushback: Without a clear, cohesive strategic narrative, the idea's relevance and impact might be misunderstood or underappreciated by stakeholders, leading to confusion about its role in the initiative's objectives and potential value.\n\nNext action: Develop a concise, compelling statement that outlines the strategic significance of\u2026\n\nOperator:\nCore move: Improve the clarity of \"focus\" in the Brief / description for the idea with ID weak-6.\n\nPushback: Without clear and concise goals outlined in the Brief / description, team members and stakeholders may struggle to understand the priorities and expected outcomes of the initiative.\n\nNext action: Review the Brief / description for the idea with ID weak-6 and refine it to clearly define the focus, objectives, and expected outcomes. Ensure that the language used is specific, measurable,\u2026\n\nAtria synthesis:\n## Decision\nTo address the system failures listed, we'll focus on synthesizing the suggestions into actionable steps. We'll start by refining the strategic narrative around \"weak-6\" and enhancing clarity for the \"focus\" of the idea.\n\n## Rejected / Deprioritized\nWe reject the Operator's call to solely improve the clarity of the Brief / description without considering the broader context provided by the Strategist. This action might provide limited improvement if strategic misalignment remains unresolved.\n\n## One Next Move\nWe'll develop a concise strategic narrative for \"weak-6\" that ties its role within the broader initiative to its long-term goals. This strategic narrative will serve as a foundation to align expectations and priorities. Following this, we'll review and refine the Brief / description for the idea with ID weak-6 to ensure it clearly outlines the focus, objectives, and expected outcomes. This dual approach aims to address both the strategic clarity and operational clarity issues identified.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "weak-6",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "cf07025f-2c9c-4398-8ce9-77da67dae027"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "weak-6",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "cf07025f-2c9c-4398-8ce9-77da67dae027"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "partially_supported"
+      },
+      "synthesis_integrity_state": "anchored",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 14
+  }
+}

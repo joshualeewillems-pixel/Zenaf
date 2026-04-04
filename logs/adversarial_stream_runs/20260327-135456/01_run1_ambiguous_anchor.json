@@ -1,0 +1,179 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run1_ambiguous_anchor",
+    "elapsed_s": 62.45,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "anchored",
+    "integrity_warning": null,
+    "synthesis_support_status": "partially_supported",
+    "combined_summary": "grounded_but_interpretive",
+    "mismatch": {
+      "state": true,
+      "support": false,
+      "combined": true
+    },
+    "all_match": false,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Summarize the tradeoffs and give one recommendation.",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nTitle: Project\nSummary: active work item\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "idea",
+            "entity_id": "amb-1"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move:\nImprove the coherence between the idea's focus and the execution steps in the council packet for the \"Project\" initiative.\n\nPushback:\nThe current council packet fails to clearly articulate how the focus on the \"Project\" initiative translates into specific action items, potentially leading to misalignment and confusion. This mismatch undermines the ability to effectively leverage resources and move forward with strategic clarity.\n\nNext action:\nRevise the council packet to ensure that\u2026\n\nOperator:\nCore move: Addressing the tradeoffs in the current project's entity id: amb-1 requires identifying the immediate bottleneck in the existing product behavior.\n\nPushback: Without a clear understanding of the current system's limitations and dependencies, proposing specific recommendations would be speculative.\n\nNext action: Perform a system audit focusing on the existing workflows, resource allocation, and process design to identify the primary bottleneck causing scalability issues or execution\u2026\n\nAnalyst:\nCore move: Analyze the tradeoffs between the focus entity's lineage and its impact on the system's performance.\n\nPushback: The lineage of the focus entity might not directly correlate with the system's performance metrics, leading to misleading conclusions if not analyzed thoroughly.\n\nNext action: Examine the historical performance data of the focus entity against relevant metrics and compare it with the lineage characteristics to identify any significant correlations or patterns.\n\nAtria synthesis:\n## Decision: Addressing Mismatches in Project \"Amb-1\"\n\nIn analyzing the council outputs for Project \"Amb-1,\" it's evident that the primary challenge lies in aligning the initiative's focus with the execution steps. The current system struggles with clarity, leading to potential misalignment and confusion among stakeholders.\n\n## Rejected / Deprioritized: Strategist and Analyst\n\nThe Strategist and Analyst seats focus on improving coherence and analyzing tradeoffs, respectively, but fail to ground their recommendations in the specific context of Project \"Amb-1.\" While these are valuable aspects, they are abstract without concrete application to the project at hand.\n\n## One next move: Focus on Immediate Bottleneck\n\nThe primary next move should be to address the immediate bottleneck in the existing product behavior for Project \"Amb-1.\" Conducting a system audit to identify the core issue will enable targeted improvements that directly impact the project's performance and efficiency.\n\n### Summary:\nThe core move is to prioritize addressing the system bottleneck in Project \"Amb-1\" rather than focusing on abstract concepts like coherence or tradeoffs. This strategic direction ensures that the council's efforts are aligned with achieving specific, measurable outcomes for the project.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "amb-1",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "b0b5b796-4653-40fa-a0f2-af3b9d3fc8e2"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "idea",
+            "entity_id": "amb-1",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "b0b5b796-4653-40fa-a0f2-af3b9d3fc8e2"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "partially_supported"
+      },
+      "synthesis_integrity_state": "anchored",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": null,
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 1
+  }
+}

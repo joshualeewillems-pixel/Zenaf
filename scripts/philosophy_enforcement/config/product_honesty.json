@@ -1,0 +1,24 @@
+{
+  "$comment": "Grounded in ATRIA_SYSTEM_CHARTER / matrix row 11 + charter_enforcement_check.check_phantom_clarify logic.",
+  "phantom_ui_checks": [
+    {
+      "id": "clarify_with_ai_stub",
+      "file": "frontend/src/vision-execution/VisionExecutionView.tsx",
+      "label_substring": "Clarify with AI",
+      "handler_name_substring": "handleClarifyWithAI",
+      "if_label_present_then_body_must_contain_one_of": ["apiPost", "fetch("],
+      "body_scan_chars": 1200,
+      "kind_if_violation": "confirmed_violation"
+    }
+  ],
+  "tier_contract_heuristics": [
+    {
+      "id": "tier_b_or_c_user_copy",
+      "globs": ["frontend/src/**/*.tsx", "frontend/src/**/*.ts"],
+      "ignore_globs": ["**/*.test.tsx", "**/*.test.ts"],
+      "regex": "Tier\\s+[BC]\\b",
+      "kind": "heuristic_suspicion",
+      "note": "TRUTH_CONVERGENCE: product exposes Tier A only; Tier B/C in user-facing copy warrants review."
+    }
+  ]
+}

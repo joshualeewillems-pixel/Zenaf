@@ -1,0 +1,179 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run2_overreach",
+    "elapsed_s": 45.35,
+    "completed": true,
+    "done_true": true,
+    "error": null,
+    "synthesis_type": "normal",
+    "synthesis_integrity_state": "unanchored",
+    "integrity_warning": "missing_primary_anchor",
+    "synthesis_support_status": "partially_supported",
+    "combined_summary": "unreliable",
+    "mismatch": {
+      "state": false,
+      "support": false,
+      "combined": false
+    },
+    "all_match": true,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Integrate the seat perspectives, then add a short section on regulatory implications in the EU AI Act and quantum-safe cryptography for our rollout.",
+        "teacher_mode": "off",
+        "seat_question": "For Internal Workflow Cleanup only: summarize tradeoffs of staying within the Q3 scope described in PRIMARY. Do not discuss external regulations, the EU AI Act, or cryptography.",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nProject: Internal Workflow Cleanup\nConstraint: stay within current Q3 scope.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "project",
+            "entity_id": "ovr-2"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": {
+      "chunk": "Strategist:\nCore move: Simplify the internal workflow cleanup process by focusing on refining existing documentation and communication channels to ensure clarity and efficiency within the Q3 scope.\n\nPushback: Considering the current pipeline failures, it's crucial to avoid overcomplicating the process. Instead, concentrate on enhancing the usability of existing tools and resources to improve workflow effectiveness.\n\nNext action: Initiate a cross-functional review of internal documentation and\u2026\n\nAnalyst:\nCore move: Assess the current workflow processes within the Q3 scope to identify bottlenecks and redundancies for optimization.\n\nPushback: It's essential to critically evaluate the existing workflow to avoid missing potential improvements that might exist outside the immediate Q3 scope.\n\nNext action: Initiate a review of the workflow processes within the Q3 scope, focusing on identifying areas of redundancy, inefficiency, or bottlenecks that could be streamlined or automated. This analysis\u2026\n\nAtria synthesis:\n## Decision (One direction)\nTo address system failures, our primary objective is to streamline and optimize internal processes within the Q3 scope by conducting a comprehensive workflow analysis and focusing on enhancing existing documentation and communication channels. This approach ensures efficiency, avoids overcomplicating the process, and prioritizes improvements aligned with our objectives.\n\n## Rejected / Deprioritized\nThe Strategist's core move has been deemed less effective as it lacks specificity and fails to directly address the current workflow issues. The Analyst's suggestion, while valuable, also lacks focus on immediate actions and the current system state.\n\n## One next move\nInitiate a cross-functional review of internal documentation and workflow processes within the Q3 scope to identify bottlenecks, redundancies, and areas of inefficiency for targeted optimization. This action will help align our efforts with regulatory implications from the EU AI Act and promote the adoption of quantum-safe cryptography, ensuring a robust and compliant system rollout.",
+      "done": true,
+      "integrity_envelope_seat": {
+        "schema_version": 1,
+        "surface": "council_seat",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "project",
+            "entity_id": "ovr-2",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "23f2b721-5b0c-42a4-b318-12b63d8305b9"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": null,
+        "integrity_mode": null,
+        "synthesis_support_status": null
+      },
+      "integrity_envelope_synthesis": {
+        "schema_version": 1,
+        "surface": "council_synthesis",
+        "default_mode": "bounded",
+        "subject_refs": [
+          {
+            "entity_type": "project",
+            "entity_id": "ovr-2",
+            "role_in_output": "primary_subject"
+          }
+        ],
+        "provenance": {
+          "run_id": "23f2b721-5b0c-42a4-b318-12b63d8305b9"
+        },
+        "policies_applied": [
+          "wash_v0",
+          "wash_safe_for_cloud",
+          "routing:allows_externalization=true",
+          "routing:effective_cloud=true"
+        ],
+        "synthesis_type": "normal",
+        "integrity_mode": "bounded",
+        "synthesis_support_status": "partially_supported"
+      },
+      "synthesis_integrity_state": "unanchored",
+      "synthesis_type": "normal",
+      "integrity_mode": "bounded",
+      "integrity_warning": "missing_primary_anchor",
+      "council_wash_trace": {
+        "wash_version": "council_wash_v0",
+        "wash_applied": false,
+        "cloud_payload_source": "washed",
+        "safety_allow_cloud_with_wash": true,
+        "transform_summary": [],
+        "safety_refusal_reasons": []
+      },
+      "provider_resolution": {
+        "mode": "council",
+        "execution_principal_ref": "account:anonymous",
+        "routing_context_present": true,
+        "externalization_allowed": true,
+        "cloud_blocked_reason": null,
+        "seam": {
+          "policy_resolution": {
+            "blocked": false,
+            "primary": {
+              "provider": "openai",
+              "model": "gpt-4.1-mini"
+            },
+            "fallback_chain": [],
+            "allow_cloud": true,
+            "flags": {
+              "routing_context_absent": false,
+              "surface": "workspace_organizer",
+              "action_kind": "structured_evaluation",
+              "action_intent": "workspace_council",
+              "policy_namespace": "account:anonymous",
+              "streaming": true,
+              "privacy_applied": true,
+              "privacy_require_local": false,
+              "privacy_allow_cloud_fallback": true
+            }
+          },
+          "effective_provider": "ollama",
+          "effective_model": null,
+          "routing_override_active": true,
+          "openai_key_source": "anonymous_blocked",
+          "fallback_reason": "OpenAI was selected by policy but account:anonymous cannot use OPENAI_API_KEY (Option B). Using local Ollama for default council seats. Sign in and save an OpenAI key to use cloud here.",
+          "council_seam_fallback_ollama": true
+        },
+        "council": {
+          "native": {
+            "requested_provider": "implicit (resolver council stack)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "fallback_reason": null
+          },
+          "teacher": {
+            "requested_provider": "implicit (studio defaults / teacher off)",
+            "requested_model": null,
+            "effective_provider": null,
+            "effective_model": null,
+            "teacher_succeeded": null,
+            "teacher_skipped_reason": null,
+            "fallback_reason": null
+          },
+          "notes": "Limited metadata: no native effective in response metadata (e.g. teacher_mode off). Use teacher shadow/replace for native/teacher effective fields in this trace.",
+          "externalization_allowed": true,
+          "cloud_blocked_reason": null,
+          "wash": {
+            "wash_version": "council_wash_v0",
+            "cloud_payload_source": "washed",
+            "wash_applied": false,
+            "safety_allow_cloud_with_wash": true,
+            "transform_summary": [],
+            "safety_refusal_reasons": []
+          }
+        }
+      }
+    },
+    "idx": 18
+  }
+}

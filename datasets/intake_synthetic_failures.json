@@ -1,0 +1,1838 @@
+[
+  {
+    "id": 5,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "228dc6e8-2c3a-4539-91ee-48efd26b4212",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 9,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "fd5e1c2a-202a-4099-8324-fec45b22e32a",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 18,
+    "subject": "Save on your prescription",
+    "body": "Refill your medication today and save 20%. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "actual_category": "prescription",
+    "actual_lane": "needs_attention",
+    "difficulty": "adversarial",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "Refill your medication today and save 20%. Unsubscribe.",
+    "suggested_action": "Route to pharmacy or prescriber",
+    "priority": "normal",
+    "judgment_id": "b209f21b-8ae8-48c5-8b8f-a73836e99f9d",
+    "case_notes": "Pharmacy promo; likely_junk.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_prescription",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_prescription_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Save on your prescription",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 27,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "9d5be779-678d-4579-933c-511a218c0edd",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 37,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "1b8c6bcf-6c51-40de-be08-18ee425aac7e",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 42,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "476cf582-149b-419f-bb52-368593a4bd25",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 45,
+    "subject": "Monthly newsletter",
+    "body": "Topics: referral process, insurance updates, appointment reminders. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "actual_category": "referral",
+    "actual_lane": "likely_junk",
+    "difficulty": "adversarial",
+    "confidence": 0.35,
+    "confidence_display": "low",
+    "summary": "Topics: referral process, insurance updates, appointment reminders. Unsubscribe.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "85bd8555-cc61-4523-b16f-825198325219",
+    "case_notes": "Newsletter with clinical terms.",
+    "signal_codes": [
+      "signal_subject_junk_hint"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_low_confidence_to_noise"
+    ],
+    "observation_ref": {
+      "subject_preview": "Monthly newsletter",
+      "body_length": 80,
+      "matched_signals": [
+        "signal_subject_junk_hint"
+      ]
+    }
+  },
+  {
+    "id": 47,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "57f262b7-d0c6-439e-bea2-1c92e8b7d0a5",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 51,
+    "subject": "Your payment was received",
+    "body": "Thank you for your payment. This is not a bill. Do not reply.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "actual_category": "other",
+    "actual_lane": "waiting_fyi",
+    "difficulty": "adversarial",
+    "confidence": 0.3,
+    "confidence_display": "low",
+    "summary": "Thank you for your payment. This is not a bill. Do not reply.",
+    "suggested_action": "Review and triage",
+    "priority": "normal",
+    "judgment_id": "ec5abac1-3f1c-44f6-aee8-d81bad4f392b",
+    "case_notes": "Payment confirmation; not action item.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_other",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_default_to_waiting_fyi"
+    ],
+    "observation_ref": {
+      "subject_preview": "Your payment was received",
+      "body_length": 61,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 66,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "53f742ad-44bd-48d6-8222-48c4f52f800a",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 75,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "7aad7ffe-78b4-49e6-8ab5-fdeec91bf914",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 78,
+    "subject": "Your weekly health digest",
+    "body": "View in browser. This week: lab results, prescription tips, and more. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "actual_category": "lab_result",
+    "actual_lane": "likely_junk",
+    "difficulty": "adversarial",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "View in browser. This week: lab results, prescription tips, and more. Unsubscribe.",
+    "suggested_action": "Route to clinical review",
+    "priority": "normal",
+    "judgment_id": "9bf5aee2-0ce9-4cb9-8cda-40c9df765f45",
+    "case_notes": "Newsletter + medical terms; likely_junk.",
+    "signal_codes": [
+      "signal_lab_result_detected"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_lab_result",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_noise_detected"
+    ],
+    "observation_ref": {
+      "subject_preview": "Your weekly health digest",
+      "body_length": 82,
+      "matched_signals": [
+        "signal_lab_result_detected"
+      ]
+    }
+  },
+  {
+    "id": 80,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "c7cbc119-6d73-4c52-b677-0fbbe9a6b60d",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 97,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "ba5598cc-f7af-4461-9d62-a42cf4295397",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 104,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "a9f7cf67-f3d0-4dd3-9239-e6b9eacfaa32",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 117,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "f4d11972-e4a2-4d77-b6f9-9f51ddaec49f",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 121,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "c20dd034-a0f8-426f-881d-9b6573c03b59",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 125,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "9d074e1c-9249-4273-a87e-a603386636c6",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 127,
+    "subject": "General inquiry",
+    "body": "I have a question about my prescription. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "prescription",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my prescription. Please contact me.",
+    "suggested_action": "Route to pharmacy or prescriber",
+    "priority": "normal",
+    "judgment_id": "2293954a-8f73-49db-be40-7426d9e66814",
+    "case_notes": "Inquiry re prescription",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_prescription",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_prescription_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "General inquiry",
+      "body_length": 59,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 134,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "3238ade8-dc13-422f-9f13-2bf0bcdd644e",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 152,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "35ab528f-35f0-4191-aace-2433d7ac2b40",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 159,
+    "subject": "Order shipped",
+    "body": "Your supply order has shipped. Tracking attached.",
+    "expected_category": "other",
+    "expected_lane": "ordering_supplies",
+    "actual_category": "other",
+    "actual_lane": "likely_junk",
+    "difficulty": "easy",
+    "confidence": 0.3,
+    "confidence_display": "low",
+    "summary": "Your supply order has shipped. Tracking attached.",
+    "suggested_action": "Review and triage",
+    "priority": "normal",
+    "judgment_id": "1265a46b-79d2-47d9-bcb1-6001378ae733",
+    "case_notes": "Ordering",
+    "signal_codes": [
+      "signal_subject_junk_hint"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_other",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_low_confidence_to_noise"
+    ],
+    "observation_ref": {
+      "subject_preview": "Order shipped",
+      "body_length": 49,
+      "matched_signals": [
+        "signal_subject_junk_hint"
+      ]
+    }
+  },
+  {
+    "id": 173,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "f412cf18-cdc1-431d-bda1-3e3931a6c92e",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 190,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "d179bbe1-1d76-4095-98ca-07d80b240f37",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 191,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "f5f25a03-ddfe-4d04-a846-7559d3bcbad5",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 192,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "7798858d-4187-43d2-a19a-a1bca5cc1f87",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 193,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "3f35c2df-152c-4a0c-921e-8549590766f6",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 195,
+    "subject": "Prior auth",
+    "body": "\n",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "actual_category": "other",
+    "actual_lane": "insurance_medical",
+    "difficulty": "adversarial",
+    "confidence": 0.3,
+    "confidence_display": "low",
+    "summary": "",
+    "suggested_action": "Review and triage",
+    "priority": "normal",
+    "judgment_id": "5cb54f5f-db1a-4481-a2f5-a4dff9098cd2",
+    "case_notes": "Subject insurance, body newline only.",
+    "signal_codes": [
+      "signal_short_body"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_other",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_medical_keywords_to_insurance"
+    ],
+    "observation_ref": {
+      "subject_preview": "Prior auth",
+      "body_length": 0,
+      "matched_signals": [
+        "signal_short_body"
+      ]
+    }
+  },
+  {
+    "id": 203,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "cf9da642-2beb-484c-8b3d-0b30f03f2bc8",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 208,
+    "subject": "Lab",
+    "body": "",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "actual_category": "other",
+    "actual_lane": "waiting_fyi",
+    "difficulty": "adversarial",
+    "confidence": 0.0,
+    "confidence_display": "low",
+    "summary": "(No content)",
+    "suggested_action": "Review and triage",
+    "priority": "normal",
+    "judgment_id": "e48ac124-299c-424f-a596-55eda76be811",
+    "case_notes": "Subject only; one word lab; body empty.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_other",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_default_to_waiting_fyi"
+    ],
+    "observation_ref": {
+      "subject_preview": "",
+      "body_length": 0,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 216,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "b843d4b3-79bb-4c61-98dc-e3e70bd7aa02",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 222,
+    "subject": "No reply",
+    "body": "Prior authorization required for procedure. Please submit to billing.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "actual_category": "insurance",
+    "actual_lane": "likely_junk",
+    "difficulty": "adversarial",
+    "confidence": 0.35,
+    "confidence_display": "low",
+    "summary": "Prior authorization required for procedure. Please submit to billing.",
+    "suggested_action": "Route to billing/authorization",
+    "priority": "normal",
+    "judgment_id": "0816cac2-9de6-4491-be22-87946bb78720",
+    "case_notes": "Subject no-reply, body insurance; could be missed.",
+    "signal_codes": [
+      "signal_subject_junk_hint"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_insurance",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_low_confidence_to_noise"
+    ],
+    "observation_ref": {
+      "subject_preview": "No reply",
+      "body_length": 69,
+      "matched_signals": [
+        "signal_subject_junk_hint"
+      ]
+    }
+  },
+  {
+    "id": 237,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "b9915823-ecff-4fbb-96c5-4e0e8ed1a86e",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 243,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "a0fd9968-8f3b-4e81-bc52-f8b80336b411",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 246,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "69bf3cc7-3067-4c7f-95fb-534b37d1f4ea",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 257,
+    "subject": "MediCal eligibility inquiry",
+    "body": "Please verify eligibility for upcoming visit.",
+    "expected_category": "insurance",
+    "expected_lane": "insurance_medical",
+    "actual_category": "other",
+    "actual_lane": "insurance_medical",
+    "difficulty": "easy",
+    "confidence": 0.3,
+    "confidence_display": "low",
+    "summary": "Please verify eligibility for upcoming visit.",
+    "suggested_action": "Review and triage",
+    "priority": "normal",
+    "judgment_id": "f096acec-708a-4076-976a-4767570c3ddb",
+    "case_notes": "Insurance/MediCal.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_other",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_medical_keywords_to_insurance"
+    ],
+    "observation_ref": {
+      "subject_preview": "MediCal eligibility inquiry",
+      "body_length": 45,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 261,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "c2824eea-0cad-4503-967b-048e7586e2f0",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 263,
+    "subject": "Notification from System",
+    "body": "New lab results are available for your patient. CBC panel ready for review.",
+    "expected_category": "lab_result",
+    "expected_lane": "needs_attention",
+    "actual_category": "lab_result",
+    "actual_lane": "likely_junk",
+    "difficulty": "adversarial",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "New lab results are available for your patient. CBC panel ready for review.",
+    "suggested_action": "Route to clinical review",
+    "priority": "normal",
+    "judgment_id": "5c7b389f-d331-4737-9f69-674731081a76",
+    "case_notes": "Subject notification-ish, body is lab; classifier may cap confidence.",
+    "signal_codes": [
+      "signal_lab_result_detected"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_lab_result",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_noise_detected"
+    ],
+    "observation_ref": {
+      "subject_preview": "Notification from System",
+      "body_length": 75,
+      "matched_signals": [
+        "signal_lab_result_detected"
+      ]
+    }
+  },
+  {
+    "id": 268,
+    "subject": "Request for information",
+    "body": "I would like to request a callback to discuss my appointment. Not a records request.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "records_request",
+    "actual_lane": "insurance_medical",
+    "difficulty": "adversarial",
+    "confidence": 0.6,
+    "confidence_display": "medium",
+    "summary": "I would like to request a callback to discuss my appointment. Not a records request.",
+    "suggested_action": "Process records release",
+    "priority": "normal",
+    "judgment_id": "d0418228-8692-4964-b222-dcc1fda394c1",
+    "case_notes": "Request but not records.",
+    "signal_codes": [
+      "signal_records_release_context"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_records_request",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_records_to_insurance"
+    ],
+    "observation_ref": {
+      "subject_preview": "Request for information",
+      "body_length": 84,
+      "matched_signals": [
+        "signal_records_release_context"
+      ]
+    }
+  },
+  {
+    "id": 273,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "8e1c669a-29f2-4632-8c7f-77c2f8b5b55e",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 291,
+    "subject": "Request a callback",
+    "body": "Would like to schedule a call to discuss my prescription refill.",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "prescription",
+    "actual_lane": "needs_attention",
+    "difficulty": "boundary",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "Would like to schedule a call to discuss my prescription refill.",
+    "suggested_action": "Route to pharmacy or prescriber",
+    "priority": "normal",
+    "judgment_id": "8094b71e-8fbb-45aa-9da6-fbd58037f16d",
+    "case_notes": "Request + prescription; not records_request.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_prescription",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_prescription_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Request a callback",
+      "body_length": 64,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 292,
+    "subject": "Your daily digest",
+    "body": "URGENT: Patient referral for cardiology. Please route to referral coordinator immediately.",
+    "expected_category": "referral",
+    "expected_lane": "needs_attention",
+    "actual_category": "referral",
+    "actual_lane": "likely_junk",
+    "difficulty": "adversarial",
+    "confidence": 0.35,
+    "confidence_display": "low",
+    "summary": "URGENT: [REDACTED]. Please route to referral coordinator immediately.",
+    "suggested_action": "Review immediately",
+    "priority": "urgent",
+    "judgment_id": "2824900c-c86a-40a0-b1d9-b42ce55c8d15",
+    "case_notes": "Subject junk (digest), body urgent referral; may get likely_junk from subject.",
+    "signal_codes": [
+      "signal_subject_junk_hint"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_urgent"
+    ],
+    "policy_codes": [
+      "policy_low_confidence_to_noise"
+    ],
+    "observation_ref": {
+      "subject_preview": "Your daily digest",
+      "body_length": 90,
+      "matched_signals": [
+        "signal_subject_junk_hint"
+      ]
+    }
+  },
+  {
+    "id": 304,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "1ae27b6b-a989-4c88-980d-93c4e9f0d62f",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 320,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "e0c52ee8-4a13-4614-9663-a05f2141d5f4",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 329,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "aa2e6314-976b-476d-9fba-4cba3f605cd7",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 331,
+    "subject": "Routine follow-up",
+    "body": "When convenient, please review the attached lab results.",
+    "expected_category": "other",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "lab_result",
+    "actual_lane": "needs_attention",
+    "difficulty": "boundary",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "When convenient, please review the attached lab results.",
+    "suggested_action": "Route to clinical review",
+    "priority": "low",
+    "judgment_id": "9ed6b2a5-547d-49b8-9d01-7de6fe8d1373",
+    "case_notes": "Low priority but has lab; often waiting_fyi.",
+    "signal_codes": [
+      "signal_lab_result_detected"
+    ],
+    "interpretation_codes": [
+      "interpretation_category_lab_result",
+      "interpretation_priority_low"
+    ],
+    "policy_codes": [
+      "policy_lab_result_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Routine follow-up",
+      "body_length": 56,
+      "matched_signals": [
+        "signal_lab_result_detected"
+      ]
+    }
+  },
+  {
+    "id": 333,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "bed9b0e1-0d36-4bf9-a537-b5bde1c0e719",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 358,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "58ed37bc-ab3e-4e7d-9961-148dbf3cdc67",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 369,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "42e8659e-0a43-4546-bdc1-5c8d77b62257",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 370,
+    "subject": "EOB for your records",
+    "body": "Explanation of benefits attached for your records. No action needed.",
+    "expected_category": "insurance",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "other",
+    "actual_lane": "insurance_medical",
+    "difficulty": "adversarial",
+    "confidence": 0.3,
+    "confidence_display": "low",
+    "summary": "Explanation of benefits attached for your records. No action needed.",
+    "suggested_action": "Review and triage",
+    "priority": "normal",
+    "judgment_id": "f443a188-9c4f-47e2-959b-7bb4273daef9",
+    "case_notes": "EOB but no action needed.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_other",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_medical_keywords_to_insurance"
+    ],
+    "observation_ref": {
+      "subject_preview": "EOB for your records",
+      "body_length": 68,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 376,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "05f46937-d084-40db-863c-4ed02015fc68",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 384,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "c13ae729-bbbf-4b79-a1ba-81d236377d3d",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 385,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "3b0860db-71ef-4013-835f-0fe9607341b7",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 389,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "b9c6bbd6-2d40-452b-abb5-1835cb8faae2",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 393,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "a2ea0bfb-72cf-4a8e-8dd2-c6f92ff51ab2",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 394,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "8e59e1a9-fcce-4317-8ccf-51ae4f4c1ace",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 400,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "e194e38b-d49e-42e3-8aee-09ebf727983d",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 407,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "d1935ebd-3bd4-4a6d-8480-f24c18e2babb",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 413,
+    "subject": "Referral for Patient",
+    "body": "Congratulations! You've been selected. Act now. Unsubscribe.",
+    "expected_category": "other",
+    "expected_lane": "likely_junk",
+    "actual_category": "other",
+    "actual_lane": "waiting_fyi",
+    "difficulty": "adversarial",
+    "confidence": 0.3,
+    "confidence_display": "low",
+    "summary": "Congratulations! You've been selected. Act now. Unsubscribe.",
+    "suggested_action": "Review and triage",
+    "priority": "normal",
+    "judgment_id": "44906a68-a68a-4818-9140-874ca44a5144",
+    "case_notes": "Subject referral, body promo; likely_junk.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_other",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_default_to_waiting_fyi"
+    ],
+    "observation_ref": {
+      "subject_preview": "Referral for Patient",
+      "body_length": 60,
+      "matched_signals": []
+    }
+  },
+  {
+    "id": 427,
+    "subject": "Inquiry",
+    "body": "I have a question about my referral. Please contact me.",
+    "expected_category": "general_inquiry",
+    "expected_lane": "waiting_fyi",
+    "actual_category": "referral",
+    "actual_lane": "needs_attention",
+    "difficulty": "easy",
+    "confidence": 0.7,
+    "confidence_display": "high",
+    "summary": "I have a question about my referral. Please contact me.",
+    "suggested_action": "Route to referral coordinator",
+    "priority": "normal",
+    "judgment_id": "6b6a17fd-ab10-452e-8237-6f3813ab2754",
+    "case_notes": "Padded variety.",
+    "signal_codes": [],
+    "interpretation_codes": [
+      "interpretation_category_referral",
+      "interpretation_priority_normal"
+    ],
+    "policy_codes": [
+      "policy_referral_to_needs_attention"
+    ],
+    "observation_ref": {
+      "subject_preview": "Inquiry",
+      "body_length": 55,
+      "matched_signals": []
+    }
+  }
+]

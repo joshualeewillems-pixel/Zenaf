@@ -1,0 +1,52 @@
+{
+  "schema": "adversarial_stream_run_v1",
+  "result": {
+    "scenario": "run9_happy_control",
+    "elapsed_s": 7.02,
+    "completed": false,
+    "done_true": false,
+    "error": null,
+    "synthesis_type": null,
+    "synthesis_integrity_state": null,
+    "integrity_warning": null,
+    "synthesis_support_status": null,
+    "combined_summary": null,
+    "mismatch": {
+      "state": true,
+      "support": true,
+      "combined": true
+    },
+    "all_match": false,
+    "request_payload": {
+      "mode": "council",
+      "params": {
+        "question": "Does the council agree that we should ship the Phoenix Migration milestone before the LedgerBridge dependency? Why or why not?",
+        "teacher_mode": "off",
+        "include_synthesis": true,
+        "included_agents": [
+          "strategist",
+          "operator",
+          "analyst"
+        ]
+      },
+      "context": {
+        "context_block": "PRIMARY CONTEXT (authoritative):\n\nProgram: Phoenix Migration\nDependency: LedgerBridge\nDecision: sequence and risk.\n",
+        "council_preflight": {
+          "ve_focus": {
+            "entity_type": "initiative",
+            "entity_id": "ctrl-9"
+          }
+        }
+      },
+      "routing_context": {
+        "surface": "workspace_organizer",
+        "action_kind": "structured_evaluation",
+        "action_intent": "workspace_council",
+        "streaming": true,
+        "allows_externalization": true
+      }
+    },
+    "done_payload": null,
+    "idx": 16
+  }
+}

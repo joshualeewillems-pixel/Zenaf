@@ -1,0 +1,39 @@
+{
+  "initiatives": [
+    "Healing Haven Clinic Operations",
+    "Patient Onboarding and Follow-Up System",
+    "Living from the Heart Content and Program Development",
+    "Community Hub and Events Expansion",
+    "AI Systems and Automation Infrastructure"
+  ],
+  "projects": [
+    "Radar Home",
+    "Clinic Dashboard",
+    "Jane data integration",
+    "Patient note dictation workflow",
+    "Welcome letter design",
+    "Opt-in / newsletter flow",
+    "Community bulletin board",
+    "Living from the Heart landing page"
+  ],
+  "signals": [
+    "patient note workflow is too manual",
+    "onboarding / follow-up system is incomplete",
+    "inventory and supplements lack streamlined visibility",
+    "development scope is outrunning current financial clarity"
+  ],
+  "assets": [
+    "Jane practice management system",
+    "What makes Healing Haven the Healing Haven",
+    "Existing meditation / visualization videos",
+    "Standard Process system survey / evaluation form",
+    "Atria radar / dashboard system"
+  ],
+  "people": [
+    "Phil",
+    "Joshua",
+    "Anna",
+    "Jay"
+  ]
+}
+

@@ -1,6 +1,6 @@
 # Philosophy enforcement report
 
-- Generated: `2026-04-04T17:11:48.313674+00:00`
+- Generated: `2026-04-04T17:16:18.231017+00:00`
 - Repo: `C:\Users\philc\OneDrive\Desktop\Atria`
 
 ## Program state (from JSON only)
@@ -11,15 +11,15 @@
 
 | Objective ID | Title | Track |
 |--------------|-------|-------|
-| 2A | Trace-or-exempt | A |
 | 2B | Product honesty | B |
 | 2D | Deterministic commit | A |
+| 2C | Canonical identity | B |
 
 **Blocked:**
 
 - Phase 3 structural unification — do not re-promote matrix automation until Class A (trace + product honesty) is sustainably clear
 
-**Notes:** Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md).
+**Notes:** Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md). 2A is complete enough for now—keep monitored via the runner; active focus is 2B, 2D, 2C. 2A passed via explicit client-surface exemptions in docs/01_TRUTH/ai_trace_exemptions.json; any future FE caller for exempted routes must either emit client trace or remove the exemption.
 
 | Philosophy | Status | Findings | Suggested next action |
 |------------|--------|----------|------------------------|

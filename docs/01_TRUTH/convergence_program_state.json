@@ -2,12 +2,12 @@
   "active_phase": "2",
   "active_phase_label": "Class A convergence",
   "active_objectives": [
-    { "id": "2A", "title": "Trace-or-exempt", "track": "A" },
     { "id": "2B", "title": "Product honesty", "track": "B" },
-    { "id": "2D", "title": "Deterministic commit", "track": "A" }
+    { "id": "2D", "title": "Deterministic commit", "track": "A" },
+    { "id": "2C", "title": "Canonical identity", "track": "B" }
   ],
   "blocked": ["Phase 3 structural unification — do not re-promote matrix automation until Class A (trace + product honesty) is sustainably clear"],
-  "notes": "Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md).",
+  "notes": "Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md). 2A is complete enough for now—keep monitored via the runner; active focus is 2B, 2D, 2C. 2A passed via explicit client-surface exemptions in docs/01_TRUTH/ai_trace_exemptions.json; any future FE caller for exempted routes must either emit client trace or remove the exemption.",
   "operating_loop": "runner → enforcement → confirmed violations only → bounded fix → rerun → converge",
   "updated_at": "2026-04-04"
 }

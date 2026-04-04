@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-04-04T04:34:56.974662+00:00",
+  "generated_at_utc": "2026-04-04T04:49:00.348844+00:00",
   "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
   "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
   "program_state": {
@@ -186,6 +186,11 @@
       "checker_runs": [
         {
           "checker_id": "canonical_identity_leaks",
+          "findings": [],
+          "error": null
+        },
+        {
+          "checker_id": "check_canonical_identity",
           "findings": [],
           "error": null
         }

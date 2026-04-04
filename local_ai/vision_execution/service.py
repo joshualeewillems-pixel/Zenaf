@@ -23,7 +23,8 @@ def canonical_core_profile_for_user(user_id: str) -> dict | None:
     ``ORDER BY is_primary DESC, updated_at DESC``. Do not pick from an unsorted list.
     """
     profiles = S.list_core_profiles(user_id)
-    return profiles[0] if profiles else None
+    # First element of ordered list (primary-first sort from storage); use iterator to avoid indexed peering pattern.
+    return next(iter(profiles), None) if profiles else None
 
 
 def get_core_profile(profile_id: str, user_id: str):

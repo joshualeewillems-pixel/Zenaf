@@ -77,7 +77,10 @@
         "docs/01_TRUTH/SINGULAR_CORE_PROFILE_CONVERGENCE_AUDIT.md",
         "frontend/src/vision-execution/canonicalCoreProfile.ts"
       ],
-      "automation": { "checker_ids": ["canonical_identity_leaks"] }
+      "automation": {
+        "checker_ids": ["canonical_identity_leaks", "check_canonical_identity"],
+        "notes": "canonical_identity_leaks: profiles[0] on FE. check_canonical_identity: alternate list names [0], api/ + local_ai/ profiles[0], risky .find without primary/canonical/equality."
+      }
     },
     {
       "id": 7,

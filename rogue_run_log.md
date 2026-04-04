@@ -13,7 +13,7 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 ## Wave 2B — Product Honesty
 
 - **Branch:** `auto/wave-2b-honesty`
-- **Commits:** `3b1baf8` program state 2B+2D; (Wave 2B completion commit follows).
+- **Commits:** `3b1baf8` program state 2B+2D; `f7770ec` `Auto: Completed Wave 2B Product Honesty`.
 - **Track A:** `check_product_honesty.py`, `config/check_product_honesty.json`, registered in `checkers/__init__.py`, matrix JSON + `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md` row 11.
 - **Track B:** `VisionExecutionView.tsx` — renamed handler to `handleClarifyLocalTemplates`, button `Suggest text (local, no LLM)`, title tooltip discloses no model call.
 - **Enforcement:** `python scripts/philosophy_enforcement/run_all.py` → philosophy 11 **pass**, 0 fail.
@@ -22,7 +22,11 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 
 ## Wave 2D — Deterministic Commit
 
-- (filled as run progresses)
+- **Branch:** `auto/wave-2d-commit`
+- **Track A:** `check_deterministic_commit.py` — `integration_commit.py` contract markers; `infer_draft_value_from_context(` in `atria_tools.py` requires preceding `deterministic-commit` comment.
+- **Track B:** `atria_tools.py` — audit comment + `_ollama_log.info` when infer fallback produces a pending payload.
+- **Matrix:** Philosophy 8 automation in JSON + row 8 in `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md`.
+- **Enforcement:** `run_all.py` → philosophy 8 **pass**; summary pass count 4, fail 0.
 
 ---
 

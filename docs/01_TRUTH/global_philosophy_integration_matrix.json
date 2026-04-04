@@ -101,7 +101,16 @@
       "law": "Confirmed writes use explicit structured payload (e.g. [DRAFT_VALUE:], patches)—not silent inference from chat text.",
       "intended_scope": "Council integration commit, VE field apply, AI-said-save paths.",
       "enforcement_mechanism": "charter_enforcement_check.py inference path visibility; checklist on new commit surfaces.",
-      "related_docs": ["docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md", "local_ai/integration_commit.py", "scripts/charter_enforcement_check.py"]
+      "related_docs": [
+        "docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md",
+        "local_ai/integration_commit.py",
+        "scripts/charter_enforcement_check.py",
+        "scripts/philosophy_enforcement/checkers/check_deterministic_commit.py"
+      ],
+      "automation": {
+        "checker_ids": ["check_deterministic_commit"],
+        "notes": "integration_commit contract fragments + audited infer_draft_value_from_context call sites in atria_tools.py."
+      }
     },
     {
       "id": 9,

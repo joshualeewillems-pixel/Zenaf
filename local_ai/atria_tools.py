@@ -927,6 +927,7 @@ def _run_council_conversational_partner_body(
             if _pend:
                 _meta["pending_integration"] = _pend
         else:
+            # deterministic-commit: narrow fallback when the model omitted [DRAFT_VALUE: …]; primary path is explicit tag + _draft_for_pending.
             _auto = infer_draft_value_from_context(
                 entity_id=str(getattr(_merged_subj, "id", "") or ""),
                 entity_type=str(getattr(_merged_subj, "entity_type", "") or ""),
@@ -935,6 +936,12 @@ def _run_council_conversational_partner_body(
                 user_id=str((council_preflight_dict or {}).get("user_id") or ""),
             )
             if _auto:
+                _ollama_log.info(
+                    "[deterministic-commit] infer_draft_value_from_context used (model omitted [DRAFT_VALUE]); "
+                    "entity_type=%r field=%r",
+                    str(getattr(_merged_subj, "entity_type", "") or ""),
+                    str(_capture.get("field_target") or ""),
+                )
                 _pend = build_pending_integration_payload(
                     question=question,
                     capture_field=_capture["field_target"],

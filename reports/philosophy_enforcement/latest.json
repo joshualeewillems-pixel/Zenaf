@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-04-04T17:16:18.230962+00:00",
+  "generated_at_utc": "2026-04-04T17:19:00.204436+00:00",
   "repo": "C:\\Users\\philc\\OneDrive\\Desktop\\Atria",
   "program_state_source": "docs/01_TRUTH/convergence_program_state.json",
   "program_state": {
@@ -25,7 +25,7 @@
     "blocked": [
       "Phase 3 structural unification \u2014 do not re-promote matrix automation until Class A (trace + product honesty) is sustainably clear"
     ],
-    "notes": "Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md). 2A is complete enough for now\u2014keep monitored via the runner; active focus is 2B, 2D, 2C. 2A passed via explicit client-surface exemptions in docs/01_TRUTH/ai_trace_exemptions.json; any future FE caller for exempted routes must either emit client trace or remove the exemption.",
+    "notes": "Runner-first: scripts/philosophy_enforcement/run_all.py is the primary board signal (optionally PHILOSOPHY_ENFORCE_STRICT=1 for confirmed-only gate). Confirmed-only: mandatory fixes for confirmed_violation; heuristics are review hints, not scope expanders. Finish real Class A work before promoting structural unification again; exploratory Phase 3 checkers stay manual (see rogue_run_log.md). 2A is complete enough for now\u2014keep monitored via the runner; active focus is 2B, 2D, 2C. 2A passed via explicit client-surface exemptions in docs/01_TRUTH/ai_trace_exemptions.json; any future FE caller for exempted routes must either emit client trace or remove the exemption. Work order: 2B first (fastest to make globally true), then 2D (trust at deep interaction), then 2C (high leverage but prone to sprawl\u2014after 2B/2D). Discipline: only 2B, 2D, and 2C may spawn new discretionary work; 2A may resurface only from runner findings or exemption invalidation (e.g. new FE caller)\u2014not intuition.",
     "operating_loop": "runner \u2192 enforcement \u2192 confirmed violations only \u2192 bounded fix \u2192 rerun \u2192 converge",
     "updated_at": "2026-04-04"
   },

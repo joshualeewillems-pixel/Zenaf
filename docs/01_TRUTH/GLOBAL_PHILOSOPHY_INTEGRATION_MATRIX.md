@@ -8,6 +8,8 @@ Companion: partial integration narrative in chat / seed from ATRIA_SYSTEM_CHARTE
 
 **Purpose:** For each **philosophy** (architectural law we already declared), record **where it is real**, **where it is partial**, **what is exempt or parked**, **how to classify urgency**, and **what enforcement prevents drift**—without redesigning features.
 
+**Promotion rule:** A checker may be matrix-gated in `global_philosophy_integration_matrix.json` / `run_all.py` **only if** it verifies the law at the row’s scope (e.g. path-level enforcement vs structural “file still exists”). Do not wire smoke or exploratory checks into `automation.checker_ids` until they meet that bar—keep them manual or documented outside the registry.
+
 **Legend — classification (col “Class”):**
 
 | Code | Meaning |

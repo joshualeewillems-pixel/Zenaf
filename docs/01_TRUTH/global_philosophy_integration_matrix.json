@@ -1,5 +1,5 @@
 {
-  "$schema_comment": "Machine-readable companion to GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md — update both together.",
+  "$schema_comment": "Machine-readable companion to GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md — update both together. Promotion rule: only add automation.checker_ids when the checker verifies the law at the row's scope (path-level vs structural presence); see docs/01_TRUTH/README.md.",
   "source_markdown": "docs/01_TRUTH/GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md",
   "philosophies": [
     {

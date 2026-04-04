@@ -6,6 +6,10 @@ runs registered static checkers (see global_philosophy_integration_matrix.json c
 
 Exit code: 0 normally (report-only), 2 if convergence_program_state.json is missing or invalid.
 Set PHILOSOPHY_ENFORCE_STRICT=1 to exit 1 on any confirmed violation.
+
+Promotion rule (matrix): a checker may be matrix-gated only if it verifies the law at that row's
+scope—path-level behavior vs structural file/symbol presence must match what the row claims
+(see docs/01_TRUTH/README.md and GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md).
 """
 from __future__ import annotations
 
@@ -167,6 +171,15 @@ def main() -> int:
 
     md = render_markdown(rows, repo, program_state=program_state)
     if args.stdout:
+        # Windows consoles often default to cp1252; report uses Unicode arrows and em dashes.
+        enc = (getattr(sys.stdout, "encoding", None) or "").lower()
+        if enc not in ("utf-8", "utf8"):
+            reconf = getattr(sys.stdout, "reconfigure", None)
+            if callable(reconf):
+                try:
+                    reconf(encoding="utf-8", errors="replace")
+                except (OSError, ValueError, AttributeError):
+                    pass
         print(md)
     else:
         print("Philosophy enforcement")

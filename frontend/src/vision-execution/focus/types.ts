@@ -8,7 +8,7 @@ import type { GraphFocusSlice } from './graphSliceTypes'
 export type EntityType = 'idea' | 'initiative' | 'project' | 'task' | 'council' | 'core_profile' | 'app_field'
 
 /** Where the focused control lives (drives registry keys + graph lanes). */
-export type FocusSurface = 'vision_execution' | 'core_profile' | 'workspace' | 'shell'
+export type FocusSurface = 'vision_execution' | 'vision_map' | 'core_profile' | 'workspace' | 'shell'
 
 /** Coarse grouping for future capability defaults */
 export type FieldKind = 'long_form_strategy' | 'dependencies_scope' | 'evaluation_narrative' | 'idea_body'

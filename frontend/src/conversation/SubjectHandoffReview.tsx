@@ -8,6 +8,8 @@ type Props = {
   forSubjectLabel: string
   items: Item[]
   resolvedIds: Set<string>
+  /** When false, notes attach target is missing (e.g. workspace-only subject). */
+  showSaveInNotes?: boolean
   onCommitNow: (item: Item) => void
   onSaveNotes: (item: Item) => void
   onDismissItem: (item: Item) => void
@@ -19,6 +21,7 @@ export function SubjectHandoffReview({
   forSubjectLabel,
   items,
   resolvedIds,
+  showSaveInNotes = true,
   onCommitNow,
   onSaveNotes,
   onDismissItem,
@@ -51,14 +54,16 @@ export function SubjectHandoffReview({
             >
               Do this now
             </button>
-            <button
-              type="button"
-              disabled={busyId === item.id}
-              className="text-sky-300/90 hover:underline disabled:opacity-40"
-              onClick={() => onSaveNotes(item)}
-            >
-              Save in notes for later
-            </button>
+            {showSaveInNotes ? (
+              <button
+                type="button"
+                disabled={busyId === item.id}
+                className="text-sky-300/90 hover:underline disabled:opacity-40"
+                onClick={() => onSaveNotes(item)}
+              >
+                Save in notes for later
+              </button>
+            ) : null}
             <button
               type="button"
               disabled={busyId === item.id}

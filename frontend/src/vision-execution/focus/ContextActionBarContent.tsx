@@ -15,6 +15,7 @@ import {
   withTraceOutcome,
   withTraceOutput,
 } from '../../ai-actions'
+import { FocusInviteChips } from './FocusInviteChips'
 
 const MAX_VISIBLE_ACTIONS = 6
 
@@ -27,7 +28,7 @@ type FocusRewriteResponse = {
 type ContextActionBarContentProps = {
   className?: string
   /** Where the shell is: affects copy when no field is focused */
-  idleHint?: 've' | 'shell'
+  idleHint?: 've' | 'shell' | 'map'
 }
 
 export function ContextActionBarContent({ className = '', idleHint = 've' }: ContextActionBarContentProps) {
@@ -177,7 +178,9 @@ export function ContextActionBarContent({ className = '', idleHint = 've' }: Con
     const idle =
       idleHint === 'shell'
         ? 'No field focus — click into any text field to use voice transcription.'
-        : 'No field focus — click into a text field in this view (create idea, detail panel, …).'
+        : idleHint === 'map'
+          ? 'No map entity focus — click a node for context, or open operator mode for text fields.'
+          : 'No field focus — click into a text field in this view (create idea, detail panel, …).'
     return (
       <div className={`flex flex-wrap items-center gap-2 min-w-0 ${className}`}>
         <span className="text-slate-500 text-sm truncate" aria-live="polite">
@@ -220,6 +223,7 @@ export function ContextActionBarContent({ className = '', idleHint = 've' }: Con
             {c.field_kind}
           </span>
         </div>
+        <FocusInviteChips className="w-full mt-0.5" />
       </div>
       {visible.length > 0 && (
         <div

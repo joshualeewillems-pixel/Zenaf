@@ -2,7 +2,7 @@
 
 <!--
 Status: Canonical
-Last updated: 2026-04-03
+Last updated: 2026-04-04
 -->
 
 Reality vs roadmap: what is working, partial, stubbed, deprecated, or not yet built. Based on the current codebase.
@@ -13,6 +13,7 @@ Reality vs roadmap: what is working, partial, stubbed, deprecated, or not yet bu
 - **`ATRIA_CHARTER_VIOLATION_LEDGER.md`** — audit status, first-pass violations, automation pointer
 - **`scripts/charter_enforcement_check.py`** — run: `python scripts/charter_enforcement_check.py` (optional `CHARTER_ENFORCE_STRICT=1` to fail CI on selected severities)
 - **`GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md`** — each declared philosophy: law, scope, implemented vs partial vs parked, class A/B/C, enforcement mechanism, ranked order
+- **`wave_autonomy_protocol.md`** — online wave-gated CI autonomy (exit gate, optional SMS/promotion); **`convergence_program_state.json`** — active program phase/objectives for the philosophy runner
 
 For **philosophy, layered definitions, and API/entity reference**, see **`SYSTEM_REFERENCE.md`**. This file is the **operational** truth: surfaces, flows, gaps, and near-term build targets. For **module/file-level inventory and build notes**, see **`CODEBASE_INVENTORY.md`** (the other half of "as-built + direction"). For **locked source-of-truth decisions** (council seats, traces, intake tiers, field naming), see **`TRUTH_CONVERGENCE.md`**.
 
@@ -79,6 +80,7 @@ Top-level navigation emphasizes **Perspectives** (Foundation = core profile + pe
 - **Intake API:** Config, Gmail OAuth, POST email/fax, POST email/poll, GET/PATCH queue, GET queue item judgment.
 - **Policy layer:** `local_ai.policy.data_access` with tiers and `request_access`; used by `mirror.get_item_with_content()`.
 - **Synthetic data scripts:** Generate synthetic cases, evaluate pipeline, export failures, review; pytest intake quality and synthetic regression.
+- **Arc detector lab (v0.1):** Interpretation layer only — heuristic + `arc_detection_candidates`, synthetic user/fixtures (`scripts/seed_arc_lab_fixtures.py`, `scripts/eval_arc_detector_lab.py`). **Lab-stable** per [`ATRIA_CHARTER_VIOLATION_LEDGER.md`](ATRIA_CHARTER_VIOLATION_LEDGER.md) §Closed at lab level; spec [`docs/02_ACTIVE_DESIGN/ARC_DETECTION_FIXTURE_SPEC.md`](../02_ACTIVE_DESIGN/ARC_DETECTION_FIXTURE_SPEC.md). Real-user meaning and mint remain **not** proven by this lane.
 - **Startup:** Dependency checks and mirror load on API startup; Vision Execution DB init on first use.
 - **Operational launcher:** `open-cockpit.bat` / `open-cockpit.ps1` start API + frontend and open browser.
 - **Vision map:** Live graph from `buildLiveVisionMapGraph`; context chat shell with triad metrics from `mapGrowthMetrics.ts`; guidance scripts / weak-area copy (`guidanceScripts.ts`, `guidanceConversationalSeed.ts`, `MapChatShell.tsx`); sand deformation in `sandHeightField.ts` (no backend persistence for rake patterns). Triad snapshot can feed **developmental guidance** for council (see Council bullet).

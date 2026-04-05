@@ -26,11 +26,16 @@ import {
   isEligibleDomTextControl,
 } from './domShellField'
 import { ATRIA_VE_FOCUS_INSERT_TEXT, insertTextAtSelection, type VeFocusInsertTextDetail } from './insertTextEvent'
+import { CONVERSATION_ENTITY_FIELD_KEY } from './conversationEntityFocus'
 
 type VisionExecutionFocusValue = {
   focus: FocusContext | null
   /** Debounced apply when a registered field receives focus */
   notifyFieldFocused: (desc: FocusDescriptor) => void
+  /** Immediate apply for list/map entity selection (no text focus). */
+  notifyConversationEntityFocus: (desc: FocusDescriptor) => void
+  /** Clear only the conversation-entity shell, if active (does not clear real field focus). */
+  clearConversationEntityShell: () => void
   /** Debounced clear when focus leaves registered subtree (unless bar interaction suppresses once) */
   notifyFieldBlurred: () => void
   /** Call on pointer down in the action bar (capture) so blur from field does not clear focus */
@@ -198,6 +203,40 @@ export function VisionExecutionFocusProvider({
     [clearAllTimers],
   )
 
+  const notifyConversationEntityFocus = useCallback(
+    (desc: FocusDescriptor) => {
+      const surface = desc.surface ?? 'vision_execution'
+      const prev = focusCoreRef.current
+      if (
+        prev &&
+        prev.field_key === CONVERSATION_ENTITY_FIELD_KEY &&
+        desc.field_key === CONVERSATION_ENTITY_FIELD_KEY &&
+        prev.entity_type === desc.entity_type &&
+        prev.entity_id === desc.entity_id &&
+        prev.surface === surface &&
+        prev.field_label === desc.field_label
+      ) {
+        return
+      }
+      clearAllTimers()
+      suppressBlurOnceRef.current = false
+      focusVersionRef.current += 1
+      setFocusCore({
+        ...desc,
+        surface,
+        focus_version: focusVersionRef.current,
+      })
+    },
+    [clearAllTimers],
+  )
+
+  const clearConversationEntityShell = useCallback(() => {
+    if (focusCoreRef.current?.field_key !== CONVERSATION_ENTITY_FIELD_KEY) return
+    clearAllTimers()
+    suppressBlurOnceRef.current = false
+    setFocusCore(null)
+  }, [clearAllTimers])
+
   useEffect(() => {
     const onInsert = (ev: Event) => {
       const d = (ev as CustomEvent<VeFocusInsertTextDetail>).detail
@@ -301,6 +340,8 @@ export function VisionExecutionFocusProvider({
     () => ({
       focus,
       notifyFieldFocused,
+      notifyConversationEntityFocus,
+      clearConversationEntityShell,
       notifyFieldBlurred,
       onBarPointerDownCapture,
       onBarFocusCapture,
@@ -314,6 +355,8 @@ export function VisionExecutionFocusProvider({
     [
       focus,
       notifyFieldFocused,
+      notifyConversationEntityFocus,
+      clearConversationEntityShell,
       notifyFieldBlurred,
       onBarPointerDownCapture,
       onBarFocusCapture,

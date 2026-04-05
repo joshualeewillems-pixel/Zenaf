@@ -1,6 +1,10 @@
 import type { ReactNode } from 'react'
 import type { PerspectiveIconId } from '../perspectives/roleIcons'
-import { EntityMentionText, type EntityMentionOpenPayload } from '../components/EntityMentionText'
+import {
+  EntityMentionText,
+  councilRowHasLinkableEntityMarker,
+  type EntityMentionOpenPayload,
+} from '../components/EntityMentionText'
 import { PerspectiveRoleIcon } from '../perspectives/roleIcons'
 import {
   mandateIdFromCouncilSeatLabel,
@@ -93,7 +97,14 @@ export function CouncilTranscript({
     <div className="whitespace-pre-wrap font-sans text-xs">
       {lines.map((line, idx) => {
         const trimmed = line.trim()
+        // Lines with [ID:…] must use EntityMentionText (cyan chips). A trailing ":" alone is a weak
+        // header signal — Zenaf often writes "Here are the options:" plus numbered lines; some models
+        // also end list rows with ":". Never treat these as seat headers.
+        const hasEntityIdMarker = councilRowHasLinkableEntityMarker(line)
+        const isNumberedListLine = /^\d+\.\s/.test(trimmed)
         const isHeader =
+          !hasEntityIdMarker &&
+          !isNumberedListLine &&
           trimmed.endsWith(':') &&
           trimmed.length > 1 &&
           !trimmed.toLowerCase().startsWith('atria synthesis') &&

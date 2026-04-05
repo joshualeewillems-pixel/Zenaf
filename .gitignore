@@ -19,3 +19,9 @@ e2e/nightly/test-results/
 
 # Debug: last council enriched packet (local_ai/council_preflight.py)
 last_packet.txt
+
+# Wave exit gate local report (CI uploads as artifact)
+wave_exit_report.json
+
+# ARC lab: machine-specific user/project ids (regenerate: python scripts/seed_arc_lab_fixtures.py)
+reports/arc_lab/manifest.json

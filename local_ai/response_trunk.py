@@ -76,7 +76,8 @@ def _syntax_rules_block() -> str:
     """Hostile schema — stylistic drift = integration failure."""
     return (
         "**ID MANDATE:** Every Vision & Execution entity you mention that has an id in Context MUST appear as "
-        "`Name [ID: uuid]` (space after colon). No ID = system crash for linking.\n"
+        "`Name [ID: uuid]` (space after colon). Use exactly one pair of brackets around the tag — "
+        "do not nest brackets around the uuid (e.g. never `[ID: [uuid]]`). No ID = system crash for linking.\n"
         "**BACKTICK BAN:** Triple backticks for proposed field text are a FATAL ERROR. "
         "Use ONLY `[DRAFT_VALUE: …]` for proposals — no code fences.\n"
         "**PARSER:** Reply is consumed by a technical parser; malformed field tokens are rejected."

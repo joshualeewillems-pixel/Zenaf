@@ -7,6 +7,7 @@ import re
 import sqlite3
 import json
 import os
+import threading
 import hashlib
 import hmac
 import secrets
@@ -33,7 +34,11 @@ _PHIL_DISPLAY_NAME = "Phil"
 _PHIL_PASSWORD_FALLBACK = "phil-local-dev"
 _SESSION_TTL_DAYS = 30
 
-_conn: sqlite3.Connection | None = None
+# One SQLite connection per thread: FastAPI runs sync route handlers on a thread pool; a single
+# shared connection is not safe for concurrent execute() and triggers InterfaceError (e.g. Python 3.14).
+_thread_local = threading.local()
+_init_lock = threading.Lock()
+_init_done_paths: set[str] = set()
 
 _logger = logging.getLogger(__name__)
 
@@ -199,7 +204,9 @@ def log_coordination_client_checkpoint(
                 append_execution_flow_reading,
             )
 
-            applied_suggestion = cp == "ai_suggestion_applied" and str(user_outcome or "").strip().lower() == "applied"
+            uo = str(user_outcome or "").strip().lower()
+            applied_suggestion = cp == "ai_suggestion_applied" and uo == "applied"
+            friction_checkpoint = cp == "ai_suggestion_applied" and uo in ("stuck", "dismissed")
             if applied_suggestion:
                 append_execution_flow_reading(
                     user_id=uid,
@@ -210,6 +217,18 @@ def log_coordination_client_checkpoint(
                     evidence_source="atria-client-trace",
                     impact="positive",
                     dimension="capacity",
+                    confidence=0.6,
+                )
+            elif friction_checkpoint:
+                append_execution_flow_reading(
+                    user_id=uid,
+                    entity_type=et,
+                    entity_id=eid,
+                    pointer=event_id,
+                    pointer_kind="activity_event",
+                    evidence_source="atria-client-trace",
+                    impact="negative",
+                    dimension="friction",
                     confidence=0.6,
                 )
             else:
@@ -877,14 +896,36 @@ def init_db(conn: sqlite3.Connection) -> None:
 
 
 def get_connection() -> sqlite3.Connection:
-    global _conn
-    if _conn is not None:
-        return _conn
+    resolved = str(_DB_PATH.resolve())
+    cached = getattr(_thread_local, "conn", None)
+    cached_path = getattr(_thread_local, "db_path_resolved", None)
+    if cached is not None and cached_path == resolved:
+        return cached
+    if cached is not None:
+        try:
+            cached.close()
+        except sqlite3.Error:
+            pass
+        _thread_local.conn = None
+        _thread_local.db_path_resolved = None
+
     _DB_DIR.mkdir(parents=True, exist_ok=True)
-    # Allow use from any thread (uvicorn may serve requests from different threads).
-    _conn = open_sqlite_with_ve_pragmas(_DB_PATH, check_same_thread=False)
-    init_db(_conn)
-    return _conn
+    # Serialize first-time init: do not hand out thread connections until init_db has committed on
+    # this file. Otherwise another thread can sqlite3.connect the same path before DDL finishes and
+    # later skip init — breaking reads (e.g. login) on a half-initialized or empty schema.
+    with _init_lock:
+        if resolved not in _init_done_paths:
+            bootstrap = open_sqlite_with_ve_pragmas(_DB_PATH, check_same_thread=True)
+            try:
+                init_db(bootstrap)
+                _init_done_paths.add(resolved)
+            finally:
+                bootstrap.close()
+
+    conn = open_sqlite_with_ve_pragmas(_DB_PATH, check_same_thread=True)
+    _thread_local.conn = conn
+    _thread_local.db_path_resolved = resolved
+    return conn
 
 
 def _now() -> str:
@@ -959,6 +1000,8 @@ def create_session(user_id: str, *, ttl_days: int = _SESSION_TTL_DAYS) -> str:
 
 
 def get_session_user(session_token: str) -> dict[str, Any] | None:
+    if not session_token:
+        return None
     conn = get_connection()
     row = conn.execute(
         """
@@ -2951,6 +2994,98 @@ def list_node_judgments(
         del d["trunk_json"]
         out.append(d)
     return out
+
+
+def list_node_judgments_chronological(
+    user_id: str, entity_type: str, entity_id: str, limit: int = 1000
+) -> list[dict[str, Any]]:
+    """Oldest-first judgments for arc/heuristic scans (contrast list_node_judgments DESC)."""
+    uid = (user_id or "").strip() or "anonymous"
+    et = (entity_type or "").strip()
+    eid = (entity_id or "").strip()
+    lim = max(1, min(int(limit), 5000))
+    conn = get_connection()
+    rows = conn.execute(
+        """
+        SELECT * FROM node_judgment_history
+        WHERE user_id = ? AND entity_type = ? AND entity_id = ?
+        ORDER BY created_at ASC LIMIT ?
+        """,
+        (uid, et, eid, lim),
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        raw = d.get("trunk_json")
+        try:
+            d["trunk"] = json.loads(raw) if isinstance(raw, str) and raw.strip() else {}
+        except Exception:
+            d["trunk"] = {}
+        del d["trunk_json"]
+        out.append(d)
+    return out
+
+
+def try_insert_arc_detection_candidate(
+    *,
+    user_id: str,
+    source_entity_type: str,
+    source_entity_id: str,
+    heuristic_version: str,
+    t_avoid_reading_id: str,
+    t_eng_reading_id: str,
+    t_complete_at: str,
+    detector_confidence: float,
+    notes_json: str,
+) -> str | None:
+    """
+    Insert status=proposed. Returns new row id, or None if UNIQUE conflict (same user/entity/heuristic)
+    or DB error.
+    """
+    from local_ai.vision_execution import models as M
+
+    uid = (user_id or "").strip()
+    if not uid:
+        return None
+    et = (source_entity_type or "").strip().lower()
+    eid = (source_entity_id or "").strip()
+    hv = (heuristic_version or "").strip()
+    if not et or not eid or not hv:
+        return None
+    cid = M.new_id()
+    now = _now()
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO arc_detection_candidates (
+              id, user_id, source_entity_type, source_entity_id, heuristic_version,
+              t_avoid_reading_id, t_eng_reading_id, t_complete_at,
+              detector_confidence, status, notes_json, reviewed_at, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'proposed', ?, NULL, ?)
+            """,
+            (
+                cid,
+                uid,
+                et,
+                eid,
+                hv,
+                t_avoid_reading_id,
+                t_eng_reading_id,
+                t_complete_at,
+                float(detector_confidence),
+                notes_json,
+                now,
+            ),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return None
+    except Exception:
+        conn.rollback()
+        return None
+    return cid
 
 
 def get_node_judgment_summary(user_id: str, entity_type: str, entity_id: str) -> dict[str, Any]:

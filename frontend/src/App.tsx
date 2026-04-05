@@ -94,8 +94,11 @@ import {
 } from './conversation/mediationSurfaceTypes'
 import type { ConversationSubject } from './conversation/conversationTrunkTypes'
 import {
+  contentForSuggestionExtraction,
   extractConversationSuggestions,
+  normalizeSuggestionFingerprint,
   parseSubjectEntityRef,
+  shouldScrapeMessageForSuggestions,
   type PendingThreadSuggestion,
 } from './conversation/subjectThreadCapture'
 import { formatSystemPromptContextTitle } from './developmentalGuidance/systemPromptTitle'
@@ -121,6 +124,12 @@ import {
   VisionExecutionFocusProvider,
   VeVoiceRecordingProvider,
   ContextActionBarContent,
+  FocusInviteRunProvider,
+  buildConversationalInvitePreface,
+  buildStructuredFillInvitePreface,
+  CONVERSATIONAL_INVITE_MARKER,
+  boundedTransformDisabledForQuestion,
+  replaceStructuredFillComposerValue,
   FocusContextRecordButton,
   TranscribableFieldRegion,
   focusFieldRegistryKey,
@@ -130,9 +139,12 @@ import {
   insertTextAtSelection,
   type VeFocusInsertTextDetail,
   type VeFocusApplyRewriteDetail,
+  type FocusInvite,
 } from './vision-execution/focus'
 import { useVisionExecutionFocusOptional } from './vision-execution/focus/VisionExecutionFocusContext'
-import type { FocusContext } from './vision-execution/focus/types'
+import type { FocusContext, FocusContextCore } from './vision-execution/focus/types'
+import { resolveGraphSliceVE } from './vision-execution/focus/graphSliceResolver'
+import { veFocusCoreFromVeSelection, veGraphSnapshotFromBundle } from './vision-execution/focus/conversationEntityFocus'
 import type { Mandate } from './mandates'
 import { BUILT_IN_MANDATES } from './mandates'
 import {
@@ -375,19 +387,44 @@ function CouncilSynthesisIntegrityNote({
 /** Syncs VE field focus into a ref for council preflight (must render under VisionExecutionFocusProvider). */
 function CouncilFocusBridge({
   focusRef,
-  veActive,
+  focusBridgeActive,
 }: {
   focusRef: { current: FocusContext | null }
-  veActive: boolean
+  /** True on Vision & Execution and Vision Map so council preflight can read shared focus. */
+  focusBridgeActive: boolean
 }) {
   const ctx = useVisionExecutionFocusOptional()
   useEffect(() => {
-    if (!veActive || !ctx) {
+    if (!focusBridgeActive || !ctx) {
       focusRef.current = null
       return
     }
     focusRef.current = ctx.focus
-  }, [veActive, ctx, ctx?.focus, focusRef])
+  }, [focusBridgeActive, ctx, ctx?.focus, focusRef])
+  return null
+}
+
+/** Clear all focus when leaving VE surfaces so workspace/home do not keep stale entity context. */
+function LeaveVisionSurfacesFocusClear({
+  mainView,
+}: {
+  mainView:
+    | 'home'
+    | 'workspace'
+    | 'perspectives'
+    | 'content'
+    | 'vision_map'
+    | 'vision_execution'
+    | 'settings'
+}) {
+  const ctx = useVisionExecutionFocusOptional()
+  const clearRef = useRef(ctx?.clearFocus)
+  clearRef.current = ctx?.clearFocus
+  useEffect(() => {
+    if (mainView !== 'vision_map' && mainView !== 'vision_execution') {
+      clearRef.current?.()
+    }
+  }, [mainView])
   return null
 }
 
@@ -417,7 +454,11 @@ function chatResonanceIntegration(
   if (opts?.folderWorkflow || agentLabel === 'Folder review') {
     return { seatId: 'folder_review', contextKind: 'council_seat' }
   }
-  if (agentLabel === 'Thinking Partner' || agentLabel === 'Atria (Thinking Partner)') {
+  if (
+    agentLabel === 'Zenaf' ||
+    agentLabel === 'Thinking Partner' ||
+    agentLabel === 'Atria (Thinking Partner)'
+  ) {
     return { seatId: 'zenaf', contextKind: 'zenaf_training' }
   }
   if (agentLabel === 'Council') {
@@ -438,7 +479,10 @@ function useWorkspaceOrVeResonanceEntity(
 ) {
   const ve = useVisionExecutionFocusOptional()
   return useMemo(() => {
-    if (mainView === 'vision_execution' && ve?.focus?.core?.entity_id?.trim()) {
+    if (
+      (mainView === 'vision_execution' || mainView === 'vision_map') &&
+      ve?.focus?.core?.entity_id?.trim()
+    ) {
       return {
         entityType: ve.focus.core.entity_type,
         entityId: ve.focus.core.entity_id.trim(),
@@ -552,7 +596,8 @@ function UniversalContextStrip({
 }) {
   const focusOpt = useVisionExecutionFocusOptional()
   const hasVeFieldFocus = Boolean(focusOpt?.focus)
-  const idleHint = mainView === 'vision_execution' ? 've' : 'shell'
+  const idleHint =
+    mainView === 'vision_map' ? 'map' : mainView === 'vision_execution' ? 've' : 'shell'
 
   return (
     <div className="shrink-0 z-10 border-b border-stone-700 px-6 py-2.5 bg-stone-800/95 backdrop-blur-sm">
@@ -1688,6 +1733,7 @@ function App() {
     el.style.height = `${next}px`
     el.style.overflowY = fullScroll > maxH ? 'auto' : 'hidden'
   }, [])
+
   useLayoutEffect(() => {
     adjustCouncilQuestionTextareaHeight()
   }, [question, adjustCouncilQuestionTextareaHeight])
@@ -1823,6 +1869,9 @@ function App() {
   const intakeQueueResizeRef = useRef<{ startY: number; startH: number } | null>(null)
   /** Synced after `currentTopic` / `mainView` / `veSelection` each render — used by council preflight. */
   const councilVeFocusRef = useRef<FocusContext | null>(null)
+  const runCouncilRef = useRef<
+    ((overrideQuestion?: string, options?: { preserveComposer?: boolean }) => Promise<void>) | null
+  >(null)
   const councilIdeaLabelsRef = useRef<CouncilIdeaLabelsSnapshot | null>(null)
   /** Last Zenaf `conversation_subject` from council stream `done` — echoed on the next POST /run/stream. */
   const councilConversationSubjectRef = useRef<ConversationSubject | null>(null)
@@ -2506,14 +2555,17 @@ function App() {
     return lines.join('\n')
   }
 
-  const runCouncil = async (overrideQuestion?: string) => {
+  const runCouncil = async (
+    overrideQuestion?: string,
+    options?: { preserveComposer?: boolean },
+  ) => {
     const invocationKind = councilInvocationNextRef.current
     councilInvocationNextRef.current = 'default'
     const q = (overrideQuestion ?? question)?.trim() || 'What should we consider?'
     const isFolderWorkflowEarly = lastMode === 'recommend' && !!lastFolderPath
     const mapPayloadEarly = councilRunMapPayloadRef.current
     councilRunMapPayloadRef.current = null
-    if (!isFolderWorkflowEarly) {
+    if (!isFolderWorkflowEarly && !boundedTransformDisabledForQuestion(q)) {
       const anchorType = resolveCouncilAnchorEntityType(veSelection, mapPayloadEarly)
       const transformIntent = inferBoundedTransformIntent(q, anchorType)
       if (
@@ -2686,10 +2738,15 @@ function App() {
           },
         ]
       })
-      setQuestion('')
+      if (!options?.preserveComposer) {
+        setQuestion('')
+      }
       setAgentConversationScrollNonce((n) => n + 1)
       const snap = councilRuntimeRef.current
       const vf = councilVeFocusRef.current
+      const entityBundle = councilVeEntityBundleRef.current
+      const fallbackCore = veFocusCoreFromVeSelection(snap.ve_selection, entityBundle)
+      const effectiveCore = vf?.core ?? fallbackCore
       const council_preflight: Record<string, unknown> = {
         active_surface: snap.mainView,
         workspace_topic_label: snap.currentTopic.label,
@@ -2702,18 +2759,21 @@ function App() {
             : [snap.currentTopic.label, snap.currentTopic.modeLabel].filter(Boolean).join(' · ') || undefined,
         folder_path: lastFolderPath || undefined,
       }
-      if (vf) {
-        const vc = vf.core
+      if (effectiveCore) {
         council_preflight.ve_focus = {
-          entity_type: vc.entity_type,
-          entity_id: vc.entity_id,
-          field_label: vc.field_label,
-          field_key: vc.field_key,
-          parent: vc.parent,
-          lineage_labels: vc.lineage_labels,
+          entity_type: effectiveCore.entity_type,
+          entity_id: effectiveCore.entity_id,
+          field_label: effectiveCore.field_label,
+          field_key: effectiveCore.field_key,
+          parent: effectiveCore.parent,
+          lineage_labels: effectiveCore.lineage_labels,
         }
-        if (vf.graphs.ve) {
+        if (vf?.graphs.ve) {
           council_preflight.ve_focus_graph = vf.graphs.ve
+        } else {
+          const graphSnap = veGraphSnapshotFromBundle(entityBundle)
+          const slice = graphSnap ? resolveGraphSliceVE(effectiveCore, graphSnap) : null
+          if (slice) council_preflight.ve_focus_graph = slice
         }
       }
       if (snap.ve_selection && Object.keys(snap.ve_selection).length > 0) {
@@ -2721,17 +2781,20 @@ function App() {
       }
       const ideaLabels = councilIdeaLabelsRef.current
       if (
-        vf?.core.entity_type === 'idea' &&
+        effectiveCore?.entity_type === 'idea' &&
         ideaLabels &&
-        vf.core.entity_id === ideaLabels.entity_id
+        effectiveCore.entity_id === ideaLabels.entity_id
       ) {
         council_preflight.ve_focus_title = ideaLabels.ve_focus_title
         council_preflight.ve_focus_brief = ideaLabels.ve_focus_brief
         council_preflight.ve_focus_description = ideaLabels.ve_focus_description
       }
-      if (vf?.core.entity_type === 'task') {
-        const slice = vf.graphs?.ve
-        const tid = (vf.core.entity_id || '').trim()
+      if (effectiveCore?.entity_type === 'task') {
+        const graphSnap = veGraphSnapshotFromBundle(entityBundle)
+        const slice =
+          vf?.graphs?.ve ??
+          (graphSnap ? resolveGraphSliceVE(effectiveCore, graphSnap) : null)
+        const tid = (effectiveCore.entity_id || '').trim()
         const taskNode =
           slice && !slice.dataUnavailable && tid ? slice.nodes[tid] : undefined
         const raw =
@@ -2750,8 +2813,8 @@ function App() {
               ? sq.map((x) => String(x ?? '').trim()).filter(Boolean).join('\n')
               : ''
         const lineageFallback =
-          Array.isArray(vf.core.lineage_labels) && vf.core.lineage_labels.length > 0
-            ? String(vf.core.lineage_labels[vf.core.lineage_labels.length - 1] ?? '').trim()
+          Array.isArray(effectiveCore.lineage_labels) && effectiveCore.lineage_labels.length > 0
+            ? String(effectiveCore.lineage_labels[effectiveCore.lineage_labels.length - 1] ?? '').trim()
             : ''
         council_preflight.ve_focus_title = rowTitle || lineageFallback || '(task)'
         council_preflight.ve_focus_brief = rowDescription || 'No description provided.'
@@ -2764,7 +2827,7 @@ function App() {
       const mapTriadForGuidance =
         snap.mainView === 'vision_map'
           ? mapDevelopmentalSnapshot
-          : buildVeMapTriadSnapshotFromFocus(vf?.core ?? null, councilVeEntityBundleRef.current)
+          : buildVeMapTriadSnapshotFromFocus(effectiveCore ?? null, entityBundle)
       let councilFlowReadings: ExecutionFlowReadingSummary[] = []
       const flowRef = veEntityRefFromMapTriad(mapTriadForGuidance ?? null)
       if (flowRef) {
@@ -2786,9 +2849,9 @@ function App() {
       if (councilScopedDigression) {
         const dig = councilScopedDigression
         const matchesVf =
-          Boolean(vf) &&
-          vf!.core.entity_type === dig.entityType &&
-          (vf!.core.entity_id || '').trim() === dig.entityId.trim()
+          Boolean(effectiveCore) &&
+          effectiveCore!.entity_type === dig.entityType &&
+          (effectiveCore!.entity_id || '').trim() === dig.entityId.trim()
         if (!matchesVf) {
           council_preflight.ve_focus = {
             entity_type: dig.entityType,
@@ -2806,8 +2869,8 @@ function App() {
       }
 
       console.debug('[Atria council] council_preflight snapshot', {
-        ve_focus_entity: vf?.core.entity_type,
-        ve_focus_id: vf?.core.entity_id,
+        ve_focus_entity: effectiveCore?.entity_type,
+        ve_focus_id: effectiveCore?.entity_id,
         ve_focus_title: council_preflight.ve_focus_title,
         ve_focus_brief_len: String(council_preflight.ve_focus_brief ?? '').length,
         ve_focus_description_len: String(council_preflight.ve_focus_description ?? '').length,
@@ -2886,6 +2949,7 @@ function App() {
         body.params.force_full_council = true
       } else {
         body.params.included_agents = includedAgentsForApi
+        const focusInviteForceThinkingPartner = q.includes(CONVERSATIONAL_INVITE_MARKER)
         const definitions = filledSlots
           .map((slot, idx) => {
             const a = councilAgentList.find((x) => x.id === slot.actorId)
@@ -2911,7 +2975,9 @@ function App() {
               promptNotes: a.promptNotes,
             }
             if (a.context?.trim()) def.context = a.context.trim()
-            const mandateId = mandatesBySeatId[slot.id] ?? ''
+            const mandateId = focusInviteForceThinkingPartner
+              ? 'thinking_partner'
+              : (mandatesBySeatId[slot.id] ?? '')
             const mandate: Mandate | undefined = mandateId
               ? BUILT_IN_MANDATES.find((m) => m.id === mandateId)
               : undefined
@@ -3376,6 +3442,8 @@ function App() {
       setLoading(false)
     }
   }
+
+  runCouncilRef.current = runCouncil
 
   /** Folder workflow only: call folder advisor directly. Does not update activeMode, question, lastCouncilResult, or agentThread. */
   const runFolderAdvisor = async () => {
@@ -4143,6 +4211,27 @@ function App() {
     }
   }, [activeMode, councilStreamPhase])
 
+  const COUNCIL_STREAM_BUSY_PHASES: ReadonlySet<CouncilStreamPhase> = new Set([
+    'connecting',
+    'connected_waiting_first_chunk',
+    'streaming',
+    'finalizing',
+  ])
+
+  const handleFocusInvite = useCallback((invite: FocusInvite, core: FocusContextCore) => {
+    if (invite.kind === 'conversational') {
+      if (COUNCIL_STREAM_BUSY_PHASES.has(councilStreamPhase)) return
+      setActiveMode('council')
+      const preface = buildConversationalInvitePreface(invite, core)
+      void runCouncilRef.current?.(preface, { preserveComposer: true })
+      return
+    }
+    setActiveMode('council')
+    setQuestion((prev) =>
+      replaceStructuredFillComposerValue(prev, buildStructuredFillInvitePreface(invite, core)),
+    )
+  }, [councilStreamPhase])
+
   const buildAgentThreadContext = (): string => {
     if (agentThread.length === 0) return ''
     const lines = agentThread.slice(-12).map((m) => {
@@ -4293,6 +4382,10 @@ function App() {
       return
     }
   }
+
+  const onMapEntitySelectionChange = useCallback((payload: MapNodePayload | null) => {
+    setVeSelection(payload ? veSelectionFromMapPayload(payload) ?? null : null)
+  }, [])
 
   const runReassessWithPerspective = async (reviewer: PerspectiveAgent) => {
     const items = lastAssessResult?.items ?? []
@@ -4473,6 +4566,18 @@ function App() {
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('home')
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
+  /** Avoid new object identity on every VisionExecutionView `bundleForFocus` refresh when ids are unchanged. */
+  const stableVeSelectionForExecutionView = useMemo(
+    () => veSelection,
+    [
+      veSelection?.tab,
+      veSelection?.ideaId,
+      veSelection?.initiativeId,
+      veSelection?.projectId,
+      veSelection?.taskId,
+      veSelection?.assetId,
+    ],
+  )
   const [veFocusTabRequest, setVeFocusTabRequest] = useState<VEWorkspaceTabId | null>(null)
   const consumeVeFocusTabRequest = useCallback(() => setVeFocusTabRequest(null), [])
   const [mapDevelopmentalSnapshot, setMapDevelopmentalSnapshot] = useState<MapTriadDevelopmentalSnapshot | null>(null)
@@ -5016,15 +5121,16 @@ function App() {
     if (agentThread.length === 0) return
     const last = agentThread[agentThread.length - 1]!
     if (last.role === 'guide' || last.threadHandoffReview) return
-    if (last.role !== 'user' && last.role !== 'agent') return
-    const slice = last.content.slice(0, 8000)
+    if (!shouldScrapeMessageForSuggestions(last.role, last.content)) return
+    const slice = contentForSuggestionExtraction(last.role, last.content)
     const found = extractConversationSuggestions(slice)
     if (found.length === 0) return
     const sk = guideStackKeyFingerprint
     setPendingThreadSuggestions((prev) => {
       const next = [...prev]
       for (const text of found) {
-        if (next.some((x) => x.subjectKey === sk && x.text === text)) continue
+        const fp = normalizeSuggestionFingerprint(text)
+        if (next.some((x) => normalizeSuggestionFingerprint(x.text) === fp)) continue
         next.push({
           id: `sug-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           text,
@@ -5210,7 +5316,12 @@ function App() {
     <VisionExecutionProfileGraphDataProvider snapshot={profileGraphSnapshot}>
     <VisionExecutionGraphDataProvider>
     <VisionExecutionFocusProvider focusHostActive>
-    <CouncilFocusBridge focusRef={councilVeFocusRef} veActive={mainView === 'vision_execution'} />
+    <FocusInviteRunProvider value={handleFocusInvite}>
+    <CouncilFocusBridge
+      focusRef={councilVeFocusRef}
+      focusBridgeActive={mainView === 'vision_execution' || mainView === 'vision_map'}
+    />
+    <LeaveVisionSurfacesFocusClear mainView={mainView} />
     <div className="h-dvh min-h-0 overflow-hidden bg-stone-900 text-stone-100 flex flex-col">
       <header className="shrink-0 border-b border-stone-700 px-6 py-4 flex items-center justify-between bg-stone-900 z-20">
         <div className="flex items-center gap-3 min-w-0">
@@ -5541,17 +5652,19 @@ function App() {
               onCouncilEntityBundleSnapshot={(bundle) => {
                 councilVeEntityBundleRef.current = bundle
               }}
+              onMapEntitySelectionChange={onMapEntitySelectionChange}
               layoutPersistenceContext={currentUser ? String(currentUser.id) : 'anonymous'}
             />
           </div>
         ) : mainView === 'vision_execution' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-auto">
             <VisionExecutionView
-              initialSelection={veSelection}
+              initialSelection={stableVeSelectionForExecutionView}
               councilIdeaLabelsRef={councilIdeaLabelsRef}
               councilVeEntityBundleRef={councilVeEntityBundleRef}
               focusTabRequest={veFocusTabRequest}
               onFocusTabRequestConsumed={consumeVeFocusTabRequest}
+              onVeSelectionChange={setVeSelection}
               recognitionUserId={currentUser?.id ?? null}
             />
           </div>
@@ -6730,6 +6843,9 @@ function App() {
                             forSubjectLabel={m.threadHandoffReview.forSubjectLabel}
                             items={m.threadHandoffReview.items}
                             resolvedIds={resolvedHandoffSet}
+                            showSaveInNotes={Boolean(
+                              parseSubjectEntityRef(m.threadHandoffReview.previousSubjectKey),
+                            )}
                             busyId={handoffNotesBusyId}
                             onCommitNow={handleHandoffCommitNow}
                             onSaveNotes={(item) =>
@@ -6748,6 +6864,7 @@ function App() {
                       ) : m.role === 'agent' &&
                         (m.agentLabel === 'Council' ||
                           m.agentLabel === 'Folder review' ||
+                          m.agentLabel === 'Zenaf' ||
                           m.agentLabel === 'Thinking Partner' ||
                           m.agentLabel === 'Atria (Thinking Partner)') ? (
                         <>
@@ -6769,9 +6886,7 @@ function App() {
                             folderWorkflowResonance={m.agentLabel === 'Folder review'}
                             integrationCommit={m.integrationCommit}
                             pendingIntegration={m.pendingIntegration}
-                            onOpenEntity={
-                              activeMode === 'council' ? handleCouncilEntityMentionOpen : undefined
-                            }
+                            onOpenEntity={handleCouncilEntityMentionOpen}
                           />
                           {i === agentThread.length - 1 &&
                             m.role === 'agent' &&
@@ -6828,6 +6943,7 @@ function App() {
                       }
                       stripAtriaSynthesis={
                         lastCouncilWasFolderWorkflow ||
+                        streamingCouncilRunLabel === 'Zenaf' ||
                         streamingCouncilRunLabel === 'Thinking Partner' ||
                         streamingCouncilRunLabel === 'Atria (Thinking Partner)' ||
                         !includeCouncilSynthesis
@@ -6844,9 +6960,7 @@ function App() {
                         lastCouncilWasFolderWorkflow ? 'Folder review' : streamingCouncilRunLabel
                       }
                       folderWorkflowResonance={lastCouncilWasFolderWorkflow}
-                      onOpenEntity={
-                        activeMode === 'council' ? handleCouncilEntityMentionOpen : undefined
-                      }
+                      onOpenEntity={handleCouncilEntityMentionOpen}
                     />
                     {!lastCouncilWasFolderWorkflow && streamingCouncilRunLabel === 'Council' && (
                       <CouncilSynthesisIntegrityNote
@@ -6881,9 +6995,7 @@ function App() {
                             lastCouncilWasFolderWorkflow ? 'Folder review' : streamingCouncilRunLabel || 'Council'
                           }
                           folderWorkflowResonance={lastCouncilWasFolderWorkflow}
-                          onOpenEntity={
-                            activeMode === 'council' ? handleCouncilEntityMentionOpen : undefined
-                          }
+                          onOpenEntity={handleCouncilEntityMentionOpen}
                         />
                         {lastCouncilPresentationKind === 'multiseat' &&
                           !lastCouncilWasFolderWorkflow &&
@@ -7196,6 +7308,7 @@ function App() {
         </aside>
       </div>
     </div>
+    </FocusInviteRunProvider>
     </VisionExecutionFocusProvider>
     </VisionExecutionGraphDataProvider>
     </VisionExecutionProfileGraphDataProvider>

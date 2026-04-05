@@ -2,8 +2,8 @@
 
 <!--
 Status: Operating board (execution plan, not product redesign)
-Last updated: 2026-04-03
-Companion: ATRIA_SYSTEM_CHARTER.md, TRUTH_CONVERGENCE.md, GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md, global_philosophy_integration_matrix.json, AUTONOMOUS_REPAIR_POLICY.md, convergence_program_state.json
+Last updated: 2026-04-04
+Companion: ATRIA_SYSTEM_CHARTER.md, TRUTH_CONVERGENCE.md, GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md, global_philosophy_integration_matrix.json, AUTONOMOUS_REPAIR_POLICY.md, convergence_program_state.json, wave_autonomy_protocol.md
 -->
 
 ## Current program state (human mirror)
@@ -12,21 +12,21 @@ Companion: ATRIA_SYSTEM_CHARTER.md, TRUTH_CONVERGENCE.md, GLOBAL_PHILOSOPHY_INTE
 
 | Field | Value |
 |-------|-------|
-| **Active phase** | **2** — Class A convergence |
-| **Operating loop** | enforcement → confirmed violations → bounded fix → rerun → converge |
-| **Updated** | 2026-04-03 |
+| **Active phase** | **5** — Perimeter Sweep (see `convergence_program_state.json` → `active_phase_label`) |
+| **Operating loop** | runner → enforcement → confirmed violations only → bounded fix → rerun → converge |
+| **Updated** | 2026-04-04 |
 
 **Active objectives (max 3):**
 
 | ID | Title | Track |
 |----|-------|-------|
-| 2A | Trace-or-exempt | A — Law enforcement |
-| 2C | Canonical identity | B — Class A convergence |
-| 2B | Product honesty | B — Class A convergence |
+| 5A | HTTP client frontier — Philosophy **#9** (VE vs organizer bases, no ad-hoc origins) | A |
+| 5B | Intake observability — Philosophy **#10** (sync/mailbox claims vs poll-path writers) | A |
+| 5C | Developmental guidance boundary — Philosophy **#12** (optional council context only) | A |
 
 **Blocked:** *(none)*
 
-**Notes:** runner signal quality: good
+**Notes:** Phase 4 operator boundaries closed and green. Phase 5 Track A: perimeter checkers (#9, #10, #12); bounded Track B fixes only when tied to confirmed violations—no feature-scope creep during Track A. Online wave-gated runs: **`wave_autonomy_protocol.md`** + `.github/workflows/wave-autonomy.yml`.
 
 *Update this mirror when you change `convergence_program_state.json`; do not rely on Markdown formatting for tooling.*
 
@@ -57,6 +57,8 @@ This program coordinates:
 | **3** | Declare partial philosophies as system patterns | Mirror interpretation envelope, data access policy, execution seam—each surface **on the contract** or **explicitly not**. |
 | **4** | Bounded operator | Enable first safe repair handlers, handler library, structured commits + checkpoints—**reversible** mutations only. |
 | **5** | Scale propagation | More checkers/repairs, nightly/trend reports, ledger/issue surfacing for non-repairable confirmed violations. |
+
+**Note:** The machine-readable program state may attach a **phase label** (e.g. **Perimeter Sweep** for static checkers on philosophies **#9 / #10 / #12**) while still counting as Phase **5** in the roadmap—see **`convergence_program_state.json`** (`active_phase`, `active_phase_label`, `notes`).
 
 ---
 
@@ -164,10 +166,10 @@ flowchart TD
 |-------|----------------------------|
 | **0** | **Mostly done** — charter, truth convergence, matrix (md+json), autonomous repair policy exist; minor row updates may follow identity/trace work. |
 | **1** | **Done enough to move forward** — `scripts/philosophy_enforcement/` runner, registry, reports, CI hook path per policy; tighten strict mode + coverage over time. |
-| **2** | **In progress** — trace/honesty/commit/identity each have partial tooling and some fixes; **complete burn-down not finished** (e.g. placement/node-transform canonical defaults, trace gaps per matrix). |
+| **2** | **Ongoing themes** — Class A laws (trace, honesty, identity, commit) still matter; tooling and fixes land incrementally. **Program focus** has advanced—see JSON for the active phase, not this row alone. |
 | **3** | **Partial / documentation-heavy** — envelope, policy, seam: boundaries exist in docs; **unified enforcement** not complete. |
-| **4** | **Early** — policy + registry exist; **first closed-loop unattended repair** not yet the default outcome. |
-| **5** | **Not started** as a sustained loop. |
+| **4** | **Closed enough to proceed** — operator boundaries green; heavier scale (trend reports, broader repair) still optional. |
+| **5** | **In progress (Perimeter Sweep)** — static enforcement on HTTP client frontier (#9), intake observability (#10), developmental guidance consumer allowlist (#12); optional alignment with **`wave_exit_gate.py`** / CI wave workflow. |
 
 ---
 

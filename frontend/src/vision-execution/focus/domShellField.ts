@@ -38,7 +38,13 @@ export function ensureDomFieldId(el: HTMLElement, map: WeakMap<HTMLElement, stri
 
 function parseSurface(raw: string | null | undefined): FocusSurface | undefined {
   if (!raw) return undefined
-  if (raw === 'vision_execution' || raw === 'core_profile' || raw === 'workspace' || raw === 'shell') {
+  if (
+    raw === 'vision_execution' ||
+    raw === 'vision_map' ||
+    raw === 'core_profile' ||
+    raw === 'workspace' ||
+    raw === 'shell'
+  ) {
     return raw
   }
   return undefined

@@ -258,6 +258,26 @@
         ],
         "notes": "Studio auth: get_current_admin_user per route block. Trace alignment (4B): each operator LLM route emits server trace or matches exempt_routes with studio_admin_surface rationale. Mutation depth (4C): no raw .commit in studio/auth admin routes without operator-mutation-exempt. TS registry lists studio_admin_surface."
       }
+    },
+    {
+      "id": 16,
+      "slug": "vitality_value_mint_boundary",
+      "name": "Vitality ≠ economic value; mint evidence boundary",
+      "class": "B",
+      "law": "node_vitality (water/soil/fruit) is execution/UI signal only; Integration Artifact mint, ledger, or tokenomics must not derive payout or eligibility from vitality scores. Mint uses VE entity + judgment evidence only—no parallel user-psyche ontology.",
+      "intended_scope": "Future mint, ledger, tokenomics, attribution; any economic or symbolic gate on vitality.",
+      "enforcement_mechanism": "check_vitality_value_boundary import firewall; FRUIT_MINT_POLICY.md + TRUTH_CONVERGENCE; PR checklist with row 4 for new judgment stores.",
+      "related_docs": [
+        "docs/01_TRUTH/FRUIT_MINT_POLICY.md",
+        "docs/01_TRUTH/TRUTH_CONVERGENCE.md",
+        "local_ai/vision_execution/node_vitality_scores.py",
+        "local_ai/vision_execution/storage.py",
+        "scripts/philosophy_enforcement/checkers/check_vitality_value_boundary.py"
+      ],
+      "automation": {
+        "checker_ids": ["check_vitality_value_boundary"],
+        "notes": "Forbids imports of node_vitality_scores / compute_vitality_scores outside node_vitality_scores.py, storage.py (vitality upsert), tests/test_node_vitality_scores.py. Extend allowlist only via matrix + doc PR—never to wire mint payout to vitality."
+      }
     }
   ]
 }

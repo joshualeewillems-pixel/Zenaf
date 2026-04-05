@@ -135,6 +135,7 @@ chore(philosophy-enforce): auto-repair <checker_id>
 
 - **Local:** `auto_repair.py` may use `--apply` with Git checkpoints.
 - **CI:** Run philosophy enforcement + tests; **upload reports**; **do not** run `--apply` in the default workflow (no self-modifying CI without separate policy).
+- **Wave autonomy (online):** `.github/workflows/wave-autonomy.yml` is the gated runner; see [`wave_autonomy_protocol.md`](wave_autonomy_protocol.md). **`apply_repair` is default `false`** on `workflow_dispatch`. When set `true`, the workflow runs `--apply` **only** on `refs/heads/auto/wave-*` (not on `main`). Scheduled runs never enable `apply_repair`. This is **V1.5**—keep the default PR/push workflow (`.github/workflows/philosophy-enforcement.yml`) without `--apply`.
 
 ---
 
@@ -142,6 +143,9 @@ chore(philosophy-enforce): auto-repair <checker_id>
 
 | File | Role |
 |------|------|
+| [`wave_autonomy_protocol.md`](wave_autonomy_protocol.md) | Online wave gates, concurrency, SMS triggers, promotion rules |
+| `scripts/philosophy_enforcement/wave_registry.json` | Current wave id + exit criteria for `wave_exit_gate.py` |
+| `scripts/philosophy_enforcement/wave_exit_gate.py` | Machine-checkable wave exit (strict enforcement + pytest + optional phase) |
 | `scripts/philosophy_enforcement/repair_registry.json` | Per-checker repair eligibility and caps |
 | `scripts/philosophy_enforcement/auto_repair.py` | Loop orchestration |
 | `scripts/philosophy_enforcement/repairs/` | Handler implementations |

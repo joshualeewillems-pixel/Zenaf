@@ -1,5 +1,7 @@
 """Council preflight: enriched context (no run-level mode gate)."""
 
+import local_ai.council_preflight as council_preflight_mod
+
 from local_ai.council_preflight import (
     CONTEXT_LEGITIMACY_NOTE_MARKER,
     PRIMARY_CONTEXT_MARKER,
@@ -648,3 +650,28 @@ def test_build_enriched_scoped_omits_working_set_and_merged_thread(monkeypatch):
     assert "Should not appear in scoped build" not in s
     assert "SCOPED DIGRESSION (guardrails):" in s
     assert PRIMARY_CONTEXT_MARKER in s
+
+
+def test_format_ve_focus_block_dedupes_identical_brief_and_description():
+    p = CouncilPreflight(
+        ve_focus={"entity_type": "idea", "entity_id": "i1"},
+        ve_focus_title="Heart signup",
+        ve_focus_brief="Create a mailing list signup linked from the Heart page",
+        ve_focus_description="Create a mailing list signup linked from the Heart page",
+    )
+    block = council_preflight_mod._format_ve_focus_block(p)
+    assert block
+    assert block.count("Create a mailing list signup linked from the Heart page") == 1
+
+
+def test_format_ve_focus_block_prefix_description_emits_single_brief_line():
+    p = CouncilPreflight(
+        ve_focus={"entity_type": "project", "entity_id": "p1"},
+        ve_focus_title="Site",
+        ve_focus_brief="Launch",
+        ve_focus_description="Launch with booking",
+    )
+    block = council_preflight_mod._format_ve_focus_block(p)
+    assert block
+    assert "Expanded description:" not in block
+    assert "Launch with booking" in block

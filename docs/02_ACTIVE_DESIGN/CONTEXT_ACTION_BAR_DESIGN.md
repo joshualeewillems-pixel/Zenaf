@@ -1,6 +1,6 @@
 # Context Action Bar (top system bar) — design note
 
-**Status:** Phase 1 + cockpit extensions **implemented** (2026-03); design intent below remains the contract for new fields.  
+**Status:** Phase 1 + cockpit extensions **implemented** (2026-03); **Pass 2 focus invites v1** (Appendix D) documents as-built behavior and known limits. Design intent below remains the contract for new fields.  
 **As-built truth:** `../01_TRUTH/ACTIVE_VS_PLANNED.md`, `../01_TRUTH/SYSTEM_REFERENCE.md` (Part II §2.3, Part IV, Part V §5.7).  
 **Aligns with:** `../MEDIATION_OPERATIONAL_NOTE.md` (mediation quality bar on outputs), `../01_TRUTH/CODEBASE_TRUTH_RULES.md` (VE branch, no second trunk), `./VISION_EXECUTION_DESIGN.md`
 
@@ -181,3 +181,35 @@ type FieldCapabilityRegistry = Record<string, FieldCapabilities>
 - Top bar subscribes and looks up `allowed_actions` from **static registry** + optional `field_kind` defaults.
 
 No new global LLM router required for Phase 1 if each action maps to an existing or single new VE endpoint; keep **one branch**, not a second trunk.
+
+---
+
+## Appendix D — Focus invites (Pass 2 v1, shipped)
+
+**As-built:** `frontend/src/vision-execution/focus/` — `deriveFocusInvites`, `focusInviteRuleTable.ts` (single rule source; Appendix B registry), `FocusInviteChips` inside `ContextActionBarContent`, framing in `focusInviteFraming.ts`.
+
+**Scope (v1):** `idea` and `initiative` only; `rewrite` → structured-fill invite; other registry actions (except `transcribe`) → conversational invites; deterministic sort (conversational before structured_fill, then registry order) then cap.
+
+**Execution (refined):**
+
+- **Conversational invites** — intent triggers only: **do not** write the council composer; **`runCouncil(preface, { preserveComposer: true })`** runs immediately (no Send). Preface is the POST `question` only. Duplicate clicks while the council stream is busy (`connecting` … `finalizing`) are ignored. **`CONVERSATIONAL_INVITE_MARKER`** in that question still selects **Thinking Partner** mandates when **`perspective_definitions`** are sent. Bounded node-transform routing is skipped for invite-shaped questions.
+- **Structured-fill invites** — set composer to the structured template; **replace** the previous structured block via `STRUCTURED_FILL_INVITE_MARKER` (no stacking invite prefaces). User edits and **Send** explicitly. Same invite again replaces idempotently.
+
+No new `council_preflight` keys in v1.
+
+### Known limitation (do not lose track)
+
+When **`force_full_council`** is on, the client does not send **`perspective_definitions`**, so the conversational marker **cannot** force Thinking Partner. Thinking Partner gravity is strongest on the **normal** council path, not universally guaranteed across full-council mode.
+
+### Marker brittleness (future)
+
+Encoding invite intent inside the **question string** is intentional for v1 (backend scope unchanged). A later pass may add an explicit preflight or request field instead of substring detection.
+
+### Manual smoke checklist
+
+- Idea / initiative detail → conversational chip runs council without filling composer; structured chip fills composer, Send required.
+- Map-selected entity shell → same invite rules.
+- Composer has freeform text → conversational run leaves it untouched; structured replaces only the prior structured block (if any).
+- Spam conversational while streaming → ignored; after idle, same chip reruns cleanly.
+- Blur / clear focus → invite chips disappear (no stale UI).
+- **`force_full_council`:** conversational marker **not** to override seat mandates (known limitation).

@@ -1,0 +1,231 @@
+# Wave-gated autonomy: one run at a time, machine-checkable exit gate, Twilio on failure or optional success.
+# Protocol: docs/01_TRUTH/wave_autonomy_protocol.md
+name: wave-autonomy
+
+on:
+  workflow_dispatch:
+    inputs:
+      wave_id:
+        description: "Override wave id (default: wave_registry.json current_wave_id)"
+        required: false
+        default: ""
+      skip_branch_check:
+        description: "If true, ignore branch_ref_pattern (use on main for smoke)"
+        required: false
+        type: boolean
+        default: true
+      run_exit_gate:
+        description: "Run wave_exit_gate (set false for promote-only dispatch)"
+        required: false
+        type: boolean
+        default: true
+      notify_on_success:
+        description: "SMS when gate passes (promotion reminder); off for quiet scheduled runs"
+        required: false
+        type: boolean
+        default: false
+      promote_next_wave:
+        description: "Bump current_wave_id to next waves[] entry (requires contents:write; no next wave = fail)"
+        required: false
+        type: boolean
+        default: false
+      apply_repair:
+        description: "Run auto_repair.py --apply (only on refs/heads/auto/wave-*; default off per AUTONOMOUS_REPAIR_POLICY)"
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    # Weekly sanity on default branch; uses --skip-branch-check. Remove this block to disable cron.
+    - cron: "0 6 * * 1"
+
+concurrency:
+  group: atria-wave-autonomy
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_exit_gate != 'false')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r api/requirements.txt
+          pip install pytest
+
+      - name: Wave exit gate
+        id: wave_gate
+        env:
+          GITHUB_REF: ${{ github.ref }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          ARGS=""
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ARGS="$ARGS --skip-branch-check"
+          elif [ "${{ github.event.inputs.skip_branch_check }}" = "true" ] || [ -z "${{ github.event.inputs.skip_branch_check }}" ]; then
+            ARGS="$ARGS --skip-branch-check"
+          fi
+          WID="${{ github.event.inputs.wave_id }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "$WID" ]; then
+            ARGS="$ARGS --wave-id $WID"
+          fi
+          python scripts/philosophy_enforcement/wave_exit_gate.py $ARGS
+
+      - name: Optional auto-repair (V1.5)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.apply_repair == 'true' &&
+          startsWith(github.ref, 'refs/heads/auto/wave-')
+        run: |
+          python scripts/philosophy_enforcement/auto_repair.py --apply --write-enforcement-report
+
+      - name: Optional auto-repair (skipped — wrong ref or not dispatch)
+        if: >-
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.apply_repair == 'true' &&
+          !startsWith(github.ref, 'refs/heads/auto/wave-')
+        run: |
+          echo "apply_repair requested but GITHUB_REF is not refs/heads/auto/wave-* ; skipping (policy)"
+
+      - name: Upload wave exit report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wave-exit-report
+          path: wave_exit_report.json
+          if-no-files-found: ignore
+
+      - name: Upload philosophy reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: philosophy-enforcement-wave-run
+          path: |
+            reports/philosophy_enforcement/latest.md
+            reports/philosophy_enforcement/latest.json
+          if-no-files-found: ignore
+
+  promote:
+    needs: gate
+    if: >-
+      always() &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.promote_next_wave == 'true' &&
+      (needs.gate.result == 'success' ||
+        (needs.gate.result == 'skipped' && github.event.inputs.run_exit_gate == 'false'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Bump current_wave_id
+        run: python scripts/philosophy_enforcement/wave_promote.py
+
+      - name: Commit and push registry
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add scripts/philosophy_enforcement/wave_registry.json
+          if git diff --staged --quiet; then
+            echo "No registry change (promote may have failed earlier)"
+            exit 1
+          fi
+          git commit -m "chore(wave): promote current_wave_id via wave-autonomy workflow"
+          git push
+
+  notify:
+    needs: gate
+    if: ${{ always() && needs.gate.result == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: wave-exit-report
+          path: _wave_report
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: SMS alert (Twilio)
+        env:
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          NOTIFY_TO_NUMBER: ${{ secrets.NOTIFY_TO_NUMBER }}
+        run: |
+          REPORT="_wave_report/wave_exit_report.json"
+          if [ -f "$REPORT" ]; then
+            BODY=$(python scripts/philosophy_enforcement/wave_sms_body.py \
+              --report "$REPORT" \
+              --variant failure \
+              --repo "${{ github.repository }}" \
+              --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              --git-ref "${{ github.ref }}" \
+              --sha "${{ github.sha }}")
+          else
+            BODY="Atria wave-autonomy FAILED (no wave_exit_report.json). Repo=${{ github.repository }} run=${{ github.run_id }} url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+          python scripts/philosophy_enforcement/notify_twilio_sms.py --body "$BODY"
+
+  notify_success:
+    needs: gate
+    if: >-
+      needs.gate.result == 'success' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.notify_on_success == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: wave-exit-report
+          path: _wave_report
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install requests
+        run: pip install requests
+
+      - name: SMS wave complete (Twilio)
+        env:
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_FROM_NUMBER: ${{ secrets.TWILIO_FROM_NUMBER }}
+          NOTIFY_TO_NUMBER: ${{ secrets.NOTIFY_TO_NUMBER }}
+        run: |
+          BODY=$(python scripts/philosophy_enforcement/wave_sms_body.py \
+            --report "_wave_report/wave_exit_report.json" \
+            --variant success \
+            --repo "${{ github.repository }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --git-ref "${{ github.ref }}" \
+            --sha "${{ github.sha }}")
+          python scripts/philosophy_enforcement/notify_twilio_sms.py --body "$BODY"

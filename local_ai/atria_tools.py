@@ -521,21 +521,26 @@ COUNCIL_INSTRUCTIONS_CLOSE = "[/INSTRUCTIONS]"
 
 # Single-voice path when exactly one active seat is Thinking Partner (no structured council roles).
 # Syntax, silo grounding, and mediation live in ``response_trunk.build_response_control_block`` (Technical Header).
-COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM = """You are a System Interface: one continuous voice.
+COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM = """You are a System Interface: one continuous voice — chief-of-staff to the user, not a kiosk.
 
 Follow this order only: (1) RESPONSE CONTRACT — TECHNICAL HEADER, (2) THIS TURN — MEDIATION CONTROL + CONVERSATION TRUNK, (3) Context packet facts.
 
 When proposing stored text, output parser-safe tags with real content: [DRAFT_VALUE: ...] and [ID: ...]. No code fences.
 
-Grounding stays in PRIMARY and explicit Context lines. For inventory asks, list what exists from Context only.
+Grounding stays in PRIMARY and explicit Context lines. The Vision Execution **working set** (when present) is their **in-product** work: tasks, projects, ideas, agenda, and schedule for **this app** — not an external calendar unless they say otherwise.
+
+For status and discovery asks: **synthesize and group** first; **verbatim long lists** only when they ask to list everything or Context is tiny. Converse naturally — **do not** force a question at the end of every message unless you are genuinely blocked.
+
+When naming a Vision & Execution row, use **one** natural phrase plus a single `[ID: uuid]` tag — **do not** repeat the same title as a numbered list line and again as the link text.
 
 Keep replies concise and operational. If Context is thin, say so briefly."""
 
 # Injected into persona block for Thinking Partner seats (matches product copy).
 COUNCIL_THINKING_PARTNER_INJECT = (
     "You are a concise thinking partner biased toward the user's flourishing, with integrative honesty. "
-    "State/inventory questions (what exists, missing, incomplete, which fields): answer from Context only — list data as given; "
-    "no inferred tasks or recommendations unless they ask what to do / next / how to proceed. "
+    "State/inventory questions (what exists, missing, incomplete, schedule/agenda today, which fields): answer from Context only — "
+    "prefer a **brief synthesized landscape** (grouped themes, a few hooks); **full enumeration** only when they ask to list all "
+    "or the set is small; no inferred tasks or recommendations unless they ask what to do / next / how to proceed. "
     "When Context names real work (features, components, issues, flows, titles), **derive option labels from those items** — "
     "do not mix generic productivity tips with system-specific options; prefer **only** context-derived labels until none exist. "
     "Reflection serves action, not a therapeutic preamble. "
@@ -545,7 +550,7 @@ COUNCIL_THINKING_PARTNER_INJECT = (
 
 COUNCIL_THINKING_PARTNER_BODY_RULES_PRIMARY = """
 **Thinking Partner seat** (standard council template replaced; obey **RESPONSE CONTRACT — TECHNICAL HEADER** + trunk):
-- **Inventory:** What exists / missing / fields → Context only; no recommendations unless they ask next steps.
+- **Inventory / discovery:** What exists / missing / fields / today’s plate → Context only; summarize by category first; no recommendations unless they ask next steps.
 - **Anchor:** 1–2 sentences on Question + named Context (PRIMARY, runtime, folder, topic). No invented facts.
 - **Labels:** Derive option text from Context threads when present; do not mix with generic self-help in the same reply.
 - **PRIMARY + saves:** Trade-offs and drafts only from PRIMARY/Question text; when a save fits, emit ``[DRAFT_VALUE: …]`` — not axis-only talk. Verbatim user/PRIMARY wording for proposed text.
@@ -729,9 +734,21 @@ def _run_council_conversational_partner_body(
         _oc = select_output_contract(_qk)
         _mediation = derive_mediation_profile(question, _qk, _oc)
     else:
+        _q_strip = (question or "").strip()
+        if _q_strip == "__ZENAF_SESSION_OPENER__":
+            question = (
+                "Open the session: briefly orient me from Context (working set, PRIMARY, runtime). "
+                "Offer your read on what matters for this moment and one good next move, "
+                "and end with one short invitational question. "
+                "Stay conversational; synthesize — do not enumerate every row; use ID tags only when naming one specific item."
+            )
         _qk = classify_question_kind(question)
         _oc = select_output_contract(_qk)
         _mediation = derive_mediation_profile(question, _qk, _oc)
+        if isinstance(council_preflight_dict, dict) and council_preflight_dict.get("digression_record_intent"):
+            _qk = "user_providing_precision"
+            _oc = select_output_contract(_qk)
+            _mediation = derive_mediation_profile(question, _qk, _oc)
     _asp_ctx = "ASPIRATION ORIENTATION (user-stated; bounded):" in (packet or "")
     _prev_subj = (
         parse_conversation_subject(conversation_subject_dict)
@@ -823,6 +840,9 @@ def _run_council_conversational_partner_body(
         conversation_entity_type=str(_conv_et).strip() if _conv_et else None,
     )
     _save_state_block = format_integration_save_state_trunk_overlay(_save_state)
+    _scoped_dig = bool(
+        isinstance(council_preflight_dict, dict) and council_preflight_dict.get("is_scoped_digression")
+    )
     _trunk_block = conversational_partner_trunk_instructions(
         question_kind=_qk,
         output_contract=_oc,
@@ -835,12 +855,9 @@ def _run_council_conversational_partner_body(
         conversation_subject=_merged_subj,
         query_scope=_scope,
         integration_save_state_block=_save_state_block,
+        scoped_digression=_scoped_dig,
     )
     _trunk_block += format_integration_trunk_mandate(integration_event_dict)
-
-    _scoped_dig = bool(
-        isinstance(council_preflight_dict, dict) and council_preflight_dict.get("is_scoped_digression")
-    )
     _response_control = build_response_control_block(
         scoped_digression=_scoped_dig,
         question_kind=_qk,

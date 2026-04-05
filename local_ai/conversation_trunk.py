@@ -139,6 +139,7 @@ class QueryScopeResolution(TypedDict):
 # Visible in trunk block; system prompt references this heading for override behavior.
 MEDIATION_CONTROL_HEADING = "**THIS TURN — MEDIATION CONTROL:**"
 RETRIEVAL_SCOPE_HEADING = "**THIS TURN — RETRIEVAL SCOPE (mandatory; before mediation):**"
+SCOPED_DIGRESSION_DEPTH_HEADING = "**THIS TURN — SCOPED DIGRESSION (mandatory):**"
 GLOBAL_EXTERNAL_VOICE_HEADING = "**THIS TURN — USER-FACING VOICE (mandatory; all modes):**"
 MODE_LOCK_HEADING = "**THIS TURN — MODE LOCK (mandatory):**"
 PROGRESS_BIAS_HEADING = "**THIS TURN — PROGRESS OVER EXPLORATION (mandatory):**"
@@ -376,6 +377,41 @@ def _full_system_inventory_signals(lower: str, question_raw: str) -> bool:
     if "what needs work" in lower and not _question_has_named_in_scope_phrase(question_raw):
         return True
     return False
+
+
+def _agenda_schedule_working_set_signals(lower: str, question_raw: str) -> bool:
+    """
+    User is asking about their day / agenda / schedule in the sense of **in-app work**, not external calendar.
+    Maps to state_inventory without requiring full_system_inventory phrasing (avoids forcing full_inventory scope).
+    """
+    if _question_has_named_in_scope_phrase(question_raw):
+        return False
+    phrases = (
+        "what's on the schedule",
+        "whats on the schedule",
+        "what is on the schedule",
+        "on the schedule today",
+        "on my schedule",
+        "on our schedule",
+        "schedule today",
+        "schedule for today",
+        "today's schedule",
+        "todays schedule",
+        "my schedule today",
+        "our schedule today",
+        "what's on my agenda",
+        "whats on my agenda",
+        "what's on the agenda",
+        "whats on the agenda",
+        "what's on our agenda",
+        "whats on our agenda",
+        "on the agenda today",
+        "what's lined up",
+        "whats lined up",
+        "what do i have today",
+        "what do we have today",
+    )
+    return any(p in lower for p in phrases)
 
 
 def _explicit_deictic_work_scope(lower: str) -> bool:
@@ -933,6 +969,9 @@ def _classify_question_kind_impl(question: str) -> QuestionKind:
     if _full_system_inventory_signals(q, q_raw):
         return "state_inventory"
 
+    if _agenda_schedule_working_set_signals(q, q_raw):
+        return "state_inventory"
+
     if _conversation_continuity_signals(q):
         return "conversation_continuity"
 
@@ -1448,9 +1487,13 @@ def _query_scope_instruction_block(scope: QueryScopeResolution | None) -> str:
     )
     if rm == "full_inventory":
         body += (
+            "- **Semantic bridge:** The Vision Execution **working set** in Context is the user’s **in-product** work "
+            "queue — tasks, projects, ideas, and initiatives. Treat **schedule**, **agenda**, **today**, and **what’s on "
+            "the plate** as referring to this block unless they explicitly mean an external calendar (none is supplied).\n"
             "- **Primary job:** Treat this as a **system-state listing** turn. Use **only** items, rows, gaps, and "
             "status language already present in Context (Vision Execution working set, scoped block if present, "
-            "PRIMARY, developmental lens). **MUST** enumerate or summarize what exists — **do not** invent net-new "
+            "PRIMARY, developmental lens). **MUST** ground in what exists — prefer a **compressed summary** by category "
+            "unless the user asked to **list everything** or enumerate verbatim; **do not** invent net-new "
             "ideas, brainstorm, frame abstract trade-offs, or expand into “here are three directions.”\n"
             "- If the working set is empty or thin, say so plainly; **do not** fabricate work items.\n"
         )
@@ -1469,10 +1512,23 @@ def _query_scope_instruction_block(scope: QueryScopeResolution | None) -> str:
         )
     else:
         body += (
+            "- **Semantic bridge:** When Context includes a Vision Execution **working set** snapshot, that is the user’s "
+            "**in-product** backlog — **tasks, projects, agenda, and schedule** in this app. It is **not** an external "
+            "calendar; use it to answer “what’s on today / the schedule / the plate” unless the question clearly excludes it.\n"
             "- **Primary job:** Use Context as assembled (runtime + PRIMARY + working set). "
             "Do not invent structure or items absent from Context.\n"
         )
     return body
+
+
+def _scoped_digression_depth_block() -> str:
+    """User chose a focused entity (chip); unlock granular, PRIMARY-grounded replies."""
+    return (
+        f"\n\n{SCOPED_DIGRESSION_DEPTH_HEADING}\n"
+        "- The user **narrowed** this thread to a specific entity (scoped digression). Treat that as **high investment**.\n"
+        "- Give **granular**, PRIMARY-grounded detail, field edits, and next steps for **that** entity; **do not** re-summarize "
+        "the whole working set unless the question requires it.\n"
+    )
 
 
 def _continuity_executor(subject: ConversationSubject | None) -> str:
@@ -1503,13 +1559,14 @@ def _continuity_executor(subject: ConversationSubject | None) -> str:
     elif subject and subject.get("confidence") in ("high", "medium") and subject.get("entity_id"):
         dn = subject.get("entity_display_name") or "the focused entity"
         base += (
-            f"- **Thread anchor (medium):** Entity **{dn}** — briefly recap what Context + subject imply, then **one** "
-            "**tight** discriminating question if a key piece is missing — **not** open-ended facilitation.\n"
+            f"- **Thread anchor (medium):** Entity **{dn}** — briefly recap what Context + subject imply. "
+            "**If** a single missing piece blocks progress, end with **one** tight question; **otherwise** a short forward "
+            "hook or statement is enough — **not** open-ended facilitation.\n"
         )
     else:
         base += (
-            "- **No strong subject snapshot.** Say the prior thread is not in view; use PRIMARY / Context to re-anchor with "
-            "**one** focused question.\n"
+            "- **No strong subject snapshot.** Say the prior thread is not in view; re-anchor from PRIMARY / Context. "
+            "**Only** end with a question if you are **genuinely blocked**; otherwise offer a concise next move or hook.\n"
         )
     return base
 
@@ -1787,21 +1844,26 @@ def _executor_bullets_for_mediation(
             "dependencies before writing. **Externally** deliver a **compressed** summary — prefer **prose** or **very short** "
             "grouped lines; **avoid bullet spam** and **do not** repeat the same gap as separate bullets for each entity "
             "(e.g. bad: five lines each “missing outcome”; good: one line that the same gap spans those items).\n"
+            "- **Progressive disclosure:** For broad discovery (what exists, what’s on today, what can we work on), give "
+            "**2–3 thematic buckets** first and at most **three** concrete item names with `[ID: …]` unless the user asked to "
+            "**list everything** or **enumerate all** — then you may go long. Offer a **hook** (where to go deeper) instead "
+            "of a raw dump.\n"
             "- **MUST** ground in Context only (PRIMARY, Vision Execution working set, DEVELOPMENTAL GUIDANCE / WORK GUIDANCE "
             "LENS if present).\n"
             "- If the working set header says **scoped** (single named subject), inventory **only** that subject and "
             "the linked lines in that block — **do not** broaden to unrelated ideas or tasks from elsewhere in the app.\n"
             "- **MUST NOT** invent new tasks, assign work to people not named in Context, suggest coordination steps, "
             "or give “I recommend…” / roadmap / action menus.\n"
-            "- **Progress:** surface gaps **only** — **do not** spin inventory into exploration, coaching, or new interview "
-            "questions.\n"
+            "- **Progress:** surface gaps **only** — **do not** spin inventory into exploration, coaching, or stacked "
+            "interview questions.\n"
         )
         if mediation_move == "sequence_precision_layers":
             base += (
                 "- **Mediation (sequence_precision_layers):** **Internally** organize factual gaps into **non-overlapping "
                 "layers** (e.g. outcome definition / experience or scope / execution or handoff) using **only** Context. "
-                "**Externally** state the picture in **compressed** form; end with **one discriminating question** "
-                "(e.g. which layer to nail down first). **No** option list or peer “ways forward.”\n"
+                "**Externally** state the picture in **compressed** form. **End with a question only** if one missing layer "
+                "clearly blocks progress; **otherwise** close with a short hook or statement — **no** option list or peer "
+                "“ways forward.”\n"
             )
         elif mediation_move == "compress_redundant_work":
             base += (
@@ -1810,8 +1872,8 @@ def _executor_bullets_for_mediation(
                 "they share the same gap. **No** multi-option action menu.\n"
             )
         base += (
-            "- **Optional closing (tight):** at most **one** short line offering to decide next — **no** “would you like”, "
-            "**no** “consider”, **no** coaching.\n"
+            "- **Closing:** You may end on a **statement** or **optional hook**; **do not** force a clarifying question "
+            "every turn. **No** “would you like”, **no** “consider”, **no** coaching tone.\n"
             "- **Do not** use a multi-option action menu this turn."
         )
         return base + _inv_hard
@@ -1909,6 +1971,7 @@ def conversational_partner_trunk_instructions(
     conversation_subject: ConversationSubject | None = None,
     query_scope: QueryScopeResolution | None = None,
     integration_save_state_block: str = "",
+    scoped_digression: bool = False,
 ) -> str:
     """
     Mandatory block for single-seat Zenaf: mediation control + trunk metadata + executor-only rules.
@@ -1920,6 +1983,7 @@ def conversational_partner_trunk_instructions(
     control = _mediation_control_block(mediation_profile)
     subj_block = _conversation_subject_block(conversation_subject)
     scope_block = _query_scope_instruction_block(query_scope)
+    scoped_block = _scoped_digression_depth_block() if scoped_digression else ""
     trunk_header = (
         f"\n\n**THIS TURN — CONVERSATION TRUNK (mandatory):** "
         f"question_kind={question_kind!r}, output_contract={output_contract!r}.\n"
@@ -1959,6 +2023,7 @@ def conversational_partner_trunk_instructions(
         control
         + subj_block
         + scope_block
+        + scoped_block
         + trunk_header
         + _progress_over_exploration_block()
         + (integration_save_state_block or "")

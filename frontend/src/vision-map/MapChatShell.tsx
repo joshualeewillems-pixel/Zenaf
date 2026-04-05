@@ -165,6 +165,8 @@ export function MapChatShell({
   const lastTriadPrefillRef = useRef<string | null>(null)
   const councilInteractRef = useRef(onVisionMapCouncilInteraction)
   councilInteractRef.current = onVisionMapCouncilInteraction
+  const devSnapshotRef = useRef(developmentalSnapshotForPrompt)
+  devSnapshotRef.current = developmentalSnapshotForPrompt
 
   useEffect(() => {
     lastSeededSelectionIdRef.current = null
@@ -258,9 +260,9 @@ export function MapChatShell({
       payload: selected,
       guideTexts: [guide, ...extras],
       resetThread: true,
-      developmentalSnapshotForPrompt,
+      developmentalSnapshotForPrompt: devSnapshotRef.current,
     })
-  }, [selected, growthTriad, entityBundle, developmentalSnapshotForPrompt])
+  }, [selected, growthTriad, entityBundle])
 
   const runGuidanceAction = (action: NonNullable<typeof guidanceScript>['suggested_actions'][number]) => {
     if (!selected || !guidanceScript) return

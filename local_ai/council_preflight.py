@@ -300,6 +300,8 @@ class CouncilPreflight:
     scoped_digression: bool = False
     # Client-formatted last messages from parent thread (shown only in Background block).
     digression_background_block: str | None = None
+    # Scoped UI: user clicked "Record changes" — bias trunk toward capture / pending_integration.
+    digression_record_intent: bool = False
 
 
 def parse_preflight_from_request(
@@ -342,6 +344,9 @@ def parse_preflight_from_request(
         sd2 = raw.get("is_scoped_digression")
         if sd2 is True or str(sd2).lower() in ("1", "true", "yes"):
             out.scoped_digression = True
+        dri = raw.get("digression_record_intent")
+        if dri is True or str(dri).lower() in ("1", "true", "yes"):
+            out.digression_record_intent = True
     # Legacy: folder at top level
     if not out.folder_path and context.get("folder_path"):
         out.folder_path = _s(context.get("folder_path"))
@@ -363,6 +368,71 @@ def _s(v: Any) -> str | None:
         return None
     t = str(v).strip()
     return t or None
+
+
+def _ve_ws_collapse(text: str | None) -> str:
+    return " ".join(str(text or "").split()).strip()
+
+
+def _ve_same_text(a: str | None, b: str | None) -> bool:
+    return bool(_ve_ws_collapse(a)) and _ve_ws_collapse(a) == _ve_ws_collapse(b)
+
+
+def _ve_description_bullets_for_focus(
+    title: str | None,
+    brief: str | None,
+    expanded: str | None,
+) -> list[str]:
+    """
+    One or two bullets for brief/expanded without repeating the same text twice
+    or duplicating the title line (avoids model 'stutter' in replies).
+    """
+    tit = _ve_ws_collapse(title)
+    br = _s(brief)
+    ex = _s(expanded)
+    if not br and not ex:
+        return ["- Brief / description: —", "- Expanded description: —"]
+
+    def trunc_b(s: str) -> str:
+        return (s[:2000] + "…") if len(s) > 2000 else s
+
+    def trunc_e(s: str) -> str:
+        return (s[:4000] + "…") if len(s) > 4000 else s
+
+    lines: list[str] = []
+    if br and ex:
+        if _ve_same_text(br, ex):
+            one = trunc_b(br) if len(br) <= 2000 else trunc_e(br)
+            lines.append(f"- Brief / description: {one}")
+        else:
+            b_n, e_n = _ve_ws_collapse(br), _ve_ws_collapse(ex)
+            if b_n and e_n.startswith(b_n):
+                lines.append(f"- Brief / description: {trunc_e(ex)}")
+            elif e_n and b_n.startswith(e_n):
+                lines.append(f"- Brief / description: {trunc_b(br)}")
+            else:
+                lines.append(f"- Brief / description: {trunc_b(br)}")
+                lines.append(f"- Expanded description: {trunc_e(ex)}")
+    elif br:
+        lines.append(f"- Brief / description: {trunc_b(br)}")
+    else:
+        lines.append(f"- Brief / description: {trunc_e(ex)}")
+
+    # Drop bullets whose body duplicates title (title already shown above).
+    out: list[str] = []
+    for line in lines:
+        if line.startswith("- Brief / description: "):
+            body = line[len("- Brief / description: ") :].strip()
+        elif line.startswith("- Expanded description: "):
+            body = line[len("- Expanded description: ") :].strip()
+        else:
+            out.append(line)
+            continue
+        body_n = _ve_ws_collapse(body)
+        if tit and body_n and (tit == body_n or body in ("—",)):
+            continue
+        out.append(line)
+    return out if out else ["- Brief / description: —", "- Expanded description: —"]
 
 
 def _format_ve_focus_block(preflight: CouncilPreflight) -> str | None:
@@ -396,10 +466,6 @@ def _format_ve_focus_block(preflight: CouncilPreflight) -> str | None:
     title = _s(preflight.ve_focus_title)
     brief = _s(preflight.ve_focus_brief)
     expanded = _s(preflight.ve_focus_description)
-    brief_display = (brief[:2000] + "…") if brief and len(brief) > 2000 else (brief or "—")
-    expanded_display = (
-        (expanded[:4000] + "…") if expanded and len(expanded) > 4000 else (expanded or "—")
-    )
     status = _s(preflight.ve_focus_status) or "—"
     owner = _s(preflight.ve_focus_owner)
 
@@ -434,8 +500,7 @@ def _format_ve_focus_block(preflight: CouncilPreflight) -> str | None:
         f"- Title: {title_display}",
         f"- Initiative: {initiative_display}",
         f"- Status: {status}",
-        f"- Brief / description: {brief_display}",
-        f"- Expanded description: {expanded_display}",
+        *_ve_description_bullets_for_focus(title, brief, expanded),
     ]
     if owner:
         main_bullets.append(f"- Owner: {owner}")

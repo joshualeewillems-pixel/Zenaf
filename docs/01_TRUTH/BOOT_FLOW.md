@@ -1,5 +1,9 @@
 # Atria Boot Flow
 
+<!--
+Last updated: 2026-04-04 — mirror_sync / perspectives aligned with poll path + TRUTH_CONVERGENCE.
+-->
+
 What happens on startup and during normal operation. Based on the current codebase.
 
 ---
@@ -47,7 +51,7 @@ What happens on startup and during normal operation. Based on the current codeba
   - Only Tier A fields are present in the in-memory queue; Tier B (`sanitized_body_text`) is in the DB but not in the in-memory item dicts when loaded (see `_dict_from_item_row(..., include_tier_b=False)` in `mirror.py`).
 
 - **Not loaded at startup:**  
-  - `mirror_sync` (poll cursors / last poll time) — used only when/if poll code calls `set_sync_state` / `get_sync_state` (currently not called after poll).  
+  - `mirror_sync` (poll cursors / last poll time) — **written** on successful poll (`set_sync_state` after readonly IMAP `SELECT`); rows are **not** bulk-loaded into RAM at boot (read on demand if needed).  
   - `mailbox_action` — audit log; read when needed, not loaded into memory at boot.
 
 ---
@@ -56,7 +60,7 @@ What happens on startup and during normal operation. Based on the current codeba
 
 - **Queue working set:** The list and dict in `queue_store` (`_order`, `_items`) are the runtime source for GET queue and PATCH item. They are rebuilt from the mirror on startup and updated on add/update; they are not read again from disk on each request.
 - **Judgment store:** The in-memory dicts in `local_ai.judgment` are the runtime source for “get judgment for entity” and supersession chains. Persistence is write-through from queue_store and mirror (see below).
-- **Perspectives / council:** Frontend stores perspective agents in `localStorage` (`atria-perspective-agents`). No server-side persistence for council or perspectives.
+- **Perspectives / council:** Signed-in users hydrate seat definitions from **`GET /vision-execution/council-workspace/perspectives`** (`user_council_workspace`); `localStorage` is cache + anonymous fallback. Council **packets** and Zenaf contracts are assembled server-side (`council_preflight`, `response_trunk`, `integration_commit`); see **`TRUTH_CONVERGENCE.md`** and **`CODEBASE_TRUTH_RULES.md`** §9.
 - **File Steward:** No persistent store; each call is stateless (folder path → result).
 
 ---
@@ -122,7 +126,7 @@ So: **in-memory queue and judgment store are the source of truth at runtime;** t
 |-----------|--------------------------|----------------------------|-------|
 | Intake queue (list, item fields) | `queue_store._items`, `_order` | `intake_mirror.db` → `mirror_item` | Rebuilt from mirror on startup; write-through on add/update. |
 | Intake judgments | `local_ai.judgment` in-memory store | `intake_mirror.db` → `mirror_judgment` | Rebuilt from mirror on startup; write-through when item is added/updated. |
-| Intake sync state | N/A (not used at runtime) | `mirror_sync` table | set_sync_state not called after poll. |
+| Intake sync state | N/A (not a hot in-memory cache) | `mirror_sync` table | Updated after successful poll (`set_sync_state`); `mailbox_action` still unwired until mailbox mutations exist. |
 | Mailbox actions | N/A | `mailbox_action` table | Audit only; no in-memory cache. |
 | Vision Execution (ideas, initiatives, etc.) | N/A (stateless read/write) | `data/vision_execution/vision_execution.db` | Each API call reads/writes via storage layer. Includes **user_llm_profile**, **user_llm_provider_credentials** (encrypted), **user_notification_settings**, **`user_council_workspace`** (perspective agent JSON when signed in). |
 | Council / perspectives (seat definitions) | React state hydrated from API or `localStorage` | `user_council_workspace.perspectives_json` per user | Signed-in: **`GET`/`PUT /vision-execution/council-workspace/perspectives`**. Anonymous: `localStorage` only. Each `/run` still assembles council **packet + Zenaf contract** server-side (`response_trunk`, `integration_commit`); see **`docs/01_TRUTH/CODEBASE_TRUTH_RULES.md`** §9. |

@@ -299,7 +299,6 @@ def test_upsert_aspiration_profile_roundtrip(tmp_path, monkeypatch: pytest.Monke
     from local_ai.vision_execution import storage as St
 
     monkeypatch.setattr(St, "_DB_PATH", tmp_path / "ve.db")
-    monkeypatch.setattr(St, "_conn", None)
     uid = M.new_id()
     conn = St.get_connection()
     now = St._now()

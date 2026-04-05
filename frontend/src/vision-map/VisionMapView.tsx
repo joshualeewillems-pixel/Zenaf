@@ -72,6 +72,8 @@ import {
 import { applyLocalRepulsion, expandRelativePositions } from './nestLayout'
 import { effectiveGrowthTriad } from './effectiveGrowthTriad'
 import { detectMissingDimensions } from './guidanceScripts'
+import { useVisionExecutionFocusOptional } from '../vision-execution/focus/VisionExecutionFocusContext'
+import { mapPayloadToConversationFocusDescriptor } from './mapFocusDescriptor'
 
 const nodeTypes = { entityMap: EntityMapNode, nestGroup: NestGroupNode }
 const edgeTypes = { mapFlow: MapFlowEdge }
@@ -271,6 +273,8 @@ export type VisionMapViewProps = {
    * @default 'default'
    */
   layoutPersistenceContext?: string
+  /** Sync map node selection to App `veSelection` + global focus (Pass 1). */
+  onMapEntitySelectionChange?: (payload: MapNodePayload | null) => void
 }
 
 function VisionMapFlow({
@@ -279,6 +283,7 @@ function VisionMapFlow({
   onVisionMapCouncilInteraction,
   onDevelopmentalSignalsChange,
   onCouncilEntityBundleSnapshot,
+  onMapEntitySelectionChange,
   layoutPersistenceContext = 'default',
 }: VisionMapViewProps) {
   const sandRef = useRef<ZenSandCanvasHandle>(null)
@@ -317,6 +322,36 @@ function VisionMapFlow({
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [zoomLevel, setZoomLevel] = useState(1)
   const [guidancePulseNodeId, setGuidancePulseNodeId] = useState<string | null>(null)
+
+  const mapFocusCtx = useVisionExecutionFocusOptional()
+  const mapFocusCtxRef = useRef(mapFocusCtx)
+  mapFocusCtxRef.current = mapFocusCtx
+
+  const onMapEntitySelectionChangeRef = useRef(onMapEntitySelectionChange)
+  onMapEntitySelectionChangeRef.current = onMapEntitySelectionChange
+
+  /** Avoid re-notifying focus when parent re-renders with the same map selection (prevents focus bar / invite flicker). */
+  const lastConversationFocusKeyRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    onMapEntitySelectionChangeRef.current?.(selectedPayload)
+    if (selectedPayload) {
+      const desc = mapPayloadToConversationFocusDescriptor(selectedPayload)
+      if (desc) {
+        const k = `${desc.surface}\0${desc.entity_type}\0${desc.entity_id}\0${desc.field_key}\0${desc.field_label}`
+        if (lastConversationFocusKeyRef.current !== k) {
+          lastConversationFocusKeyRef.current = k
+          mapFocusCtxRef.current?.notifyConversationEntityFocus(desc)
+        }
+      } else {
+        lastConversationFocusKeyRef.current = null
+        mapFocusCtxRef.current?.clearConversationEntityShell()
+      }
+    } else {
+      lastConversationFocusKeyRef.current = null
+      mapFocusCtxRef.current?.clearConversationEntityShell()
+    }
+  }, [selectedPayload])
 
   const onViewportChange = useCallback(({ zoom }: { zoom: number }) => {
     setZoomLevel(zoom)
@@ -430,6 +465,7 @@ function VisionMapFlow({
     if (!g?.collapsed) return
     const rootNode = baseGraph.nodes.find((n) => n.id === g.rootNodeId)
     if (!rootNode) return
+    if (selectedNodeId === g.rootNodeId) return
     setSelectedNodeId(g.rootNodeId)
     setSelectedPayload(rootNode.data)
   }, [selectedNodeId, nestState, baseGraph])
@@ -671,8 +707,13 @@ function VisionMapFlow({
 
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      setNodes((nds) => applyNodeChanges(changes, nds) as Node<MapNodePayload | NestGroupNodeData>[])
-      const moveChanges = changes.filter(
+      // Selection is owned by `selectedNodeId` + `applyFocusToVisionMap`. Applying RF `select` changes
+      // fights that and causes rapid A↔B bouncing between clicks.
+      const structural = changes.filter((c) => c.type !== 'select')
+      if (structural.length > 0) {
+        setNodes((nds) => applyNodeChanges(structural, nds) as Node<MapNodePayload | NestGroupNodeData>[])
+      }
+      const moveChanges = structural.filter(
         (c) => c.type === 'position' && !!(c as { position?: XYPosition }).position && !(c as { dragging?: boolean }).dragging,
       ) as Array<{ id: string; position: XYPosition }>
       if (moveChanges.length === 0) return
@@ -767,11 +808,12 @@ function VisionMapFlow({
   })()
 
   const selectedNest = selectedNodeId ? getNestGroupForRoot(selectedNodeId, nestState) : null
-  const selectedNestTriad = (() => {
+  /** Must be memoized — a fresh object every render was invalidating `developmentalSnapshotForPrompt` and re-firing parent/shell effects. */
+  const selectedNestTriad = useMemo(() => {
     if (!selectedNest || !baseGraph) return null
     const members = baseGraph.nodes.filter((n) => selectedNest.memberNodeIds.includes(n.id))
     return computeNestGrowthTriad(selectedNest, members, entityBundle)
-  })()
+  }, [selectedNest, baseGraph, entityBundle])
 
   const developmentalSnapshotForPrompt = useMemo((): MapTriadDevelopmentalSnapshot | null => {
     if (!selectedNodeId || !selectedPayload) return null
@@ -788,9 +830,14 @@ function VisionMapFlow({
     }
   }, [selectedNodeId, selectedPayload, entityBundle, selectedNestTriad])
 
+  const lastDevSnapshotJsonRef = useRef<string | null>(null)
   useEffect(() => {
     const cb = onDevelopmentalSignalsChange
     if (!cb) return
+    const json =
+      developmentalSnapshotForPrompt == null ? '\0null' : JSON.stringify(developmentalSnapshotForPrompt)
+    if (lastDevSnapshotJsonRef.current === json) return
+    lastDevSnapshotJsonRef.current = json
     cb(developmentalSnapshotForPrompt)
   }, [onDevelopmentalSignalsChange, developmentalSnapshotForPrompt])
 

@@ -2,7 +2,7 @@
 
 <!--
 Status: Living document
-Last updated: 2026-04-03
+Last updated: 2026-04-04
 -->
 
 Companion to **`ATRIA_SYSTEM_CHARTER.md`**. This ledger records **audit status** and **known gaps** without redesigning features. For **per-philosophy scope, partial integration, and enforcement hooks**, see **`GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md`**.
@@ -16,6 +16,22 @@ Companion to **`ATRIA_SYSTEM_CHARTER.md`**. This ledger records **audit status**
 | **Coordination plumbing (activity → judgment → read API)** | Coherent for the acknowledged suggestion path | `log_coordination_client_checkpoint` → `append_execution_flow_reading` → `GET /vision-execution/coordination/execution-flow-readings`; pointer `activity_event` + `atria-client-trace`; tests in `tests/test_coordination_signals.py` |
 | **Client-checkpoint positive branch** | Coherent for `ai_suggestion_applied` + `user_outcome=applied` | `local_ai/vision_execution/storage.py`: non-neutral `execution_flow_reading` only in that narrow case; council writer unchanged (neutral) |
 | **Trace discipline (server meeting debug + core profile LLM routes)** | Substantially hardened for instrumented routes | `api/routes/vision_execution.py` + `local_ai/ai_action_trace/server_emit.py` (`trace_meeting_debug_extract_route`, `trace_core_profile_llm_route`); debug `subject_id` de-collision |
+
+---
+
+## Closed at lab level (interpretation / synthetic only)
+
+**Not** charter “all clear” for product mint or real-user claims — only that the **lab slice** is stable and separated from entity truth.
+
+| Topic | Status | Evidence / notes |
+|-------|--------|------------------|
+| **Arc detector v0.1 (`friction_to_done`)** | **Lab-stable** | Heuristic + `collect_flow_readings_from_judgment_rows`, table `arc_detection_candidates`, CLI `python -m local_ai.vision_execution.detect_arcs`. **Synthetic lane:** `arc_lab_synthetic@local.atria`, `ARC-LAB:*` titles, `scripts/seed_arc_lab_fixtures.py`, `scripts/eval_arc_detector_lab.py` (regression on expected skips/match). **Spec:** [`docs/02_ACTIVE_DESIGN/ARC_DETECTION_FIXTURE_SPEC.md`](../02_ACTIVE_DESIGN/ARC_DETECTION_FIXTURE_SPEC.md). **Carry-forward:** Arc lab proves the **interpretation layer** (detector, storage, seeded eval, E2E path). Further work here is **productization** (real-lane calibration, mint UX, policy graduation) — not another round of lab-only refinement unless definitions change. |
+
+---
+
+## Next charter audit priority (highest-order gaps)
+
+When leaving the arc lab: prefer **repo-wide trace truth** closure — align `AI_ACTION_SUBSTRATE_COVERAGE_MATRIX.md` with Charter §4 (**full client trace or named exempt**) for remaining **No** rows (Content `/run`, meeting extract, evaluate outcomes, etc.); see **First-pass violation audit §A** below. **In parallel** (not lab polish): **identity / perspective fallback** consistency across VE + Foundation (`ACTIVE_VS_PLANNED.md`, `SINGULAR_CORE_PROFILE_CONVERGENCE_AUDIT.md`), **deterministic commit/save** beyond the integration-commit slice (§B), and **scoped-context leakage** (full `council_preflight` thread vs PRIMARY audit — ledger **Not yet audited**).
 
 ---
 

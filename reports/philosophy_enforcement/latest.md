@@ -1,6 +1,6 @@
 # Philosophy enforcement report
 
-- Generated: `2026-04-04T17:54:58.895903+00:00`
+- Generated: `2026-04-05T05:42:41.508624+00:00`
 - Repo: `C:\Users\philc\OneDrive\Desktop\Atria`
 
 ## Program state (from JSON only)
@@ -37,6 +37,7 @@
 | Shared artifacts / Radar / node substrate (roadmap) (13) | `not-yet-automated` | — | Add `automation.checker_ids` for `shared_artifacts_roadmap` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
 | Soil filesystem substrate (14) | `not-yet-automated` | — | Add `automation.checker_ids` for `soil_filesystem_substrate` in global_philosophy_integration_matrix.json and implement a checker under scripts/philosophy_enforcement/checkers/. |
 | Operator / Studio surfaces (15) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |
+| Vitality ≠ economic value; mint evidence boundary (16) | `pass` | — | No automated issues; keep matrix JSON, configs, and ve_integration_schema in sync when changing labels or routes. |
 
 ## Legend
 

@@ -258,6 +258,7 @@ import {
   VeFocusRegion,
   useVisionExecutionFocusOptional,
   useVisionExecutionGraphDataOptional,
+  focusDescriptorFromVeSelection,
   ATRIA_VE_FOCUS_APPLY_REWRITE,
   type VeFocusApplyRewriteDetail,
   ATRIA_VE_FOCUS_INSERT_TEXT,
@@ -865,6 +866,25 @@ export type VEWorkspaceTabId =
   | 'executive'
 
 type TabId = VEWorkspaceTabId
+
+/** Derive App-level `VESelection` from open detail state (Pass 1 focus sync). */
+function deriveVeSelectionFromDetailState(
+  tab: TabId,
+  detailIdeaId: string | null,
+  detailInitiativeId: string | null,
+  detailProjectId: string | null,
+  detailTaskId: string | null,
+  detailAssetId: string | null,
+): VESelection | null {
+  if (detailIdeaId) return { tab: 'ideas', ideaId: detailIdeaId }
+  if (detailAssetId) return { tab: 'assets', assetId: detailAssetId }
+  if (tab === 'execution') {
+    if (detailTaskId) return { tab: 'tasks', taskId: detailTaskId, projectId: detailProjectId ?? undefined }
+    if (detailProjectId) return { tab: 'projects', projectId: detailProjectId }
+    if (detailInitiativeId) return { tab: 'initiatives', initiativeId: detailInitiativeId }
+  }
+  return null
+}
 
 const PERSPECTIVE_AGENTS_STORAGE_KEY = 'atria-perspective-agents'
 
@@ -4168,8 +4188,19 @@ function ProjectDetailPanel({
                     pushAiActionTrace(withTraceOutcome(t, 'dismissed'))
                     lastSuggestedWorkTraceRef.current = null
                   }
+                  void apiPost<{ activity_event_id: string }>('/coordination/client-checkpoint', {
+                    checkpoint: 'ai_suggestion_applied',
+                    entity_type: 'project',
+                    entity_id: projectId,
+                    user_outcome: 'dismissed',
+                    ...(t
+                      ? { trace_id: t.trace_id, action_intent: t.action_intent ?? undefined }
+                      : {}),
+                  }).catch(() => {})
                   setSuggestedWorkPanelOutcome('dismissed')
-                  setSuggestedWorkOutcomeNote('Recorded in your action log: you dismissed this batch.')
+                  setSuggestedWorkOutcomeNote(
+                    'Recorded: friction checkpoint on this project (dismissed batch).',
+                  )
                   clearProjectSuggestions(projectId)
                   setSuggestedWork({ items: [], checkedIds: [] })
                 }}
@@ -5218,6 +5249,7 @@ export function VisionExecutionView({
   councilVeEntityBundleRef,
   focusTabRequest,
   onFocusTabRequestConsumed,
+  onVeSelectionChange,
   recognitionUserId,
 }: {
   initialSelection?: VESelection | null
@@ -5227,6 +5259,8 @@ export function VisionExecutionView({
   /** When set, switches top tab once (e.g. from vision map triad). Not persisted. */
   focusTabRequest?: VEWorkspaceTabId | null
   onFocusTabRequestConsumed?: () => void
+  /** Keeps App `veSelection` aligned with open detail / list context (Pass 1). */
+  onVeSelectionChange?: (sel: VESelection | null) => void
   /** Optional account user id for recognition `decisions.user_id`. */
   recognitionUserId?: string | null
 } = {}) {
@@ -6022,6 +6056,106 @@ export function VisionExecutionView({
       null
     )
   }, [initialSelection])
+
+  const bundleForFocus = useMemo(
+    (): VisionMapEntityBundle => ({ ideas, initiatives, projects, tasks }),
+    [ideas, initiatives, projects, tasks],
+  )
+  const veFocusOpt = useVisionExecutionFocusOptional()
+  const veFocusOptRef = useRef(veFocusOpt)
+  veFocusOptRef.current = veFocusOpt
+
+  /** True until detail state has caught up after `initialSelection` was set (avoids clearing App `veSelection` on first paint). */
+  const veSelectionHydrationPendingRef = useRef(false)
+  useEffect(() => {
+    veSelectionHydrationPendingRef.current = !!initialSelection
+  }, [initialSelection])
+
+  // Push App `veSelection` only when detail/tab/initialSelection change — not when `ideas`/bundle refresh.
+  useEffect(() => {
+    const sel = deriveVeSelectionFromDetailState(
+      tab,
+      detailIdeaId,
+      detailInitiativeId,
+      detailProjectId,
+      detailTaskId,
+      detailAssetId,
+    )
+    const anyDetailOpen = !!(
+      detailIdeaId ??
+      detailInitiativeId ??
+      detailProjectId ??
+      detailTaskId ??
+      detailAssetId
+    )
+    if (
+      veSelectionHydrationPendingRef.current &&
+      sel == null &&
+      initialSelection &&
+      !anyDetailOpen
+    ) {
+      return
+    }
+    if (sel != null || !initialSelection) {
+      veSelectionHydrationPendingRef.current = false
+    }
+
+    onVeSelectionChange?.(sel)
+  }, [
+    tab,
+    detailIdeaId,
+    detailInitiativeId,
+    detailProjectId,
+    detailTaskId,
+    detailAssetId,
+    initialSelection,
+    onVeSelectionChange,
+  ])
+
+  // Refresh conversation focus labels when entity lists change (titles, etc.) without re-pushing `veSelection`.
+  useEffect(() => {
+    const sel = deriveVeSelectionFromDetailState(
+      tab,
+      detailIdeaId,
+      detailInitiativeId,
+      detailProjectId,
+      detailTaskId,
+      detailAssetId,
+    )
+    const anyDetailOpen = !!(
+      detailIdeaId ??
+      detailInitiativeId ??
+      detailProjectId ??
+      detailTaskId ??
+      detailAssetId
+    )
+    if (
+      veSelectionHydrationPendingRef.current &&
+      sel == null &&
+      initialSelection &&
+      !anyDetailOpen
+    ) {
+      return
+    }
+    const fc = veFocusOptRef.current
+    if (!fc) return
+    if (sel) {
+      const desc = focusDescriptorFromVeSelection(sel, bundleForFocus, 'vision_execution')
+      if (desc) fc.notifyConversationEntityFocus(desc)
+      else fc.clearConversationEntityShell()
+    } else {
+      fc.clearConversationEntityShell()
+    }
+  }, [
+    bundleForFocus,
+    tab,
+    detailIdeaId,
+    detailInitiativeId,
+    detailProjectId,
+    detailTaskId,
+    detailAssetId,
+    initialSelection,
+  ])
 
   useEffect(() => {
     if (tab === 'ideas') fetchIdeas()

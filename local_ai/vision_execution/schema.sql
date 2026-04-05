@@ -508,6 +508,28 @@ CREATE TABLE IF NOT EXISTS node_judgment_history (
 CREATE INDEX IF NOT EXISTS idx_njh_subject
     ON node_judgment_history (user_id, entity_type, entity_id, created_at);
 
+-- Arc detection lab: heuristic proposals only (no minting, no ledger, no embeddings).
+-- accepted = accepted as a useful system-detected arc candidate, not proven inner transformation.
+CREATE TABLE IF NOT EXISTS arc_detection_candidates (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    source_entity_type TEXT NOT NULL,
+    source_entity_id TEXT NOT NULL,
+    heuristic_version TEXT NOT NULL,
+    t_avoid_reading_id TEXT NOT NULL,
+    t_eng_reading_id TEXT NOT NULL,
+    t_complete_at TEXT NOT NULL,
+    detector_confidence REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed', 'accepted', 'rejected')),
+    notes_json TEXT NOT NULL DEFAULT '{}',
+    reviewed_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (user_id, source_entity_type, source_entity_id, heuristic_version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_arc_candidates_user ON arc_detection_candidates (user_id);
+CREATE INDEX IF NOT EXISTS idx_arc_candidates_status ON arc_detection_candidates (status);
+
 -- User-authored aspiration profile (canonical) + derived operational signals (API).
 CREATE TABLE IF NOT EXISTS aspiration_profile (
   user_id TEXT PRIMARY KEY,

@@ -129,7 +129,7 @@ def test_log_coordination_client_checkpoint_requires_owned_entity(ve_conn: sqlit
     assert linked[0].get("confidence") == pytest.approx(0.6)
 
 
-def test_log_coordination_client_checkpoint_suggestion_non_applied_stays_neutral_flow_reading(
+def test_log_coordination_client_checkpoint_suggestion_dismissed_writes_friction_negative(
     ve_conn: sqlite3.Connection,
 ) -> None:
     _insert_project(ve_conn, "user-x", "proj-neu")
@@ -141,6 +141,43 @@ def test_log_coordination_client_checkpoint_suggestion_non_applied_stays_neutral
         user_outcome="dismissed",
     )
     sums = list_execution_flow_summaries_for_entity("user-x", "project", "proj-neu", limit=10)
+    linked = [s for s in sums if s.get("pointer") == aid]
+    assert len(linked) == 1
+    assert linked[0].get("impact") == "negative"
+    assert linked[0].get("dimension") == "friction"
+    assert linked[0].get("confidence") == pytest.approx(0.6)
+
+
+def test_log_coordination_client_checkpoint_suggestion_stuck_writes_friction_negative(
+    ve_conn: sqlite3.Connection,
+) -> None:
+    _insert_project(ve_conn, "user-x", "proj-stuck")
+    aid = log_coordination_client_checkpoint(
+        "user-x",
+        "ai_suggestion_applied",
+        "project",
+        "proj-stuck",
+        user_outcome="stuck",
+    )
+    sums = list_execution_flow_summaries_for_entity("user-x", "project", "proj-stuck", limit=10)
+    linked = [s for s in sums if s.get("pointer") == aid]
+    assert len(linked) == 1
+    assert linked[0].get("impact") == "negative"
+    assert linked[0].get("dimension") == "friction"
+
+
+def test_log_coordination_client_checkpoint_suggestion_other_outcome_stays_neutral_flow_reading(
+    ve_conn: sqlite3.Connection,
+) -> None:
+    _insert_project(ve_conn, "user-x", "proj-other")
+    aid = log_coordination_client_checkpoint(
+        "user-x",
+        "ai_suggestion_applied",
+        "project",
+        "proj-other",
+        user_outcome="copied",
+    )
+    sums = list_execution_flow_summaries_for_entity("user-x", "project", "proj-other", limit=10)
     linked = [s for s in sums if s.get("pointer") == aid]
     assert len(linked) == 1
     assert linked[0].get("impact") == "neutral"

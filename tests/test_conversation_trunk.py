@@ -6,6 +6,7 @@ from local_ai.conversation_trunk import (
     MEDIATION_CONTROL_HEADING,
     MODE_LOCK_HEADING,
     PROGRESS_BIAS_HEADING,
+    SCOPED_DIGRESSION_DEPTH_HEADING,
     classify_question_kind,
     conversational_partner_trunk_instructions,
     derive_capture_target,
@@ -213,6 +214,34 @@ def test_priority_resolution_classify_doing_today_agenda_focus():
         p = derive_mediation_profile(q, "priority_resolution", "three_options_then_lean")
         assert p["resolution_mode"] == "decide"
         assert p["mediation_move"] == "resolve_priority"
+
+
+def test_agenda_schedule_classifies_state_inventory_not_reflective():
+    """Schedule/today phrasing uses working-set inventory path (semantic bridge in trunk), not generic reflection."""
+    for q in (
+        "what's on the schedule today?",
+        "whats on my schedule",
+        "schedule for today?",
+        "what do i have today?",
+    ):
+        assert classify_question_kind(q) == "state_inventory"
+        assert select_output_contract("state_inventory") == "inventory_only"
+
+
+def test_scoped_digression_trunk_includes_depth_heading():
+    q = "what do we still need to do to the finalize website idea?"
+    kind = classify_question_kind(q)
+    contract = select_output_contract(kind)
+    profile = derive_mediation_profile(q, kind, contract)
+    block = conversational_partner_trunk_instructions(
+        question_kind=kind,
+        output_contract=contract,
+        mediation_profile=profile,
+        user_question=q,
+        scoped_digression=True,
+    )
+    assert SCOPED_DIGRESSION_DEPTH_HEADING in block
+    assert "high investment" in block.lower() or "narrowed" in block.lower()
 
 
 def test_field_update_direct_put_that_in_routes_to_recommend_first_collapse():

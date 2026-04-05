@@ -2,7 +2,7 @@
 
 <!--
 Status: Canonical
-Last updated: 2026-04-02
+Last updated: 2026-04-04
 -->
 
 Single reference combining: **intent & philosophy**, **projection & stages**, **definitions & machine-readable reference**, and **consolidated current-state map**.  
@@ -99,6 +99,11 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 - **Precision writes:** **`local_ai/integration_commit.py`** strips **`[DRAFT_VALUE: …]`** from user-visible text and builds **`pending_integration`**; on affirmation, **`commit_precision`** writes VE rows. Backend may **infer** a missing draft in a **narrow** case (e.g. focused **task** with empty **description**) via **`infer_draft_value_from_context`**.
 - **UI:** **`frontend/src/components/EntityMentionText.tsx`** parses raw assistant text with a tolerant **`[ID: …]`** pattern so entity mentions render as **chips/buttons** when the wrapper is present.
 
+## 2.8 Conversation trunk + mediation *(implemented slice)*
+
+- **Role:** **`local_ai/conversation_trunk.py`** classifies **`QuestionKind`**, selects **`OutputContract`**, derives **`MediationProfile`**, and emits trunk instructions (including **THIS TURN — MEDIATION CONTROL**) consumed by Zenaf assembly and related paths; **`local_ai/response_trunk.py`** imports trunk types for the **RESPONSE CONTRACT — TECHNICAL HEADER**. **`api/main.py`** and **`local_ai/council_preflight.py`** use **`classify_question_kind`** where wired.
+- **Direction:** Extend the same trunk vocabulary across remaining conversational surfaces so branches only enrich—see **`docs/02_ACTIVE_DESIGN/CONVERSATION_TRUNK_ARCHITECTURE.md`** (Phase 1–2 marked implemented there; full unification remains trajectory).
+
 ---
 
 # Part III — Staged processes (phases and minimal paths)
@@ -153,7 +158,7 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 - **Intake:** POST email/fax → pipeline → queue → mirror; GET/PATCH queue; judgment creation and correction; mirror load on API startup.
 - **Vision Execution:** Full CRUD (core profiles, ideas, initiatives, projects, tasks, persons, assets, capacity, decisions); **Signal** entity + API (POST/GET/PATCH signals); **Radar** as view over Signal + buckets from initiatives/projects/tasks/capacity; SQLite; API under /vision-execution. **Focus + voice:** Detail fields and inline create (idea / initiative / project / task) register in `VisionExecutionFocusProvider`; context bar **Rewrite** where `fieldCapabilityRegistry` allows; voice insert via `veVoiceRecordingContext` + field selection capture.
 - **Activity:** ActivityEvent log (activity.log); enums ActivityType, ActivityEntityType; get_recent_activity(limit); signal lifecycle events (created, acknowledged, linked, resolved, dismissed).
-- **Council:** run_council / run_council_stream; POST /run and /run/stream mode=council; **`perspective_definitions`** (always at least one seat; default **Thinking Partner** / **Atria** in cockpit). **All seats Thinking Partner** → **Zenaf** conversational path (**System Interface** system text + **RESPONSE CONTRACT — TECHNICAL HEADER** from **`local_ai/response_trunk.py`**, **15s** LLM timeout, **`integration_commit`** for **`[DRAFT_VALUE]`** / pending saves), **no synthesis**. **Mixed with structured roles** → structured seat prompts + **synthesis** when enabled. **`council_preflight`** may include **`developmental_guidance`** (read model → bounded packet block via **`local_ai/council_preflight.py`** + **`local_ai/developmental_guidance.py`**). **`priority_resolution`** may use **thread amnesia** (no prior messages in packet). **Your reply** participates in the same **focus / voice** strip as VE (`CouncilQuestionTextarea` in `App.tsx`: synthetic focus + `ATRIA_VOICE_TRANSCRIPT_DOM_FIRST` / `ATRIA_VE_FOCUS_INSERT_TEXT` handlers). Assistant **`[ID: …]`** mentions render as chips via **`EntityMentionText`** when the UI uses it on raw text.
+- **Council:** run_council / run_council_stream; POST /run and /run/stream mode=council; **`perspective_definitions`** (always at least one seat; default **Thinking Partner** / **Atria** in cockpit). **All seats Thinking Partner** → **Zenaf** conversational path (**System Interface** system text + **RESPONSE CONTRACT — TECHNICAL HEADER** from **`local_ai/response_trunk.py`**, mediation/trunk slice from **`local_ai/conversation_trunk.py`**, **15s** LLM timeout, **`integration_commit`** for **`[DRAFT_VALUE]`** / pending saves), **no synthesis**. **Mixed with structured roles** → structured seat prompts + **synthesis** when enabled. **`council_preflight`** may include **`developmental_guidance`** (read model → bounded packet block via **`local_ai/council_preflight.py`** + **`local_ai/developmental_guidance.py`**). **`priority_resolution`** may use **thread amnesia** (no prior messages in packet). **Your reply** participates in the same **focus / voice** strip as VE (`CouncilQuestionTextarea` in `App.tsx`: synthetic focus + `ATRIA_VOICE_TRANSCRIPT_DOM_FIRST` / `ATRIA_VE_FOCUS_INSERT_TEXT` handlers). Assistant **`[ID: …]`** mentions render as chips via **`EntityMentionText`** when the UI uses it on raw text.
 - **Perspectives:** Frontend types, list, detail, creator, import/export; localStorage; passed to council as custom definitions.
 - **Foundation shell split (as-built):** In `mainView === 'perspectives'`, actor/detail/training/editor content is rendered in a Foundation-local right pane. The global council/chat aside remains the shared shell surface and is not repurposed by Foundation detail state.
 - **File Steward:** Analyze, Recommend, Assess, Simulate; folder picker; simulation tree with effective target folders and filtered overrides.

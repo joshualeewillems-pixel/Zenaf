@@ -1,0 +1,56 @@
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "d4aca9c0-996a-4b4b-b622-2791867e8c86", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "d4aca9c0-996a-4b4b-b622-2791867e8c86", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "d5f50bbb-17c3-44c7-8db3-d70ca32ab413", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "d5f50bbb-17c3-44c7-8db3-d70ca32ab413", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "43945968-ee30-433f-b4b4-c471ace1f6a7", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "43945968-ee30-433f-b4b4-c471ace1f6a7", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "571ede52-0d53-4055-adfb-ff5d048c9d04", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "571ede52-0d53-4055-adfb-ff5d048c9d04", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "85afb41c-0995-4fc9-8531-1f0ba7ab5861", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "85afb41c-0995-4fc9-8531-1f0ba7ab5861", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "f364cff7-a9a4-4fb4-ace6-7bdf47065d11", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "f364cff7-a9a4-4fb4-ace6-7bdf47065d11", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "b9e3aefc-f6b9-4b16-ae68-e1c2a1e59565", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "b9e3aefc-f6b9-4b16-ae68-e1c2a1e59565", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "d2d10ad2-f207-45a1-a28f-a368e7c833af", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "d2d10ad2-f207-45a1-a28f-a368e7c833af", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "idea", "entity_id": "c4d12838-7d82-4859-ac6b-d4dcbbec6e61", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "idea", "entity_id": "c4d12838-7d82-4859-ac6b-d4dcbbec6e61", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "initiative", "entity_id": "5b989663-fc23-4cc7-93e8-57fbbe7b4470", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "initiative", "entity_id": "5b989663-fc23-4cc7-93e8-57fbbe7b4470", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "initiative", "entity_id": "b69b934e-c4f7-4657-9595-9cc3df8ac126", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "initiative", "entity_id": "b69b934e-c4f7-4657-9595-9cc3df8ac126", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "initiative", "entity_id": "94b44a54-b65a-415c-a8bf-0ed78e72ddac", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "initiative", "entity_id": "94b44a54-b65a-415c-a8bf-0ed78e72ddac", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "f6ef6edf-17c0-451b-8de8-f336e5f0cecb", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "f6ef6edf-17c0-451b-8de8-f336e5f0cecb", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "cec187a5-7ce7-4297-a721-12290290b97d", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "cec187a5-7ce7-4297-a721-12290290b97d", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "036ba6e6-d17f-433e-8885-c508754944e6", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "036ba6e6-d17f-433e-8885-c508754944e6", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "a1bd690f-caae-42c3-a837-135c27c06446", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "a1bd690f-caae-42c3-a837-135c27c06446", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "d62d344e-77cc-4a43-bf55-212accd37345", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "d62d344e-77cc-4a43-bf55-212accd37345", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "fc719de6-202d-4e8f-97fb-749b1c956e5d", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "fc719de6-202d-4e8f-97fb-749b1c956e5d", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "7f2055d1-024c-4771-abca-c0444ac12037", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "7f2055d1-024c-4771-abca-c0444ac12037", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "project", "entity_id": "ad7b627b-974b-4558-9d7b-530d4696cdcc", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "project", "entity_id": "ad7b627b-974b-4558-9d7b-530d4696cdcc", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "76d45db8-d2e9-46c7-b332-058fb743dbc1", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "76d45db8-d2e9-46c7-b332-058fb743dbc1", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "5a36f60a-95fd-4aec-adf1-b44a3b5f02ca", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "5a36f60a-95fd-4aec-adf1-b44a3b5f02ca", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "fff908d7-c6b1-4ed4-9cfa-08b96e8b90be", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "fff908d7-c6b1-4ed4-9cfa-08b96e8b90be", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "ca32c843-21f1-454e-96bd-d47da53fd89f", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "ca32c843-21f1-454e-96bd-d47da53fd89f", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "1b59834d-5f2a-439c-8157-bef4c759fbe6", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "1b59834d-5f2a-439c-8157-bef4c759fbe6", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "798c3b01-e741-41a6-b521-0c2152ddb8ca", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "798c3b01-e741-41a6-b521-0c2152ddb8ca", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "b48af49f-724a-42e5-9314-9b93f14226a9", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "b48af49f-724a-42e5-9314-9b93f14226a9", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}
+{"event": "scan_entity", "entity_type": "task", "entity_id": "3b203297-386b-4e5e-b58f-2a94e4dd7149", "execution_flow_readings": 0}
+{"event": "skip", "entity_type": "task", "entity_id": "3b203297-386b-4e5e-b58f-2a94e4dd7149", "execution_flow_readings": 0, "reason": "no_execution_flow_readings"}

@@ -30,9 +30,35 @@ export {
   useVisionExecutionProfileGraphOptional,
 } from './VisionExecutionProfileGraphDataContext'
 export { VisionExecutionFocusProvider, useVisionExecutionFocus, useVisionExecutionFocusOptional } from './VisionExecutionFocusContext'
+export {
+  CONVERSATION_ENTITY_FIELD_KEY,
+  focusDescriptorFromVeSelection,
+  veFocusCoreFromVeSelection,
+  veGraphSnapshotFromBundle,
+} from './conversationEntityFocus'
 export { VeVoiceRecordingProvider, useVeVoiceRecording } from './veVoiceRecordingContext'
 export { VeFocusRegion } from './VeFocusRegion'
 export { ContextActionBarContent } from './ContextActionBarContent'
+export type { FocusInvite, FocusInviteKind } from './focusInviteTypes'
+export { deriveFocusInvites } from './deriveFocusInvites'
+export {
+  FOCUS_INVITE_ENTITY_TYPES,
+  STRUCTURED_FILL_ACTION_IDS,
+  EXCLUDED_INVITE_ACTION_IDS,
+  MAX_FOCUS_INVITES_VISIBLE,
+  CONVERSATION_ENTITY_INVITE_REGISTRY_FIELD,
+} from './focusInviteRuleTable'
+export {
+  buildConversationalInvitePreface,
+  buildStructuredFillInvitePreface,
+  CONVERSATIONAL_INVITE_MARKER,
+  STRUCTURED_FILL_INVITE_MARKER,
+  boundedTransformDisabledForQuestion,
+  replaceStructuredFillComposerValue,
+} from './focusInviteFraming'
+export { FocusInviteRunProvider, useFocusInviteRunOptional } from './FocusInviteRunContext'
+export type { FocusInviteRunHandler } from './FocusInviteRunContext'
+export { FocusInviteChips } from './FocusInviteChips'
 export { FocusContextRecordButton } from './FocusContextRecordButton'
 export { getFieldCapabilities, actionsForField, ACTION_LABELS } from './fieldCapabilityRegistry'
 export { focusFieldRegistryKey } from './focusRegistryKey'

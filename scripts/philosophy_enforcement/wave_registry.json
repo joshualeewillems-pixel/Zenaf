@@ -1,0 +1,21 @@
+{
+  "$comment": "Wave-gated autonomy registry. Advance current_wave_id only after wave_exit_gate.py passes and promotion rules in docs/01_TRUTH/wave_autonomy_protocol.md are satisfied.",
+  "version": 1,
+  "current_wave_id": "perimeter_sweep",
+  "waves": [
+    {
+      "id": "perimeter_sweep",
+      "title": "Phase 5 perimeter — HTTP client (#9), intake (#10), developmental guidance (#12)",
+      "exit": {
+        "enforce_strict": true,
+        "pytest_targets": ["tests/test_run_routing_context.py"],
+        "optional_phase_equals": "5",
+        "branch_ref_pattern": null
+      },
+      "promotion": {
+        "requires_manual_flag": true,
+        "notes": "After gate passes, human updates current_wave_id and convergence_program_state.json for the next wave."
+      }
+    }
+  ]
+}

@@ -215,9 +215,9 @@ export function ContextActionBarContent({ className = '', idleHint = 've' }: Con
           {voicePhase === 'transcribing' && (
             <span className="text-sky-300/90 text-[10px] font-medium">Transcribing…</span>
           )}
-          <span className="text-slate-500 text-xs truncate">
-            {c.entity_type} <span className="font-mono text-slate-400">{c.entity_id.slice(0, 8)}…</span>
-            {lineage ? <span className="text-slate-600"> · {lineage}</span> : null}
+          <span className="text-slate-500 text-xs truncate capitalize">
+            {c.entity_type}
+            {lineage ? <span className="text-slate-600 normal-case"> · {lineage}</span> : null}
           </span>
           <span className="text-slate-600 text-[10px] uppercase tracking-wide hidden sm:inline">
             {c.field_kind}

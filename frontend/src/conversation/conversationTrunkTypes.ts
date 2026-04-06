@@ -70,6 +70,8 @@ export type FieldTarget =
   | 'goal'
   | 'constraints'
   | 'notes'
+  | 'title'
+  | 'description'
   | 'unknown'
 
 export type CaptureTarget = {

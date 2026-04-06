@@ -58,8 +58,16 @@ const VALID_USE_EXISTING_BY_KIND: Record<LinkableSectionKey, EntityType[]> = {
   signals: [],
 }
 
-function truncateText(text: string | null | undefined, maxChars: number): string {
-  const s = (text ?? '').replace(/\s+/g, ' ').trim()
+/** API/DB may return non-strings; never pass objects through to React children. */
+function linkDisplayStr(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return ''
+}
+
+function truncateText(text: unknown, maxChars: number): string {
+  const s = linkDisplayStr(text).replace(/\s+/g, ' ').trim()
   if (!s) return ''
   return s.length <= maxChars ? s : `${s.slice(0, Math.max(0, maxChars - 1))}…`
 }
@@ -228,7 +236,7 @@ export function LinkChooser(props: LinkChooserProps) {
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-slate-200 truncate">{idea.title}</span>
+        <span className="font-medium text-slate-200 truncate">{linkDisplayStr(idea.title)}</span>
         <span className="text-slate-500 text-[11px] shrink-0">Idea</span>
       </div>
       <p className="text-slate-400 text-xs mt-0.5 truncate">
@@ -320,8 +328,8 @@ export function LinkChooser(props: LinkChooserProps) {
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-slate-200 truncate">{init.title}</span>
-                          <span className="text-slate-500 text-[11px] shrink-0">Initiative · {init.status || '—'}</span>
+                          <span className="font-medium text-slate-200 truncate">{linkDisplayStr(init.title)}</span>
+                          <span className="text-slate-500 text-[11px] shrink-0">Initiative · {linkDisplayStr(init.status) || '—'}</span>
                         </div>
                         <p className="text-slate-400 text-xs mt-0.5 truncate">{summaryText}</p>
                       </div>
@@ -353,8 +361,8 @@ export function LinkChooser(props: LinkChooserProps) {
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="font-medium text-slate-200 truncate">{p.title}</span>
-                                    <span className="text-slate-500 text-[11px] shrink-0">Project · {p.status || '—'}</span>
+                                    <span className="font-medium text-slate-200 truncate">{linkDisplayStr(p.title)}</span>
+                                    <span className="text-slate-500 text-[11px] shrink-0">Project · {linkDisplayStr(p.status) || '—'}</span>
                                   </div>
                                   <p className="text-slate-400 text-xs mt-0.5 truncate">{pSummary}</p>
                                 </div>
@@ -380,8 +388,8 @@ export function LinkChooser(props: LinkChooserProps) {
                                       }`}
                                     >
                                       <div className="flex items-center justify-between gap-2">
-                                        <span className="font-medium text-slate-200 truncate">{t.title}</span>
-                                        <span className="text-slate-500 text-[11px] shrink-0">Task · {t.status || '—'}</span>
+                                        <span className="font-medium text-slate-200 truncate">{linkDisplayStr(t.title)}</span>
+                                        <span className="text-slate-500 text-[11px] shrink-0">Task · {linkDisplayStr(t.status) || '—'}</span>
                                       </div>
                                       <p className="text-slate-400 text-xs mt-0.5 truncate">
                                         {truncateText(t.description || t.title, 56) || 'No description'}
@@ -427,8 +435,8 @@ export function LinkChooser(props: LinkChooserProps) {
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-medium text-slate-200 truncate">{p.title}</span>
-                              <span className="text-slate-500 text-[11px] shrink-0">Project · {p.status || '—'}</span>
+                              <span className="font-medium text-slate-200 truncate">{linkDisplayStr(p.title)}</span>
+                              <span className="text-slate-500 text-[11px] shrink-0">Project · {linkDisplayStr(p.status) || '—'}</span>
                             </div>
                             <p className="text-slate-400 text-xs mt-0.5 truncate">{pSummary}</p>
                           </div>
@@ -454,8 +462,8 @@ export function LinkChooser(props: LinkChooserProps) {
                                 }`}
                               >
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="font-medium text-slate-200 truncate">{t.title}</span>
-                                  <span className="text-slate-500 text-[11px] shrink-0">Task · {t.status || '—'}</span>
+                                  <span className="font-medium text-slate-200 truncate">{linkDisplayStr(t.title)}</span>
+                                  <span className="text-slate-500 text-[11px] shrink-0">Task · {linkDisplayStr(t.status) || '—'}</span>
                                 </div>
                                 <p className="text-slate-400 text-xs mt-0.5 truncate">
                                   {truncateText(t.description || t.title, 56) || 'No description'}
@@ -493,8 +501,8 @@ export function LinkChooser(props: LinkChooserProps) {
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
-                          <span className="font-medium text-slate-200 truncate">{t.title}</span>
-                          <span className="text-slate-500 text-[11px] shrink-0">Task · {t.status || '—'}</span>
+                          <span className="font-medium text-slate-200 truncate">{linkDisplayStr(t.title)}</span>
+                          <span className="text-slate-500 text-[11px] shrink-0">Task · {linkDisplayStr(t.status) || '—'}</span>
                         </div>
                         <p className="text-slate-400 text-xs mt-0.5 truncate">
                           {truncateText(t.description || t.title, 56) || 'No description'}

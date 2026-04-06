@@ -35,6 +35,8 @@ export {
   focusDescriptorFromVeSelection,
   veFocusCoreFromVeSelection,
   veGraphSnapshotFromBundle,
+  veSelectedEntityPayloadFromSelection,
+  type VeSelectedEntityPayload,
 } from './conversationEntityFocus'
 export { VeVoiceRecordingProvider, useVeVoiceRecording } from './veVoiceRecordingContext'
 export { VeFocusRegion } from './VeFocusRegion'
@@ -51,6 +53,10 @@ export {
 export {
   buildConversationalInvitePreface,
   buildStructuredFillInvitePreface,
+  buildConversationalInviteDisplayLine,
+  buildScopedContextLabelFromCore,
+  buildStructuredFillDisplayLine,
+  threadDisplayLineForCouncilQuestion,
   CONVERSATIONAL_INVITE_MARKER,
   STRUCTURED_FILL_INVITE_MARKER,
   boundedTransformDisabledForQuestion,

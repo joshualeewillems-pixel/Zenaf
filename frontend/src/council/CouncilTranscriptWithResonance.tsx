@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { CouncilTranscript } from './CouncilTranscript'
+import { sanitizeCouncilAssistantTextForDisplay } from './councilUserVisibleSanitize'
 import { parseCouncilSeatSections } from './councilSeatSections'
 import { ResonanceSlider } from '../components/ResonanceSlider'
 import {
@@ -43,10 +44,10 @@ export function CouncilTranscriptWithResonance({
   pendingIntegration,
   onOpenEntity,
 }: CouncilTranscriptWithResonanceProps) {
-  const { preambleLines, sections } = useMemo(
-    () => parseCouncilSeatSections(text, stripAtriaSynthesis),
-    [text, stripAtriaSynthesis],
-  )
+  const { preambleLines, sections } = useMemo(() => {
+    const cleaned = sanitizeCouncilAssistantTextForDisplay(text)
+    return parseCouncilSeatSections(cleaned, stripAtriaSynthesis)
+  }, [text, stripAtriaSynthesis])
 
   const pendingPath =
     pendingIntegration?.integration_state === 'proposed'

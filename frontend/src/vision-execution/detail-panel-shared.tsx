@@ -4,6 +4,14 @@
 
 import { useState } from 'react'
 
+/** Never render API/DB blobs as React children from getLabel(). */
+function safeEntityLabel(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return ''
+}
+
 const inputBase = 'w-full px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-sm'
 const inputTextarea = inputBase + ' resize-y'
 
@@ -135,7 +143,7 @@ export function EntityMultiSelect<T extends { id: string }>({
               key={id}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-700 text-slate-200 text-xs"
             >
-              {item ? getLabel(item) : id}
+              {item ? safeEntityLabel(getLabel(item)) : id}
               <button type="button" onClick={() => remove(id)} className="text-slate-400 hover:text-red-300">×</button>
             </span>
           )
@@ -160,7 +168,7 @@ export function EntityMultiSelect<T extends { id: string }>({
                   onMouseDown={(e) => { e.preventDefault(); add(o.id) }}
                   className="w-full text-left px-2 py-1.5 text-sm text-slate-200 hover:bg-slate-700"
                 >
-                  {getLabel(o)}
+                  {safeEntityLabel(getLabel(o))}
                 </button>
               </li>
             ))}

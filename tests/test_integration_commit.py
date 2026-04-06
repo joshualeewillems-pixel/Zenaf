@@ -4,6 +4,8 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from local_ai.integration_commit import (
+    recover_pending_on_affirm_from_conversation_subject,
+    extract_user_literal_for_pending_integration,
     assistant_has_nonempty_draft_value,
     assistant_uses_backtick_save_antipattern,
     build_integration_commit_sse_payload,
@@ -22,7 +24,58 @@ from local_ai.integration_commit import (
     prepare_pending_integration_payload,
     process_pending_integration,
     user_affirms_precision_commit,
+    user_signals_execution_commit,
+    infer_draft_value_from_execution_commit_reply,
+    extract_assistant_quoted_proposal_for_text_field,
 )
+
+
+def test_extract_user_literal_for_brief_directive():
+    q = (
+        '"A collection of miscellaneous tasks that require attention but do not fit into other initiatives, '
+        'allowing for flexible management of ancillary work." use this for the brief field'
+    )
+    v = extract_user_literal_for_pending_integration(q)
+    assert v
+    assert "miscellaneous tasks" in v
+    assert "ancillary work" in v
+
+
+def test_extract_user_literal_brief_directive_trailing_quote_only_no_opening_quote():
+    """Users often paste prose then a single closing ``"`` before the directive."""
+    q = (
+        "A collection of miscellaneous tasks that require attention but do not fit into other initiatives, "
+        'allowing for flexible management of ancillary work." use this for the brief field'
+    )
+    v = extract_user_literal_for_pending_integration(q)
+    assert v
+    assert "miscellaneous tasks" in v
+    assert "ancillary work" in v
+    assert not v.startswith('"')
+
+
+def test_extract_user_literal_returns_none_without_directive():
+    q = '"Some long quoted text that is not tied to a brief directive at all."'
+    assert extract_user_literal_for_pending_integration(q) is None
+
+
+def test_derive_save_state_proposed_includes_pending_value_as_recorded_text():
+    st = derive_integration_save_state(
+        integration_event=None,
+        pending_integration={
+            "integration_state": "proposed",
+            "entity_type": "initiative",
+            "entity_id": "x",
+            "field": "brief",
+            "field_label": "Brief",
+            "entity_display_name": "junk drawer",
+            "value": "hello brief body",
+        },
+        capture_target=None,
+        last_integration_commit=None,
+    )
+    assert st["pending_confirm"] is True
+    assert st["recorded_text"] == "hello brief body"
 
 
 def test_assistant_has_nonempty_draft_rejects_backticks_even_with_tag():
@@ -77,10 +130,10 @@ def test_infer_draft_value_from_context_none_when_description_exists():
     assert out is None
 
 
-def test_missing_draft_nudge_mentions_required_tag():
+def test_missing_draft_nudge_is_user_safe():
     low = MISSING_DRAFT_VALUE_REPLY_NUDGE.lower()
-    assert "draft_value" in low
-    assert "required" in low
+    assert "draft_value" not in low
+    assert "save" in low or "field" in low
 
 
 def test_extract_draft_value_strips_tag_and_returns_inner():
@@ -114,11 +167,110 @@ def test_prepare_pending_integration_uses_proposed_value_override():
     assert pend["value"] == "User's exact phrase to store"
 
 
+def test_recover_pending_on_affirm_from_conversation_subject():
+    luc = (
+        '"A collection of miscellaneous tasks that require attention but do not fit into other initiatives, '
+        'allowing for flexible management of ancillary work." use this for the brief field'
+    )
+    ctx = {
+        "conversation_subject": {
+            "entity_id": "i1",
+            "entity_type": "initiative",
+            "entity_display_name": "junk drawer",
+            "active_field": "brief",
+            "last_user_contribution": luc,
+            "confidence": "high",
+        },
+        "council_preflight": {
+            "ve_focus": {"entity_id": "i1", "entity_type": "initiative"},
+            "ve_focus_title": "junk drawer",
+        },
+    }
+    got = recover_pending_on_affirm_from_conversation_subject(question="add it", context=ctx)
+    assert got is not None
+    assert got.get("integration_state") == "proposed"
+    assert got.get("field") == "brief"
+    assert "miscellaneous tasks" in str(got.get("value") or "")
+    assert recover_pending_on_affirm_from_conversation_subject(question="maybe not", context=ctx) is None
+
+
 def test_user_affirms_this_is_good_for_now():
     assert user_affirms_precision_commit("this is good for now")
     assert user_affirms_precision_commit("Yes, add it")
+    assert user_affirms_precision_commit("confirm as is")
+    assert user_affirms_precision_commit("leave as is")
+    assert user_affirms_precision_commit("proceed with this update")
+    assert user_affirms_precision_commit("please proceed")
+    assert user_affirms_precision_commit("ok to add")
+    assert user_affirms_precision_commit("proceed with this")
+    assert user_affirms_precision_commit("proceed")
     assert not user_affirms_precision_commit("don't save yet")
     assert not user_affirms_precision_commit("")
+
+
+def test_user_signals_execution_commit_phrases():
+    assert user_signals_execution_commit("i like that go ahead and change it")
+    assert user_signals_execution_commit("Go ahead and change it")
+    assert user_signals_execution_commit("yes, change it")
+    assert user_signals_execution_commit("yes, make the change")
+    assert user_signals_execution_commit("go for it")
+    assert user_signals_execution_commit("use that definition")
+    assert user_signals_execution_commit("please apply that to the brief")
+    assert not user_signals_execution_commit("what should we go ahead and do?")
+    assert not user_signals_execution_commit("should we go ahead and change it?")
+    assert not user_signals_execution_commit("don't go ahead and change it")
+
+
+def test_extract_assistant_quoted_proposal_for_brief():
+    raw = (
+        'The **Title** is "Initiative · junk drawer." The current **Brief** is "todos\'." '
+        'I will update the **Brief** to: "A collection of miscellaneous tasks that require attention '
+        'but do not fit into other initiatives, allowing for flexible management of ancillary work." '
+        "Shall I finalize this change?"
+    )
+    got = extract_assistant_quoted_proposal_for_text_field(
+        assistant_raw=raw,
+        entity_type="initiative",
+        field_target="brief",
+    )
+    assert got
+    assert "miscellaneous tasks" in got
+    assert "ancillary work" in got
+
+
+def test_extract_assistant_quoted_proposal_none_without_field_cue():
+    raw = '"A collection of miscellaneous tasks that require attention."'
+    assert (
+        extract_assistant_quoted_proposal_for_text_field(
+            assistant_raw=raw,
+            entity_type="initiative",
+            field_target="brief",
+        )
+        is None
+    )
+
+
+def test_infer_draft_from_execution_commit_quoted_proposal():
+    raw = (
+        'I propose revising the brief to: "A collection of miscellaneous tasks that require attention." '
+        "Shall I proceed?"
+    )
+    got = infer_draft_value_from_execution_commit_reply(
+        assistant_raw=raw,
+        user_question="go for it",
+        entity_type="initiative",
+        field="brief",
+    )
+    assert got == "A collection of miscellaneous tasks that require attention."
+    assert (
+        infer_draft_value_from_execution_commit_reply(
+            assistant_raw=raw,
+            user_question="what do you think?",
+            entity_type="initiative",
+            field="brief",
+        )
+        is None
+    )
 
 
 def test_process_pending_skipped_when_new_precision_turn():
@@ -424,6 +576,40 @@ def test_prepare_pending_unknown_field_returns_disambiguation():
     assert "Description" in dis
     assert "Notes" in dis
     assert "don't have a clear field" in dis.lower()
+
+
+def test_prepare_pending_initiative_unknown_token_disambiguates_not_notes():
+    pend, dis = prepare_pending_integration_payload(
+        question="some text",
+        capture_field="unknown",
+        capture_entity_label="junk drawer",
+        council_preflight_dict={
+            "ve_focus": {"entity_id": "in1", "entity_type": "initiative"},
+            "ve_focus_title": "junk drawer",
+        },
+        merged_subject={"entity_id": "in1", "entity_type": "initiative", "entity_display_name": "junk drawer"},
+    )
+    assert pend is None
+    assert dis is not None
+    assert "Brief" in dis
+    assert "Diagnostics / admin notes" in dis
+
+
+def test_prepare_pending_initiative_description_maps_to_brief():
+    pend, dis = prepare_pending_integration_payload(
+        question="updated brief body",
+        capture_field="description",
+        capture_entity_label="junk drawer",
+        council_preflight_dict={
+            "ve_focus": {"entity_id": "in1", "entity_type": "initiative"},
+            "ve_focus_title": "junk drawer",
+        },
+        merged_subject={"entity_id": "in1", "entity_type": "initiative", "entity_display_name": "junk drawer"},
+    )
+    assert dis is None
+    assert pend is not None
+    assert pend["field"] == "brief"
+    assert pend["field_label"] == "Brief"
 
 
 def test_deterministic_commit_sse_includes_digression_summary_when_scoped():

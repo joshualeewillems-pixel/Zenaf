@@ -44,6 +44,8 @@ export type MediationThreadItemKind =
   | 'utility_result'
   | 'system_status'
   | 'streaming_placeholder'
+  /** Folded scoped sub-thread (collapsed in main list; children kept for expand / context). */
+  | 'scoped_thread_nest'
 
 export function deriveMediationPanelMode(input: {
   showFolderReviewPanel: boolean

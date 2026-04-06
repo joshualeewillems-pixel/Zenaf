@@ -48,6 +48,23 @@ function confirmBulkAction(message: string, run: () => void) {
   if (typeof window !== 'undefined' && window.confirm(message)) run()
 }
 
+/**
+ * Coerce API/LLM values to a string safe for React text nodes.
+ * Never pass unknown objects through — e.g. `a || apiField` in JSX will render objects and crash.
+ */
+function scalarForUi(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (typeof v === 'object' && !Array.isArray(v)) {
+    const o = v as Record<string, unknown>
+    if (typeof o.text === 'string') return o.text
+    if (typeof o.title === 'string') return o.title
+    if (typeof o.statement === 'string') return o.statement
+  }
+  return ''
+}
+
 function presortBucketDisplayLabel(b: PresortBucket): string {
   if (b === 'existing') return 'Existing'
   if (b === 'new') return 'New'
@@ -63,14 +80,16 @@ function PresortTriageBadge({ item, compact = false }: { item: StagedItem; compa
       : b === 'new'
         ? 'bg-sky-950/50 text-sky-200 border-sky-700/45'
         : 'bg-amber-950/45 text-amber-200 border-amber-700/45'
-  const reason = item.presortReason?.trim()
+  const reason = scalarForUi(item.presortReason).trim()
+  const existingTitle = scalarForUi(item.presortExistingTitle).trim()
   const hint =
-    b === 'existing' && item.presortExistingTitle
-      ? `Likely: ${item.presortExistingTitle}`
+    b === 'existing' && existingTitle
+      ? `Likely: ${existingTitle}`
       : item.presortConfidence != null
         ? `Confidence ${Math.round(item.presortConfidence * 100)}%`
         : undefined
-  const typeSuffix = item.presortType && b !== 'existing' ? ` · ${item.presortType}` : ''
+  const typeSuffix =
+    item.presortType && b !== 'existing' ? ` · ${scalarForUi(item.presortType)}` : ''
   const titleParts = [presortBucketDisplayLabel(b) + typeSuffix, reason, hint].filter(Boolean)
   return (
     <span
@@ -81,7 +100,7 @@ function PresortTriageBadge({ item, compact = false }: { item: StagedItem; compa
     >
       {presortBucketDisplayLabel(b)}
       {item.presortType && b !== 'existing' ? (
-        <span className="font-normal opacity-90 normal-case">({item.presortType})</span>
+        <span className="font-normal opacity-90 normal-case">({scalarForUi(item.presortType)})</span>
       ) : null}
     </span>
   )
@@ -247,28 +266,33 @@ function cloneStagedItem(item: StagedItem): StagedItem {
   return JSON.parse(JSON.stringify(item)) as StagedItem
 }
 
-function titleCaseFit(v: string | null | undefined): string {
-  if (!v) return ''
-  const t = v.toLowerCase()
+function titleCaseFit(v: unknown): string {
+  const s = scalarForUi(v).trim()
+  if (!s) return ''
+  const t = s.toLowerCase()
   return t.charAt(0).toUpperCase() + t.slice(1)
 }
 
 function describePlacementSummary(hint: CandidatePlacementResponse): string {
   const m = hint.placement_mode
-  if ((m === 'attach' || m === 'amend') && hint.target?.title) {
+  const tTitle = scalarForUi(hint.target?.title).trim()
+  const tType = scalarForUi(hint.target?.type).trim()
+  if ((m === 'attach' || m === 'amend') && tTitle) {
     return m === 'amend'
-      ? `Amend / attach to “${hint.target.title}” (${hint.target.type})`
-      : `Attach to “${hint.target.title}” (${hint.target.type})`
+      ? `Amend / attach to “${tTitle}” (${tType || '?'})`
+      : `Attach to “${tTitle}” (${tType || '?'})`
   }
-  if (m === 'new' && hint.suggested_parent?.title) {
-    return `New under “${hint.suggested_parent.title}” (${hint.suggested_parent.type})`
+  const pTitle = scalarForUi(hint.suggested_parent?.title).trim()
+  const pType = scalarForUi(hint.suggested_parent?.type).trim()
+  if (m === 'new' && pTitle) {
+    return `New under “${pTitle}” (${pType || '?'})`
   }
   return 'New (no parent link)'
 }
 
 function combinePlacementWhy(hint: CandidatePlacementResponse): string {
-  const pr = (hint.profile_reason || '').trim()
-  const r = (hint.reason || '').trim()
+  const pr = scalarForUi(hint.profile_reason).trim()
+  const r = scalarForUi(hint.reason).trim()
   const s = pr && r && pr !== r ? `${pr} · ${r}` : pr || r
   return s.length > 420 ? `${s.slice(0, 417)}…` : s
 }
@@ -524,11 +548,12 @@ const COMMITABLE_TYPE_GROUPS: { heading: string; options: { value: CommitableSta
 ]
 
 function getDisplayTitle(data: Record<string, unknown>, kind: string): string {
-  if (kind === 'insight') return (data.statement as string) ?? ''
-  if (kind === 'asset') return (data.name as string) ?? ''
-  if (kind === 'person') return (data.name as string) ?? ''
-  if (kind === 'signal') return (data.label as string) ?? ''
-  return (data.title as string) ?? ''
+  if (kind === 'insight') return scalarForUi(data.statement)
+  if (kind === 'asset') return scalarForUi(data.name)
+  if (kind === 'person') return scalarForUi(data.name)
+  if (kind === 'signal') return scalarForUi(data.label) || scalarForUi(data.kind)
+  if (kind === 'summary') return scalarForUi(data.text) || scalarForUi(data.title)
+  return scalarForUi(data.title)
 }
 
 /** Priority: structured summary → rationale/notes/description → source evidence → minimal placeholder. Never return blank. */
@@ -536,26 +561,28 @@ function getDisplaySummary(data: Record<string, unknown>, kind: string): string 
   let summary = ''
   // 1) Structured summary / rationale / description
   if (kind === 'insight') {
-    summary = (data.sourceQuote as string) ?? ''
+    summary = scalarForUi(data.sourceQuote)
   } else if (kind === 'idea') {
-    summary = (data.summary as string) ?? (data.description as string) ?? ''
+    summary = scalarForUi(data.summary) || scalarForUi(data.description) || ''
   } else if (kind === 'initiative' || kind === 'project') {
-    summary = (data.brief as string) ?? (data.description as string) ?? (data.notes as string) ?? ''
+    summary = scalarForUi(data.brief) || scalarForUi(data.description) || scalarForUi(data.notes) || ''
   } else if (kind === 'task') {
-    summary = (data.description as string) ?? (data.notes as string) ?? ''
+    summary = scalarForUi(data.description) || scalarForUi(data.notes) || ''
   } else if (kind === 'asset') {
-    summary = (data.description as string) ?? ''
+    summary = scalarForUi(data.description) || ''
   } else if (kind === 'person') {
-    summary = (data.role as string) ?? (data.context as string) ?? ''
+    summary = scalarForUi(data.role) || scalarForUi(data.context) || ''
   } else if (kind === 'signal') {
-    summary = (data.detail as string) ?? ''
+    summary = scalarForUi(data.detail) || ''
+  } else if (kind === 'summary') {
+    summary = scalarForUi(data.text) || ''
   }
 
-  const hasStructured = !!summary && !!String(summary).trim()
+  const hasStructured = !!summary.trim()
 
   // 2) Cleaned sentence from sourceExcerpt (first sentence)
   if (!hasStructured) {
-    const rawExcerpt = (data.sourceExcerpt as string | null | undefined) ?? ''
+    const rawExcerpt = scalarForUi(data.sourceExcerpt)
     const excerpt = rawExcerpt.replace(/[\r\n]+/g, ' ').trim()
     if (excerpt) {
       // Heuristic: take up to the first sentence terminator, otherwise cap length.
@@ -567,9 +594,7 @@ function getDisplaySummary(data: Record<string, unknown>, kind: string): string 
   }
 
   // 3) Final fallback
-  if (!summary || !String(summary).trim()) {
-    summary = 'Needs summary'
-  }
+  summary = scalarForUi(summary).trim() || 'Needs summary'
   return summary
 }
 
@@ -713,8 +738,8 @@ function getExtractorSuggestedMatch(
 /** Segment metadata on extracted item data (optional). */
 function getSegmentLabel(data: { segmentId?: string; segmentTitle?: string } | undefined): string | null {
   if (!data) return null
-  const title = data.segmentTitle?.trim()
-  const id = data.segmentId?.trim()
+  const title = scalarForUi(data.segmentTitle).trim()
+  const id = scalarForUi(data.segmentId).trim()
   if (title) return title
   if (id) return id
   return null
@@ -857,7 +882,7 @@ function SummaryRow({
       ) : (
         <input type="checkbox" checked={item.approved} onChange={onToggle} className="mt-1 rounded border-slate-500" aria-label={item.approved ? 'Reject' : 'Accept'} />
       )}
-      <p className="text-slate-200 flex-1">{(item.data as { text: string }).text}</p>
+      <p className="text-slate-200 flex-1">{scalarForUi((item.data as { text?: unknown }).text) || '—'}</p>
     </li>
   )
 }
@@ -926,7 +951,7 @@ function StagedCard<T extends StagedItem>({
   const suggested = extractorSuggestedMatch ?? possibleMatch
   const isExtractor = !!extractorSuggestedMatch
   const segmentLabel = getSegmentLabel(data as { segmentId?: string; segmentTitle?: string })
-  const sourceExcerpt = (data.sourceExcerpt as string | null | undefined) ?? ''
+  const sourceExcerpt = scalarForUi(data.sourceExcerpt)
   const confidence = (data.confidence as ExtractedConfidence | null | undefined) ?? null
   const matchConfidence = data.matchConfidence as number | null | undefined
   const observationSourceStage = (data.sourceStage as string | null | undefined)?.trim() || null
@@ -1072,17 +1097,18 @@ function StagedCard<T extends StagedItem>({
             </button>
           </div>
           {placementHint.execution_blocked ? (
-            <p className="text-red-300">{placementHint.error ?? 'Execution blocked by policy.'}</p>
+            <p className="text-red-300">{scalarForUi(placementHint.error) || 'Execution blocked by policy.'}</p>
           ) : (
             <>
-              {placementHint.profile_name ? (
+              {scalarForUi(placementHint.profile_name).trim() ? (
                 <p className="text-[11px] text-slate-500">
-                  Brand core (placement): <span className="text-slate-300">{placementHint.profile_name}</span>
+                  Brand core (placement):{' '}
+                  <span className="text-slate-300">{scalarForUi(placementHint.profile_name)}</span>
                 </p>
               ) : null}
               <p className="text-slate-200">
                 <span className="text-slate-500">Suggested as: </span>
-                {titleCaseFit(placementHint.proposed_type) || placementHint.proposed_type || '—'}
+                {titleCaseFit(placementHint.proposed_type) || '—'}
                 {placementHint.confidence != null && (
                   <span className="text-slate-500">
                     {' '}
@@ -1157,9 +1183,11 @@ function StagedCard<T extends StagedItem>({
           <div className="rounded border border-slate-600 bg-slate-800/50 px-2 py-1.5 text-xs space-y-1">
             <div className="text-slate-300">
               {item.acceptedExistingId ? (
-                <span className="text-emerald-400/90">Use existing: <strong>{linkedTitle}</strong></span>
+                <span className="text-emerald-400/90">Use existing: <strong>{scalarForUi(linkedTitle)}</strong></span>
               ) : (
-                <span className="text-slate-400">Place under: <strong className="text-slate-200">{linkedTitle}</strong> (create as child)</span>
+                <span className="text-slate-400">
+                  Place under: <strong className="text-slate-200">{scalarForUi(linkedTitle)}</strong> (create as child)
+                </span>
               )}
             </div>
             <div className="flex gap-2">
@@ -1180,7 +1208,7 @@ function StagedCard<T extends StagedItem>({
           <span className={isExtractor ? 'text-emerald-400/90' : 'text-amber-400/90'}>
             {isExtractor ? 'Suggested link:' : 'Possible match:'}
           </span>
-          <span className="text-slate-400">{suggested.title}</span>
+          <span className="text-slate-400">{scalarForUi(suggested.title)}</span>
           {onUseExisting && entityType !== undefined && (
             <button type="button" onClick={() => onUseExisting(entityType, index, suggested.id)} className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium">Accept</button>
           )}

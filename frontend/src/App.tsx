@@ -7,6 +7,7 @@ import {
   useRef,
   type ChangeEvent,
   type KeyboardEvent,
+  type ReactNode,
   type Ref,
   type SyntheticEvent,
 } from 'react'
@@ -41,16 +42,6 @@ import {
   type VEWorkspaceTabId,
 } from './vision-execution'
 import { VisionMapView } from './vision-map'
-import {
-  inferBoundedTransformIntent,
-  intentAllowedForSourceType,
-  buildBoundedNodeTransformInputSnapshot,
-  buildNodeTransformApiBody,
-  formatNodeTransformAgentContent,
-  buildNodeTransformRoutingContext,
-  resolveCouncilAnchorEntityType,
-  type NodeTransformResponse,
-} from './vision-map/boundedCouncilTransform'
 import { veSelectionFromEntityRef, veSelectionFromMapPayload } from './vision-map/mapCouncilActions'
 import { resolveInspectEntityRef } from './vision-map/mapTriadInspector'
 import type { MapNodePayload } from './vision-map/ontology'
@@ -115,6 +106,7 @@ import { VISION_EXECUTION_API, type CoreProfile } from './vision-execution/types
 import { canonicalCoreProfileId, coreProfileInfluencePickLabel } from './vision-execution/canonicalCoreProfile'
 import { ZenafPresence } from './components/ZenafPresence'
 import { EntityMentionText, type EntityMentionOpenPayload } from './components/EntityMentionText'
+import { enrichScopedDigressionLabel } from './council/enrichScopedDigressionLabel'
 import { postCouncilInsightRecognition } from './vision-execution/recognitionDecisions'
 import { BrandStructuredProfilePanel, CreateCoreProfileForm } from './vision-execution/coreProfilePanels'
 import { AspirationsFoundationPanel } from './foundation/AspirationsFoundationPanel'
@@ -127,9 +119,10 @@ import {
   FocusInviteRunProvider,
   buildConversationalInvitePreface,
   buildStructuredFillInvitePreface,
+  buildConversationalInviteDisplayLine,
+  buildScopedContextLabelFromCore,
+  threadDisplayLineForCouncilQuestion,
   CONVERSATIONAL_INVITE_MARKER,
-  boundedTransformDisabledForQuestion,
-  replaceStructuredFillComposerValue,
   FocusContextRecordButton,
   TranscribableFieldRegion,
   focusFieldRegistryKey,
@@ -144,7 +137,11 @@ import {
 import { useVisionExecutionFocusOptional } from './vision-execution/focus/VisionExecutionFocusContext'
 import type { FocusContext, FocusContextCore } from './vision-execution/focus/types'
 import { resolveGraphSliceVE } from './vision-execution/focus/graphSliceResolver'
-import { veFocusCoreFromVeSelection, veGraphSnapshotFromBundle } from './vision-execution/focus/conversationEntityFocus'
+import {
+  veFocusCoreFromVeSelection,
+  veGraphSnapshotFromBundle,
+  veSelectedEntityPayloadFromSelection,
+} from './vision-execution/focus/conversationEntityFocus'
 import type { Mandate } from './mandates'
 import { BUILT_IN_MANDATES } from './mandates'
 import {
@@ -215,6 +212,48 @@ import {
   type LastIntegrationCommitPayload,
   type PendingIntegrationPayload,
 } from './council/synthesisIntegrity'
+
+/** Flat scan for proposed integration (walks into folded scoped threads). */
+type AgentThreadScanRow = {
+  role: string
+  threadItemKind?: string
+  pendingIntegration?: PendingIntegrationPayload | null
+  nestedScopedThread?: { children: AgentThreadScanRow[] }
+}
+
+function findLastProposedPendingIntegrationInRows(rows: AgentThreadScanRow[]): PendingIntegrationPayload | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i]!
+    if (row.threadItemKind === 'scoped_thread_nest' && row.nestedScopedThread) {
+      const inner = findLastProposedPendingIntegrationInRows(row.nestedScopedThread.children)
+      if (inner) return inner
+    }
+    if (row.role === 'agent' && row.pendingIntegration?.integration_state === 'proposed') {
+      return row.pendingIntegration
+    }
+  }
+  return null
+}
+
+type CouncilInsightScanRow = {
+  role: string
+  content: string
+  agentLabel?: string
+  threadItemKind?: string
+  nestedScopedThread?: { children: CouncilInsightScanRow[] }
+}
+
+function findLastCouncilContentInRows(rows: CouncilInsightScanRow[]): string | null {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const m = rows[i]!
+    if (m.threadItemKind === 'scoped_thread_nest' && m.nestedScopedThread) {
+      const inner = findLastCouncilContentInRows(m.nestedScopedThread.children)
+      if (inner) return inner
+    }
+    if (m.role === 'agent' && m.agentLabel === 'Council' && m.content.trim()) return m.content
+  }
+  return null
+}
 
 /** POST /vision-execution/learning-records/user-outcome when structured next_step returned a correlation id. */
 function postWorkspaceLearningFromRef(
@@ -891,12 +930,33 @@ const COUNCIL_STREAM_IDLE_MS = 3 * 60 * 1000
 /** Non-council agent bubbles stay short; council + folder advisor can be long (many seats + synthesis). */
 const AGENT_THREAD_DISPLAY_MAX_CHARS = 2000
 
-function formatDigressionBackgroundBlock(
-  thread: { role: string; content: string; threadItemKind?: string }[],
-): string {
+function newScopedThreadNestId(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `nest-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+}
+
+type DigressionBackgroundThreadRow = {
+  role: string
+  content: string
+  threadItemKind?: string
+  nestedScopedThread?: { children: DigressionBackgroundThreadRow[] }
+}
+
+function formatDigressionBackgroundBlock(thread: DigressionBackgroundThreadRow[]): string {
+  function* walkReverse(rows: DigressionBackgroundThreadRow[]): Generator<DigressionBackgroundThreadRow> {
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const m = rows[i]!
+      if (m.threadItemKind === 'scoped_thread_nest' && m.nestedScopedThread) {
+        yield* walkReverse(m.nestedScopedThread.children)
+      } else {
+        yield m
+      }
+    }
+  }
   const lines: string[] = []
-  for (let i = thread.length - 1; i >= 0 && lines.length < 4; i--) {
-    const m = thread[i]!
+  for (const m of walkReverse(thread)) {
+    if (lines.length >= 4) break
     if (m.role !== 'user' && m.role !== 'agent') continue
     if (m.threadItemKind === 'streaming_placeholder') continue
     const role = m.role === 'user' ? 'User' : 'Assistant'
@@ -1870,7 +1930,16 @@ function App() {
   /** Synced after `currentTopic` / `mainView` / `veSelection` each render — used by council preflight. */
   const councilVeFocusRef = useRef<FocusContext | null>(null)
   const runCouncilRef = useRef<
-    ((overrideQuestion?: string, options?: { preserveComposer?: boolean }) => Promise<void>) | null
+    | ((
+        overrideQuestion?: string,
+        options?: {
+          preserveComposer?: boolean
+          threadDisplayHint?: string
+          /** Thread snapshot for digression background / pending scan when state has not flushed yet (invite trim). */
+          councilContextThreadOverride?: DigressionBackgroundThreadRow[]
+        },
+      ) => Promise<void>)
+    | null
   >(null)
   const councilIdeaLabelsRef = useRef<CouncilIdeaLabelsSnapshot | null>(null)
   /** Last Zenaf `conversation_subject` from council stream `done` — echoed on the next POST /run/stream. */
@@ -1879,6 +1948,8 @@ function App() {
   const councilPendingIntegrationRef = useRef<PendingIntegrationPayload | null>(null)
   /** Last committed integration from stream `done` — sticky for “where does this live?”. */
   const councilLastIntegrationCommitRef = useRef<LastIntegrationCommitPayload | null>(null)
+  /** Echo `last_created_project_id` for Lane A follow-up task batches (`context.ve_direct_session`). */
+  const councilVeDirectSessionRef = useRef<{ last_created_project_id?: string } | null>(null)
   /** Matches `councilRunId` for the in-flight / last council reply — keeps resonance slider key stable stream → final message. */
   const councilResonanceRunIdRef = useRef<string | null>(null)
   /** Stable id for the orphan “agent response” strip when `agentThread` is empty (avoids shared `thread-fallback` key). */
@@ -1898,11 +1969,41 @@ function App() {
     ve_selection: null,
   })
   const [councilExpandedMode, setCouncilExpandedMode] = useState(false)
+  /** Bumps after server-side VE writes (integration commit or Lane A) so Vision Execution detail panels refetch. */
+  const [councilVeServerWriteNonce, setCouncilVeServerWriteNonce] = useState(0)
   /** Scoped sub-thread: Zenaf sees only this entity + short parent background (server: is_scoped_digression). */
   const [councilScopedDigression, setCouncilScopedDigression] = useState<EntityMentionOpenPayload | null>(null)
-  const handleCouncilEntityMentionOpen = useCallback((p: EntityMentionOpenPayload) => {
-    setCouncilScopedDigression(p)
+  /** When set, conversation list shows only rows from this index (scoped context replaces full thread view). */
+  const [councilScopeThreadStartIndex, setCouncilScopeThreadStartIndex] = useState<number | null>(null)
+  const councilScopeThreadStartIndexRef = useRef<number | null>(null)
+  const councilScopedDigressionRef = useRef<EntityMentionOpenPayload | null>(null)
+  useEffect(() => {
+    councilScopeThreadStartIndexRef.current = councilScopeThreadStartIndex
+  }, [councilScopeThreadStartIndex])
+  useEffect(() => {
+    councilScopedDigressionRef.current = councilScopedDigression
+  }, [councilScopedDigression])
+  /** Bumped when the open idea editor refreshes council snapshot — re-resolve scoped banner label. */
+  const [councilIdeaLiveLabelsSeq, setCouncilIdeaLiveLabelsSeq] = useState(0)
+  const bumpCouncilIdeaLiveLabelsSeq = useCallback(() => {
+    setCouncilIdeaLiveLabelsSeq((n) => n + 1)
   }, [])
+  const scopedDigressionKey = councilScopedDigression
+    ? `${councilScopedDigression.entityType}:${councilScopedDigression.entityId}`
+    : ''
+  useEffect(() => {
+    if (!scopedDigressionKey) return
+    setCouncilScopedDigression((prev) => {
+      if (!prev) return prev
+      const next = enrichScopedDigressionLabel(prev, {
+        ideaLabels: councilIdeaLabelsRef.current,
+        bundle: councilVeEntityBundleRef.current,
+      })
+      return next.label === prev.label ? prev : next
+    })
+  }, [scopedDigressionKey, councilIdeaLiveLabelsSeq])
+  /** Expanded `scoped_thread_nest` rows in the council transcript (collapsed by default). */
+  const [councilExpandedNestIds, setCouncilExpandedNestIds] = useState<Set<string>>(() => new Set())
   const [councilSeatSlots, setCouncilSeatSlots] = useState<CouncilSeatSlot[]>(() =>
     Array.from({ length: EXPANDED_MAX_SEATS }, (_, i) => ({
       id: `cs-${i}`,
@@ -2557,91 +2658,19 @@ function App() {
 
   const runCouncil = async (
     overrideQuestion?: string,
-    options?: { preserveComposer?: boolean },
+    options?: {
+      preserveComposer?: boolean
+      threadDisplayHint?: string
+      councilContextThreadOverride?: DigressionBackgroundThreadRow[]
+    },
   ) => {
     const invocationKind = councilInvocationNextRef.current
     councilInvocationNextRef.current = 'default'
     const q = (overrideQuestion ?? question)?.trim() || 'What should we consider?'
     const isFolderWorkflowEarly = lastMode === 'recommend' && !!lastFolderPath
-    const mapPayloadEarly = councilRunMapPayloadRef.current
     councilRunMapPayloadRef.current = null
-    if (!isFolderWorkflowEarly && !boundedTransformDisabledForQuestion(q)) {
-      const anchorType = resolveCouncilAnchorEntityType(veSelection, mapPayloadEarly)
-      const transformIntent = inferBoundedTransformIntent(q, anchorType)
-      if (
-        transformIntent &&
-        intentAllowedForSourceType(transformIntent, anchorType)
-      ) {
-        const apiBody = buildNodeTransformApiBody(transformIntent, q, {
-          veSelection,
-          mapPayload: mapPayloadEarly,
-          ideaLabels: councilIdeaLabelsRef.current,
-          profileId: brandCoreProfileId,
-        })
-        if (apiBody) {
-          setError(null)
-          setWorkspaceTraceOutcomeBanner(null)
-          setCouncilTransformLoading(true)
-          try {
-            const data = await veApiPost<NodeTransformResponse>('/suggest-node-transform', {
-              ...apiBody,
-              client_correlation_id: `bounded-transform:${Date.now()}`,
-              routingContext: buildNodeTransformRoutingContext(),
-            })
-            if (data.execution_blocked) {
-              setError(
-                typeof data.error === 'string'
-                  ? data.error
-                  : 'Execution blocked by policy.',
-              )
-              return
-            }
-            if (data.error && !data.proposed_node?.title?.trim()) {
-              setError(typeof data.message === 'string' ? data.message : String(data.error))
-              return
-            }
-            const reply = formatNodeTransformAgentContent(data)
-            try {
-              const tr = emitWorkspaceTraceFromText({
-                action_intent: WORKSPACE_ACTION_INTENTS.bounded_node_transform,
-                folder_path: lastFolderPath || null,
-                input_snapshot: buildBoundedNodeTransformInputSnapshot({
-                  questionCharLen: q.length,
-                  anchorEntityType: anchorType,
-                  transformIntent,
-                }),
-                output_text: reply,
-                resolved_model_used: data.model_used ?? undefined,
-              })
-              workspaceOutcomeTargetRef.current = {
-                trace: tr,
-                action_intent: WORKSPACE_ACTION_INTENTS.bounded_node_transform,
-              }
-            } catch {
-              /* trace must not affect council UX */
-            }
-            setQuestion('')
-            setResult(reply)
-            setLastMode('council')
-            setLastCouncilResult(reply)
-            setLastCouncilPresentationKind('thinking')
-            setCurrentFocusMode('council')
-            setCurrentFocusHasResult(true)
-            setAgentThread((t) => [
-              ...t,
-              { role: 'user', content: q },
-              { role: 'agent', content: reply, agentLabel: 'Transform' },
-            ])
-            setAgentConversationScrollNonce((n) => n + 1)
-          } catch (e) {
-            setError(e instanceof Error ? e.message : 'Transform request failed')
-          } finally {
-            setCouncilTransformLoading(false)
-          }
-          return
-        }
-      }
-    }
+    // Bounded node transform (suggest-only) previously ran before POST /run; Lane A direct VE runs on the server
+    // first, so council/stream is always attempted here — no pre-council transform hijack.
 
     const cxMax = councilExpandedMode ? EXPANDED_MAX_SEATS : MAX_COUNCIL_SEATS
     let filledSlots = councilSeatSlots.slice(0, cxMax).filter((s) => s.actorId != null)
@@ -2692,6 +2721,7 @@ function App() {
     let councilRunId: string | null = null
     let perfLog: ((stage: string, extra?: Record<string, unknown>) => void) | null = null
     try {
+      const threadForCouncilContext = options?.councilContextThreadOverride ?? agentThread
       const workflowContext = useLastResultAsContext ? buildContextBlock(isFolderWorkflow ? approvedFolders : undefined) : ''
       const inCouncilDigression = Boolean(councilScopedDigression)
       const threadContext = inCouncilDigression ? '' : buildAgentThreadContext()
@@ -2712,6 +2742,8 @@ function App() {
       }
       perfLog?.('runCouncil_try_start', { questionLen: q.length })
       setCouncilStreamPhase('connecting')
+      const threadDisplayLine =
+        options?.threadDisplayHint ?? threadDisplayLineForCouncilQuestion(q)
       setAgentThread((prev) => {
         const stripped = prev.filter(
           (m) =>
@@ -2720,9 +2752,15 @@ function App() {
               (m.threadItemKind === 'system_status' || m.threadItemKind === 'streaming_placeholder')
             ),
         )
+        const userRow: AgentThreadMessage = {
+          role: 'user',
+          content: q,
+          threadItemKind: 'user_message',
+          ...(threadDisplayLine ? { councilThreadDisplayContent: threadDisplayLine } : {}),
+        }
         return [
           ...stripped,
-          { role: 'user', content: q, threadItemKind: 'user_message' },
+          userRow,
           {
             role: 'system',
             content: councilPhaseDetail('connecting'),
@@ -2779,6 +2817,16 @@ function App() {
       if (snap.ve_selection && Object.keys(snap.ve_selection).length > 0) {
         council_preflight.ve_selection = snap.ve_selection
       }
+      const veSelectedPayload = veSelectedEntityPayloadFromSelection(snap.ve_selection, entityBundle)
+      if (veSelectedPayload) {
+        council_preflight.ve_selected_entity = veSelectedPayload
+      }
+      if (
+        effectiveCore &&
+        (snap.mainView === 'vision_execution' || snap.mainView === 'vision_map')
+      ) {
+        council_preflight.grounding_explicit = true
+      }
       const ideaLabels = councilIdeaLabelsRef.current
       if (
         effectiveCore?.entity_type === 'idea' &&
@@ -2788,6 +2836,8 @@ function App() {
         council_preflight.ve_focus_title = ideaLabels.ve_focus_title
         council_preflight.ve_focus_brief = ideaLabels.ve_focus_brief
         council_preflight.ve_focus_description = ideaLabels.ve_focus_description
+        const st = ideaLabels.ve_focus_status?.trim()
+        if (st) council_preflight.ve_focus_status = st
       }
       if (effectiveCore?.entity_type === 'task') {
         const graphSnap = veGraphSnapshotFromBundle(entityBundle)
@@ -2882,16 +2932,8 @@ function App() {
       // Transaction integrity: final SSE often omits `pending_integration` when unchanged, which previously cleared the
       // ref and dropped the echo on the next POST. Recover from the last assistant row that still shows a pending chip.
       if (!councilPendingIntegrationRef.current) {
-        for (let i = agentThread.length - 1; i >= 0; i--) {
-          const row = agentThread[i]
-          if (
-            row?.role === 'agent' &&
-            row.pendingIntegration?.integration_state === 'proposed'
-          ) {
-            councilPendingIntegrationRef.current = row.pendingIntegration
-            break
-          }
-        }
+        const recovered = findLastProposedPendingIntegrationInRows(threadForCouncilContext as AgentThreadScanRow[])
+        if (recovered) councilPendingIntegrationRef.current = recovered
       }
       const body: {
         mode: string
@@ -2911,6 +2953,7 @@ function App() {
           conversation_subject?: ConversationSubject
           pending_integration?: PendingIntegrationPayload
           last_integration_commit?: LastIntegrationCommitPayload
+          ve_direct_session?: { last_created_project_id?: string }
           is_scoped_digression?: boolean
           digression_background?: string
         }
@@ -2937,10 +2980,17 @@ function App() {
           ...(councilLastIntegrationCommitRef.current
             ? { last_integration_commit: councilLastIntegrationCommitRef.current }
             : {}),
+          ...(councilVeDirectSessionRef.current?.last_created_project_id
+            ? {
+                ve_direct_session: {
+                  last_created_project_id: councilVeDirectSessionRef.current.last_created_project_id,
+                },
+              }
+            : {}),
           ...(councilScopedDigression
             ? {
                 is_scoped_digression: true,
-                digression_background: formatDigressionBackgroundBlock(agentThread),
+                digression_background: formatDigressionBackgroundBlock(threadForCouncilContext),
               }
             : {}),
         },
@@ -3180,6 +3230,7 @@ function App() {
               integrationCommitFromDone?.status === 'committed'
             if (committedThisStream) {
               councilPendingIntegrationRef.current = null
+              setCouncilVeServerWriteNonce((n) => n + 1)
             } else if ('pending_integration' in payload) {
               if (
                 payload.pending_integration != null &&
@@ -3199,6 +3250,27 @@ function App() {
               councilLastIntegrationCommitRef.current = payload.last_integration_commit as LastIntegrationCommitPayload
             }
             if (
+              payload.direct_ve_action != null &&
+              typeof payload.direct_ve_action === 'object' &&
+              !Array.isArray(payload.direct_ve_action)
+            ) {
+              const dva = payload.direct_ve_action
+              if (dva.status === 'handled') {
+                setCouncilVeServerWriteNonce((n) => n + 1)
+                const ents = dva.created_entities
+                if (Array.isArray(ents)) {
+                  const proj = ents.find(
+                    (e) => e && e.entity_type === 'project' && String(e.entity_id ?? '').trim(),
+                  )
+                  if (proj?.entity_id) {
+                    councilVeDirectSessionRef.current = {
+                      last_created_project_id: String(proj.entity_id).trim(),
+                    }
+                  }
+                }
+              }
+            }
+            if (
               !integrationCommitFromDone &&
               payload.pending_integration != null &&
               typeof payload.pending_integration === 'object' &&
@@ -3213,15 +3285,34 @@ function App() {
               payload.digression_summary.trim()
             ) {
               const note = payload.digression_summary.trim()
+              const foldStart = councilScopeThreadStartIndexRef.current
+              const foldLabel = councilScopedDigressionRef.current?.label ?? 'Focused thread'
               setCouncilScopedDigression(null)
-              setAgentThread((prev) => [
-                ...prev,
-                {
-                  role: 'system',
-                  content: `System note: ${note}\n\nResume the main discussion when you are ready.`,
-                  threadItemKind: 'system_status',
-                },
-              ])
+              setCouncilScopeThreadStartIndex(null)
+              setAgentThread((prev) => {
+                let base = prev
+                if (foldStart != null && foldStart < base.length) {
+                  const nestId = newScopedThreadNestId()
+                  const children = base.slice(foldStart).map((row) => ({ ...row }))
+                  base = [
+                    ...base.slice(0, foldStart),
+                    {
+                      role: 'system' as const,
+                      content: '',
+                      threadItemKind: 'scoped_thread_nest' as const,
+                      nestedScopedThread: { id: nestId, label: foldLabel, children },
+                    },
+                  ]
+                }
+                return [
+                  ...base,
+                  {
+                    role: 'system',
+                    content: `System note: ${note}\n\nResume the main discussion when you are ready.`,
+                    threadItemKind: 'system_status',
+                  },
+                ]
+              })
             }
             setStreamingCouncilText(fullText)
             streamDone = true
@@ -3257,6 +3348,16 @@ function App() {
             }
             fullText += payload.chunk
             setStreamingCouncilText(fullText)
+          }
+          // Thinking-partner stream: first event often carries `pending_integration` in meta; final `done` may omit it.
+          if (
+            !payload.done &&
+            'pending_integration' in payload &&
+            payload.pending_integration != null &&
+            typeof payload.pending_integration === 'object' &&
+            !Array.isArray(payload.pending_integration)
+          ) {
+            councilPendingIntegrationRef.current = payload.pending_integration as PendingIntegrationPayload
           }
         } catch (_) {}
       }
@@ -3323,6 +3424,32 @@ function App() {
       setCurrentFocusMode('council')
       setCurrentFocusHasResult(true)
       if (lastFolderPath) setCurrentFocusPath(lastFolderPath)
+      // If the final `done` payload omits `pending_integration`, `pendingIntegrationFromDone` stays null but
+      // `councilPendingIntegrationRef` may still hold the proposed write (key absent → ref not cleared).
+      // Attach that ref to the row so the next POST echoes `context.pending_integration` and deterministic commit runs.
+      let pendingAttach: PendingIntegrationPayload | undefined
+      if (!integrationCommitFromDone) {
+        if (
+          pendingIntegrationFromDone &&
+          typeof pendingIntegrationFromDone === 'object' &&
+          !Array.isArray(pendingIntegrationFromDone)
+        ) {
+          pendingAttach = pendingIntegrationFromDone
+        } else {
+          const r = councilPendingIntegrationRef.current
+          if (
+            r &&
+            typeof r === 'object' &&
+            !Array.isArray(r) &&
+            r.integration_state === 'proposed'
+          ) {
+            pendingAttach = r
+          }
+        }
+      }
+      if (pendingAttach) {
+        councilPendingIntegrationRef.current = pendingAttach
+      }
       setAgentThread((t) => {
         const cleaned = councilRunId ? t.filter((m) => m.ephemeralRunId !== councilRunId) : t
         const withoutStalePending =
@@ -3342,9 +3469,7 @@ function App() {
             threadItemKind: 'assistant_message',
             resonanceResponseId: councilRunId ?? undefined,
             ...(integrationCommitFromDone ? { integrationCommit: integrationCommitFromDone } : {}),
-            ...(pendingIntegrationFromDone && !integrationCommitFromDone
-              ? { pendingIntegration: pendingIntegrationFromDone }
-              : {}),
+            ...(pendingAttach ? { pendingIntegration: pendingAttach } : {}),
           },
         ]
       })
@@ -4121,8 +4246,50 @@ function App() {
     integrationCommit?: IntegrationCommitPayload | null
     /** Proposed save from this turn; stripped when a later turn commits. */
     pendingIntegration?: PendingIntegrationPayload | null
+    /** Human-visible council question line when `content` carries internal invite preface. */
+    councilThreadDisplayContent?: string
+    /** Folded scoped sub-thread after Return (single row; expand to see messages). */
+    nestedScopedThread?: {
+      id: string
+      label: string
+      children: AgentThreadMessage[]
+    }
   }
   const [agentThread, setAgentThread] = useState<AgentThreadMessage[]>([])
+  const agentThreadRef = useRef(agentThread)
+  agentThreadRef.current = agentThread
+
+  const handleCouncilEntityMentionOpen = useCallback((p: EntityMentionOpenPayload) => {
+    const enriched = enrichScopedDigressionLabel(p, {
+      ideaLabels: councilIdeaLabelsRef.current,
+      bundle: councilVeEntityBundleRef.current,
+    })
+    setCouncilScopeThreadStartIndex(agentThreadRef.current.length)
+    setCouncilScopedDigression(enriched)
+  }, [])
+
+  const foldScopedThreadIntoNest = useCallback(() => {
+    const start = councilScopeThreadStartIndexRef.current
+    const label = councilScopedDigressionRef.current?.label ?? 'Focused thread'
+    setCouncilScopedDigression(null)
+    setCouncilScopeThreadStartIndex(null)
+    setAgentThread((prev) => {
+      if (start == null || start >= prev.length) return prev
+      const nestId = newScopedThreadNestId()
+      const children = prev.slice(start).map((row) => ({ ...row }))
+      const before = prev.slice(0, start)
+      const nest: AgentThreadMessage = {
+        role: 'system',
+        content: '',
+        threadItemKind: 'scoped_thread_nest',
+        nestedScopedThread: { id: nestId, label, children },
+      }
+      return [...before, nest]
+    })
+  }, [])
+
+  const lastConversationalFocusInviteRef = useRef<{ key: string; t: number } | null>(null)
+
   const mapSeedGenRef = useRef(0)
   const deferResurfaceFingerprintRef = useRef<Map<string, string>>(new Map())
   const guideRowPromptId = useCallback((row: AgentThreadMessage) => {
@@ -4221,20 +4388,58 @@ function App() {
   const handleFocusInvite = useCallback((invite: FocusInvite, core: FocusContextCore) => {
     if (invite.kind === 'conversational') {
       if (COUNCIL_STREAM_BUSY_PHASES.has(councilStreamPhase)) return
+      const dedupeKey = `${invite.id}:${core.entity_id}`
+      const now = Date.now()
+      const prevRun = lastConversationalFocusInviteRef.current
+      if (prevRun && prevRun.key === dedupeKey && now - prevRun.t < 4000) return
+      lastConversationalFocusInviteRef.current = { key: dedupeKey, t: now }
+
+      const prevThread = agentThreadRef.current
+      const dig = councilScopedDigressionRef.current
+      const scopeStart = councilScopeThreadStartIndexRef.current
+      const sameEntityScoped =
+        Boolean(dig) &&
+        dig!.entityId === core.entity_id &&
+        dig!.entityType === core.entity_type &&
+        scopeStart != null &&
+        scopeStart <= prevThread.length
+      const trimmed =
+        sameEntityScoped && scopeStart != null
+          ? prevThread.slice(0, scopeStart)
+          : prevThread.slice()
+
       setActiveMode('council')
+      setAgentThread(trimmed)
+      const nextScopeStart = trimmed.length
+      setCouncilScopeThreadStartIndex(nextScopeStart)
+      setCouncilScopedDigression({
+        entityId: core.entity_id,
+        entityType: core.entity_type,
+        label: buildScopedContextLabelFromCore(core),
+      })
       const preface = buildConversationalInvitePreface(invite, core)
-      void runCouncilRef.current?.(preface, { preserveComposer: true })
+      const hint = buildConversationalInviteDisplayLine(invite, core)
+      void runCouncilRef.current?.(preface, {
+        preserveComposer: false,
+        threadDisplayHint: hint,
+        councilContextThreadOverride: trimmed,
+      })
       return
     }
     setActiveMode('council')
-    setQuestion((prev) =>
-      replaceStructuredFillComposerValue(prev, buildStructuredFillInvitePreface(invite, core)),
-    )
+    setQuestion(buildStructuredFillInvitePreface(invite, core))
   }, [councilStreamPhase])
 
   const buildAgentThreadContext = (): string => {
     if (agentThread.length === 0) return ''
-    const lines = agentThread.slice(-12).map((m) => {
+    const formatOne = (m: AgentThreadMessage): string | null => {
+      if (m.threadItemKind === 'scoped_thread_nest' && m.nestedScopedThread) {
+        const inner = m.nestedScopedThread.children
+          .map(formatOne)
+          .filter((x): x is string => x != null)
+        if (inner.length === 0) return `[Scoped thread — ${m.nestedScopedThread.label}]`
+        return `[Scoped thread — ${m.nestedScopedThread.label}]\n${inner.join('\n\n')}`
+      }
       if (
         m.role === 'system' ||
         m.threadItemKind === 'system_status' ||
@@ -4242,16 +4447,16 @@ function App() {
       ) {
         return null
       }
-      if (m.role === 'user') return `User: ${m.content}`
+      if (m.role === 'user') return `User: ${m.councilThreadDisplayContent ?? m.content}`
       if (m.role === 'guide') return `Guide: ${m.content}`
       if (m.threadHandoffReview) {
-        const bits = m.threadHandoffReview.items.map((i) => i.text).join(' | ')
+        const bits = m.threadHandoffReview.items.map((x) => x.text).join(' | ')
         return `Agent (${m.agentLabel ?? 'handoff'}): unresolved from ${m.threadHandoffReview.forSubjectLabel}: ${bits}`
       }
       return `Agent${m.agentLabel ? ` (${m.agentLabel})` : ''}: ${m.content}`
-    })
-    const filtered = lines.filter((x): x is string => x != null)
-    return 'Recent conversation:\n' + filtered.join('\n\n')
+    }
+    const lines = agentThread.slice(-12).map(formatOne).filter((x): x is string => x != null)
+    return 'Recent conversation:\n' + lines.join('\n\n')
   }
 
   const handleVisionMapCouncilInteraction = (action: VisionMapCouncilInteraction) => {
@@ -4528,10 +4733,8 @@ function App() {
 
   const resolveCouncilInsightText = useCallback((): string | null => {
     if (streamingCouncilText.trim()) return streamingCouncilText
-    for (let i = agentThread.length - 1; i >= 0; i--) {
-      const m = agentThread[i]
-      if (m.role === 'agent' && m.agentLabel === 'Council' && m.content.trim()) return m.content
-    }
+    const fromThread = findLastCouncilContentInRows(agentThread as CouncilInsightScanRow[])
+    if (fromThread) return fromThread
     if (lastMode === 'council' && (agentResponse?.trim() ?? '')) return agentResponse!.trim()
     return null
   }, [streamingCouncilText, agentThread, lastMode, agentResponse])
@@ -5662,10 +5865,12 @@ function App() {
               initialSelection={stableVeSelectionForExecutionView}
               councilIdeaLabelsRef={councilIdeaLabelsRef}
               councilVeEntityBundleRef={councilVeEntityBundleRef}
+              onCouncilIdeaLiveLabelsUpdated={bumpCouncilIdeaLiveLabelsSeq}
               focusTabRequest={veFocusTabRequest}
               onFocusTabRequestConsumed={consumeVeFocusTabRequest}
               onVeSelectionChange={setVeSelection}
               recognitionUserId={currentUser?.id ?? null}
+              councilServerWriteNonce={councilVeServerWriteNonce}
             />
           </div>
         ) : (
@@ -6661,10 +6866,7 @@ function App() {
                     <p className="text-[10px] uppercase tracking-wide text-cyan-400/95 font-semibold">
                       Scoped sub-thread
                     </p>
-                    <p
-                      className="text-sm text-cyan-100/95 font-medium truncate"
-                      title={`${councilScopedDigression.entityType} · ${councilScopedDigression.entityId}`}
-                    >
+                    <p className="text-sm text-cyan-100/95 font-medium truncate" title={councilScopedDigression.label}>
                       Focus: {councilScopedDigression.label}
                     </p>
                     <p className="text-[11px] text-cyan-200/60 mt-0.5">
@@ -6673,7 +6875,7 @@ function App() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setCouncilScopedDigression(null)}
+                    onClick={() => foldScopedThreadIntoNest()}
                     className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-stone-900/90 text-cyan-100 border border-cyan-600/50 hover:bg-stone-800"
                   >
                     Return
@@ -6698,11 +6900,61 @@ function App() {
                   <p className="text-stone-500 text-xs">Ask a question or run an agent to start the thread.</p>
                 )}
                 {/* One ThreadInlineGuideStack per render: only at first stacked guide index; other stacked rows are skipped (return null). */}
-                {agentThread.map((m, i) => {
+                {(() => {
+                  const renderRow = (
+                    m: AgentThreadMessage,
+                    i: number,
+                    keyPrefix: string,
+                    insideNest: boolean,
+                  ): ReactNode => {
+                  if (m.threadItemKind === 'scoped_thread_nest' && m.nestedScopedThread) {
+                    const { id, label, children } = m.nestedScopedThread
+                    const expanded = councilExpandedNestIds.has(id)
+                    const count = children.length
+                    return (
+                      <div
+                        key={keyPrefix}
+                        className="rounded-lg border border-cyan-700/35 bg-stone-950/55 mx-2 overflow-hidden"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCouncilExpandedNestIds((prev) => {
+                              const next = new Set(prev)
+                              if (next.has(id)) next.delete(id)
+                              else next.add(id)
+                              return next
+                            })
+                          }
+                          className="w-full text-left px-3 py-2.5 flex items-start gap-2 text-sm hover:bg-stone-900/50"
+                        >
+                          <span className="text-cyan-400/90 shrink-0 font-mono text-xs mt-0.5" aria-hidden>
+                            {expanded ? '▼' : '▶'}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="text-[10px] uppercase tracking-wide text-cyan-500/85 font-semibold block">
+                              Scoped thread
+                            </span>
+                            <span className="block truncate text-stone-100 font-medium" title={label}>
+                              {label}
+                            </span>
+                            <span className="text-[11px] text-stone-500">
+                              {count} message{count === 1 ? '' : 's'} · {expanded ? 'Collapse' : 'Expand'}
+                            </span>
+                          </span>
+                        </button>
+                        {expanded ? (
+                          <div className="px-2 pb-2 pt-1 space-y-2 border-t border-cyan-900/25 bg-stone-950/40">
+                            {children.map((c, j) => renderRow(c, j, `${keyPrefix}-c${j}`, true))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  }
                   if (m.role === 'system') {
                     return (
                       <div
-                        key={m.ephemeralRunId ? `session-${m.ephemeralRunId}` : `session-${i}`}
+                        key={m.ephemeralRunId ? `session-${m.ephemeralRunId}` : keyPrefix}
                         className="rounded-lg px-3 py-2 text-xs text-stone-400 bg-stone-900/40 border border-stone-700/60 mx-2"
                         role="status"
                         aria-live="polite"
@@ -6717,7 +6969,7 @@ function App() {
                       councilPhaseDetail(councilStreamPhase) || 'Preparing response…'
                     return (
                       <div
-                        key={m.ephemeralRunId ? `placeholder-${m.ephemeralRunId}` : `placeholder-${i}`}
+                        key={m.ephemeralRunId ? `placeholder-${m.ephemeralRunId}` : keyPrefix}
                         className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 mr-4 border border-yellow-700/40"
                         role="status"
                         aria-live="polite"
@@ -6735,7 +6987,7 @@ function App() {
                   }
                   if (m.role === 'guide') {
                     const gid = guideRowPromptId(m)
-                    if (stackedPromptIdSet.has(gid)) {
+                    if (!insideNest && stackedPromptIdSet.has(gid)) {
                       if (i === firstStackedGuideIndex && stackedGuides.length > 0) {
                         return (
                           <ThreadInlineGuideStack
@@ -6782,7 +7034,7 @@ function App() {
                       gm.promptSignal?.promptId ?? ephemeralGuidePromptIdFromContent(gm.content)
                     return (
                       <InlineThreadGuideCard
-                        key={i}
+                        key={keyPrefix}
                         message={gm}
                         mainView={mainView}
                         mapNodeKind={mapDevelopmentalSnapshot?.node_kind ?? null}
@@ -6822,7 +7074,7 @@ function App() {
                   }
                   return (
                     <div
-                      key={i}
+                      key={keyPrefix}
                       className={`rounded-lg px-3 py-2 text-sm ${
                         m.role === 'user'
                           ? 'bg-stone-700/80 text-stone-200 ml-4'
@@ -6877,7 +7129,7 @@ function App() {
                             responseIdPrefix={
                               m.resonanceResponseId ??
                               councilSynthesisIntegrityEnvelope?.provenance?.run_id ??
-                              `thread-msg-${i}`
+                              `${keyPrefix}-msg`
                             }
                             mainView={mainView}
                             folderPath={folderPath}
@@ -6888,7 +7140,7 @@ function App() {
                             pendingIntegration={m.pendingIntegration}
                             onOpenEntity={handleCouncilEntityMentionOpen}
                           />
-                          {i === agentThread.length - 1 &&
+                          {!insideNest && i === agentThread.length - 1 &&
                             m.role === 'agent' &&
                             m.agentLabel === 'Council' &&
                             includeCouncilSynthesis &&
@@ -6906,20 +7158,26 @@ function App() {
                           {m.role === 'user' && activeMode === 'council' ? (
                             <div className="whitespace-pre-wrap font-sans text-xs text-stone-200">
                               <EntityMentionText
-                                text={m.content}
+                                text={m.councilThreadDisplayContent ?? m.content}
                                 maxChars={AGENT_THREAD_DISPLAY_MAX_CHARS}
                                 onOpenEntity={handleCouncilEntityMentionOpen}
                               />
                             </div>
                           ) : (
                             <pre className="whitespace-pre-wrap font-sans text-xs">
-                              {m.content.slice(0, AGENT_THREAD_DISPLAY_MAX_CHARS)}
-                              {m.content.length > AGENT_THREAD_DISPLAY_MAX_CHARS ? '\n…' : ''}
+                              {(m.councilThreadDisplayContent ?? m.content).slice(
+                                0,
+                                AGENT_THREAD_DISPLAY_MAX_CHARS,
+                              )}
+                              {(m.councilThreadDisplayContent ?? m.content).length >
+                              AGENT_THREAD_DISPLAY_MAX_CHARS
+                                ? '\n…'
+                                : ''}
                             </pre>
                           )}
                           {m.role === 'agent' ? (
                             <AgentChatResonanceSlider
-                              responseId={m.resonanceResponseId ?? `thread-msg-${i}-integrated`}
+                              responseId={m.resonanceResponseId ?? `${keyPrefix}-integrated`}
                               agentLabel={m.agentLabel}
                               mainView={mainView}
                               folderPath={folderPath}
@@ -6930,7 +7188,15 @@ function App() {
                       )}
                     </div>
                   )
-                })}
+                }
+                  return agentThread.map((m, i) => {
+                    if (councilScopeThreadStartIndex != null) {
+                      const start = Math.min(councilScopeThreadStartIndex, agentThread.length)
+                      if (i < start) return null
+                    }
+                    return renderRow(m, i, `row-${i}`, false)
+                  })
+                })()}
                 {streamingCouncilText && (
                   <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 mr-4 border border-yellow-700/50">
                     <p className="text-xs text-yellow-500/90 font-medium mb-1">

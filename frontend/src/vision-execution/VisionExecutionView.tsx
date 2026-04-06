@@ -172,6 +172,20 @@ function applyWorkspaceIdentityGetToSession(data: WorkspaceIdentityStatusRespons
   }
 }
 
+/** Ideas/initiatives/etc. must be strings in the UI; DB or bad merges can leave objects in scalar fields. */
+function veEntityDisplayStr(v: unknown): string {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  return ''
+}
+
+function veClip(v: unknown, maxChars: number): string {
+  const s = veEntityDisplayStr(v)
+  if (!s) return ''
+  return s.length <= maxChars ? s : `${s.slice(0, maxChars)}…`
+}
+
 function readWorkspacePacketForExtract(): { domainHints: string[] } | undefined {
   if (typeof sessionStorage === 'undefined') return undefined
   try {
@@ -205,36 +219,40 @@ function workspacePacketSurfaceLines(
     seen.add(k)
     out.push(t)
   }
-  for (const x of packet.domainHints ?? []) push(x)
+  for (const x of packet.domainHints ?? []) {
+    if (typeof x === 'string') push(x)
+  }
   for (const x of packet.literalAnchors ?? []) {
     if (out.length >= maxItems) break
-    push(x)
+    if (typeof x === 'string') push(x)
   }
   const cap = packet.reasoningCapsule
   if (cap) {
     for (const x of cap.themes ?? []) {
       if (out.length >= maxItems) break
-      push(x)
+      if (typeof x === 'string') push(x)
     }
     for (const x of cap.namedPrograms ?? []) {
       if (out.length >= maxItems) break
-      push(x)
+      if (typeof x === 'string') push(x)
     }
     for (const x of cap.tags ?? []) {
       if (out.length >= maxItems) break
-      push(x)
+      if (typeof x === 'string') push(x)
     }
   }
   return out.slice(0, maxItems)
 }
 
-/** Synced into POST /run council_preflight when an idea detail is open (title / summary / description). */
+/** Synced into POST /run council_preflight from the open idea editor (live form — not just the list cache). */
 export type CouncilIdeaLabelsSnapshot = {
   entity_type: 'idea'
   entity_id: string
   ve_focus_title: string
   ve_focus_brief: string
   ve_focus_description: string
+  /** Current status from the detail form (e.g. Captured / Clarify). */
+  ve_focus_status?: string
 }
 import type {
   StagingArea,
@@ -664,7 +682,9 @@ function ChunkProgressSimple({
             return (
               <li key={chunk.id} className="py-1.5 border-b border-slate-700 last:border-0 text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-slate-400 truncate flex-1" title={chunk.title}>{chunk.title || chunk.id}</span>
+                  <span className="text-slate-400 truncate flex-1" title={veEntityDisplayStr(chunk.title) || chunk.id}>
+                    {veEntityDisplayStr(chunk.title) || chunk.id}
+                  </span>
                   <span className="flex items-center gap-2 shrink-0">
                     <span className={`text-xs px-2 py-0.5 rounded ${
                       status === 'succeeded' ? 'bg-emerald-900/50 text-emerald-200' :
@@ -749,13 +769,19 @@ function RoadmapView({
         ) : (
           initFiltered.map((init) => {
             const initProjects = projects.filter((p) => p.initiative_id === init.id)
+            const briefLine = veEntityDisplayStr(init.brief)
             return (
               <div key={init.id} className="rounded-xl border border-slate-600 bg-slate-800/50 p-4">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="font-medium text-slate-200">{init.title}</span>
-                  <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">{init.status}</span>
+                  <span className="font-medium text-slate-200">{veEntityDisplayStr(init.title)}</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">{veEntityDisplayStr(init.status)}</span>
                 </div>
-                {init.brief && <p className="text-slate-500 text-xs mb-2">{init.brief.slice(0, 160)}{init.brief.length > 160 ? '…' : ''}</p>}
+                {briefLine ? (
+                  <p className="text-slate-500 text-xs mb-2">
+                    {briefLine.slice(0, 160)}
+                    {briefLine.length > 160 ? '…' : ''}
+                  </p>
+                ) : null}
                 <div className="ml-3 space-y-2 border-l-2 border-slate-600 pl-3">
                   {initProjects.length === 0 ? (
                     <p className="text-slate-500 text-xs">No projects</p>
@@ -765,13 +791,15 @@ function RoadmapView({
                       return (
                         <div key={proj.id} className="text-sm">
                           <div className="flex items-center gap-2 text-slate-300">
-                            <span>{proj.title}</span>
-                            <span className="text-xs text-slate-500">({proj.status})</span>
+                            <span>{veEntityDisplayStr(proj.title)}</span>
+                            <span className="text-xs text-slate-500">({veEntityDisplayStr(proj.status)})</span>
                             {proj.start_date || proj.end_date ? <span className="text-xs text-slate-500">{proj.start_date ?? '…'} → {proj.end_date ?? '…'}</span> : null}
                           </div>
                           <ul className="ml-3 mt-1 space-y-0.5 text-xs text-slate-400">
                             {projTasks.slice(0, 8).map((t) => (
-                              <li key={t.id}>· {t.title} {t.assignee_id ? `(${getPersonName(t.assignee_id)})` : ''} — {t.status}</li>
+                              <li key={t.id}>
+                                · {veEntityDisplayStr(t.title)} {t.assignee_id ? `(${getPersonName(t.assignee_id)})` : ''} — {veEntityDisplayStr(t.status)}
+                              </li>
                             ))}
                             {projTasks.length > 8 && <li className="text-slate-500">+{projTasks.length - 8} more</li>}
                           </ul>
@@ -817,7 +845,11 @@ function ExecutiveView({
           <h4 className="text-xs font-medium text-slate-400 uppercase mb-2">Top priorities</h4>
           {topPriorities.length === 0 ? <p className="text-slate-500 text-sm">None</p> : (
             <ul className="space-y-1 text-sm text-slate-200">
-              {topPriorities.map((i) => <li key={i.id}>{i.title} <span className="text-slate-500">({i.status})</span></li>)}
+              {topPriorities.map((i) => (
+                <li key={i.id}>
+                  {veEntityDisplayStr(i.title)} <span className="text-slate-500">({veEntityDisplayStr(i.status)})</span>
+                </li>
+              ))}
             </ul>
           )}
         </div>
@@ -825,7 +857,12 @@ function ExecutiveView({
           <h4 className="text-xs font-medium text-slate-400 uppercase mb-2">Blocked</h4>
           {blocked.length === 0 ? <p className="text-slate-500 text-sm">None</p> : (
             <ul className="space-y-1 text-sm text-slate-200">
-              {blocked.map((b) => <li key={`${b.type}-${b.id}`}>{b.type === 'project' ? 'Project: ' : 'Task: '}{b.title}</li>)}
+              {blocked.map((b) => (
+                <li key={`${b.type}-${b.id}`}>
+                  {b.type === 'project' ? 'Project: ' : 'Task: '}
+                  {veEntityDisplayStr(b.title)}
+                </li>
+              ))}
             </ul>
           )}
         </div>
@@ -835,7 +872,11 @@ function ExecutiveView({
             <ul className="space-y-1 text-sm text-slate-200">
               {overcapacityPeople.map((c) => {
                 const p = persons.find((x) => x.id === c.person_id)
-                return <li key={c.person_id}>{p?.name ?? c.person_id} — {c.activeWeeklyHours ?? 0}h / {c.weekly_capacity_hours ?? 0}h</li>
+                return (
+                  <li key={c.person_id}>
+                    {veEntityDisplayStr(p?.name) || c.person_id} — {c.activeWeeklyHours ?? 0}h / {c.weekly_capacity_hours ?? 0}h
+                  </li>
+                )
               })}
             </ul>
           )}
@@ -1402,6 +1443,7 @@ function InitiativeDetailPanel({
   apiPatch,
   apiPost,
   apiDelete,
+  serverWriteNonce = 0,
 }: {
   initiativeId: string
   persons: Person[]
@@ -1414,6 +1456,8 @@ function InitiativeDetailPanel({
   apiPatch: <T>(path: string, body: unknown) => Promise<T>
   apiPost: <T>(path: string, body: unknown) => Promise<T>
   apiDelete: (path: string) => Promise<void>
+  /** Bumps when council/Lane A writes to VE server-side — reload open panel from API. */
+  serverWriteNonce?: number
 }) {
   const [initiative, setInitiative] = useState<Initiative | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1588,7 +1632,7 @@ function InitiativeDetailPanel({
         if (!cancelled) setLoading(false)
       })
     return () => { cancelled = true }
-  }, [initiativeId, apiGet, persons])
+  }, [initiativeId, apiGet, persons, serverWriteNonce])
 
   const handleEvaluate = async () => {
     const prevT = lastInitiativeEvaluateTraceRef.current
@@ -2458,18 +2502,18 @@ function InitiativeDetailPanel({
                           }, 0)
                         }}
                         disabled={execStepsBusy}
-                        aria-label={`Edit title: ${step.title}`}
+                        aria-label={`Edit title: ${veEntityDisplayStr(step.title)}`}
                       />
                     ) : (
                       <p
                         className={`text-xs text-slate-100 px-1 py-0.5 rounded ${doneVisual ? 'line-through text-slate-500' : ''}`}
                       >
-                        {step.title}
+                        {veEntityDisplayStr(step.title)}
                       </p>
                     )}
                   </div>
                   <span className="text-[10px] text-slate-600 shrink-0 pt-1" title="Source">
-                    {step.source}
+                    {veEntityDisplayStr(step.source)}
                   </span>
                   <div className="flex flex-wrap items-center gap-1.5 shrink-0">
                     <button
@@ -2980,6 +3024,8 @@ function IdeaDetailPanel({
   initiatives,
   projects,
   tasks,
+  councilIdeaLabelsRef,
+  onCouncilIdeaLiveLabelsUpdated,
   onClose,
   onSaved,
   apiGet,
@@ -2994,6 +3040,8 @@ function IdeaDetailPanel({
   initiatives: Initiative[]
   projects: Project[]
   tasks: Task[]
+  councilIdeaLabelsRef?: MutableRefObject<CouncilIdeaLabelsSnapshot | null>
+  onCouncilIdeaLiveLabelsUpdated?: () => void
   onClose: () => void
   onSaved: () => void
   apiGet: <T>(path: string) => Promise<T>
@@ -3039,6 +3087,35 @@ function IdeaDetailPanel({
     }).catch(() => { if (!cancelled) setIdea(null) }).finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [ideaId, apiGet])
+
+  useEffect(() => {
+    if (!councilIdeaLabelsRef) return
+    if (!ideaId) return
+    if (!idea || idea.id !== ideaId) {
+      if (councilIdeaLabelsRef.current?.entity_id !== ideaId) {
+        councilIdeaLabelsRef.current = null
+      }
+      return
+    }
+    councilIdeaLabelsRef.current = {
+      entity_type: 'idea',
+      entity_id: ideaId,
+      ve_focus_title: String(form.title ?? idea.title ?? ''),
+      ve_focus_brief: String(form.summary ?? idea.summary ?? '').trim(),
+      ve_focus_description: String(form.description ?? idea.description ?? '').trim(),
+      ve_focus_status: String(form.status ?? idea.status ?? '').trim() || undefined,
+    }
+    onCouncilIdeaLiveLabelsUpdated?.()
+  }, [
+    councilIdeaLabelsRef,
+    ideaId,
+    idea,
+    form.title,
+    form.summary,
+    form.description,
+    form.status,
+    onCouncilIdeaLiveLabelsUpdated,
+  ])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -3762,6 +3839,7 @@ function ProjectDetailPanel({
   apiPatch,
   apiPost,
   apiDelete,
+  serverWriteNonce = 0,
 }: {
   projectId: string
   initiatives: Initiative[]
@@ -3772,6 +3850,7 @@ function ProjectDetailPanel({
   apiPatch: <T>(path: string, body: unknown) => Promise<T>
   apiPost: <T>(path: string, body: unknown) => Promise<T>
   apiDelete: (path: string) => Promise<void>
+  serverWriteNonce?: number
 }) {
   const [project, setProject] = useState<Project | null>(null)
   const [projectTasks, setProjectTasks] = useState<Task[]>([])
@@ -3849,7 +3928,7 @@ function ProjectDetailPanel({
       }
     }).catch(() => { if (!c) setProject(null) }).finally(() => { if (!c) setLoading(false) })
     return () => { c = true }
-  }, [projectId, apiGet])
+  }, [projectId, apiGet, serverWriteNonce])
 
   const suggestedCheckedSet = useMemo(() => new Set(suggestedWork.checkedIds), [suggestedWork.checkedIds])
 
@@ -4055,8 +4134,8 @@ function ProjectDetailPanel({
           <ul className="space-y-1 max-h-40 overflow-y-auto pr-1">
             {projectTasks.map((t) => (
               <li key={t.id} className="text-slate-300 text-sm">
-                {t.title || '(Untitled)'}{' '}
-                <span className="text-slate-500 text-xs">({t.status})</span>
+                {veEntityDisplayStr(t.title) || '(Untitled)'}{' '}
+                <span className="text-slate-500 text-xs">({veEntityDisplayStr(t.status)})</span>
               </li>
             ))}
           </ul>
@@ -4079,7 +4158,7 @@ function ProjectDetailPanel({
         </DetailSection>
 
         <DetailSection title="Plan & cadence" defaultOpen>
-          <DetailField label="Owner" value={(form.owner_id as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, owner_id: v }))} options={[{ value: '', label: 'None' }, ...persons.map((p) => ({ value: p.id, label: p.name }))]} />
+          <DetailField label="Owner" value={(form.owner_id as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, owner_id: v }))} options={[{ value: '', label: 'None' }, ...persons.map((p) => ({ value: p.id, label: veEntityDisplayStr(p.name) || p.id }))]} />
           <EntityMultiSelect label="Supporting owners" selectedIds={supportingOwnerIds} onChange={setSupportingOwnerIds} options={persons} getLabel={(p) => (p as Person).name} />
           <div className="space-y-1">
             <label className="block text-xs font-medium text-slate-400">Priority (1–5)</label>
@@ -4326,6 +4405,7 @@ function TaskDetailPanel({
   apiPatch,
   apiPost,
   apiDelete,
+  serverWriteNonce = 0,
 }: {
   taskId: string
   projects: Project[]
@@ -4337,6 +4417,7 @@ function TaskDetailPanel({
   apiPatch: <T>(path: string, body: unknown) => Promise<T>
   apiPost: <T>(path: string, body: unknown) => Promise<T>
   apiDelete: (path: string) => Promise<void>
+  serverWriteNonce?: number
 }) {
   const [task, setTask] = useState<Task | null>(null)
   const [loading, setLoading] = useState(true)
@@ -4381,7 +4462,7 @@ function TaskDetailPanel({
       }
     }).catch(() => { if (!c) setTask(null) }).finally(() => { if (!c) setLoading(false) })
     return () => { c = true }
-  }, [taskId, apiGet])
+  }, [taskId, apiGet, serverWriteNonce])
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -4540,7 +4621,7 @@ function TaskDetailPanel({
             <DetailField label="Description" value={(form.description as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, description: v }))} textarea rows={3} />
           </VeFocusRegion>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <DetailField label="Assignee" value={(form.assignee_id as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, assignee_id: v }))} options={[{ value: '', label: 'None' }, ...persons.map((p) => ({ value: p.id, label: p.name }))]} />
+            <DetailField label="Assignee" value={(form.assignee_id as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, assignee_id: v }))} options={[{ value: '', label: 'None' }, ...persons.map((p) => ({ value: p.id, label: veEntityDisplayStr(p.name) || p.id }))]} />
             <DetailField label="Due date" value={(form.due_date as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, due_date: v }))} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -4875,7 +4956,16 @@ function PersonDetailPanel({
                 <span className="text-[11px] text-slate-500 uppercase block mb-1">Initiatives owned</span>
                 <ul className="flex flex-wrap gap-1">
                   {initiativesOwned.map((i) => (
-                    <li key={i.id} className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]" title={i.title || i.id}>{i.title || i.id} {i.status && <span className="ml-1 text-[10px] text-slate-500">{i.status}</span>}</li>
+                    <li
+                      key={i.id}
+                      className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]"
+                      title={veEntityDisplayStr(i.title) || i.id}
+                    >
+                      {veEntityDisplayStr(i.title) || i.id}{' '}
+                      {veEntityDisplayStr(i.status) ? (
+                        <span className="ml-1 text-[10px] text-slate-500">{veEntityDisplayStr(i.status)}</span>
+                      ) : null}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -4885,7 +4975,13 @@ function PersonDetailPanel({
                 <span className="text-[11px] text-slate-500 uppercase block mb-1">Seats assigned</span>
                 <ul className="flex flex-wrap gap-1">
                   {seatsAssigned.map((s, idx) => (
-                    <li key={`${s.initiative.id}-${s.role}-${idx}`} className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]" title={`${s.role}: ${s.initiative.title || s.initiative.id}`}>{s.role} · {s.initiative.title || s.initiative.id}</li>
+                    <li
+                      key={`${s.initiative.id}-${s.role}-${idx}`}
+                      className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]"
+                      title={`${s.role}: ${veEntityDisplayStr(s.initiative.title) || s.initiative.id}`}
+                    >
+                      {s.role} · {veEntityDisplayStr(s.initiative.title) || s.initiative.id}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -4895,10 +4991,24 @@ function PersonDetailPanel({
                 <span className="text-[11px] text-slate-500 uppercase block mb-1">Projects</span>
                 <ul className="flex flex-wrap gap-1">
                   {projectsOwned.map((p) => (
-                    <li key={p.id} className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]" title={p.title || p.id}>Owner: {p.title || p.id} <span className="ml-1 text-[10px] text-slate-500">{p.status}</span></li>
+                    <li
+                      key={p.id}
+                      className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]"
+                      title={veEntityDisplayStr(p.title) || p.id}
+                    >
+                      Owner: {veEntityDisplayStr(p.title) || p.id}{' '}
+                      <span className="ml-1 text-[10px] text-slate-500">{veEntityDisplayStr(p.status)}</span>
+                    </li>
                   ))}
                   {projectsSupporting.map((p) => (
-                    <li key={p.id} className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/40 text-slate-300 truncate max-w-[200px]" title={p.title || p.id}>Supporting: {p.title || p.id} <span className="ml-1 text-[10px] text-slate-500">{p.status}</span></li>
+                    <li
+                      key={p.id}
+                      className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/40 text-slate-300 truncate max-w-[200px]"
+                      title={veEntityDisplayStr(p.title) || p.id}
+                    >
+                      Supporting: {veEntityDisplayStr(p.title) || p.id}{' '}
+                      <span className="ml-1 text-[10px] text-slate-500">{veEntityDisplayStr(p.status)}</span>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -4908,7 +5018,14 @@ function PersonDetailPanel({
                 <span className="text-[11px] text-slate-500 uppercase block mb-1">Tasks assigned</span>
                 <ul className="flex flex-wrap gap-1">
                   {tasksAssigned.map((t) => (
-                    <li key={t.id} className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]" title={t.title || t.id}>{t.title || t.id} <span className="ml-1 text-[10px] text-slate-500">{t.status}</span></li>
+                    <li
+                      key={t.id}
+                      className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]"
+                      title={veEntityDisplayStr(t.title) || t.id}
+                    >
+                      {veEntityDisplayStr(t.title) || t.id}{' '}
+                      <span className="ml-1 text-[10px] text-slate-500">{veEntityDisplayStr(t.status)}</span>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -4918,7 +5035,16 @@ function PersonDetailPanel({
                 <span className="text-[11px] text-slate-500 uppercase block mb-1">Assets owned</span>
                 <ul className="flex flex-wrap gap-1">
                   {assetsOwned.map((a) => (
-                    <li key={a.id} className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]" title={a.name || a.id}>{a.name || a.id} {a.asset_type && <span className="ml-1 text-[10px] text-slate-500">{a.asset_type}</span>}</li>
+                    <li
+                      key={a.id}
+                      className="inline-flex items-center px-2 py-0.5 rounded bg-slate-700/60 text-slate-200 truncate max-w-[200px]"
+                      title={veEntityDisplayStr(a.name) || a.id}
+                    >
+                      {veEntityDisplayStr(a.name) || a.id}{' '}
+                      {veEntityDisplayStr(a.asset_type) ? (
+                        <span className="ml-1 text-[10px] text-slate-500">{veEntityDisplayStr(a.asset_type)}</span>
+                      ) : null}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -5183,8 +5309,10 @@ function AssetDetailPanel({ assetId, ideas, initiatives, projects, persons, onCl
                       <li className="text-[11px] text-slate-500 uppercase">Initiatives</li>
                       {requiredByInitiatives.map((i) => (
                         <li key={i.id} className="text-sm text-slate-200 flex items-center gap-2 pl-2">
-                          <span className="truncate">{i.title || i.id}</span>
-                          {i.status && <span className="shrink-0 text-[11px] text-slate-500 uppercase">{i.status}</span>}
+                          <span className="truncate">{veEntityDisplayStr(i.title) || i.id}</span>
+                          {veEntityDisplayStr(i.status) ? (
+                            <span className="shrink-0 text-[11px] text-slate-500 uppercase">{veEntityDisplayStr(i.status)}</span>
+                          ) : null}
                         </li>
                       ))}
                     </>
@@ -5194,8 +5322,10 @@ function AssetDetailPanel({ assetId, ideas, initiatives, projects, persons, onCl
                       <li className="text-[11px] text-slate-500 uppercase mt-1">Projects</li>
                       {requiredByProjects.map((p) => (
                         <li key={p.id} className="text-sm text-slate-200 flex items-center gap-2 pl-2">
-                          <span className="truncate">{p.title || p.id}</span>
-                          {p.status && <span className="shrink-0 text-[11px] text-slate-500 uppercase">{p.status}</span>}
+                          <span className="truncate">{veEntityDisplayStr(p.title) || p.id}</span>
+                          {veEntityDisplayStr(p.status) ? (
+                            <span className="shrink-0 text-[11px] text-slate-500 uppercase">{veEntityDisplayStr(p.status)}</span>
+                          ) : null}
                         </li>
                       ))}
                     </>
@@ -5205,23 +5335,74 @@ function AssetDetailPanel({ assetId, ideas, initiatives, projects, persons, onCl
             </div>
             <div>
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wide block mb-1">Linked to ideas</span>
-              {linkedIdeas.length === 0 ? <p className="text-slate-500 text-sm">None linked</p> : <p className="text-slate-300 text-sm">{linkedIdeas.map((i) => i.title || i.id).join(', ')}</p>}
-              <EntityMultiSelect label="Edit links" selectedIds={linkedIdeaIds} onChange={setLinkedIdeaIds} options={ideas} getLabel={(i) => (i as Idea).title || (i as Idea).id} placeholder="Search ideas…" />
+              {linkedIdeas.length === 0 ? (
+                <p className="text-slate-500 text-sm">None linked</p>
+              ) : (
+                <p className="text-slate-300 text-sm">
+                  {linkedIdeas.map((i) => veEntityDisplayStr(i.title) || i.id).join(', ')}
+                </p>
+              )}
+              <EntityMultiSelect
+                label="Edit links"
+                selectedIds={linkedIdeaIds}
+                onChange={setLinkedIdeaIds}
+                options={ideas}
+                getLabel={(i) => veEntityDisplayStr((i as Idea).title) || (i as Idea).id}
+                placeholder="Search ideas…"
+              />
             </div>
             <div>
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wide block mb-1">Linked to initiatives</span>
-              {linkedInits.length === 0 ? <p className="text-slate-500 text-sm">None linked</p> : <p className="text-slate-300 text-sm">{linkedInits.map((i) => `${i.title || i.id}${i.status ? ` (${i.status})` : ''}`).join(', ')}</p>}
-              <EntityMultiSelect label="Edit links" selectedIds={linkedInitiativeIds} onChange={setLinkedInitiativeIds} options={initiatives} getLabel={(i) => (i as Initiative).title || (i as Initiative).id} placeholder="Search initiatives…" />
+              {linkedInits.length === 0 ? (
+                <p className="text-slate-500 text-sm">None linked</p>
+              ) : (
+                <p className="text-slate-300 text-sm">
+                  {linkedInits
+                    .map((i) => {
+                      const t = veEntityDisplayStr(i.title) || i.id
+                      const st = veEntityDisplayStr(i.status)
+                      return st ? `${t} (${st})` : t
+                    })
+                    .join(', ')}
+                </p>
+              )}
+              <EntityMultiSelect
+                label="Edit links"
+                selectedIds={linkedInitiativeIds}
+                onChange={setLinkedInitiativeIds}
+                options={initiatives}
+                getLabel={(i) => veEntityDisplayStr((i as Initiative).title) || (i as Initiative).id}
+                placeholder="Search initiatives…"
+              />
             </div>
             <div>
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wide block mb-1">Linked to projects</span>
-              {linkedProjs.length === 0 ? <p className="text-slate-500 text-sm">None linked</p> : <p className="text-slate-300 text-sm">{linkedProjs.map((p) => `${p.title || p.id}${p.status ? ` (${p.status})` : ''}`).join(', ')}</p>}
-              <EntityMultiSelect label="Edit links" selectedIds={linkedProjectIds} onChange={setLinkedProjectIds} options={projects} getLabel={(p) => (p as Project).title || (p as Project).id} placeholder="Search projects…" />
+              {linkedProjs.length === 0 ? (
+                <p className="text-slate-500 text-sm">None linked</p>
+              ) : (
+                <p className="text-slate-300 text-sm">
+                  {linkedProjs
+                    .map((proj) => {
+                      const t = veEntityDisplayStr(proj.title) || proj.id
+                      const st = veEntityDisplayStr(proj.status)
+                      return st ? `${t} (${st})` : t
+                    })
+                    .join(', ')}
+                </p>
+              )}
+              <EntityMultiSelect
+                label="Edit links"
+                selectedIds={linkedProjectIds}
+                onChange={setLinkedProjectIds}
+                options={projects}
+                getLabel={(proj) => veEntityDisplayStr((proj as Project).title) || (proj as Project).id}
+                placeholder="Search projects…"
+              />
             </div>
           </div>
         </DetailSection>
         <DetailSection title="Availability & access" defaultOpen={false}>
-          <DetailField label="Owner" value={(form.owner_id as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, owner_id: v }))} options={[{ value: '', label: 'None' }, ...persons.map((p) => ({ value: p.id, label: p.name }))]} />
+          <DetailField label="Owner" value={(form.owner_id as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, owner_id: v }))} options={[{ value: '', label: 'None' }, ...persons.map((p) => ({ value: p.id, label: veEntityDisplayStr(p.name) || p.id }))]} />
           <DetailField label="Availability" value={(form.availability as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, availability: v }))} placeholder="e.g. Shared, Dedicated" />
           <DetailField label="Time availability" value={(form.time_availability as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, time_availability: v }))} placeholder="e.g. Business hours, Always" />
           <DetailField label="Cost" value={(form.cost as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, cost: v }))} />
@@ -5247,15 +5428,19 @@ export function VisionExecutionView({
   initialSelection,
   councilIdeaLabelsRef,
   councilVeEntityBundleRef,
+  onCouncilIdeaLiveLabelsUpdated,
   focusTabRequest,
   onFocusTabRequestConsumed,
   onVeSelectionChange,
   recognitionUserId,
+  councilServerWriteNonce = 0,
 }: {
   initialSelection?: VESelection | null
   councilIdeaLabelsRef?: MutableRefObject<CouncilIdeaLabelsSnapshot | null>
   /** Live ideas/projects/tasks for council growth-triad (off vision map tab). */
   councilVeEntityBundleRef?: MutableRefObject<VisionMapEntityBundle | null>
+  /** Bumps when the open idea editor updates council snapshot (for scoped-thread banner label). */
+  onCouncilIdeaLiveLabelsUpdated?: () => void
   /** When set, switches top tab once (e.g. from vision map triad). Not persisted. */
   focusTabRequest?: VEWorkspaceTabId | null
   onFocusTabRequestConsumed?: () => void
@@ -5263,6 +5448,8 @@ export function VisionExecutionView({
   onVeSelectionChange?: (sel: VESelection | null) => void
   /** Optional account user id for recognition `decisions.user_id`. */
   recognitionUserId?: string | null
+  /** Increment when council stream reports a server-side VE write (integration or Lane A) so open detail panels refetch. */
+  councilServerWriteNonce?: number
 } = {}) {
   const domain = useDomain()
   const [tab, setTab] = useState<TabId>('ideas')
@@ -5376,21 +5563,9 @@ export function VisionExecutionView({
     if (!councilIdeaLabelsRef) return
     if (!detailIdeaId) {
       councilIdeaLabelsRef.current = null
-      return
     }
-    const idea = ideas.find((i) => i.id === detailIdeaId)
-    if (!idea) {
-      councilIdeaLabelsRef.current = null
-      return
-    }
-    councilIdeaLabelsRef.current = {
-      entity_type: 'idea',
-      entity_id: idea.id,
-      ve_focus_title: idea.title ?? '',
-      ve_focus_brief: (idea.summary ?? '').trim(),
-      ve_focus_description: (idea.description ?? '').trim(),
-    }
-  }, [detailIdeaId, ideas, councilIdeaLabelsRef])
+    // Live title/summary/description/status are pushed from IdeaDetailPanel (unsaved edits included).
+  }, [detailIdeaId, councilIdeaLabelsRef])
 
   const EXECUTION_VIEW_STORAGE_KEY = 'atria-execution-view-mode'
   const [executionViewMode, setExecutionViewMode] = useState<ProjectsViewMode>(() => {
@@ -7418,8 +7593,8 @@ export function VisionExecutionView({
     setExpandedWorkspaceMessageId(null)
   }, [])
 
-  const truncateText = (text: string | null | undefined, maxChars: number) => {
-    const t = String(text ?? '').trim()
+  const truncateText = (text: unknown, maxChars: number) => {
+    const t = veEntityDisplayStr(text).trim()
     if (!t) return ''
     if (t.length <= maxChars) return t
     return `${t.slice(0, maxChars)}…`
@@ -7964,25 +8139,31 @@ export function VisionExecutionView({
                   Status:{' '}
                   <span
                     className={
-                      workspaceIdentity.status === 'ok'
+                      veEntityDisplayStr(workspaceIdentity.status) === 'ok'
                         ? 'text-emerald-400'
-                        : workspaceIdentity.status === 'branch_mismatch'
+                        : veEntityDisplayStr(workspaceIdentity.status) === 'branch_mismatch'
                           ? 'text-amber-400'
                           : 'text-slate-400'
                     }
                   >
-                    {workspaceIdentity.status}
+                    {veEntityDisplayStr(workspaceIdentity.status) || '—'}
                   </span>
-                  {workspaceIdentity.status === 'branch_mismatch' && (
+                  {veEntityDisplayStr(workspaceIdentity.status) === 'branch_mismatch' && (
                     <span className="text-amber-500/90 ml-2">
                       (snapshot branch {workspaceIdentity.branchKeySnapshot ?? '—'} ≠ current {workspaceIdentity.branchKeyCurrent})
                     </span>
                   )}
                 </div>
-                {workspaceIdentity.status === 'ok' && workspaceIdentity.snapshotSummary && (
+                {veEntityDisplayStr(workspaceIdentity.status) === 'ok' && workspaceIdentity.snapshotSummary && (
                   <div>
                     Packet v{workspaceIdentity.workspacePacket?.schemaVersion ?? '—'}: literal {workspaceIdentity.workspacePacket?.domainHints?.length ?? 0} · snapshot phrases{' '}
-                    {workspaceIdentity.snapshotSummary.domainHintCount} · roots {workspaceIdentity.snapshotSummary.sourceRootCount}
+                    {typeof workspaceIdentity.snapshotSummary.domainHintCount === 'number'
+                      ? workspaceIdentity.snapshotSummary.domainHintCount
+                      : '—'}{' '}
+                    · roots{' '}
+                    {typeof workspaceIdentity.snapshotSummary.sourceRootCount === 'number'
+                      ? workspaceIdentity.snapshotSummary.sourceRootCount
+                      : '—'}
                     {typeof workspaceIdentity.snapshotSummary.reasoningThemeCount === 'number'
                       ? ` · reasoning themes ${workspaceIdentity.snapshotSummary.reasoningThemeCount}`
                       : ''}
@@ -7992,15 +8173,17 @@ export function VisionExecutionView({
                     {workspaceIdentity.snapshotSummary.nodeCapReached ? ' · cap hit' : ''}
                   </div>
                 )}
-                {workspaceIdentity.suggestRefreshDueToAge && workspaceIdentity.status === 'ok' && (
+                {workspaceIdentity.suggestRefreshDueToAge && veEntityDisplayStr(workspaceIdentity.status) === 'ok' && (
                   <div className="text-amber-400/90">Snapshot older than 7 days — consider Refresh identity.</div>
                 )}
-                {workspaceIdentity.status === 'ok' && workspaceIdentity.identityQualityWarning && (
+                {veEntityDisplayStr(workspaceIdentity.status) === 'ok' &&
+                  typeof workspaceIdentity.identityQualityWarning === 'string' &&
+                  workspaceIdentity.identityQualityWarning.trim() && (
                   <div className="rounded border border-amber-600/50 bg-amber-950/25 text-amber-100/95 px-2 py-1.5 text-[11px] leading-snug">
                     {workspaceIdentity.identityQualityWarning}
                   </div>
                 )}
-                {workspaceIdentity.status === 'missing' && (
+                {veEntityDisplayStr(workspaceIdentity.status) === 'missing' && (
                   <div className="text-slate-500">No snapshot yet. Run Deep rescan once to populate local mirror (gitignored).</div>
                 )}
               </div>
@@ -8022,19 +8205,19 @@ export function VisionExecutionView({
               <p className="text-slate-500">Loading workspace identity…</p>
             ) : !workspaceIdentity ? (
               <p className="text-slate-500">Workspace identity status not loaded.</p>
-            ) : workspaceIdentity.status === 'ok' && workspaceMirrorLines.length > 0 ? (
+            ) : veEntityDisplayStr(workspaceIdentity.status) === 'ok' && workspaceMirrorLines.length > 0 ? (
               <ul className="list-disc list-inside space-y-0.5 text-slate-300 text-[11px]">
                 {workspaceMirrorLines.map((t) => (
                   <li key={t}>{t}</li>
                 ))}
               </ul>
-            ) : workspaceIdentity.status === 'missing' ? (
+            ) : veEntityDisplayStr(workspaceIdentity.status) === 'missing' ? (
               <p className="text-slate-500">No snapshot yet. Run Deep rescan in Workspace identity above to populate this list.</p>
-            ) : workspaceIdentity.status === 'ok' ? (
+            ) : veEntityDisplayStr(workspaceIdentity.status) === 'ok' ? (
               <p className="text-slate-500">Snapshot OK but the packet has no phrases yet. Try Deep rescan.</p>
             ) : (
               <p className="text-amber-400/90">
-                Mirror not used for extract while status is “{workspaceIdentity.status}”. Fix branch alignment or rescan from Workspace identity
+                Mirror not used for extract while status is “{veEntityDisplayStr(workspaceIdentity.status) || '—'}”. Fix branch alignment or rescan from Workspace identity
                 above.
               </p>
             )}
@@ -8260,32 +8443,32 @@ export function VisionExecutionView({
                 existingEntities={{
                   initiatives: initiatives.map((i) => ({
                     id: i.id,
-                    title: i.title || '',
-                    brief: i.brief,
-                    status: i.status,
+                    title: veEntityDisplayStr(i.title),
+                    brief: veEntityDisplayStr(i.brief),
+                    status: veEntityDisplayStr(i.status),
                   })),
                   projects: projects.map((p) => ({
                     id: p.id,
-                    title: p.title || '',
+                    title: veEntityDisplayStr(p.title),
                     initiative_id: p.initiative_id,
-                    brief: p.brief,
-                    status: p.status,
+                    brief: veEntityDisplayStr(p.brief),
+                    status: veEntityDisplayStr(p.status),
                   })),
                   tasks: tasks.map((t) => ({
                     id: t.id,
-                    title: t.title || '',
+                    title: veEntityDisplayStr(t.title),
                     project_id: t.project_id,
-                    description: t.description,
-                    status: t.status,
+                    description: veEntityDisplayStr(t.description),
+                    status: veEntityDisplayStr(t.status),
                   })),
                   ideas: ideas.map((i) => ({
                     id: i.id,
-                    title: i.title || '',
-                    summary: i.summary ?? i.description,
-                    description: i.description,
+                    title: veEntityDisplayStr(i.title),
+                    summary: veEntityDisplayStr(i.summary ?? i.description),
+                    description: veEntityDisplayStr(i.description),
                   })),
-                  assets: assets.map((a) => ({ id: a.id, name: a.name || '' })),
-                  people: persons.map((p) => ({ id: p.id, name: p.name || '' })),
+                  assets: assets.map((a) => ({ id: a.id, name: veEntityDisplayStr(a.name) })),
+                  people: persons.map((p) => ({ id: p.id, name: veEntityDisplayStr(p.name) })),
                 }}
                 onLinkToExisting={(entityType, id) => {
                   dismissMeetingExtractTraceIfPending()
@@ -9029,8 +9212,8 @@ export function VisionExecutionView({
                       onClick={() => { setDetailIdeaId(i.id); setSelectedId(i.id) }}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <span className="font-medium text-slate-200 truncate">{i.title}</span>
-                        <span className="text-slate-500 text-[11px] whitespace-nowrap">{i.status}</span>
+                        <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(i.title)}</span>
+                        <span className="text-slate-500 text-[11px] whitespace-nowrap">{veEntityDisplayStr(i.status)}</span>
                       </div>
                       <p className="text-slate-400 text-xs mt-1 truncate">{summaryText}</p>
                       <div className="mt-1 text-[11px] text-slate-500 truncate">{metaLine}</div>
@@ -9054,8 +9237,8 @@ export function VisionExecutionView({
                           onClick={() => { setDetailIdeaId(i.id); setSelectedId(i.id) }}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <span className="font-medium text-slate-200 truncate">{i.title}</span>
-                            <span className="text-slate-500 text-[10px] whitespace-nowrap">{i.status}</span>
+                            <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(i.title)}</span>
+                            <span className="text-slate-500 text-[10px] whitespace-nowrap">{veEntityDisplayStr(i.status)}</span>
                           </div>
                           <p className="text-slate-400 text-[11px] mt-1 truncate">{summaryText}</p>
                           <div className="mt-1 text-[10px] text-slate-500 truncate">{metaLine}</div>
@@ -9077,6 +9260,8 @@ export function VisionExecutionView({
               initiatives={initiatives}
               projects={projects}
               tasks={tasks}
+              councilIdeaLabelsRef={councilIdeaLabelsRef}
+              onCouncilIdeaLiveLabelsUpdated={onCouncilIdeaLiveLabelsUpdated}
               onClose={() => {
                 setDetailIdeaId(null)
                 setSelectedId(null)
@@ -9139,8 +9324,10 @@ export function VisionExecutionView({
                             </span>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="font-medium text-slate-200 truncate">{init.title}</span>
-                                <span className="text-slate-500 text-[11px] shrink-0">Initiative · {init.status || '—'}</span>
+                                <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(init.title)}</span>
+                                <span className="text-slate-500 text-[11px] shrink-0">
+                                  Initiative · {veEntityDisplayStr(init.status) || '—'}
+                                </span>
                               </div>
                               <p className="text-slate-400 text-xs mt-0.5 truncate">{summaryText}</p>
                             </div>
@@ -9164,8 +9351,10 @@ export function VisionExecutionView({
                                       </span>
                                       <div className="min-w-0 flex-1">
                                         <div className="flex items-center justify-between gap-2">
-                                          <span className="font-medium text-slate-200 truncate">{p.title}</span>
-                                          <span className="text-slate-500 text-[11px] shrink-0">Project · {p.status || '—'}</span>
+                                          <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(p.title)}</span>
+                                          <span className="text-slate-500 text-[11px] shrink-0">
+                                            Project · {veEntityDisplayStr(p.status) || '—'}
+                                          </span>
                                         </div>
                                         <p className="text-slate-400 text-xs mt-0.5 truncate">{pSummary}</p>
                                       </div>
@@ -9181,8 +9370,10 @@ export function VisionExecutionView({
                                             onClick={(e) => { e.stopPropagation(); setDetailTaskId(t.id); setDetailProjectId(p.id); setDetailInitiativeId(null); setSelectedId(t.id) }}
                                           >
                                             <div className="flex items-center justify-between gap-2">
-                                              <span className="font-medium text-slate-200 truncate">{t.title}</span>
-                                              <span className="text-slate-500 text-[11px] shrink-0">Task · {t.status || '—'}</span>
+                                              <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(t.title)}</span>
+                                              <span className="text-slate-500 text-[11px] shrink-0">
+                                                Task · {veEntityDisplayStr(t.status) || '—'}
+                                              </span>
                                             </div>
                                             <p className="text-slate-400 text-xs mt-0.5 truncate">{truncateText(t.description || t.title, 56) || 'No description'}</p>
                                           </div>
@@ -9217,8 +9408,10 @@ export function VisionExecutionView({
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center justify-between gap-2">
-                                    <span className="font-medium text-slate-200 truncate">{p.title}</span>
-                                    <span className="text-slate-500 text-[11px] shrink-0">Project · {p.status || '—'}</span>
+                                    <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(p.title)}</span>
+                                    <span className="text-slate-500 text-[11px] shrink-0">
+                                      Project · {veEntityDisplayStr(p.status) || '—'}
+                                    </span>
                                   </div>
                                   <p className="text-slate-400 text-xs mt-0.5 truncate">{pSummary}</p>
                                 </div>
@@ -9234,8 +9427,10 @@ export function VisionExecutionView({
                                       onClick={(e) => { e.stopPropagation(); setDetailTaskId(t.id); setDetailProjectId(p.id); setDetailInitiativeId(null); setSelectedId(t.id) }}
                                     >
                                       <div className="flex items-center justify-between gap-2">
-                                        <span className="font-medium text-slate-200 truncate">{t.title}</span>
-                                        <span className="text-slate-500 text-[11px] shrink-0">Task · {t.status || '—'}</span>
+                                        <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(t.title)}</span>
+                                        <span className="text-slate-500 text-[11px] shrink-0">
+                                          Task · {veEntityDisplayStr(t.status) || '—'}
+                                        </span>
                                       </div>
                                       <p className="text-slate-400 text-xs mt-0.5 truncate">{truncateText(t.description || t.title, 56) || 'No description'}</p>
                                     </div>
@@ -9268,8 +9463,10 @@ export function VisionExecutionView({
                                 }}
                               >
                                 <div className="flex items-center justify-between gap-2">
-                                  <span className="font-medium text-slate-200 truncate">{t.title}</span>
-                                  <span className="text-slate-500 text-[11px] shrink-0">Task · {t.status || '—'}</span>
+                                  <span className="font-medium text-slate-200 truncate">{veEntityDisplayStr(t.title)}</span>
+                                  <span className="text-slate-500 text-[11px] shrink-0">
+                                    Task · {veEntityDisplayStr(t.status) || '—'}
+                                  </span>
                                 </div>
                                 <p className="text-slate-400 text-xs mt-0.5 truncate">
                                   {truncateText(t.description || t.title, 56) || 'No description'}
@@ -9313,6 +9510,7 @@ export function VisionExecutionView({
               apiPatch={apiPatch}
               apiPost={apiPost}
               apiDelete={apiDelete}
+              serverWriteNonce={councilServerWriteNonce}
             />
           )}
           {!detailTaskId && detailProjectId && (
@@ -9326,6 +9524,7 @@ export function VisionExecutionView({
               apiPatch={apiPatch}
               apiPost={apiPost}
               apiDelete={apiDelete}
+              serverWriteNonce={councilServerWriteNonce}
             />
           )}
           {!detailTaskId && !detailProjectId && detailInitiativeId && (
@@ -9341,6 +9540,7 @@ export function VisionExecutionView({
               apiPatch={apiPatch}
               apiPost={apiPost}
               apiDelete={apiDelete}
+              serverWriteNonce={councilServerWriteNonce}
             />
           )}
         </div>
@@ -9380,7 +9580,7 @@ export function VisionExecutionView({
                   return (
                     <li key={p.id} className={`rounded-lg border p-3 text-sm cursor-pointer ${detailPersonId === p.id ? 'border-amber-500 bg-amber-900/20' : 'border-slate-600 bg-slate-800/50'}`} onClick={() => { setDetailPersonId(p.id); setSelectedId(p.id) }}>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-slate-200">{p.name}</span>
+                        <span className="font-medium text-slate-200">{veEntityDisplayStr(p.name)}</span>
                         <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] uppercase tracking-wide border ${statusClass}`}>{status === 'Over capacity' ? 'Over' : status === 'Near capacity' ? 'Near' : 'Available'}</span>
                       </div>
                       {(p.role || p.relationship_type) && <p className="text-slate-500 text-xs mt-0.5">{[p.role, p.relationship_type].filter(Boolean).join(' · ')}</p>}
@@ -9426,8 +9626,10 @@ export function VisionExecutionView({
               <ul className="space-y-2 max-h-[400px] overflow-y-auto">
                 {assets.map((a) => (
                   <li key={a.id} className={`rounded-lg border p-3 text-sm cursor-pointer ${detailAssetId === a.id ? 'border-amber-500 bg-amber-900/20' : 'border-slate-600 bg-slate-800/50'}`} onClick={() => { setDetailAssetId(a.id); setSelectedId(a.id) }}>
-                    <span className="font-medium text-slate-200">{a.name}</span>
-                    {a.asset_type && <span className="ml-2 text-slate-500 text-xs">{a.asset_type}</span>}
+                    <span className="font-medium text-slate-200">{veEntityDisplayStr(a.name)}</span>
+                    {veEntityDisplayStr(a.asset_type) ? (
+                      <span className="ml-2 text-slate-500 text-xs">{veEntityDisplayStr(a.asset_type)}</span>
+                    ) : null}
                   </li>
                 ))}
               </ul>
@@ -9463,10 +9665,16 @@ export function VisionExecutionView({
                       <ul className="space-y-1.5">
                         {(radarData[key] as RadarItem[]).map((item) => (
                           <li key={`${item.type}-${item.id}`} className="text-xs text-slate-300 flex flex-wrap gap-x-2 gap-y-0.5">
-                            <span className="font-medium">{item.title ?? item.name ?? item.id}</span>
-                            <span className="text-slate-500">{item.type}</span>
-                            {item.status && <span className="text-slate-500">{item.status}</span>}
-                            {item.reason && <span className="text-amber-400/80">{item.reason}</span>}
+                            <span className="font-medium">
+                              {veEntityDisplayStr(item.title) || veEntityDisplayStr(item.name) || item.id}
+                            </span>
+                            <span className="text-slate-500">{veEntityDisplayStr(item.type)}</span>
+                            {veEntityDisplayStr(item.status) ? (
+                              <span className="text-slate-500">{veEntityDisplayStr(item.status)}</span>
+                            ) : null}
+                            {veEntityDisplayStr(item.reason) ? (
+                              <span className="text-amber-400/80">{veEntityDisplayStr(item.reason)}</span>
+                            ) : null}
                             {item.weighted_score != null && <span className="text-slate-500">score {item.weighted_score}</span>}
                             {item.active_weekly_hours != null && item.weekly_capacity_hours != null && (
                               <span className="text-slate-500">{item.active_weekly_hours}h / {item.weekly_capacity_hours}h</span>
@@ -9485,20 +9693,36 @@ export function VisionExecutionView({
                   <ul className="space-y-2">
                     {(radarData.signals as RadarSignalItem[]).map((item) => (
                       <li key={item.id} className="text-xs border-l-2 border-slate-600 pl-2">
-                        <span className="font-medium text-slate-200">{item.title}</span>
-                        <span className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] ${
-                          item.kind === 'risk' ? 'bg-red-900/50' : item.kind === 'blocker' ? 'bg-amber-900/50' : item.kind === 'opportunity' ? 'bg-emerald-900/50' : 'bg-slate-600'
-                        }`}>{item.kind}</span>
-                        {item.severity && <span className="text-slate-500 ml-1">· {item.severity}</span>}
-                        {item.status && (
+                        <span className="font-medium text-slate-200">{veEntityDisplayStr(item.title)}</span>
+                        <span
+                          className={`ml-1.5 px-1.5 py-0.5 rounded text-[10px] ${
+                            item.kind === 'risk'
+                              ? 'bg-red-900/50'
+                              : item.kind === 'blocker'
+                                ? 'bg-amber-900/50'
+                                : item.kind === 'opportunity'
+                                  ? 'bg-emerald-900/50'
+                                  : 'bg-slate-600'
+                          }`}
+                        >
+                          {veEntityDisplayStr(item.kind)}
+                        </span>
+                        {veEntityDisplayStr(item.severity) ? (
+                          <span className="text-slate-500 ml-1">· {veEntityDisplayStr(item.severity)}</span>
+                        ) : null}
+                        {veEntityDisplayStr(item.status) ? (
                           <span className="ml-2 inline-flex items-center rounded-full border border-slate-600 px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-300">
-                            {item.status}
+                            {veEntityDisplayStr(item.status)}
                           </span>
-                        )}
-                        {item.detail && <p className="text-slate-500 mt-0.5">{item.detail.slice(0, 200)}{item.detail.length > 200 ? '…' : ''}</p>}
-                        {item.source_excerpt && <p className="text-slate-500 mt-0.5 italic">&ldquo;{item.source_excerpt.slice(0, 150)}{item.source_excerpt.length > 150 ? '…' : ''}&rdquo;</p>}
+                        ) : null}
+                        {veClip(item.detail, 200) ? (
+                          <p className="text-slate-500 mt-0.5">{veClip(item.detail, 200)}</p>
+                        ) : null}
+                        {veClip(item.source_excerpt, 150) ? (
+                          <p className="text-slate-500 mt-0.5 italic">&ldquo;{veClip(item.source_excerpt, 150)}&rdquo;</p>
+                        ) : null}
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
-                          {(!item.status || item.status === 'new') && (
+                          {(!veEntityDisplayStr(item.status) || item.status === 'new') && (
                             <>
                               <button
                                 type="button"
@@ -9885,7 +10109,9 @@ function CreateTaskForm({
       >
         <option value="">No project (standalone task)</option>
         {projects.map((p) => (
-          <option key={p.id} value={p.id}>{p.title}</option>
+          <option key={p.id} value={p.id}>
+            {veEntityDisplayStr(p.title) || p.id}
+          </option>
         ))}
       </select>
       <VeFocusRegion

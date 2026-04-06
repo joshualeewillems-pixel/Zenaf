@@ -295,6 +295,8 @@ class RunResponse(BaseModel):
     council_native_attachment_trace: dict | None = None
     # Council wash-for-externalization v0 (deterministic redaction trace)
     council_wash_trace: dict | None = None
+    # Lane A: direct Vision Execution action (integration ran first; early return skips council LLM)
+    direct_ve_action: dict | None = None
 
 
 def _end_run_routing(teardown) -> None:
@@ -833,6 +835,7 @@ def _council_integration_suffix_and_event(
     from local_ai.integration_commit import (
         format_last_integration_overlay,
         process_pending_integration,
+        recover_pending_on_affirm_from_conversation_subject,
         user_affirms_precision_commit,
     )
 
@@ -845,6 +848,10 @@ def _council_integration_suffix_and_event(
         lc = context.get("last_integration_commit")
         if isinstance(lc, dict):
             last_c = lc
+        if pending is None:
+            rec = recover_pending_on_affirm_from_conversation_subject(question=question, context=context)
+            if rec:
+                pending = rec
     q = (question or "").strip()
     # Affirmations must commit pending precision even if the same text could look like a capture turn.
     _is_precision_turn = classify_question_kind(q) == "user_providing_precision"
@@ -906,6 +913,56 @@ def _council_deterministic_commit_sse_pay(
         teacher_meta=None,
         wash_trace=wash_trace,
     )
+    return pay
+
+
+def _council_direct_ve_sse_pay(
+    *,
+    question: str,
+    context: dict | None,
+    conversation_subject_dict: dict | None,
+    wash_trace: dict,
+    params: RunParams,
+    principal: ExecutionPrincipal,
+    exec_meta: dict | None,
+    request: RunRequest | None,
+) -> dict | None:
+    """Lane A: deterministic SSE when direct VE mutation handled (or hard error), skipping council LLM."""
+    from local_ai.execution_policy.provider_default_inspect import build_provider_resolution_for_run
+    from local_ai.vision_execution.direct_action_executor import (
+        evaluate_direct_ve_action,
+        should_skip_council_for_direct_result,
+    )
+
+    res = evaluate_direct_ve_action(
+        question=question,
+        context=context if isinstance(context, dict) else None,
+        user_id=principal.account_user_id,
+    )
+    setattr(_run_council, "_last_direct_ve_action", res if should_skip_council_for_direct_result(res) else None)
+    if not should_skip_council_for_direct_result(res):
+        return None
+    text = str(res.get("message") or "").strip()
+    if not text:
+        return None
+    pay: dict = {
+        "chunk": text,
+        "done": True,
+        "direct_ve_action": res,
+        "synthesis_type": "conversational_partner",
+        "council_wash_trace": wash_trace,
+        "provider_resolution": build_provider_resolution_for_run(
+            mode="council",
+            params=params,
+            principal=principal,
+            exec_meta=exec_meta or {},
+            routing_context=request.routing_context if request else None,
+            teacher_meta=None,
+            wash_trace=wash_trace,
+        ),
+    }
+    if conversation_subject_dict:
+        pay["conversation_subject"] = conversation_subject_dict
     return pay
 
 
@@ -993,8 +1050,25 @@ def _run_council(
     )
 
     if integration_event_requires_deterministic_ack(_int_event):
+        setattr(_run_council, "_last_direct_ve_action", None)
         setattr(_run_council, "_last_teacher_meta", None)
         return deterministic_integration_ack_text(_int_event)
+
+    from local_ai.vision_execution.direct_action_executor import (
+        evaluate_direct_ve_action,
+        should_skip_council_for_direct_result,
+    )
+
+    _dve = evaluate_direct_ve_action(
+        question=question,
+        context=context if isinstance(context, dict) else None,
+        user_id=execution_principal.account_user_id,
+    )
+    if should_skip_council_for_direct_result(_dve):
+        setattr(_run_council, "_last_direct_ve_action", _dve)
+        setattr(_run_council, "_last_teacher_meta", None)
+        return str(_dve.get("message") or "").strip()
+    setattr(_run_council, "_last_direct_ve_action", None)
 
     # Keep existing behavior when teacher is off.
     if s.teacher_mode == "off":
@@ -1291,6 +1365,21 @@ def _council_stream_gen(
         yield f"data: {json.dumps(_det_pay)}\n\n"
         return
 
+    _dve_pay = _council_direct_ve_sse_pay(
+        question=question,
+        context=context,
+        conversation_subject_dict=_stream_conv_subj,
+        wash_trace=wash_trace,
+        params=params,
+        principal=execution_principal,
+        exec_meta=exec_meta,
+        request=request,
+    )
+    if _dve_pay is not None:
+        perf_mark("_council_stream_gen_direct_ve_bypass")
+        yield f"data: {json.dumps(_dve_pay)}\n\n"
+        return
+
     if s.teacher_mode in ("shadow", "warn", "veto", "replace"):
         perf_mark(
             "_council_stream_gen_teacher_branch_enter",
@@ -1534,6 +1623,9 @@ def run(body: RunRequest, http_request: Request):
             b.setdefault("policy_namespace", principal.policy_namespace)
         tm = getattr(_run_council, "_last_teacher_meta", None) if mode == "council" else None
         wtr = getattr(_run_council, "_last_council_wash_trace", None) if mode == "council" else None
+        dva = getattr(_run_council, "_last_direct_ve_action", None) if mode == "council" else None
+        if mode == "council" and dva is not None:
+            b["direct_ve_action"] = dva
         if mode == "council" and wtr is not None:
             b["council_wash_trace"] = wtr
         b["provider_resolution"] = build_provider_resolution_for_run(

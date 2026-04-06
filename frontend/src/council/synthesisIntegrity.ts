@@ -81,12 +81,23 @@ export type IntegrationCommitPayload = {
   verified_match?: boolean
 }
 
+/** Lane A: server-side direct VE mutation result on stream `done` (council LLM skipped). */
+export type DirectVeActionPayload = {
+  kind?: string
+  status?: string
+  message?: string
+  refresh_hint?: string | null
+  created_entities?: Array<{ entity_type?: string; entity_id?: string; title?: string }>
+}
+
 export type CouncilStreamSsePayload = {
   /** First SSE from server before council work; keeps dev proxies and clients unblocked. */
   stream_open?: boolean
   chunk?: string
   done?: boolean
   error?: string
+  /** Present on `done` when the server handled a scoped imperative VE write without council. */
+  direct_ve_action?: DirectVeActionPayload | null
   /** Echo next request as `context.conversation_subject` for Zenaf thread continuity. */
   conversation_subject?: ConversationSubject | null
   /** Proposed precision not yet written; echo on next POST until user affirms or server omits it. */

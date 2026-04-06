@@ -239,7 +239,7 @@ def test_seat_postprocess_grounding_phrase_based_not_word_bag():
 
 - Type: initiative
 - Title: Secret Initiative X
-- Brief / description: North star: do the thing
+- Brief: North star: do the thing
 """
     body = (
         "Core move: Fix council packet truncation so **Secret Initiative X** "
@@ -359,7 +359,8 @@ def test_build_enriched_includes_runtime_block():
     assert "Recent conversation" in s
 
 
-def test_vague_question_demotes_primary_to_context_note():
+def test_vague_question_keeps_primary_when_ve_focus_entity_resolved():
+    """Resolved entity_type + entity_id is authoritative grounding even if the question uses 'this project'."""
     p = CouncilPreflight(
         user_question="What's the next step for this project?",
         active_surface="vision_execution",
@@ -371,17 +372,116 @@ def test_vague_question_demotes_primary_to_context_note():
         ve_focus_title="Secret Initiative X",
     )
     ok, reason = should_treat_primary_as_authoritative(p, subject_ref=None, object_snapshot=None)
+    assert ok is True
+    assert reason == "grounding_strong"
+
+    s = build_enriched_council_context(p, legacy_context_str=None, subject_ref=None, object_snapshot=None)
+    assert PRIMARY_CONTEXT_MARKER in s
+    assert CONTEXT_LEGITIMACY_NOTE_MARKER not in s
+    assert "Secret Initiative X" in s
+    assert council_packet_has_primary_context(s)
+    primary, secondary = split_enriched_council_context_for_seats(s)
+    assert primary is not None
+    assert PRIMARY_CONTEXT_MARKER in primary
+
+
+def test_build_enriched_hydrates_idea_snapshot_from_storage(monkeypatch):
+    def fake_get_idea(iid: str, uid: str):
+        return {
+            "id": iid,
+            "title": "Hydrated title",
+            "summary": "Short note from DB",
+            "description": "Expanded from DB",
+            "status": "Draft",
+            "desired_outcome": "Ship MVP",
+            "notes": "",
+            "linked_people": [],
+            "linked_assets": [],
+            "linked_ideas": [],
+        }
+
+    monkeypatch.setattr("local_ai.vision_execution.storage.get_idea", fake_get_idea)
+    p = CouncilPreflight(
+        user_question="what does this contain?",
+        ve_focus={"entity_type": "idea", "entity_id": "idea-h1"},
+    )
+    s = build_enriched_council_context(
+        p,
+        legacy_context_str=None,
+        subject_ref=None,
+        object_snapshot=None,
+        resonance_user_id="user-h1",
+    )
+    assert "Hydrated title" in s
+    assert "Short note from DB" in s
+    assert "Expanded from DB" in s
+    assert "Ship MVP" in s
+
+
+def test_format_ve_focus_initiative_includes_ui_schema_not_expanded_description():
+    p = CouncilPreflight(
+        user_question="walk me through the fields",
+        ve_focus={"entity_type": "initiative", "entity_id": "i-walk"},
+        ve_focus_title="junk drawer",
+        ve_focus_brief="todos",
+    )
+    block = council_preflight_mod._format_ve_focus_block(p)
+    assert block
+    assert "UI FIELD SCHEMA (initiative" in block
+    assert "- Expanded description:" not in block
+    assert "- Brief:" in block
+    assert "Execution steps" in block
+
+
+def test_build_enriched_hydrates_initiative_snapshot_from_storage(monkeypatch):
+    def fake_get_initiative(iid: str, uid: str):
+        return {
+            "id": iid,
+            "title": "Init from DB",
+            "brief": "Brief from DB",
+            "status": "Draft",
+            "next_step_ai": "",
+            "dependencies": "",
+            "risks": "",
+            "recommendation": "",
+            "notes": "",
+            "seats": [],
+        }
+
+    monkeypatch.setattr("local_ai.vision_execution.storage.get_initiative", fake_get_initiative)
+    p = CouncilPreflight(
+        user_question="what needs to be done?",
+        ve_focus={"entity_type": "initiative", "entity_id": "init-h1"},
+    )
+    s = build_enriched_council_context(
+        p,
+        legacy_context_str=None,
+        subject_ref=None,
+        object_snapshot=None,
+        resonance_user_id="user-h1",
+    )
+    assert "Init from DB" in s
+    assert "Brief from DB" in s
+    assert PRIMARY_CONTEXT_MARKER in s
+
+
+def test_ve_focus_without_entity_id_still_demotes_on_vague_question():
+    p = CouncilPreflight(
+        user_question="What's the next step for this project?",
+        active_surface="vision_execution",
+        ve_focus={
+            "entity_type": "project",
+            "lineage_labels": ["Initiatives", "North star", "Projects"],
+        },
+        ve_focus_title="Secret Initiative X",
+    )
+    ok, reason = should_treat_primary_as_authoritative(p, subject_ref=None, object_snapshot=None)
     assert ok is False
     assert reason == "vague_question_weak_grounding"
 
     s = build_enriched_council_context(p, legacy_context_str=None, subject_ref=None, object_snapshot=None)
     assert PRIMARY_CONTEXT_MARKER not in s
     assert CONTEXT_LEGITIMACY_NOTE_MARKER in s
-    assert "Secret Initiative X" in s
-    assert not council_packet_has_primary_context(s)
-    primary, secondary = split_enriched_council_context_for_seats(s)
-    assert primary is None
-    assert CONTEXT_LEGITIMACY_NOTE_MARKER in secondary
 
 
 def test_subject_ref_entity_id_keeps_authoritative_primary():

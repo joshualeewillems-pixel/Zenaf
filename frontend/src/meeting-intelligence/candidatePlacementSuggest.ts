@@ -74,7 +74,10 @@ export function buildStagingPatchFromPlacementSuggestion(s: CandidatePlacementRe
   acceptedExistingId: string | null
   parentLink: StagedParentLink | null
 } {
-  const ptRaw = (s.proposed_type || 'idea').toLowerCase()
+  const ptRaw =
+    typeof s.proposed_type === 'string' && s.proposed_type.trim()
+      ? s.proposed_type.trim().toLowerCase()
+      : 'idea'
   let overrideType: CommitableStagedKind = isCommitable(ptRaw) ? ptRaw : 'idea'
   let acceptedExistingId: string | null = null
   let parentLink: StagedParentLink | null = null

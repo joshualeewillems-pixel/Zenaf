@@ -42,6 +42,222 @@ def extract_draft_value_for_pending(assistant_text: str) -> tuple[str, str | Non
     return visible, found[0]
 
 
+def _sequential_double_quoted_segments(text: str, *, min_len: int = 25, max_len: int = 12000) -> list[str]:
+    """
+    Pair ASCII double-quotes left-to-right (opening → next ``"``), so closing quotes are not
+    mistaken for opening a new segment when prose continues (e.g. ``." I will … to: "LONG"``).
+    """
+    s = text or ""
+    out: list[str] = []
+    i = 0
+    n = len(s)
+    while i < n:
+        if s[i] != '"':
+            i += 1
+            continue
+        j = i + 1
+        while j < n and s[j] != '"':
+            j += 1
+        if j >= n:
+            break
+        inner = s[i + 1 : j].strip()
+        if min_len <= len(inner) <= max_len:
+            out.append(inner)
+        i = j + 1
+    return out
+
+
+def infer_draft_value_from_execution_commit_reply(
+    *,
+    assistant_raw: str,
+    user_question: str,
+    entity_type: str,
+    field: str,
+) -> str | None:
+    """
+    When the user issued an execution-commit phrase but the model omitted ``[DRAFT_VALUE: …]``,
+    take the longest substantial double-quoted string from the assistant reply (typical proposal shape).
+
+    Narrow: only for text fields; requires ``user_signals_execution_commit``.
+    """
+    if not user_signals_execution_commit(user_question):
+        return None
+    et = (entity_type or "").strip().lower()
+    sk = normalize_trunk_token_to_storage_key(et, str(field or "").strip().lower())
+    if not sk:
+        sk = str(field or "").strip().lower()
+    if sk not in (
+        "brief",
+        "description",
+        "summary",
+        "desired_outcome",
+        "notes",
+        "next_step_ai",
+        "completion_criteria",
+    ):
+        return None
+    raw = assistant_raw or ""
+    candidates: list[str] = [
+        t for t in _sequential_double_quoted_segments(raw) if t and not t.startswith("[")
+    ]
+    for m in re.finditer(r"'([^']{25,12000})'", raw):
+        t = m.group(1).strip()
+        if t and len(t) >= 25:
+            candidates.append(t)
+    if not candidates:
+        return None
+    best = max(candidates, key=len)
+    return best[:12000]
+
+
+_TEXT_FIELDS_ASSISTANT_QUOTE_FALLBACK: frozenset[str] = frozenset(
+    {
+        "brief",
+        "description",
+        "summary",
+        "desired_outcome",
+        "notes",
+        "next_step_ai",
+        "completion_criteria",
+    }
+)
+
+# Assistant proposes new wording in quotes (“update **Brief** to: \"…\"") but omitted [DRAFT_VALUE: …].
+_RE_IDOT = re.IGNORECASE | re.DOTALL
+
+_FIELD_WRITE_HINT_RES: dict[str, re.Pattern[str]] = {
+    "brief": re.compile(
+        r"(?:\*\*brief\*\*|"
+        r"\bupdate\s+(?:the\s+)?\*\*brief\*\*|"
+        r"\bbrief\b\s*(?:field)?\s*(?:to\s*|[—–-]\s*|is\s*:)|"
+        r"(?:finalize|finalise).{0,160}\bbrief\b|"
+        r"\bbrief\b.{0,100}(?:to\s*:|will\s+(?:be|read|say)|should\s+read))",
+        _RE_IDOT,
+    ),
+    "description": re.compile(
+        r"(?:\*\*description\*\*|\bdescription\b\s*(?:field)?\s*(?:to\s*|[—–-]\s*))",
+        _RE_IDOT,
+    ),
+    "summary": re.compile(
+        r"(?:\*\*summary\*\*|\bsummary\b\s*(?:field)?\s*(?:to\s*|[—–-]\s*))",
+        _RE_IDOT,
+    ),
+    "desired_outcome": re.compile(
+        r"(?:\*\*desired\s+outcome\*\*|\bdesired\s+outcome\b.{0,60}(?:to\s*|[—–-]\s*))",
+        _RE_IDOT,
+    ),
+    "notes": re.compile(
+        r"(?:\*\*notes\*\*|\bnotes\b\s*(?:field)?\s*(?:to\s*|[—–-]\s*)|diagnostics|admin\s+notes)",
+        _RE_IDOT,
+    ),
+    "next_step_ai": re.compile(
+        r"(?:\*\*next\s+step[^*]*\*\*|\bnext\s+step\b.{0,60}(?:to\s*|[—–-]\s*))",
+        _RE_IDOT,
+    ),
+    "completion_criteria": re.compile(
+        r"(?:\*\*completion\s+criteria\*\*|\bcompletion\s+criteria\b.{0,60}(?:to\s*|[—–-]\s*))",
+        _RE_IDOT,
+    ),
+}
+
+
+def extract_assistant_quoted_proposal_for_text_field(
+    *,
+    assistant_raw: str,
+    entity_type: str,
+    field_target: str,
+) -> str | None:
+    """
+    When the model omitted ``[DRAFT_VALUE: …]`` but proposed quoted prose for a text field (e.g. **Brief**),
+    take the longest substantial quoted string. Narrow: requires a field-specific write cue in the assistant text.
+    """
+    et = (entity_type or "").strip().lower()
+    sk = normalize_trunk_token_to_storage_key(et, str(field_target or "").strip().lower())
+    if not sk:
+        sk = str(field_target or "").strip().lower()
+    if sk not in _TEXT_FIELDS_ASSISTANT_QUOTE_FALLBACK:
+        return None
+    pat = _FIELD_WRITE_HINT_RES.get(sk)
+    if pat is None or not pat.search(assistant_raw or ""):
+        return None
+    raw = assistant_raw or ""
+    candidates: list[str] = [
+        t for t in _sequential_double_quoted_segments(raw) if t and not t.startswith("[")
+    ]
+    for m in re.finditer(r"'([^']{25,12000})'", raw):
+        t = m.group(1).strip()
+        if t and len(t) >= 25:
+            candidates.append(t)
+    if not candidates:
+        return None
+    return max(candidates, key=len)[:12000]
+
+
+# User pastes exact storage text in quotes and names the field — use when the model omits [DRAFT_VALUE: …].
+_BRIEF_DIRECTIVE_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"use\s+this\s+for\s+(?:the\s+)?brief", re.I),
+    re.compile(r"use\s+for\s+(?:the\s+)?brief", re.I),
+    re.compile(r"put\s+(?:this|it)\s+in\s+(?:the\s+)?brief", re.I),
+    re.compile(r"for\s+(?:the\s+)?brief\s+field", re.I),
+    re.compile(r"as\s+(?:the\s+)?brief", re.I),
+)
+
+
+def _extract_literal_before_closing_quote_and_brief_directive(question: str, *, min_len: int = 20) -> str | None:
+    """
+    Handle pasted prose with **no** leading ``"`` — only ``…work." use this for the brief field``.
+    """
+    q = question or ""
+    tails = (
+        r"(?s)(.+)(?:\"|\u201d)\s*use\s+this\s+for\s+(?:the\s+)?brief(?:\s+field)?\b",
+        r"(?s)(.+)(?:\"|\u201d)\s*use\s+for\s+(?:the\s+)?brief(?:\s+field)?\b",
+        r"(?s)(.+)(?:\"|\u201d)\s*put\s+(?:this|it)\s+in\s+(?:the\s+)?brief\b",
+        r"(?s)(.+)(?:\"|\u201d)\s*for\s+(?:the\s+)?brief\s+field\b",
+    )
+    for tpat in tails:
+        m = re.search(tpat, q, re.I)
+        if m:
+            body = m.group(1).strip()
+            if len(body) >= min_len:
+                return body[:12000]
+    return None
+
+
+def extract_user_literal_for_pending_integration(question: str, *, min_quote_len: int = 20) -> str | None:
+    """
+    Extract quoted prose the user wants stored (e.g. ``"...long text..." use this for the brief field``).
+
+    Enables ``pending_integration`` on the **first** turn when the assistant reply has no ``[DRAFT_VALUE: …]``,
+    so the client can echo pending and a bare **yes** commits via ``process_pending_integration``.
+    """
+    q = (question or "").strip()
+    if len(q) < min_quote_len + 10:
+        return None
+    if not any(p.search(q) for p in _BRIEF_DIRECTIVE_RES):
+        return None
+    candidates: list[str] = []
+    for m in re.finditer(r'"([^"]{' + str(min_quote_len) + r',12000})"', q):
+        t = m.group(1).strip()
+        if t:
+            candidates.append(t)
+    smart_pat = "\u201c([^\u201d]{%d,12000})\u201d" % (min_quote_len,)
+    for m in re.finditer(smart_pat, q):
+        t = m.group(1).strip()
+        if t:
+            candidates.append(t)
+    for m in re.finditer(r"'([^']{" + str(min_quote_len) + r",12000})'", q):
+        t = m.group(1).strip()
+        if t:
+            candidates.append(t)
+    if not candidates:
+        tail = _extract_literal_before_closing_quote_and_brief_directive(q, min_len=min_quote_len)
+        if tail:
+            candidates.append(tail)
+    if not candidates:
+        return None
+    return max(candidates, key=len)[:12000]
+
+
 def infer_draft_value_from_context(
     *,
     entity_id: str,
@@ -110,9 +326,7 @@ def assistant_has_nonempty_draft_value(raw: str) -> bool:
 
 # Appended to Zenaf reply when a save-eligible turn cannot queue a pending write (no valid tag / payload).
 MISSING_DRAFT_VALUE_REPLY_NUDGE = (
-    "\n\nThanks for your patience — I wasn’t able to queue a save from that reply. "
-    "A `[DRAFT_VALUE: …]` tag with the **exact** text to store is **required** (triple-backtick code fences and empty "
-    "grave-accent blocks **do not** count). Please send your request again and I’ll include that tag."
+    "\n\nI couldn’t save that to the field yet. Want me to suggest wording you can confirm on the next reply?"
 )
 
 
@@ -136,6 +350,12 @@ _DENY_RE = re.compile(
 )
 
 
+_PROCEED_UPDATE_AFFIRM = re.compile(
+    r"^(?:please\s+)?proceed(?:\s+with\s+(?:this|that|the|it)(?:\s+update|\s+now)?)?$",
+    re.I,
+)
+
+
 def user_affirms_precision_commit(question: str) -> bool:
     q = (question or "").strip()
     if len(q) < 1:
@@ -146,9 +366,79 @@ def user_affirms_precision_commit(question: str) -> bool:
     low = q.lower()
     if _DENY_RE.search(low):
         return False
+    if re.search(r"\b(confirm|leave)\s+as\s+is\b", low):
+        return True
+    if re.search(r"\bok\s+to\s+add\b", low):
+        return True
+    if _PROCEED_UPDATE_AFFIRM.match(low.strip()):
+        return True
     if _AFFIRM_RE.search(low):
         return True
     if low in ("y", "k", "👍"):
+        return True
+    return False
+
+
+_EXEC_COMMIT_DENY_START = re.compile(
+    r"^\s*(what|which|how|why|when|where|who|should\s+we|could\s+we|would\s+we|do\s+you|does|did|is\s+it|are\s+we)\b",
+    re.I,
+)
+
+
+def user_signals_execution_commit(question: str) -> bool:
+    """
+    True when the user is directing the assistant to **apply** agreed text (not asking a new question).
+
+    Routes to ``confirm_and_integrate`` with commit-intent executor: model must emit ``[DRAFT_VALUE: …]``
+    without a second confirmation. Conservative: rejects leading interrogative / ``should we`` openers.
+
+    Note: ``go for it`` / ``make the change`` must match here when there is **no** ``pending_integration`` yet;
+    ``user_affirms_precision_commit`` only runs after a draft was proposed to the client.
+    """
+    q = (question or "").strip()
+    if len(q) < 3:
+        return False
+    low = q.lower()
+    if _DENY_RE.search(low):
+        return False
+    if _EXEC_COMMIT_DENY_START.search(low):
+        return False
+
+    compact = low.strip().rstrip(".!?…").strip()
+    if compact in (
+        "go for it",
+        "make the change",
+        "save it",
+        "apply it",
+        "finalize it",
+        "finalize this",
+        "do it now",
+    ):
+        return True
+
+    if re.search(r"\bgo\s+ahead(\s+and\s+)?(change|update|apply|save|make\s+it|do\s+it|make)\b", low):
+        return True
+    if re.search(r"\bgo\s+for\s+it\b", low):
+        return True
+    if re.search(r"\b(make|apply)\s+that\s+change\b", low):
+        return True
+    if "i like that" in low and "go ahead" in low:
+        return True
+    if re.search(r"\b(use|adopt)\s+that\s+(definition|wording|text|revision|version)\b", low):
+        return True
+    if re.search(r"\byes[,!. ]+(make|change|apply|save|go\s+ahead|do\s+it|finalize)\b", low):
+        return True
+    if re.search(r"\byes\s+make\s+the\s+change\b", low):
+        return True
+    if re.search(r"\bplease\s+(go\s+ahead|apply|save|change|update|make)\b", low):
+        return True
+    if re.search(r"\b(change|update)\s+it\s+(now|please)\b", low):
+        return True
+    if re.search(r"\b(save|apply)\s+that(\s+to\s+the\s+(brief|field|description))?\b", low):
+        return True
+    if re.search(r"\bfinalize\s+(this|the)\s+change\b", low):
+        return True
+    if re.search(r"\bproceed\s+with\s+(this|the)\s+change\b", low):
         return True
     return False
 
@@ -457,6 +747,45 @@ def build_pending_integration_payload(
     return p
 
 
+def recover_pending_on_affirm_from_conversation_subject(
+    *,
+    question: str,
+    context: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    """
+    If the client omitted ``pending_integration`` but still echoes ``conversation_subject`` from the
+    precision turn (``last_user_contribution`` + ``active_field``), rebuild the proposed payload so
+    short affirmations (``add it``, ``yes``) still commit.
+    """
+    if not user_affirms_precision_commit(question):
+        return None
+    if not isinstance(context, Mapping):
+        return None
+    cs = context.get("conversation_subject")
+    if not isinstance(cs, dict):
+        return None
+    luc = str(cs.get("last_user_contribution") or "").strip()
+    if len(luc) < 24:
+        return None
+    ul = extract_user_literal_for_pending_integration(luc)
+    if not ul:
+        return None
+    ft = str(cs.get("active_field") or "").strip().lower()
+    if not ft or ft == "unknown":
+        return None
+    cp = context.get("council_preflight")
+    cp_dict = cp if isinstance(cp, dict) else None
+    ent_label = str(cs.get("entity_display_name") or "").strip() or None
+    return build_pending_integration_payload(
+        question=luc,
+        capture_field=ft,
+        capture_entity_label=ent_label,
+        council_preflight_dict=cp_dict,
+        merged_subject=cs,
+        proposed_value_override=ul,
+    )
+
+
 def process_pending_integration(
     *,
     question: str,
@@ -637,6 +966,7 @@ def derive_integration_save_state(
         title = disp or "this item"
         fk = str(pend.get("field") or "")
         fl = (pend.get("field_label") or "").strip() or _field_label_human_for_entity_storage(et, fk)
+        val = str(pend.get("value") or "").strip()
         return {
             "status": "candidate_target",
             "entity_display_name": title,
@@ -644,7 +974,7 @@ def derive_integration_save_state(
             "field_key": fk,
             "field_label_human": fl,
             "ui_path_label": build_ui_path_label(et, title, ui_field_label=fl),
-            "recorded_text": "",
+            "recorded_text": val[:12000],
             "pending_confirm": True,
             "last_save_blurb": _last_save_blurb(last_integration_commit),
         }
@@ -709,9 +1039,14 @@ def format_integration_save_state_trunk_overlay(state: Mapping[str, Any]) -> str
         )
 
     if st == "candidate_target" and title and fl:
+        rt = str(state.get("recorded_text") or "").strip()
+        proposed_line = ""
+        if pending_confirm and rt:
+            sn = rt if len(rt) <= 500 else rt[:497] + "…"
+            proposed_line = f"- **Proposed text (verbatim, already captured):** {sn}\n"
         if pending_confirm:
             pref = (
-                "- Status: **not saved yet** — a **proposed** write is waiting for an explicit yes.\n"
+                "- Status: **not saved yet** — a **proposed** write is waiting for an explicit **yes** (one word is enough).\n"
                 f"- Would save to: **{fl}** for **{title}**.\n"
             )
         else:
@@ -719,12 +1054,20 @@ def format_integration_save_state_trunk_overlay(state: Mapping[str, Any]) -> str
                 "- Status: **not saved** — only inferred target from context / thread (no write yet).\n"
                 f"- Likely field: **{fl}** for **{title}**.\n"
             )
+        no_reask = ""
+        if pending_confirm and rt:
+            no_reask = (
+                "- **Do not** ask them to re-confirm the same wording or “finalize” again — **yes** / **go ahead** applies the "
+                "proposed text above.\n"
+            )
         return (
             "\n\n**SAVE STATE (authoritative — for persistence questions):**\n"
             + pref
+            + proposed_line
             + (f"- Path if saved: `{ui_path}`.\n" if ui_path else "")
             + "- **Do not** say it was saved. For the preferred shape: if not pending_confirm, you may ask **one** short "
             "yes/no to save; if pending_confirm, tell them it saves when they confirm.\n"
+            + no_reask
             + last_line
         )
 

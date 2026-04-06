@@ -244,13 +244,21 @@ def test_scoped_digression_trunk_includes_depth_heading():
     assert "high investment" in block.lower() or "narrowed" in block.lower()
 
 
-def test_field_update_direct_put_that_in_routes_to_recommend_first_collapse():
+def test_use_this_for_brief_field_routes_precision_and_capture_target_brief():
+    """Regression: phrase must not miss placement regex (else reflective_synthesis + ve_focus → notes)."""
+    q = '"A collection of miscellaneous tasks." use this for the brief field'
+    assert classify_question_kind(q) == "user_providing_precision"
+    ct = derive_capture_target(q, packet=None, council_preflight_dict=None)
+    assert ct["field_target"] == "brief"
+
+
+def test_explicit_field_placement_routes_to_confirm_and_integrate_not_field_update_direct():
     q = "yes put that in completion criteria"
-    assert classify_question_kind(q) == "field_update_direct"
-    assert select_output_contract("field_update_direct") == "three_options_then_lean"
-    p = derive_mediation_profile(q, "field_update_direct", "three_options_then_lean")
-    assert p["mediation_move"] == "recommend_first_collapse"
-    assert p["resolution_mode"] == "decide"
+    assert classify_question_kind(q) == "user_providing_precision"
+    assert select_output_contract("user_providing_precision") == "confirm_and_integrate"
+    p = derive_mediation_profile(q, "user_providing_precision", "confirm_and_integrate")
+    assert p["mediation_move"] == "acknowledge_integrate"
+    assert p["resolution_mode"] == "compress"
 
 
 def test_resolution_collapse_finalize_verbs_route_to_recommend_first_collapse():
@@ -339,6 +347,12 @@ def test_missing_fields_kind():
     assert p["mediation_move"] == "compress_redundant_work"
 
 
+def test_synopsis_and_contents_questions_are_state_inventory():
+    assert classify_question_kind("Give me a synopsis of what it already contains") == "state_inventory"
+    assert classify_question_kind("What's associated with this idea?") == "state_inventory"
+    assert select_output_contract("state_inventory") == "inventory_only"
+
+
 def test_option_generation():
     assert classify_question_kind("Give me some ways to unblock this") == "option_generation"
     assert select_output_contract("option_generation") == "three_options_then_lean"
@@ -398,6 +412,18 @@ def test_derive_capture_target_low_without_signals():
     ct = derive_capture_target("to clarify, we're aiming for quality.", packet=None, council_preflight_dict=None)
     assert ct["capture_confidence"] == "low"
     assert ct["entity_target"] is None
+
+
+def test_put_it_in_brief_classify_and_capture_overrides_focus():
+    q = "put it in the brief: a collection of miscellaneous tasks"
+    assert classify_question_kind(q) == "user_providing_precision"
+    preflight = {
+        "ve_focus": {"entity_id": "in-1", "entity_type": "initiative", "field_label": "Notes"},
+        "ve_focus_title": "junk drawer",
+    }
+    ct = derive_capture_target(q, packet=None, council_preflight_dict=preflight)
+    assert ct["field_target"] == "brief"
+    assert ct["entity_target"] == "junk drawer"
 
 
 def test_user_providing_precision_not_when_asking_for_outcome():
@@ -461,6 +487,56 @@ def test_conversation_continuity_classified():
     assert select_output_contract("conversation_continuity") == "continuity_forward"
     p = derive_mediation_profile("x", "conversation_continuity", "continuity_forward")
     assert p["mediation_move"] == "continue_from_subject"
+
+
+def test_merge_preserves_active_field_when_capture_field_unknown():
+    """Execution-commit lines like 'yes make those changes' must not wipe prior brief targeting."""
+    prev = {
+        "entity_id": "in-1",
+        "entity_type": "initiative",
+        "entity_display_name": "junk drawer",
+        "active_field": "brief",
+        "last_user_contribution": "refine the brief",
+        "confidence": "high",
+    }
+    ct_unknown = {
+        "field_target": "unknown",
+        "entity_target": "junk drawer",
+        "capture_confidence": "low",
+    }
+    merged = merge_conversation_subject(
+        previous=parse_conversation_subject(prev),
+        question="yes make those changes",
+        question_kind="user_providing_precision",
+        output_contract="confirm_and_integrate",
+        capture_target=ct_unknown,
+        council_preflight_dict={"ve_focus": {"entity_type": "initiative", "entity_id": "in-1"}},
+        packet=None,
+    )
+    assert merged is not None
+    assert merged.get("active_field") == "brief"
+
+
+def test_derive_capture_target_change_this_brief():
+    ct = derive_capture_target(
+        "yes change this brief",
+        council_preflight_dict={
+            "ve_focus": {"entity_type": "initiative", "entity_id": "in-1"},
+            "ve_focus_title": "junk drawer",
+        },
+    )
+    assert ct["field_target"] == "brief"
+
+
+def test_derive_capture_target_but_it_in_brief_typo():
+    ct = derive_capture_target(
+        'but it in "brief"',
+        council_preflight_dict={
+            "ve_focus": {"entity_type": "initiative", "entity_id": "in-1"},
+            "ve_focus_title": "junk drawer",
+        },
+    )
+    assert ct["field_target"] == "brief"
 
 
 def test_merge_conversation_subject_retains_contribution_on_continuity():
@@ -611,3 +687,87 @@ def test_mode_lock_on_continuity_and_inventory():
     b_inv = _trunk_block_for_question("what do we still need to do to the finalize website idea?")
     assert MODE_LOCK_HEADING in b_inv
     assert "inventory excludes" in b_inv.lower() or "Inventory excludes" in b_inv
+
+
+def test_entity_grounding_block_when_primary_in_packet():
+    packet = f"{PRIMARY_CONTEXT_MARKER}\n\n- Title: Mailing list signup\n- Type: idea\n"
+    block = _trunk_block_for_question("what would be a good intent?", packet=packet)
+    assert "ENTITY GROUNDING + SCOPE" in block
+    assert "Anchor first" in block
+    assert "Scope lock (idea)" in block
+    assert "it seems you want" in block
+
+
+def test_entity_grounding_scope_lock_task_from_preflight():
+    packet = "Some context without primary marker."
+    preflight = {"ve_focus": {"entity_type": "task", "entity_id": "t1"}}
+    block = _trunk_block_for_question("next step?", packet=packet, council_preflight_dict=preflight)
+    assert "ENTITY GROUNDING + SCOPE" in block
+    assert "Scope lock (task)" in block
+
+
+def test_entity_grounding_scope_lock_initiative_from_preflight():
+    packet = f"{PRIMARY_CONTEXT_MARKER}\n\n- Type: initiative\n"
+    preflight = {"ve_focus": {"entity_type": "initiative", "entity_id": "i1"}}
+    block = _trunk_block_for_question("what next?", packet=packet, council_preflight_dict=preflight)
+    assert "ENTITY GROUNDING + SCOPE" in block
+    assert "Scope lock (initiative)" in block
+
+
+def test_entity_grounding_absent_without_focus_or_primary():
+    block = _trunk_block_for_question("hello world", packet="No primary here.")
+    assert "ENTITY GROUNDING + SCOPE" not in block
+
+
+def test_execution_commit_classifies_as_user_providing_precision():
+    assert classify_question_kind("i like that go ahead and change it") == "user_providing_precision"
+    assert select_output_contract("user_providing_precision") == "confirm_and_integrate"
+
+
+def test_execution_commit_uses_commit_intent_executor_in_trunk():
+    from local_ai.conversation_trunk import conversational_partner_trunk_instructions, derive_mediation_profile
+
+    q = "go ahead and change it"
+    kind = classify_question_kind(q)
+    contract = select_output_contract(kind)
+    profile = derive_mediation_profile(q, kind, contract)
+    block = conversational_partner_trunk_instructions(
+        question_kind=kind,
+        output_contract=contract,
+        mediation_profile=profile,
+        user_question=q,
+        packet=f"{PRIMARY_CONTEXT_MARKER}\n\n- Type: initiative\n",
+        council_preflight_dict={"ve_focus": {"entity_type": "initiative", "entity_id": "i1", "field_label": "Brief"}},
+    )
+    assert "EXECUTION COMMIT" in block
+    assert "Shall I" in block or "second confirmation" in block
+
+
+def test_lane_a_guard_block_injected_when_declined_after_parse():
+    from local_ai.conversation_trunk import conversational_partner_trunk_instructions, derive_mediation_profile
+
+    kind = "next_step"
+    contract = "three_options_then_lean"
+    profile = derive_mediation_profile("q", kind, contract)
+    base_pf: dict = {"ve_focus": {"entity_type": "initiative", "entity_id": "i1"}}
+    block_off = conversational_partner_trunk_instructions(
+        question_kind=kind,
+        output_contract=contract,
+        mediation_profile=profile,
+        user_question="x",
+        council_preflight_dict=dict(base_pf),
+    )
+    block_on = conversational_partner_trunk_instructions(
+        question_kind=kind,
+        output_contract=contract,
+        mediation_profile=profile,
+        user_question="x",
+        council_preflight_dict={
+            **base_pf,
+            "lane_a_mutation_intent_parsed": True,
+            "lane_a_direct_action_declined": True,
+        },
+    )
+    assert "LANE A DIRECT ACTION" not in block_off
+    assert "LANE A DIRECT ACTION" in block_on
+    assert "Do not" in block_on or "did not" in block_on.lower()

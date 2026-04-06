@@ -46,6 +46,23 @@ function selectionToEntity(sel: VeSelectionCore): { entity_type: EntityType; ent
   return null
 }
 
+/** Sent on POST /run ``council_preflight.ve_selected_entity`` — open VE row / list selection, independent of field focus. */
+export type VeSelectedEntityPayload = {
+  entity_type: EntityType
+  entity_id: string
+  title: string
+}
+
+export function veSelectedEntityPayloadFromSelection(
+  sel: VeSelectionCore | null | undefined,
+  bundle: VisionMapEntityBundle | null | undefined,
+): VeSelectedEntityPayload | null {
+  if (!sel) return null
+  const ent = selectionToEntity(sel)
+  if (!ent) return null
+  return { ...ent, title: titleForSelection(sel, bundle) }
+}
+
 /** Focus descriptor for list/map selection without a focused text control. */
 export function focusDescriptorFromVeSelection(
   sel: VeSelectionCore,

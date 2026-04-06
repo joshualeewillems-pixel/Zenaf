@@ -523,7 +523,7 @@ COUNCIL_INSTRUCTIONS_CLOSE = "[/INSTRUCTIONS]"
 # Syntax, silo grounding, and mediation live in ``response_trunk.build_response_control_block`` (Technical Header).
 COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM = """You are a System Interface: one continuous voice — chief-of-staff to the user, not a kiosk.
 
-Follow this order only: (1) RESPONSE CONTRACT — TECHNICAL HEADER, (2) THIS TURN — MEDIATION CONTROL + CONVERSATION TRUNK, (3) Context packet facts.
+Follow this order only: (1) RESPONSE CONTRACT — TECHNICAL HEADER, (2) **Context packet** (facts; PRIMARY lines are the live record), (3) THIS TURN — MEDIATION CONTROL + CONVERSATION TRUNK, (4) User message.
 
 When proposing stored text, output parser-safe tags with real content: [DRAFT_VALUE: ...] and [ID: ...]. No code fences.
 
@@ -653,6 +653,34 @@ def _council_shared_constraints_for_definition(
     return _compose_council_seat_shared_constraints(role_limit, clarify_only=clarify_only)
 
 
+def _capture_target_with_subject_field_fallback(
+    capture: dict[str, Any] | None,
+    merged_subject: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """
+    If the user message does not name a field (e.g. ``yes make those changes``) but the client
+    still echoes a concrete ``active_field`` from the prior precision turn, reuse it so integration
+    does not fall through to ``unknown`` + disambiguation.
+    """
+    if not capture or capture.get("field_target") != "unknown":
+        return capture
+    if not merged_subject or not isinstance(merged_subject, dict):
+        return capture
+    af = str(merged_subject.get("active_field") or "").strip().lower()
+    if not af or af == "unknown":
+        return capture
+    from typing import get_args
+
+    from local_ai.conversation_trunk import FieldTarget
+
+    if af not in get_args(FieldTarget):
+        return capture
+    out = dict(capture)
+    out["field_target"] = af
+    out["capture_confidence"] = "high" if out.get("entity_target") else "medium"
+    return out
+
+
 def _run_council_conversational_partner_body(
     provider,
     question: str,
@@ -664,6 +692,7 @@ def _run_council_conversational_partner_body(
     integration_event_dict: dict[str, Any] | None = None,
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
+    ve_elicitation_user_id: str | None = None,
     timeout: int = 15,
 ) -> tuple[str, dict[str, Any]]:
     import logging
@@ -688,10 +717,13 @@ def _run_council_conversational_partner_body(
         derive_integration_save_state,
         deterministic_integration_ack_text,
         infer_draft_value_from_context,
+        infer_draft_value_from_execution_commit_reply,
         format_integration_save_state_trunk_overlay,
         format_integration_trunk_mandate,
         integration_event_requires_deterministic_ack,
+        extract_assistant_quoted_proposal_for_text_field,
         extract_draft_value_for_pending,
+        extract_user_literal_for_pending_integration,
         MISSING_DRAFT_VALUE_REPLY_NUDGE,
         prepare_pending_integration_payload,
         raw_assistant_text_has_draft_value_open_tag,
@@ -769,6 +801,8 @@ def _run_council_conversational_partner_body(
         council_preflight_dict=council_preflight_dict,
         packet=packet,
     )
+    if _merged_subj:
+        _capture = _capture_target_with_subject_field_fallback(_capture, dict(_merged_subj))
     _scope = resolve_query_scope(
         question=question,
         question_kind=_qk,
@@ -803,6 +837,8 @@ def _run_council_conversational_partner_body(
             council_preflight_dict=council_preflight_dict,
             packet=packet,
         )
+        if _merged_subj:
+            _capture = _capture_target_with_subject_field_fallback(_capture, dict(_merged_subj))
         _scope = resolve_query_scope(
             question=question,
             question_kind=_qk,
@@ -831,10 +867,34 @@ def _run_council_conversational_partner_body(
                 _early_meta["conversation_subject"] = conversation_subject_to_json(_merged_subj)
             return _dis_msg.strip(), _early_meta
         del _pend_chk
+    _pre_user_literal_pending: dict[str, Any] | None = None
+    if (
+        _oc == "confirm_and_integrate"
+        and _capture is not None
+        and not _committed_this_pre
+    ):
+        _ft_pre = str(_capture.get("field_target") or "").strip().lower()
+        if _ft_pre and _ft_pre != "unknown":
+            _ul_pre = extract_user_literal_for_pending_integration(question)
+            if _ul_pre:
+                _pre_user_literal_pending = build_pending_integration_payload(
+                    question=question,
+                    capture_field=_ft_pre,
+                    capture_entity_label=_capture.get("entity_target"),
+                    council_preflight_dict=council_preflight_dict,
+                    merged_subject=conversation_subject_to_json(_merged_subj) if _merged_subj else None,
+                    proposed_value_override=_ul_pre,
+                )
     _conv_et = (_merged_subj.get("entity_type") if _merged_subj else None) or None
+    _effective_pending_for_save = (
+        pending_integration_dict
+        if isinstance(pending_integration_dict, dict)
+        and pending_integration_dict.get("integration_state") == "proposed"
+        else _pre_user_literal_pending
+    )
     _save_state = derive_integration_save_state(
         integration_event=integration_event_dict,
-        pending_integration=pending_integration_dict,
+        pending_integration=_effective_pending_for_save,
         capture_target=_capture,
         last_integration_commit=last_integration_commit_dict,
         conversation_entity_type=str(_conv_et).strip() if _conv_et else None,
@@ -843,6 +903,15 @@ def _run_council_conversational_partner_body(
     _scoped_dig = bool(
         isinstance(council_preflight_dict, dict) and council_preflight_dict.get("is_scoped_digression")
     )
+    if isinstance(council_preflight_dict, dict) and ve_elicitation_user_id:
+        from local_ai.vision_execution.ve_gap_elicitation import attach_ve_gap_to_preflight
+
+        attach_ve_gap_to_preflight(
+            council_preflight_dict,
+            conversation_subject_dict=conversation_subject_dict if isinstance(conversation_subject_dict, dict) else None,
+            user_id=ve_elicitation_user_id,
+            question_kind=_qk,
+        )
     _trunk_block = conversational_partner_trunk_instructions(
         question_kind=_qk,
         output_contract=_oc,
@@ -896,16 +965,22 @@ def _run_council_conversational_partner_body(
     )
 
     _closing = (
-        "Follow **THIS TURN — MEDIATION CONTROL** and **THIS TURN — CONVERSATION TRUNK** exactly. "
+        "The **Context packet** is authoritative for what exists in-app; **PRIMARY CONTEXT** lines win over guesses. "
+        "Follow **THIS TURN — MEDIATION CONTROL** and **THIS TURN — CONVERSATION TRUNK** from the trunk section exactly. "
         "Execute the mediation in plain prose. No role labels or council seat section headers "
         "(Strategist, Core move, etc.)."
     )
 
+    _context_packet_heading = (
+        "=== CONTEXT PACKET (authoritative facts; read before applying trunk rules) ===\n"
+    )
+    _trunk_heading = "=== THIS TURN — TRUNK RULES (mediation + executor) ===\n"
+
     prompt = (
         f"{COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM}\n"
-        f"{_response_control}\n"
-        f"{_trunk_block}\n\n"
-        f"{_packet_body}\n\n"
+        f"{_response_control}\n\n"
+        f"{_context_packet_heading}{_packet_body}\n\n"
+        f"{_trunk_heading}{_trunk_block}\n\n"
         f"User message:\n{question.strip()}\n\n"
         f"{_closing}"
     )
@@ -969,8 +1044,93 @@ def _run_council_conversational_partner_body(
                 )
                 if _pend:
                     _meta["pending_integration"] = _pend
-            elif _qk in frozenset({"priority_resolution", "resolution_collapse"}):
-                out = (out + MISSING_DRAFT_VALUE_REPLY_NUDGE).strip()
+            else:
+                _et_infer = ""
+                if isinstance(_merged_subj, dict):
+                    _et_infer = str(_merged_subj.get("entity_type") or "")
+                if not _et_infer and isinstance(council_preflight_dict, dict):
+                    _vf_inf = council_preflight_dict.get("ve_focus")
+                    if isinstance(_vf_inf, dict):
+                        _et_infer = str(_vf_inf.get("entity_type") or "")
+                _auto_exec = infer_draft_value_from_execution_commit_reply(
+                    assistant_raw=out_raw,
+                    user_question=question,
+                    entity_type=_et_infer,
+                    field=str(_capture.get("field_target") or ""),
+                )
+                if _auto_exec:
+                    _ollama_log.info(
+                        "[deterministic-commit] infer_draft_value_from_execution_commit_reply (quoted proposal); "
+                        "entity_type=%r field=%r",
+                        _et_infer,
+                        str(_capture.get("field_target") or ""),
+                    )
+                    _pend = build_pending_integration_payload(
+                        question=question,
+                        capture_field=_capture["field_target"],
+                        capture_entity_label=_capture.get("entity_target"),
+                        council_preflight_dict=council_preflight_dict,
+                        merged_subject=conversation_subject_to_json(_merged_subj) if _merged_subj else None,
+                        proposed_value_override=_auto_exec,
+                    )
+                    if _pend:
+                        _meta["pending_integration"] = _pend
+        if not _meta.get("pending_integration"):
+            _uq_lit = extract_user_literal_for_pending_integration(question)
+            _ft_cap = str(_capture.get("field_target") or "").strip().lower()
+            if _uq_lit and _ft_cap and _ft_cap != "unknown":
+                _pend_u = build_pending_integration_payload(
+                    question=question,
+                    capture_field=_ft_cap,
+                    capture_entity_label=_capture.get("entity_target"),
+                    council_preflight_dict=council_preflight_dict,
+                    merged_subject=conversation_subject_to_json(_merged_subj) if _merged_subj else None,
+                    proposed_value_override=_uq_lit,
+                )
+                if _pend_u:
+                    _meta["pending_integration"] = _pend_u
+                    _ollama_log.info(
+                        "[deterministic-commit] extract_user_literal_for_pending_integration (user quoted + brief directive); "
+                        "field=%r",
+                        _ft_cap,
+                    )
+        if not _meta.get("pending_integration"):
+            _et_asst = (
+                str(_merged_subj.get("entity_type") or "").strip().lower() if _merged_subj else ""
+            )
+            if not _et_asst and isinstance(council_preflight_dict, dict):
+                _vf_asst = council_preflight_dict.get("ve_focus")
+                if isinstance(_vf_asst, dict):
+                    _et_asst = str(_vf_asst.get("entity_type") or "").strip().lower()
+            _aq_prop = extract_assistant_quoted_proposal_for_text_field(
+                assistant_raw=out_raw,
+                entity_type=_et_asst,
+                field_target=str(_capture.get("field_target") or ""),
+            )
+            if _aq_prop:
+                _pend_asst = build_pending_integration_payload(
+                    question=question,
+                    capture_field=str(_capture.get("field_target") or "").strip().lower(),
+                    capture_entity_label=_capture.get("entity_target"),
+                    council_preflight_dict=council_preflight_dict,
+                    merged_subject=conversation_subject_to_json(_merged_subj) if _merged_subj else None,
+                    proposed_value_override=_aq_prop,
+                )
+                if _pend_asst:
+                    _meta["pending_integration"] = _pend_asst
+                    _ollama_log.info(
+                        "[deterministic-commit] extract_assistant_quoted_proposal_for_text_field; "
+                        "entity_type=%r field=%r",
+                        _et_asst,
+                        str(_capture.get("field_target") or ""),
+                    )
+        if not _meta.get("pending_integration") and _pre_user_literal_pending:
+            _meta["pending_integration"] = _pre_user_literal_pending
+        if (
+            not _meta.get("pending_integration")
+            and _qk in frozenset({"priority_resolution", "resolution_collapse"})
+        ):
+            out = (out + MISSING_DRAFT_VALUE_REPLY_NUDGE).strip()
     elif not _committed_this and _qk in frozenset({"priority_resolution", "resolution_collapse"}):
         _draft_ok = assistant_has_nonempty_draft_value(out_raw)
         _bt = assistant_uses_backtick_save_antipattern(out_raw)
@@ -1152,7 +1312,7 @@ def _primary_field_grounding_phrases(context: str | None) -> Dict[str, List[str]
             tl = t.lower()
             if len(t) >= 4 and t != "—" and "(not provided" not in tl:
                 out["title"].append(t[:200])
-        elif s.startswith("- Brief / description:"):
+        elif s.startswith("- Brief / description:") or s.startswith("- Brief:") or s.startswith("- Description:"):
             t = s.split(":", 1)[1].strip()
             tl = t.lower()
             if len(t) < 8 or t == "—" or "(not provided" in tl:
@@ -1971,10 +2131,11 @@ def _extract_primary_title_value(section: str) -> str | None:
 def _extract_primary_brief_snippet(section: str) -> str | None:
     for line in section.splitlines():
         s = line.strip()
-        if s.startswith("- Brief / description:"):
-            t = s.split(":", 1)[1].strip()
-            if len(t) >= 8 and t != "—" and "(not provided" not in t.lower():
-                return t[:160]
+        for prefix in ("- Brief / description:", "- Brief:", "- Description:"):
+            if s.startswith(prefix):
+                t = s.split(":", 1)[1].strip()
+                if len(t) >= 8 and t != "—" and "(not provided" not in t.lower():
+                    return t[:160]
     return None
 
 
@@ -1999,7 +2160,7 @@ def _council_primary_grounding_corpus(primary_block: str | None) -> str:
         parts.append(t)
     for line in section.splitlines():
         s = line.strip()
-        if s.startswith("- Brief / description:"):
+        if s.startswith("- Brief / description:") or s.startswith("- Brief:") or s.startswith("- Description:"):
             b = s.split(":", 1)[1].strip()
             bl = b.lower()
             if b and b != "—" and "(not provided" not in bl:
@@ -3545,6 +3706,7 @@ def run_council(
             integration_event_dict=integration_event_dict,
             pending_integration_dict=pending_integration_dict,
             last_integration_commit_dict=last_integration_commit_dict,
+            ve_elicitation_user_id=p_council.account_user_id,
             timeout=15,
         )
         out_lines.append(_cp_txt)
@@ -4192,6 +4354,7 @@ def run_council_stream(
             integration_event_dict=integration_event_dict,
             pending_integration_dict=pending_integration_dict,
             last_integration_commit_dict=last_integration_commit_dict,
+            ve_elicitation_user_id=p_council.account_user_id,
             timeout=15,
         )
         perf_mark("run_council_stream_conversational_partner_yields", body_len=len(body_txt or ""))

@@ -16,6 +16,11 @@ from local_ai.developmental_guidance import (
     attach_resonance_escalation_to_developmental_guidance,
     format_developmental_guidance_packet_block,
 )
+from local_ai.vision_execution.ve_integration_schema import (
+    hydration_field_block,
+    hydration_inline_list,
+    hydrated_structured_bullets as _hydrated_structured_bullets,
+)
 
 
 # Must match the header emitted by `_format_ve_focus_block` (used to attach stricter seat rules).
@@ -128,9 +133,10 @@ def grounding_signals_strong(
         reasons.append("question_title_overlap")
         return True, reasons
     vf = preflight.ve_focus if isinstance(preflight.ve_focus, dict) else None
-    if vf and _s(vf.get("entity_id")):
-        # Navigation focus exists but question is vague — not enough without UI confirm or text tie.
-        reasons.append("ve_focus_id_without_text_tie")
+    if vf and _s(vf.get("entity_id")) and _s(vf.get("entity_type")):
+        # Resolved record focus from the app: treat as authoritative grounding for this turn.
+        reasons.append("ve_focus_resolved_entity")
+        return True, reasons
     return False, reasons
 
 
@@ -153,6 +159,8 @@ def should_treat_primary_as_authoritative(
     preflight: CouncilPreflight,
     subject_ref: dict[str, Any] | None,
     object_snapshot: dict[str, Any] | None,
+    *,
+    question_kind: str | None = None,
 ) -> tuple[bool, str]:
     """
     If a PRIMARY block would be emitted, decide whether it may be authoritative.
@@ -162,9 +170,15 @@ def should_treat_primary_as_authoritative(
     primary_would_exist = bool(_format_ve_focus_block(preflight))
     if not primary_would_exist:
         return True, "no_primary_candidate"
+    qk = (question_kind or "").strip()
+    if qk in ("state_inventory", "missing_fields"):
+        return True, "question_kind_inventory"
     if _raw_context_rejects_authoritative_primary(preflight):
         strong, _ = grounding_signals_strong(preflight, subject_ref, object_snapshot)
         if not strong:
+            return False, "raw_context_rejects_authoritative_primary"
+        # Thread text explicitly denied an authoritative object — honor unless UI flagged explicit grounding.
+        if not preflight.grounding_explicit:
             return False, "raw_context_rejects_authoritative_primary"
     if not _question_has_vague_referent(q):
         return True, "question_not_vague"
@@ -281,6 +295,8 @@ class CouncilPreflight:
     ve_focus: dict[str, Any] | None = None
     # Vision & Execution: tab + selected entity ids from navigation
     ve_selection: dict[str, Any] | None = None
+    # Open row / list selection (stable scope for Lane A); independent of field-level ve_focus.
+    ve_selected_entity: dict[str, Any] | None = None
     # Optional client-enriched labels (title/brief/status/owner) when available
     ve_focus_title: str | None = None
     ve_focus_brief: str | None = None
@@ -327,6 +343,9 @@ def parse_preflight_from_request(
         vs = raw.get("ve_selection")
         if isinstance(vs, dict) and vs:
             out.ve_selection = vs
+        vse = raw.get("ve_selected_entity")
+        if isinstance(vse, dict) and vse:
+            out.ve_selected_entity = vse
         out.ve_focus_title = _s(raw.get("ve_focus_title"))
         out.ve_focus_brief = _s(raw.get("ve_focus_brief"))
         out.ve_focus_description = _s(raw.get("ve_focus_description"))
@@ -370,12 +389,386 @@ def _s(v: Any) -> str | None:
     return t or None
 
 
+def _client_ve_field_weak(s: str | None) -> bool:
+    """True when the client snapshot for a VE field is empty or a non-authoritative placeholder."""
+    t = (s or "").strip()
+    if not t or t in ("—", "-", "–"):
+        return True
+    low = t.lower()
+    if "scoped sub-thread" in low and "vision & execution" in low:
+        return True
+    if low.startswith("(not provided"):
+        return True
+    return False
+
+
+def _hydrate_preflight_ve_focus_from_storage(
+    preflight: CouncilPreflight,
+    user_id: str | None,
+    *,
+    user_question: str | None = None,
+) -> None:
+    """
+    Merge SQLite row into council preflight when the client omitted or placeholder-filled snapshot fields.
+    Ensures PRIMARY CONTEXT reflects persisted entity state, not only in-memory UI refs.
+    """
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    vf = preflight.ve_focus if isinstance(preflight.ve_focus, dict) else None
+    if not vf:
+        return
+    et = (_s(vf.get("entity_type")) or "").lower()
+    eid = _s(vf.get("entity_id"))
+    if not eid:
+        return
+    try:
+        from local_ai.vision_execution import storage as ve_storage
+    except Exception:
+        return
+
+    extras: list[str] = []
+
+    if et == "idea":
+        row = ve_storage.get_idea(eid, uid)
+        if not row:
+            return
+        title = str(row.get("title") or "").strip()
+        summary = str(row.get("summary") or "").strip()
+        desc = str(row.get("description") or "").strip()
+        status = str(row.get("status") or "").strip()
+        desired = str(row.get("desired_outcome") or "").strip()
+        notes = str(row.get("notes") or "").strip()
+        if _client_ve_field_weak(preflight.ve_focus_title) and title:
+            preflight.ve_focus_title = title
+        if _client_ve_field_weak(preflight.ve_focus_brief) and summary:
+            preflight.ve_focus_brief = summary
+        if _client_ve_field_weak(preflight.ve_focus_description) and desc:
+            preflight.ve_focus_description = desc
+        if status and _client_ve_field_weak(preflight.ve_focus_status):
+            preflight.ve_focus_status = status
+        if desired:
+            blk = hydration_field_block("idea", "desired_outcome", desired, max_body_len=8000)
+            if blk:
+                extras.append(blk)
+        if notes:
+            blk = hydration_field_block("idea", "notes", notes, max_body_len=2000)
+            if blk:
+                extras.append(blk)
+        for k in ("linked_people", "linked_assets", "linked_ideas"):
+            v = row.get(k)
+            if isinstance(v, list) and v:
+                line = hydration_inline_list("idea", k, [str(x) for x in v])
+                if line:
+                    extras.append(line)
+
+    elif et == "project":
+        row = ve_storage.get_project(eid, uid)
+        if not row:
+            return
+        title = str(row.get("title") or "").strip()
+        brief = str(row.get("brief") or "").strip()
+        status = str(row.get("status") or "").strip()
+        notes = str(row.get("notes") or "").strip()
+        deliverables = str(row.get("deliverables") or "").strip()
+        nxt = str(row.get("next_step_ai") or "").strip()
+        if _client_ve_field_weak(preflight.ve_focus_title) and title:
+            preflight.ve_focus_title = title
+        if _client_ve_field_weak(preflight.ve_focus_brief) and brief:
+            preflight.ve_focus_brief = brief
+        if status and _client_ve_field_weak(preflight.ve_focus_status):
+            preflight.ve_focus_status = status
+        body_parts: list[str] = []
+        if deliverables:
+            blk = hydration_field_block("project", "deliverables", deliverables, max_body_len=3500)
+            if blk:
+                body_parts.append(blk)
+        if nxt:
+            blk = hydration_field_block("project", "next_step_ai", nxt, max_body_len=2000)
+            if blk:
+                body_parts.append(blk)
+        if notes:
+            blk = hydration_field_block("project", "notes", notes, max_body_len=2000)
+            if blk:
+                body_parts.append(blk)
+        if body_parts and _client_ve_field_weak(preflight.ve_focus_description):
+            preflight.ve_focus_description = "\n\n".join(body_parts)
+
+    elif et == "initiative":
+        row = ve_storage.get_initiative(eid, uid)
+        if not row:
+            return
+        title = str(row.get("title") or "").strip()
+        brief = str(row.get("brief") or "").strip()
+        status = str(row.get("status") or "").strip()
+        notes = str(row.get("notes") or "").strip()
+        nxt = str(row.get("next_step_ai") or "").strip()
+        dependencies = str(row.get("dependencies") or "").strip()
+        risks = str(row.get("risks") or "").strip()
+        recommendation = str(row.get("recommendation") or "").strip()
+        if _client_ve_field_weak(preflight.ve_focus_title) and title:
+            preflight.ve_focus_title = title
+        if _client_ve_field_weak(preflight.ve_focus_brief) and brief:
+            preflight.ve_focus_brief = brief
+        if status and _client_ve_field_weak(preflight.ve_focus_status):
+            preflight.ve_focus_status = status
+        body_parts = []
+        if nxt:
+            blk = hydration_field_block("initiative", "next_step_ai", nxt, max_body_len=2000)
+            if blk:
+                body_parts.append(blk)
+        if dependencies:
+            blk = hydration_field_block("initiative", "dependencies", dependencies, max_body_len=3500)
+            if blk:
+                body_parts.append(blk)
+        if risks:
+            blk = hydration_field_block("initiative", "risks", risks, max_body_len=2500)
+            if blk:
+                body_parts.append(blk)
+        if recommendation:
+            blk = hydration_field_block("initiative", "recommendation", recommendation, max_body_len=2500)
+            if blk:
+                body_parts.append(blk)
+        qlow = (user_question or "").lower()
+        admin_notes_intent = any(
+            k in qlow
+            for k in (
+                "diagnostic",
+                "diagnostics",
+                "admin notes",
+                "admin note",
+                "what's in notes",
+                "whats in notes",
+            )
+        )
+        brief_is_weak = not str(brief or "").strip()
+        if notes:
+            blk = hydration_field_block("initiative", "notes", notes, max_body_len=2000)
+            if blk and (admin_notes_intent or brief_is_weak):
+                body_parts.append(blk)
+        if body_parts and _client_ve_field_weak(preflight.ve_focus_description):
+            preflight.ve_focus_description = "\n\n".join(body_parts)
+
+    elif et == "task":
+        row = ve_storage.get_task(eid, uid)
+        if not row:
+            return
+        title = str(row.get("title") or "").strip()
+        description = str(row.get("description") or "").strip()
+        status = str(row.get("status") or "").strip()
+        criteria = str(row.get("completion_criteria") or "").strip()
+        notes = str(row.get("notes") or "").strip()
+        if _client_ve_field_weak(preflight.ve_focus_title) and title:
+            preflight.ve_focus_title = title
+        if _client_ve_field_weak(preflight.ve_focus_brief) and description:
+            preflight.ve_focus_brief = description
+        if status and _client_ve_field_weak(preflight.ve_focus_status):
+            preflight.ve_focus_status = status
+        body_parts = []
+        if criteria:
+            blk = hydration_field_block("task", "completion_criteria", criteria, max_body_len=3500)
+            if blk:
+                body_parts.append(blk)
+        if notes:
+            blk = hydration_field_block("task", "notes", notes, max_body_len=2000)
+            if blk:
+                body_parts.append(blk)
+        if body_parts:
+            base = (preflight.ve_focus_description or "").strip()
+            addon = "\n\n".join(body_parts)
+            if _client_ve_field_weak(preflight.ve_focus_description):
+                preflight.ve_focus_description = (description + "\n\n" + addon).strip() if description else addon
+            elif addon and addon not in base:
+                preflight.ve_focus_description = f"{base}\n\n{addon}".strip()
+
+    else:
+        return
+
+    if extras:
+        base_desc = (preflight.ve_focus_description or "").strip()
+        addon = "\n\n".join(extras)
+        if addon and addon not in base_desc:
+            preflight.ve_focus_description = f"{base_desc}\n\n{addon}".strip() if base_desc else addon
+
+
 def _ve_ws_collapse(text: str | None) -> str:
     return " ".join(str(text or "").split()).strip()
 
 
 def _ve_same_text(a: str | None, b: str | None) -> bool:
     return bool(_ve_ws_collapse(a)) and _ve_ws_collapse(a) == _ve_ws_collapse(b)
+
+
+def _ui_field_schema_block(entity_type: str | None) -> str:
+    """
+    Authoritative list of real Vision & Execution UI surfaces for this entity type.
+    Injected into PRIMARY so seats do not invent generic fields (e.g. “Expanded description” on initiatives).
+    """
+    et = (entity_type or "").strip().lower()
+    if et == "initiative":
+        return (
+            "\n\n**UI FIELD SCHEMA (initiative — authoritative names only):**\n"
+            "- **Identity / scope:** Title, Brief, Owner, Status, Source idea; linked projects (read-only list in panel).\n"
+            "- **Risks (text):** Risks, Kill criteria (when present on the record).\n"
+            "- **Decision / Summary:** Evaluation-driven fields (e.g. Recommendation, Estimated cost, Estimated timeframe, "
+            "Strategic alignment (AI)); sliders such as Priority / Strategic value / Energy after evaluation.\n"
+            "- **Execution:** Checklist rows (**Execution steps** — their own list; not a single free-text “Next steps” field). "
+            "Legacy **Next step (AI)** text is transitional; canonical actionable steps are **Execution steps**.\n"
+            "- **Risks / admin:** **Diagnostics / admin notes** (the `notes` column — not labeled “Notes” in the initiative UI). "
+            "Do **not** treat this as the main description; primary prose belongs in **Brief**.\n"
+            "**Hard rule:** Do **not** refer to **Expanded description** on initiatives (not in UI). Do **not** describe one "
+            "editable field called **Next steps** — use **Execution steps** for checklist work or name specific **Decision** fields.\n"
+            "**Concept map:** colloquial “description” / main prose → **Brief**; tactical checklist → **Execution steps**; "
+            "evaluation narrative → **Decision fields**.\n"
+            "**Mutation truth:** Never claim an Owner/Brief/Status/etc. change **succeeded** from chat prose alone. "
+            "Only treat a write as confirmed when the packet includes **INTEGRATION COMMITTED** or a deterministic server line "
+            "like **Recorded →** / **Created →** for this turn. Otherwise invite the user to verify in Vision & Execution.\n"
+        )
+    if et == "project":
+        return (
+            "\n\n**UI FIELD SCHEMA (project — authoritative names only):**\n"
+            "- **Core:** Title, Brief (scope & outcomes), Status, Initiative, Owner, supporting owners, dates, priority, "
+            "estimated weekly hours, Notes.\n"
+            "- **Suggested work (AI):** Mediation lane (not the same as the main Brief).\n"
+            "- **Next step (AI)** text on the record is optional/legacy; do not treat it as the primary “next steps” surface.\n"
+            "**Hard rule:** Do **not** say **Expanded description** for projects; main prose is **Brief**.\n"
+        )
+    if et == "task":
+        return (
+            "\n\n**UI FIELD SCHEMA (task — authoritative names only):**\n"
+            "- Title, Description, Assignee, Due date, Priority, Estimated hours, Status, Completion criteria, Notes.\n"
+            "**Hard rule:** Do **not** invent **Expanded description** or initiative-style fields for tasks.\n"
+        )
+    if et == "idea":
+        return (
+            "\n\n**UI FIELD SCHEMA (idea — authoritative names only):**\n"
+            "- Title, Short note, Expanded description, Intent / what this idea is trying to become, Notes; promotion / analysis "
+            "sections as shown in app.\n"
+            "**Note:** **Expanded description** is valid **only** for ideas — not for initiatives or projects.\n"
+        )
+    return ""
+
+
+def _primary_bullets_initiative_or_project(
+    entity_type: str,
+    title: str | None,
+    brief: str | None,
+    expanded: str | None,
+) -> list[str]:
+    """PRIMARY lines for initiative/project — **Brief** only; never 'Expanded description'."""
+    tit = _ve_ws_collapse(title)
+    br = _s(brief)
+    ex = _s(expanded)
+    struct = _hydrated_structured_bullets(ex, entity_type)
+
+    def trunc(s: str, n: int) -> str:
+        return (s[: n - 1] + "…") if len(s) > n else s
+
+    lines: list[str] = []
+    if br and ex and not _ve_same_text(br, ex):
+        b_n, e_n = _ve_ws_collapse(br), _ve_ws_collapse(ex)
+        if e_n.startswith(b_n) and len(e_n) > len(b_n):
+            lines.append(f"- Brief: {trunc(ex, 4000)}")
+        else:
+            lines.append(f"- Brief: {trunc(br, 2000)}")
+            if struct:
+                lines.extend(struct)
+            else:
+                lines.append(f"- Supplemental record text: {trunc(ex, 3000)}")
+    elif br:
+        lines.append(f"- Brief: {trunc(br, 4000)}")
+        if ex and not _ve_same_text(br, ex) and struct:
+            lines.extend(struct)
+    elif ex:
+        if struct:
+            lines.append("- Brief: —")
+            lines.extend(struct)
+        else:
+            lines.append(f"- Brief: {trunc(ex, 4000)}")
+    else:
+        lines.append("- Brief: —")
+
+    out: list[str] = []
+    for line in lines:
+        if line.startswith("- Brief: "):
+            body = line[len("- Brief: ") :].strip()
+            body_n = _ve_ws_collapse(body)
+            if tit and body_n and tit == body_n:
+                continue
+        elif line.startswith("- Supplemental record text: "):
+            body = line[len("- Supplemental record text: ") :].strip()
+            if tit and _ve_ws_collapse(body) == tit:
+                continue
+        out.append(line)
+    return out if out else ["- Brief: —"]
+
+
+def _primary_bullets_task(
+    title: str | None,
+    brief: str | None,
+    expanded: str | None,
+) -> list[str]:
+    """Task PRIMARY uses **Description** (UI label), not idea-style Brief/Expanded."""
+    tit = _ve_ws_collapse(title)
+    br = _s(brief)
+    ex = _s(expanded)
+    struct = _hydrated_structured_bullets(ex, "task")
+
+    def trunc(s: str, n: int) -> str:
+        return (s[: n - 1] + "…") if len(s) > n else s
+
+    lines: list[str] = []
+    if br and ex and not _ve_same_text(br, ex):
+        b_n, e_n = _ve_ws_collapse(br), _ve_ws_collapse(ex)
+        if e_n.startswith(b_n) and len(e_n) > len(b_n):
+            lines.append(f"- Description: {trunc(ex, 4000)}")
+        else:
+            lines.append(f"- Description: {trunc(br, 2000)}")
+            if struct:
+                lines.extend(struct)
+            else:
+                lines.append(f"- Supplemental record text: {trunc(ex, 3000)}")
+    elif br:
+        lines.append(f"- Description: {trunc(br, 4000)}")
+        if ex and not _ve_same_text(br, ex) and struct:
+            lines.extend(struct)
+    elif ex:
+        if struct:
+            lines.append("- Description: —")
+            lines.extend(struct)
+        else:
+            lines.append(f"- Description: {trunc(ex, 4000)}")
+    else:
+        lines.append("- Description: —")
+
+    out: list[str] = []
+    for line in lines:
+        if line.startswith("- Description: "):
+            body = line[len("- Description: ") :].strip()
+            if tit and _ve_ws_collapse(body) == tit:
+                continue
+        elif line.startswith("- Supplemental record text: "):
+            body = line[len("- Supplemental record text: ") :].strip()
+            if tit and _ve_ws_collapse(body) == tit:
+                continue
+        out.append(line)
+    return out if out else ["- Description: —"]
+
+
+def _primary_content_bullets_for_entity(
+    entity_type: str | None,
+    title: str | None,
+    brief: str | None,
+    expanded: str | None,
+) -> list[str]:
+    et = (entity_type or "").strip().lower()
+    if et == "idea":
+        return _ve_description_bullets_for_focus(title, brief, expanded)
+    if et in ("initiative", "project"):
+        return _primary_bullets_initiative_or_project(et, title, brief, expanded)
+    if et == "task":
+        return _primary_bullets_task(title, brief, expanded)
+    return _ve_description_bullets_for_focus(title, brief, expanded)
 
 
 def _ve_description_bullets_for_focus(
@@ -489,18 +882,28 @@ def _format_ve_focus_block(preflight: CouncilPreflight) -> str | None:
 
     if not title and lineage_meaningful:
         title = lineage_meaningful[-1]
+    if (et or "").strip().lower() == "initiative" and title:
+        from local_ai.vision_execution.initiative_completeness import normalize_initiative_display_title
+
+        title = normalize_initiative_display_title(title) or title
     title_display = title or "(not provided — use Reference below: lineage, entity id, and field focus)"
 
     if (type_display or "").lower() == "initiative" and not initiative_label:
         initiative_label = title or (lineage_meaningful[-1] if lineage_meaningful else None)
     initiative_display = initiative_label or "(see Reference if parent initiative or lineage is listed)"
 
+    et_norm = ((et or type_display or "").strip().lower())
     main_bullets: list[str] = [
         f"- Type: {type_display}",
         f"- Title: {title_display}",
         f"- Initiative: {initiative_display}",
         f"- Status: {status}",
-        *_ve_description_bullets_for_focus(title, brief, expanded),
+        *_primary_content_bullets_for_entity(
+            et_norm if et_norm in ("idea", "initiative", "project", "task") else None,
+            title,
+            brief,
+            expanded,
+        ),
     ]
     if owner:
         main_bullets.append(f"- Owner: {owner}")
@@ -541,15 +944,35 @@ def _format_ve_focus_block(preflight: CouncilPreflight) -> str | None:
             details.append("Navigation selection: " + ", ".join(sel_bits))
 
     intro = (
+        "**Authoritative snapshot:** The lines below are the application's record for the focused entity. "
+        "When a line shows non-empty text, treat that as **verified state** — summarize or quote it faithfully. "
+        "Do **not** claim a field is empty or missing if PRIMARY shows content for it.\n"
+        "**Reply shape (mandatory):** (1) **State** — name or quote **Title** and every **non-empty** field line below. "
+        "(2) **Sufficiency** — given the question and the **conversation thread**, judge whether this record is already a "
+        "**valid configuration** for the user’s goal. **Draft** or a short brief does **not** automatically mean “must expand "
+        "description”; role clarity can be enough. If the user states operational intent (e.g. catch-all, staging, bucket for "
+        "ancillary work, intentionally loose), treat that as **authoritative** and pivot to **confirm + operationalize** "
+        "(status change, 1–2 light guardrails, or leave as-is) — **not** repeated pressure to lengthen the brief.\n"
+        "(3) **Gaps** — only if sufficiency is **actually** lacking for the stated goal. "
+        "(4) **Move** — one clear recommendation or option set; **do not** re-issue the same “expand/refine description” "
+        "advice after the user has already clarified role or asked to revise on those terms.\n"
         "The user's question is about THIS object unless they clearly refer to something else.\n"
-        "Treat every field above as ground truth for the active initiative / project / task. "
-        "Ground your answer directly in that work — do not speak as if no subject were specified."
+        "**Type + field discipline:** Stay at the entity’s layer (initiative vs project vs task vs idea). Use **only** field "
+        "names from **UI FIELD SCHEMA** and the bullets above — **do not** invent labels (e.g. **Expanded description** on "
+        "initiatives/projects). For initiatives, tactical work belongs in **Execution steps** (checklist), not a generic "
+        "“next steps” text field; decision narrative belongs in **Decision** fields.\n"
+        "Avoid generic facilitation openers (“it seems you want…”, “this could involve…”, “to move forward…”); "
+        "open with the entity itself.\n"
+        "Treat every field above as ground truth. Ground your answer directly in that work — do not speak as if no subject were specified."
     )
     ref_block = ""
     if details:
         ref_block = "\n\nReference (IDs, field focus, navigation):\n" + "\n".join(f"• {d}" for d in details)
 
-    return PRIMARY_CONTEXT_MARKER + "\n\n" + intro + "\n\n" + "\n".join(main_bullets) + ref_block
+    schema_et = et_norm if et_norm in ("idea", "initiative", "project", "task") else ""
+    schema_block = _ui_field_schema_block(schema_et)
+
+    return PRIMARY_CONTEXT_MARKER + "\n\n" + intro + "\n\n" + "\n".join(main_bullets) + schema_block + ref_block
 
 
 def _ve_one_line(text: str | None, max_len: int = 100) -> str:
@@ -1013,6 +1436,8 @@ def format_scoped_digression_guardrail_note() -> str:
     return (
         "SCOPED DIGRESSION (guardrails):\n"
         "- You are in a **narrow sub-thread** focused on the PRIMARY entity only.\n"
+        "- **Name the work** using the **Title** (and type) from PRIMARY CONTEXT — **do not** echo raw UUIDs or generic "
+        "“Entity abc123…” labels in user-facing prose when PRIMARY gives a real title.\n"
         "- **Do not** propose creating **new peer** tasks, ideas, or initiatives here; return to the main thread for that.\n"
         "- You **may** edit fields on the PRIMARY object (notes, description, completion criteria, etc.) per user intent.\n"
         "- Treat BACKGROUND lines as **context only** — PRIMARY is authoritative for what to edit."
@@ -1043,6 +1468,10 @@ def build_enriched_council_context(
     """
     from local_ai.conversation_trunk import classify_question_kind
 
+    ve_uid_early = (resonance_user_id or aspiration_user_id or "").strip() or None
+    if ve_uid_early:
+        _hydrate_preflight_ve_focus_from_storage(preflight, ve_uid_early, user_question=preflight.user_question)
+
     blocks: list[str] = []
     scoped = bool(getattr(preflight, "scoped_digression", False))
     uq = (preflight.user_question or "").strip()
@@ -1057,11 +1486,44 @@ def build_enriched_council_context(
         if scoped:
             use_authoritative = True
         else:
-            use_authoritative, _ = should_treat_primary_as_authoritative(preflight, subject_ref, object_snapshot)
+            use_authoritative, _ = should_treat_primary_as_authoritative(
+                preflight,
+                subject_ref,
+                object_snapshot,
+                question_kind=effective_qk,
+            )
         if use_authoritative:
             blocks.append(primary_candidate)
         else:
             blocks.append(_context_legitimacy_note(preflight))
+
+    if (
+        ve_uid_early
+        and effective_qk in ("state_inventory", "missing_fields")
+        and not scoped
+    ):
+        vf_inv = preflight.ve_focus if isinstance(preflight.ve_focus, dict) else None
+        et_inv = (_s(vf_inv.get("entity_type")) if vf_inv else "").strip().lower()
+        eid_inv = _s(vf_inv.get("entity_id")) if vf_inv else None
+        if et_inv == "initiative" and eid_inv:
+            try:
+                from local_ai.vision_execution import storage as ve_storage
+                from local_ai.vision_execution.initiative_completeness import (
+                    build_initiative_completeness_block,
+                )
+
+                row = ve_storage.get_initiative(eid_inv, ve_uid_early)
+                if row:
+                    n_steps = ve_storage.count_execution_steps("initiative", eid_inv, ve_uid_early)
+                    blocks.append(
+                        build_initiative_completeness_block(
+                            row,
+                            user_id=ve_uid_early,
+                            execution_step_count=n_steps,
+                        )
+                    )
+            except Exception:
+                pass
 
     runtime_lines: list[str] = []
     if preflight.active_surface:
@@ -1109,7 +1571,7 @@ def build_enriched_council_context(
     if scoped:
         blocks.append(format_scoped_digression_guardrail_note())
 
-    ve_uid = (resonance_user_id or aspiration_user_id or "").strip() or None
+    ve_uid = ve_uid_early
     if ve_uid and not scoped:
         if effective_qk in ("state_inventory", "missing_fields"):
             ve_scoped = format_ve_working_set_scoped_inventory_block(

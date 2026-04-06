@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from typing import Any, Literal, TypedDict, get_args
 
+from local_ai.integration_commit import user_signals_execution_commit
+
 QuestionKind = Literal[
     "state_inventory",
     "missing_fields",
@@ -85,6 +87,8 @@ FieldTarget = Literal[
     "goal",
     "constraints",
     "notes",
+    "title",
+    "description",
     "unknown",
 ]
 
@@ -556,10 +560,18 @@ def _token_overlap_named_scope(phrase: str, title: str) -> bool:
 
 def _user_providing_precision_signals(q_raw: str) -> bool:
     """True when the user is supplying a definition / field (declarative), not asking for analysis."""
+    # Pass 3C: short execution phrases (e.g. "go for it") must run before the length gate below.
+    if user_signals_execution_commit(q_raw):
+        return True
     q = (q_raw or "").strip()
+    lower_head = q.lower()
+    # Explicit field target ("put it in brief", "save this to notes", …) — must use confirm_and_integrate
+    # even when the line is short or lacks other supply markers.
+    if _field_from_placement_phrase(lower_head):
+        return True
     if len(q) < 8:
         return False
-    lower = q.lower()
+    lower = lower_head
 
     # Question-shaped **capture** asks (tool intent): still `user_providing_precision` / confirm_and_integrate.
     if any(
@@ -923,6 +935,10 @@ def _classify_question_kind_impl(question: str) -> QuestionKind:
     if _integration_status_signals(q):
         return "integration_status"
 
+    # Named field beats generic field-update collapse — enables deterministic integration targeting.
+    if _field_from_placement_phrase(q):
+        return "user_providing_precision"
+
     if _field_update_command_signals(q):
         return "field_update_direct"
 
@@ -931,6 +947,45 @@ def _classify_question_kind_impl(question: str) -> QuestionKind:
 
     if _resolution_collapse_signals(q):
         return "resolution_collapse"
+
+    # State / introspection on the focused record (not action advice).
+    if any(
+        p in q
+        for p in (
+            "synopsis",
+            "summary of what",
+            "what it already",
+            "what's already",
+            "whats already",
+            "already contains",
+            "already has",
+            "currently contains",
+            "currently has",
+            "what exists",
+            "what's in this",
+            "whats in this",
+            "what is in this",
+            "read me what",
+            "tell me what",
+            "what's on this",
+            "whats on this",
+            "what's filled",
+            "whats filled",
+            "what is filled",
+            "what's associated",
+            "whats associated",
+            "associated context",
+            "current state of",
+            "ground truth",
+            "actual content",
+            "what the idea",
+            "what this idea",
+            "inventory of this",
+            "describe this record",
+            "contents of this",
+        )
+    ):
+        return "state_inventory"
 
     # Explicit action-seeking (check before broad "what" inventory phrases).
     if any(
@@ -1172,7 +1227,84 @@ def _parse_primary_title_from_packet(packet: str | None) -> str | None:
     return None
 
 
+def _placement_word_to_field_target(raw: str) -> FieldTarget | None:
+    w = (raw or "").lower().strip().replace(" ", "")
+    if w == "brief":
+        return "brief"
+    if w == "notes":
+        return "notes"
+    if w == "description":
+        return "description"
+    if w == "title":
+        return "title"
+    if w == "summary":
+        return "summary"
+    if w == "goal":
+        return "goal"
+    if "desiredoutcome" in w or (w.startswith("desired") and "outcome" in w):
+        return "desired_outcome"
+    if w.startswith("completion") and "criteria" in w:
+        return "acceptance_criteria"
+    if w in ("nextstep", "nextsteps") or (w.startswith("next") and "step" in w):
+        return "next_step"
+    return None
+
+
+def _field_from_placement_phrase(lower: str) -> FieldTarget | None:
+    """User explicitly names the VE field (verb + preposition + field) — authoritative for capture."""
+    # Common typo: "but it in brief" / casual "it in brief"
+    if re.search(r"\b(?:but|put)\s+it\s+in\s+(?:the\s+)?brief\b", lower):
+        return "brief"
+    if re.search(r"\bit\s+in\s+(?:the\s+)?brief\b", lower):
+        return "brief"
+    word = (
+        r"(brief|notes|description|title|summary|goal|completion\s*criteria|desired\s*outcome|next\s*steps?)"
+    )
+    # "use this for the brief field" — distinct from ``use the brief`` / ``use brief`` above
+    m_this_for = re.search(rf"\buse\s+this\s+for\s+(?:the\s+)?{word}(?:\s+field)?\b", lower)
+    if m_this_for:
+        ft = _placement_word_to_field_target(m_this_for.group(1))
+        if ft:
+            return ft
+    if re.search(r"\buse\s+for\s+(?:the\s+)?brief\b", lower):
+        return "brief"
+    seq: tuple[tuple[str, int], ...] = (
+        (rf"\bput\s+(?:it|this|that)\s+in\s+(?:the\s+)?{word}\b", 1),
+        (rf"\b(?:place|stick)\s+(?:it|this|that)\s+in\s+(?:the\s+)?{word}\b", 1),
+        (rf"\badd\s+(?:it|this|that)\s+to\s+(?:the\s+)?{word}\b", 1),
+        (rf"\b(?:save|record)\s+(?:it|this|that)\s+to\s+(?:the\s+)?{word}\b", 1),
+        (rf"\binto\s+(?:the\s+)?{word}\b", 1),
+        (rf"\buse\s+(?:the\s+)?{word}\b(?:\s+field)?\b", 1),
+    )
+    for pat, group_idx in seq:
+        m = re.search(pat, lower)
+        if m:
+            ft = _placement_word_to_field_target(m.group(group_idx))
+            if ft:
+                return ft
+    return None
+
+
 def _field_from_user_text(lower: str) -> FieldTarget | None:
+    placed = _field_from_placement_phrase(lower)
+    if placed:
+        return placed
+    # Brief edits (UI label **Brief**) — phrases that do not use "the brief" or placement verbs.
+    if re.search(r"\b(?:change|update|set|edit|refine|fix|rewrite|expand)\s+(?:the\s+|this\s+)?brief\b", lower):
+        return "brief"
+    if re.search(r"\b(?:change|update)\s+this\s+brief\b", lower):
+        return "brief"
+    if re.search(r"\bbrief\s+to\s+(?:say|state|read|be|include)\b", lower):
+        return "brief"
+    if re.search(r'\bin\s+["\']brief["\']', lower):
+        return "brief"
+    if "this brief" in lower and re.search(
+        r"\b(?:change|update|fix|refine|edit|make)\b",
+        lower,
+    ):
+        return "brief"
+    if re.search(r"\b(?:update|change)\s+the\s+brief\b", lower):
+        return "brief"
     if "desired outcome" in lower or "desired outcomes" in lower:
         return "desired_outcome"
     if "acceptance criteria" in lower or "acceptance criterion" in lower:
@@ -1187,7 +1319,12 @@ def _field_from_user_text(lower: str) -> FieldTarget | None:
         return "constraints"
     if "next step" in lower or "next steps" in lower:
         return "next_step"
-    if "the brief" in lower or lower.startswith("brief:") or lower.startswith("the brief "):
+    if (
+        "the brief" in lower
+        or lower.startswith("brief:")
+        or lower.startswith("the brief ")
+        or re.search(r"\brefine\s+the\s+brief\b", lower)
+    ):
         return "brief"
     if "summary" in lower and (
         "the summary" in lower or lower.startswith("summary:") or "topic summary" in lower
@@ -1218,6 +1355,9 @@ def _field_from_ve_focus(vf: dict[str, Any]) -> FieldTarget | None:
         return "next_step"
     if "goal" in blob:
         return "goal"
+    # Initiative: `notes` column → UI "Diagnostics / admin notes"
+    if fk == "notes" or "diagnostics" in fl or ("admin" in fl and "notes" in fl):
+        return "notes"
     return None
 
 
@@ -1400,12 +1540,14 @@ def merge_conversation_subject(
             base["entity_display_name"] = ptitle
 
     if question_kind == "user_providing_precision" and capture_target:
-        base["active_field"] = capture_target["field_target"]
         base["last_user_contribution"] = (question or "").strip()[:4000]
-        base["confidence"] = capture_target["capture_confidence"]
-        et_cap = capture_target["entity_target"]
-        if et_cap:
-            base["entity_display_name"] = et_cap
+        ft = capture_target.get("field_target")
+        if ft and ft != "unknown":
+            base["active_field"] = ft
+            base["confidence"] = capture_target["capture_confidence"]
+            et_cap = capture_target.get("entity_target")
+            if et_cap:
+                base["entity_display_name"] = et_cap
 
     if question_kind == "user_correcting_model":
         base["last_user_contribution"] = (question or "").strip()[:4000]
@@ -1529,6 +1671,88 @@ def _scoped_digression_depth_block() -> str:
         "- Give **granular**, PRIMARY-grounded detail, field edits, and next steps for **that** entity; **do not** re-summarize "
         "the whole working set unless the question requires it.\n"
     )
+
+
+def _entity_grounding_scope_continuity_block(
+    packet: str | None,
+    council_preflight_dict: dict[str, Any] | None,
+) -> str:
+    """Mandatory Zenaf rules when a focused record exists: anchor on PRIMARY, scope lock, continuity, no protocol leakage."""
+    from local_ai.council_preflight import PRIMARY_CONTEXT_MARKER, parse_preflight_from_request
+
+    p = (packet or "").strip()
+    has_primary = bool(p and PRIMARY_CONTEXT_MARKER in p)
+
+    entity_type = ""
+    if isinstance(council_preflight_dict, dict) and council_preflight_dict:
+        ctx = {"council_preflight": council_preflight_dict}
+        pf = parse_preflight_from_request(ctx, "")
+        vf = pf.ve_focus if isinstance(pf.ve_focus, dict) else None
+        if vf:
+            entity_type = str(vf.get("entity_type") or "").strip().lower()
+    if not entity_type and has_primary:
+        m = re.search(r"(?m)^-\s*Type:\s*(\w+)", p)
+        if m:
+            entity_type = m.group(1).strip().lower()
+
+    if not has_primary and not entity_type:
+        return ""
+
+    parts: list[str] = [
+        "\n\n**ENTITY GROUNDING + SCOPE (mandatory when focus / PRIMARY exists):**\n",
+    ]
+    if has_primary:
+        parts.append(
+            "- **Anchor first:** Before opinions, next steps, or field advice, **name or briefly quote** the PRIMARY record’s "
+            "real **Title** and any **non-empty** field lines under PRIMARY CONTEXT. **Do not** treat fields as blank or "
+            "invent “missing fields” / generic task titles that contradict PRIMARY.\n"
+            "- **UI field truth:** When guiding “what to fill” or walking through the form, use **only** names from "
+            "**UI FIELD SCHEMA** (in PRIMARY) and the non-empty bullets above. **Do not** invent fields (e.g. **Expanded description** "
+            "on initiatives/projects/tasks). Colloquial “description” → **Brief** (initiative/project) or **Description** (task).\n"
+            "- **State → sufficiency → move:** Lead with what PRIMARY shows, then **judge whether the setup is already enough** "
+            "for the user’s stated goal (including role they describe in-thread). **Do not** default to “expand the brief” when "
+            "a minimal or catch-all role is valid; then offer **concrete moves** (e.g. mark Active, optional guardrails, or "
+            "confirm as-is). Only then note real gaps.\n"
+            "- **Anti-loop:** If the user already clarified intent or asked you to apply their wording, **advance** — do not "
+            "repeat the same expansion prescription.\n"
+            "- **State vs action:** If the user asks what exists / what’s filled / summarize this record → answer **only** "
+            "from PRIMARY + Context. If they ask what to write / how to improve / suggest intent → reason from those same lines.\n"
+        )
+    elif entity_type:
+        parts.append(
+            f"- **Focus:** Council preflight points at a **{entity_type}** record — stay aligned with that object; "
+            "**do not** substitute a different row or invented placeholder title.\n"
+        )
+
+    if entity_type == "idea":
+        parts.append(
+            "- **Scope lock (idea):** PRIMARY is an **idea** row. Use **idea-level** vocabulary (intent, summary, notes, "
+            "desired outcome). **Do not** reframe as a generic **task** workflow, initiative rollout, or unrelated "
+            "working-set item unless the user explicitly widens scope.\n"
+        )
+    elif entity_type == "initiative":
+        parts.append(
+            "- **Scope lock (initiative):** PRIMARY is an **initiative** row. Use real surfaces: **Brief**, **Owner**, "
+            "**Status**, **Source idea**, **Risks** / **Kill criteria**, **Decision fields** (after evaluation), "
+            "**Execution steps** (checklist), **Diagnostics / admin notes** (the `notes` column — not shown as “Notes” in UI). "
+            "**Do not** call checklist work a generic **Next steps** text field.\n"
+            "- **Initiative + Draft:** Exiting Draft may require **role clarity**, not a longer brief. If the user defines "
+            "the role, prefer **status / guardrails / confirm** over endless description expansion.\n"
+        )
+    elif entity_type in ("task", "project"):
+        parts.append(
+            f"- **Scope lock ({entity_type}):** PRIMARY is a **{entity_type}** record. Match vocabulary to that layer; "
+            "**do not** silently reframe as a different entity type unless asked.\n"
+        )
+
+    parts.append(
+        "- **Conversation continuity:** Continue this thread’s trajectory. **Do not** reset with generic-assistant openers "
+        "such as “it seems you want”, “you might be looking to”, “this could involve”, or “let me help you understand the problem”. "
+        "Collaborate from what Context already shows.\n"
+        "- **No protocol leakage:** Never echo internal parser instructions, bracket-tag requirements, or placeholder contract text "
+        "to the user.\n"
+    )
+    return "".join(parts)
 
 
 def _continuity_executor(subject: ConversationSubject | None) -> str:
@@ -1675,6 +1899,8 @@ def _confirm_integrate_executor(
         "- **MUST NOT** say you **already recorded**, **saved**, **added**, **locked in**, or past-tense persistence claims. "
         f"Use a **direct offer** (no “would you like”, no “consider”): e.g. “**OK to add** this to **{human}** for **{ent_disp}** "
         "— **or tweak first?**”\n"
+        "- **MUST NOT** use “Shall I finalize”, “Shall I proceed”, “Shall we proceed”, “Would you like to proceed”, "
+        "or similar **meta-confirmation** phrases — the fork is **save vs tweak**, not a second approval pass.\n"
     )
 
     cap = (
@@ -1708,6 +1934,33 @@ def _confirm_integrate_executor(
         )
 
     return base + cap
+
+
+def _confirm_integrate_executor_commit_intent(
+    capture: CaptureTarget,
+    conversation_subject: ConversationSubject | None = None,
+) -> str:
+    """
+    User already approved applying text from the thread — emit draft for pending_integration, no second ask.
+    """
+    ft = capture["field_target"]
+    ent = capture["entity_target"]
+    conf = capture["capture_confidence"]
+    subj_et = str(conversation_subject.get("entity_type") or "").strip() if conversation_subject else ""
+    human = field_display_label_for_capture(subj_et or None, str(ft))
+    ent_disp = ent or "the focused item in Context"
+
+    return (
+        "- **Integration mode — EXECUTION COMMIT (mandatory):** The user’s message is an **instruction to apply** wording "
+        "already discussed (approval / “go ahead” / “change it” / “use that definition”) — **not** an open question.\n"
+        "- **MUST** take the **agreed final text** from your **prior turn** or the user’s explicit quote in the thread and "
+        f"output **exactly one** ``[DRAFT_VALUE: …]`` tag with that full text for **{human}** on **{ent_disp}**.\n"
+        "- **MUST NOT** ask “Shall I…”, “Would you like…”, “Proceed?”, “or tweak first?”, or any **second confirmation**.\n"
+        "- **MUST NOT** restate the whole initiative analysis — at most **one short sentence** of acknowledgment, then the tag.\n"
+        "- **MUST NOT** claim the database is already updated unless Context shows a commit for this turn; the tag **queues** the write for the user to confirm in the product if required.\n"
+        f"- **CAPTURE TARGET:** field_target={ft!r}, entity_target={ent!r}, capture_confidence={conf!r}. "
+        "If field_target is ``unknown``, infer the best field from PRIMARY + field in focus; still emit ``[DRAFT_VALUE: …]``.\n"
+    )
 
 
 def _update_and_continue_executor(subject: ConversationSubject | None) -> str:
@@ -1785,6 +2038,7 @@ def _executor_bullets_for_mediation(
     capture_target: CaptureTarget | None = None,
     conversation_subject: ConversationSubject | None = None,
     query_scope: QueryScopeResolution | None = None,
+    user_question: str = "",
 ) -> str:
     """Instruction text for Zenaf: how to write the answer, given trunk-chosen mediation."""
     asp_three = _aspiration_recall_snippet_threeish() if aspiration_context_available else ""
@@ -1827,6 +2081,8 @@ def _executor_bullets_for_mediation(
 
     if output_contract == "confirm_and_integrate":
         ct = capture_target or derive_capture_target("", packet=None, council_preflight_dict=None)
+        if user_signals_execution_commit(user_question):
+            return _confirm_integrate_executor_commit_intent(ct, conversation_subject) + _inv_hard
         return _confirm_integrate_executor(ct, conversation_subject) + _inv_hard
 
     if output_contract == "refine_and_continue":
@@ -1840,6 +2096,9 @@ def _executor_bullets_for_mediation(
 
     if output_contract == "inventory_only":
         base = (
+            "- **Single-entity STATE:** If **PRIMARY CONTEXT** names one focused idea/task/project/initiative, **lead with the "
+            "actual field values shown there** (title, brief, description, status, etc.) — quote or paraphrase faithfully. "
+            "Only then note **empty** fields. **Never** imply a field is missing when PRIMARY shows text for it.\n"
             "- **Inventory — internal vs external:** **Internally** you may group by missing field, entity clusters, or "
             "dependencies before writing. **Externally** deliver a **compressed** summary — prefer **prose** or **very short** "
             "grouped lines; **avoid bullet spam** and **do not** repeat the same gap as separate bullets for each entity "
@@ -1897,11 +2156,12 @@ def _executor_bullets_for_mediation(
             "lenses, dimensions, or frameworks.\n"
             "- **DRAFT_VALUE mandate (`resolve_priority`):** You are **forbidden** from asking **“Would you like…”** / "
             "**“Shall we…”** / similar **process** invitations. Once you identify **the** priority, you **must** **immediately** "
-            "output a ``[DRAFT_VALUE: …]`` block proposing text to save — target **Brief** or **Description** on **ideas/initiatives**, "
-            "**Description** or **Completion criteria** on **tasks** (whichever Context shows as empty or thin). **Propose the data;** "
+            "output a ``[DRAFT_VALUE: …]`` block proposing text to save — target **Short note** / **Expanded description** on **ideas**, "
+            "**Brief** on **initiatives** and **projects**, **Description** or **Completion criteria** on **tasks** (whichever "
+            "Context + **UI FIELD SCHEMA** show as empty or thin). **Propose the data;** "
             "**do not** discuss whether to capture it.\n"
             "- **PRIMARY gap-fill (`resolve_priority`):** Do **not** only **name** the priority. Look at **PRIMARY**: if the "
-            "chosen focus is **missing** a usable **brief** or **description** or **completion criteria** (or equivalent empty field), "
+            "chosen focus is **missing** a usable **brief** / **description** / **completion criteria** (per entity schema), "
             "the ``[DRAFT_VALUE: …]`` on this turn is **mandatory** — concrete wording from Context + Question, **verbatim bias** per system rules.\n"
             "- **MUST NOT (external):** list peer options, name multiple equal candidates, defer the decision to the user "
             "(“what do you prefer?”, “which should we pick?”), peer menus, punting without a best-effort priority when "
@@ -1955,7 +2215,109 @@ def _executor_bullets_for_mediation(
 
     return (
         "- Execute the stated mediation_move and resolution_mode; do not substitute a generic three-option template.\n"
+        "- **PRIMARY (when present):** If the Context includes **PRIMARY CONTEXT (authoritative)** for a focused record, "
+        "base factual claims on those lines before offering opinions or next steps. Do not invent emptiness or generic "
+        "“missing fields” lists that contradict PRIMARY.\n"
     ) + _inv_hard
+
+
+def _ve_gap_elicitation_block(
+    council_preflight_dict: dict[str, Any] | None,
+    *,
+    question_kind: str,
+) -> str:
+    """
+    Structured elicitation: one gap at a time, or a short inventory for ``missing_fields``.
+    Populated server-side in ``attach_ve_gap_to_preflight`` (vision_execution.ve_gap_elicitation).
+    """
+    if not isinstance(council_preflight_dict, dict):
+        return ""
+    mode = str(council_preflight_dict.get("ve_gap_mode") or "").strip()
+    if not mode:
+        return ""
+
+    if mode == "inventory" and question_kind == "missing_fields":
+        inv = council_preflight_dict.get("ve_gap_inventory")
+        if not isinstance(inv, list) or not inv:
+            return ""
+        lines: list[str] = []
+        for item in inv[:6]:
+            if not isinstance(item, dict):
+                continue
+            q = str(item.get("question") or "").strip()
+            lb = str(item.get("label") or "").strip()
+            if q:
+                lines.append(f"- **{lb}:** {q}" if lb else f"- {q}")
+        if not lines:
+            return ""
+        inv_body = "\n".join(lines)
+        primary = council_preflight_dict.get("ve_gap_primary")
+        pq = ""
+        if isinstance(primary, dict):
+            pq = str(primary.get("question") or "").strip()
+        tail = (
+            f"\n- After summarizing, end with **exactly one** short follow-up question; prefer: {pq}"
+            if pq
+            else "\n- After summarizing, end with **exactly one** short follow-up question on the highest-priority gap."
+        )
+        return (
+            "\n\n**STRUCTURED GAP ELICITATION (mandatory for this turn):** The user asked what is missing or weak. "
+            "Respond with **two short groups**: (1) **Core fields** — the most important empty or weak items; "
+            "(2) **Next structure** — execution shape (steps, seats, tasks, dependencies) only if relevant. "
+            "Keep it compact (top 2–4 gaps total), not a dump of every column.\n"
+            f"Authoritative prioritized gaps from the open record:\n{inv_body}"
+            f"{tail}\n"
+        )
+
+    if mode == "decline_pivot":
+        primary = council_preflight_dict.get("ve_gap_primary")
+        if not isinstance(primary, dict):
+            return ""
+        q = str(primary.get("question") or "").strip()
+        if not q:
+            return ""
+        return (
+            "\n\n**LANE A + ELICITATION (mandatory):** A direct Vision Execution edit did **not** complete on this turn. "
+            "**Do not** imply the change was saved. Briefly acknowledge the limitation, then pivot with **one** "
+            f"forward question (use this or a natural equivalent): {q}\n"
+        )
+
+    if mode == "idle_close":
+        if question_kind in ("missing_fields", "integration_confirm", "integration_status"):
+            return ""
+        primary = council_preflight_dict.get("ve_gap_primary")
+        if not isinstance(primary, dict):
+            return ""
+        q = str(primary.get("question") or "").strip()
+        if not q:
+            return ""
+        return (
+            "\n\n**CLOSING ELICITATION (mandatory when substantive reply is otherwise complete):** "
+            "The user did not issue a direct save-this-field imperative that Lane A handled. "
+            "After your main answer, if you have not already asked a sharp forward question, add **one** short "
+            f"question (prefer this): {q}\n"
+        )
+
+    return ""
+
+
+def _lane_a_direct_action_guard_block(council_preflight_dict: dict[str, Any] | None) -> str:
+    """
+    When Lane A parsed a mutation-shaped intent but did not persist, forbid success hallucinations in council text.
+    """
+    if not isinstance(council_preflight_dict, dict):
+        return ""
+    if not council_preflight_dict.get("lane_a_mutation_intent_parsed"):
+        return ""
+    if not council_preflight_dict.get("lane_a_direct_action_declined"):
+        return ""
+    return (
+        "\n\n**LANE A DIRECT ACTION (mandatory):** The user message matched an imperative **persist-to-VE** pattern, "
+        "but the server **did not** apply a deterministic Vision Execution write on this turn. "
+        "**Do not** claim the record was updated, saved, assigned, created, linked, or that any field changed. "
+        "Avoid success language such as: Done, Updated, Added, Saved, Recorded, Successfully changed, or Owner changed. "
+        "Explain what is missing (e.g. person not found, unsupported phrase) or the exact UI/API path.\n"
+    )
 
 
 def conversational_partner_trunk_instructions(
@@ -1984,6 +2346,9 @@ def conversational_partner_trunk_instructions(
     subj_block = _conversation_subject_block(conversation_subject)
     scope_block = _query_scope_instruction_block(query_scope)
     scoped_block = _scoped_digression_depth_block() if scoped_digression else ""
+    grounding_block = _entity_grounding_scope_continuity_block(packet, council_preflight_dict)
+    lane_a_guard_block = _lane_a_direct_action_guard_block(council_preflight_dict)
+    ve_gap_block = _ve_gap_elicitation_block(council_preflight_dict, question_kind=question_kind)
     trunk_header = (
         f"\n\n**THIS TURN — CONVERSATION TRUNK (mandatory):** "
         f"question_kind={question_kind!r}, output_contract={output_contract!r}.\n"
@@ -2005,6 +2370,7 @@ def conversational_partner_trunk_instructions(
         capture_target=capture,
         conversation_subject=conversation_subject,
         query_scope=query_scope,
+        user_question=user_question,
     )
     mode_lock = _mode_lock_block(mediation_profile["mediation_move"], output_contract)
     tail = (
@@ -2024,6 +2390,9 @@ def conversational_partner_trunk_instructions(
         + subj_block
         + scope_block
         + scoped_block
+        + grounding_block
+        + lane_a_guard_block
+        + ve_gap_block
         + trunk_header
         + _progress_over_exploration_block()
         + (integration_save_state_block or "")

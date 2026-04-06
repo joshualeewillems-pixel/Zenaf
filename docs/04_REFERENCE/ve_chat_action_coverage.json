@@ -1,0 +1,1648 @@
+{
+  "contract_version": "1.0.0",
+  "kind": "ve_chat_action_coverage",
+  "generated_date": "2026-04-06",
+  "product_rule": "If a control is visibly editable in Vision Execution, chat shall either (1) apply a registered handler to edit it directly, or (2) truthfully explain the exact UI/API operation path for relation-derived-readonly surfaces. No silent 'supported a few scalars' pretense.",
+  "implementation_model": "Surface action registry keyed by (entity, surface_key, operation); handlers are shared primitives (text_set, person_assign, entity_link, checklist_row, workflow_router).",
+  "companion_field_inventory": "vision_execution_field_inventory.json",
+  "canonical_types": "frontend/src/vision-execution/types.ts",
+  "priority_tier_definitions": {
+    "1": "High-frequency daily edits — Lane A sequencing starts here (initiative + project + task first).",
+    "2": "Regular but not constant — schedule after tier-1 matrix is honest.",
+    "3": "Advanced workflows, cross-surface, session-local AI, matching/message center — explicit paths only until wired."
+  },
+  "handler_taxonomy": {
+    "text_set": "Scalar or long text PATCH on parent entity",
+    "enum_set": "Closed set / status / priority PATCH",
+    "numeric_set": "Number field PATCH",
+    "date_set": "ISO date PATCH",
+    "person_assign": "Single person_id FK PATCH",
+    "person_multi_assign": "Array of person ids PATCH",
+    "entity_reference_set": "Single entity FK PATCH (idea, initiative, project)",
+    "entity_multi_link": "Array of entity ids PATCH (assets, tasks, ideas)",
+    "structured_text_block": "Multi-line block (dependencies, risks) PATCH",
+    "checklist_row_crud": "execution_steps table POST/PATCH/DELETE",
+    "initiative_seat_crud": "initiative_seats nested CRUD",
+    "session_state_patch": "Client session only — chat must disclose non-persistence",
+    "client_local_ai_list": "localStorage / client-only suggested work — disclose + offer UI deep link",
+    "derived_readonly_explain": "No PATCH — return deterministic explanation of derivation",
+    "workflow_router": "Multi-step product action (promote, create child, apply evaluation)",
+    "core_profile_patch": "PATCH core profile / primary flag via Foundation routes"
+  },
+  "implementation_status_default": "registry_only",
+  "rows": [
+    {
+      "entity": "initiative",
+      "surface_label": "Title",
+      "surface_key": "title",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "change"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Set initiative title to \"{value}\".",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Brief",
+      "surface_key": "brief",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "change",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated initiative brief.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Owner",
+      "surface_key": "owner_id",
+      "surface_type": "person_reference",
+      "chat_operations": [
+        "set",
+        "assign",
+        "clear"
+      ],
+      "handler": "person_assign",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Assigned → Initiative → Owner ({person_name})",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Status",
+      "surface_key": "status",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set",
+        "change"
+      ],
+      "handler": "enum_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Set initiative status to \"{value}\".",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Source idea",
+      "surface_key": "source_idea_id",
+      "surface_type": "entity_reference",
+      "chat_operations": [
+        "set",
+        "link",
+        "clear"
+      ],
+      "handler": "entity_reference_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Linked source idea on initiative.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Recommendation",
+      "surface_key": "recommendation",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set",
+        "change"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated initiative recommendation text.",
+      "implementation_status": "registry_only",
+      "notes": "Often AI-filled; user may edit before/after apply.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Execution steps (checklist)",
+      "surface_key": "execution_steps",
+      "surface_type": "checklist",
+      "chat_operations": [
+        "add",
+        "remove",
+        "rename",
+        "toggle_done",
+        "reorder"
+      ],
+      "handler": "checklist_row_crud",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "POST/PATCH/DELETE /execution-steps (scope initiative)",
+      "deterministic_confirmation_template": "Modified execution checklist on initiative.",
+      "implementation_status": "registry_only",
+      "notes": "Child rows use execution_step entity.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "execution_step",
+      "surface_label": "Step title",
+      "surface_key": "title",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "checklist_row_crud",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /execution-steps/:stepId",
+      "deterministic_confirmation_template": "Renamed execution step.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "execution_step",
+      "surface_label": "Done / reopen",
+      "surface_key": "is_done",
+      "surface_type": "enum",
+      "chat_operations": [
+        "toggle",
+        "set"
+      ],
+      "handler": "checklist_row_crud",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /execution-steps/:stepId",
+      "deterministic_confirmation_template": "Marked execution step done/reopened.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Required assets",
+      "surface_key": "required_assets",
+      "surface_type": "entity_multi_reference",
+      "chat_operations": [
+        "add",
+        "remove",
+        "set"
+      ],
+      "handler": "entity_multi_link",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated required assets on initiative.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative_seat",
+      "surface_label": "Required seats / roles (row)",
+      "surface_key": "initiative_seat",
+      "surface_type": "collection",
+      "chat_operations": [
+        "add",
+        "remove",
+        "set"
+      ],
+      "handler": "initiative_seat_crud",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "Nested initiative seat API / PATCH initiative with seats payload",
+      "deterministic_confirmation_template": "Updated required seat row on initiative.",
+      "implementation_status": "registry_only",
+      "notes": "Maps role, assigned_person_id, estimated_effort, notes per seat.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative_seat",
+      "surface_label": "Seat assignee",
+      "surface_key": "assigned_person_id",
+      "surface_type": "person_reference",
+      "chat_operations": [
+        "assign",
+        "clear"
+      ],
+      "handler": "initiative_seat_crud",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "Seat row PATCH",
+      "deterministic_confirmation_template": "Assigned person to initiative seat.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Dependencies",
+      "surface_key": "dependencies",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "structured_text_block",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated initiative dependencies.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Risks",
+      "surface_key": "risks",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "structured_text_block",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated initiative risks.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Kill criteria",
+      "surface_key": "kill_criteria",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated kill criteria.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Diagnostics / admin notes",
+      "surface_key": "notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated initiative notes.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Counts toward capacity",
+      "surface_key": "counts_toward_capacity",
+      "surface_type": "numeric",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Set counts_toward_capacity.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Estimated cost (AI)",
+      "surface_key": "estimated_cost_ai",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated estimated cost field.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Estimated timeframe (AI)",
+      "surface_key": "estimated_timeframe_ai",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated estimated timeframe.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Strategic alignment (AI)",
+      "surface_key": "philosophical_alignment_ai",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated strategic alignment (AI) field.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Legacy next step (AI) text",
+      "surface_key": "next_step_ai",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated legacy next_step_ai.",
+      "implementation_status": "registry_only",
+      "notes": "Prefer execution_steps for new work.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Priority (manual 0–5)",
+      "surface_key": "priority_rank_manual",
+      "surface_type": "numeric",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Set manual priority rank.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Strategic value (evaluation slider)",
+      "surface_key": "strategic_value_manual",
+      "surface_type": "numeric",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "Typically set via evaluation apply flow",
+      "deterministic_confirmation_template": "Explain: use Evaluate → Apply decision to set strategic value.",
+      "implementation_status": "registry_only",
+      "notes": "Read-only in UI except via evaluation; chat must explain path.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Energy impact (evaluation slider)",
+      "surface_key": "energy_impact_manual",
+      "surface_type": "numeric",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "Evaluate apply",
+      "deterministic_confirmation_template": "Explain: set via evaluation apply.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Weighted score",
+      "surface_key": "weightedScore",
+      "surface_type": "derived_readonly",
+      "chat_operations": [
+        "explain"
+      ],
+      "handler": "derived_readonly_explain",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "derived",
+      "deterministic_confirmation_template": "Weighted score is derived from manual sliders; not directly editable.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Linked projects (read-only list)",
+      "surface_key": "linked_projects_display",
+      "surface_type": "derived_readonly",
+      "chat_operations": [
+        "explain",
+        "navigate"
+      ],
+      "handler": "derived_readonly_explain",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "derived from projects.initiative_id",
+      "deterministic_confirmation_template": "Projects are edited from each project’s Initiative field; list is read-only here.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Title",
+      "surface_key": "title",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "change"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Set project title.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Brief (scope & outcomes)",
+      "surface_key": "brief",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Updated project brief.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Owner",
+      "surface_key": "owner_id",
+      "surface_type": "person_reference",
+      "chat_operations": [
+        "assign",
+        "clear"
+      ],
+      "handler": "person_assign",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Assigned → Project → Owner ({person_name})",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Supporting owners",
+      "surface_key": "supporting_owner_ids",
+      "surface_type": "entity_multi_reference",
+      "chat_operations": [
+        "add",
+        "remove",
+        "set"
+      ],
+      "handler": "person_multi_assign",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Updated supporting owners on project.",
+      "implementation_status": "registry_only",
+      "notes": "Stores person id array.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Status",
+      "surface_key": "status",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "enum_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Set project status to \"{value}\".",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Initiative",
+      "surface_key": "initiative_id",
+      "surface_type": "entity_reference",
+      "chat_operations": [
+        "set",
+        "link",
+        "clear"
+      ],
+      "handler": "entity_reference_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Linked project to initiative.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Priority (1–5)",
+      "surface_key": "priority",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "enum_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id (numeric string)",
+      "deterministic_confirmation_template": "Set project priority to \"{value}\".",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Start date",
+      "surface_key": "start_date",
+      "surface_type": "date",
+      "chat_operations": [
+        "set",
+        "clear"
+      ],
+      "handler": "date_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Set project start date.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "End date",
+      "surface_key": "end_date",
+      "surface_type": "date",
+      "chat_operations": [
+        "set",
+        "clear"
+      ],
+      "handler": "date_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Set project end date.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Estimated weekly hours",
+      "surface_key": "estimated_weekly_hours",
+      "surface_type": "numeric",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Set estimated weekly hours.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Suggested work (AI) checklist",
+      "surface_key": "client:project_suggested_work",
+      "surface_type": "ai_suggestion_local",
+      "chat_operations": [
+        "add",
+        "remove",
+        "regenerate_hint"
+      ],
+      "handler": "client_local_ai_list",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "localStorage (projectSuggestedWorkLocal.ts); not SQLite",
+      "deterministic_confirmation_template": "Disclose: suggested work is client-local until promoted to tasks/checklist.",
+      "implementation_status": "registry_only",
+      "notes": "Chat must not claim durable save without migration path.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Earlier suggestion (AI)",
+      "surface_key": "next_step_ai",
+      "surface_type": "structured_text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Updated earlier suggestion field.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Notes",
+      "surface_key": "notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Updated project notes.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Duration / readiness / unanchored (radar)",
+      "surface_key": "duration",
+      "surface_type": "derived_readonly",
+      "chat_operations": [
+        "explain"
+      ],
+      "handler": "derived_readonly_explain",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "derived",
+      "deterministic_confirmation_template": "Radar metrics are derived from dates and fields; edit dates/brief instead.",
+      "implementation_status": "registry_only",
+      "notes": "Applies to duration, completionReadiness, unanchoredFlag.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Title",
+      "surface_key": "title",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Set task title.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Description",
+      "surface_key": "description",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Updated task description.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Assignee",
+      "surface_key": "assignee_id",
+      "surface_type": "person_reference",
+      "chat_operations": [
+        "assign",
+        "clear"
+      ],
+      "handler": "person_assign",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Assigned → Task → Assignee ({person_name})",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Due date",
+      "surface_key": "due_date",
+      "surface_type": "date",
+      "chat_operations": [
+        "set",
+        "clear"
+      ],
+      "handler": "date_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Set task due date.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Priority",
+      "surface_key": "priority",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "enum_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Set task priority to \"{value}\".",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Estimated hours",
+      "surface_key": "estimated_hours",
+      "surface_type": "numeric",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Set estimated hours.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Status",
+      "surface_key": "status",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "enum_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Set task status to \"{value}\".",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Depends on (tasks)",
+      "surface_key": "dependency_ids",
+      "surface_type": "entity_multi_reference",
+      "chat_operations": [
+        "add",
+        "remove",
+        "set"
+      ],
+      "handler": "entity_multi_link",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Updated task dependencies.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Completion criteria",
+      "surface_key": "completion_criteria",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Updated completion criteria.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Notes",
+      "surface_key": "notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Updated task notes.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Project (parent)",
+      "surface_key": "project_id",
+      "surface_type": "entity_reference",
+      "chat_operations": [
+        "set",
+        "link",
+        "clear"
+      ],
+      "handler": "entity_reference_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Moved task under project (or standalone).",
+      "implementation_status": "registry_only",
+      "notes": "Often set via create-under workflow.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Required asset ids (API)",
+      "surface_key": "required_asset_ids",
+      "surface_type": "entity_multi_reference",
+      "chat_operations": [
+        "add",
+        "remove",
+        "set"
+      ],
+      "handler": "entity_multi_link",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /tasks/:id when UI exposed",
+      "deterministic_confirmation_template": "Explain: not in current task detail form; use API or future UI.",
+      "implementation_status": "registry_only",
+      "notes": "Inventory marks ve_ui_exposed false.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Title",
+      "surface_key": "title",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /ideas/:id",
+      "deterministic_confirmation_template": "Set idea title.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Short note",
+      "surface_key": "summary",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /ideas/:id",
+      "deterministic_confirmation_template": "Updated short note.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Expanded description",
+      "surface_key": "description",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /ideas/:id",
+      "deterministic_confirmation_template": "Updated idea description.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Intent / what this idea is trying to become",
+      "surface_key": "desired_outcome",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /ideas/:id",
+      "deterministic_confirmation_template": "Updated desired outcome / intent.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Status",
+      "surface_key": "status",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "enum_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /ideas/:id",
+      "deterministic_confirmation_template": "Set idea status.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Notes",
+      "surface_key": "notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /ideas/:id",
+      "deterministic_confirmation_template": "Notes field exists in API; disclose if UI omits editor.",
+      "implementation_status": "registry_only",
+      "notes": "Inventory: ve_ui_exposed false for notes.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Evaluate panel (session fields)",
+      "surface_key": "session:idea_evaluation:*",
+      "surface_type": "session_state",
+      "chat_operations": [
+        "set",
+        "apply_to_decision"
+      ],
+      "handler": "session_state_patch",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "Session until persisted via evaluation/decision flow",
+      "deterministic_confirmation_template": "Disclose session vs persisted fields before claiming save.",
+      "implementation_status": "registry_only",
+      "notes": "Wildcard covers estimated_cost_range, recommendation, etc.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Promote idea → initiative",
+      "surface_key": "workflow:promote_idea_to_initiative",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "promote"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "Product flow POST/PATCH sequence",
+      "deterministic_confirmation_template": "Ran promote workflow; confirm new initiative id.",
+      "implementation_status": "registry_only",
+      "notes": "Maps user 'promote target' intent.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Apply / defer idea evaluation decision",
+      "surface_key": "workflow:idea_evaluation_decision",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "apply",
+        "defer",
+        "modify"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "VisionExecutionView decision buttons + API",
+      "deterministic_confirmation_template": "Recorded evaluation decision per product rules.",
+      "implementation_status": "registry_only",
+      "notes": "Align with decisions API usage in VE.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "person",
+      "surface_label": "Name",
+      "surface_key": "name",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /people/:id",
+      "deterministic_confirmation_template": "Updated person name.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "person",
+      "surface_label": "Contact info",
+      "surface_key": "contact_info",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /people/:id",
+      "deterministic_confirmation_template": "Updated contact info.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "person",
+      "surface_label": "Role",
+      "surface_key": "role",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /people/:id",
+      "deterministic_confirmation_template": "Updated role.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "person",
+      "surface_label": "Relationship type",
+      "surface_key": "relationship_type",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /people/:id",
+      "deterministic_confirmation_template": "Updated relationship type.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "person",
+      "surface_label": "Strengths / needs / wants / availability",
+      "surface_key": "strengths|needs|wants|availability",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /people/:id",
+      "deterministic_confirmation_template": "Updated person profile text field.",
+      "implementation_status": "registry_only",
+      "notes": "Split per field in implementation registry.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "person",
+      "surface_label": "Notes",
+      "surface_key": "notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /people/:id",
+      "deterministic_confirmation_template": "Updated person notes.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "person",
+      "surface_label": "Current participation (read-only)",
+      "surface_key": "participation_summary",
+      "surface_type": "derived_readonly",
+      "chat_operations": [
+        "explain"
+      ],
+      "handler": "derived_readonly_explain",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "derived",
+      "deterministic_confirmation_template": "Participation is derived from project/task assignments; edit those records.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "capacity_profile",
+      "surface_label": "Weekly capacity (hours)",
+      "surface_key": "weekly_capacity_hours",
+      "surface_type": "numeric",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PUT /capacity-profiles/:personId",
+      "deterministic_confirmation_template": "Set weekly capacity hours.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "capacity_profile",
+      "surface_label": "Active weekly hours / delta / overcapacity",
+      "surface_key": "activeWeeklyHours",
+      "surface_type": "derived_readonly",
+      "chat_operations": [
+        "explain"
+      ],
+      "handler": "derived_readonly_explain",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "derived",
+      "deterministic_confirmation_template": "Capacity load is derived from active projects; adjust project hours or capacity.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Name",
+      "surface_key": "name",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Updated asset name.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Type",
+      "surface_key": "asset_type",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Updated asset type.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Status",
+      "surface_key": "status",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "enum_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Set asset status.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Linked ideas",
+      "surface_key": "linked_idea_ids",
+      "surface_type": "entity_multi_reference",
+      "chat_operations": [
+        "link",
+        "unlink",
+        "set"
+      ],
+      "handler": "entity_multi_link",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Updated linked ideas on asset.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Linked initiatives",
+      "surface_key": "linked_initiative_ids",
+      "surface_type": "entity_multi_reference",
+      "chat_operations": [
+        "link",
+        "unlink",
+        "set"
+      ],
+      "handler": "entity_multi_link",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Updated linked initiatives on asset.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Linked projects",
+      "surface_key": "linked_project_ids",
+      "surface_type": "entity_multi_reference",
+      "chat_operations": [
+        "link",
+        "unlink",
+        "set"
+      ],
+      "handler": "entity_multi_link",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Updated linked projects on asset.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Owner",
+      "surface_key": "owner_id",
+      "surface_type": "person_reference",
+      "chat_operations": [
+        "assign",
+        "clear"
+      ],
+      "handler": "person_assign",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Set asset owner.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Availability / time / cost",
+      "surface_key": "availability|time_availability|cost",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Updated availability or cost field.",
+      "implementation_status": "registry_only",
+      "notes": "Split per field in implementation.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Notes",
+      "surface_key": "notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /assets/:id",
+      "deterministic_confirmation_template": "Updated asset notes.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "asset",
+      "surface_label": "Required by (read-only)",
+      "surface_key": "required_by_display",
+      "surface_type": "derived_readonly",
+      "chat_operations": [
+        "explain"
+      ],
+      "handler": "derived_readonly_explain",
+      "ui_editable": false,
+      "priority_tier": 2,
+      "persistence_path": "derived",
+      "deterministic_confirmation_template": "Required-by is derived from initiative/project/task links.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "core_profile",
+      "surface_label": "Foundation / core profile text fields",
+      "surface_key": "core_definition|current_goals|growth_focus_12_months|economic_engine|non_negotiables|strategic_filter|current_constraints|capacity_limit|kill_philosophy|strength_positioning",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "core_profile_patch",
+      "ui_editable": true,
+      "priority_tier": 3,
+      "persistence_path": "PATCH /core-profiles/:id (Foundation / Perspectives UI)",
+      "deterministic_confirmation_template": "Updated core profile field.",
+      "implementation_status": "registry_only",
+      "notes": "ve_ui_exposed false in inventory; edited from Foundation flows.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "core_profile",
+      "surface_label": "Primary / canonical profile flag",
+      "surface_key": "is_primary",
+      "surface_type": "enum",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "core_profile_patch",
+      "ui_editable": true,
+      "priority_tier": 3,
+      "persistence_path": "PATCH /core-profiles/:id",
+      "deterministic_confirmation_template": "Set primary core profile.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "core_profile",
+      "surface_label": "Raw notes (admin)",
+      "surface_key": "raw_notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set"
+      ],
+      "handler": "core_profile_patch",
+      "ui_editable": true,
+      "priority_tier": 3,
+      "persistence_path": "PATCH /core-profiles/:id",
+      "deterministic_confirmation_template": "Updated raw notes.",
+      "implementation_status": "registry_only",
+      "notes": "safe_for_chat_reference false in inventory — gate in product policy.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Create task under project",
+      "surface_key": "workflow:create_task_under_project",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "create"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "POST /tasks + optional project_id",
+      "deterministic_confirmation_template": "Created {task_count} {task_noun} under Project → {project_title}",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Create project (under initiative or standalone)",
+      "surface_key": "workflow:create_project",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "create"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "POST /projects",
+      "deterministic_confirmation_template": "Created → Project → {title}",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Assign person to project/task",
+      "surface_key": "workflow:assign_person",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "assign"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH project owner/supporting_owner_ids or task assignee_id",
+      "deterministic_confirmation_template": "Assigned person on record.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Link asset to initiative/project/task",
+      "surface_key": "workflow:link_asset",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "link",
+        "unlink"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH required_assets / linked_* arrays",
+      "deterministic_confirmation_template": "Linked or unlinked asset.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Generate suggestions (context-bar / evaluate)",
+      "surface_key": "workflow:generate_suggestions",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "generate"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 3,
+      "persistence_path": "VE evaluate / rewrite routes + trace",
+      "deterministic_confirmation_template": "Ran suggestion generation; review apply/dismiss.",
+      "implementation_status": "registry_only",
+      "notes": "Must emit trace per trace law.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Initiative evaluate → apply decision",
+      "surface_key": "workflow:initiative_evaluation_apply",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "apply",
+        "dismiss",
+        "edit_then_save"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 2,
+      "persistence_path": "VisionExecutionView evaluate + PATCH initiative",
+      "deterministic_confirmation_template": "Applied or dismissed initiative evaluation.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Matching / message center share-revoke-index",
+      "surface_key": "workflow:matching_message_center",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "share",
+        "revoke",
+        "index_toggle"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 3,
+      "persistence_path": "TBD — document exact routes when productized",
+      "deterministic_confirmation_template": "Disclose exact API/UI path once wired.",
+      "implementation_status": "registry_only",
+      "notes": "Placeholder until matching surface is canonical in inventory.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Foundation perspective actor create/edit",
+      "surface_key": "workflow:perspective_actor_crud",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "create",
+        "edit"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 3,
+      "persistence_path": "Council workspace perspectives API",
+      "deterministic_confirmation_template": "Updated perspective actor definition.",
+      "implementation_status": "registry_only",
+      "notes": "TRUTH: server-owned definitions when signed in.",
+      "lane_a_coverage": false
+    }
+  ],
+  "lane_a_coverage_note": "Per row: lane_a_coverage false until Lane A wires this surface; set true when handler is shipped. Burn-down tracker — not taxonomy."
+}

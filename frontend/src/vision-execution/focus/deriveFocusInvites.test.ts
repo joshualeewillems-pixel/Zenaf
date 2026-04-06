@@ -54,5 +54,7 @@ describe('deriveFocusInvites', () => {
     expect(firstStructured).toBeGreaterThan(-1)
     expect(lastConversational).toBeLessThan(firstStructured)
     expect(labels[0]).not.toBe('Draft for field')
+    const structured = invites.find((x) => x.kind === 'structured_fill')
+    expect(structured?.label).toBe('Write description')
   })
 })

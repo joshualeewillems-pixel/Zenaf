@@ -19,10 +19,9 @@ function structuredFillInviteLabel(
   fieldLabel: string,
 ): string {
   if (action !== 'rewrite') return `${ACTION_LABELS[action]} · ${fieldLabel}`
-  if (et === 'idea' && fieldKey === 'description') return 'Write description'
+  if (fieldKey === 'description') return 'Write description'
   if (fieldKey === 'summary') return 'Write short note'
   if (fieldKey === 'title') return et === 'idea' ? 'Set idea title' : 'Set title'
-  if (et === 'initiative' && fieldKey === 'brief') return 'Draft brief'
   if (fieldKey === 'recommendation') return 'Fill recommendation'
   if (fieldKey === 'philosophical_alignment_ai') return 'Fill strategic alignment'
   if (fieldKey === 'dependencies') return 'Add dependencies'
@@ -80,8 +79,8 @@ function kindRank(k: FocusInviteKind): number {
 }
 
 /**
- * Invites for idea/initiative only. Ordering: tie-break by kind (conversational before structured_fill),
- * then Appendix B order = index in `allowed_actions` for that registry row.
+ * Invites for idea / initiative / project / task (registry-backed). Ordering: conversational before
+ * structured_fill, then Appendix B order = index in `allowed_actions` for that registry row.
  */
 export function deriveFocusInvites(core: FocusContextCore | null | undefined): FocusInvite[] {
   if (!core) return []
@@ -101,6 +100,8 @@ export function deriveFocusInvites(core: FocusContextCore | null | undefined): F
   for (let i = 0; i < allowed.length; i++) {
     const action = allowed[i]!
     if (EXCLUDED_INVITE_ACTION_IDS.has(action)) continue
+    // Rewrite lives on the context action bar for brief; do not duplicate as an invite chip.
+    if (action === 'rewrite' && regField === 'brief') continue
     const kind: FocusInviteKind = STRUCTURED_FILL_ACTION_IDS.has(action) ? 'structured_fill' : 'conversational'
     rows.push({
       regIdx: i,

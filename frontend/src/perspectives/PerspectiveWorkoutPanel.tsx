@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react'
 import type { PerspectiveAgent } from './types'
 import type { WorkoutMessage } from './workoutTypes'
 import { AvatarDisplay } from '../components/AvatarDisplay'
 import { ResonanceSlider } from '../components/ResonanceSlider'
+import { appendChatDroppedFiles, dataTransferHasFiles } from '../conversation/chatFileDrop'
 
 export function PerspectiveWorkoutPanel({
   perspective,
@@ -27,12 +28,53 @@ export function PerspectiveWorkoutPanel({
 }) {
   const threadEndRef = useRef<HTMLDivElement | null>(null)
   const pName = (perspective.name || 'Perspective').trim() || 'Perspective'
+  const [dragActive, setDragActive] = useState(false)
+  const inputRef = useRef(input)
+  inputRef.current = input
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [thread.length, invokingSeatId])
 
   const busy = invokingSeatId != null
+
+  const onWorkoutDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    if (!dataTransferHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragActive(true)
+  }, [])
+
+  const onWorkoutDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const t = e.currentTarget
+    const rel = e.relatedTarget as Node | null
+    if (rel && t.contains(rel)) return
+    setDragActive(false)
+  }, [])
+
+  const onWorkoutDrop = useCallback(
+    async (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragActive(false)
+      if (busy) return
+      const files = e.dataTransfer.files
+      if (!files?.length) return
+      const next = await appendChatDroppedFiles(inputRef.current, files)
+      onInputChange(next)
+      requestAnimationFrame(() => {
+        const el = document.getElementById('workout-reply') as HTMLTextAreaElement | null
+        if (!el) return
+        el.focus()
+        const len = el.value.length
+        el.setSelectionRange(len, len)
+      })
+    },
+    [busy, onInputChange],
+  )
 
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden bg-stone-900/40">
@@ -72,7 +114,12 @@ export function PerspectiveWorkoutPanel({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 overscroll-contain">
+      <div
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 overscroll-contain"
+        onDragOver={onWorkoutDragOver}
+        onDragLeave={onWorkoutDragLeave}
+        onDrop={(e) => void onWorkoutDrop(e)}
+      >
         {thread.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[120px] text-center px-4">
             <p className="text-sm text-warm-white/30">
@@ -138,7 +185,14 @@ export function PerspectiveWorkoutPanel({
         <div ref={threadEndRef} />
       </div>
 
-      <div className="shrink-0 p-3 border-t border-stone-700 space-y-2 bg-stone-800/80">
+      <div
+        className={`shrink-0 p-3 border-t border-stone-700 space-y-2 bg-stone-800/80 rounded-b-lg ${
+          dragActive ? 'ring-2 ring-amber-500/75 ring-inset' : ''
+        }`}
+        onDragOver={onWorkoutDragOver}
+        onDragLeave={onWorkoutDragLeave}
+        onDrop={(e) => void onWorkoutDrop(e)}
+      >
         <label className="sr-only" htmlFor="workout-reply">
           Message to {pName}
         </label>

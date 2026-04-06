@@ -71,6 +71,18 @@ def iter_rows(
         yield r
 
 
+def find_text_append_row(entity_type: str, surface_key: str) -> dict[str, Any] | None:
+    """Tier-1 row: entity + ``text_append`` handler (append-merge long text, e.g. initiative risks/deps)."""
+    et = (entity_type or "").strip().lower()
+    sk = (surface_key or "").strip()
+    for r in load_tier1_coverage_rows():
+        if r.get("handler") != "text_append":
+            continue
+        if r.get("entity") == et and r.get("surface_key") == sk:
+            return r
+    return None
+
+
 def find_text_set_row(entity_type: str, surface_key: str) -> dict[str, Any] | None:
     """Tier-1 row: entity + text_set handler + exact surface_key (storage key)."""
     et = (entity_type or "").strip().lower()
@@ -123,6 +135,21 @@ def resolve_direct_surface_action(
             return None
         return find_text_set_row(et, sk)
 
+    if kind == "text_append":
+        if not eid or not et:
+            return None
+        sk = str(parsed.get("surface_key") or "").strip()
+        if not sk:
+            return None
+        row = find_text_append_row(et, sk)
+        if row:
+            return row
+        if sk == "notes" and et == "initiative":
+            notes = find_tier1_row(et, "notes")
+            if notes and str(notes.get("handler") or "") == "text_set":
+                return notes
+        return None
+
     if kind == "child_create_project":
         if et != "initiative" or not eid:
             return None
@@ -160,7 +187,7 @@ def resolve_direct_surface_action(
         sk = str(parsed.get("surface_key") or "").strip()
         if et != "initiative":
             return None
-        if sk not in ("risks", "dependencies", "execution_steps"):
+        if sk != "execution_steps":
             return None
         return find_tier1_row(et, sk)
 

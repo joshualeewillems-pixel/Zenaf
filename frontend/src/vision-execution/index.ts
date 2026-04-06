@@ -7,6 +7,13 @@ export type {
 } from './VisionExecutionView'
 export { VISION_EXECUTION_API } from './types'
 export type { CoreProfile, Idea, Initiative, Project, Task, Person, CapacityProfile, Asset } from './types'
+export type { VeRadarBucketId, VeRadarSemanticGroups, VeRadarStripSegment } from './veRadarAwareness'
+export {
+  buildRadarSemanticGroups,
+  buildRadarStripSegments,
+  buildMostUrgentHint,
+  firstNonEmptyRiskBucket,
+} from './veRadarAwareness'
 export {
   buildCoreProfileConversationSnapshot,
   buildCoreProfileReconcileSnapshot,

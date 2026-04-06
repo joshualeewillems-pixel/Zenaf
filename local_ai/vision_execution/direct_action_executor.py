@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 from local_ai.integration_commit import user_affirms_precision_commit
 from local_ai.vision_execution.action_coverage import resolve_direct_surface_action
+from local_ai.vision_execution.pending_ve_elicitation import try_resolve_pending_ve_elicitation
 from local_ai.vision_execution.direct_action_handlers import execute_direct_surface_action
 from local_ai.vision_execution.direct_action_parsing import parse_direct_action_intent
 from local_ai.vision_execution.ve_integration_schema import normalize_trunk_token_to_storage_key
@@ -194,6 +195,12 @@ def resolve_direct_surface_action_public(
             return intent, None, eid, et
         sk = normalize_trunk_token_to_storage_key(et, intent["surface_key"]) or intent["surface_key"]
         intent = {"kind": "text_set", "surface_key": sk, "value": intent["value"]}
+    if intent.get("kind") == "text_append":
+        if not eid or not et:
+            return intent, None, eid, et
+        sk0 = str(intent.get("surface_key") or "").strip()
+        sk = normalize_trunk_token_to_storage_key(et, sk0) or sk0
+        intent = {"kind": "text_append", "surface_key": sk, "value": intent["value"]}
     row = resolve_direct_surface_action(parsed=intent, entity_id=eid, entity_type=et, context=context)
     return intent, row, eid, et
 
@@ -206,9 +213,15 @@ def evaluate_direct_ve_action(
 ) -> dict[str, Any]:
     q = (question or "").strip()
     uid = (user_id or "").strip()
-    _reset_lane_a_guard(context)
     if not q or not uid:
         return _result("declined")
+
+    _reset_lane_a_guard(context)
+
+    if isinstance(context, dict):
+        _pend_res = try_resolve_pending_ve_elicitation(q, context, uid)
+        if _pend_res is not None:
+            return _pend_res
 
     if user_affirms_precision_commit(q) and len(q) <= 64:
         return _result("declined")
@@ -224,6 +237,14 @@ def evaluate_direct_ve_action(
             return _result("declined")
         sk = normalize_trunk_token_to_storage_key(et, intent["surface_key"]) or intent["surface_key"]
         intent = {"kind": "text_set", "surface_key": sk, "value": intent["value"]}
+
+    if intent.get("kind") == "text_append":
+        if not eid or not et:
+            _apply_lane_a_guard(context, intent, "declined")
+            return _result("declined")
+        sk0 = str(intent.get("surface_key") or "").strip()
+        sk = normalize_trunk_token_to_storage_key(et, sk0) or sk0
+        intent = {"kind": "text_append", "surface_key": sk, "value": intent["value"]}
 
     row = resolve_direct_surface_action(parsed=intent, entity_id=eid, entity_type=et, context=context)
     if not row:

@@ -13,6 +13,12 @@ class TextSetIntent(TypedDict):
     value: str
 
 
+class TextAppendIntent(TypedDict):
+    kind: Literal["text_append"]
+    surface_key: Literal["risks", "dependencies", "notes"]
+    value: str
+
+
 class ChildCreateProjectIntent(TypedDict):
     kind: Literal["child_create_project"]
     title: str
@@ -37,12 +43,13 @@ class EnumSetIntent(TypedDict):
 
 class CollectionAddIntent(TypedDict):
     kind: Literal["collection_add"]
-    surface_key: Literal["risks", "dependencies", "execution_steps"]
+    surface_key: Literal["execution_steps"]
     body: str
 
 
 DirectIntent = (
     TextSetIntent
+    | TextAppendIntent
     | ChildCreateProjectIntent
     | ChildCreateTasksIntent
     | PersonAssignIntent
@@ -86,7 +93,7 @@ def normalize_field_update_value(raw: str) -> str:
 # Imperative field update (brief / notes / description-style fields).
 _RE_FIELD_UPDATE = re.compile(
     r"(?is)(?:\b(?:please|kindly)\s+)?\b(?:change|set|update|edit|replace)\s+(?:the\s+)?"
-    r"(?P<tok>brief|notes|summary|description|next\s*step(?:\s*ai)?|admin\s+notes|diagnostics)\b"
+    r"(?P<tok>brief|notes|summary|description|next\s*step(?:\s*ai)?|admin\s+notes|diagnostics|kill\s*criteria|recommendation)\b"
     r".{0,64}?"
     r"(?:to|:|=)\s*(?P<val>.+)$"
 )
@@ -109,6 +116,10 @@ def field_token_to_trunk_key(raw: str) -> str:
     t = re.sub(r"\s+", " ", t)
     if "diagnostic" in t or t == "admin notes":
         return "notes"
+    if "kill" in t and "criteria" in t:
+        return "kill_criteria"
+    if t == "recommendation":
+        return "recommendation"
     if "next step" in t:
         return "next_step_ai"
     return t.replace(" ", "_")
@@ -218,6 +229,46 @@ def _parse_enum_set_intent(question: str, entity_type: str) -> EnumSetIntent | N
     return None
 
 
+def _parse_text_append_intent(question: str, entity_type: str) -> TextAppendIntent | None:
+    q = (question or "").strip()
+    et = (entity_type or "").strip().lower()
+    if et != "initiative":
+        return None
+
+    def _val(g: str) -> str:
+        return (g or "").strip()[:12000]
+
+    m = re.search(r"(?is)\badd\s+(?:a\s+)?(?:risk|risks)\s*[:\-]?\s*(?P<body>.+)$", q)
+    if m:
+        b = _val(m.group("body"))
+        if len(b) >= 2:
+            return TextAppendIntent(kind="text_append", surface_key="risks", value=b)
+    m = re.search(r"(?is)\badd\s+(?:a\s+)?(?:dependency|dependencies)\s*[:\-]?\s*(?P<body>.+)$", q)
+    if m:
+        b = _val(m.group("body"))
+        if len(b) >= 2:
+            return TextAppendIntent(kind="text_append", surface_key="dependencies", value=b)
+    m = re.search(
+        r"(?is)\b(?:append|add)\s+(?:to\s+)?(?:(?:the\s+)?(?:admin\s+)?notes|diagnostics|diagnostics\s*/\s*admin\s+notes)\s*[:\-]?\s*(?P<body>.+)$",
+        q,
+    )
+    if m:
+        b = _val(m.group("body"))
+        if len(b) >= 2:
+            return TextAppendIntent(kind="text_append", surface_key="notes", value=b)
+    m = re.search(r"(?is)\bappend\s+(?:to\s+)?(?:the\s+)?risks?\s*[:\-]?\s*(?P<body>.+)$", q)
+    if m:
+        b = _val(m.group("body"))
+        if len(b) >= 2:
+            return TextAppendIntent(kind="text_append", surface_key="risks", value=b)
+    m = re.search(r"(?is)\bappend\s+(?:to\s+)?(?:the\s+)?dependencies?\s*[:\-]?\s*(?P<body>.+)$", q)
+    if m:
+        b = _val(m.group("body"))
+        if len(b) >= 2:
+            return TextAppendIntent(kind="text_append", surface_key="dependencies", value=b)
+    return None
+
+
 def _parse_collection_add_intent(question: str, entity_type: str) -> CollectionAddIntent | None:
     q = (question or "").strip()
     et = (entity_type or "").strip().lower()
@@ -237,16 +288,6 @@ def _parse_collection_add_intent(question: str, entity_type: str) -> CollectionA
         b = _body(m.group("body"))
         if len(b) >= 2:
             return CollectionAddIntent(kind="collection_add", surface_key="execution_steps", body=b)
-    m = re.search(r"(?is)\badd\s+(?:a\s+)?(?:risk|risks)\s*[:\-]?\s*(?P<body>.+)$", q)
-    if m:
-        b = _body(m.group("body"))
-        if len(b) >= 2:
-            return CollectionAddIntent(kind="collection_add", surface_key="risks", body=b)
-    m = re.search(r"(?is)\badd\s+(?:a\s+)?(?:dependency|dependencies)\s*[:\-]?\s*(?P<body>.+)$", q)
-    if m:
-        b = _body(m.group("body"))
-        if len(b) >= 2:
-            return CollectionAddIntent(kind="collection_add", surface_key="dependencies", body=b)
     return None
 
 
@@ -290,6 +331,9 @@ def parse_direct_action_intent(
         if hit:
             return hit
         hit = _parse_enum_set_intent(q, et)
+        if hit:
+            return hit
+        hit = _parse_text_append_intent(q, et)
         if hit:
             return hit
         hit = _parse_collection_add_intent(q, et)

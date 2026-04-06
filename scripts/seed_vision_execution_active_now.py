@@ -50,47 +50,51 @@ def main() -> None:
 
     ideas_data: list[M.IdeaCreate] = [
         M.IdeaCreate(
-            title="Intake mirror reflects poll reality",
-            summary="Mirror sync state should update after a successful email poll.",
+            title="Email poll results should show up in mirror sync status",
+            summary="When polling finishes successfully, stored sync metadata should match what just happened.",
             description=(
-                "Source: docs/01_TRUTH/ACTIVE_VS_PLANNED.md (Intake mirror sync state). "
-                "docs/OPEN_QUESTIONS.md §2, §4."
+                "Status: partially built — APIs exist, but the poll success path still needs to write durable state. "
+                "See docs/01_TRUTH/ACTIVE_VS_PLANNED.md and docs/OPEN_QUESTIONS.md for background."
             ),
             status="Contextualized",
             tags=[],
             created_by="",
-            desired_outcome="",
+            desired_outcome="Dashboards and diagnostics never claim the inbox is fresh when it is not.",
         ),
         M.IdeaCreate(
-            title="Truth convergence: council workspace + trace exempt registry",
-            summary="Server-owned perspective JSON; Idea Lab removed; trace policy documented in aiTraceExemptRegistry.",
-            description="Source: docs/01_TRUTH/TRUTH_CONVERGENCE.md; frontend/src/ai-actions/aiTraceExemptRegistry.ts.",
-            status="Contextualized",
-            tags=[],
-            created_by="",
-            desired_outcome="",
-        ),
-        M.IdeaCreate(
-            title="Council packet and seats match documented truth order",
-            summary="Packet order, mandate labels, and documented truth-source contract.",
+            title="Council seats and traces should follow one clear rulebook",
+            summary="Advisor seats belong to the signed-in account on the server; sensitive AI actions declare trace rules explicitly.",
             description=(
-                "Source: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md (Steps 1–3). "
-                "docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md. "
-                "docs/01_TRUTH/SYSTEM_REFERENCE.md §3.5."
+                "Status: largely aligned — council workspace persistence shipped directionally; trace exemptions live in a registry. "
+                "See docs/01_TRUTH/TRUTH_CONVERGENCE.md."
             ),
             status="Contextualized",
             tags=[],
             created_by="",
-            desired_outcome="",
+            desired_outcome="No more guessing whether seats are local-only or which AI steps skip logging.",
         ),
         M.IdeaCreate(
-            title="Assets/read are execution-legible in VE",
-            summary="Linked vs required-by and reverse usage from existing VE data.",
-            description="Source: docs/MATERIAL_ENTITY_NODE_DIRECTION.md §NOW.",
+            title="Council briefs, seat names, and docs should tell the same story",
+            summary="Reorder the automatic council packet, fix on-screen advisor labels (including risk), and document reading order.",
+            description=(
+                "Status: planned cleanup steps — docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md, "
+                "docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md, docs/01_TRUTH/SYSTEM_REFERENCE.md."
+            ),
             status="Contextualized",
             tags=[],
             created_by="",
-            desired_outcome="",
+            desired_outcome="Council output reads like advice on your question, with roles and sources everyone recognizes.",
+        ),
+        M.IdeaCreate(
+            title="Assets should explain how work depends on them",
+            summary="Show linked context versus hard requirements, prefer titles over raw IDs, and surface reverse lookups.",
+            description=(
+                "Status: direction documented; UI still evolving. See docs/MATERIAL_ENTITY_NODE_DIRECTION.md."
+            ),
+            status="Contextualized",
+            tags=[],
+            created_by="",
+            desired_outcome="Open an asset and immediately see whether it blocks delivery and who relies on it.",
         ),
     ]
 
@@ -119,7 +123,7 @@ def main() -> None:
                     status=status,
                     owner_id=None,
                     next_step_ai="",
-                    notes="Active-now reseed (approved Section A).",
+                    notes="Active-now seed: focused on intake honesty, council workspace, council brief quality, and asset clarity.",
                 ),
                 owner_id,
             )
@@ -128,26 +132,26 @@ def main() -> None:
             return None
 
     n1 = make_init(
-        "Intake operational honesty",
-        "Poll completes; durable mirror sync state (and optional mailbox audit) reflects reality.",
+        "Honest email intake status",
+        "Finish wiring so a successful poll updates mirror sync metadata (and optionally mailbox audit) that downstream views trust.",
         status="Active",
         source_key="i1",
     )
     n2 = make_init(
-        "Council workspace persistence",
-        "GET/PUT /vision-execution/council-workspace/perspectives; FE migration from localStorage.",
+        "Council workspace on the server",
+        "Prove advisor seats load and save through the Vision & Execution API for signed-in users instead of disappearing with the browser cache.",
         status="Approved",
         source_key="i2",
     )
     n3 = make_init(
-        "Council sharpness & truth contract",
-        "Packet order, Risk/seat labels, truth-source documentation.",
+        "Sharper council briefs and documented truth order",
+        "Reorder the automatic packet, align mandate labels (including risk), and capture the intended reading order in docs.",
         status="Active",
         source_key="i3",
     )
     n4 = make_init(
-        "Material / asset presentation",
-        "Execution-legible assets: linked vs required-by; reverse usage.",
+        "Assets that read like execution facts",
+        "Separate casual links from true requirements, show friendly names, and derive “required by” summaries from existing graph data.",
         status="Active",
         source_key="i4",
     )
@@ -162,131 +166,135 @@ def main() -> None:
     projects_raw: list[M.ProjectCreate] = [
         M.ProjectCreate(
             initiative_id=in1,
-            title="Wire successful poll → set_sync_state",
+            title="Persist sync metadata after a successful inbox poll",
             brief=(
-                "Call set_sync_state after successful poll. "
-                "Source: docs/01_TRUTH/ACTIVE_VS_PLANNED.md; docs/OPEN_QUESTIONS.md §2, §4."
+                "Hook the poll-success path so mirror sync timestamps and cursor data update immediately — "
+                "the same fields Vision & Execution and diagnostics read."
             ),
             status="Active",
             owner_id=None,
             priority="High",
-            deliverables="Sync state updated after poll.",
-            current_focus="intake poll handler",
-            notes="Active-now",
+            deliverables="Observable state change in storage right after a successful poll run.",
+            current_focus="Email intake polling flow",
+            notes="Background: docs/01_TRUTH/ACTIVE_VS_PLANNED.md, docs/OPEN_QUESTIONS.md",
         ),
         M.ProjectCreate(
             initiative_id=in1,
-            title="Optional: log poll to mailbox_action",
+            title="Optional audit trail entry when polling completes",
             brief=(
-                "If applicable after poll: record_mailbox_action. "
-                "Source: docs/01_TRUTH/ACTIVE_VS_PLANNED.md (mailbox_action table)."
+                "If we want a mailbox audit log, record a concise entry after polls; otherwise document why we deferred it."
             ),
             status="Draft",
             owner_id=None,
             priority="Medium",
-            deliverables="Audit log entry path or documented deferral.",
-            current_focus="intake",
-            notes="Active-now optional",
+            deliverables="Either a working log write or an explicit deferral note with rationale.",
+            current_focus="Intake persistence layer",
+            notes="Background: docs/01_TRUTH/ACTIVE_VS_PLANNED.md",
         ),
         M.ProjectCreate(
             initiative_id=in2,
-            title="Verify council-workspace API",
-            brief="GET after login; PUT after editing perspectives. Source: TRUTH_CONVERGENCE.md.",
+            title="Exercise the council workspace API end to end",
+            brief=(
+                "After login, fetch advisor seats from the server, edit them, and confirm saves land in the Vision & Execution database."
+            ),
             status="Active",
             owner_id=None,
             priority="High",
-            deliverables="SQLite user_council_workspace row for test user.",
-            current_focus="api/routes/vision_execution.py",
-            notes="Active-now",
+            deliverables="Repeatable steps proving GET/PUT behave for a real user row.",
+            current_focus="Vision & Execution API routes",
+            notes="Background: docs/01_TRUTH/TRUTH_CONVERGENCE.md",
         ),
         M.ProjectCreate(
             initiative_id=in2,
-            title="Cross-session seat consistency",
-            brief="Second browser or incognito: same seats after login (server truth).",
-            status="Draft",
-            owner_id=None,
-            priority="Medium",
-            deliverables="Manual test note.",
-            current_focus="App.tsx",
-            notes="Active-now",
-        ),
-        M.ProjectCreate(
-            initiative_id=in3,
-            title="Reorder build_council_decision_packet",
+            title="Confirm seats match across browsers and sessions",
             brief=(
-                "Task-first packet order per NEXT_CLEANUP Step 1. "
-                "Source: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md; local_ai/atria_tools.py."
-            ),
-            status="Draft",
-            owner_id=None,
-            priority="High",
-            deliverables="Reordered blocks + comment.",
-            current_focus="atria_tools.py",
-            notes="Active-now",
-        ),
-        M.ProjectCreate(
-            initiative_id=in3,
-            title="Mandates UI: labels + Risk mandate",
-            brief="Source: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md Step 2; frontend/src/mandates.ts.",
-            status="Draft",
-            owner_id=None,
-            priority="High",
-            deliverables="Display names + Risk mandate entry.",
-            current_focus="frontend",
-            notes="Active-now",
-        ),
-        M.ProjectCreate(
-            initiative_id=in3,
-            title="Truth-source subsection + inline order note",
-            brief=(
-                "docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md + optional comment in atria_tools. "
-                "Source: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md Step 3."
+                "Log in from a second profile or device and verify the same advisor lineup — evidence the server is canonical."
             ),
             status="Draft",
             owner_id=None,
             priority="Medium",
-            deliverables="Doc + inline reference.",
-            current_focus="docs + atria_tools",
-            notes="Active-now",
+            deliverables="Short written test result (pass/fail) with screenshots or notes.",
+            current_focus="Main application shell",
+            notes="Active-now QA",
+        ),
+        M.ProjectCreate(
+            initiative_id=in3,
+            title="Reorder the automatic council decision brief",
+            brief=(
+                "Lead with your context and question before tool summaries and priorities, per the cleanup proposal."
+            ),
+            status="Draft",
+            owner_id=None,
+            priority="High",
+            deliverables="Updated packet assembly plus a pointer to the governing doc.",
+            current_focus="Local AI council packet builder",
+            notes="Background: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md",
+        ),
+        M.ProjectCreate(
+            initiative_id=in3,
+            title="Refresh mandate labels and add risk as a first-class seat",
+            brief=(
+                "Rename on-screen advisor roles to match the documented taxonomy and ensure risk appears everywhere mandates are listed."
+            ),
+            status="Draft",
+            owner_id=None,
+            priority="High",
+            deliverables="UI/config alignment reviewers can check in one pass.",
+            current_focus="Frontend mandates and perspectives",
+            notes="Background: NEXT_CLEANUP proposal step 2",
+        ),
+        M.ProjectCreate(
+            initiative_id=in3,
+            title="Document council truth order and echo it in code comments",
+            brief=(
+                "Add a concise subsection to the prompt/truth architecture doc and optionally mirror the order in a comment beside packet assembly."
+            ),
+            status="Draft",
+            owner_id=None,
+            priority="Medium",
+            deliverables="Published doc change plus optional non-functional code note.",
+            current_focus="Docs and council tooling",
+            notes="Background: NEXT_CLEANUP proposal step 3",
         ),
         M.ProjectCreate(
             initiative_id=in4,
-            title="Asset UI: linked to vs required by",
-            brief="Source: docs/MATERIAL_ENTITY_NODE_DIRECTION.md §NOW (1).",
+            title="Separate “linked” assets from “required to proceed”",
+            brief=(
+                "Adjust asset detail UI so casual references do not look like hard blockers, following the material-entity direction doc."
+            ),
             status="Draft",
             owner_id=None,
             priority="High",
-            deliverables="Clear sections in VE Assets UI.",
-            current_focus="VisionExecutionView / assets",
-            notes="Active-now",
+            deliverables="Layouts reviewers can understand without reading schema definitions.",
+            current_focus="Vision & Execution asset panels",
+            notes="Background: docs/MATERIAL_ENTITY_NODE_DIRECTION.md",
         ),
         M.ProjectCreate(
             initiative_id=in4,
-            title="Reverse usage from loaded VE data",
+            title="Derive reverse usage summaries from loaded execution data",
             brief=(
-                "Scan required_assets / required_asset_ids. "
-                "Source: docs/MATERIAL_ENTITY_NODE_DIRECTION.md §NOW (2)."
+                "Scan initiatives, projects, and tasks for required asset fields and show plain-language summaries such as “blocks these two projects.”"
             ),
             status="Draft",
             owner_id=None,
             priority="Medium",
-            deliverables="Deterministic summaries in UI.",
-            current_focus="frontend",
-            notes="Active-now",
+            deliverables="Deterministic UI text with no manual duplicate entry.",
+            current_focus="Client-side graph already in memory",
+            notes="Background: docs/MATERIAL_ENTITY_NODE_DIRECTION.md",
         ),
         M.ProjectCreate(
             initiative_id=in1,
-            title="End-to-end sanity check (poll → VE → council visibility)",
+            title="End-to-end check: poll → Vision & Execution → council context",
             brief=(
-                "Validate operational chain: intake poll → durable/mirror state → what VE and council context see. "
-                "Active-now extension (approved)."
+                "Run a poll, confirm mirror state and execution data look right, then inspect what the council packet would include — "
+                "record any break in the chain."
             ),
             status="Active",
             owner_id=None,
             priority="High",
-            deliverables="Documented pass/fail for the chain.",
-            current_focus="intake + VE + council context",
-            notes="Active-now e2e",
+            deliverables="Written pass/fail narrative with pointers to any bugs filed.",
+            current_focus="Intake, Vision & Execution, and council context together",
+            notes="Active-now integration smoke test",
         ),
     ]
 
@@ -301,19 +309,19 @@ def main() -> None:
 
     # (project_index, title, description, status)
     task_specs: list[tuple[int, str, str, str]] = [
-        (0, "Locate post-success poll path", "File + function that completes poll. Source: OPEN_QUESTIONS.", "Todo"),
-        (0, "Call set_sync_state with cursor/time", "Persist last poll per mirror_sync design. ACTIVE_VS_PLANNED.", "Todo"),
-        (0, "Short note on cursor semantics", "Comment or doc for mirror_sync cursor. OPEN_QUESTIONS §4.", "Todo"),
-        (2, "GET /vision-execution/council-workspace/perspectives", "Signed in; row_exists or migration.", "Todo"),
-        (2, "Confirm debounced PUT after perspective edit", "Network + DB.", "Todo"),
-        (4, "Edit build_council_decision_packet order only", "NEXT_CLEANUP Step 1; no new blocks.", "Todo"),
-        (5, "Update BUILT_IN_MANDATES + add Risk mandate", "NEXT_CLEANUP Step 2.", "Todo"),
-        (6, "Add truth-source subsection + optional order comment", "NEXT_CLEANUP Step 3.", "Todo"),
-        (7, "Separate linked vs required-by in asset presentation", "MATERIAL_ENTITY §NOW.", "Todo"),
-        (8, "Implement reverse required-asset scan in UI", "Initiatives/projects/tasks fields. MATERIAL_ENTITY §NOW.", "Todo"),
-        (9, "Run poll; confirm mirror/queue updates observable", "Trace intake → mirror visibility.", "Todo"),
-        (9, "Confirm council/agent context sees or documents VE state post-poll", "build_council_decision_packet / context. SYSTEM_REFERENCE.", "Todo"),
-        (9, "Record any break in poll → VE → council chain", "Short note in ticket or notes.", "Todo"),
+        (0, "Trace the poll success path in code", "Identify the function that runs immediately after a poll succeeds.", "Todo"),
+        (0, "Write sync metadata when the poll succeeds", "Persist timestamps/cursor data the mirror already knows how to read.", "Todo"),
+        (0, "Document what the inbox cursor means", "Add a short comment or doc so future edits do not corrupt ordering.", "Todo"),
+        (2, "Fetch council workspace right after login", "Expect a real payload or a defined empty state — not a silent failure.", "Todo"),
+        (2, "Edit a seat and confirm debounced save", "Watch network traffic and the database row to ensure one stable write.", "Todo"),
+        (4, "Apply only the approved packet reorder", "Implement cleanup step one without inventing new sections.", "Todo"),
+        (5, "Update mandate names and add risk", "Match architecture vocabulary everywhere mandates appear.", "Todo"),
+        (6, "Ship the truth-order doc plus optional code note", "Docs first; code comment mirrors but does not change behavior alone.", "Todo"),
+        (7, "Rework asset layout for linked vs required", "Follow the material-entity NOW checklist for clarity.", "Todo"),
+        (8, "Build reverse lookups from graph data", "Derive summaries from initiatives, projects, and tasks already loaded.", "Todo"),
+        (9, "Poll email and watch mirror-facing state", "Confirm queues and sync indicators move as expected.", "Todo"),
+        (9, "Inspect council context after the poll", "Ensure execution summaries feeding the council match the new mirror truth.", "Todo"),
+        (9, "Log any broken link in the chain", "Capture repro notes so the team can file targeted fixes.", "Todo"),
     ]
 
     for pi, title, desc, st in task_specs:
@@ -329,7 +337,7 @@ def main() -> None:
                     description=desc,
                     status=st,
                     priority="Medium",
-                    notes="seed_vision_execution_active_now.py",
+                    notes="Active-now seed task — edit status as you complete work.",
                 ),
                 owner_id,
             )

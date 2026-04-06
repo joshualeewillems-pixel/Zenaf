@@ -233,6 +233,7 @@ def run_council_with_teacher(
     integration_event_dict: dict[str, Any] | None = None,
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
+    pending_ve_elicitation_dict: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from local_ai.atria_tools import run_council
     from local_ai.conversation_trunk import (
@@ -330,6 +331,7 @@ def run_council_with_teacher(
         integration_event_dict=integration_event_dict,
         pending_integration_dict=pending_integration_dict,
         last_integration_commit_dict=last_integration_commit_dict,
+        pending_ve_elicitation_dict=pending_ve_elicitation_dict,
     )
     native_debug: dict[str, Any] = {}
     if isinstance(native_res, tuple):
@@ -376,6 +378,7 @@ def run_council_with_teacher(
                     integration_event_dict=integration_event_dict,
                     pending_integration_dict=pending_integration_dict,
                     last_integration_commit_dict=last_integration_commit_dict,
+                    pending_ve_elicitation_dict=pending_ve_elicitation_dict,
                 )
                 if isinstance(t_res, tuple):
                     if len(t_res) >= 3:

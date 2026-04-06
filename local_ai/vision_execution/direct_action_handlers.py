@@ -1,7 +1,7 @@
 """
 Lane A handler implementations: coverage row + parsed payload → persistence + deterministic reply.
 
-Pass 1 burn-down: ``text_set``, ``child_create`` (via workflow rows → ``workflow_router``).
+Lane A handlers: ``text_set``, ``text_append``, ``child_create`` (workflow rows), ``person_assign``, ``enum_set``, ``collection_add`` (checklist steps only).
 """
 from __future__ import annotations
 
@@ -317,6 +317,59 @@ def handle_enum_set(
     return _result("declined")
 
 
+def _append_initiative_text_field(
+    *,
+    entity_id: str,
+    user_id: str,
+    storage_key: str,
+    chunk: str,
+    tmpl: str,
+) -> dict[str, Any]:
+    uid = (user_id or "").strip()
+    sk = (storage_key or "").strip()
+    body = (chunk or "").strip()
+    if not uid or not body or sk not in ("risks", "dependencies", "notes"):
+        return _result("declined")
+    cur = ve_storage.get_initiative(entity_id, uid) or {}
+    old = str(cur.get(sk) or "").strip()
+    merged = f"{old}\n\n{body}".strip() if old else body
+    out = ve_storage.update_initiative(entity_id, M.InitiativeUpdate(**{sk: merged}), uid)
+    if not out:
+        return _result("error", "Save didn't complete — initiative not found")
+    msg = format_confirmation_template(tmpl)
+    if not msg:
+        msg = f"Updated initiative {sk}."
+    return _result("handled", msg, refresh_hint=f"initiative:{entity_id}")
+
+
+def handle_text_append(
+    row: dict[str, Any],
+    parsed: DirectIntent,
+    *,
+    context: dict[str, Any] | None,
+    user_id: str,
+    entity_id: str,
+    entity_type: str,
+) -> dict[str, Any]:
+    if (entity_type or "").strip().lower() != "initiative":
+        return _result("declined")
+    kind = str(parsed.get("kind") or "")
+    if kind not in ("text_append", "collection_add"):
+        return _result("declined")
+    sk = str(parsed.get("surface_key") or "").strip()
+    chunk = str(parsed.get("value") or parsed.get("body") or "").strip()
+    tmpl = str(row.get("deterministic_confirmation_template") or "")
+    if sk in ("risks", "dependencies", "notes") and chunk:
+        return _append_initiative_text_field(
+            entity_id=entity_id,
+            user_id=user_id,
+            storage_key=sk,
+            chunk=chunk[:12000],
+            tmpl=tmpl,
+        )
+    return _result("declined")
+
+
 def handle_collection_add(
     row: dict[str, Any],
     parsed: DirectIntent,
@@ -331,24 +384,12 @@ def handle_collection_add(
     uid = (user_id or "").strip()
     sk = str(parsed.get("surface_key") or "")
     body = str(parsed.get("body") or "").strip()
-    if not uid or not body or sk not in ("risks", "dependencies", "execution_steps"):
+    if not uid or not body or sk != "execution_steps":
         return _result("declined")
     if (entity_type or "").strip().lower() != "initiative":
         return _result("declined")
 
     tmpl = str(row.get("deterministic_confirmation_template") or "")
-
-    if sk in ("risks", "dependencies"):
-        cur = ve_storage.get_initiative(entity_id, uid) or {}
-        old = str(cur.get(sk) or "").strip()
-        merged = f"{old}\n\n{body}".strip() if old else body
-        out = ve_storage.update_initiative(entity_id, M.InitiativeUpdate(**{sk: merged}), uid)
-        if not out:
-            return _result("error", "Save didn't complete — initiative not found")
-        msg = format_confirmation_template(tmpl)
-        if not msg:
-            msg = f"Updated initiative {sk}."
-        return _result("handled", msg, refresh_hint=f"initiative:{entity_id}")
 
     ve_storage.create_execution_step(
         uid,
@@ -365,25 +406,29 @@ def handle_collection_add(
     return _result("handled", msg, refresh_hint=f"initiative:{entity_id}")
 
 
-def handler_name_for_row(row: dict[str, Any]) -> str:
-    """Map coverage ``handler`` + ``surface_key`` to executable handler bucket."""
+def handler_name_for_row(row: dict[str, Any], parsed: dict[str, Any] | None = None) -> str:
+    """Map coverage ``handler`` + parsed intent to executable handler bucket."""
     h = str(row.get("handler") or "")
     sk = str(row.get("surface_key") or "")
     ent = str(row.get("entity") or "")
+    pkind = str((parsed or {}).get("kind") or "")
     if h == "workflow_router" and sk in (
         "workflow:create_project",
         "workflow:create_task_under_project",
     ):
         return "child_create"
-    if h == "structured_text_block" and sk in ("risks", "dependencies"):
-        return "collection_add"
     if h == "checklist_row_crud" and sk == "execution_steps" and ent == "initiative":
         return "collection_add"
+    if pkind == "text_append" and h == "text_set" and sk == "notes" and ent == "initiative":
+        return "text_append"
+    if h == "text_append":
+        return "text_append"
     return h
 
 
 HANDLERS: dict[str, Callable[..., dict[str, Any]]] = {
     "text_set": handle_text_set,
+    "text_append": handle_text_append,
     "child_create": handle_child_create,
     "person_assign": handle_person_assign,
     "enum_set": handle_enum_set,
@@ -400,7 +445,8 @@ def execute_direct_surface_action(
     entity_id: str | None,
     entity_type: str | None,
 ) -> dict[str, Any]:
-    name = handler_name_for_row(row)
+    p = parsed if isinstance(parsed, dict) else {}
+    name = handler_name_for_row(row, p)
     fn = HANDLERS.get(name)
     if not fn:
         return _result("declined")
@@ -408,6 +454,17 @@ def execute_direct_surface_action(
         if not entity_id or not entity_type:
             return _result("declined")
         return handle_text_set(
+            row,
+            parsed,
+            context=context,
+            user_id=user_id,
+            entity_id=entity_id,
+            entity_type=entity_type,
+        )
+    if name == "text_append":
+        if not entity_id or not entity_type:
+            return _result("declined")
+        return handle_text_append(
             row,
             parsed,
             context=context,

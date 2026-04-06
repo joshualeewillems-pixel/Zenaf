@@ -692,6 +692,7 @@ def _run_council_conversational_partner_body(
     integration_event_dict: dict[str, Any] | None = None,
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
+    pending_ve_elicitation_dict: dict[str, Any] | None = None,
     ve_elicitation_user_id: str | None = None,
     timeout: int = 15,
 ) -> tuple[str, dict[str, Any]]:
@@ -903,10 +904,11 @@ def _run_council_conversational_partner_body(
     _scoped_dig = bool(
         isinstance(council_preflight_dict, dict) and council_preflight_dict.get("is_scoped_digression")
     )
+    _ve_pending_seed: dict[str, Any] | None = None
     if isinstance(council_preflight_dict, dict) and ve_elicitation_user_id:
         from local_ai.vision_execution.ve_gap_elicitation import attach_ve_gap_to_preflight
 
-        attach_ve_gap_to_preflight(
+        _ve_pending_seed = attach_ve_gap_to_preflight(
             council_preflight_dict,
             conversation_subject_dict=conversation_subject_dict if isinstance(conversation_subject_dict, dict) else None,
             user_id=ve_elicitation_user_id,
@@ -1001,6 +1003,10 @@ def _run_council_conversational_partner_body(
     _meta: dict[str, Any] = {}
     if _merged_subj:
         _meta["conversation_subject"] = conversation_subject_to_json(_merged_subj)
+    if _ve_pending_seed:
+        _meta["pending_ve_elicitation"] = _ve_pending_seed
+    elif isinstance(pending_ve_elicitation_dict, dict) and int(pending_ve_elicitation_dict.get("version") or 0) == 1:
+        _meta["pending_ve_elicitation"] = pending_ve_elicitation_dict
     _committed_this = (
         isinstance(integration_event_dict, dict) and integration_event_dict.get("kind") == "committed_ok"
     )
@@ -3551,6 +3557,7 @@ def run_council(
     integration_event_dict: dict[str, Any] | None = None,
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
+    pending_ve_elicitation_dict: dict[str, Any] | None = None,
 ) -> str | tuple[str, CouncilRunArtifact, dict[str, Any]]:
     """
     Council mode: at least one seat is always required (perspective_definitions, built-in role keys in included_roles,
@@ -3706,6 +3713,7 @@ def run_council(
             integration_event_dict=integration_event_dict,
             pending_integration_dict=pending_integration_dict,
             last_integration_commit_dict=last_integration_commit_dict,
+            pending_ve_elicitation_dict=pending_ve_elicitation_dict,
             ve_elicitation_user_id=p_council.account_user_id,
             timeout=15,
         )
@@ -4170,6 +4178,7 @@ def run_council_stream(
     integration_event_dict: dict[str, Any] | None = None,
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
+    pending_ve_elicitation_dict: dict[str, Any] | None = None,
 ):
     """
     Same as run_council but yields each role/synthesis chunk as it completes, for streaming UI.
@@ -4354,6 +4363,7 @@ def run_council_stream(
             integration_event_dict=integration_event_dict,
             pending_integration_dict=pending_integration_dict,
             last_integration_commit_dict=last_integration_commit_dict,
+            pending_ve_elicitation_dict=pending_ve_elicitation_dict,
             ve_elicitation_user_id=p_council.account_user_id,
             timeout=15,
         )

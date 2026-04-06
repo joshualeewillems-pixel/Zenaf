@@ -211,6 +211,35 @@ def test_add_risk_append(ve_conn) -> None:
     assert "Budget overrun" in risks
 
 
+def test_set_kill_criteria_lane_a(ve_conn) -> None:
+    uid = "u-kill"
+    ini = ve_storage.create_initiative(M.InitiativeCreate(title="K", brief="b"), uid)
+    iid = str(ini["id"])
+    r = evaluate_direct_ve_action(
+        question="Set kill criteria to Pause if no sponsor by June 1",
+        context=_ctx_initiative(iid),
+        user_id=uid,
+    )
+    assert r["status"] == "handled"
+    row = ve_storage.get_initiative(iid, uid) or {}
+    assert "June 1" in str(row.get("kill_criteria") or "")
+
+
+def test_append_to_admin_notes_lane_a(ve_conn) -> None:
+    uid = "u-nappend"
+    ini = ve_storage.create_initiative(M.InitiativeCreate(title="N", brief="b"), uid)
+    iid = str(ini["id"])
+    ve_storage.update_initiative(iid, M.InitiativeUpdate(notes="First line."), uid)
+    r = evaluate_direct_ve_action(
+        question="Append to admin notes: Check compliance folder.",
+        context=_ctx_initiative(iid),
+        user_id=uid,
+    )
+    assert r["status"] == "handled"
+    notes = str((ve_storage.get_initiative(iid, uid) or {}).get("notes") or "")
+    assert "First line." in notes and "compliance" in notes.lower()
+
+
 def test_add_execution_step(ve_conn) -> None:
     uid = "u-step"
     ini = ve_storage.create_initiative(M.InitiativeCreate(title="E", brief="b"), uid)

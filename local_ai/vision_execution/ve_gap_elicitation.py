@@ -10,7 +10,10 @@ import json
 from typing import Any, TypedDict
 
 from local_ai.vision_execution import storage as ve_storage
+from local_ai.vision_execution.action_coverage import find_text_set_row, find_tier1_row
 from local_ai.vision_execution.direct_action_executor import _resolve_scoped_ve_entity
+from local_ai.vision_execution.pending_ve_elicitation import PENDING_VERSION
+from local_ai.vision_execution.ve_integration_schema import normalize_trunk_token_to_storage_key
 
 _MISSING_FIELD_KEYS = frozenset(
     {
@@ -19,6 +22,9 @@ _MISSING_FIELD_KEYS = frozenset(
         "ve_gap_inventory",
     }
 )
+
+# Persisted + UI-visible but no operational readers yet — never inventory as “missing work.”
+_GAP_SKIP_FIELD_KEYS = frozenset({"counts_toward_capacity", "manual_override"})
 
 
 class MissingFieldPrompt(TypedDict, total=False):
@@ -278,6 +284,13 @@ def top_missing_field_prompts(
         hit = next_missing_field_prompt(entity_type, shadow, execution_step_count=esc, task_count=tc)
         if not hit:
             break
+        fk = str(hit.get("field_key") or "")
+        if fk in _GAP_SKIP_FIELD_KEYS:
+            if fk == "counts_toward_capacity":
+                shadow["counts_toward_capacity"] = 1
+            else:
+                shadow["manual_override"] = "filled"
+            continue
         out.append(hit)
         fk = hit.get("field_key") or ""
         if fk == "owner_id":
@@ -396,13 +409,60 @@ def _decline_aligned_prompt(
                 "reason": "Priority change did not persist in Lane A.",
                 "question": "I did not persist a priority change on this turn. How urgent is this (e.g. low / medium / high)?",
             }
+    if kind == "text_append":
+        sk_raw = str(last_intent.get("surface_key") or "").strip()
+        sk = normalize_trunk_token_to_storage_key(et, sk_raw) or sk_raw
+        if et == "initiative" and sk in ("risks", "dependencies", "notes"):
+            row = find_tier1_row(et, sk)
+            h = str(row.get("handler") or "") if row else ""
+            ok = row and (
+                (h == "text_append" and sk in ("risks", "dependencies"))
+                or (h == "text_set" and sk == "notes")
+            )
+            if ok:
+                label = sk.replace("_", " ").strip().title()
+                return {
+                    "field_key": sk,
+                    "label": label,
+                    "reason": "Lane A did not append that text on this turn.",
+                    "question": (
+                        f"I did not add that to **{label}** in-app on this turn. "
+                        "Paste the lines to add (one per line or a short bullet list)."
+                    ),
+                }
     if kind == "collection_add":
+        sk_raw = str(last_intent.get("surface_key") or "").strip()
+        sk = normalize_trunk_token_to_storage_key(et, sk_raw) or sk_raw
+        if et == "initiative" and sk == "execution_steps":
+            row = find_tier1_row(et, sk)
+            h = str(row.get("handler") or "") if row else ""
+            if row and h == "checklist_row_crud":
+                return {
+                    "field_key": "execution_steps",
+                    "label": "Execution steps",
+                    "reason": "Checklist append did not complete in Lane A.",
+                    "question": (
+                        "I did not add that execution step in-app on this turn. "
+                        "What should the step say?"
+                    ),
+                }
         return {
             "field_key": "collection_add",
             "label": "Structured list",
-            "reason": "Append to risks/steps/deps did not complete in Lane A.",
-            "question": "I did not add that to the structured list in-app on this turn. What exact text should we capture as a proposed addition?",
+            "reason": "Append to checklist / structured text did not complete in Lane A.",
+            "question": "I did not add that in-app on this turn. What exact text should we capture?",
         }
+    if kind == "text_set":
+        sk_raw = str(last_intent.get("surface_key") or "").strip()
+        sk = normalize_trunk_token_to_storage_key(et, sk_raw) or sk_raw
+        if sk and find_text_set_row(et, sk):
+            label = sk.replace("_", " ").strip().title()
+            return {
+                "field_key": sk,
+                "label": label,
+                "reason": "Lane A did not persist that text on this turn.",
+                "question": f"I did not save that yet. What should **{label}** say?",
+            }
     return next_missing_field_prompt(
         entity_type, row, execution_step_count=execution_step_count, task_count=task_count
     )
@@ -413,20 +473,98 @@ def _clear_ve_gap_keys(cp: dict[str, Any]) -> None:
         cp.pop(k, None)
 
 
+def pending_ve_elicitation_seed_from_gap(
+    _mode: str,
+    primary: dict[str, Any],
+    entity_id: str,
+    entity_type: str,
+) -> dict[str, Any] | None:
+    """Seed two-step Lane A commit for person, text_set, initiative text_append gaps (as collection_add pending), or execution steps."""
+    fk = str(primary.get("field_key") or "").strip()
+    et = (entity_type or "").strip().lower()
+    eid = str(entity_id or "").strip()
+    if not eid:
+        return None
+    if fk == "owner_id" and et in ("initiative", "project"):
+        return {
+            "version": PENDING_VERSION,
+            "phase": "awaiting_value",
+            "elicitation_kind": "person_assign",
+            "entity_type": et,
+            "entity_id": eid,
+            "field_key": "owner_id",
+        }
+    if fk == "assignee_id" and et == "task":
+        return {
+            "version": PENDING_VERSION,
+            "phase": "awaiting_value",
+            "elicitation_kind": "person_assign",
+            "entity_type": "task",
+            "entity_id": eid,
+            "field_key": "assignee_id",
+        }
+    if et == "initiative" and fk in ("risks", "dependencies", "execution_steps"):
+        sk = normalize_trunk_token_to_storage_key(et, fk) or fk
+        row = find_tier1_row(et, sk)
+        h = str(row.get("handler") or "") if row else ""
+        ok = row and (
+            (h == "text_append" and sk in ("risks", "dependencies"))
+            or (h == "checklist_row_crud" and sk == "execution_steps")
+        )
+        if ok:
+            return {
+                "version": PENDING_VERSION,
+                "phase": "awaiting_value",
+                "elicitation_kind": "collection_add",
+                "entity_type": "initiative",
+                "entity_id": eid,
+                "field_key": sk,
+                "surface_key": sk,
+            }
+    if et in ("idea", "initiative", "project", "task") and fk not in (
+        "collection_add",
+        "seats",
+        "tasks",
+        "schedule",
+        "dependency_ids",
+        "execution_steps",
+        "risks",
+        "dependencies",
+        "status",
+        "priority",
+        "owner_id",
+        "assignee_id",
+    ):
+        sk = normalize_trunk_token_to_storage_key(et, fk) or fk
+        if find_text_set_row(et, sk):
+            return {
+                "version": PENDING_VERSION,
+                "phase": "awaiting_value",
+                "elicitation_kind": "text_set",
+                "entity_type": et,
+                "entity_id": eid,
+                "field_key": sk,
+                "surface_key": sk,
+            }
+    return None
+
+
 def attach_ve_gap_to_preflight(
     council_preflight_dict: dict[str, Any] | None,
     *,
     conversation_subject_dict: dict[str, Any] | None,
     user_id: str | None,
     question_kind: str,
-) -> None:
+) -> dict[str, Any] | None:
     """
     Mutates ``council_preflight_dict`` in place with ``ve_gap_*`` keys for trunk consumption.
 
     Skips when there is no authenticated user id or no resolvable scoped entity.
+
+    Returns optional ``pending_ve_elicitation`` payload for the client to echo until commit.
     """
     if not user_id or not isinstance(council_preflight_dict, dict):
-        return
+        return None
     ctx: dict[str, Any] = {"council_preflight": council_preflight_dict}
     if isinstance(conversation_subject_dict, dict):
         ctx["conversation_subject"] = conversation_subject_dict
@@ -436,12 +574,12 @@ def attach_ve_gap_to_preflight(
     eid, et = _resolve_scoped_ve_entity(ctx)
     if not eid or not et:
         _clear_ve_gap_keys(council_preflight_dict)
-        return
+        return None
 
     row, esc, tc = _load_scoped_row(et, eid, user_id)
     if not row:
         _clear_ve_gap_keys(council_preflight_dict)
-        return
+        return None
 
     _clear_ve_gap_keys(council_preflight_dict)
     cp = council_preflight_dict
@@ -454,19 +592,19 @@ def attach_ve_gap_to_preflight(
     if question_kind == "missing_fields":
         inv = top_missing_field_prompts(et, row, execution_step_count=esc, task_count=tc, limit=4)
         if not inv:
-            return
+            return None
         cp["ve_gap_mode"] = "inventory"
         cp["ve_gap_inventory"] = [dict(x) for x in inv]
         cp["ve_gap_primary"] = dict(inv[0])
-        return
+        return None
 
     if mut_parsed and (declined or lane_err):
         primary = _decline_aligned_prompt(last_intent, et, row, execution_step_count=esc, task_count=tc)
         if not primary:
-            return
+            return None
         cp["ve_gap_mode"] = "decline_pivot"
         cp["ve_gap_primary"] = dict(primary)
-        return
+        return pending_ve_elicitation_seed_from_gap("decline_pivot", dict(primary), eid, et)
 
     _idle_elicitation_kinds = frozenset(
         {
@@ -479,6 +617,9 @@ def attach_ve_gap_to_preflight(
     if not mut_parsed and question_kind in _idle_elicitation_kinds:
         primary = next_missing_field_prompt(et, row, execution_step_count=esc, task_count=tc)
         if not primary:
-            return
+            return None
         cp["ve_gap_mode"] = "idle_close"
         cp["ve_gap_primary"] = dict(primary)
+        return pending_ve_elicitation_seed_from_gap("idle_close", dict(primary), eid, et)
+
+    return None

@@ -4,8 +4,65 @@
   "extracted_from": "ve_chat_action_coverage.json",
   "extracted_date": "2026-04-05",
   "lane_a_coverage_note": "Per row: lane_a_coverage false until Lane A wires this surface; set true when handler is shipped. Burn-down tracker — not taxonomy.",
-  "handler_burn_down_hint": "Implement ~8 handlers (text_set, person_assign, person_multi_assign, enum_set, numeric_set, date_set, workflow_router/child_create, structured_text_block or checklist append) — not one-off per row.",
-  "row_count": 53,
+  "handler_burn_down_hint": "Core field handlers: text_set, text_append (append-merge long text), person_assign, person_multi_assign, enum_set, numeric_set, date_set, entity_reference_set, entity_multi_link, collection_add (checklist), workflow_router / child_create. AI / product actions (not plain text edit): ai_action_run, ai_action_apply, workflow_action — chat should offer/run these, not pretend they are textarea fields.",
+  "chat_surface_model_note": "Plain fields → scalar handlers above. AI-powered UI (run evaluation, generate suggestions, suggested work checklist) → ai_action_* / workflow_action rows. Read-only radar / soil append / message center → omit from Lane A or separate product hooks.",
+  "tab_coverage_passes": {
+    "project": {
+      "pass_a_scalar": [
+        "title",
+        "brief",
+        "status",
+        "owner_id",
+        "priority",
+        "notes",
+        "next_step_ai"
+      ],
+      "pass_b_planning": [
+        "initiative_id",
+        "supporting_owner_ids",
+        "start_date",
+        "end_date",
+        "estimated_weekly_hours",
+        "workflow:create_task_under_project",
+        "workflow:link_task_to_project"
+      ],
+      "ai_coordination": [
+        "ai_action:generate_project_suggestions",
+        "client:project_suggested_work"
+      ]
+    },
+    "task": {
+      "pass_a_scalar": [
+        "title",
+        "description",
+        "assignee_id",
+        "status",
+        "due_date",
+        "estimated_hours",
+        "priority",
+        "completion_criteria",
+        "notes",
+        "is_done"
+      ],
+      "links": ["dependency_ids", "project_id"],
+      "dependencies_append_vs_replace": "dependency_ids uses entity_multi_link; free-text deps (if any) would use text_append — follow storage truth in schema."
+    },
+    "idea": {
+      "pass_c_clarify": ["title", "summary", "description", "desired_outcome", "notes", "status"],
+      "ai_workflow": [
+        "ai_action:run_evaluation",
+        "ai_action:apply_evaluation",
+        "workflow:idea_promote",
+        "workflow:idea_incubate",
+        "workflow:idea_shelve",
+        "workflow:idea_reject"
+      ]
+    },
+    "initiative": {
+      "ai_coordination": ["ai_action:run_initiative_evaluation"]
+    }
+  },
+  "row_count": 69,
   "rows": [
     {
       "entity": "initiative",
@@ -201,13 +258,13 @@
         "set",
         "append"
       ],
-      "handler": "structured_text_block",
+      "handler": "text_append",
       "ui_editable": true,
       "priority_tier": 1,
       "persistence_path": "PATCH /initiatives/:id",
       "deterministic_confirmation_template": "Updated initiative dependencies.",
       "implementation_status": "registry_only",
-      "notes": null,
+      "notes": "Lane A: append with blank-line merge via text_append handler.",
       "lane_a_coverage": false
     },
     {
@@ -219,11 +276,29 @@
         "set",
         "append"
       ],
-      "handler": "structured_text_block",
+      "handler": "text_append",
       "ui_editable": true,
       "priority_tier": 1,
       "persistence_path": "PATCH /initiatives/:id",
       "deterministic_confirmation_template": "Updated initiative risks.",
+      "implementation_status": "registry_only",
+      "notes": "Lane A: append via text_append; full replace via text_set + integration commit not yet wired for risks.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Kill criteria",
+      "surface_key": "kill_criteria",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "change"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /initiatives/:id",
+      "deterministic_confirmation_template": "Updated initiative kill criteria.",
       "implementation_status": "registry_only",
       "notes": null,
       "lane_a_coverage": false
@@ -410,6 +485,24 @@
     },
     {
       "entity": "project",
+      "surface_label": "Estimated weekly hours",
+      "surface_key": "estimated_weekly_hours",
+      "surface_type": "number",
+      "chat_operations": [
+        "set",
+        "clear"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Set project estimated weekly hours.",
+      "implementation_status": "registry_only",
+      "notes": "Feeds capacity / People & Execution views.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
       "surface_label": "Notes",
       "surface_key": "notes",
       "surface_type": "text",
@@ -424,6 +517,24 @@
       "deterministic_confirmation_template": "Updated project notes.",
       "implementation_status": "registry_only",
       "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Earlier suggestion (AI)",
+      "surface_key": "next_step_ai",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /projects/:id",
+      "deterministic_confirmation_template": "Updated project earlier suggestion (AI) text.",
+      "implementation_status": "registry_only",
+      "notes": "Transitional narrative field; also offer generate/suggestions workflows separately.",
       "lane_a_coverage": false
     },
     {
@@ -493,6 +604,24 @@
       "priority_tier": 1,
       "persistence_path": "PATCH /tasks/:id",
       "deterministic_confirmation_template": "Set task due date.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Estimated hours",
+      "surface_key": "estimated_hours",
+      "surface_type": "number",
+      "chat_operations": [
+        "set",
+        "clear"
+      ],
+      "handler": "numeric_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id",
+      "deterministic_confirmation_template": "Set task estimated hours.",
       "implementation_status": "registry_only",
       "notes": null,
       "lane_a_coverage": false
@@ -584,6 +713,24 @@
       "deterministic_confirmation_template": "Updated task notes.",
       "implementation_status": "registry_only",
       "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "task",
+      "surface_label": "Done",
+      "surface_key": "is_done",
+      "surface_type": "boolean",
+      "chat_operations": [
+        "set",
+        "toggle"
+      ],
+      "handler": "workflow_action",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id is_done",
+      "deterministic_confirmation_template": "Marked task done or reopened.",
+      "implementation_status": "registry_only",
+      "notes": "Chat should confirm done/reopen explicitly; maps to stored is_done flag.",
       "lane_a_coverage": false
     },
     {
@@ -689,6 +836,187 @@
       "deterministic_confirmation_template": "Set idea status.",
       "implementation_status": "registry_only",
       "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Notes",
+      "surface_key": "notes",
+      "surface_type": "text",
+      "chat_operations": [
+        "set",
+        "append"
+      ],
+      "handler": "text_set",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /ideas/:id",
+      "deterministic_confirmation_template": "Updated idea notes.",
+      "implementation_status": "registry_only",
+      "notes": "Append phrasing can route to text_append when Lane A adds idea-scope append.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Run evaluation",
+      "surface_key": "ai_action:run_evaluation",
+      "surface_type": "ai_action",
+      "chat_operations": [
+        "offer",
+        "run"
+      ],
+      "handler": "ai_action_run",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "POST idea evaluate (proposal); optional apply path",
+      "deterministic_confirmation_template": "Started idea evaluation.",
+      "implementation_status": "registry_only",
+      "notes": "Chat offers when unevaluated; not a textarea field.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Apply evaluation",
+      "surface_key": "ai_action:apply_evaluation",
+      "surface_type": "ai_action",
+      "chat_operations": [
+        "offer",
+        "apply"
+      ],
+      "handler": "ai_action_apply",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "PATCH idea + decision rows per product flow",
+      "deterministic_confirmation_template": "Applied evaluation to idea fields.",
+      "implementation_status": "registry_only",
+      "notes": "Offer when a proposal exists; pairs with run evaluation.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Promote (create initiative / advance)",
+      "surface_key": "workflow:idea_promote",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "offer",
+        "run"
+      ],
+      "handler": "workflow_action",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "Product promote flow",
+      "deterministic_confirmation_template": "Promoted idea per workflow.",
+      "implementation_status": "registry_only",
+      "notes": "Promote target / linkage is part of this workflow, not a plain text field.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Incubate",
+      "surface_key": "workflow:idea_incubate",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "offer",
+        "run"
+      ],
+      "handler": "workflow_action",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "Product lifecycle",
+      "deterministic_confirmation_template": "Set idea to incubate path.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Shelve",
+      "surface_key": "workflow:idea_shelve",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "offer",
+        "run"
+      ],
+      "handler": "workflow_action",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "Product lifecycle",
+      "deterministic_confirmation_template": "Shelved idea.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "idea",
+      "surface_label": "Reject",
+      "surface_key": "workflow:idea_reject",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "offer",
+        "run"
+      ],
+      "handler": "workflow_action",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "Product lifecycle",
+      "deterministic_confirmation_template": "Rejected idea.",
+      "implementation_status": "registry_only",
+      "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Generate project suggestions (AI)",
+      "surface_key": "ai_action:generate_project_suggestions",
+      "surface_type": "ai_action",
+      "chat_operations": [
+        "offer",
+        "run"
+      ],
+      "handler": "ai_action_run",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "UI / API suggestion flow",
+      "deterministic_confirmation_template": "Generated project suggestions.",
+      "implementation_status": "registry_only",
+      "notes": "Offer when brief/tasks exist but suggestions empty; not plain text_set.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "project",
+      "surface_label": "Suggested work (AI) checklist",
+      "surface_key": "client:project_suggested_work",
+      "surface_type": "ai_coordination",
+      "chat_operations": [
+        "offer",
+        "run",
+        "apply"
+      ],
+      "handler": "ai_action_coordinate",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "localStorage + optional task materialization",
+      "deterministic_confirmation_template": "Updated suggested work checklist.",
+      "implementation_status": "registry_only",
+      "notes": "Hybrid client state; chat coordinates offers and 'turn into tasks' later.",
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "initiative",
+      "surface_label": "Run initiative evaluation (AI)",
+      "surface_key": "ai_action:run_initiative_evaluation",
+      "surface_type": "ai_action",
+      "chat_operations": [
+        "offer",
+        "run"
+      ],
+      "handler": "ai_action_run",
+      "ui_editable": false,
+      "priority_tier": 1,
+      "persistence_path": "POST /initiatives/:id/evaluate (proposal)",
+      "deterministic_confirmation_template": "Ran initiative evaluation proposal.",
+      "implementation_status": "registry_only",
+      "notes": "Offer apply separately via existing UI apply path when wiring chat.",
       "lane_a_coverage": false
     },
     {
@@ -952,6 +1280,24 @@
       "deterministic_confirmation_template": "Linked or unlinked asset.",
       "implementation_status": "registry_only",
       "notes": null,
+      "lane_a_coverage": false
+    },
+    {
+      "entity": "workflow",
+      "surface_label": "Link existing task to project",
+      "surface_key": "workflow:link_task_to_project",
+      "surface_type": "workflow",
+      "chat_operations": [
+        "link",
+        "move"
+      ],
+      "handler": "workflow_router",
+      "ui_editable": true,
+      "priority_tier": 1,
+      "persistence_path": "PATCH /tasks/:id project_id",
+      "deterministic_confirmation_template": "Linked task to project.",
+      "implementation_status": "registry_only",
+      "notes": "Pass B: attach orphan or reparent task under scoped project.",
       "lane_a_coverage": false
     }
   ]

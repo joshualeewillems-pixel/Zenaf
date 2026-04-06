@@ -963,6 +963,8 @@ def _council_direct_ve_sse_pay(
     }
     if conversation_subject_dict:
         pay["conversation_subject"] = conversation_subject_dict
+    if isinstance(res, dict) and "pending_ve_elicitation" in res:
+        pay["pending_ve_elicitation"] = res.get("pending_ve_elicitation")
     return pay
 
 
@@ -999,6 +1001,7 @@ def _run_council(
     conversation_subject_dict = None
     pending_integration_dict = None
     last_integration_commit_dict = None
+    pending_ve_elicitation_dict = None
     if isinstance(context, dict):
         _cp = context.get("council_preflight")
         if isinstance(_cp, dict):
@@ -1012,6 +1015,9 @@ def _run_council(
         _lic = context.get("last_integration_commit")
         if isinstance(_lic, dict):
             last_integration_commit_dict = _lic
+        _pve = context.get("pending_ve_elicitation")
+        if isinstance(_pve, dict):
+            pending_ve_elicitation_dict = _pve
     from local_ai.council_wash import prepare_council_contexts
 
     native_ctx, cloud_ctx, wash_trace = prepare_council_contexts(context_str or "")
@@ -1097,6 +1103,7 @@ def _run_council(
             integration_event_dict=_int_event,
             pending_integration_dict=pending_integration_dict,
             last_integration_commit_dict=last_integration_commit_dict,
+            pending_ve_elicitation_dict=pending_ve_elicitation_dict,
         )
 
     packed = run_council_with_teacher(
@@ -1121,6 +1128,7 @@ def _run_council(
         integration_event_dict=_int_event,
         pending_integration_dict=pending_integration_dict,
         last_integration_commit_dict=last_integration_commit_dict,
+        pending_ve_elicitation_dict=pending_ve_elicitation_dict,
     )
     rid = St.append_council_teacher_run(
         {
@@ -1347,6 +1355,9 @@ def _council_stream_gen(
     _stream_last_commit = (context or {}).get("last_integration_commit")
     if _stream_last_commit is not None and not isinstance(_stream_last_commit, dict):
         _stream_last_commit = None
+    _stream_ve_elicitation = (context or {}).get("pending_ve_elicitation")
+    if _stream_ve_elicitation is not None and not isinstance(_stream_ve_elicitation, dict):
+        _stream_ve_elicitation = None
     _int_event_s, _int_suffix_s = _council_integration_suffix_and_event(
         context, question, user_id=execution_principal.account_user_id
     )
@@ -1408,6 +1419,7 @@ def _council_stream_gen(
             integration_event_dict=_int_event_s,
             pending_integration_dict=_stream_pending,
             last_integration_commit_dict=_stream_last_commit,
+            pending_ve_elicitation_dict=_stream_ve_elicitation,
         )
         perf_mark(
             "_council_stream_gen_after_run_council_with_teacher",
@@ -1474,6 +1486,7 @@ def _council_stream_gen(
             for _k in (
                 "conversation_subject",
                 "pending_integration",
+                "pending_ve_elicitation",
                 "last_integration_commit",
                 "integration_commit",
             ):
@@ -1528,6 +1541,7 @@ def _council_stream_gen(
         integration_event_dict=_int_event_s,
         pending_integration_dict=_stream_pending,
         last_integration_commit_dict=_stream_last_commit,
+        pending_ve_elicitation_dict=_stream_ve_elicitation,
     ):
         perf_mark(
             "_council_stream_gen_run_council_stream_tuple_received",

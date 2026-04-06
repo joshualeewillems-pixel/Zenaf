@@ -59,6 +59,32 @@ describe('focusInviteFraming helpers', () => {
     expect(label).not.toContain('idea:')
   })
 
+  it('buildConversationalInvitePreface carries explicit per-intent rules', () => {
+    const distill = buildConversationalInvitePreface(
+      { id: 'd', kind: 'conversational', sourceAction: 'distill', label: 'Sharpen focus' },
+      core({}),
+    )
+    expect(distill).toContain('Goal:')
+    expect(distill).toContain('Prefer commitment over exploration')
+    const expand = buildConversationalInvitePreface(
+      { id: 'e', kind: 'conversational', sourceAction: 'expand_to_steps', label: 'Expand steps' },
+      core({}),
+    )
+    expect(expand).toContain('mappable')
+    const tensions = buildConversationalInvitePreface(
+      { id: 't', kind: 'conversational', sourceAction: 'surface_tensions', label: 'Explore tensions' },
+      core({}),
+    )
+    expect(tensions).toContain('Assumption audit')
+    expect(tensions).toContain('Pre-mortem')
+    const council = buildConversationalInvitePreface(
+      { id: 's', kind: 'conversational', sourceAction: 'summarize_for_council', label: 'Summarize for council' },
+      core({}),
+    )
+    expect(council).toContain('Stakeholders')
+    expect(council).toContain('definition of done')
+  })
+
   it('threadDisplayLineForCouncilQuestion maps stored preface to display line', () => {
     const preface = buildConversationalInvitePreface(convInvite, core({}))
     expect(threadDisplayLineForCouncilQuestion(preface)).toContain('Thinking partner')

@@ -8,11 +8,14 @@
   "integration_label_map_source": "local_ai/vision_execution/ve_integration_schema.py",
   "council_schema_narrative_source": "local_ai/council_preflight.py (_ui_field_schema_block)",
   "notes": [
+    "plain_english_hints: optional map keyed by \"entity_type.storage_key\" with conversational explanations for operators and LLM tooling; not yet rendered in the VE UI.",
     "UI labels and sections are taken from VisionExecutionView.tsx DetailField / DetailSection / adjacent copy as of audit date.",
     "Where API columns exist but no VE detail control edits them, ve_ui_exposed is false.",
     "Idea evaluation analysis fields are UI-only session state until persisted (see types: IdeaDecisionAnalysis comment in VisionExecutionView.tsx).",
     "Project Suggested work (AI) checklist state is client localStorage (projectSuggestedWorkLocal.ts), not SQLite.",
-    "Core profile rows are edited primarily from Perspectives/Foundation (App.tsx) and partial create form (coreProfilePanels.tsx); VE Team tab loads profiles for influences only."
+    "Core profile rows are edited primarily from Perspectives/Foundation (App.tsx) and partial create form (coreProfilePanels.tsx); VE Team tab loads profiles for influences only.",
+    "Initiative counts_toward_capacity (2026-04 audit): stored in SQLite, edited in VisionExecutionView Risks/admin; not read anywhere in Python for capacity/overcapacity. People & Capacity derived math (activeWeeklyHours, overcapacity) uses only projects + capacity_profiles — see local_ai/vision_execution/derived.add_capacity_derived. Treat as reserved/legacy until wired; do not elicit in chat as if it changed load.",
+    "Initiative manual_override (2026-04 audit): TEXT column, editable textarea in VE; CRUD only in storage/models — no other Python consumer. Not an evaluation override flag; free-form admin note. Safe to keep in UI; chat should not treat it as a semantic control until a reader exists."
   ],
   "fields": [
     {"entity_type": "core_profile", "storage_key": "name", "ui_label": "Name (profile list / detail; create form: Brand core name)", "section": "Identity", "field_type": "text", "editable": true, "source_of_truth": "frontend/src/vision-execution/types.ts + coreProfilePanels.tsx / App.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": false},
@@ -83,7 +86,7 @@
     {"entity_type": "initiative", "storage_key": "kill_criteria", "ui_label": "Kill criteria", "section": "Risks / admin", "field_type": "textarea", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": true},
     {"entity_type": "initiative", "storage_key": "notes", "ui_label": "Diagnostics / admin notes", "section": "Risks / admin", "field_type": "textarea", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": true},
     {"entity_type": "initiative", "storage_key": "counts_toward_capacity", "ui_label": "Counts toward capacity", "section": "Risks / admin", "field_type": "number", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": false, "ve_ui_exposed": true},
-    {"entity_type": "initiative", "storage_key": "manual_override", "ui_label": "Manual override", "section": "Risks / admin", "field_type": "textarea", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": true},
+    {"entity_type": "initiative", "storage_key": "manual_override", "ui_label": "Manual override", "section": "Risks / admin", "field_type": "textarea", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": false, "ve_ui_exposed": true},
     {"entity_type": "initiative", "storage_key": "required_people", "ui_label": "Required people (legacy JSON)", "section": "API / legacy", "field_type": "multiselect_json", "editable": false, "source_of_truth": "local_ai/vision_execution/schema.sql (cleared on save; seats canonical)", "safe_for_chat_reference": false, "ve_ui_exposed": false},
 
     {"entity_type": "project", "storage_key": "title", "ui_label": "Title", "section": "Identity / scope", "field_type": "text", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": true},
@@ -148,5 +151,46 @@
     {"entity_type": "asset", "storage_key": "time_availability", "ui_label": "Time availability", "section": "Availability & access", "field_type": "text", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": true},
     {"entity_type": "asset", "storage_key": "cost", "ui_label": "Cost", "section": "Availability & access", "field_type": "text", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": true},
     {"entity_type": "asset", "storage_key": "notes", "ui_label": "Notes", "section": "Notes", "field_type": "textarea", "editable": true, "source_of_truth": "VisionExecutionView.tsx", "safe_for_chat_reference": true, "ve_ui_exposed": true}
-  ]
+  ],
+  "plain_english_hints": {
+    "core_profile.core_definition": "In one short paragraph, what this organization (or you) fundamentally optimizes for — the compass for saying yes or no.",
+    "core_profile.current_goals": "What you are deliberately pursuing right now, usually measurable or time-bound.",
+    "core_profile.strategic_filter": "A plain question or rule you use to decide if new work fits the core definition and current goals.",
+    "core_profile.kill_philosophy": "How aggressively you stop work that is drifting, failing, or no longer worth the cost.",
+    "idea.summary": "A quick note someone could read in ten seconds and understand the idea.",
+    "idea.description": "The longer version: context, constraints, and anything someone needs to evaluate the idea fairly.",
+    "idea.desired_outcome": "What “done” or “success” looks like if this idea becomes real work — written like a sentence to a teammate.",
+    "initiative.brief": "A short scope statement: what this initiative covers, what it does not, and what “finished” means at initiative level.",
+    "initiative.owner_id": "The person accountable for decisions and follow-through — not every helper, just the single owner.",
+    "initiative.next_step_ai": "Older field for an AI-suggested next step; prefer execution-step checklists for new planning. Still shown for legacy records.",
+    "initiative.evaluation_priority": "The model’s last priority hint after an evaluation run — guidance only until you set real sliders or steps.",
+    "initiative.weightedScore": "A computed score from your manual sliders and weights — useful for sorting, not a substitute for judgment.",
+    "initiative.approvalReady": "Derived flag summarizing whether basic decision fields look complete enough to approve on paper.",
+    "initiative.execution_steps": "Checklist of concrete steps inside the initiative — better for execution than long prose.",
+    "initiative.required_assets": "Tools, systems, or access this initiative cannot succeed without — distinct from nice-to-have links.",
+    "initiative.dependencies": "Other work that must land (or stay true) before this initiative can succeed.",
+    "initiative.kill_criteria": "Plain-language tripwires that should trigger pause, pivot, or stop.",
+    "initiative.notes": "Internal diagnostics or admin notes — not shown as a primary user-facing field in every flow.",
+    "initiative.counts_toward_capacity": "Reserved numeric flag in storage; weekly load math today uses projects and capacity profiles — treat as legacy until wired.",
+    "initiative.manual_override": "Free-form admin text only — not an automatic override of scores or AI output elsewhere.",
+    "project.brief": "What this project will deliver, for whom, and the boundaries of the current slice of work.",
+    "project.supporting_owner_ids": "People who share responsibility or cover sub-areas — the primary owner still leads.",
+    "project.priority": "Relative urgency from 1 (low) to 5 (high) among your portfolio — your call, not the system’s.",
+    "project.estimated_weekly_hours": "Rough hours per week you expect this project to consume across the team.",
+    "client:project_suggested_work": "AI-generated checklist suggestions stored only in this browser until you promote them to real tasks.",
+    "project.next_step_ai": "Earlier AI suggestion field kept for compatibility; use tasks or notes for new work.",
+    "project.deliverables": "Legacy column folded into the brief on load — avoid relying on it for new saves.",
+    "project.current_focus": "Legacy scratch field folded away on save — capture focus inside the brief or notes instead.",
+    "task.description": "What needs to happen, written so another person could pick it up without a verbal handoff.",
+    "task.completion_criteria": "How you will know this task is truly done — observable checks, not feelings.",
+    "task.dependency_ids": "Other tasks that must finish before this one can start or be considered complete.",
+    "execution_step.title": "A single actionable step inside an initiative checklist.",
+    "initiative_seat.role": "The seat or role name you need filled (for example facilitator, engineer, approver).",
+    "initiative_seat.estimated_effort": "Rough effort for that seat — hours, days, or a short phrase your team understands.",
+    "person.participation_summary": "Automatically lists initiatives, projects, and assets this person touches — read-only.",
+    "capacity_profile.activeWeeklyHours": "Adds up estimated weekly hours from active projects assigned to this person.",
+    "capacity_profile.overcapacity": "True when active weekly hours exceed the weekly capacity you set.",
+    "asset.required_by_display": "Derived list of initiatives or projects that mark this asset as required — read-only summary.",
+    "asset.linked_idea_ids": "Ideas this asset relates to for context — does not by itself mean the asset blocks delivery."
+  }
 }

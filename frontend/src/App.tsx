@@ -6,6 +6,7 @@ import {
   useCallback,
   useRef,
   type ChangeEvent,
+  type DragEvent,
   type KeyboardEvent,
   type ReactNode,
   type Ref,
@@ -72,6 +73,7 @@ import {
 } from './developmentalGuidance/guideQuestionDisplay'
 import { InlineThreadGuideCard } from './conversation/InlineThreadGuideCard'
 import { ThreadInlineGuideStack } from './conversation/ThreadInlineGuideStack'
+import { appendChatDroppedFiles, dataTransferHasFiles } from './conversation/chatFileDrop'
 import { SubjectHandoffReview } from './conversation/SubjectHandoffReview'
 import {
   councilPhaseDetail,
@@ -155,7 +157,7 @@ import { CouncilTranscript } from './council/CouncilTranscript'
 import { CouncilTranscriptWithResonance } from './council/CouncilTranscriptWithResonance'
 import { ResonanceSlider } from './components/ResonanceSlider'
 import { ContentFrontDoor } from './content'
-import { RadarHomePage } from './radar-home'
+import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
 import { DomainProvider } from './domain/DomainContext'
 import { AuthGate } from './auth/AuthGate'
 import { ConsentOnboardingGate } from './auth/ConsentOnboardingGate'
@@ -211,6 +213,7 @@ import {
   type IntegrationCommitPayload,
   type LastIntegrationCommitPayload,
   type PendingIntegrationPayload,
+  type PendingVeElicitationPayload,
 } from './council/synthesisIntegrity'
 
 /** Flat scan for proposed integration (walks into folded scoped threads). */
@@ -443,12 +446,11 @@ function CouncilFocusBridge({
   return null
 }
 
-/** Clear all focus when leaving VE surfaces so workspace/home do not keep stale entity context. */
+/** Clear all focus when leaving VE surfaces so workspace does not keep stale entity context. */
 function LeaveVisionSurfacesFocusClear({
   mainView,
 }: {
   mainView:
-    | 'home'
     | 'workspace'
     | 'perspectives'
     | 'content'
@@ -477,7 +479,6 @@ function workspaceFolderEntityId(folderPath: string, lastFolderPath: string): st
 }
 
 type MainViewForResonance =
-  | 'home'
   | 'workspace'
   | 'perspectives'
   | 'content'
@@ -621,7 +622,6 @@ function UniversalContextStrip({
   useLastResultAsContext,
 }: {
   mainView:
-    | 'home'
     | 'workspace'
     | 'perspectives'
     | 'content'
@@ -651,8 +651,8 @@ function UniversalContextStrip({
           {!hasVeFieldFocus && mainView !== 'vision_execution' && (
             <div className="flex flex-wrap items-center gap-2 border-t border-stone-700/80 pt-2 sm:border-t-0 sm:pt-0 sm:border-l sm:border-stone-700 sm:pl-4 w-full sm:w-auto">
               <span className="text-stone-500 uppercase text-[10px] tracking-wide font-medium">Where</span>
-              {mainView === 'home' ? (
-                <span className="text-stone-300">Radar Home</span>
+              {mainView === 'vision_map' ? (
+                <span className="text-stone-300">Vision map</span>
               ) : (
                 <>
                   <span className="text-stone-300 font-mono truncate max-w-[220px]" title={currentTopic.fullPath}>
@@ -696,6 +696,19 @@ const COUNCIL_REPLY_FOCUS_FIELD_KEY = focusFieldRegistryKey({
   field_key: 'reply',
 })
 
+function focusTextareaRefEnd(textareaRef: Ref<HTMLTextAreaElement>) {
+  requestAnimationFrame(() => {
+    const el =
+      textareaRef && typeof textareaRef === 'object' && 'current' in textareaRef
+        ? textareaRef.current
+        : null
+    if (!(el instanceof HTMLTextAreaElement)) return
+    el.focus()
+    const len = el.value.length
+    el.setSelectionRange(len, len)
+  })
+}
+
 /** Council “Your reply” — registers focus/selection for record + insert; voice still uses DOM-first when the textarea stays active. Renders under VisionExecutionFocusProvider. */
 function CouncilQuestionTextarea({
   value,
@@ -705,6 +718,7 @@ function CouncilQuestionTextarea({
   onKeyDown,
   placeholder,
   className,
+  onAfterFilesDropped,
 }: {
   value: string
   onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void
@@ -713,10 +727,48 @@ function CouncilQuestionTextarea({
   onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
   placeholder: string
   className: string
+  onAfterFilesDropped?: () => void
 }) {
   const ctx = useVisionExecutionFocusOptional()
   const valueRef = useRef(value)
   valueRef.current = value
+  const [dragActive, setDragActive] = useState(false)
+
+  const onComposerDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    if (!dataTransferHasFiles(e.dataTransfer)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'copy'
+    setDragActive(true)
+  }, [])
+
+  const onComposerDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const t = e.currentTarget
+    const rel = e.relatedTarget as Node | null
+    if (rel && t.contains(rel)) return
+    setDragActive(false)
+  }, [])
+
+  const onComposerDrop = useCallback(
+    async (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setDragActive(false)
+      const files = e.dataTransfer.files
+      if (!files?.length) return
+      const next = await appendChatDroppedFiles(valueRef.current, files)
+      onChange({ target: { value: next } } as ChangeEvent<HTMLTextAreaElement>)
+      focusTextareaRefEnd(textareaRef)
+      onAfterFilesDropped?.()
+    },
+    [onChange, onAfterFilesDropped, textareaRef],
+  )
+
+  const dropZoneClass = dragActive
+    ? 'ring-2 ring-amber-500/75 ring-offset-2 ring-offset-stone-900 rounded-lg'
+    : ''
 
   const desc = useMemo(
     () =>
@@ -754,7 +806,16 @@ function CouncilQuestionTextarea({
   )
 
   if (!ctx) {
-    return ta
+    return (
+      <div
+        className={`min-w-0 ${dropZoneClass}`}
+        onDragOver={onComposerDragOver}
+        onDragLeave={onComposerDragLeave}
+        onDrop={(e) => void onComposerDrop(e)}
+      >
+        {ta}
+      </div>
+    )
   }
 
   const { notifyFieldFocused, notifyFieldBlurred, recordFieldSelection } = ctx
@@ -770,12 +831,15 @@ function CouncilQuestionTextarea({
 
   return (
     <div
-      className="min-w-0"
+      className={`min-w-0 ${dropZoneClass}`}
       onFocusCapture={() => notifyFieldFocused(desc)}
       onBlurCapture={() => notifyFieldBlurred()}
       onSelectCapture={syncSelection}
       onKeyUpCapture={syncSelection}
       onClickCapture={syncSelection}
+      onDragOver={onComposerDragOver}
+      onDragLeave={onComposerDragLeave}
+      onDrop={(e) => void onComposerDrop(e)}
     >
       {ta}
     </div>
@@ -1772,10 +1836,13 @@ function App() {
   const [activeMode, setActiveMode] = useState<ModeId>('analyze')
   const [folderPath, setFolderPath] = useState('')
   const [question, setQuestion] = useState('')
+  const questionRef = useRef(question)
+  questionRef.current = question
   /** Bumped when council appends a new user turn so the conversation panel scrolls to the active reply. */
   const [agentConversationScrollNonce, setAgentConversationScrollNonce] = useState(0)
   const councilQuestionTextareaRef = useRef<HTMLTextAreaElement | null>(null)
   const agentConversationEndRef = useRef<HTMLDivElement | null>(null)
+  const agentConversationScrollRef = useRef<HTMLDivElement | null>(null)
   const adjustCouncilQuestionTextareaHeight = useCallback(() => {
     const el = councilQuestionTextareaRef.current
     if (!el) return
@@ -1793,6 +1860,21 @@ function App() {
     el.style.height = `${next}px`
     el.style.overflowY = fullScroll > maxH ? 'auto' : 'hidden'
   }, [])
+
+  const appendFilesToCouncilQuestion = useCallback(async (files: FileList | null) => {
+    if (!files?.length) return
+    const next = await appendChatDroppedFiles(questionRef.current, files)
+    setQuestion(next)
+    requestAnimationFrame(() => {
+      adjustCouncilQuestionTextareaHeight()
+      councilQuestionTextareaRef.current?.focus()
+      const ta = councilQuestionTextareaRef.current
+      if (ta) {
+        const len = ta.value.length
+        ta.setSelectionRange(len, len)
+      }
+    })
+  }, [adjustCouncilQuestionTextareaHeight])
 
   useLayoutEffect(() => {
     adjustCouncilQuestionTextareaHeight()
@@ -1946,6 +2028,8 @@ function App() {
   const councilConversationSubjectRef = useRef<ConversationSubject | null>(null)
   /** Proposed VE field update from Zenaf; echoed until commit or cleared when absent on `done`. */
   const councilPendingIntegrationRef = useRef<PendingIntegrationPayload | null>(null)
+  /** Server-seeded owner/assignee elicitation; echo until Lane A confirm or explicit clear. */
+  const councilPendingVeElicitationRef = useRef<PendingVeElicitationPayload | null>(null)
   /** Last committed integration from stream `done` — sticky for “where does this live?”. */
   const councilLastIntegrationCommitRef = useRef<LastIntegrationCommitPayload | null>(null)
   /** Echo `last_created_project_id` for Lane A follow-up task batches (`context.ve_direct_session`). */
@@ -1964,7 +2048,7 @@ function App() {
     currentTopic: { label: string; modeLabel: string | null; summary: string }
     ve_selection: VESelection | null
   }>({
-    mainView: 'home',
+    mainView: 'vision_map',
     currentTopic: { label: '', modeLabel: null, summary: '' },
     ve_selection: null,
   })
@@ -2790,11 +2874,9 @@ function App() {
         workspace_topic_label: snap.currentTopic.label,
         workspace_topic_summary: snap.currentTopic.summary,
         workspace_mode_label: snap.currentTopic.modeLabel,
-        home_strip_label: snap.mainView === 'home' ? 'Radar Home' : undefined,
+        home_strip_label: undefined,
         breadcrumb:
-          snap.mainView === 'home'
-            ? 'Radar Home'
-            : [snap.currentTopic.label, snap.currentTopic.modeLabel].filter(Boolean).join(' · ') || undefined,
+          [snap.currentTopic.label, snap.currentTopic.modeLabel].filter(Boolean).join(' · ') || undefined,
         folder_path: lastFolderPath || undefined,
       }
       if (effectiveCore) {
@@ -2952,6 +3034,7 @@ function App() {
           council_preflight?: Record<string, unknown>
           conversation_subject?: ConversationSubject
           pending_integration?: PendingIntegrationPayload
+          pending_ve_elicitation?: PendingVeElicitationPayload
           last_integration_commit?: LastIntegrationCommitPayload
           ve_direct_session?: { last_created_project_id?: string }
           is_scoped_digression?: boolean
@@ -2976,6 +3059,9 @@ function App() {
             : {}),
           ...(councilPendingIntegrationRef.current
             ? { pending_integration: councilPendingIntegrationRef.current }
+            : {}),
+          ...(councilPendingVeElicitationRef.current
+            ? { pending_ve_elicitation: councilPendingVeElicitationRef.current }
             : {}),
           ...(councilLastIntegrationCommitRef.current
             ? { last_integration_commit: councilLastIntegrationCommitRef.current }
@@ -3242,6 +3328,18 @@ function App() {
                 councilPendingIntegrationRef.current = null
               }
             }
+            if ('pending_ve_elicitation' in payload) {
+              if (
+                payload.pending_ve_elicitation != null &&
+                typeof payload.pending_ve_elicitation === 'object' &&
+                !Array.isArray(payload.pending_ve_elicitation)
+              ) {
+                councilPendingVeElicitationRef.current =
+                  payload.pending_ve_elicitation as PendingVeElicitationPayload
+              } else {
+                councilPendingVeElicitationRef.current = null
+              }
+            }
             if (
               payload.last_integration_commit != null &&
               typeof payload.last_integration_commit === 'object' &&
@@ -3255,6 +3353,18 @@ function App() {
               !Array.isArray(payload.direct_ve_action)
             ) {
               const dva = payload.direct_ve_action
+              if ('pending_ve_elicitation' in dva) {
+                if (
+                  dva.pending_ve_elicitation != null &&
+                  typeof dva.pending_ve_elicitation === 'object' &&
+                  !Array.isArray(dva.pending_ve_elicitation)
+                ) {
+                  councilPendingVeElicitationRef.current =
+                    dva.pending_ve_elicitation as PendingVeElicitationPayload
+                } else {
+                  councilPendingVeElicitationRef.current = null
+                }
+              }
               if (dva.status === 'handled') {
                 setCouncilVeServerWriteNonce((n) => n + 1)
                 const ents = dva.created_entities
@@ -4364,11 +4474,21 @@ function App() {
   }, [streamingCouncilText])
   useLayoutEffect(() => {
     if (agentConversationScrollNonce === 0) return
-    agentConversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    const pane = agentConversationScrollRef.current
+    if (pane) {
+      pane.scrollTop = pane.scrollHeight
+    } else {
+      agentConversationEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+    }
   }, [agentConversationScrollNonce])
   useLayoutEffect(() => {
     if (!loading || !streamingCouncilText) return
-    agentConversationEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
+    const pane = agentConversationScrollRef.current
+    if (pane) {
+      pane.scrollTop = pane.scrollHeight
+    } else {
+      agentConversationEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
+    }
   }, [streamingCouncilText, loading])
   const [councilInsightSaving, setCouncilInsightSaving] = useState(false)
   const [councilInsightNotice, setCouncilInsightNotice] = useState<string | null>(null)
@@ -4758,16 +4878,15 @@ function App() {
     }
   }, [resolveCouncilInsightText, currentUser?.id, streamingCouncilRunLabel])
 
-  // Top-level view: Radar Home (default), Workspace Organizer, Perspectives, Content, Vision → Execution
+  // Top-level view: Vision map (default), Workspace Organizer, Perspectives, Content, Vision → Execution
   type MainView =
-    | 'home'
     | 'workspace'
     | 'perspectives'
     | 'content'
     | 'vision_map'
     | 'vision_execution'
     | 'settings'
-  const [mainView, setMainView] = useState<MainView>('home')
+  const [mainView, setMainView] = useState<MainView>('vision_map')
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
   /** Avoid new object identity on every VisionExecutionView `bundleForFocus` refresh when ids are unchanged. */
   const stableVeSelectionForExecutionView = useMemo(
@@ -4783,6 +4902,13 @@ function App() {
   )
   const [veFocusTabRequest, setVeFocusTabRequest] = useState<VEWorkspaceTabId | null>(null)
   const consumeVeFocusTabRequest = useCallback(() => setVeFocusTabRequest(null), [])
+  const [veRadarScrollBucket, setVeRadarScrollBucket] = useState<VeRadarBucketId | null>(null)
+  const clearVeRadarScrollBucket = useCallback(() => setVeRadarScrollBucket(null), [])
+  const handleOpenVeRadar = useCallback((bucket?: VeRadarBucketId) => {
+    setMainView('vision_execution')
+    setVeFocusTabRequest('radar')
+    setVeRadarScrollBucket(bucket ?? null)
+  }, [])
   const [mapDevelopmentalSnapshot, setMapDevelopmentalSnapshot] = useState<MapTriadDevelopmentalSnapshot | null>(null)
   const [mapExecutionFlowReadings, setMapExecutionFlowReadings] = useState<ExecutionFlowReadingSummary[]>([])
   const [perspectivesCoreProfiles, setPerspectivesCoreProfiles] = useState<CoreProfile[]>([])
@@ -5538,16 +5664,7 @@ function App() {
           className="flex items-center gap-1"
           aria-label="Primary"
         >
-          {/* Core: Home + Foundation (actors / profiles) + Vision & Execution */}
-          <button
-            type="button"
-            onClick={() => setMainView('home')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-              mainView === 'home' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
-            }`}
-          >
-            Home
-          </button>
+          {/* Core: Foundation (actors / profiles) + Vision & Execution */}
           <button
             type="button"
             onClick={() => setMainView('perspectives')}
@@ -5652,33 +5769,7 @@ function App() {
 
       <div className="flex-1 flex min-h-0">
         {/* Left: main content (changes by tab) */}
-        {mainView === 'home' ? (
-          <div className="flex-1 flex flex-col min-h-0">
-            <RadarHomePage
-              role="anna-admin"
-              onOpenQueue={() => {
-                setMainView('workspace')
-                setActiveMode('ordering_queue')
-              }}
-              onOpenProject={(projectId) => {
-                setVeSelection({ tab: 'projects', projectId })
-                setMainView('vision_execution')
-              }}
-              onOpenTask={(taskId, projectId) => {
-                setVeSelection({ tab: 'tasks', taskId, projectId })
-                setMainView('vision_execution')
-              }}
-              onOpenAsset={(assetId) => {
-                setVeSelection({ tab: 'assets', assetId })
-                setMainView('vision_execution')
-              }}
-              onOpenInitiative={(initiativeId) => {
-                setVeSelection({ tab: 'initiatives', initiativeId })
-                setMainView('vision_execution')
-              }}
-            />
-          </div>
-        ) : mainView === 'perspectives' ? (
+        {mainView === 'perspectives' ? (
           <div className="flex-1 flex min-h-0 overflow-hidden bg-surface/20">
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <div className="shrink-0 border-b border-[color:var(--color-border)] px-4 py-3 bg-surface/40">
@@ -5849,6 +5940,7 @@ function App() {
               onOpenOperatorMode={() => {
                 setMainView('vision_execution')
               }}
+              onOpenVeRadar={handleOpenVeRadar}
               councilQuestionDraft={question}
               onVisionMapCouncilInteraction={handleVisionMapCouncilInteraction}
               onDevelopmentalSignalsChange={setMapDevelopmentalSnapshot}
@@ -5871,6 +5963,8 @@ function App() {
               onVeSelectionChange={setVeSelection}
               recognitionUserId={currentUser?.id ?? null}
               councilServerWriteNonce={councilVeServerWriteNonce}
+              radarScrollBucketRequest={veRadarScrollBucket}
+              onRadarScrollBucketConsumed={clearVeRadarScrollBucket}
             />
           </div>
         ) : (
@@ -6675,7 +6769,7 @@ function App() {
               {error}
             </div>
           )}
-          <div className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain">
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden overflow-x-hidden overscroll-contain">
           <div
             className="shrink-0 px-3 py-2.5 border-b border-amber-900/35 bg-gradient-to-r from-stone-900/95 via-stone-900/85 to-stone-800/80"
             role="region"
@@ -6856,7 +6950,7 @@ function App() {
               />
             </div>
           ) : (
-            <>
+            <div className="flex flex-col flex-1 min-h-0 min-w-0">
               {councilScopedDigression && activeMode === 'council' ? (
                 <div
                   className="shrink-0 mx-3 mt-3 mb-1 rounded-lg border border-cyan-500/45 bg-cyan-950/35 shadow-[0_0_20px_rgba(34,211,238,0.12)] px-3 py-2.5 flex items-start justify-between gap-3"
@@ -6882,16 +6976,30 @@ function App() {
                   </button>
                 </div>
               ) : null}
-              <div className="shrink-0 p-4 border-b border-stone-700">
-                <h2 className="text-base font-semibold text-stone-100">Conversation</h2>
-              </div>
-              <div
-                className={`flex-1 basis-0 min-h-[50vh] overflow-y-auto overflow-x-hidden p-3 space-y-3 overscroll-contain ${
-                  councilScopedDigression && activeMode === 'council'
-                    ? 'rounded-b-lg mx-1 mb-1 ring-1 ring-cyan-600/25 bg-cyan-950/[0.07]'
-                    : ''
-                }`}
-              >
+              {/* Split ~50/50: transcript vs composer+seats so the thread is not starved by tall seat controls */}
+              <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+                <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+                  <div className="shrink-0 border-b border-stone-700 p-4">
+                    <h2 className="text-base font-semibold text-stone-100">Conversation</h2>
+                  </div>
+                  <div
+                    ref={agentConversationScrollRef}
+                    className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 space-y-3 ${
+                      councilScopedDigression && activeMode === 'council'
+                        ? 'rounded-b-lg mx-1 mb-1 ring-1 ring-cyan-600/25 bg-cyan-950/[0.07]'
+                        : ''
+                    }`}
+                    onDragOver={(e) => {
+                      if (!dataTransferHasFiles(e.dataTransfer)) return
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'copy'
+                    }}
+                    onDrop={(e) => {
+                      if (!dataTransferHasFiles(e.dataTransfer)) return
+                      e.preventDefault()
+                      void appendFilesToCouncilQuestion(e.dataTransfer.files)
+                    }}
+                  >
                 {agentThread.length === 0 &&
                   !agentResponse &&
                   !streamingCouncilText &&
@@ -7298,9 +7406,11 @@ function App() {
                     )}
                   </div>
                 )}
-                <div ref={agentConversationEndRef} className="h-px w-full shrink-0 scroll-mt-2" aria-hidden />
-              </div>
-              <div className="shrink-0 p-4 space-y-3 border-t border-stone-700 bg-stone-800/80">
+                    <div ref={agentConversationEndRef} className="h-px w-full shrink-0 scroll-mt-2" aria-hidden />
+                  </div>
+                </div>
+                <div className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-stone-700 bg-stone-800/80">
+                  <div className="space-y-3 p-4">
                 <div>
                   <label className="block text-xs text-stone-500 mb-1">Your reply</label>
                   <CouncilQuestionTextarea
@@ -7561,8 +7671,10 @@ function App() {
                     })()}
                   </div>
                 </div>
+                  </div>
+                </div>
               </div>
-            </>
+            </div>
           )}
           </div>
           {workoutExitToast ? (

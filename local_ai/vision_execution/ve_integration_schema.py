@@ -30,7 +30,9 @@ _ENTITY_TYPE_UI: Final[dict[str, str]] = {
 # Keys ``commit_precision`` / ``_patch_for_entity`` can actually write today (integration_commit.py).
 _INTEGRATION_SUPPORTED_STORAGE_KEYS: Final[dict[str, frozenset[str]]] = {
     "idea": frozenset({"title", "summary", "description", "desired_outcome", "notes"}),
-    "initiative": frozenset({"title", "brief", "next_step_ai", "notes"}),
+    "initiative": frozenset(
+        {"title", "brief", "next_step_ai", "notes", "kill_criteria", "recommendation"}
+    ),
     "project": frozenset({"title", "brief", "next_step_ai", "notes"}),
     "task": frozenset({"title", "description", "completion_criteria", "notes"}),
 }
@@ -79,6 +81,9 @@ _ALIAS_POLICY: Final[dict[str, dict[str, str]]] = {
         "constraints": "notes",
         "audience_split": "notes",
         "description": "brief",
+        "kill_criteria": "kill_criteria",
+        "kill": "kill_criteria",
+        "recommendation": "recommendation",
     },
     "project": {
         "title": "title",

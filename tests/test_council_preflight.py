@@ -25,7 +25,7 @@ def test_parse_preflight_merges_council_preflight_dict():
         "council_preflight": {
             "active_surface": "workspace",
             "workspace_topic_label": "MyFolder",
-            "home_strip_label": "Radar Home",
+            "breadcrumb": "MyFolder · Analyze",
             "ve_focus": {"entity_type": "task", "entity_id": "t1", "field_label": "Description"},
         },
         "context_block": "Mode: Analyze. Context: medical.",
@@ -33,7 +33,7 @@ def test_parse_preflight_merges_council_preflight_dict():
     p = parse_preflight_from_request(ctx, "Should we proceed?")
     assert p.active_surface == "workspace"
     assert p.view_label == "MyFolder"
-    assert p.breadcrumb == "Radar Home"
+    assert p.breadcrumb == "MyFolder · Analyze"
     assert p.ve_focus is not None
     assert p.ve_focus.get("entity_id") == "t1"
     assert "Analyze" in (p.raw_context_block or "")
@@ -348,14 +348,14 @@ def test_split_enriched_council_context_for_seats():
 def test_build_enriched_includes_runtime_block():
     p = CouncilPreflight(
         user_question="q",
-        active_surface="home",
-        breadcrumb="Radar Home",
+        active_surface="vision_map",
+        breadcrumb="Vision map",
         raw_context_block="Recent conversation:\nUser: hi",
     )
     s = build_enriched_council_context(p, legacy_context_str=None, subject_ref=None, object_snapshot=None)
     assert "SYSTEM FAILURE STATE" not in s
     assert "Runtime context (from app):" in s
-    assert "Radar Home" in s
+    assert "Vision map" in s
     assert "Recent conversation" in s
 
 

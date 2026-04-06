@@ -10,6 +10,7 @@ from local_ai.vision_execution import storage as ve_storage
 from local_ai.vision_execution.ve_gap_elicitation import (
     attach_ve_gap_to_preflight,
     next_missing_field_prompt,
+    pending_ve_elicitation_seed_from_gap,
     top_missing_field_prompts,
 )
 from local_ai.vision_execution.storage import init_db, open_sqlite_with_ve_pragmas
@@ -36,6 +37,34 @@ def test_initiative_brief_after_owner() -> None:
     row = {"owner_id": "p1", "brief": "", "source_idea_id": None}
     p = next_missing_field_prompt("initiative", row, execution_step_count=0)
     assert p and p["field_key"] == "brief"
+
+
+def test_pending_seed_from_gap_collection_add_risks() -> None:
+    primary = {"field_key": "risks", "label": "Risks", "reason": "", "question": ""}
+    seed = pending_ve_elicitation_seed_from_gap("idle_close", primary, "ini-2", "initiative")
+    assert seed
+    assert seed["elicitation_kind"] == "collection_add"
+    assert seed["surface_key"] == "risks"
+    assert seed["entity_id"] == "ini-2"
+
+
+def test_pending_seed_from_gap_text_set_kill_criteria() -> None:
+    primary = {"field_key": "kill_criteria", "label": "Kill criteria", "reason": "", "question": ""}
+    seed = pending_ve_elicitation_seed_from_gap("idle_close", primary, "ini-k", "initiative")
+    assert seed
+    assert seed["elicitation_kind"] == "text_set"
+    assert seed["surface_key"] == "kill_criteria"
+
+
+def test_pending_seed_from_gap_text_set_brief() -> None:
+    primary = {"field_key": "brief", "label": "Brief", "reason": "", "question": ""}
+    seed = pending_ve_elicitation_seed_from_gap("idle_close", primary, "ini-1", "initiative")
+    assert seed
+    assert seed["elicitation_kind"] == "text_set"
+    assert seed["phase"] == "awaiting_value"
+    assert seed["surface_key"] == "brief"
+    assert seed["field_key"] == "brief"
+    assert seed["entity_id"] == "ini-1"
 
 
 def test_project_tasks_last_in_chain() -> None:
@@ -93,7 +122,7 @@ def test_attach_decline_pivot(ve_conn) -> None:
         "lane_a_direct_action_declined": True,
         "lane_a_last_intent": {"kind": "person_assign"},
     }
-    attach_ve_gap_to_preflight(
+    seed = attach_ve_gap_to_preflight(
         cp,
         conversation_subject_dict=None,
         user_id=uid,
@@ -101,6 +130,9 @@ def test_attach_decline_pivot(ve_conn) -> None:
     )
     assert cp.get("ve_gap_mode") == "decline_pivot"
     assert "could not apply" in str(cp.get("ve_gap_primary", {}).get("question", "")).lower()
+    assert isinstance(seed, dict)
+    assert seed.get("phase") == "awaiting_value"
+    assert seed.get("field_key") == "owner_id"
 
 
 def test_next_missing_field_prompt_alias() -> None:

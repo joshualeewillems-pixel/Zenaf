@@ -65,6 +65,8 @@ export {
 export { FocusInviteRunProvider, useFocusInviteRunOptional } from './FocusInviteRunContext'
 export type { FocusInviteRunHandler } from './FocusInviteRunContext'
 export { FocusInviteChips } from './FocusInviteChips'
+export { DetailPanelInviteChips } from './DetailPanelInviteChips'
+export type { DetailPanelInviteEntity } from './DetailPanelInviteChips'
 export { FocusContextRecordButton } from './FocusContextRecordButton'
 export { getFieldCapabilities, actionsForField, ACTION_LABELS } from './fieldCapabilityRegistry'
 export { focusFieldRegistryKey } from './focusRegistryKey'

@@ -1,6 +1,6 @@
 /**
  * Shared domain context: initiatives, projects, tasks, assets, inventory, inbox.
- * Hydrated from shared seed; consumed by Radar Home and Vision & Execution.
+ * Hydrated from shared seed; consumed by Vision & Execution (e.g. asset merge fallback).
  */
 
 import { createContext, useContext, useMemo, type ReactNode } from 'react'

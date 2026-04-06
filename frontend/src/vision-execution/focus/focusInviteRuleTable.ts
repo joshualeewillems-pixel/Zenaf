@@ -5,7 +5,7 @@
  */
 import type { ActionId } from './types'
 
-export const FOCUS_INVITE_ENTITY_TYPES = ['idea', 'initiative'] as const
+export const FOCUS_INVITE_ENTITY_TYPES = ['idea', 'initiative', 'project', 'task'] as const
 
 export type FocusInviteEntityType = (typeof FOCUS_INVITE_ENTITY_TYPES)[number]
 
@@ -13,6 +13,8 @@ export type FocusInviteEntityType = (typeof FOCUS_INVITE_ENTITY_TYPES)[number]
 export const CONVERSATION_ENTITY_INVITE_REGISTRY_FIELD: Record<FocusInviteEntityType, string> = {
   initiative: 'brief',
   idea: 'description',
+  project: 'brief',
+  task: 'description',
 }
 
 /** Appendix B + product: `rewrite` is completion-oriented → structured_fill invite only. */
@@ -21,4 +23,5 @@ export const STRUCTURED_FILL_ACTION_IDS: ReadonlySet<ActionId> = new Set(['rewri
 /** Direct bar actions — not duplicated as invites (CONTEXT_ACTION_BAR_DESIGN §6). */
 export const EXCLUDED_INVITE_ACTION_IDS: ReadonlySet<ActionId> = new Set(['transcribe'])
 
-export const MAX_FOCUS_INVITES_VISIBLE = 4
+/** Four conversational intents + structured_fill (e.g. rewrite) on long-form fields; cap avoids crowding. */
+export const MAX_FOCUS_INVITES_VISIBLE = 5

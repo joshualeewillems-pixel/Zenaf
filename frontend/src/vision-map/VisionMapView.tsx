@@ -74,6 +74,8 @@ import { effectiveGrowthTriad } from './effectiveGrowthTriad'
 import { detectMissingDimensions } from './guidanceScripts'
 import { useVisionExecutionFocusOptional } from '../vision-execution/focus/VisionExecutionFocusContext'
 import { mapPayloadToConversationFocusDescriptor } from './mapFocusDescriptor'
+import { VeRadarAwarenessStrip } from './VeRadarAwarenessStrip'
+import type { VeRadarBucketId } from '../vision-execution/veRadarAwareness'
 
 const nodeTypes = { entityMap: EntityMapNode, nestGroup: NestGroupNode }
 const edgeTypes = { mapFlow: MapFlowEdge }
@@ -262,6 +264,8 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
 
 export type VisionMapViewProps = {
   onOpenOperatorMode: () => void
+  /** Jump to Vision & Execution Radar tab; optional bucket for scroll target. */
+  onOpenVeRadar?: (bucket?: VeRadarBucketId) => void
   councilQuestionDraft: string
   onVisionMapCouncilInteraction: (action: VisionMapCouncilInteraction) => void
   /** Growth triad snapshot for developmental guidance (council preflight); cleared when selection clears. */
@@ -279,6 +283,7 @@ export type VisionMapViewProps = {
 
 function VisionMapFlow({
   onOpenOperatorMode,
+  onOpenVeRadar,
   councilQuestionDraft,
   onVisionMapCouncilInteraction,
   onDevelopmentalSignalsChange,
@@ -315,6 +320,8 @@ function VisionMapFlow({
   const [positionOverrides, setPositionOverrides] = useState<Record<string, XYPosition>>({})
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [loadErr, setLoadErr] = useState<string | null>(null)
+  /** Bumps VeRadarAwarenessStrip refresh when map reloads VE entities. */
+  const [radarStripRefreshNonce, setRadarStripRefreshNonce] = useState(0)
   /** False until first viewport is centered on a node (avoid fit-to-full-canvas zoom-out flash). */
   const [mapViewportReady, setMapViewportReady] = useState(false)
 
@@ -407,8 +414,12 @@ function VisionMapFlow({
     setMapViewportReady(false)
     setLoadErr(null)
     try {
-      const [entities, runs] = await Promise.all([fetchVisionMapEntities(), fetchStudioCouncilRuns(80)])
-      const { nodes: n, edges: e } = buildLiveVisionMapGraph(entities, runs)
+      const [entities, runs, serverVitality] = await Promise.all([
+        fetchVisionMapEntities(),
+        fetchStudioCouncilRuns(80),
+        fetchNodeVitalityMap().catch(() => undefined),
+      ])
+      const { nodes: n, edges: e } = buildLiveVisionMapGraph(entities, runs, serverVitality)
       const persisted = loadVisionMapLayout(layoutStorageKey)
       const ids = new Set(n.map((node) => node.id))
       const restoredPos: Record<string, XYPosition> = {}
@@ -425,6 +436,7 @@ function VisionMapFlow({
       setSelectedNodeId(null)
       setSelectedPayload(null)
       setLoadState('ok')
+      setRadarStripRefreshNonce((n) => n + 1)
     } catch (err) {
       setLoadState('error')
       setLoadErr(err instanceof Error ? err.message : String(err))
@@ -902,18 +914,29 @@ function VisionMapFlow({
     }, 0)
   }, [layoutStorageKey, rf])
 
+  const mapHelpTitle =
+    'Live VE projection · glow = water (owner = lush; stale = dry) · green ring = recent update or council · fruit = shipped project + deliverables · drag stones · pan: empty map / Space / right-drag / two-finger trackpad'
+
   return (
     <div className="flex flex-1 min-h-0 flex-col bg-stone-900">
-      <header className="flex items-center justify-between gap-3 px-4 py-2 border-b border-stone-700 bg-stone-900/85 shrink-0 flex-wrap">
-        <div>
-          <h1 className="text-lg font-semibold text-stone-100">Vision map</h1>
-          <p className="text-xs text-stone-400">
-            Live VE projection · glow = water (owner = lush; stale = dry) · green ring = recent update or council ·
-            fruit = shipped project + deliverables · drag stones · pan empty map / Space / right-drag / two-finger trackpad ·{' '}
-            {loadState === 'ok' ? `${nodeCount} nodes` : loadState}
+      <header className="flex items-start justify-between gap-3 px-4 py-2 border-b border-stone-700 bg-stone-900/85 shrink-0 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-semibold text-stone-100" title={mapHelpTitle}>
+            Vision map
+          </h1>
+          <p className="text-[10px] text-stone-500 truncate" title={mapHelpTitle}>
+            {loadState === 'ok' ? `${nodeCount} nodes` : loadState} · hover title for map legend
           </p>
+          {onOpenVeRadar ? (
+            <div className="mt-1.5 max-w-full">
+              <VeRadarAwarenessStrip
+                onOpenVeRadar={onOpenVeRadar}
+                refreshNonce={radarStripRefreshNonce}
+              />
+            </div>
+          ) : null}
         </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap pt-0.5">
           <button
             type="button"
             onClick={() => void load()}

@@ -1676,6 +1676,7 @@ def _scoped_digression_depth_block() -> str:
 def _entity_grounding_scope_continuity_block(
     packet: str | None,
     council_preflight_dict: dict[str, Any] | None,
+    conversation_subject: ConversationSubject | None = None,
 ) -> str:
     """Mandatory Zenaf rules when a focused record exists: anchor on PRIMARY, scope lock, continuity, no protocol leakage."""
     from local_ai.council_preflight import PRIMARY_CONTEXT_MARKER, parse_preflight_from_request
@@ -1752,6 +1753,24 @@ def _entity_grounding_scope_continuity_block(
         "- **No protocol leakage:** Never echo internal parser instructions, bracket-tag requirements, or placeholder contract text "
         "to the user.\n"
     )
+    vf_eid = ""
+    vf_et = ""
+    if isinstance(council_preflight_dict, dict) and council_preflight_dict:
+        ctx = {"council_preflight": council_preflight_dict}
+        pf = parse_preflight_from_request(ctx, "")
+        vf = pf.ve_focus if isinstance(pf.ve_focus, dict) else None
+        if vf:
+            vf_eid = str(vf.get("entity_id") or "").strip()
+            vf_et = str(vf.get("entity_type") or "").strip().lower()
+    sub_eid = str((conversation_subject or {}).get("entity_id") or "").strip() if conversation_subject else ""
+    sub_et = str((conversation_subject or {}).get("entity_type") or "").strip().lower() if conversation_subject else ""
+    if vf_eid and sub_eid and vf_eid == sub_eid and vf_et and sub_et and vf_et == sub_et:
+        parts.append(
+            "- **Stable scoped thread:** The client thread is already anchored on this same focused record. **Do not** open "
+            "with a formulaic recap of title and status from PRIMARY (e.g. “The initiative titled … is in Draft”). Prefer a "
+            "short natural acknowledgment (“Got it.” / “Makes sense.”) and move forward. PRIMARY is still authoritative — only "
+            "restate the record if the user switched items, asked what this is, or you must resolve ambiguity.\n"
+        )
     return "".join(parts)
 
 
@@ -2346,7 +2365,9 @@ def conversational_partner_trunk_instructions(
     subj_block = _conversation_subject_block(conversation_subject)
     scope_block = _query_scope_instruction_block(query_scope)
     scoped_block = _scoped_digression_depth_block() if scoped_digression else ""
-    grounding_block = _entity_grounding_scope_continuity_block(packet, council_preflight_dict)
+    grounding_block = _entity_grounding_scope_continuity_block(
+        packet, council_preflight_dict, conversation_subject=conversation_subject
+    )
     lane_a_guard_block = _lane_a_direct_action_guard_block(council_preflight_dict)
     ve_gap_block = _ve_gap_elicitation_block(council_preflight_dict, question_kind=question_kind)
     trunk_header = (

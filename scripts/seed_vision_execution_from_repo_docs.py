@@ -24,7 +24,8 @@ if str(_REPO_ROOT) not in sys.path:
 
 from local_ai.vision_execution import storage, models as M
 
-LC = "planning:low-confidence"  # user asked: default uncertain items toward "idea"
+# Tag for ideas that still need an architecture or product decision (not dev-ready).
+LC = "architecture-open"
 
 
 def _clear_execution_graph(owner_id: str) -> None:
@@ -62,10 +63,17 @@ def _dedupe_core_profiles(owner_id: str) -> dict:
     if not profiles:
         return storage.create_core_profile(
             M.CoreProfileCreate(
-                name="Atria build (from repo docs)",
-                core_definition="Execution graph seeded from docs/ planning notes; adjust in VE UI.",
-                current_goals="Close documented wiring gaps; align council and intake operational truth.",
-                raw_notes="Seeded by scripts/seed_vision_execution_from_repo_docs.py",
+                name="Atria — local build",
+                core_definition=(
+                    "Atria is a local-first assistant: email intake, a council of advisor perspectives, "
+                    "and Vision & Execution so plans stay tied to real work (people, assets, tasks)."
+                ),
+                current_goals=(
+                    "Finish the honest operational chain: email poll → mirror state → what Vision & Execution "
+                    "and the council see. Tighten council briefs (order of context, seats/roles, written "
+                    "truth rules). Make assets and capacity legible in the UI."
+                ),
+                raw_notes="Seeded by scripts/seed_vision_execution_from_repo_docs.py (re-run to refresh sample rows).",
             ),
             owner_id,
         )
@@ -83,6 +91,7 @@ def _idea(
     summary: str,
     description: str,
     *,
+    desired_outcome: str = "",
     status: str = "Captured",
     tags: list[str] | None = None,
     low_confidence: bool = False,
@@ -97,7 +106,7 @@ def _idea(
         status=status,
         tags=t,
         created_by="",
-        desired_outcome="",
+        desired_outcome=desired_outcome,
     )
 
 
@@ -114,82 +123,163 @@ def main() -> None:
     profile = _dedupe_core_profiles(owner_id)
     print("Kept core profile:", profile.get("id"), profile.get("name"))
 
-    # --- Ideas (doc-sourced; uncertain → status Captured + low_confidence tag) ---
+    # --- Ideas (doc-sourced; architecture-open tag = needs a product/architecture decision) ---
     ideas_spec = [
         _idea(
-            "Truth convergence: charter + server-owned council perspectives",
-            "Idea Lab stack removed; council seat definitions persist in user_council_workspace when signed in.",
-            "Source: docs/01_TRUTH/TRUTH_CONVERGENCE.md; GET/PUT /vision-execution/council-workspace/perspectives.",
+            "Council seats should live on the server when you are signed in",
+            (
+                "Older flows kept advisor seats only in the browser. Today, signed-in users can load and save "
+                "council workspace data on the server so the same seats come back after refresh or on another device."
+            ),
+            (
+                "Status: largely in place — API and storage exist; the app should prefer server data over "
+                "browser-only copies. Detail: docs/01_TRUTH/TRUTH_CONVERGENCE.md."
+            ),
+            desired_outcome="You always see the same advisor lineup for your account, backed by the server.",
             status="Contextualized",
         ),
         _idea(
-            "Intake poll should update mirror sync state",
-            "mirror_sync APIs exist; poll does not call set_sync_state / mailbox_action.",
-            "Source: docs/01_TRUTH/ACTIVE_VS_PLANNED.md (Intake mirror sync state). docs/OPEN_QUESTIONS.md §2, §4.",
+            "After a successful email poll, the inbox mirror should record that sync honestly",
+            (
+                "When the app finishes polling email, downstream screens should see up-to-date sync metadata "
+                "(last run, cursor position) instead of looking stale."
+            ),
+            (
+                "Status: started on the API side; the poll success path does not yet write that state everywhere "
+                "we document. Detail: docs/01_TRUTH/ACTIVE_VS_PLANNED.md, docs/OPEN_QUESTIONS.md."
+            ),
+            desired_outcome="Anyone reading Vision & Execution or diagnostics trusts that “last synced” matches reality.",
             status="Contextualized",
         ),
         _idea(
-            "Tier B/C queue content via policy layer",
-            "get_item_with_content is implemented; no route or UI consumes it yet.",
-            "Source: docs/01_TRUTH/ACTIVE_VS_PLANNED.md (Tier B/C). docs/OPEN_QUESTIONS.md §3.",
+            "Load deferred or sensitive inbox content only through a deliberate permission step",
+            (
+                "Some messages stay queued until a policy check says it is safe to fetch full body text. "
+                "The low-level helper to fetch with policy exists; a user-facing flow still needs design."
+            ),
+            (
+                "Status: backend building block exists; no dedicated route or UI yet. "
+                "Detail: docs/01_TRUTH/ACTIVE_VS_PLANNED.md, docs/OPEN_QUESTIONS.md."
+            ),
+            desired_outcome="Tiered inbox handling stays safe and explainable, not a hidden bypass.",
             status="Clarifying",
         ),
         _idea(
-            "Council packet: task (context + question) before operator priorities",
-            "Reorder blocks in build_council_decision_packet per cleanup proposal.",
-            "Source: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md Step 1. Code: local_ai/atria_tools.build_council_decision_packet.",
+            "Council brief: put the human question before the operator’s priority list",
+            (
+                "The packet the council sees should lead with the task framing (context + question), "
+                "then tool summaries and priorities — so advice stays grounded in what you actually asked."
+            ),
+            (
+                "Status: planned change in the council packet builder. "
+                "Detail: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md (step 1)."
+            ),
+            desired_outcome="Council answers read like responses to your question, not a generic status dump.",
             status="Contextualized",
         ),
         _idea(
-            "Mandate UI aligned with seat taxonomy (incl. Risk)",
-            "Rename mandate labels; add Risk mandate; optional Skeptic pairing.",
-            "Source: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md Step 2. Files: frontend mandates.ts, perspectives, App.tsx.",
+            "Advisor role names in the UI should match the real seat model (including risk)",
+            (
+                "Labels like “Strategist” or “Skeptic” should match the documented seat taxonomy, "
+                "and risk should appear as a first-class seat where we say it should."
+            ),
+            (
+                "Status: planned UI and config pass. "
+                "Detail: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md (step 2)."
+            ),
+            desired_outcome="What you see in the product matches the architecture docs without mental translation.",
             status="Contextualized",
         ),
         _idea(
-            "Document truth-source order for council",
-            "Single documented contract for block order / weighting.",
-            "Source: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md Step 3; docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md.",
+            "Write down the agreed order of truth for the council",
+            (
+                "We should have a short, explicit description of which sources the council considers first "
+                "and how packet sections relate — so future changes do not silently drift behavior."
+            ),
+            (
+                "Status: documentation pass (and optional inline references in code comments). "
+                "Detail: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md (step 3), "
+                "docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md."
+            ),
+            desired_outcome="New contributors can answer “what does the council read first?” from docs alone.",
             status="Contextualized",
         ),
         _idea(
-            "Adopt shared policy layer outside intake mirror",
-            "Architecture calls for policy on Tier B/C paths; only mirror uses it today.",
-            "Source: docs/01_TRUTH/ACTIVE_VS_PLANNED.md (Policy adoption). docs/ATRIA_ARCHITECTURE.md (intent).",
+            "One permission style for intake, council, and future modules",
+            (
+                "Today the mirror path uses a structured policy layer; other modules may still reach for data "
+                "directly. Long term, similar checks should apply anywhere we touch deferred or sensitive content."
+            ),
+            (
+                "Status: concept and partial use — needs a deliberate decision on rollout. "
+                "Detail: docs/01_TRUTH/ACTIVE_VS_PLANNED.md, docs/ATRIA_ARCHITECTURE.md."
+            ),
+            desired_outcome="No feature accidentally skips the same safety bar we use elsewhere.",
             status="Captured",
             low_confidence=True,
         ),
         _idea(
-            "Asset / material-node clarity in Vision Execution UI",
-            "Linked vs required-by; human-readable titles; reverse usage from VE data.",
-            "Source: docs/MATERIAL_ENTITY_NODE_DIRECTION.md §NOW (priorities 1–3).",
+            "Assets in Vision & Execution should read like real-world tools, not database rows",
+            (
+                "People should see whether an asset is merely related to work or actually required to proceed, "
+                "with readable titles and a clear “who uses this?” picture."
+            ),
+            (
+                "Status: documented direction; UI still catching up. Detail: docs/MATERIAL_ENTITY_NODE_DIRECTION.md."
+            ),
+            desired_outcome="You open an asset and immediately understand how it connects to active initiatives and projects.",
             status="Contextualized",
         ),
         _idea(
-            "Unify LLM access: adapters vs get_default_provider",
-            "OPEN_QUESTIONS: registry vs direct provider as long-term contract.",
-            "Source: docs/01_TRUTH/ACTIVE_VS_PLANNED.md; docs/OPEN_QUESTIONS.md §6.",
+            "Pick one long-term pattern for calling language models",
+            (
+                "Some code paths use a shared adapter or registry; others call a default provider directly. "
+                "We still need to decide the single supported pattern for new work."
+            ),
+            (
+                "Status: open design choice. Detail: docs/01_TRUTH/ACTIVE_VS_PLANNED.md, docs/OPEN_QUESTIONS.md."
+            ),
+            desired_outcome="Every new LLM feature plugs into one obvious, testable entry point.",
             status="Captured",
             low_confidence=True,
         ),
         _idea(
-            "Configurable paths for intake mirror and Vision Execution DB",
-            "Paths are fixed to repo layout today.",
-            "Source: docs/OPEN_QUESTIONS.md §8.",
+            "Configurable locations for inbox mirror data and the Vision & Execution database",
+            (
+                "Installs should not assume a fixed folder layout on disk; operators may want explicit paths "
+                "for backup, portability, or multiple environments."
+            ),
+            (
+                "Status: open product/config question. Detail: docs/OPEN_QUESTIONS.md."
+            ),
+            desired_outcome="A normal install can point storage at sensible paths without editing code.",
             status="Captured",
             low_confidence=True,
         ),
         _idea(
-            "Server-side persistence for council perspectives",
-            "Perspectives today live in browser localStorage only.",
-            "Source: docs/OPEN_QUESTIONS.md §2.",
+            "If any council seat data still lives only in the browser, plan its retirement",
+            (
+                "This idea is the safety net for stragglers: anything not yet on the server should be listed "
+                "and migrated so “signed in” always means “server is canonical.”"
+            ),
+            (
+                "Status: mostly superseded by server workspace work; keep until we confirm no local-only paths remain. "
+                "Detail: docs/OPEN_QUESTIONS.md."
+            ),
+            desired_outcome="Zero silent divergence between browser cache and server records.",
             status="Captured",
             low_confidence=True,
         ),
         _idea(
-            "Judgment persistence beyond intake domain",
-            "Judgment protocol is intake-mirror-only; VE/council unclear.",
-            "Source: docs/OPEN_QUESTIONS.md §1.",
+            "Carry structured judgment beyond the email mirror",
+            (
+                "Judgment flows today focus on intake. We have not fully specified how the same rigor applies "
+                "to Vision & Execution entities or council-facing summaries."
+            ),
+            (
+                "Status: conceptual / unclear wiring. Detail: docs/OPEN_QUESTIONS.md."
+            ),
+            desired_outcome="Important decisions leave the same kind of audit trail everywhere, not only in intake.",
             status="Captured",
             low_confidence=True,
         ),
@@ -214,33 +304,46 @@ def main() -> None:
                 status=status,
                 owner_id=None,
                 next_step_ai="",
-                notes="Derived from docs/; see linked idea sources.",
+                notes="Seeded from in-repo planning docs; edit freely in Vision & Execution.",
             ),
             owner_id,
         )
         return row["id"]
 
     in1 = ini(
-        "Intake sync, Tier B/C deferral, and policy completeness",
-        "Wire poll→sync state when product needs it; Tier B/C remain internal until contract expands (TRUTH_CONVERGENCE).",
+        "Email intake: honest sync state, deferred content, and shared rules",
+        (
+            "Make polling email update the mirror’s sync story, decide how deferred message bodies surface, "
+            "and keep permission checks consistent with the rest of the product. Pulls together the email sync, "
+            "deferred content, and shared-rules themes from the idea list."
+        ),
         status="Approved",
-        source_key="i1",
+        source_key="i2",
     )
     in2 = ini(
-        "Council sharpness and truth-source contract",
-        "Packet reorder, mandate/seat UI alignment, document truth-source order.",
+        "Council experience: brief order, seat names, and written truth rules",
+        (
+            "Tighten what the council sees first, align on-screen advisor roles with the documented model "
+            "(including risk), and capture the agreed reading order in docs."
+        ),
         status="Active",
         source_key="i4",
     )
     in3 = ini(
-        "Policy and provider boundaries (pilot)",
-        "Align cross-module policy adoption and clarify adapter vs provider LLM entry (pilot only).",
+        "Architecture pilots: permissions everywhere and one LLM entry style",
+        (
+            "Exploratory initiative: roll policy-style access beyond the mirror where it makes sense, "
+            "and converge on a single pattern for language-model calls. Expect decisions before large builds."
+        ),
         status="Draft",
         source_key="i7",
     )
     in4 = ini(
-        "Material / asset execution presentation",
-        "Ship MATERIAL_ENTITY_NODE_DIRECTION §NOW priorities without schema rewrites.",
+        "Execution reality for assets and materials",
+        (
+            "Vision & Execution should show how assets relate to work (linked vs required), human-readable names, "
+            "and reverse lookups from initiatives and projects — without a database migration."
+        ),
         status="Active",
         source_key="i8",
     )
@@ -248,107 +351,142 @@ def main() -> None:
     projects_raw: list[M.ProjectCreate] = [
         M.ProjectCreate(
             initiative_id=in1,
-            title="Council workspace persistence verification",
-            brief="Exercise GET/PUT /vision-execution/council-workspace/perspectives; confirm App.tsx migration from localStorage.",
+            title="Verify council workspace saves on the server",
+            brief=(
+                "Sign in, open council seat settings, and confirm reads/writes hit the Vision & Execution API "
+                "so the same advisors appear after refresh or on another session — not only in browser storage."
+            ),
             status="Active",
             owner_id=None,
             priority="High",
-            deliverables="Signed-in users see consistent seats across sessions.",
-            current_focus="api/routes/vision_execution.py + App.tsx",
-            notes="docs/01_TRUTH/TRUTH_CONVERGENCE.md",
+            deliverables="Short test note: login → load seats → edit → confirm saved row for the account.",
+            current_focus="Vision & Execution API route and main app shell",
+            notes="Background: docs/01_TRUTH/TRUTH_CONVERGENCE.md",
         ),
         M.ProjectCreate(
             initiative_id=in1,
-            title="Wire email poll → mirror sync state",
-            brief="Call set_sync_state after successful poll; consider record_mailbox_action.",
+            title="When email polling succeeds, persist mirror sync metadata",
+            brief=(
+                "Find the code path that finishes a successful inbox poll and write durable sync state "
+                "(timestamps, cursor) so dashboards and diagnostics do not lie about freshness."
+            ),
             status="Active",
             owner_id=None,
             priority="High",
-            deliverables="Sync state reflects last poll; cursor semantics documented.",
-            current_focus="intake poll handler",
-            notes="docs/OPEN_QUESTIONS.md §2, §4",
+            deliverables="After a poll, stored state matches what the user just saw complete successfully.",
+            current_focus="Email intake polling flow",
+            notes="Background: docs/OPEN_QUESTIONS.md, docs/01_TRUTH/ACTIVE_VS_PLANNED.md",
         ),
         M.ProjectCreate(
             initiative_id=in1,
-            title="Minimal Tier B/C read API",
-            brief="Expose get_item_with_content via authenticated route with policy justification.",
+            title="Expose a minimal API for deferred message bodies (policy-checked)",
+            brief=(
+                "The low-level helper to fetch content with policy already exists. Add a small authenticated "
+                "HTTP surface and document who may call it — enough for one pilot consumer later."
+            ),
             status="Draft",
             owner_id=None,
             priority="Medium",
-            deliverables="One route + access level contract.",
-            current_focus="api/routes intake",
-            notes="docs/01_TRUTH/ACTIVE_VS_PLANNED.md Tier B/C",
+            deliverables="One route plus plain-language notes on access levels and failure modes.",
+            current_focus="API layer for intake",
+            notes="Background: docs/01_TRUTH/ACTIVE_VS_PLANNED.md",
         ),
         M.ProjectCreate(
             initiative_id=in2,
-            title="Reorder council decision packet",
-            brief="Context → Question → recent tool summary → operator priorities → constraints.",
+            title="Reorder the council decision brief for clarity",
+            brief=(
+                "Adjust the automatic council packet so it presents context and your question before tool chatter "
+                "and priority lists, matching the cleanup proposal."
+            ),
             status="Draft",
             owner_id=None,
             priority="High",
-            deliverables="build_council_decision_packet updated + comment.",
-            current_focus="local_ai/atria_tools.py",
-            notes="NEXT_CLEANUP_STEPS Step 1",
+            deliverables="Updated packet builder plus a one-line comment pointing to the doc.",
+            current_focus="Council packet assembly in the local AI tools layer",
+            notes="Background: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md step 1",
         ),
         M.ProjectCreate(
             initiative_id=in2,
-            title="Mandate display + Risk mandate",
-            brief="frontend/src/mandates.ts: names; add risk id; optional Skeptic.",
+            title="Align mandate labels and add an explicit risk seat",
+            brief=(
+                "Rename on-screen advisor roles to match the documented seat list and ensure risk appears "
+                "where the architecture expects it."
+            ),
             status="Draft",
             owner_id=None,
             priority="High",
-            deliverables="UI matches canonical seat labels.",
-            notes="NEXT_CLEANUP_STEPS Step 2",
+            deliverables="UI strings and config IDs line up with the canonical seat taxonomy.",
+            current_focus="Frontend mandates and perspectives",
+            notes="Background: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md step 2",
         ),
         M.ProjectCreate(
             initiative_id=in2,
-            title="Truth-source documentation pass",
-            brief="ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE + optional order tuple in atria_tools.",
+            title="Document the intended council truth order",
+            brief=(
+                "Add a concise subsection to the prompt/truth architecture doc describing which sections matter most. "
+                "Optionally mirror that order in a non-behavioral code comment."
+            ),
             status="Draft",
             owner_id=None,
             priority="Medium",
-            deliverables="Doc subsection + inline comment.",
-            notes="NEXT_CLEANUP_STEPS Step 3",
+            deliverables="Doc subsection reviewers can quote; optional inline pointer in packet code.",
+            current_focus="Architecture docs and council tooling",
+            notes="Background: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md step 3",
         ),
         M.ProjectCreate(
             initiative_id=in3,
-            title="Policy adoption pilot (council + intake body)",
-            brief="When council touches queue body, route through request_access / get_item_with_content.",
+            title="Pilot shared permission checks outside the mirror",
+            brief=(
+                "Pick one additional place (for example council reading a queued body) and route it through "
+                "the same style of access request used for deferred intake content — or document a deliberate deferral."
+            ),
             status="Draft",
             owner_id=None,
             priority="Low",
-            deliverables="Decision doc or one pilot call site.",
-            notes="OPEN_QUESTIONS §5; architecture intent",
+            deliverables="Decision memo plus either one integrated call site or an explicit “not yet” note with rationale.",
+            current_focus="Cross-cutting policy design",
+            notes="Background: docs/OPEN_QUESTIONS.md, architecture intent in docs/ATRIA_ARCHITECTURE.md",
         ),
         M.ProjectCreate(
             initiative_id=in3,
-            title="LLM call-site inventory (adapter vs provider)",
-            brief="List atria_tools/council call sites vs adapter registry.",
+            title="Inventory where language models are invoked",
+            brief=(
+                "List call sites that go through adapters versus direct provider helpers so we can converge on one pattern."
+            ),
             status="Draft",
             owner_id=None,
             priority="Low",
-            deliverables="Short inventory in docs or ticket.",
-            notes="ACTIVE_VS_PLANNED adapters",
+            deliverables="Short table or bullet list checked into docs or a ticket.",
+            current_focus="Local AI and council code paths",
+            notes="Background: docs/01_TRUTH/ACTIVE_VS_PLANNED.md",
         ),
         M.ProjectCreate(
             initiative_id=in4,
-            title="Asset UI: linked vs required-by",
-            brief="Summary strip; human-readable titles; states per MATERIAL doc.",
+            title="Clarify asset panels: related work versus hard requirements",
+            brief=(
+                "In Vision & Execution, separate “linked for context” from “required before we ship” and prefer "
+                "human titles over raw identifiers when data is available."
+            ),
             status="Draft",
             owner_id=None,
             priority="High",
-            deliverables="Clear sections in Assets/VE UI.",
-            notes="MATERIAL_ENTITY_NODE_DIRECTION §NOW item 1",
+            deliverables="Asset detail views read clearly to a non-engineer.",
+            current_focus="Vision & Execution asset UI",
+            notes="Background: docs/MATERIAL_ENTITY_NODE_DIRECTION.md",
         ),
         M.ProjectCreate(
             initiative_id=in4,
-            title="Reverse usage from loaded VE data",
-            brief="Deterministic scan required_assets / required_asset_ids across initiatives/projects/tasks.",
+            title="Show where each asset is required across the execution graph",
+            brief=(
+                "Scan initiatives, projects, and tasks for required-asset fields and surface a deterministic summary "
+                "such as “required by these three active projects.”"
+            ),
             status="Draft",
             owner_id=None,
             priority="Medium",
-            deliverables="Derived summaries in UI.",
-            notes="MATERIAL_ENTITY_NODE_DIRECTION §NOW item 2",
+            deliverables="Reverse lookup summaries visible in the UI without new database tables.",
+            current_focus="Vision & Execution data already loaded in the client",
+            notes="Background: docs/MATERIAL_ENTITY_NODE_DIRECTION.md",
         ),
     ]
 
@@ -359,27 +497,132 @@ def main() -> None:
 
     # Tasks (project index matches projects_raw order)
     task_specs: list[tuple[int, str, str, str]] = [
-        (0, "Call GET /vision-execution/council-workspace/perspectives", "After login; expect row_exists or migration.", "Todo"),
-        (0, "Edit a perspective; confirm PUT debounces", "Network tab; SQLite user_council_workspace.", "Todo"),
-        (1, "Locate intake poll success path", "File + function that completes poll.", "Todo"),
-        (1, "Invoke set_sync_state after successful poll", "Persist last_poll_at / cursor per OPEN_QUESTIONS.", "Todo"),
-        (1, "Document cursor semantics for mirror_sync", "Short note in docs or code comment.", "Todo"),
-        (2, "Design Tier B route contract", "Access level + justification + errors.", "Todo"),
-        (2, "Implement GET (or POST) using get_item_with_content", "Auth-scoped; no raw bypass.", "Todo"),
-        (3, "Edit build_council_decision_packet order", "Per NEXT_CLEANUP Step 1 only.", "Todo"),
-        (3, "Add one-line packet order comment", "Reference doc.", "Todo"),
-        (4, "Update BUILT_IN_MANDATES display names", "strategist→Strategy, etc.", "Todo"),
-        (4, "Add Risk mandate entry", "id risk; backend accepts string ids.", "Todo"),
-        (5, "Add 'Intended truth-source order' subsection", "ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md", "Todo"),
-        (5, "Optional: order tuple comment in atria_tools", "Non-behavioral.", "Todo"),
-        (6, "Record policy decision for council+intake", "Approved approach or defer.", "Todo"),
-        (6, "If approved: one pilot call site", "Smallest integration.", "Todo"),
-        (7, "Grep LLM call sites", "providers vs adapters.", "Todo"),
-        (7, "Write inventory summary", "docs or ADR snippet.", "Todo"),
-        (8, "Asset list/detail: separate linked vs required", "Match MATERIAL §NOW.", "Todo"),
-        (8, "Replace raw id display where titles exist", "Use loaded VE entities.", "Todo"),
-        (9, "Implement reverse required-asset scan", "Initiatives/projects/tasks JSON fields.", "Todo"),
-        (9, "Surface summary strings in UI", "Unused / linked / required-by active work.", "Todo"),
+        (
+            0,
+            "Load council workspace after sign-in",
+            "Use the signed-in session to fetch saved advisor seats and confirm you get a real response (new row or migration path), not an empty error.",
+            "Todo",
+        ),
+        (
+            0,
+            "Edit a seat and confirm it saves without spamming the server",
+            "Change a label or selection, wait for debounced save, and verify the database row updates once.",
+            "Todo",
+        ),
+        (
+            1,
+            "Find where a successful email poll finishes",
+            "Trace the code from “poll succeeded” to the last function called so we know where to attach sync bookkeeping.",
+            "Todo",
+        ),
+        (
+            1,
+            "Persist sync metadata right after a successful poll",
+            "Write last-run time and cursor information to the same store the mirror reads so status screens stay accurate.",
+            "Todo",
+        ),
+        (
+            1,
+            "Write a short note on cursor semantics",
+            "Explain in docs or a comment what the cursor means so future changes do not break inbox ordering silently.",
+            "Todo",
+        ),
+        (
+            2,
+            "Draft the deferred-content API contract",
+            "Describe who may call it, what justification or access level is required, and what errors look like.",
+            "Todo",
+        ),
+        (
+            2,
+            "Implement the route using the existing policy-aware fetch helper",
+            "Wire authentication and ensure no code path bypasses the helper’s checks.",
+            "Todo",
+        ),
+        (
+            3,
+            "Reorder council packet sections only as agreed",
+            "Implement the step-one reorder from the cleanup proposal without adding new sections yet.",
+            "Todo",
+        ),
+        (
+            3,
+            "Add a single-line comment pointing to the packet-order doc",
+            "Future readers should see which document owns the ordering decision.",
+            "Todo",
+        ),
+        (
+            4,
+            "Refresh built-in mandate display names",
+            "Replace shorthand labels with the human-facing role names from the architecture doc.",
+            "Todo",
+        ),
+        (
+            4,
+            "Introduce a risk mandate entry end-to-end",
+            "Ensure the identifier is accepted by the backend and visible wherever other mandates appear.",
+            "Todo",
+        ),
+        (
+            5,
+            "Add an “intended truth order” subsection to the architecture doc",
+            "Plain-language description of what the council should weigh first.",
+            "Todo",
+        ),
+        (
+            5,
+            "Optionally echo that order in a code comment",
+            "Non-functional comment only — behavior change belongs in the packet task.",
+            "Todo",
+        ),
+        (
+            6,
+            "Decide whether to extend policy checks beyond the mirror now",
+            "Capture approve/defer with reasoning so the team does not re-litigate silently.",
+            "Todo",
+        ),
+        (
+            6,
+            "If approved, integrate the smallest additional call site",
+            "Pick one real workflow (for example council reading a deferred body) and route it through the shared access path.",
+            "Todo",
+        ),
+        (
+            7,
+            "Search the codebase for direct model calls versus adapter calls",
+            "Produce a simple categorized list.",
+            "Todo",
+        ),
+        (
+            7,
+            "Publish the inventory where others can comment",
+            "Drop it into docs or a tracking ticket with space for follow-ups.",
+            "Todo",
+        ),
+        (
+            8,
+            "Split “linked” and “required by” presentation for assets",
+            "Match the material-entity direction doc for layout and emphasis.",
+            "Todo",
+        ),
+        (
+            8,
+            "Prefer titles over raw IDs wherever entity data is already loaded",
+            "Reuse names from ideas, initiatives, and projects already in memory.",
+            "Todo",
+        ),
+        (
+            9,
+            "Compute reverse required-asset relationships deterministically",
+            "Walk initiatives, projects, and tasks for required asset fields without hand-maintained lists.",
+            "Todo",
+        ),
+        (
+            9,
+            "Render human-readable summaries in the asset UI",
+            "Examples: unused, linked for context, required by active delivery work.",
+            "Todo",
+        ),
     ]
 
     for pi, title, desc, st in task_specs:
@@ -391,13 +634,13 @@ def main() -> None:
                 description=desc,
                 status=st,
                 priority="Medium" if st == "Todo" else "Medium",
-                notes="From repo docs seed; adjust in VE.",
+                notes="From doc-based seed script; safe to edit or close in Vision & Execution.",
             ),
             owner_id,
         )
 
     print(f"Created {len(created_ideas)} ideas, 4 initiatives, {len(proj_ids)} projects, {len(task_specs)} tasks.")
-    print("Ideas tagged", LC, "are planning-low-confidence (architectural/open questions).")
+    print("Ideas tagged", LC, "still need an explicit architecture or product decision before major build-out.")
     print("Done.")
 
 

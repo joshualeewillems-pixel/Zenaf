@@ -26,7 +26,13 @@ const REGISTRY: Record<string, FieldCapabilityEntry> = {
     field_key: 'brief',
     field_label: 'Brief',
     field_kind: 'long_form_strategy',
-    allowed_actions: ['rewrite', 'distill', 'expand_to_steps', 'surface_tensions', 'summarize_for_council'],
+    allowed_actions: [
+      'rewrite',
+      'distill',
+      'expand_to_steps',
+      'surface_tensions',
+      'summarize_for_council',
+    ],
   },
   [key('initiative', 'recommendation')]: {
     entity_type: 'initiative',
@@ -47,7 +53,13 @@ const REGISTRY: Record<string, FieldCapabilityEntry> = {
     field_key: 'philosophical_alignment_ai',
     field_label: 'Strategic alignment (AI)',
     field_kind: 'evaluation_narrative',
-    allowed_actions: ['rewrite', 'distill', 'surface_tensions', 'compare_with_evaluation', 'summarize_for_council'],
+    allowed_actions: [
+      'rewrite',
+      'distill',
+      'surface_tensions',
+      'compare_with_evaluation',
+      'summarize_for_council',
+    ],
   },
   [key('initiative', 'dependencies')]: {
     entity_type: 'initiative',
@@ -61,7 +73,13 @@ const REGISTRY: Record<string, FieldCapabilityEntry> = {
     field_key: 'description',
     field_label: 'Expanded description',
     field_kind: 'idea_body',
-    allowed_actions: ['rewrite', 'distill', 'expand_to_steps', 'surface_tensions'],
+    allowed_actions: [
+      'rewrite',
+      'distill',
+      'expand_to_steps',
+      'surface_tensions',
+      'summarize_for_council',
+    ],
   },
   [key('idea', 'title')]: {
     entity_type: 'idea',
@@ -89,7 +107,13 @@ const REGISTRY: Record<string, FieldCapabilityEntry> = {
     field_key: 'brief',
     field_label: 'Brief',
     field_kind: 'long_form_strategy',
-    allowed_actions: ['rewrite', 'distill', 'expand_to_steps', 'surface_tensions', 'summarize_for_council'],
+    allowed_actions: [
+      'rewrite',
+      'distill',
+      'expand_to_steps',
+      'surface_tensions',
+      'summarize_for_council',
+    ],
   },
   [key('task', 'title')]: {
     entity_type: 'task',
@@ -103,7 +127,13 @@ const REGISTRY: Record<string, FieldCapabilityEntry> = {
     field_key: 'description',
     field_label: 'Description',
     field_kind: 'idea_body',
-    allowed_actions: ['rewrite'],
+    allowed_actions: [
+      'rewrite',
+      'distill',
+      'expand_to_steps',
+      'surface_tensions',
+      'summarize_for_council',
+    ],
   },
 }
 

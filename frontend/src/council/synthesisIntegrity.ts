@@ -81,6 +81,21 @@ export type IntegrationCommitPayload = {
   verified_match?: boolean
 }
 
+/** Two-step Lane A elicitation: echoed as `context.pending_ve_elicitation` until cleared. */
+export type PendingVeElicitationPayload = {
+  version: number
+  phase: 'awaiting_value' | 'awaiting_confirm'
+  elicitation_kind: 'person_assign' | 'text_set' | 'collection_add'
+  entity_type: string
+  entity_id: string
+  field_key: string
+  /** Canonical surface (`text_set` or initiative `collection_add`); mirrored in `field_key` after normalize. */
+  surface_key?: string
+  proposed_person_name?: string
+  proposed_value?: string
+  proposed_items?: string[]
+}
+
 /** Lane A: server-side direct VE mutation result on stream `done` (council LLM skipped). */
 export type DirectVeActionPayload = {
   kind?: string
@@ -88,6 +103,7 @@ export type DirectVeActionPayload = {
   message?: string
   refresh_hint?: string | null
   created_entities?: Array<{ entity_type?: string; entity_id?: string; title?: string }>
+  pending_ve_elicitation?: PendingVeElicitationPayload | null
 }
 
 export type CouncilStreamSsePayload = {
@@ -102,6 +118,8 @@ export type CouncilStreamSsePayload = {
   conversation_subject?: ConversationSubject | null
   /** Proposed precision not yet written; echo on next POST until user affirms or server omits it. */
   pending_integration?: PendingIntegrationPayload | null
+  /** Lane A elicitation bridge — echo until confirm or clear. */
+  pending_ve_elicitation?: PendingVeElicitationPayload | null
   /** Last successful integration commit facts for location Q&A. */
   last_integration_commit?: LastIntegrationCommitPayload | null
   /** Present on `done` when this turn performed a VE write (Thinking Partner stream). */

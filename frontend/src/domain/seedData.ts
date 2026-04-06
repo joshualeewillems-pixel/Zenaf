@@ -1,6 +1,6 @@
 /**
  * Shared **demo** seed: initiatives, projects, tasks, assets, inventory.
- * Fictional multi-vertical scenario for local UI / Radar Home — not a default real organization.
+ * Fictional multi-vertical scenario for local UI — not a default real organization.
  * Shape matches Vision Execution API so existing VE views can display them.
  */
 

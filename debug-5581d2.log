@@ -12443,3 +12443,58 @@ ge.googleapis.com', port=443): Failed to resolve 'generativelanguage.googleapis.
 {"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775433698709}
 {"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5299, "using_perspectives": true}, "timestamp": 1775433698730}
 {"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5299, "using_perspectives": true}, "timestamp": 1775433709202}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775434428586}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5307, "using_perspectives": true}, "timestamp": 1775434428688}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5307, "using_perspectives": true}, "timestamp": 1775434432790}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775434468811}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5308, "using_perspectives": true}, "timestamp": 1775434468834}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5308, "using_perspectives": true}, "timestamp": 1775434470921}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775434486065}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5299, "using_perspectives": true}, "timestamp": 1775434486092}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5299, "using_perspectives": true}, "timestamp": 1775434490713}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775434956608}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5579, "using_perspectives": true}, "timestamp": 1775434956693}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5579, "using_perspectives": true}, "timestamp": 1775434961199}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435002022}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435013550}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435038246}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5308, "using_perspectives": true}, "timestamp": 1775435038269}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5308, "using_perspectives": true}, "timestamp": 1775435040956}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435179900}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5493, "using_perspectives": true}, "timestamp": 1775435179927}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5493, "using_perspectives": true}, "timestamp": 1775435183096}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435208194}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5302, "using_perspectives": true}, "timestamp": 1775435208217}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5302, "using_perspectives": true}, "timestamp": 1775435211852}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435235735}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5299, "using_perspectives": true}, "timestamp": 1775435235758}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5299, "using_perspectives": true}, "timestamp": 1775435238312}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435572974}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5579, "using_perspectives": true}, "timestamp": 1775435573060}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5579, "using_perspectives": true}, "timestamp": 1775435580118}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435623874}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435635188}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435658536}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5306, "using_perspectives": true}, "timestamp": 1775435658564}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5306, "using_perspectives": true}, "timestamp": 1775435662306}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435727299}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5326, "using_perspectives": true}, "timestamp": 1775435727324}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5326, "using_perspectives": true}, "timestamp": 1775435730487}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435789641}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5351, "using_perspectives": true}, "timestamp": 1775435789670}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5351, "using_perspectives": true}, "timestamp": 1775435792758}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435903698}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5389, "using_perspectives": true}, "timestamp": 1775435903722}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5389, "using_perspectives": true}, "timestamp": 1775435909584}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435943065}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5322, "using_perspectives": true}, "timestamp": 1775435943096}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5322, "using_perspectives": true}, "timestamp": 1775435951864}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775435978530}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5302, "using_perspectives": true}, "timestamp": 1775435978556}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5302, "using_perspectives": true}, "timestamp": 1775435981656}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775438289221}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5326, "using_perspectives": true}, "timestamp": 1775438289328}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5326, "using_perspectives": true}, "timestamp": 1775438292432}
+{"sessionId": "5581d2", "hypothesisId": "H4", "location": "api/main.py:run_stream", "message": "POST /run/stream start", "data": {"mode": "council"}, "timestamp": 1775439556494}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5557, "using_perspectives": true}, "timestamp": 1775439556758}
+{"sessionId": "5581d2", "hypothesisId": "H1,H5", "location": "atria_tools.py:run_council", "message": "run_council start", "data": {"packet_len": 5557, "using_perspectives": true}, "timestamp": 1775439560464}

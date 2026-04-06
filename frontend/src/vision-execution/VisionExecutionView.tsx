@@ -15,6 +15,7 @@ import {
   type RadarSignalItem,
   type ExecutionStep,
 } from './types'
+import type { VeRadarBucketId } from './veRadarAwareness'
 import { canonicalCoreProfileId, coreProfileInfluencePickLabel } from './canonicalCoreProfile'
 import { TaskSoilDevAppend } from './dev/TaskSoilDevAppend'
 import type { VisionMapEntityBundle } from '../vision-map/blockersFromVe'
@@ -274,6 +275,7 @@ import { formatVeEntityPromptTitle } from '../developmentalGuidance/systemPrompt
 import { InfluencesLinksSection } from '../perspectives/InfluencesLinksSection'
 import {
   VeFocusRegion,
+  DetailPanelInviteChips,
   useVisionExecutionFocusOptional,
   useVisionExecutionGraphDataOptional,
   focusDescriptorFromVeSelection,
@@ -2044,7 +2046,7 @@ function InitiativeDetailPanel({
   const initiativeReadinessClass = readiness === 'high' ? 'text-emerald-200' : readiness === 'medium' ? 'text-amber-200' : 'text-red-200'
 
   return (
-    <div className="flex-1 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-auto flex flex-col">
+    <div className="flex-1 min-h-0 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-hidden flex flex-col">
       <div className="flex justify-between mb-3">
         <h3 className="text-sm font-medium text-slate-200">Initiative</h3>
         <button type="button" onClick={handleInitiativePanelClose} className="text-slate-400 hover:text-slate-200 text-sm">Close</button>
@@ -3509,7 +3511,7 @@ function IdeaDetailPanel({
   ]
 
   return (
-    <div className="flex-1 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-auto flex flex-col">
+    <div className="flex-1 min-h-0 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-hidden flex flex-col">
       <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
         <h3 className="text-sm font-medium text-slate-200">Idea</h3>
         <button type="button" onClick={handleIdeaPanelClose} className="text-slate-400 hover:text-slate-200 text-sm">Close</button>
@@ -3530,6 +3532,14 @@ function IdeaDetailPanel({
       </div>
       {saveError && <p className="text-red-400 text-xs mb-2">{saveError}</p>}
 
+      <DetailPanelInviteChips
+        entityType="idea"
+        entityId={ideaId}
+        titleLine={veEntityDisplayStr((form.title as string) ?? idea?.title ?? '') || 'Idea'}
+        className="mb-2 shrink-0"
+      />
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
       {stage === 'capture' && (
         <div className="space-y-3 flex-1">
           <p className="text-slate-500 text-xs">Lightweight. Jot it down; refine in Clarify.</p>
@@ -3796,6 +3806,7 @@ function IdeaDetailPanel({
           </div>
         </div>
       )}
+      </div>
 
       {confirmAction === 'shelve' && <ConfirmModal title="Shelve idea" message="Move to Parked. You can bring it back later." confirmLabel="Shelve" variant="warning" onConfirm={handleShelve} onCancel={() => setConfirmAction(null)} />}
       {confirmAction === 'reject' && <ConfirmModal title="Reject idea" message="Remove from active consideration (delete). This cannot be undone." confirmLabel="Reject" onConfirm={handleReject} onCancel={() => setConfirmAction(null)} />}
@@ -4095,7 +4106,7 @@ function ProjectDetailPanel({
   }
 
   return (
-    <div className="flex-1 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-auto flex flex-col">
+    <div className="flex-1 min-h-0 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-hidden flex flex-col">
       <div className="flex justify-between mb-3"><h3 className="text-sm font-medium text-slate-200">Project</h3><button type="button" onClick={closeProjectPanel} className="text-slate-400 hover:text-slate-200 text-sm">Close</button></div>
       <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-2.5 mb-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -4123,6 +4134,13 @@ function ProjectDetailPanel({
       </div>
       <TraceabilityMeta notesOrDescription={project.notes} />
       {saveError && <p className="text-red-400 text-xs mb-2">{saveError}</p>}
+
+      <DetailPanelInviteChips
+        entityType="project"
+        entityId={projectId}
+        titleLine={veEntityDisplayStr((form.title as string) ?? project?.title ?? '') || 'Project'}
+        className="mb-2 shrink-0"
+      />
 
       <div className="rounded-lg border border-slate-700 bg-slate-900/30 p-2.5 mb-2 shrink-0">
         <h4 className="text-xs font-medium text-slate-400 uppercase tracking-wide mb-1.5">Tasks in this project</h4>
@@ -4578,7 +4596,7 @@ function TaskDetailPanel({
   const canToggleDone = statusLower !== 'dropped'
 
   return (
-    <div className="flex-1 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-auto flex flex-col">
+    <div className="flex-1 min-h-0 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-hidden flex flex-col">
       <div className="flex justify-between mb-3"><h3 className="text-sm font-medium text-slate-200">Task</h3><button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200 text-sm">Close</button></div>
       <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-2.5 mb-2">
         <div className="flex flex-wrap items-center gap-2">
@@ -4598,7 +4616,15 @@ function TaskDetailPanel({
       </div>
       <TraceabilityMeta notesOrDescription={task.notes} />
       {saveError && <p className="text-red-400 text-xs mb-2">{saveError}</p>}
-      <div className="space-y-2 flex-1 overflow-y-auto">
+
+      <DetailPanelInviteChips
+        entityType="task"
+        entityId={taskId}
+        titleLine={veEntityDisplayStr((form.title as string) ?? task?.title ?? '') || 'Task'}
+        className="mb-2 shrink-0"
+      />
+
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         <DetailSection title="Task" defaultOpen>
           <VeFocusRegion
             entity_type="task"
@@ -4890,7 +4916,7 @@ function PersonDetailPanel({
   const statusBadgeClass = capacityStatus === 'Over capacity' ? 'bg-amber-500/20 text-amber-300 border-amber-500/50' : capacityStatus === 'Near capacity' ? 'bg-slate-500/20 text-slate-300 border-slate-500/50' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
 
   return (
-    <div className="flex-1 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-auto flex flex-col">
+    <div className="flex-1 min-h-0 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-hidden flex flex-col">
       <div className="flex justify-between mb-3"><h3 className="text-sm font-medium text-slate-200">Person</h3><button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200 text-sm">Close</button></div>
       {saveError && <p className="text-red-400 text-xs mb-2">{saveError}</p>}
 
@@ -4915,7 +4941,7 @@ function PersonDetailPanel({
         </div>
       </div>
 
-      <div className="space-y-2 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         <DetailSection title="Identity" defaultOpen={true}>
           <DetailField label="Name" value={(form.name as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, name: v }))} />
           <DetailField label="Contact info" value={(form.contact_info as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, contact_info: v }))} />
@@ -5272,7 +5298,7 @@ function AssetDetailPanel({ assetId, ideas, initiatives, projects, persons, onCl
 
   const statusOptions = ['', 'Active', 'Archived', 'Unavailable'].filter(Boolean).map((s) => ({ value: s, label: s }))
   return (
-    <div className="flex-1 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-auto flex flex-col">
+    <div className="flex-1 min-h-0 rounded-xl border border-slate-600 bg-slate-800/50 p-4 min-w-0 overflow-hidden flex flex-col">
       <div className="flex justify-between mb-3"><h3 className="text-sm font-medium text-slate-200">Asset</h3><button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-200 text-sm">Close</button></div>
       {saveError && <p className="text-red-400 text-xs mb-2">{saveError}</p>}
       <div className="rounded-lg border border-slate-700 bg-slate-900/40 p-3 mb-4">
@@ -5290,7 +5316,7 @@ function AssetDetailPanel({ assetId, ideas, initiatives, projects, persons, onCl
           {!usedInLine && !requiredByLine && !availabilityLine && !ownerName && <span>No usage or availability set</span>}
         </div>
       </div>
-      <div className="space-y-2 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
         <DetailSection title="Identity" defaultOpen={true}>
           <DetailField label="Name" value={(form.name as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, name: v }))} />
           <DetailField label="Type" value={(form.asset_type as string) ?? ''} onChange={(v) => setForm((p) => ({ ...p, asset_type: v }))} placeholder="e.g. Tool, Document" />
@@ -5434,6 +5460,8 @@ export function VisionExecutionView({
   onVeSelectionChange,
   recognitionUserId,
   councilServerWriteNonce = 0,
+  radarScrollBucketRequest = null,
+  onRadarScrollBucketConsumed,
 }: {
   initialSelection?: VESelection | null
   councilIdeaLabelsRef?: MutableRefObject<CouncilIdeaLabelsSnapshot | null>
@@ -5450,6 +5478,9 @@ export function VisionExecutionView({
   recognitionUserId?: string | null
   /** Increment when council stream reports a server-side VE write (integration or Lane A) so open detail panels refetch. */
   councilServerWriteNonce?: number
+  /** When set with Radar tab open, scroll to `ve-radar-bucket-*` once then clear. */
+  radarScrollBucketRequest?: VeRadarBucketId | null
+  onRadarScrollBucketConsumed?: () => void
 } = {}) {
   const domain = useDomain()
   const [tab, setTab] = useState<TabId>('ideas')
@@ -6145,6 +6176,17 @@ export function VisionExecutionView({
       setRadarLoading(false)
     }
   }, [])
+
+  useEffect(() => {
+    if (radarScrollBucketRequest == null) return
+    if (tab !== 'radar') return
+    if (radarLoading || !radarData) return
+    const el = document.getElementById(`ve-radar-bucket-${radarScrollBucketRequest}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+    onRadarScrollBucketConsumed?.()
+  }, [tab, radarLoading, radarData, radarScrollBucketRequest, onRadarScrollBucketConsumed])
 
   const fetchSeatRequests = useCallback(async () => {
     setMatchingLoading(true)
@@ -9649,6 +9691,60 @@ export function VisionExecutionView({
             <p className="text-slate-500 text-sm">No radar data.</p>
           ) : (
             <>
+              <div
+                id="ve-radar-bucket-act_now"
+                className="rounded-xl border border-slate-600 bg-slate-800/50 p-4 scroll-mt-4"
+              >
+                <h3 className="text-sm font-medium text-slate-200 mb-1">Attention</h3>
+                <p className="text-xs text-slate-500 mb-3">
+                  Initiatives approved or active but missing owner, next step, or linked projects
+                </p>
+                {radarData.act_now.length === 0 ? (
+                  <p className="text-slate-500 text-xs">None</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {radarData.act_now.map((item) => (
+                      <li key={`${item.type}-${item.id}`} className="text-xs text-slate-300 flex flex-wrap gap-x-2 gap-y-0.5">
+                        <span className="font-medium">
+                          {veEntityDisplayStr(item.title) || veEntityDisplayStr(item.name) || item.id}
+                        </span>
+                        <span className="text-slate-500">{veEntityDisplayStr(item.type)}</span>
+                        {veEntityDisplayStr(item.status) ? (
+                          <span className="text-slate-500">{veEntityDisplayStr(item.status)}</span>
+                        ) : null}
+                        {veEntityDisplayStr(item.reason) ? (
+                          <span className="text-amber-400/80">{veEntityDisplayStr(item.reason)}</span>
+                        ) : null}
+                        {item.weighted_score != null && <span className="text-slate-500">score {item.weighted_score}</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div
+                id="ve-radar-bucket-blocked"
+                className="rounded-xl border border-slate-600 bg-slate-800/50 p-4 scroll-mt-4"
+              >
+                <h3 className="text-sm font-medium text-slate-200 mb-1">Blocked</h3>
+                <p className="text-xs text-slate-500 mb-3">Projects or tasks marked blocked</p>
+                {radarData.blocked.length === 0 ? (
+                  <p className="text-slate-500 text-xs">None</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {radarData.blocked.map((item) => (
+                      <li key={`${item.type}-${item.id}`} className="text-xs text-slate-300 flex flex-wrap gap-x-2 gap-y-0.5">
+                        <span className="font-medium">
+                          {veEntityDisplayStr(item.title) || veEntityDisplayStr(item.name) || item.id}
+                        </span>
+                        <span className="text-slate-500">{veEntityDisplayStr(item.type)}</span>
+                        {veEntityDisplayStr(item.status) ? (
+                          <span className="text-slate-500">{veEntityDisplayStr(item.status)}</span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {([
                   { key: 'unanchored' as const, label: 'Unanchored', desc: 'Projects not linked to an initiative' },
@@ -9656,7 +9752,11 @@ export function VisionExecutionView({
                   { key: 'kill_candidates' as const, label: 'Watch / kill candidates', desc: 'Score < 45, not Complete/Killed' },
                   { key: 'overcapacity' as const, label: 'Overcapacity', desc: 'People over their weekly capacity' },
                 ]).map(({ key, label, desc }) => (
-                  <div key={key} className="rounded-xl border border-slate-600 bg-slate-800/50 p-4">
+                  <div
+                    key={key}
+                    id={`ve-radar-bucket-${key}`}
+                    className="rounded-xl border border-slate-600 bg-slate-800/50 p-4 scroll-mt-4"
+                  >
                     <h3 className="text-sm font-medium text-slate-200 mb-1">{label}</h3>
                     <p className="text-xs text-slate-500 mb-3">{desc}</p>
                     {radarData[key].length === 0 ? (
@@ -9687,7 +9787,10 @@ export function VisionExecutionView({
                 ))}
               </div>
               {(radarData.signals?.length ?? 0) > 0 && (
-                <div className="rounded-xl border border-slate-600 bg-slate-800/50 p-4">
+                <div
+                  id="ve-radar-bucket-signals"
+                  className="rounded-xl border border-slate-600 bg-slate-800/50 p-4 scroll-mt-4"
+                >
                   <h3 className="text-sm font-medium text-slate-200 mb-1">Meeting signals</h3>
                   <p className="text-xs text-slate-500 mb-3">From meeting extraction (attention, risk, opportunity, blocker). Source: meeting-extraction.</p>
                   <ul className="space-y-2">

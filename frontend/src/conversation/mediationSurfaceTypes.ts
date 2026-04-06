@@ -121,7 +121,6 @@ export function workspaceRunModeLabel(modeId: string): string {
 /** Main app shell view (Radar / workspace / map / …). */
 export function mainViewLabel(mainView: string): string {
   const v: Record<string, string> = {
-    home: 'Radar Home',
     workspace: 'Workspace',
     vision_map: 'Vision Map',
     perspectives: 'Perspectives',

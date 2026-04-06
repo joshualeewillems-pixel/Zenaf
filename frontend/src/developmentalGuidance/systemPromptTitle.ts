@@ -37,7 +37,7 @@ export function entityTypeLabelForKey(kindOrVeType: string): string {
   )
 }
 
-export type MainViewHint = 'vision_map' | 'vision_execution' | 'home' | string
+export type MainViewHint = 'vision_map' | 'vision_execution' | string
 
 /**
  * Thread guide bubbles: map selection, developmental inject, etc.

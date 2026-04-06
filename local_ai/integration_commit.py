@@ -337,7 +337,7 @@ _AFFIRM_RE = re.compile(
     r"\b("
     r"yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|please do|save it|lock it in|ship it|"
     r"confirm(ed)?|approved?|sounds good|looks good|that'?s good|this is good|good for now|"
-    r"that works|all set|we'?re good|record it|add it|go for it|correct|exactly|precisely|spot on|"
+    r"that works|all set|we'?re good|record it|add it|add those|add them|go for it|correct|exactly|precisely|spot on|"
     r"that'?s right|that is right|perfect|please add|works for me"
     r")\b"
     r"|just like that(?:\s*[!.])?"
@@ -472,6 +472,10 @@ def _storage_key_to_initiative_update(storage_key: str, value: str) -> M.Initiat
         return M.InitiativeUpdate(next_step_ai=v)
     if sk == "notes":
         return M.InitiativeUpdate(notes=v)
+    if sk == "kill_criteria":
+        return M.InitiativeUpdate(kill_criteria=v)
+    if sk == "recommendation":
+        return M.InitiativeUpdate(recommendation=v)
     if sk == "title":
         return M.InitiativeUpdate(title=v)
     return None

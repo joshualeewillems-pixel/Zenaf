@@ -14,13 +14,22 @@ function hash32(s: string): number {
 
 /**
  * Smooth elliptical outline (jittered % border-radius) + tiny rotate/scale on the stone face only.
- * Cheaper than polygon clip-path facets or per-node SVG path(); content column unchanged.
+ * Low soil coherence adds a bit more angular wobble (form less “resolved”).
  */
-export function stoneShapeMicroStyle(nodeId: string, kind: MapEntityKind): CSSProperties {
+export function stoneShapeMicroStyle(
+  nodeId: string,
+  kind: MapEntityKind,
+  soilCoherence01: number = 0.5,
+): CSSProperties {
   const h = hash32(`${kind}:${nodeId}`)
-  const rot = ((h % 17) - 8) * 0.065
-  const sx = 1 + ((h >>> 4) % 7) * 0.003 - 0.009
-  const sy = 1 + ((h >>> 8) % 7) * 0.003 - 0.009
+  const coherence = Math.max(0, Math.min(1, soilCoherence01))
+  const rough = 1 - coherence
+  const rotBase = ((h % 17) - 8) * 0.065
+  const rot = rotBase + rough * (((h >>> 12) % 9) - 4) * 0.055
+  const sx =
+    1 + ((h >>> 4) % 7) * 0.003 - 0.009 + rough * ((((h >>> 16) % 5) - 2) * 0.004)
+  const sy =
+    1 + ((h >>> 8) % 7) * 0.003 - 0.009 + rough * ((((h >>> 20) % 5) - 2) * 0.004)
   return {
     borderRadius: organicEllipticalBorderRadiusFromSeed(`${kind}:${nodeId}`),
     overflow: 'hidden',

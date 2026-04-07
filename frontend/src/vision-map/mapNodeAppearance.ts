@@ -1,4 +1,54 @@
-import type { ConditionState, GrowthState, MapEntityKind, WaterLevel } from './ontology'
+import type { ConditionState, GrowthState, MapEntityKind, MapNodePayload, WaterLevel } from './ontology'
+
+function clamp01(x: number): number {
+  return Math.max(0, Math.min(1, x))
+}
+
+/** Triad snapshot from graph build, or coarse fallback from legacy `water_level` only. */
+export function resolveMapVisualTriadScalars(data: MapNodePayload): {
+  water: number
+  soil: number
+  fruit: number
+} {
+  const t = data.map_visual_triad
+  if (t && [t.water, t.soil, t.fruit].every((n) => typeof n === 'number' && Number.isFinite(n))) {
+    return { water: clamp01(t.water), soil: clamp01(t.soil), fruit: clamp01(t.fruit) }
+  }
+  const wl = data.water_level ?? 'medium'
+  const water = wl === 'high' ? 0.82 : wl === 'medium' ? 0.5 : 0.28
+  return { water, soil: 0.45, fruit: 0.45 }
+}
+
+/** Water scalar for stone surface; stale pulls “dryer” without a heavy crack overlay. */
+export function surfaceWater01ForMap(data: MapNodePayload): number {
+  const { water } = resolveMapVisualTriadScalars(data)
+  if (data.condition === 'stale') return clamp01(water - 0.14)
+  return water
+}
+
+/** Four-step surface richness: dry / matte / normal / rich (wet stone read). */
+export function mapSurfaceWaterClass(w01: number): string {
+  if (w01 < 0.32) return 'map-surface-water-dry'
+  if (w01 < 0.48) return 'map-surface-water-matte'
+  if (w01 < 0.72) return 'map-surface-water-normal'
+  return 'map-surface-water-rich'
+}
+
+/** DevTools / QA — which surface tier is active (matches `mapSurfaceWaterClass`). */
+export function mapSurfaceWaterTier(w01: number): 'dry' | 'matte' | 'normal' | 'rich' {
+  if (w01 < 0.32) return 'dry'
+  if (w01 < 0.48) return 'matte'
+  if (w01 < 0.72) return 'normal'
+  return 'rich'
+}
+
+/** Subtle lower-body grounding from fruit / output scalar — keep quiet (not a badge). */
+export function mapFruitMassClass(f01: number): string {
+  if (f01 < 0.3) return ''
+  if (f01 < 0.5) return 'map-fruit-mass-soft'
+  if (f01 < 0.68) return 'map-fruit-mass-mid'
+  return 'map-fruit-mass-firm'
+}
 
 /** Label contrast: pale task stone uses dark type; all other kinds use light type on dark material */
 export type StoneTextTone = 'on-dark' | 'on-light'
@@ -121,7 +171,7 @@ export function entityLabelTextClass(): string {
 export function conditionShapeOverlayClass(c: ConditionState): string {
   switch (c) {
     case 'healthy':
-      return 'map-cond-overlay map-cond-overlay--healthy'
+      return 'map-cond-overlay map-cond-overlay--neutral'
     case 'blocked':
       return 'map-cond-overlay map-cond-overlay--blocked'
     case 'teacher-warned':
@@ -129,9 +179,9 @@ export function conditionShapeOverlayClass(c: ConditionState): string {
     case 'teacher-vetoed':
       return 'map-cond-overlay map-cond-overlay--veto'
     case 'stale':
-      return 'map-cond-overlay map-cond-overlay--stale'
+      return 'map-cond-overlay map-cond-overlay--stale-wash'
     default:
-      return 'map-cond-overlay map-cond-overlay--healthy'
+      return 'map-cond-overlay map-cond-overlay--neutral'
   }
 }
 
@@ -159,14 +209,14 @@ export function vitalityOuterClass(growth: GrowthState, condition: ConditionStat
   return parts.join(' ')
 }
 
-/** Clipped stone silhouette — filter glow follows pebble, not the rectangular RF box */
+/**
+ * Deprecated halo pulse — water reads via surface richness classes; keep empty to avoid
+ * healthy-gated glow competing with condition stress.
+ */
 export function vitalityShapePulseClass(
-  growth: GrowthState,
-  condition: ConditionState,
-  water: WaterLevel,
+  _growth: GrowthState,
+  _condition: ConditionState,
+  _water: WaterLevel,
 ): string {
-  const quietLife = growth === 'pruned' || growth === 'dormant'
-  if (condition !== 'healthy' || quietLife) return ''
-  const pulse = water === 'high' ? 'map-vitality-pulse-shape map-vitality-pulse-shape--strong' : 'map-vitality-pulse-shape'
-  return pulse
+  return ''
 }

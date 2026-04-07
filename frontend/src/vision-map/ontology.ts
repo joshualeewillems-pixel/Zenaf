@@ -62,4 +62,9 @@ export type MapNodePayload = {
   /** Precomputed water/soil/fruit when vitality_source === 'server' (node_vitality API). */
   growth_triad?: { water: number; soil: number; fruit: number }
   vitality_source?: 'server' | 'client'
+  /**
+   * Unified triad snapshot for map + panel (same semantics as `effectiveGrowthTriad`).
+   * Set in `buildLiveVisionMapGraph`; optional on older/sample graphs.
+   */
+  map_visual_triad?: { water: number; soil: number; fruit: number }
 } & Record<string, unknown>

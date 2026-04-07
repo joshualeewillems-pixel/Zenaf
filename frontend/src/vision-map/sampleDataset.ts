@@ -8,6 +8,8 @@ import {
   vitalForTask,
   waterLevelFromVital,
 } from './mapVitalForces'
+import type { VisionMapEntityBundle } from './blockersFromVe'
+import { mapVisualTriad } from './mapGrowthMetrics'
 import type { CouncilTeacherPreview, MapNodePayload } from './ontology'
 import type { StudioCouncilRunRow } from './studioCouncilTypes'
 
@@ -242,8 +244,20 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
   const map = new Map<string, MapNodePayload>()
   const noRuns: StudioCouncilRunRow[] = []
 
+  const entityBundle: VisionMapEntityBundle = {
+    ideas: [idea],
+    initiatives: [initiative],
+    projects,
+    tasks,
+  }
+
+  const finalize = (p: MapNodePayload): MapNodePayload => ({
+    ...p,
+    map_visual_triad: mapVisualTriad(p, entityBundle),
+  })
+
   const vIdea = vitalForIdea(idea)
-  map.set(`seed:${idea.id}`, {
+  map.set(`seed:${idea.id}`, finalize({
     kind: 'seed',
     label: idea.title,
     subtitle: 'Idea',
@@ -256,10 +270,10 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
     councilTeacher: sampleCouncilStub('idea', false, false),
     water_level: waterLevelFromVital(vIdea),
     fertilizer_pulse: deriveFertilizerPulse({ veType: 'idea', id: idea.id }, vIdea.entityUpdatedAt ?? null, noRuns),
-  })
+  }))
 
   const vIni = vitalForInitiative(initiative)
-  map.set(`tree:${initiative.id}`, {
+  map.set(`tree:${initiative.id}`, finalize({
     kind: 'tree',
     label: initiative.title,
     subtitle: 'Initiative',
@@ -274,12 +288,12 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
     councilTeacher: sampleCouncilStub('initiative', false, false),
     water_level: waterLevelFromVital(vIni),
     fertilizer_pulse: deriveFertilizerPulse({ veType: 'initiative', id: initiative.id }, vIni.entityUpdatedAt ?? null, noRuns),
-  })
+  }))
 
   for (const p of projects) {
     const stale = isStaleIso(p.updated_at, 14)
     const vP = vitalForProject(p)
-    map.set(`branch:${p.id}`, {
+    map.set(`branch:${p.id}`, finalize({
       kind: 'branch',
       label: p.title,
       subtitle: 'Project',
@@ -294,7 +308,7 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
       councilTeacher: sampleCouncilStub('project', false, stale),
       water_level: waterLevelFromVital(vP),
       fertilizer_pulse: deriveFertilizerPulse({ veType: 'project', id: p.id }, vP.entityUpdatedAt ?? null, noRuns),
-    })
+    }))
   }
 
   for (const t of tasks) {
@@ -302,7 +316,7 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
     const warn = t.id === 'sample-task-flower-2'
     const veto = t.id === 'sample-task-flower-3'
     const vT = vitalForTask(t)
-    map.set(`flower:${t.id}`, {
+    map.set(`flower:${t.id}`, finalize({
       kind: 'flower',
       label: t.title,
       subtitle: 'Task',
@@ -322,22 +336,24 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
       councilTeacher: sampleCouncilStub('task', veto, warn && !veto),
       water_level: waterLevelFromVital(vT),
       fertilizer_pulse: deriveFertilizerPulse({ veType: 'task', id: t.id }, vT.entityUpdatedAt ?? null, noRuns),
-    })
+    }))
   }
 
   for (const o of outcomes) {
-    map.set(`fruit:${o.id}`, {
+    const parentProjectId = projects.find((pr) => pr.initiative_id === o.initiative_id)?.id ?? projects[0]!.id
+    map.set(`fruit:${o.id}`, finalize({
       kind: 'fruit',
       label: o.title,
       subtitle: 'Outcome',
       growth: growthFromStatus(o.status),
       condition: 'healthy',
       ref: { veType: 'outcome', id: o.id },
+      parentRef: { veType: 'project', id: parentProjectId },
       summaryLines: [o.metric ? `Metric: ${o.metric}` : '', `Status: ${o.status}`].filter(Boolean),
       councilTeacher: sampleCouncilStub('outcome', false, false),
       water_level: 'medium',
       fertilizer_pulse: false,
-    })
+    }))
   }
 
   return map

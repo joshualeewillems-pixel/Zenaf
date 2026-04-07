@@ -5,6 +5,7 @@
 import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
 import type { MapNodePayload } from './ontology'
 import type { VisionMapEntityBundle } from './blockersFromVe'
+import { effectiveGrowthTriad } from './effectiveGrowthTriad'
 
 export type GrowthTriadMetrics = {
   water: number
@@ -178,6 +179,11 @@ export function computeGrowthTriad(p: MapNodePayload, bundle: VisionMapEntityBun
     soil: computeSoilQuality(p, bundle),
     fruit: computeFruitProgress(p, bundle),
   }
+}
+
+/** Same semantics as the right-panel triad — single source for map surface + bars. */
+export function mapVisualTriad(p: MapNodePayload, bundle: VisionMapEntityBundle | null): GrowthTriadMetrics {
+  return effectiveGrowthTriad(p, bundle)
 }
 
 /** One short sentence; visuals carry most meaning */

@@ -8,11 +8,16 @@ import {
   entityOrganicClasses,
   entitySubtitleClass,
   hierarchyTitleClass,
+  mapFruitMassClass,
+  mapSurfaceWaterClass,
+  mapSurfaceWaterTier,
+  resolveMapVisualTriadScalars,
   stoneTextTone,
+  surfaceWater01ForMap,
   vitalityOuterClass,
-  vitalityShapePulseClass,
 } from './mapNodeAppearance'
 import { stoneShapeMicroStyle } from './mapStoneShape'
+import { StoneConditionOverlay } from './StoneConditionOverlay'
 import { StoneKindGlyph } from './StoneKindGlyph'
 
 type EntityRfNode = Node<MapNodePayload, 'entityMap'>
@@ -26,24 +31,24 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const stoneToneAttr = labelTone === 'on-light' ? 'light' : 'dark'
   const vitalityOuter = vitalityOuterClass(data.growth, data.condition)
   const condOverlay = conditionShapeOverlayClass(data.condition)
-  const quiet =
-    data.growth === 'pruned' ||
-    data.growth === 'dormant' ||
-    data.condition === 'blocked' ||
-    data.condition === 'teacher-vetoed'
-  const showShimmer = data.growth === 'growing' && !quiet
   const statusHint = compactNodeStatusSummary(data.growth, data.condition)
   const statusTitle = `${data.growth} · ${data.condition}`
-  const water = data.water_level ?? 'medium'
-  const waterClass = water === 'high' ? 'map-water-high' : water === 'medium' ? 'map-water-medium' : 'map-water-low'
-  const shapePulse = vitalityShapePulseClass(data.growth, data.condition, water)
+
+  const triad = resolveMapVisualTriadScalars(data)
+  const surfaceW01 = surfaceWater01ForMap(data)
+  const surfaceWater = mapSurfaceWaterClass(surfaceW01)
+  const surfaceTier = mapSurfaceWaterTier(surfaceW01)
+  const fruitMass = mapFruitMassClass(triad.fruit)
+  const staleWash = data.condition === 'stale' ? 'map-surface-stale-wash' : ''
 
   return (
     <div
       className={[
         organic.outer,
         vitalityOuter,
-        waterClass,
+        surfaceWater,
+        staleWash,
+        fruitMass,
         'map-stone-surface text-center transition-transform duration-200 ease-out',
         data.dimmed ? 'map-node-dimmed' : '',
         data.focusLineage ? 'map-node-lineage' : '',
@@ -52,15 +57,18 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
         .filter(Boolean)
         .join(' ')}
       data-stone-tone={stoneToneAttr}
+      data-map-surface={surfaceTier}
+      data-map-soil={triad.soil.toFixed(2)}
+      data-map-fruit-scalar={triad.fruit.toFixed(2)}
+      data-map-condition={data.condition}
       title={statusTitle}
     >
       <div
-        className={[organic.shape, shapePulse, data.fertilizer_pulse ? 'map-fertilizer-pulse' : '']
-          .filter(Boolean)
-          .join(' ')}
-        style={stoneShapeMicroStyle(id, data.kind)}
+        className={[organic.shape, data.fertilizer_pulse ? 'map-fertilizer-pulse' : ''].filter(Boolean).join(' ')}
+        style={stoneShapeMicroStyle(id, data.kind, triad.soil)}
         aria-hidden
-      >        <div
+      >
+        <div
           className={`pointer-events-none absolute inset-0 z-0 map-stone-clip ${organic.fill}`}
           aria-hidden
         />
@@ -72,13 +80,9 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
           className="pointer-events-none absolute inset-0 z-0 map-stone-clip map-stone-rim-shadow opacity-70"
           aria-hidden
         />
-        {showShimmer && (
-          <div
-            className="map-shimmer-layer pointer-events-none absolute inset-0 z-0 map-stone-clip opacity-[0.14]"
-            aria-hidden
-          />
-        )}
+        <div className="pointer-events-none absolute inset-0 z-[3] map-stone-clip map-stone-mineral-grain" aria-hidden />
         <div className={`pointer-events-none absolute inset-0 z-[4] map-stone-clip ${condOverlay}`} aria-hidden />
+        <StoneConditionOverlay condition={data.condition} />
       </div>
       <div className="relative z-[2] flex min-h-0 w-full flex-col items-center px-1 pb-2 pt-0.5">
         <Handle type="target" position={Position.Top} className={`${handleClass} !top-0`} />
@@ -86,7 +90,22 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
           className="flex w-full flex-shrink-0 flex-col items-center justify-center px-1 pt-1"
           aria-hidden
         >
-          <StoneKindGlyph kind={data.kind} className={organic.glyph} />
+          <StoneKindGlyph
+            kind={data.kind}
+            className={[
+              organic.glyph,
+              data.kind === 'tree' ? 'map-stone-glyph--initiative-tree' : '',
+              data.kind === 'branch' ? 'map-stone-glyph--project-branch' : '',
+              data.kind === 'flower' ? 'map-stone-glyph--task-flower' : '',
+              data.kind === 'seed' ? 'map-stone-glyph--idea-seed' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            growth={data.growth}
+            soil01={triad.soil}
+            fruit01={triad.fruit}
+            condition={data.condition}
+          />
         </div>
         <div className="mt-3.5 flex w-full min-w-0 max-w-full flex-col items-center gap-2.5 px-2.5 pb-2">
           {data.subtitle?.trim() ? (

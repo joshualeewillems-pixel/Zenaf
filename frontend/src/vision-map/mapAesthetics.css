@@ -103,8 +103,22 @@
   color: #dcd8d0;
 }
 
+/* Initiative tree, project branch, idea seed — mint etched glow (reference art) */
+.map-stone-node[data-stone-tone='dark'] .map-stone-glyph--initiative-tree,
+.map-stone-node[data-stone-tone='dark'] .map-stone-glyph--project-branch,
+.map-stone-node[data-stone-tone='dark'] .map-stone-glyph--idea-seed {
+  color: #d8ebe0;
+  filter: drop-shadow(0 0 1px rgba(200, 235, 215, 0.5)) drop-shadow(0 0 5px rgba(160, 210, 185, 0.22));
+}
+
 .map-stone-node[data-stone-tone='light'] .map-stone-glyph {
   color: #2f2c28;
+}
+
+/* Task flower bud/bloom/apple — mint luminous read on pale stone */
+.map-stone-node[data-stone-tone='light'] .map-stone-glyph--task-flower {
+  color: #2a4d3a;
+  filter: drop-shadow(0 0 1.5px rgba(90, 160, 120, 0.45)) drop-shadow(0 0 6px rgba(130, 200, 155, 0.22));
 }
 
 /* Rounded silhouette + overflow:hidden here; outer .map-stone-node stays rectangular so labels are not cropped */
@@ -147,6 +161,13 @@
     inset 0 0 0 1px rgba(0, 0, 0, 0.04);
 }
 
+/* Breaks up the smooth gradient so faces read as matte stone, not glassy orbs */
+.map-stone-mineral-grain {
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 /* map-silhouette-* classes: markers for rim/bevel rules; outline is inline % border-radius + overflow:hidden */
 
 /* Top bevel + ontology-tinted inner lip (::before); perimeter darken + mass (::after) */
@@ -161,7 +182,7 @@
   pointer-events: none;
   z-index: 1;
   border-radius: inherit;
-  /* Match cairn “domed face” without extra layers or filters. */
+  /* Bevel highlight (flower/fruit/seed). Tree/branch use the softer override in the next rule. */
   background:
     radial-gradient(ellipse 108% 56% at 50% 0%, rgba(255, 255, 255, 0.14) 0%, transparent 44%),
     linear-gradient(
@@ -169,6 +190,19 @@
       rgba(255, 255, 255, 0.55) 0%,
       rgba(255, 255, 255, 0.22) 28%,
       rgba(255, 255, 255, 0.06) 46%,
+      transparent 64%
+    );
+}
+
+.map-stone-shape.map-silhouette-tree::before,
+.map-stone-shape.map-silhouette-branch::before {
+  background:
+    radial-gradient(ellipse 108% 56% at 50% 0%, rgba(255, 255, 255, 0.085) 0%, transparent 46%),
+    linear-gradient(
+      172deg,
+      rgba(255, 255, 255, 0.38) 0%,
+      rgba(255, 255, 255, 0.14) 28%,
+      rgba(255, 255, 255, 0.04) 46%,
       transparent 64%
     );
 }
@@ -331,8 +365,13 @@
   pointer-events: none;
 }
 
-.map-cond-overlay--healthy {
-  box-shadow: inset 0 18px 42px rgba(255, 255, 255, 0.1);
+.map-cond-overlay--neutral {
+  box-shadow: inset 0 12px 32px rgba(255, 255, 255, 0.035);
+}
+
+.map-cond-overlay--stale-wash {
+  background: rgba(32, 30, 26, 0.12);
+  box-shadow: inset 0 18px 48px rgba(18, 16, 14, 0.14);
 }
 
 .map-cond-overlay--blocked {
@@ -683,27 +722,66 @@
   }
 }
 
-.map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape {
-  animation: map-pulse-glow-shape 3.2s ease-in-out infinite;
+/* Healthy vitality pulse removed — surface water + triad carry attention read. */
+
+/* Unified triad-driven surface water — exaggerated steps so dry vs rich is obvious on real data */
+.map-stone-surface.map-surface-water-dry:not(.map-stone-selected) {
+  filter: saturate(0.58) brightness(0.88) contrast(1.04);
 }
 
-.map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape--strong {
-  animation: map-pulse-glow-shape-strong 2.8s ease-in-out infinite;
+.map-stone-node.map-surface-water-dry:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  box-shadow: var(--stone-inset-stack), 0 9px 18px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.08);
 }
 
-.map-node-dimmed .map-stone-shape.map-vitality-pulse-shape,
-.map-node-dimmed .map-stone-shape.map-vitality-pulse-shape--strong {
-  animation: none !important;
+.map-stone-surface.map-surface-water-matte:not(.map-stone-selected) {
+  filter: saturate(0.74) brightness(0.92) contrast(1.02);
 }
 
-/* Dry / low attention — desaturate whole node; slightly softer cast shadow on silhouette only */
-.map-stone-surface.map-water-low:not(.map-node-dimmed):not(.map-stone-selected) {
-  filter: saturate(0.82) brightness(0.97);
+.map-stone-surface.map-surface-water-normal:not(.map-stone-selected) {
+  filter: saturate(0.92) brightness(0.98);
 }
 
-.map-stone-node.map-water-low:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
-  filter: none;
-  box-shadow: var(--stone-inset-stack), 0 14px 26px rgba(15, 23, 42, 0.17), 0 4px 12px rgba(15, 23, 42, 0.11);
+.map-stone-surface.map-surface-water-rich:not(.map-stone-selected) {
+  filter: saturate(1.18) brightness(1.045) contrast(1.01);
+}
+
+.map-stone-node.map-surface-water-rich:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  box-shadow:
+    var(--stone-inset-stack),
+    var(--stone-cast),
+    inset 0 -22px 46px rgba(255, 255, 255, 0.055),
+    inset 0 4px 18px rgba(255, 255, 255, 0.1),
+    inset 0 0 40px rgba(120, 175, 165, 0.06);
+}
+
+.map-stone-surface.map-surface-stale-wash:not(.map-stone-selected) {
+  filter: saturate(0.68) brightness(0.9) contrast(1.02);
+}
+
+/* Subtle output / groundedness — not a badge */
+.map-stone-node.map-fruit-mass-soft > .map-stone-shape {
+  box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 15px 28px rgba(15, 23, 42, 0.19);
+}
+
+.map-stone-node.map-fruit-mass-mid > .map-stone-shape {
+  box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 17px 32px rgba(15, 23, 42, 0.21);
+}
+
+.map-stone-node.map-fruit-mass-firm > .map-stone-shape {
+  box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 19px 36px rgba(15, 23, 42, 0.23);
+}
+
+.map-stone-node.map-surface-water-rich.map-fruit-mass-firm:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  box-shadow:
+    var(--stone-inset-stack),
+    var(--stone-cast),
+    inset 0 -20px 42px rgba(255, 255, 255, 0.045),
+    inset 0 3px 16px rgba(255, 255, 255, 0.09),
+    0 19px 36px rgba(15, 23, 42, 0.22);
+}
+
+.map-stone-stress-svg {
+  border-radius: inherit;
 }
 
 .map-stone-shape.map-fertilizer-pulse {
@@ -716,11 +794,6 @@
     box-shadow: 0 0 0 2px rgba(88, 140, 96, 0.2);
   }
 
-  .map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape,
-  .map-stone-node:not(.map-node-dimmed) .map-stone-shape.map-vitality-pulse-shape--strong {
-    animation: none;
-    filter: drop-shadow(0 0 14px rgba(56, 72, 62, 0.2));
-  }
 }
 
 .map-vitality-grow:not(.map-node-dimmed) {
@@ -749,8 +822,8 @@
 }
 
 .map-node-dimmed {
-  opacity: 0.22;
-  filter: saturate(0.52) brightness(0.88);
+  opacity: 0.52;
+  filter: saturate(0.72) brightness(0.92);
 }
 
 .map-node-lineage:not(.map-node-dimmed) .map-stone-shape {
@@ -810,8 +883,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-stone-shape.map-vitality-pulse-shape,
-  .map-stone-shape.map-vitality-pulse-shape--strong,
+  .map-stone-mineral-grain {
+    opacity: 0.035;
+  }
+
   .map-vitality-grow,
   .map-vitality-blocked,
   .map-vitality-stale,

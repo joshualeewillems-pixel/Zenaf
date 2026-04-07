@@ -36,6 +36,7 @@ import {
   treeTopLeftForColumn,
   VISION_MAP_LAYOUT,
 } from './mapVisionLayout'
+import { mapVisualTriad } from './mapGrowthMetrics'
 
 const UNSCOPED_INIT_ID = PROJECTION_UNSCOPED_INITIATIVE_ID
 /** Merged onto React Flow’s outer node wrapper — strips theme borders/shadows */
@@ -133,6 +134,15 @@ function applyServerVitality(data: MapNodePayload, serverVitality?: ServerNodeVi
   }
 }
 
+function finalizeMapNodePayload(
+  data: MapNodePayload,
+  bundle: VisionMapEntityBundle,
+  serverVitality?: ServerNodeVitalityMap,
+): MapNodePayload {
+  const v = applyServerVitality(data, serverVitality)
+  return { ...v, map_visual_triad: mapVisualTriad(v, bundle) }
+}
+
 export function buildLiveVisionMapGraph(
   bundle: VisionMapEntityBundle,
   councilRuns: StudioCouncilRunRow[],
@@ -176,7 +186,7 @@ export function buildLiveVisionMapGraph(
       type: 'entityMap',
       className: RF_STONE_WRAPPER_CLASS,
       position: { x, y: yOrphan },
-      data: applyServerVitality(
+      data: finalizeMapNodePayload(
         payload(
           {
             kind: 'seed',
@@ -194,6 +204,7 @@ export function buildLiveVisionMapGraph(
           councilRuns,
           vSeed,
         ),
+        bundle,
         serverVitality,
       ),
     })
@@ -212,7 +223,7 @@ export function buildLiveVisionMapGraph(
       type: 'entityMap',
       className: RF_STONE_WRAPPER_CLASS,
       position: treeTL,
-      data: applyServerVitality(
+      data: finalizeMapNodePayload(
         payload(
           {
             kind: 'tree',
@@ -229,6 +240,7 @@ export function buildLiveVisionMapGraph(
           councilRuns,
           vUnscopedTree,
         ),
+        bundle,
         serverVitality,
       ),
     })
@@ -246,6 +258,7 @@ export function buildLiveVisionMapGraph(
         treeCondition: uTreeCond,
         treeWaterLevel: waterLevelFromVital(vUnscopedTree),
       },
+      bundle,
       serverVitality,
     )
   }
@@ -273,7 +286,7 @@ export function buildLiveVisionMapGraph(
           type: 'entityMap',
           className: RF_STONE_WRAPPER_CLASS,
           position: seedTopLeftAboveTree(treeTL),
-          data: applyServerVitality(
+          data: finalizeMapNodePayload(
             payload(
               {
                 kind: 'seed',
@@ -290,6 +303,7 @@ export function buildLiveVisionMapGraph(
               councilRuns,
               vIdea,
             ),
+            bundle,
             serverVitality,
           ),
         })
@@ -315,7 +329,7 @@ export function buildLiveVisionMapGraph(
       type: 'entityMap',
       className: RF_STONE_WRAPPER_CLASS,
       position: treeTL,
-      data: applyServerVitality(
+      data: finalizeMapNodePayload(
         payload(
           {
             kind: 'tree',
@@ -333,6 +347,7 @@ export function buildLiveVisionMapGraph(
           councilRuns,
           vIni,
         ),
+        bundle,
         serverVitality,
       ),
     })
@@ -344,7 +359,7 @@ export function buildLiveVisionMapGraph(
       treeTouch: ini.updated_at ?? null,
       treeCondition: treeCond,
       treeWaterLevel: waterLevelFromVital(vIni),
-    }, serverVitality)
+    }, bundle, serverVitality)
   })
 
   return { nodes, edges }
@@ -359,6 +374,7 @@ function layoutProjectsUnderTree(
   edges: Edge[],
   councilRuns: StudioCouncilRunRow[],
   treeCtx: TreeProjectionCtx,
+  bundle: VisionMapEntityBundle,
   serverVitality?: ServerNodeVitalityMap,
 ) {
   const treeId = `tree-${initiativeKey}`
@@ -378,7 +394,7 @@ function layoutProjectsUnderTree(
       type: 'entityMap',
       className: RF_STONE_WRAPPER_CLASS,
       position: branchPos,
-      data: applyServerVitality(
+      data: finalizeMapNodePayload(
         payload(
           {
             kind: 'branch',
@@ -396,6 +412,7 @@ function layoutProjectsUnderTree(
           councilRuns,
           vProj,
         ),
+        bundle,
         serverVitality,
       ),
     })
@@ -420,7 +437,7 @@ function layoutProjectsUnderTree(
         type: 'entityMap',
         className: RF_STONE_WRAPPER_CLASS,
         position: fruitTopLeft(treeTopLeft, theta),
-        data: applyServerVitality(
+        data: finalizeMapNodePayload(
           payload(
             {
               kind: 'fruit',
@@ -438,6 +455,7 @@ function layoutProjectsUnderTree(
             councilRuns,
             vProj,
           ),
+          bundle,
           serverVitality,
         ),
       })
@@ -467,7 +485,7 @@ function layoutProjectsUnderTree(
         type: 'entityMap',
         className: RF_STONE_WRAPPER_CLASS,
         position: taskTopLeft(branchPos, ti, nTasks),
-        data: applyServerVitality(
+        data: finalizeMapNodePayload(
           payload(
             {
               kind: 'flower',
@@ -485,6 +503,7 @@ function layoutProjectsUnderTree(
             councilRuns,
             vTask,
           ),
+          bundle,
           serverVitality,
         ),
       })

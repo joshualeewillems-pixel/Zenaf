@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { assessFlow } from './flowAssessment'
 import { assessNodeFlowAndChannels } from './assessNodeFlowAndChannels'
-import { collectNodeInterpretationInvariantViolations } from './nodeInterpretationInvariants'
+import { buildFlowInputFromMapPayload } from './flowInputAdapter'
 import type { MapNodePayload } from '../vision-map/ontology'
 import type { VisionMapEntityBundle } from '../vision-map/blockersFromVe'
 
@@ -56,15 +57,21 @@ function bundleWithInitiative(): VisionMapEntityBundle {
 }
 
 describe('assessNodeFlowAndChannels', () => {
-  it('includes interpretation that passes invariant checks', () => {
-    const u = assessNodeFlowAndChannels(minimalInitiativePayload(), {
-      bundle: bundleWithInitiative(),
-      councilRuns: [],
-    })
-    expect(u.interpretation.summary.length).toBeGreaterThan(10)
-    expect(u.interpretation.actionLine.length).toBeGreaterThan(5)
-    expect(u.interpretation.chatPrefill.length).toBeGreaterThan(5)
-    expect(collectNodeInterpretationInvariantViolations(u.interpretation)).toEqual([])
+  it('Phase A parity: flow matches assessFlow(buildFlowInputFromMapPayload) for same payload', () => {
+    const payload = minimalInitiativePayload()
+    const bundle = bundleWithInitiative()
+    const councilRuns: import('../vision-map/studioCouncilTypes').StudioCouncilRunRow[] = []
+    const u = assessNodeFlowAndChannels(payload, { bundle, councilRuns })
+    const input = buildFlowInputFromMapPayload(payload, bundle, councilRuns)
+    const legacy = assessFlow(input)
+    expect(u.flow.dominantIssue).toBe(legacy.dominantIssue)
+    expect(u.flow.rankedActions).toEqual(legacy.rankedActions)
+    expect(u.flow.primaryAction).toBe(legacy.primaryAction)
+    expect(u.derived.map_visual_triad.water).toBeGreaterThanOrEqual(0)
+    expect(u.derived.map_visual_triad.water).toBeLessThanOrEqual(1)
+    expect(u.lowest_channel).toMatch(/water|soil|condition|fruit/)
+    expect(typeof u.clean_stone_ready).toBe('boolean')
+    expect(u.rules_version).toBeTruthy()
   })
 
   it('is deterministic for same inputs', () => {
@@ -73,6 +80,17 @@ describe('assessNodeFlowAndChannels', () => {
     const p = minimalInitiativePayload()
     const a1 = assessNodeFlowAndChannels(p, { bundle, councilRuns })
     const a2 = assessNodeFlowAndChannels(p, { bundle, councilRuns })
-    expect(a1.interpretation).toEqual(a2.interpretation)
+    expect(a1.lowest_channel).toBe(a2.lowest_channel)
+    expect(a1.clean_stone_ready).toBe(a2.clean_stone_ready)
+    expect(a1.flow.dominantIssue).toBe(a2.flow.dominantIssue)
+    expect(a1.derived.condition_severity).toBe(a2.derived.condition_severity)
+  })
+
+  it('first_repair_path is unset during migration (Phase B will require it with primary CTA)', () => {
+    const u = assessNodeFlowAndChannels(minimalInitiativePayload(), {
+      bundle: bundleWithInitiative(),
+      councilRuns: [],
+    })
+    expect(u.first_repair_path).toBeUndefined()
   })
 })

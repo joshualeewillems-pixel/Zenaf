@@ -22,9 +22,9 @@
 
 ## Token shape
 
-`[[ATRIA_REF:subject_id:<base64url(utf-8 id)>:<8-hex sha256 fragment>]]`
+`[[ZENAF_REF:subject_id:<base64url(utf-8 id)>:<8-hex sha256 fragment>]]`
 
-Checksum: first 8 hex chars of `sha256("atria.v1|{kind}|{internal_id}")`.
+Checksum: first 8 hex chars of `sha256("zenaf.v1|{kind}|{internal_id}")`.
 
 ## Example before / after (prompt excerpt)
 
@@ -40,14 +40,14 @@ Active initiative initiative-uuid-7f2a needs a decision.
 
 ```text
 Context:
-Active initiative [[ATRIA_REF:subject_id:aW5pdGlhdGl2ZS11dWlkLTdmMmE:…]] needs a decision.
+Active initiative [[ZENAF_REF:subject_id:aW5pdGlhdGl2ZS11dWlkLTdmMmE:…]] needs a decision.
 ...
 ```
 
 **Model output (must echo token for v1 integrity)** — structured path: single JSON object, e.g.:
 
 ```json
-{"recommendation":"Follow up on [[ATRIA_REF:subject_id:…]]","rationale":"ok","alternatives":[],"caution":null}
+{"recommendation":"Follow up on [[ZENAF_REF:subject_id:…]]","rationale":"ok","alternatives":[],"caution":null}
 ```
 
 **After rebind (client-visible `result` dict):** same fields as before (`recommendation`, `rationale`, `alternatives`, `caution`) with internal ids restored in strings.

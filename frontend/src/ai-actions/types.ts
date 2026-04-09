@@ -5,7 +5,7 @@
  */
 
 /** Where in the app the action was invoked (routing + analytics dimension). */
-export type AtriaSurface =
+export type ZenafSurface =
   | 'vision_execution'
   | 'core_profile'
   | 'meeting_extraction'
@@ -62,7 +62,7 @@ export type CouncilIntegrityReviewSample = {
  */
 export type AiActionTrace = {
   trace_id: string
-  surface: AtriaSurface
+  surface: ZenafSurface
   action_kind: AiActionKind
   /**
    * Finer pipeline / template identity (snake_case string, not a closed enum).

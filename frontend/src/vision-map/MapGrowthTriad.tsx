@@ -1,4 +1,5 @@
 import type { GrowthTriadMetrics } from './mapGrowthMetrics'
+import { MAP_SOIL_TIER_LOW_BELOW, MAP_SOIL_TIER_MEDIUM_BELOW } from './mapNodeAppearance'
 
 type Props = {
   metrics: GrowthTriadMetrics
@@ -113,13 +114,17 @@ function Bar({
 export function MapGrowthTriad({ metrics, caption, activeSegment = null, onSegmentClick }: Props) {
   const { water, soil, fruit } = metrics
   const dry = water < 0.38
-  const soft = soil < 0.38
+  const soft = soil < MAP_SOIL_TIER_LOW_BELOW
   const vivid = fruit > 0.65
 
   const waterHint =
     water < 0.4 ? 'Needs attention' : water > 0.72 ? 'People & updates in place' : 'Moderate attention'
   const soilHint =
-    soil < 0.4 ? 'Needs definition' : soil > 0.68 ? 'Clarity & structure strong' : 'Partly defined'
+    soil < MAP_SOIL_TIER_LOW_BELOW
+      ? 'Thin grounding'
+      : soil >= MAP_SOIL_TIER_MEDIUM_BELOW
+        ? 'Worked-through & grounded'
+        : 'Partially formed'
   const fruitHint =
     fruit < 0.38 ? 'Little output yet' : fruit > 0.68 ? 'Producing output' : 'Some progress'
 

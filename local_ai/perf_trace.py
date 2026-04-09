@@ -15,10 +15,10 @@ import time
 from contextvars import ContextVar
 from typing import Any
 
-_log = logging.getLogger("atria.perf")
+_log = logging.getLogger("zenaf.perf")
 
-_perf_correlation: ContextVar[str | None] = ContextVar("atria_perf_correlation", default=None)
-_perf_anchor: ContextVar[float | None] = ContextVar("atria_perf_anchor", default=None)
+_perf_correlation: ContextVar[str | None] = ContextVar("zenaf_perf_correlation", default=None)
+_perf_anchor: ContextVar[float | None] = ContextVar("zenaf_perf_anchor", default=None)
 
 
 def perf_begin(correlation_id: str) -> None:
@@ -53,6 +53,6 @@ def perf_mark(stage: str, **extra: Any) -> None:
     elapsed_ms = (time.perf_counter() - anchor) * 1000 if anchor is not None else -1.0
     if extra:
         bits = " ".join(f"{k}={v!r}" for k, v in extra.items())
-        _log.info("[atria-perf] correlation=%s elapsed_ms=%.2f stage=%s %s", cid or "-", elapsed_ms, stage, bits)
+        _log.info("[zenaf-perf] correlation=%s elapsed_ms=%.2f stage=%s %s", cid or "-", elapsed_ms, stage, bits)
     else:
-        _log.info("[atria-perf] correlation=%s elapsed_ms=%.2f stage=%s", cid or "-", elapsed_ms, stage)
+        _log.info("[zenaf-perf] correlation=%s elapsed_ms=%.2f stage=%s", cid or "-", elapsed_ms, stage)

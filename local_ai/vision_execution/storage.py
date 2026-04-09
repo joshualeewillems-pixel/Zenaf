@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from . import models as M
+from local_ai.env_legacy_aliases import is_legacy_atria_import_disabled
 from local_ai.activity import (
     ActivityEntityType,
     ActivityType,
@@ -26,12 +27,14 @@ _REPO_ROOT = _PKG_DIR.parent.parent
 _DB_DIR = _REPO_ROOT / "data" / "vision_execution"
 _DB_PATH = _DB_DIR / "vision_execution.db"
 _SCHEMA_PATH = _PKG_DIR / "schema.sql"
-_DEFAULT_OWNER_EMAIL = "owner@local.atria"
+_DEFAULT_OWNER_EMAIL = "owner@local.zenaf"
 _DEFAULT_OWNER_DISPLAY_NAME = "Local Owner"
 _DEFAULT_OWNER_PASSWORD_FALLBACK = "local-dev-owner"
-_PHIL_DEV_EMAIL = "phil@local.atria"
+_PHIL_DEV_EMAIL = "phil@local.zenaf"
 _PHIL_DISPLAY_NAME = "Phil"
 _PHIL_PASSWORD_FALLBACK = "phil-local-dev"
+_OWNER_ATRIA_EMAIL = "owner@local.atria"
+_PHIL_ATRIA_EMAIL = "phil@local.atria"
 _SESSION_TTL_DAYS = 30
 
 # One SQLite connection per thread: FastAPI runs sync route handlers on a thread pool; a single
@@ -214,7 +217,7 @@ def log_coordination_client_checkpoint(
                     entity_id=eid,
                     pointer=event_id,
                     pointer_kind="activity_event",
-                    evidence_source="atria-client-trace",
+                    evidence_source="zenaf-client-trace",
                     impact="positive",
                     dimension="capacity",
                     confidence=0.6,
@@ -226,7 +229,7 @@ def log_coordination_client_checkpoint(
                     entity_id=eid,
                     pointer=event_id,
                     pointer_kind="activity_event",
-                    evidence_source="atria-client-trace",
+                    evidence_source="zenaf-client-trace",
                     impact="negative",
                     dimension="friction",
                     confidence=0.6,
@@ -238,7 +241,7 @@ def log_coordination_client_checkpoint(
                     entity_id=eid,
                     pointer=event_id,
                     pointer_kind="activity_event",
-                    evidence_source="atria-client-trace",
+                    evidence_source="zenaf-client-trace",
                     impact="neutral",
                     dimension="capacity",
                     confidence=0.5,
@@ -746,6 +749,14 @@ def _hash_session_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def _llm_credential_row_count(conn: sqlite3.Connection, user_id: str) -> int:
+    r = conn.execute(
+        "SELECT COUNT(*) AS c FROM user_llm_provider_credentials WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    return int(r["c"] or 0) if r else 0
+
+
 def _copy_user_llm_stack(conn: sqlite3.Connection, source_user_id: str, dest_user_id: str) -> None:
     """Copy LLM profile row + all provider credentials from source to dest (dest ciphertext reused as-is)."""
     if source_user_id == dest_user_id:
@@ -793,20 +804,65 @@ def _copy_user_llm_stack(conn: sqlite3.Connection, source_user_id: str, dest_use
         )
 
 
+def _sync_owner_llm_from_atria_to_zenaf(conn: sqlite3.Connection) -> None:
+    """
+    If owner@local.zenaf has no saved provider keys but owner@local.atria does, copy profile + ciphertext rows.
+    Safe: only runs when Zenaf owner credential count is zero.
+    """
+    if is_legacy_atria_import_disabled():
+        return
+    atria = conn.execute("SELECT id FROM users WHERE email = ?", (_OWNER_ATRIA_EMAIL,)).fetchone()
+    zenaf = conn.execute("SELECT id FROM users WHERE email = ?", (_DEFAULT_OWNER_EMAIL,)).fetchone()
+    if not atria or not zenaf:
+        return
+    aid, zid = str(atria[0]), str(zenaf[0])
+    if aid == zid:
+        return
+    if _llm_credential_row_count(conn, zid) > 0:
+        return
+    if _llm_credential_row_count(conn, aid) == 0:
+        return
+    _copy_user_llm_stack(conn, aid, zid)
+    _logger.info(
+        "[vision_execution] Mirrored LLM profile + credentials %s → %s (Zenaf owner had no saved keys).",
+        _OWNER_ATRIA_EMAIL,
+        _DEFAULT_OWNER_EMAIL,
+    )
+
+
+def _sync_phil_llm_from_atria_to_zenaf(conn: sqlite3.Connection) -> None:
+    """If phil@local.zenaf has no keys but phil@local.atria does, copy stack (before owner fallback)."""
+    if is_legacy_atria_import_disabled():
+        return
+    atria = conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_ATRIA_EMAIL,)).fetchone()
+    zenaf = conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_DEV_EMAIL,)).fetchone()
+    if not atria or not zenaf:
+        return
+    aid, zid = str(atria[0]), str(zenaf[0])
+    if aid == zid:
+        return
+    if _llm_credential_row_count(conn, zid) > 0:
+        return
+    if _llm_credential_row_count(conn, aid) == 0:
+        return
+    _copy_user_llm_stack(conn, aid, zid)
+    _logger.info(
+        "[vision_execution] Mirrored LLM profile + credentials %s → %s (Zenaf Phil had no saved keys).",
+        _PHIL_ATRIA_EMAIL,
+        _PHIL_DEV_EMAIL,
+    )
+
+
 def _sync_phil_llm_from_owner_if_phil_has_no_credentials(conn: sqlite3.Connection, owner_id: str) -> None:
     """
-    If phil@local.atria exists and has no rows in user_llm_provider_credentials, mirror owner's
+    If phil@local.zenaf exists and has no rows in user_llm_provider_credentials, mirror owner's
     LLM profile + keys so the dev second account can run the same providers as the main account.
     """
     row = conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_DEV_EMAIL,)).fetchone()
     if not row:
         return
     phil_id = row[0]
-    n = conn.execute(
-        "SELECT COUNT(*) AS c FROM user_llm_provider_credentials WHERE user_id = ?",
-        (phil_id,),
-    ).fetchone()
-    if n and int(n["c"] or 0) > 0:
+    if _llm_credential_row_count(conn, str(phil_id)) > 0:
         return
     _copy_user_llm_stack(conn, owner_id, phil_id)
     _logger.info(
@@ -819,10 +875,10 @@ def _ensure_dev_user_phil(conn: sqlite3.Connection) -> None:
     """Second local dev account for multi-user / isolation checks (idempotent)."""
     if conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_DEV_EMAIL,)).fetchone():
         return
-    pwd = os.environ.get("ATRIA_PHIL_BOOTSTRAP_PASSWORD", "").strip()
+    pwd = os.environ.get("ZENAF_PHIL_BOOTSTRAP_PASSWORD", "").strip()
     if not pwd:
         _logger.warning(
-            "ATRIA_PHIL_BOOTSTRAP_PASSWORD is not set. Using DEV-ONLY fallback password for %s.",
+            "ZENAF_PHIL_BOOTSTRAP_PASSWORD is not set. Using DEV-ONLY fallback password for %s.",
             _PHIL_DEV_EMAIL,
         )
         pwd = _PHIL_PASSWORD_FALLBACK
@@ -841,11 +897,11 @@ def _ensure_default_owner_and_backfill(conn: sqlite3.Connection) -> None:
         (_DEFAULT_OWNER_EMAIL,),
     ).fetchone()
     if owner is None:
-        bootstrap_password = os.environ.get("ATRIA_BOOTSTRAP_PASSWORD", "").strip()
+        bootstrap_password = os.environ.get("ZENAF_BOOTSTRAP_PASSWORD", "").strip()
         if not bootstrap_password:
             print(
-                "WARNING: ATRIA_BOOTSTRAP_PASSWORD is not set. "
-                "Using local-dev fallback bootstrap password for owner@local.atria. "
+                "WARNING: ZENAF_BOOTSTRAP_PASSWORD is not set. "
+                "Using local-dev fallback bootstrap password for owner@local.zenaf. "
                 "This is DEV ONLY and not production-safe."
             )
             bootstrap_password = _DEFAULT_OWNER_PASSWORD_FALLBACK
@@ -865,7 +921,9 @@ def _ensure_default_owner_and_backfill(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE initiatives SET user_id = ? WHERE user_id IS NULL", (owner_id,))
     conn.execute("UPDATE projects SET user_id = ? WHERE user_id IS NULL", (owner_id,))
     conn.execute("UPDATE tasks SET user_id = ? WHERE user_id IS NULL", (owner_id,))
+    _sync_owner_llm_from_atria_to_zenaf(conn)
     _ensure_dev_user_phil(conn)
+    _sync_phil_llm_from_atria_to_zenaf(conn)
     _sync_phil_llm_from_owner_if_phil_has_no_credentials(conn, owner_id)
     conn.commit()
 
@@ -985,6 +1043,50 @@ def authenticate_user(email: str, password: str) -> dict[str, Any] | None:
     return user
 
 
+def set_user_password_by_email(email: str, new_password: str) -> dict[str, Any]:
+    """
+    Replace password hash for a user (local dev / recovery). Email is normalized like login.
+    """
+    raw = (email or "").strip().lower()
+    if not raw or not new_password:
+        return {"ok": False, "reason": "email_and_password_required"}
+    conn = get_connection()
+    row = conn.execute("SELECT id FROM users WHERE email = ?", (raw,)).fetchone()
+    if not row:
+        return {"ok": False, "reason": "user_not_found", "email": raw}
+    uid = row[0]
+    conn.execute(
+        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
+        (_hash_password(new_password), _now(), uid),
+    )
+    conn.commit()
+    return {"ok": True, "user_id": uid, "email": raw}
+
+
+def port_user_llm_stack_between_users(source_user_id: str, dest_user_id: str) -> dict[str, Any]:
+    """
+    Copy ``user_llm_profile`` + ``user_llm_provider_credentials`` from source to dest.
+    Replaces dest credential rows. Ciphertext is reused; decryption must use the same Fernet key as when keys were saved.
+    """
+    su = (source_user_id or "").strip()
+    du = (dest_user_id or "").strip()
+    if not su or not du or su == du:
+        return {"ok": False, "reason": "invalid_ids"}
+    conn = get_connection()
+    if get_user_by_id(su) is None or get_user_by_id(du) is None:
+        return {"ok": False, "reason": "user_not_found"}
+    n_before = _llm_credential_row_count(conn, du)
+    n_src = _llm_credential_row_count(conn, su)
+    _copy_user_llm_stack(conn, su, du)
+    conn.commit()
+    return {
+        "ok": True,
+        "dest_credentials_before": n_before,
+        "dest_credentials_after": _llm_credential_row_count(conn, du),
+        "source_credentials": n_src,
+    }
+
+
 def create_session(user_id: str, *, ttl_days: int = _SESSION_TTL_DAYS) -> str:
     conn = get_connection()
     sid = M.new_id()
@@ -1082,7 +1184,7 @@ def create_user_account(
 
 
 # --- User settings (LLM + notifications) ---
-_SETTINGS_KEY_ENV = "ATRIA_SETTINGS_ENCRYPTION_KEY"
+_SETTINGS_KEY_ENV = "ZENAF_SETTINGS_ENCRYPTION_KEY"
 _SETTINGS_KEY_LOCAL_FILE = "settings_encryption.key"
 _LLM_PROVIDERS_WITH_KEY = frozenset({"openai", "anthropic", "google", "xai"})
 _LLM_DEFAULT_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "google", "xai"})
@@ -1111,14 +1213,14 @@ def _settings_encryption_key_paths() -> list[Path]:
     Order: user home (typical), then repo data dir next to the SQLite DB (reliable on Windows / OneDrive).
     """
     return [
-        Path.home() / ".atria" / _SETTINGS_KEY_LOCAL_FILE,
+        Path.home() / ".zenaf" / _SETTINGS_KEY_LOCAL_FILE,
         _DB_DIR / _SETTINGS_KEY_LOCAL_FILE,
     ]
 
 
 def _get_settings_encryption_key_raw() -> str | None:
     """
-    Prefer ``ATRIA_SETTINGS_ENCRYPTION_KEY`` when valid.
+    Prefer ``ZENAF_SETTINGS_ENCRYPTION_KEY`` when valid.
     Otherwise read or create a Fernet key file (see ``_settings_encryption_key_paths``).
     """
     global _settings_key_cache

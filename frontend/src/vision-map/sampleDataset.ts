@@ -10,6 +10,7 @@ import {
 } from './mapVitalForces'
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import { mapVisualTriad } from './mapGrowthMetrics'
+import { resolveConditionSeverity } from './resolveConditionSeverity'
 import type { CouncilTeacherPreview, MapNodePayload } from './ontology'
 import type { StudioCouncilRunRow } from './studioCouncilTypes'
 
@@ -251,10 +252,10 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
     tasks,
   }
 
-  const finalize = (p: MapNodePayload): MapNodePayload => ({
-    ...p,
-    map_visual_triad: mapVisualTriad(p, entityBundle),
-  })
+  const finalize = (p: MapNodePayload): MapNodePayload => {
+    const withTriad = { ...p, map_visual_triad: mapVisualTriad(p, entityBundle) }
+    return { ...withTriad, condition_severity: resolveConditionSeverity(withTriad, entityBundle) }
+  }
 
   const vIdea = vitalForIdea(idea)
   map.set(`seed:${idea.id}`, finalize({

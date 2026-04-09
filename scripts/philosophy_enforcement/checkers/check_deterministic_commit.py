@@ -1,6 +1,6 @@
 """
 Deterministic commit / explicit payload (Wave 2D): integration_commit must keep the
-[DRAFT_VALUE:] contract; atria_tools call sites of infer_draft_value_from_context must
+[DRAFT_VALUE: …] contract; zenaf_tools call sites of infer_draft_value_from_context must
 carry a nearby `deterministic-commit` audit marker (comment within preceding lines).
 
 Exemption: not applicable — fix by adding the marker or removing the call.
@@ -46,7 +46,7 @@ def run(repo: Path) -> CheckerRun:
                 )
             )
 
-    atools = repo / "local_ai" / "atria_tools.py"
+    atools = repo / "local_ai" / "zenaf_tools.py"
     if not atools.is_file():
         return out
     lines = atools.read_text(encoding="utf-8").splitlines()
@@ -60,7 +60,7 @@ def run(repo: Path) -> CheckerRun:
             Finding(
                 kind=FindingKind.CONFIRMED_VIOLATION,
                 message="infer_draft_value_from_context( call without nearby deterministic-commit audit marker",
-                location=f"local_ai/atria_tools.py:{i + 1}",
+                location=f"local_ai/zenaf_tools.py:{i + 1}",
                 detail="Prefer [DRAFT_VALUE: …] from the model; narrow fallback must be explicitly audited.",
                 checker_id="check_deterministic_commit",
             )

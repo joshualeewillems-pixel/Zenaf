@@ -83,7 +83,7 @@ export function InlineThreadGuideCard({
       data-testid="inline-thread-guide"
     >
       <div className="mb-1">
-        <p className="text-[10px] uppercase tracking-wide text-yellow-500/80 font-medium mb-0.5">Atria</p>
+        <p className="text-[10px] uppercase tracking-wide text-yellow-500/80 font-medium mb-0.5">Zenaf</p>
         <p className="text-xs font-semibold text-stone-100 leading-snug" data-testid="system-prompt-context-title">
           {title}
         </p>

@@ -19,7 +19,7 @@ Seeding: `scripts/seed_arc_lab_fixtures.py` — evaluation: `scripts/eval_arc_de
 | **Synthetic** | Scripted `node_judgment_history` + VE rows under a **dedicated lab user** | Instrumentation / regression only |
 | **Interpretive** | Human review of `arc_detection_candidates` (right / arguable / wrong) | Mints policy and UX |
 
-**Rule:** Synthetic data must never be mistaken for entity truth about a real person. Lab projects use title prefix **`ARC-LAB:`** and user **`arc_lab_synthetic@local.atria`** (display name marks synthetic).
+**Rule:** Synthetic data must never be mistaken for entity truth about a real person. Lab projects use title prefix **`ARC-LAB:`** and user **`arc_lab_synthetic@local.zenaf`** (display name marks synthetic).
 
 ---
 

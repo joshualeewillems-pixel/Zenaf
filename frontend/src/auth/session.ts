@@ -29,7 +29,14 @@ export async function login(email: string, password: string): Promise<CurrentUse
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error(data?.detail || 'Login failed')
+    const d = data?.detail
+    const msg =
+      typeof d === 'string'
+        ? d
+        : Array.isArray(d)
+          ? d.map((x: unknown) => (typeof x === 'object' && x != null && 'msg' in x ? String((x as { msg: string }).msg) : String(x))).join('; ')
+          : ''
+    throw new Error(msg || 'Login failed')
   }
   return data.user as CurrentUser
 }

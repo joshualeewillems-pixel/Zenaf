@@ -11,7 +11,7 @@ building the workspace packet — scan mechanics, buffers, and junk/cache filter
   calls things.” Both inform extraction and council, but Brand lives in the perspectives layer;
   translation lives next to workspace identity snapshot.
 - **Operator / mission brief** — Optional ``phil_brand_brief.md`` (council “Operator priorities:”);
-  disable loading with ``ATRIA_OPERATOR_BRIEF_ENABLED=0``. Translation template is per-workspace
+  disable loading with ``ZENAF_OPERATOR_BRIEF_ENABLED=0``. Translation template is per-workspace
   surface grounding (domainHints / capsule), separate from that file.
 - **Developmental / traces** — ``AiActionTrace``, workspace council intents, and
   ``buildDevelopmentalGuidanceContext`` capture *behavior and outcomes*; translation captures
@@ -52,7 +52,7 @@ MAX_CAPSULE_THEMES = 12
 
 
 def _default_identity_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / ".atria" / "workspace-identity" / "v1"
+    return Path(__file__).resolve().parents[2] / ".zenaf" / "workspace-identity" / "v1"
 
 
 def translation_template_path(base_dir: Path | None = None) -> Path:

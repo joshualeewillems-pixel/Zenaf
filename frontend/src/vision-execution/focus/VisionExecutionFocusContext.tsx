@@ -25,7 +25,7 @@ import {
   ensureDomFieldId,
   isEligibleDomTextControl,
 } from './domShellField'
-import { ATRIA_VE_FOCUS_INSERT_TEXT, insertTextAtSelection, type VeFocusInsertTextDetail } from './insertTextEvent'
+import { ZENAF_VE_FOCUS_INSERT_TEXT, insertTextAtSelection, type VeFocusInsertTextDetail } from './insertTextEvent'
 import { CONVERSATION_ENTITY_FIELD_KEY } from './conversationEntityFocus'
 
 type VisionExecutionFocusValue = {
@@ -258,8 +258,8 @@ export function VisionExecutionFocusProvider({
         /* ignore */
       }
     }
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
   }, [])
 
   useEffect(() => {
@@ -267,7 +267,7 @@ export function VisionExecutionFocusProvider({
 
     const syncShellSelection = () => {
       const el = document.activeElement
-      if (!isEligibleDomTextControl(el) || el.closest('[data-atria-transcribe-region]')) return
+      if (!isEligibleDomTextControl(el) || el.closest('[data-zenaf-transcribe-region]')) return
       const sk = shellRegistryKeyRef.current
       if (!sk || el !== shellDomElRef.current) return
       recordFieldSelection(sk, el.selectionStart ?? 0, el.selectionEnd ?? 0)
@@ -300,7 +300,7 @@ export function VisionExecutionFocusProvider({
     const onDocFocusOut = (e: FocusEvent) => {
       const t = e.target
       if (!isEligibleDomTextControl(t)) return
-      if (t.closest('[data-atria-transcribe-region]')) return
+      if (t.closest('[data-zenaf-transcribe-region]')) return
       const sk = shellRegistryKeyRef.current
       if (sk) {
         unregisterFieldTextGetter(sk)

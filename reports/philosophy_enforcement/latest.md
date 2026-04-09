@@ -1,7 +1,7 @@
 # Philosophy enforcement report
 
 - Generated: `2026-04-05T05:42:41.508624+00:00`
-- Repo: `C:\Users\philc\OneDrive\Desktop\Atria`
+- Repo: `C:\Users\philc\OneDrive\Desktop\Zenaf`
 
 ## Program state (from JSON only)
 

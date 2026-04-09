@@ -1,5 +1,5 @@
 /** Dispatched on `window` when user applies a Context Bar rewrite to the matching VE form field */
-export const ATRIA_VE_FOCUS_APPLY_REWRITE = 'atria-ve-focus-apply-rewrite'
+export const ZENAF_VE_FOCUS_APPLY_REWRITE = 'zenaf-ve-focus-apply-rewrite'
 
 export type VeFocusApplyRewriteDetail = {
   entity_type: string

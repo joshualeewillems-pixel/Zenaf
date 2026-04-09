@@ -1,4 +1,4 @@
-# Atria Codebase Inventory
+# Zenaf Codebase Inventory
 
 Comprehensive inventory of implemented modules, files, responsibilities, and current status. Based on the current repository state.
 
@@ -13,10 +13,10 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 | **Module/directory** | `api/` |
 | **Purpose** | FastAPI bridge to local_ai engine; HTTP endpoints for cockpit frontend. |
 | **Key files** | `api/main.py` (app, startup, `/run`, `/run/stream`, `_begin_run_routing` / `routing_context` / `council_user_id`, `/health`), `api/routes/intake_routes.py`, `api/routes/vision_execution.py`, `api/routes/auth_routes.py` (session, `/auth/me` incl. PATCH display name, admin **`POST /auth/admin/users`**), `api/routes/settings_routes.py` (mounted at `/settings`) |
-| **Main entry points** | `uvicorn api.main:app`; `app.on_event("startup")` → `_on_startup()`; `POST /run` dispatches by `mode` to atria_tools. |
+| **Main entry points** | `uvicorn api.main:app`; `app.on_event("startup")` → `_on_startup()`; `POST /run` dispatches by `mode` to zenaf_tools. |
 | **Important functions** | `_on_startup()`, `_check_startup_dependencies()`, `run()`, `run_stream()`, intake/vision-execution/auth/settings route handlers. |
 | **Status** | **Implemented.** Vision Execution and Intake routers are mounted. |
-| **Dependencies** | `local_ai` (atria_tools, intake, judgment, vision_execution, providers). |
+| **Dependencies** | `local_ai` (zenaf_tools, intake, judgment, vision_execution, providers). |
 | **Gaps/caveats** | No explicit route that calls `mirror.get_item_with_content()`; intake queue returns Tier A only from `get_queue`/`get_item` (**product contract** — see **`TRUTH_CONVERGENCE.md`** / **`ACTIVE_VS_PLANNED.md`**). |
 
 ---
@@ -44,7 +44,7 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 | **Purpose** | Intake: SQLite `intake_mirror.db` as durable operational memory (items, judgments, sync state, mailbox_action). Vision Execution: SQLite `data/vision_execution/vision_execution.db`. |
 | **Key files** | `local_ai/intake/mirror.py`, `local_ai/vision_execution/storage.py`, `local_ai/vision_execution/schema.sql` |
 | **Main entry points** | `init_schema()`, `upsert_item()`, `upsert_judgment_record()` / `upsert_judgment_chain_for_entity()`, `load_into_memory()`, `get_item_with_content()`, `set_sync_state()` / `get_sync_state()`, `record_mailbox_action()`. |
-| **Important functions** | `_conn()`, `_migrate_schema()`, `_dict_from_item_row()`. Vision: `get_connection()`, `init_db()`, full CRUD per entity (core_profiles, ideas, initiatives, projects, tasks, persons, assets, decisions, capacity_profiles), plus **`execution_steps`** (first-class checklist per initiative/project scope), plus user settings tables: **`user_llm_profile`** (includes **`llm_provider_prefs_json`**: per-provider enable flags and **`__council_seats`** seat→`llm_provider` map), **`user_llm_provider_credentials`** (Fernet-encrypted keys when `ATRIA_SETTINGS_ENCRYPTION_KEY` is set), **`user_notification_settings`** (JSON prefs). |
+| **Important functions** | `_conn()`, `_migrate_schema()`, `_dict_from_item_row()`. Vision: `get_connection()`, `init_db()`, full CRUD per entity (core_profiles, ideas, initiatives, projects, tasks, persons, assets, decisions, capacity_profiles), plus **`execution_steps`** (first-class checklist per initiative/project scope), plus user settings tables: **`user_llm_profile`** (includes **`llm_provider_prefs_json`**: per-provider enable flags and **`__council_seats`** seat→`llm_provider` map), **`user_llm_provider_credentials`** (Fernet-encrypted keys when `ZENAF_SETTINGS_ENCRYPTION_KEY` is set), **`user_notification_settings`** (JSON prefs). |
 | **Status** | **Implemented.** Intake mirror: schema with mirror_item, mirror_judgment, mirror_sync, mailbox_action; Tier A/B/C columns; migration for existing DBs. Vision: full schema and CRUD. |
 | **Dependencies** | Intake mirror: `local_ai.judgment`, `local_ai.policy.data_access` (for get_item_with_content), `queue_store.replace_with_items`. Vision: `local_ai.vision_execution.models`. |
 | **Gaps/caveats** | `mirror_sync` and `mailbox_action` are not yet wired to poll (set_sync_state not called after poll). Raw Tier C storage is placeholder only (`raw_content_ref`). |
@@ -90,7 +90,7 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 | **Key files** | `local_ai/adapters/__init__.py`, `local_ai/adapters/README.md` |
 | **Main entry points** | `register_adapter()`, `get_adapter()`, `get_adapter_optional()`, `list_adapters()`. `_register_defaults()` registers `llm.ollama` (OllamaProvider). |
 | **Important** | `LLMAdapter` and `MailboxAdapter` protocols. No Mailbox adapter implementation is registered; intake uses `email_ingestion` + Gmail OAuth directly. |
-| **Status** | **Partially implemented.** Registry and LLM default exist; mailbox/council/atria_tools do not go through adapters for their LLM or mailbox access. |
+| **Status** | **Partially implemented.** Registry and LLM default exist; mailbox/council/zenaf_tools do not go through adapters for their LLM or mailbox access. |
 | **Dependencies** | `local_ai.providers.ollama`. |
 | **Gaps/caveats** | Intake does not use `get_adapter("mailbox", ...)`; it uses `email_ingestion` and `gmail_oauth` directly. |
 
@@ -116,7 +116,7 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 | **Key files** | `frontend/src/App.tsx` (workspace + council UI: question **textarea**, answers **aside** with viewport-based height `calc(100vh-8rem)`, scrollable thread; Foundation detail/training/editor in a **Foundation-local right pane**, separate from the global council/chat aside), `frontend/src/settings/` (`SettingsView.tsx`, `sections/ModelConnectionsSection.tsx`, `api.ts`), `frontend/src/perspectives/`, `frontend/src/vision-execution/`, `frontend/package.json`, `frontend/vite.config.ts` (proxies `/auth`, `/settings`, `/run`, … to API), `frontend/tsconfig.json` |
 | **Main entry points** | Single-page app; mode selection; POST `/run` / `/run/stream` with `mode`, params, and **`routing_context`** for policy seam on workspace flows. Council: per-seat **`llm_provider`** on `perspective_definitions` (Auto vs named provider); streaming. Intake: config, OAuth, poll, queue list, PATCH queue item, judgment chain. Auth gate + session cookies; Settings calls `/settings/*` and `PATCH /auth/me` for display name. |
 | **Status** | **Implemented.** Large single App.tsx; perspectives, vision-execution, and settings are separate views. Ordering queue and intake flows are wired. |
-| **Dependencies** | API at 8010; CORS allows localhost:5173. Dev server proxies `/auth`, `/settings`, `/run`, etc. (see `vite.config.ts`). |
+| **Dependencies** | API at 8010; CORS allows **http://127.0.0.1:5173** only. Dev server binds that host; proxies `/auth`, `/settings`, `/run`, etc. (see `vite.config.ts`). |
 | **Gaps/caveats** | No route in frontend that requests Tier B/C via `get_item_with_content` (**product contract:** Tier A only — **`TRUTH_CONVERGENCE.md`**). Notification prefs are stored only (no delivery pipeline). Non-council `/run` modes without `routing_context` still follow legacy default provider; see **`CODEBASE_TRUTH_RULES.md`** and **`docs/02_ACTIVE_DESIGN/POLICY_PROVIDER_EXECUTION.md`**. |
 
 ### 8b. Vision map (projection UI)
@@ -135,13 +135,13 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 
 | Item | Details |
 |------|---------|
-| **Module/directory** | Council: `local_ai/atria_tools.py` (`run_council`, `run_council_stream`), `local_ai/llm/council_seat_provider.py` (per-seat adapter from prefs + registry). Perspectives: frontend `frontend/src/perspectives/` (types, list, detail, creator, import/export). |
-| **Purpose** | Multi-role or multi-perspective reasoning; optional Atria synthesis; **per-seat LLM** (Auto follows execution seam; explicit provider uses user keys when enabled in Settings). |
-| **Key files** | `local_ai/atria_tools.py` (run_council, run_council_stream; **single-voice Zenaf** path `_run_council_conversational_partner_body` with **`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM`** = **System Interface** copy + **15s** `provider.generate` timeout), `local_ai/response_trunk.py` (**RESPONSE CONTRACT — TECHNICAL HEADER**: `syntax_rules`, `grounding_fences`, `mode_directives` incl. **field checklist**; **priority** turns require **`[DRAFT_VALUE]`** + **`[ID]`** in contract text), `local_ai/conversation_trunk.py` (mediation + trunk instructions), `local_ai/integration_commit.py` ( **`[DRAFT_VALUE: …]`** parsing, pending integration, `infer_draft_value_from_context` narrow auto-fill), `local_ai/council_preflight.py` (enriched council context; **`priority_resolution`** may omit prior thread — amnesia slice; optional **`developmental_guidance`**), `local_ai/developmental_guidance.py`, `local_ai/execution_policy/seam_routing.py` (`apply_seam_routing`: council + OpenAI primary but **no key** → **Ollama seam fallback** with `council_seam_fallback_ollama` meta), `local_ai/llm/provider_registry.py`, `frontend/src/perspectives/*`, `frontend/src/perspectives/types.ts`, `frontend/src/developmentalGuidance/*`, `frontend/src/components/EntityMentionText.tsx` (greedy **`[ID: …]`** regex → clickable entity chips in raw assistant text) |
+| **Module/directory** | Council: `local_ai/zenaf_tools.py` (`run_council`, `run_council_stream`), `local_ai/llm/council_seat_provider.py` (per-seat adapter from prefs + registry). Perspectives: frontend `frontend/src/perspectives/` (types, list, detail, creator, import/export). |
+| **Purpose** | Multi-role or multi-perspective reasoning; optional Zenaf synthesis; **per-seat LLM** (Auto follows execution seam; explicit provider uses user keys when enabled in Settings). |
+| **Key files** | `local_ai/zenaf_tools.py` (run_council, run_council_stream; **single-voice Zenaf** path `_run_council_conversational_partner_body` with **`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM`** = **System Interface** copy + **15s** `provider.generate` timeout), `local_ai/response_trunk.py` (**RESPONSE CONTRACT — TECHNICAL HEADER**: `syntax_rules`, `grounding_fences`, `mode_directives` incl. **field checklist**; **priority** turns require **`[DRAFT_VALUE]`** + **`[ID]`** in contract text), `local_ai/conversation_trunk.py` (mediation + trunk instructions), `local_ai/integration_commit.py` ( **`[DRAFT_VALUE: …]`** parsing, pending integration, `infer_draft_value_from_context` narrow auto-fill), `local_ai/council_preflight.py` (enriched council context; **`priority_resolution`** may omit prior thread — amnesia slice; optional **`developmental_guidance`**), `local_ai/developmental_guidance.py`, `local_ai/execution_policy/seam_routing.py` (`apply_seam_routing`: council + OpenAI primary but **no key** → **Ollama seam fallback** with `council_seam_fallback_ollama` meta), `local_ai/llm/provider_registry.py`, `frontend/src/perspectives/*`, `frontend/src/perspectives/types.ts`, `frontend/src/developmentalGuidance/*`, `frontend/src/components/EntityMentionText.tsx` (greedy **`[ID: …]`** regex → clickable entity chips in raw assistant text) |
 | **Main entry points** | `run_council(..., council_user_id=...)`, `run_council_stream(..., council_user_id=...)`. API: `POST /run` and `/run/stream` with `mode=council`, **`routing_context`**, and session → **`council_user_id`** from cookie for seat resolution and OpenAI key (env then Settings). |
 | **Status** | **Implemented.** Cockpit always sends ≥1 seat (default first seat **Thinking Partner**). All-TP runs: conversational output, no synthesis; mixed with structured roles: structured seats + optional synthesis. During routed council requests, `get_default_provider()` / `get_council_provider()` see policy overrides from **`apply_seam_routing`** (`api/main.py`); each seat may use **`build_council_seat_provider`** (registry + encrypted credentials). Unsupported or disabled providers yield a clear block for that seat rather than silent wrong model. |
 | **Dependencies** | `local_ai.providers`, `local_ai.context.phil_context` (load_phil_context) for packet, `local_ai.vision_execution.storage` for profile/prefs when `council_user_id` set. |
-| **Gaps/caveats** | Perspective **definitions** still live in frontend localStorage (`atria-perspective-agents`); only **seat→LLM defaults** persist server-side under `__council_seats`. Shared **data access policy** is not applied to council payloads. |
+| **Gaps/caveats** | Perspective **definitions** still live in frontend localStorage (`zenaf-perspective-agents`); only **seat→LLM defaults** persist server-side under `__council_seats`. Shared **data access policy** is not applied to council payloads. |
 
 ---
 
@@ -165,7 +165,7 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 | Item | Details |
 |------|---------|
 | **Purpose** | Authenticated **Settings**: account (email, display name via `PATCH /auth/me`, logout), **Model connections** (per-provider enable/disable, keys, default provider/model, test connection), **council seat** LLM mapping (`PUT /settings/llm/council-seats/{seat_id}`), notification JSON prefs (storage only). |
-| **API** | `api/routes/settings_routes.py` → `GET /settings/llm` (includes `providers` status rows + `council_seat_providers`), `GET /settings/llm/providers`, `PUT /settings/llm/providers/{provider}` (enabled flag), `PUT /settings/llm/council-seats/{seat_id}`, `PUT /settings/llm/profile`, `PUT /settings/llm/credentials/{provider}`, `POST /settings/llm/test`, `GET/PUT /settings/notifications`. All require session. Credential writes return **503** if `ATRIA_SETTINGS_ENCRYPTION_KEY` is missing/invalid (no plaintext fallback). |
+| **API** | `api/routes/settings_routes.py` → `GET /settings/llm` (includes `providers` status rows + `council_seat_providers`), `GET /settings/llm/providers`, `PUT /settings/llm/providers/{provider}` (enabled flag), `PUT /settings/llm/council-seats/{seat_id}`, `PUT /settings/llm/profile`, `PUT /settings/llm/credentials/{provider}`, `POST /settings/llm/test`, `GET/PUT /settings/notifications`. All require session. Credential writes return **503** if `ZENAF_SETTINGS_ENCRYPTION_KEY` is missing/invalid (no plaintext fallback). |
 | **Storage** | `local_ai/vision_execution/schema.sql` + `storage.py`: Fernet encryption for keys; `llm_provider_prefs_json` merges **provider enabled** map and **`__council_seats`**; CRUD for profile, credentials, notifications. |
 | **LLM routing** | **`local_ai/llm/provider_registry.py`** — `execution_provider_gate_message` (seam + council seats), `user_llm_adapter_gate_message` (resolver). **`local_ai/llm/resolver.py`** → `get_llm_adapter_for_user(user_id)` respects prefs; blocked adapters surface explicit messages. **`apply_seam_routing`** (`seam_routing.py`) — OpenAI primary uses `OPENAI_API_KEY` then saved user key when `user_id` is set; council-only fallback to Ollama when OpenAI unavailable (see §9). |
 | **Frontend** | `frontend/src/settings/*` (`ModelConnectionsSection.tsx`); header **Settings** → `mainView === 'settings'`. |
@@ -188,13 +188,13 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 
 | Item | Details |
 |------|---------|
-| **Module/directory** | `tools/file_steward/app.py` (Streamlit); orchestration in `local_ai/atria_tools.py`. |
+| **Module/directory** | `tools/file_steward/app.py` (Streamlit); orchestration in `local_ai/zenaf_tools.py`. |
 | **Purpose** | Analyze folder, recommend children, assess uncertainty, simulate folder plan; optional LLM second pass. |
-| **Key files** | `local_ai/atria_tools.py` (analyze_folder_structure, recommend_child_folders, assess_plan_strength, simulate_folder_plan, simulate_folder_plan_with_llm, reassess_low_confidence), `tools/file_steward/app.py` |
-| **Main entry points** | `_get_steward_app()` lazy-imports `tools/file_steward/app`; atria_tools wraps app functions. POST /run modes: analyze, recommend, assess_uncertainty, simulate, reassess_low_confidence. |
-| **Status** | **Implemented.** File Steward is a separate tool; atria_tools adds path and calls it. No policy layer. |
+| **Key files** | `local_ai/zenaf_tools.py` (analyze_folder_structure, recommend_child_folders, assess_plan_strength, simulate_folder_plan, simulate_folder_plan_with_llm, reassess_low_confidence), `tools/file_steward/app.py` |
+| **Main entry points** | `_get_steward_app()` lazy-imports `tools/file_steward/app`; zenaf_tools wraps app functions. POST /run modes: analyze, recommend, assess_uncertainty, simulate, reassess_low_confidence. |
+| **Status** | **Implemented.** File Steward is a separate tool; zenaf_tools adds path and calls it. No policy layer. |
 | **Dependencies** | `tools.file_steward.app` (sys.path), `local_ai.providers` for LLM second pass. |
-| **Gaps/caveats** | File Steward runs as separate app or via atria_tools; not a registered adapter. |
+| **Gaps/caveats** | File Steward runs as separate app or via zenaf_tools; not a registered adapter. |
 
 ---
 
@@ -231,7 +231,7 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 | Item | Details |
 |------|---------|
 | **Entry** | `api/main.py` → `app.on_event("startup")` → `_on_startup()`. |
-| **Sequence** | (1) `_check_startup_dependencies()` — import pandas, duckduckgo_search, local_ai, atria_tools, providers. (2) `mirror.load_into_memory()` — if `intake_mirror.db` exists, clear judgment store, load mirror_judgment into judgment layer, load mirror_item into queue_store. |
+| **Sequence** | (1) `_check_startup_dependencies()` — import pandas, duckduckgo_search, local_ai, zenaf_tools, providers. (2) `mirror.load_into_memory()` — if `intake_mirror.db` exists, clear judgment store, load mirror_judgment into judgment layer, load mirror_item into queue_store. |
 | **Status** | **Implemented.** No explicit poll on startup; frontend or user must trigger poll. |
 | **Gaps/caveats** | Vision Execution DB is not initialized at API startup; it initializes on first request to vision-execution routes. |
 
@@ -265,9 +265,9 @@ Comprehensive inventory of implemented modules, files, responsibilities, and cur
 | Frontend build | Implemented | `tsc -b` + Vite; unused locals/parameters relaxed in tsconfig |
 | Council / perspectives | Implemented | Routed council: seam + per-seat providers + OpenAI-missing → Ollama fallback for Auto; no data-access policy on payloads |
 | Vision-to-execution | Implemented | Full CRUD + radar |
-| File Steward | Implemented | Via atria_tools; not adapter |
+| File Steward | Implemented | Via zenaf_tools; not adapter |
 | Mailbox / ingestion | Implemented | On-demand poll only |
 | Synthetic / evaluation | Implemented | Multiple scripts |
 | Startup / boot | Implemented | Mirror load on startup |
 | Tests | Implemented (narrow) | Intake pipeline only |
-| Nightly self-exercise | Implemented | `tools/run_nightly_self_exercise.py` — profiles `quick` / `standard` / `full`; morning digest + run-to-run deltas in `NIGHTLY_REPORT.md`; optional budgeted cloud sample via `ATRIA_NIGHTLY_CLOUD_BUDGET_USD`; scratch VE cleanup in `cleanup.py`; desktop launcher `tools/nightly_harness_gui.py` / `tools/NightlyHarness.bat`; reports under `logs/nightly_self_exercise/` |
+| Nightly self-exercise | Implemented | `tools/run_nightly_self_exercise.py` — profiles `quick` / `standard` / `full`; morning digest + run-to-run deltas in `NIGHTLY_REPORT.md`; optional budgeted cloud sample via `ZENAF_NIGHTLY_CLOUD_BUDGET_USD`; scratch VE cleanup in `cleanup.py`; desktop launcher `tools/nightly_harness_gui.py` / `tools/NightlyHarness.bat`; reports under `logs/nightly_self_exercise/` |

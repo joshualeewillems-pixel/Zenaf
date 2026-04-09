@@ -7,7 +7,7 @@ Single server-side resolution for OpenAI API keys used by the execution seam (ap
 **Anonymous account** (``account_user_id`` absent): no key is returned — the anonymous lane
 does **not** read ``OPENAI_API_KEY`` (Option B).
 
-**System** scope uses only ``ATRIA_SYSTEM_OPENAI_KEY`` via ``resolve_openai_api_key_for_principal``.
+**System** scope uses only ``ZENAF_SYSTEM_OPENAI_KEY`` via ``resolve_openai_api_key_for_principal``.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ def resolve_openai_api_key_for_principal(principal) -> Tuple[str | None, OpenAiK
     """
     Namespace-aware OpenAI key resolution for the execution seam.
 
-    - **system** scope: ``ATRIA_SYSTEM_OPENAI_KEY`` only (no ``OPENAI_API_KEY``, no user Settings).
+    - **system** scope: ``ZENAF_SYSTEM_OPENAI_KEY`` only (no ``OPENAI_API_KEY``, no user Settings).
     - **account (authenticated)**: ``OPENAI_API_KEY`` then saved Settings key for that user.
     - **account (anonymous)**: **no key** — does **not** use ``OPENAI_API_KEY`` (Option B).
     """
@@ -65,7 +65,7 @@ def resolve_openai_api_key_for_principal(principal) -> Tuple[str | None, OpenAiK
         return None, "anonymous_blocked"
 
     if principal.scope == "system":
-        sys_k = (os.environ.get("ATRIA_SYSTEM_OPENAI_KEY") or "").strip()
+        sys_k = (os.environ.get("ZENAF_SYSTEM_OPENAI_KEY") or "").strip()
         if sys_k:
             return sys_k, "system_env"
         return None, "none"
@@ -82,7 +82,7 @@ def describe_missing_openai_key_for_anonymous() -> str:
         "No OpenAI API key is available for anonymous requests. "
         "The anonymous account lane does not use the server's OPENAI_API_KEY. "
         "Sign in and save an OpenAI key in Settings, use local Ollama, or use a system-scoped "
-        "request with ATRIA_SYSTEM_OPENAI_KEY when appropriate."
+        "request with ZENAF_SYSTEM_OPENAI_KEY when appropriate."
     )
 
 
@@ -103,7 +103,7 @@ def describe_missing_openai_key_for_principal(principal) -> str:
     if isinstance(principal, ExecutionPrincipal) and principal.scope == "system":
         return (
             "No OpenAI API key available for system execution. "
-            "Set ATRIA_SYSTEM_OPENAI_KEY on the API server (system credential namespace)."
+            "Set ZENAF_SYSTEM_OPENAI_KEY on the API server (system credential namespace)."
         )
     if isinstance(principal, ExecutionPrincipal):
         if principal.scope == "account" and not principal.account_user_id:

@@ -1,5 +1,5 @@
 """
-Central model configuration for Atria and File Steward.
+Central model configuration for Zenaf and File Steward.
 One place controls provider choice, Ollama settings, and LLM second-pass toggle.
 """
 

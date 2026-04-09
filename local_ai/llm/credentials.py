@@ -15,12 +15,27 @@ if TYPE_CHECKING:
 
 CredentialSource = Literal["none", "system_env", "env", "settings", "account_storage"]
 
+# Authenticated account: same resolution order as OpenAI (env first, then Settings). Anonymous skips env (Option B).
+_ACCOUNT_CLOUD_ENV_KEYS: dict[str, tuple[str, ...]] = {
+    "anthropic": ("ANTHROPIC_API_KEY",),
+    "google": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+    "xai": ("XAI_API_KEY",),
+}
+
+
+def _account_env_cloud_key(provider_id: str) -> str | None:
+    for name in _ACCOUNT_CLOUD_ENV_KEYS.get(provider_id, ()):
+        v = (os.environ.get(name) or "").strip()
+        if v:
+            return v
+    return None
+
 
 def resolve_cloud_api_key(principal: ExecutionPrincipal, provider_id: str) -> tuple[str | None, CredentialSource]:
     """
     Resolve decrypted API key for a cloud provider and principal.
 
-    System namespace: ATRIA_SYSTEM_* env vars only (no user Settings).
+    System namespace: ZENAF_SYSTEM_* env vars only (no user Settings).
     Account namespace: provider-specific rules; OpenAI uses OPENAI_API_KEY then Settings.
     """
     from local_ai.llm.execution_principal import ExecutionPrincipal
@@ -35,10 +50,10 @@ def resolve_cloud_api_key(principal: ExecutionPrincipal, provider_id: str) -> tu
 
     if principal.scope == "system":
         env_names = {
-            "openai": "ATRIA_SYSTEM_OPENAI_KEY",
-            "anthropic": "ATRIA_SYSTEM_ANTHROPIC_API_KEY",
-            "google": "ATRIA_SYSTEM_GOOGLE_API_KEY",
-            "xai": "ATRIA_SYSTEM_XAI_API_KEY",
+            "openai": "ZENAF_SYSTEM_OPENAI_KEY",
+            "anthropic": "ZENAF_SYSTEM_ANTHROPIC_API_KEY",
+            "google": "ZENAF_SYSTEM_GOOGLE_API_KEY",
+            "xai": "ZENAF_SYSTEM_XAI_API_KEY",
         }
         en = env_names.get(pid)
         if not en:
@@ -66,6 +81,11 @@ def resolve_cloud_api_key(principal: ExecutionPrincipal, provider_id: str) -> tu
     uid = principal.account_user_id
     if not uid:
         return None, "none"
+
+    env_k = _account_env_cloud_key(pid)
+    if env_k:
+        return env_k, "env"
+
     from local_ai.vision_execution import storage as St
 
     raw = St.get_decrypted_llm_api_key(uid, pid)

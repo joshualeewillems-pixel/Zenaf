@@ -1,4 +1,4 @@
-# Atria — developer handoff
+# Zenaf — developer handoff
 
 Local-first **workflow cockpit**: workspace organizer (File Steward + `/run` modes), intake/email queue, **Vision → Execution** (ideas → initiatives → projects → tasks), content tools, **Settings** (account, LLM keys, notification prefs). **FastAPI** backend + **React / Vite** SPA.
 
@@ -24,9 +24,9 @@ Use this README to **clone, run, and orient** another developer on this build.
    ```bash
    cd frontend && npm install && cd ..
    ```
-7. **Optional — encrypted LLM keys in Settings:** set `ATRIA_SETTINGS_ENCRYPTION_KEY` (see [Environment](#environment)). The Settings UI will warn if it is missing; without it, **saving** API keys fails (503); much of the app still runs for local/workflow use.
+7. **Optional — encrypted LLM keys in Settings:** set `ZENAF_SETTINGS_ENCRYPTION_KEY` (see [Environment](#environment)). The Settings UI will warn if it is missing; without it, **saving** API keys fails (503); much of the app still runs for local/workflow use.
 8. **Start stack** — Windows: `.\open-cockpit.ps1` from root, or use [Manual run](#manual-run-all-platforms) below.
-9. **Sanity check:** browser **http://localhost:5173** (app) and **http://127.0.0.1:8010/docs** (OpenAPI). Optional: `curl http://127.0.0.1:8010/health`.
+9. **Sanity check:** browser **http://127.0.0.1:5173** (app) and **http://127.0.0.1:8010/docs** (OpenAPI). Optional: `curl http://127.0.0.1:8010/health`.
 
 ---
 
@@ -76,11 +76,11 @@ npm run dev
 
 | URL | What |
 |-----|------|
-| http://localhost:5173 | Cockpit SPA |
+| http://127.0.0.1:5173 | Cockpit SPA |
 | http://127.0.0.1:8010/docs | OpenAPI / Swagger |
 | http://127.0.0.1:8010/health | JSON health |
 
-Frontend dev server **proxies** `/run`, `/auth`, `/vision-execution`, `/settings` to port **8010** (`frontend/vite.config.ts`). Intake/workspace calls use **`API_BASE`** in `frontend/src/App.tsx` — keep API on **8010** unless you change both.
+Frontend dev server listens on **127.0.0.1:5173** (not `localhost`, so it matches **`API_BASE`** `http://127.0.0.1:8010` and session cookies work). It **proxies** `/run`, `/auth`, `/vision-execution`, `/settings` to port **8010** (`frontend/vite.config.ts`). Intake/workspace calls use **`API_BASE`** in `frontend/src/App.tsx` — keep API on **8010** unless you change both.
 
 ---
 
@@ -100,10 +100,10 @@ cd frontend && npm run build
 
 | Variable | When needed |
 |----------|-------------|
-| **`ATRIA_SETTINGS_ENCRYPTION_KEY`** | Fernet key (URL-safe base64) to **store** LLM API keys via Settings. If unset, credential saves return **503** (by design). Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. **Separate from** learning JSONL below — that key encrypts settings secrets only. |
-| **`ATRIA_LEARNING_EXPORT_ENABLED`** | Set to `1` / `true` / `yes` / `on` to allow authenticated **GET** export/inspect/stats for in-memory learning records (`/vision-execution/learning-records/*`). Default: off (**403**). |
-| **`ATRIA_LEARNING_PERSIST_PATH`** | Optional path to an **append-only JSONL** file for `LearningRecord` rows (same redacted shape as capture). Loaded on API startup into the ring buffer; new rows append after each capture/outcome update. Missing file is OK; corrupt lines skipped with a warning. |
-| **`ATRIA_LEARNING_PERSIST_MAX_MB`** | Optional. If set, when the JSONL exceeds this size (MiB), it is rotated to `*.YYYYMMDD-HHMMSS.rotated` before the next append. |
+| **`ZENAF_SETTINGS_ENCRYPTION_KEY`** | Fernet key (URL-safe base64) to **store** LLM API keys via Settings. If unset, credential saves return **503** (by design). Generate: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. **Separate from** learning JSONL below — that key encrypts settings secrets only. |
+| **`ZENAF_LEARNING_EXPORT_ENABLED`** | Set to `1` / `true` / `yes` / `on` to allow authenticated **GET** export/inspect/stats for in-memory learning records (`/vision-execution/learning-records/*`). Default: off (**403**). |
+| **`ZENAF_LEARNING_PERSIST_PATH`** | Optional path to an **append-only JSONL** file for `LearningRecord` rows (same redacted shape as capture). Loaded on API startup into the ring buffer; new rows append after each capture/outcome update. Missing file is OK; corrupt lines skipped with a warning. |
+| **`ZENAF_LEARNING_PERSIST_MAX_MB`** | Optional. If set, when the JSONL exceeds this size (MiB), it is rotated to `*.YYYYMMDD-HHMMSS.rotated` before the next append. |
 | **Ollama / provider config** | Default local LLM; cloud providers optional via Settings UI when encryption key is set. |
 
 ---
@@ -114,7 +114,7 @@ cd frontend && npm run build
 |-------|-----------|--------|
 | **Intake mirror** | `intake_mirror.db` (repo root) | Queue + judgments; loaded into memory on API startup — see **`docs/01_TRUTH/BOOT_FLOW.md`**. |
 | **Vision Execution** | `data/vision_execution/vision_execution.db` | Init on first VE API use. |
-| **Learning records (optional)** | Path from **`ATRIA_LEARNING_PERSIST_PATH`** | Append-only JSONL of post-capture rows (privacy modes already applied — no full prompts). Also kept in an in-memory ring buffer for fast access. |
+| **Learning records (optional)** | Path from **`ZENAF_LEARNING_PERSIST_PATH`** | Append-only JSONL of post-capture rows (privacy modes already applied — no full prompts). Also kept in an in-memory ring buffer for fast access. |
 
 Back up those files if you care about local data. **Lock down** any learning JSONL path (OS permissions) like other operational logs.
 
@@ -127,10 +127,10 @@ Non-blocking capture of **delegated** (often cloud) calls into **`LearningRecord
 | Step | What |
 |------|------|
 | **Live buffer** | `local_ai/delegation/learning_capture.py` — ring buffer; clients can POST user outcomes by `learning_record_id`. |
-| **HTTP export** | With `ATRIA_LEARNING_EXPORT_ENABLED`, logged-in users can hit **`GET /vision-execution/learning-records/{stats,inspect,export}`** (paginated; JSONL or JSON). |
-| **Durable log** | Set `ATRIA_LEARNING_PERSIST_PATH`; API startup replays JSONL into the buffer (last line per `record_id` wins). |
-| **Offline prep** | `python scripts/atria_learning_jsonl_prep.py <paths...> -o cleaned.jsonl` — merge active + `*.rotated` files, dedupe, optional `--summary-json`. |
-| **Evidence report** | `python scripts/atria_learning_analysis.py cleaned.jsonl` — validation/outcome/capture breakdowns, heuristic **surface** recommendations, coarse distillation gate; optional `--json-out`. |
+| **HTTP export** | With `ZENAF_LEARNING_EXPORT_ENABLED`, logged-in users can hit **`GET /vision-execution/learning-records/{stats,inspect,export}`** (paginated; JSONL or JSON). |
+| **Durable log** | Set `ZENAF_LEARNING_PERSIST_PATH`; API startup replays JSONL into the buffer (last line per `record_id` wins). |
+| **Offline prep** | `python scripts/zenaf_learning_jsonl_prep.py <paths...> -o cleaned.jsonl` — merge active + `*.rotated` files, dedupe, optional `--summary-json`. |
+| **Evidence report** | `python scripts/zenaf_learning_analysis.py cleaned.jsonl` — validation/outcome/capture breakdowns, heuristic **surface** recommendations, coarse distillation gate; optional `--json-out`. |
 
 **Design reference:** **`docs/02_ACTIVE_DESIGN/TIERED_DELEGATION_AND_LEARNING.md`**.
 
@@ -142,7 +142,7 @@ Non-blocking capture of **delegated** (often cloud) calls into **`LearningRecord
 |------|------|
 | `api/main.py` | FastAPI app: `/run`, routers, startup, intake mirror load |
 | `api/routes/` | `vision_execution`, intake, `auth`, `settings`, … |
-| `local_ai/` | Engine: `atria_tools.py`, `vision_execution/`, `intake/`, `llm/resolver.py`, … |
+| `local_ai/` | Engine: `zenaf_tools.py`, `vision_execution/`, `intake/`, `llm/resolver.py`, … |
 | `frontend/` | Vite SPA; `App.tsx`; `src/vision-execution/`, `src/settings/`, … |
 | `docs/` | See **`docs/README.md`** for folder layout (`01_TRUTH`, `02_ACTIVE_DESIGN`, …) |
 
@@ -173,8 +173,8 @@ pytest tests/
 
 | Script | Purpose |
 |--------|---------|
-| **`scripts/atria_learning_jsonl_prep.py`** | Dedupe merged JSONL; write cleaned file + optional summary JSON. |
-| **`scripts/atria_learning_analysis.py`** | Analysis report on **cleaned** JSONL (prompt/validator prioritization). |
+| **`scripts/zenaf_learning_jsonl_prep.py`** | Dedupe merged JSONL; write cleaned file + optional summary JSON. |
+| **`scripts/zenaf_learning_analysis.py`** | Analysis report on **cleaned** JSONL (prompt/validator prioritization). |
 | *Others* | Seeds, intake helpers, vision execution seeds — browse `scripts/`. |
 
 ---
@@ -186,9 +186,9 @@ pytest tests/
 | **`ModuleNotFoundError: local_ai`** | Run `uvicorn` from **repo root**, not from `api/`. |
 | **Frontend 404 / network errors on API** | API on **8010**; `npm run dev` running; proxy in `vite.config.ts`. |
 | **CORS / cookie issues** | Use the Vite dev URL (**5173**) so requests go through the proxy for scoped routes. |
-| **503 on LLM credential save** | Set **`ATRIA_SETTINGS_ENCRYPTION_KEY`** or skip storing keys and use default local provider. |
-| **403 on learning export/inspect** | Set **`ATRIA_LEARNING_EXPORT_ENABLED=1`** and call the API **authenticated** (same session as the app). |
-| **Learning file not growing** | Confirm **`ATRIA_LEARNING_PERSIST_PATH`** is set **before** API start; path writable; check API logs for persist warnings. |
+| **503 on LLM credential save** | Set **`ZENAF_SETTINGS_ENCRYPTION_KEY`** or skip storing keys and use default local provider. |
+| **403 on learning export/inspect** | Set **`ZENAF_LEARNING_EXPORT_ENABLED=1`** and call the API **authenticated** (same session as the app). |
+| **Learning file not growing** | Confirm **`ZENAF_LEARNING_PERSIST_PATH`** is set **before** API start; path writable; check API logs for persist warnings. |
 | **Intake queue empty after restart** | Expected if `intake_mirror.db` missing or not yet populated; see **BOOT_FLOW**. |
 
 ---

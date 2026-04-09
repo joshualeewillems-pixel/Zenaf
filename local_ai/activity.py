@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 # JSONL ``ActivityEvent.source`` for coordination checkpoints (distinct from judgment ``evidence_source`` strings).
 COORDINATION_ACTIVITY_SOURCE_SERVER_EXECUTION = "server-execution"
-COORDINATION_ACTIVITY_SOURCE_CLIENT_TRACE = "atria-client-trace"
+COORDINATION_ACTIVITY_SOURCE_CLIENT_TRACE = "zenaf-client-trace"
 
 
 class ActivityType(str, Enum):

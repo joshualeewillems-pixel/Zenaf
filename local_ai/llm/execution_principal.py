@@ -91,7 +91,7 @@ def execution_principal_from_legacy_user_id(user_id: str | None) -> ExecutionPri
 
 
 def _system_execution_key_from_request(request: Request) -> str:
-    h = request.headers.get("X-Atria-System-Execution-Key") or request.headers.get("X-Atria-System-Key")
+    h = request.headers.get("X-Zenaf-System-Execution-Key") or request.headers.get("X-Zenaf-System-Key")
     if h and h.strip():
         return h.strip()
     auth = request.headers.get("Authorization") or ""
@@ -116,8 +116,8 @@ def resolve_execution_principal_for_run_http(
         from local_ai.vision_execution import service as S
 
         # Same-origin browser clients use HttpOnly cookie. Scripted/API clients (curl, urllib) can pass
-        # the raw session token via X-Atria-Session when cookies are not practical.
-        token = request.cookies.get("atria_session") or (request.headers.get("X-Atria-Session") or "").strip()
+        # the raw session token via X-Zenaf-Session when cookies are not practical.
+        token = request.cookies.get("zenaf_session") or (request.headers.get("X-Zenaf-Session") or "").strip()
         if not token:
             return anonymous_account_principal(), None
         user = S.get_session_user(token)
@@ -129,15 +129,15 @@ def resolve_execution_principal_for_run_http(
         return authenticated_account_principal(str(uid).strip()), None
 
     if raw == "system":
-        expected = (os.environ.get("ATRIA_SYSTEM_EXECUTION_KEY") or "").strip()
+        expected = (os.environ.get("ZENAF_SYSTEM_EXECUTION_KEY") or "").strip()
         if not expected:
             return None, (
                 "System execution scope was requested but the API is not configured for it "
-                "(set ATRIA_SYSTEM_EXECUTION_KEY on the server)."
+                "(set ZENAF_SYSTEM_EXECUTION_KEY on the server)."
             )
         got = _system_execution_key_from_request(request)
         if not got or got != expected:
-            return None, "Invalid or missing system execution credentials (X-Atria-System-Execution-Key)."
+            return None, "Invalid or missing system execution credentials (X-Zenaf-System-Execution-Key)."
         return system_principal(), None
 
     return None, f"Invalid execution_scope {execution_scope_raw!r}; use 'account' or 'system'."

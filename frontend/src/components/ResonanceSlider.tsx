@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { VISION_EXECUTION_API } from '../vision-execution/types'
 
-const STORAGE_PREFIX = 'atria.resonance.v1.'
+const STORAGE_PREFIX = 'zenaf.resonance.v1.'
 
 export interface ResonanceSliderProps {
   responseId: string

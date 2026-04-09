@@ -174,7 +174,7 @@ def _token_set(text: str) -> set[str]:
 
 
 def _extract_synthesis(result_text: str) -> tuple[str, str]:
-    marker = "Atria synthesis:"
+    marker = "Zenaf synthesis:"
     if marker not in result_text:
         return result_text.strip(), ""
     head, tail = result_text.split(marker, 1)

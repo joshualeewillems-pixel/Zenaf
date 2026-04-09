@@ -6,7 +6,7 @@ Operator actions (mirror-only; no mailbox mutation):
 - Change lane: manual lane override + correction note (creates correction judgment).
 - Add correction note: with lane change (required) or when clearing override.
 - Update queue status: new / reviewed / done.
-- Archive (internal hide): item hidden from default queue list in Atria only; no mailbox delete, no external folder/label moves.
+- Archive (internal hide): item hidden from default queue list in Zenaf only; no mailbox delete, no external folder/label moves.
 
 Not supported: mailbox delete, external folder/label moves, or any mutation of the source mailbox.
 """
@@ -20,7 +20,7 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/intake", tags=["intake"])
 
 # Where to send user after successful Gmail OAuth (frontend)
-FRONTEND_URL = os.environ.get("INTAKE_OAUTH_FRONTEND_URL", "http://localhost:5173").rstrip("/")
+FRONTEND_URL = os.environ.get("INTAKE_OAUTH_FRONTEND_URL", "http://127.0.0.1:5173").rstrip("/")
 
 
 class EmailIntakeBody(BaseModel):
@@ -212,7 +212,7 @@ class QueueItemUpdateBody(BaseModel):
     assigned_to: str | None = None
     lane_override: str | None = None  # staff override; requires correction_note for logging
     correction_note: str | None = None  # reason for override (logged in judgment layer)
-    archived: bool | None = None  # internal hide in Atria queue only; no mailbox change
+    archived: bool | None = None  # internal hide in Zenaf queue only; no mailbox change
 
 
 class CreateTaskFromIntakeBody(BaseModel):

@@ -38,10 +38,10 @@ _BAD_SEGMENT_CHARS = re.compile(r'[\\/:*?"<>|\r\n\x00-\x1f]')
 
 
 def resolve_soil_root() -> Path:
-    env = os.environ.get("ATRIA_SOIL_ROOT")
+    env = os.environ.get("ZENAF_SOIL_ROOT")
     if env:
         return Path(env).expanduser().resolve()
-    return Path.home() / ".atria" / "soil" / SOIL_VERSION_DIR
+    return Path.home() / ".zenaf" / "soil" / SOIL_VERSION_DIR
 
 
 def sanitize_entity_type(entity_type: str) -> str:

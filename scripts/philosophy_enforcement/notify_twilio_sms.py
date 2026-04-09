@@ -11,7 +11,7 @@ Environment:
 If required vars are missing, exits 0 after printing to stderr (workflow can still be green).
 
 Usage:
-  python notify_twilio_sms.py --body "Atria: wave gate failed"
+  python notify_twilio_sms.py --body "Zenaf: wave gate failed"
   echo "text" | python notify_twilio_sms.py
 """
 from __future__ import annotations

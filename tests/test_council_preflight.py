@@ -152,7 +152,7 @@ def test_council_packet_has_primary_context_false_without_marker():
 
 
 def test_council_seat_limit_appends_primary_anchor():
-    from local_ai.atria_tools import (
+    from local_ai.zenaf_tools import (
         COUNCIL_SEAT_CLARIFY_TEMPLATE,
         COUNCIL_SEAT_PRIMARY_ANCHOR,
         _council_seat_role_limit_for_context,
@@ -177,7 +177,7 @@ def test_council_seat_limit_appends_primary_anchor():
 
 def test_supplemental_thread_labels_ground_seat_when_outside_primary_slice():
     """Project:/Title:/… lines after Runtime are supplemental phrases (run2-style harness)."""
-    from local_ai.atria_tools import (
+    from local_ai.zenaf_tools import (
         _primary_field_grounding_phrases,
         _seat_body_passes_primary_postprocess_grounding,
     )
@@ -210,7 +210,7 @@ Constraint: stay within current Q3 scope.
 
 
 def test_supplemental_skips_generic_title_project_and_dedupes_authoritative():
-    from local_ai.atria_tools import _primary_field_grounding_phrases
+    from local_ai.zenaf_tools import _primary_field_grounding_phrases
 
     ctx = """PRIMARY CONTEXT (authoritative):
 
@@ -233,7 +233,7 @@ Summary: active work item
 
 def test_seat_postprocess_grounding_phrase_based_not_word_bag():
     """Operator-style answers can name the product without 3 junk-token overlap on the full corpus."""
-    from local_ai.atria_tools import _seat_body_passes_primary_postprocess_grounding
+    from local_ai.zenaf_tools import _seat_body_passes_primary_postprocess_grounding
 
     ctx = """PRIMARY CONTEXT (authoritative):
 
@@ -254,7 +254,7 @@ def test_seat_postprocess_grounding_phrase_based_not_word_bag():
 
 def test_seat_postprocess_grounding_accepts_explicit_question_brief_without_title_echo():
     """Case C-style: PRIMARY title generic; user embeds Aurora/cutover in Question — Operator may echo those."""
-    from local_ai.atria_tools import _seat_body_passes_primary_postprocess_grounding
+    from local_ai.zenaf_tools import _seat_body_passes_primary_postprocess_grounding
 
     ctx = """PRIMARY CONTEXT (authoritative):
 
@@ -277,7 +277,7 @@ def test_seat_postprocess_grounding_accepts_explicit_question_brief_without_titl
 
 
 def test_operator_persona_swaps_executable_constraint_when_clarify_only():
-    from local_ai.atria_tools import _built_in_persona_dict, _build_council_persona_block
+    from local_ai.zenaf_tools import _built_in_persona_dict, _build_council_persona_block
 
     op = _built_in_persona_dict("operator")
     normal = _build_council_persona_block(op, council_clarify_only=False)
@@ -288,7 +288,7 @@ def test_operator_persona_swaps_executable_constraint_when_clarify_only():
 
 
 def test_compose_council_seat_shared_constraints_omits_primary_grounding_when_clarify_only():
-    from local_ai.atria_tools import COUNCIL_SEAT_CLARIFY_TEMPLATE, _compose_council_seat_shared_constraints
+    from local_ai.zenaf_tools import COUNCIL_SEAT_CLARIFY_TEMPLATE, _compose_council_seat_shared_constraints
 
     clarified = _compose_council_seat_shared_constraints(
         COUNCIL_SEAT_CLARIFY_TEMPLATE,
@@ -300,7 +300,7 @@ def test_compose_council_seat_shared_constraints_omits_primary_grounding_when_cl
 
 
 def test_build_council_persona_block_primary_and_enforcement():
-    from local_ai.atria_tools import _assemble_council_seat_prompt, _build_council_persona_block
+    from local_ai.zenaf_tools import _assemble_council_seat_prompt, _build_council_persona_block
 
     persona = _build_council_persona_block(
         {

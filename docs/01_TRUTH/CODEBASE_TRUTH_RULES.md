@@ -14,9 +14,9 @@ Plain facts about **current** code — not a target architecture.
 
 ## 1. LLM routing law
 
-- **`get_default_provider()`** (`local_ai/providers/__init__.py`) — use for **`/run`** and anything that must stay **identical to today’s global default** (Ollama config from env / provider module) **when no execution seam is active**. During **`apply_seam_routing`** (`local_ai/execution_policy/seam_routing.py`), overrides may replace the default (Ollama model token, OpenAI instance). Today this includes bulk of **`local_ai/atria_tools.py`** (council, web research paths that call it), **`local_ai/vision_execution/meeting_extract.py`**, **`local_ai/vision_execution/core_profile_conversation.py`**, **`local_ai/vision_execution/core_profile_reconcile.py`**, unless a deliberate change is made and documented.
+- **`get_default_provider()`** (`local_ai/providers/__init__.py`) — use for **`/run`** and anything that must stay **identical to today’s global default** (Ollama config from env / provider module) **when no execution seam is active**. During **`apply_seam_routing`** (`local_ai/execution_policy/seam_routing.py`), overrides may replace the default (Ollama model token, OpenAI instance). Today this includes bulk of **`local_ai/zenaf_tools.py`** (council, web research paths that call it), **`local_ai/vision_execution/meeting_extract.py`**, **`local_ai/vision_execution/core_profile_conversation.py`**, **`local_ai/vision_execution/core_profile_reconcile.py`**, unless a deliberate change is made and documented.
 
-- **`get_llm_adapter_for_user(user_id)`** (`local_ai/llm/resolver.py`) — use when the call chain **already has `user_id`** and the product decision is “honor stored LLM profile + keys + **provider enable prefs**.” **`get_provider_shim_for_legacy_generate(user_id)`** wraps that for code that expects `.generate(prompt, timeout=...)`. Today: **`local_ai/vision_execution/idea_evaluate.py`**, **`local_ai/vision_execution/initiative_evaluate.py`**, and **`distill_content_source`** (and any other path in `atria_tools` explicitly wired to the resolver).
+- **`get_llm_adapter_for_user(user_id)`** (`local_ai/llm/resolver.py`) — use when the call chain **already has `user_id`** and the product decision is “honor stored LLM profile + keys + **provider enable prefs**.” **`get_provider_shim_for_legacy_generate(user_id)`** wraps that for code that expects `.generate(prompt, timeout=...)`. Today: **`local_ai/vision_execution/idea_evaluate.py`**, **`local_ai/vision_execution/initiative_evaluate.py`**, and **`distill_content_source`** (and any other path in `zenaf_tools` explicitly wired to the resolver).
 
 - **`/run`** — **Routed** requests (`routing_context` present, see **`api/main.py` `_begin_run_routing`**) may use the **session user’s saved OpenAI key** (after env `OPENAI_API_KEY`) and pass **`council_user_id`** into council for **per-seat** LLM resolution (`build_council_seat_provider`). **Non-routed** `/run` modes remain **default provider only** unless extended here and in **`api/main.py`** together.
 
@@ -38,7 +38,7 @@ Plain facts about **current** code — not a target architecture.
 
 - **`/auth`** (`api/routes/auth_routes.py`) — **session identity only**: login, logout, **`GET /auth/me`**, **`PATCH /auth/me`** (e.g. display name). No LLM keys, no notification JSON blobs.
 
-- **`/settings`** (`api/routes/settings_routes.py`, mounted in **`api/main.py`**) — **user prefs and secrets**: LLM profile, encrypted provider credentials (Fernet + **`ATRIA_SETTINGS_ENCRYPTION_KEY`**), notification **`prefs`**, **`POST /settings/llm/test`**. Storage: **`local_ai/vision_execution/storage.py`** (same SQLite family as VE entities).
+- **`/settings`** (`api/routes/settings_routes.py`, mounted in **`api/main.py`**) — **user prefs and secrets**: LLM profile, encrypted provider credentials (Fernet + **`ZENAF_SETTINGS_ENCRYPTION_KEY`**), notification **`prefs`**, **`POST /settings/llm/test`**. Storage: **`local_ai/vision_execution/storage.py`** (same SQLite family as VE entities).
 
 ---
 
@@ -72,7 +72,7 @@ Plain facts about **current** code — not a target architecture.
 
 - **Purpose:** Cheap, auditable signals for “how execution is going” without a second prompt trunk or a new currency DB. Two primitives only: **`ActivityEvent`** in **`activity.log`** (`local_ai/activity.py`) and **`node_judgment_history`** rows whose trunk verdict kind is **`execution_flow_reading`** (`local_ai/vision_execution/coordination_signals.py` → **`append_execution_flow_reading`** → **`append_node_judgment`**).
 
-- **`ActivityEvent.source`** (JSONL) is **not** the same string family as judgment **`coordination_evidence_source` / `evidence_source`** in observation context. Server checkpoints use **`server-execution`**; client-reported checkpoints use **`atria-client-trace`**. Council-linked judgments use **`council_stream`** only with **`pointer_kind=council_stream_run`**.
+- **`ActivityEvent.source`** (JSONL) is **not** the same string family as judgment **`coordination_evidence_source` / `evidence_source`** in observation context. Server checkpoints use **`server-execution`**; client-reported checkpoints use **`zenaf-client-trace`**. Council-linked judgments use **`council_stream`** only with **`pointer_kind=council_stream_run`**.
 
 - **Council pointer contract (truth-critical):** For **`pointer_kind=council_stream_run`**, **`observation.pointer`** and **`refs.council_stream_run_id`** must be the **primary key** **`council_stream_runs.id`** — i.e. the return value of **`append_council_stream_run`** in **`local_ai/vision_execution/storage.py`**. Do **not** use **`integrity_run_id`**, client correlation ids, or the meta key name **`council_artifact_id`** as if it were a different id space: today the stream still echoes that key in done metadata, but the **value** must remain the **`council_stream_runs` row id**. **`append_execution_flow_reading`** rejects pointers that do not resolve via **`get_council_stream_run_for_user`**.
 
@@ -112,7 +112,7 @@ Plain facts about **current** code — not a target architecture.
 
 | Symptom | Minimal reconciliation |
 |--------|-------------------------|
-| **`/run` or council picks up user API keys** | Restore **`get_default_provider`**-only path; audit **`atria_tools`** call chain. |
+| **`/run` or council picks up user API keys** | Restore **`get_default_provider`**-only path; audit **`zenaf_tools`** call chain. |
 | **Wrong host in prod: VE vs organizer** | One frontend config for API origin; keep backend unchanged. |
 | **Second JSON slice bug** (nested `{` / partial object) | Shared `extract_json` helper; **do not** merge idea vs meeting contracts. |
 | **Contributors use `local_ai/adapters.get_adapter` for LLM** but hot path never did | Document “registry optional” or wire **one** call site — pick one. |
@@ -124,9 +124,9 @@ Plain facts about **current** code — not a target architecture.
 
 ## 9. Zenaf / single-voice council — response contract trunk
 
-- **Turn-specific system contract** for the conversational (all–Thinking Partner) path lives in **`local_ai/response_trunk.py`**: `build_response_control_block` prepends **RESPONSE CONTRACT — TECHNICAL HEADER** to the Zenaf system layer (`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM` in **`local_ai/atria_tools.py`**). Contract fields: **`mode_directives`** (incl. **field checklist** / **PRIORITY AMNESIA** when applicable), **`syntax_rules`**, **`grounding_fences`**.
+- **Turn-specific system contract** for the conversational (all–Thinking Partner) path lives in **`local_ai/response_trunk.py`**: `build_response_control_block` prepends **RESPONSE CONTRACT — TECHNICAL HEADER** to the Zenaf system layer (`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM` in **`local_ai/zenaf_tools.py`**). Contract fields: **`mode_directives`** (incl. **field checklist** / **PRIORITY AMNESIA** when applicable), **`syntax_rules`**, **`grounding_fences`**.
 
-- **Do not** reintroduce duplicate “nuclear” syntax blocks in ad-hoc prompts for that path; extend **`response_trunk`** or **`local_ai/conversation_trunk.py`** and keep **`atria_tools`** as the assembler.
+- **Do not** reintroduce duplicate “nuclear” syntax blocks in ad-hoc prompts for that path; extend **`response_trunk`** or **`local_ai/conversation_trunk.py`** and keep **`zenaf_tools`** as the assembler.
 
 - **Precision integration** (`[DRAFT_VALUE: …]`, pending commit, VE writes) is defined in **`local_ai/integration_commit.py`**. Backend may **auto-fill** a missing draft in a **narrow** case (e.g. task **description** empty + inferrable summary) instead of failing the turn silently.
 
@@ -134,4 +134,4 @@ Plain facts about **current** code — not a target architecture.
 
 ---
 
-*Last aligned with repo patterns: 2026-04-02 — coordination §5c (`coordination_signals.py`, `storage.get_council_stream_run_for_user`, `App.tsx` + `buildDevelopmentalGuidanceContext` execution-flow readings); FastAPI `api/main.py` (`_begin_run_routing`, `council_user_id`), `local_ai/execution_policy/seam_routing.py`, `local_ai/llm/provider_registry.py`, `local_ai/llm/resolver.py`, `local_ai/providers/__init__.py`, `idea_evaluate.py`, `initiative_evaluate.py`, core profile prompt modules (`core_profile_reconcile.py`, `core_profile_conversation.py`, `local_ai/delegation/core_profile_reconcile.py`), `frontend/src/vision-execution/types.ts`, `frontend/src/App.tsx`; **Zenaf trunk:** `local_ai/response_trunk.py`, conversational path in `local_ai/atria_tools.py` (`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM`, `_run_council_conversational_partner_body`), `local_ai/integration_commit.py` (`infer_draft_value_from_context`), `frontend/src/components/EntityMentionText.tsx`.*
+*Last aligned with repo patterns: 2026-04-02 — coordination §5c (`coordination_signals.py`, `storage.get_council_stream_run_for_user`, `App.tsx` + `buildDevelopmentalGuidanceContext` execution-flow readings); FastAPI `api/main.py` (`_begin_run_routing`, `council_user_id`), `local_ai/execution_policy/seam_routing.py`, `local_ai/llm/provider_registry.py`, `local_ai/llm/resolver.py`, `local_ai/providers/__init__.py`, `idea_evaluate.py`, `initiative_evaluate.py`, core profile prompt modules (`core_profile_reconcile.py`, `core_profile_conversation.py`, `local_ai/delegation/core_profile_reconcile.py`), `frontend/src/vision-execution/types.ts`, `frontend/src/App.tsx`; **Zenaf trunk:** `local_ai/response_trunk.py`, conversational path in `local_ai/zenaf_tools.py` (`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM`, `_run_council_conversational_partner_body`), `local_ai/integration_commit.py` (`infer_draft_value_from_context`), `frontend/src/components/EntityMentionText.tsx`.*

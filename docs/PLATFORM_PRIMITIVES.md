@@ -1,6 +1,6 @@
 # Platform Primitives
 
-Which concepts in Atria are shared platform primitives today, which are intake-specific but likely to become shared, and which are aspirational. Source: current docs and `docs/codebase_manifest.json`. Reality over aspiration; integration is not overstated.
+Which concepts in Zenaf are shared platform primitives today, which are intake-specific but likely to become shared, and which are aspirational. Source: current docs and `docs/codebase_manifest.json`. Reality over aspiration; integration is not overstated.
 
 ---
 
@@ -11,7 +11,7 @@ Which concepts in Atria are shared platform primitives today, which are intake-s
 | **Status** | `partially_shared` |
 | **Where implemented** | `local_ai/policy/data_access.py`: `AccessLevel`, `DataTier`, `request_access()`, `require_access()`, `tier_satisfies()`, `access_level_to_tier()`, `Destination` (local/external). |
 | **Who uses it today** | **Single consumer:** `local_ai/intake/mirror.py` → `get_item_with_content()`. That function calls `request_access(access_level, justification=...)` before returning item dict with Tier B (sanitized body) or Tier C (placeholder). No other module imports or calls the policy layer. |
-| **Who should use it later** | Per `ATRIA_ARCHITECTURE.md`: intake, council/perspectives, File Steward, Idea Lab, future connectors—whenever they read Tier B/C content or send content to an external destination. |
+| **Who should use it later** | Per `ZENAF_ARCHITECTURE.md`: intake, council/perspectives, File Steward, Idea Lab, future connectors—whenever they read Tier B/C content or send content to an external destination. |
 | **Biggest gap** | Policy is implemented and lives in a shared package, but only one call site uses it. No API route or UI calls `get_item_with_content()`, so Tier B/C gating is unused in practice. Council, File Steward, and Idea Lab do not call `request_access`. The `destination=Destination.EXTERNAL` parameter exists for egress gating but is never passed. |
 
 ---

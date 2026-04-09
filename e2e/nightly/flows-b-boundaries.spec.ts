@@ -147,7 +147,7 @@ test.describe('B5 Auth-gated / partial surface', () => {
     await page.goto('/studio', { waitUntil: 'domcontentloaded', timeout: 30_000 })
 
     const denied = page.getByTestId('studio-admin-denied')
-    const ready = page.getByRole('heading', { name: 'Atria Studio' }).filter({ hasText: 'Atria Studio' })
+    const ready = page.getByRole('heading', { name: 'Zenaf Studio' }).filter({ hasText: 'Zenaf Studio' })
 
     if (await denied.isVisible().catch(() => false)) {
       await expect(denied.getByText(/requires admin access/i)).toBeVisible()

@@ -1,4 +1,4 @@
-# Profile identity ontology (Atria)
+# Profile identity ontology (Zenaf)
 
 This doc integrates product philosophy with enforcement in code. It is **not** a second “system core identity.”
 

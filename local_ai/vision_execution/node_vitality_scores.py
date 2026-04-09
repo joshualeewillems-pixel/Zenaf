@@ -2,7 +2,12 @@
 Server-side water/soil/fruit scoring for node_vitality (VE row dicts).
 
 Pure functions over row dicts — no DB calls, no side effects.
-Rules version: v1 (must match node_vitality.rules_version).
+Rules version: v2 — soil weights align with structural field depth (notes, alignment, etc.).
+
+Convergence note: keep numerically consistent with the frontend orchestrator
+``assessNodeFlowAndChannels`` (see ``frontend/src/flow/assessNodeFlowAndChannels.ts`` and
+``UNIFIED_NODE_ASSESSMENT_RULES_VERSION``). Extend ``tests/test_node_vitality_scores.py`` with
+shared-input vectors when changing either side.
 """
 
 from __future__ import annotations
@@ -11,7 +16,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-RULES_VERSION = "v1"
+RULES_VERSION = "v2"
 
 _DONE_RE = re.compile(
     r"\b(done|complete|completed|shipped|closed|won)\b",
@@ -78,11 +83,13 @@ def soil_from_initiative(row: dict[str, Any]) -> float:
         _text_depth(
             row.get("title"),
             row.get("brief"),
+            row.get("notes"),
             row.get("next_step_ai"),
             row.get("risks"),
             row.get("dependencies"),
             row.get("kill_criteria"),
             row.get("recommendation"),
+            row.get("philosophical_alignment_ai"),
         )
     )
 
@@ -106,6 +113,7 @@ def soil_from_task(row: dict[str, Any]) -> float:
             row.get("title"),
             row.get("description"),
             row.get("completion_criteria"),
+            row.get("notes"),
         )
     )
 

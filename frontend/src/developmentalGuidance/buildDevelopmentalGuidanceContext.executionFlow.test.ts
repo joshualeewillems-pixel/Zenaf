@@ -7,7 +7,7 @@ function row(partial: Partial<ExecutionFlowReadingSummary> & Pick<ExecutionFlowR
     dimension: 'capacity',
     confidence: 0.5,
     pointer_kind: 'activity_event',
-    coordination_evidence_source: 'atria-client-trace',
+    coordination_evidence_source: 'zenaf-client-trace',
     judgment_row_id: 'j-test',
     ...partial,
   }
@@ -21,7 +21,7 @@ describe('buildDevelopmentalGuidanceContext execution_flow_reading hypotheses', 
         dimension: 'capacity',
         confidence: 0.6,
         pointer_kind: 'activity_event',
-        coordination_evidence_source: 'atria-client-trace',
+        coordination_evidence_source: 'zenaf-client-trace',
         judgment_row_id: 'j1',
         pointer: 'act-1',
       },
@@ -30,7 +30,7 @@ describe('buildDevelopmentalGuidanceContext execution_flow_reading hypotheses', 
         dimension: 'capacity',
         confidence: 0.6,
         pointer_kind: 'activity_event',
-        coordination_evidence_source: 'atria-client-trace',
+        coordination_evidence_source: 'zenaf-client-trace',
         judgment_row_id: 'j2',
         pointer: 'act-2',
       },
@@ -52,7 +52,7 @@ describe('buildDevelopmentalGuidanceContext execution_flow_reading hypotheses', 
     expect(h!.basis).toEqual(['execution_flow_reading', 'positive_cluster', 'human_checkpoint'])
   })
 
-  it('emits human_checkpoint strength when 2 positive activity_event + atria-client-trace (0.5 confidence)', () => {
+  it('emits human_checkpoint strength when 2 positive activity_event + zenaf-client-trace (0.5 confidence)', () => {
     const readings: ExecutionFlowReadingSummary[] = [
       row({ impact: 'positive', judgment_row_id: 'j1' }),
       row({ impact: 'positive', judgment_row_id: 'j2' }),
@@ -72,7 +72,7 @@ describe('buildDevelopmentalGuidanceContext execution_flow_reading hypotheses', 
     expect(h).toBeDefined()
   })
 
-  it('emits human_checkpoint friction when 2 negative activity_event + atria-client-trace with confidence floor', () => {
+  it('emits human_checkpoint friction when 2 negative activity_event + zenaf-client-trace with confidence floor', () => {
     const readings: ExecutionFlowReadingSummary[] = [
       row({ impact: 'negative', confidence: 0.5, judgment_row_id: 'j1' }),
       row({ impact: 'negative', confidence: 0.6, judgment_row_id: 'j2' }),

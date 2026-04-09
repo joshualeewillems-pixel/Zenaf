@@ -37,7 +37,7 @@ def _effective_default_model() -> str:
 
 
 def _effective_council_model() -> str:
-    env = os.environ.get("ATRIA_COUNCIL_MODEL", "").strip()
+    env = os.environ.get("ZENAF_COUNCIL_MODEL", "").strip()
     if env:
         return env
     cfg = _import_config()

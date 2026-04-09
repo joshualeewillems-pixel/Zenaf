@@ -5,6 +5,9 @@ import svgr from 'vite-plugin-svgr'
 export default defineConfig({
   plugins: [react(), svgr()],
   server: {
+    // Match API_BASE (127.0.0.1:8010) so session cookies work for cross-port fetches.
+    // localhost:5173 is a different host than 127.0.0.1 → cookies would not attach to API_BASE.
+    host: '127.0.0.1',
     port: 5173,
     strictPort: true,
     // Proxy Vision Execution API so the browser uses same origin (no CORS). Backend must run on 8010.
@@ -33,6 +36,11 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/api': {
+        target: 'http://127.0.0.1:8010',
+        changeOrigin: true,
+      },
+      // Transcript sorter (Content tab footer); backend prefix /transcripts (see transcript_routes).
+      '/transcripts': {
         target: 'http://127.0.0.1:8010',
         changeOrigin: true,
       },

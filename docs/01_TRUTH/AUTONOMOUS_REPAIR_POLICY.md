@@ -15,7 +15,7 @@ Companion: repair_registry.json, scripts/philosophy_enforcement/auto_repair.py
 
 Automation reads truth from (in order of specificity):
 
-1. `ATRIA_SYSTEM_CHARTER.md`
+1. `ZENAF_SYSTEM_CHARTER.md`
 2. `TRUTH_CONVERGENCE.md`
 3. `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md` + `global_philosophy_integration_matrix.json`
 4. `repair_registry.json` (what may be auto-repaired)

@@ -37,7 +37,7 @@ def compile_general_delegation_prompt(
     (``compiled_prompt_sha256_prefix`` in LearningRecord).
     """
     return (
-        "You are assisting the Atria local-first assistant.\n"
+        "You are assisting the Zenaf local-first assistant.\n"
         f"Surface: {surface}\n"
         f"Action intent: {action_intent}\n"
         f"Destination / UX hint: {destination_hint}\n\n"

@@ -1,5 +1,6 @@
-import type { MapEntityKind, MapNodePayload } from './ontology'
 import type { GrowthTriadMetrics } from './mapGrowthMetrics'
+import { MAP_SOIL_TIER_LOW_BELOW } from './mapNodeAppearance'
+import type { MapEntityKind, MapNodePayload } from './ontology'
 
 export type GuidanceStage = MapEntityKind
 export type GuidanceDimension = 'water' | 'soil' | 'fruit'
@@ -37,7 +38,12 @@ export type GuidanceAction = {
   commitHint?: string
 }
 
-const MISSING_DIMENSION_THRESHOLD = 0.45
+const MISSING_DIMENSION_THRESHOLD_WATER_FRUIT = 0.45
+
+function missingDimensionThreshold(d: GuidanceDimension): number {
+  if (d === 'soil') return MAP_SOIL_TIER_LOW_BELOW
+  return MISSING_DIMENSION_THRESHOLD_WATER_FRUIT
+}
 
 const DIMENSION_PRIORITY: GuidanceDimension[] = ['water', 'soil', 'fruit']
 
@@ -212,7 +218,7 @@ export function detectMissingDimensions(metrics: GrowthTriadMetrics): GuidanceDi
   }
   return [...DIMENSION_PRIORITY]
     .sort((a, b) => values[a] - values[b])
-    .filter((dimension) => values[dimension] < MISSING_DIMENSION_THRESHOLD)
+    .filter((dimension) => values[dimension] < missingDimensionThreshold(dimension))
 }
 
 export function buildGuidanceScriptForNode(

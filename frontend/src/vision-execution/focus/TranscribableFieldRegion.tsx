@@ -91,7 +91,7 @@ export function TranscribableFieldRegion({
   return (
     <div
       className="min-w-0"
-      data-atria-transcribe-region=""
+      data-zenaf-transcribe-region=""
       onFocusCapture={() => notifyFieldFocused(desc)}
       onBlurCapture={() => notifyFieldBlurred()}
       onSelectCapture={syncSelection}

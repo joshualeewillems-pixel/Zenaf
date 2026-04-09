@@ -1,9 +1,10 @@
 import type { Edge, Node, XYPosition } from '@xyflow/react'
-import type { MapNodePayload, VeEntityType } from './ontology'
+import type { ConditionSeverity, MapNodePayload, VeEntityType } from './ontology'
 import type { VisionMapEntityBundle } from './blockersFromVe'
-import { effectiveGrowthTriad } from './effectiveGrowthTriad'
-import type { GrowthTriadMetrics } from './mapGrowthMetrics'
+import { mapVisualTriad, type GrowthTriadMetrics } from './mapGrowthMetrics'
+import { MAP_SOIL_TIER_LOW_BELOW } from './mapNodeAppearance'
 import type { MapEdgeTier } from './MapFlowEdge'
+import { effectiveConditionSeverity } from './resolveConditionSeverity'
 
 export type NestVitality = {
   dry: boolean
@@ -264,6 +265,13 @@ function computeMemberKinds(memberNodes: Node<MapNodePayload>[]): Record<string,
   return out
 }
 
+const CONDITION_ACTIVITY_WEIGHT: Record<ConditionSeverity, number> = {
+  0: 1,
+  1: 0.65,
+  2: 0.4,
+  3: 0.28,
+}
+
 function activityScore(d: MapNodePayload): number {
   const g =
     d.growth === 'fruiting'
@@ -278,16 +286,7 @@ function activityScore(d: MapNodePayload): number {
               ? 0.28
               : 0.18
   const w = d.water_level === 'high' ? 0.9 : d.water_level === 'medium' ? 0.6 : 0.3
-  const c =
-    d.condition === 'healthy'
-      ? 1
-      : d.condition === 'stale'
-        ? 0.65
-        : d.condition === 'blocked'
-          ? 0.35
-          : d.condition === 'teacher-warned'
-            ? 0.5
-            : 0.28
+  const c = CONDITION_ACTIVITY_WEIGHT[effectiveConditionSeverity(d)]
   const pulse = d.fertilizer_pulse ? 0.12 : 0
   return g * 0.5 + w * 0.28 + c * 0.22 + pulse
 }
@@ -325,7 +324,7 @@ export function computeNestGrowthTriad(
   for (const id of group.memberNodeIds) {
     const n = byId.get(id)
     if (!n) continue
-    const t = effectiveGrowthTriad(n.data, entityBundle)
+    const t = mapVisualTriad(n.data, entityBundle)
     const w = kindWeight[n.data.kind]
     water += t.water * w
     soil += t.soil * w
@@ -339,7 +338,7 @@ export function computeNestGrowthTriad(
 export function computeNestVitality(triad: GrowthTriadMetrics): NestVitality {
   return {
     dry: triad.water < 0.4,
-    soft: triad.soil < 0.4,
+    soft: triad.soil < MAP_SOIL_TIER_LOW_BELOW,
     lush: triad.fruit > 0.66,
   }
 }

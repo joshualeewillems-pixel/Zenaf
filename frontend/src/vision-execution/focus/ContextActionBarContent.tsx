@@ -4,7 +4,7 @@ import { ACTION_LABELS, actionsForField } from './fieldCapabilityRegistry'
 import { useVisionExecutionFocus } from './VisionExecutionFocusContext'
 import { useVeVoiceRecording } from './veVoiceRecordingContext'
 import { VISION_EXECUTION_API } from '../types'
-import { ATRIA_VE_FOCUS_APPLY_REWRITE, type VeFocusApplyRewriteDetail } from './applyRewriteEvent'
+import { ZENAF_VE_FOCUS_APPLY_REWRITE, type VeFocusApplyRewriteDetail } from './applyRewriteEvent'
 import type { AiActionTrace, AiUserOutcome } from '../../ai-actions'
 import {
   actionIntentForFieldTextRewrite,
@@ -136,7 +136,7 @@ export function ContextActionBarContent({ className = '', idleHint = 've' }: Con
       field_key: c.field_key,
       text: rewrittenText.trim(),
     }
-    window.dispatchEvent(new CustomEvent(ATRIA_VE_FOCUS_APPLY_REWRITE, { detail }))
+    window.dispatchEvent(new CustomEvent(ZENAF_VE_FOCUS_APPLY_REWRITE, { detail }))
     const t = rewriteTraceRef.current
     if (t) pushAiActionTrace(withTraceOutcome(t, 'applied'))
     rewriteTraceRef.current = null

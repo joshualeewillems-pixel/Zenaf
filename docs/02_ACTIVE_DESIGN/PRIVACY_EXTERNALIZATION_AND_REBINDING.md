@@ -74,7 +74,7 @@ Single enum (names can ship as `externalization_strategy` in JSON; `transformati
 | **`none`** | No washing; payload is sent as today (still subject to gating + trace rules). |
 | **`light_redaction`** | Fast, deterministic rules: strip/obfuscate obvious patterns (emails, phone-like, national IDs if configured), cap lengths on narrative fields. **Weak reversibility** — prefer **lossy** fields not used for rebind, or pair with placeholders for IDs only. |
 | **`hypothetical_abstraction`** | Rewrite narrative to **hypothetical framing** (“Company A,” “a mid-size health system”) with **structured slots** for anything that must round-trip. Higher LLM risk; usually **local** model generates the abstraction **or** template-based substitution. |
-| **`structured_placeholder_mapping`** | Preferred default for **reversible** flows: operate on **typed spans** (entity id, person ref, project id) with stable **opaque tokens** (`[[ATRIA_REF:pk_01]]`), never reusing tokens across requests without a new map. |
+| **`structured_placeholder_mapping`** | Preferred default for **reversible** flows: operate on **typed spans** (entity id, person ref, project id) with stable **opaque tokens** (`[[ZENAF_REF:pk_01]]`), never reusing tokens across requests without a new map. |
 
 **Privacy mode → suggested *default* strategy** (org/user policy may override; **`local_only`** forces **no cloud**, so strategy for cloud is moot):
 
@@ -101,7 +101,7 @@ Single enum (names can ship as `externalization_strategy` in JSON; `transformati
 
 1. **Extract** internal references from **structured** inputs first (`subject_ref`, initiative id, known JSON fields), not only regex on prose.
 2. **Replace** with placeholders in **all** channels that will go external (system prompt, user message, tool descriptions if any).
-3. **Attach** short **machine instructions** to the model: “Do not alter tokens matching `[[ATRIA_REF:…]]`; echo them when referring to those entities.” (Reduces but does not eliminate model misbehavior.)
+3. **Attach** short **machine instructions** to the model: “Do not alter tokens matching `[[ZENAF_REF:…]]`; echo them when referring to those entities.” (Reduces but does not eliminate model misbehavior.)
 4. **Parse** output for known token grammar; **replace** with internal ids. **Validate** optional checksums / allowlists of ids that were in scope for this request.
 5. **Reject or sanitize** if unknown tokens appear (see risks).
 

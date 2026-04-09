@@ -26,14 +26,14 @@ INITIATIVE_EVALUATE_INTENT = "initiative_evaluate"
 
 CORE_PROFILE_RECONCILE_INTENT = "core_profile_reconcile"
 
-# [[ATRIA_REF:kind:BASE64URL_ID:ck8hex]]
+# [[ZENAF_REF:kind:BASE64URL_ID:ck8hex]]
 _TOKEN_PATTERN = re.compile(
-    r"\[\[ATRIA_REF:([a-z_]+):([A-Za-z0-9_-]+):([a-f0-9]{8})\]\]"
+    r"\[\[ZENAF_REF:([a-z_]+):([A-Za-z0-9_-]+):([a-f0-9]{8})\]\]"
 )
 
 
 def _checksum(kind: str, internal_id: str) -> str:
-    h = hashlib.sha256(f"atria.v1|{kind}|{internal_id}".encode("utf-8")).hexdigest()
+    h = hashlib.sha256(f"zenaf.v1|{kind}|{internal_id}".encode("utf-8")).hexdigest()
     return h[:8]
 
 
@@ -58,7 +58,7 @@ def make_placeholder_token(kind: str, internal_id: str) -> str:
         raise ValueError("kind and internal_id required")
     body = _b64url_encode(internal_id)
     ck = _checksum(k, internal_id)
-    return f"[[ATRIA_REF:{k}:{body}:{ck}]]"
+    return f"[[ZENAF_REF:{k}:{body}:{ck}]]"
 
 
 @dataclass(frozen=True)

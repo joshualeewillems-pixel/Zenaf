@@ -22,12 +22,12 @@ from local_ai.soil.discover import find_soil_md_by_id
 
 
 def test_resolve_soil_root_env(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     assert resolve_soil_root() == tmp_path.resolve()
 
 
 def test_ensure_node_creates_tree(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     nd = ensure_node(tmp_path, "initiative", "abc-123", title="Test")
     assert (nd / "node.json").is_file()
     assert (nd / "canonical").is_dir()
@@ -39,7 +39,7 @@ def test_ensure_node_creates_tree(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_append_soil_item(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     path, sid = append_soil_item(
         "task",
         "t1",
@@ -57,7 +57,7 @@ def test_append_soil_item(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_named_system_capture_requires_allowlisted_name(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     try:
         append_soil_item(
             "task",
@@ -75,7 +75,7 @@ def test_named_system_capture_requires_allowlisted_name(tmp_path: Path, monkeypa
 
 
 def test_named_system_capture_allowlisted(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     path, sid = append_soil_item(
         "task",
         "t1",
@@ -89,7 +89,7 @@ def test_named_system_capture_allowlisted(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_soil_markdown_basename_fallback_for_empty_slug(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     path, sid = append_soil_item(
         "task",
         "t1",
@@ -105,7 +105,7 @@ def test_soil_markdown_basename_fallback_for_empty_slug(tmp_path: Path, monkeypa
 
 
 def test_find_soil_md_by_id(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     path, sid = append_soil_item(
         "initiative",
         "i1",
@@ -123,7 +123,7 @@ def test_find_soil_md_by_id(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_write_promotion_record(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     soil_path, sid = append_soil_item(
         "project",
         "p9",
@@ -154,7 +154,7 @@ def test_write_promotion_record(tmp_path: Path, monkeypatch) -> None:
 
 
 def test_cli_append_and_promote(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     note = tmp_path / "note.md"
     note.write_text("Scope approval unclear.\n", encoding="utf-8")
     r = subprocess.run(

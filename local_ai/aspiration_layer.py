@@ -25,15 +25,15 @@ _TIME_DECAY_LAMBDA_PER_DAY = 0.1
 
 
 def aspiration_profile_enabled() -> bool:
-    return os.getenv("ATRIA_ASPIRATION_PROFILE_ENABLED", "1").strip().lower() not in ("0", "false", "off")
+    return os.getenv("ZENAF_ASPIRATION_PROFILE_ENABLED", "1").strip().lower() not in ("0", "false", "off")
 
 
 def aspiration_inference_enabled() -> bool:
-    return os.getenv("ATRIA_ASPIRATION_INFERENCE_ENABLED", "1").strip().lower() not in ("0", "false", "off")
+    return os.getenv("ZENAF_ASPIRATION_INFERENCE_ENABLED", "1").strip().lower() not in ("0", "false", "off")
 
 
 def aspiration_guidance_injection_enabled() -> bool:
-    return os.getenv("ATRIA_ASPIRATION_GUIDANCE_INJECTION_ENABLED", "1").strip().lower() not in (
+    return os.getenv("ZENAF_ASPIRATION_GUIDANCE_INJECTION_ENABLED", "1").strip().lower() not in (
         "0",
         "false",
         "off",

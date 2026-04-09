@@ -10,9 +10,9 @@ import type { ActionId, FocusContextCore } from './types'
 
 /** Detected in `App.runCouncil` to apply Thinking Partner mandates for that run only (no extra refs). */
 export const CONVERSATIONAL_INVITE_MARKER =
-  '[Atria focus invite — conversational / Thinking Partner framing]'
+  '[Zenaf focus invite — conversational / Thinking Partner framing]'
 
-export const STRUCTURED_FILL_INVITE_MARKER = '[Atria focus invite — structured field completion]'
+export const STRUCTURED_FILL_INVITE_MARKER = '[Zenaf focus invite — structured field completion]'
 
 const CONVERSATIONAL_DISPLAY_BY_ACTION: Partial<Record<ActionId, string>> = {
   surface_tensions: 'Thinking partner · Exploring tensions',
@@ -34,7 +34,7 @@ function conversationalRulesLines(action: ActionId): string[] {
         'Goal: Remove ambiguity and produce a clean, decisive articulation of what this work actually is.',
         'Rules:',
         '- No fluff, meta-commentary, or hedging ("we should consider…"). Prefer commitment over exploration.',
-        '- Do not discuss Atria UI, invites, or "the system". Stay in the substance of the work.',
+        '- Do not discuss Zenaf UI, invites, or "the system". Stay in the substance of the work.',
         '- No process narration or "checking boxes."',
         '- This is articulation of what the work *is* (scope, stakes, crisp phrasing) — not a task list, execution plan, or stakeholder map.',
         'Output:',

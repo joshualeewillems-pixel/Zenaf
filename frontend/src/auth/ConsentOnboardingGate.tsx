@@ -83,7 +83,7 @@ export function ConsentOnboardingGate({
         <div>
           <h1 className="text-xl font-semibold">Permissions and consent</h1>
           <p className="text-sm text-slate-300 mt-1">
-            Before enabling behavior-based features, choose what Atria is allowed to store and use.
+            Before enabling behavior-based features, choose what Zenaf is allowed to store and use.
           </p>
           <div className="mt-3 rounded-lg border border-slate-700 bg-slate-900/50 p-3">
             <p className="text-xs uppercase tracking-wide text-slate-500">What data this can include</p>

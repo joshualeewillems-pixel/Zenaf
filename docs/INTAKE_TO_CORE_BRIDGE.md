@@ -26,7 +26,7 @@ When an intake item is “done” with triage, it can graduate in one of these w
 
 | Field | Value |
 |-------|--------|
-| **When to use** | Item is triaged, no execution commitment. Junk, FYI, or “handled outside Atria.” |
+| **When to use** | Item is triaged, no execution commitment. Junk, FYI, or “handled outside Zenaf.” |
 | **Minimal fields** | None for Vision Execution (no entity created). Intake: set `status=done` and optionally `archived=true`. |
 | **Source intake item** | Referenced by `intake_item_id`; queue/mirror item remains the only record. |
 | **Source judgment** | Optional `source_judgment_id` for audit (why we archived). |
@@ -141,7 +141,7 @@ Implementation notes:
 
 - **API:** POST `/intake/queue/{item_id}/create-task` with body `{ project_id, title?, summary?, notes?, source_judgment_id? }`.
 - **Module:** `local_ai/intake/bridge.py` → `create_task_from_intake_item()`. Creates Vision Execution task and a Decision (entity_type=task, entity_id=task_id, decision_type=`intake_graduate_task`).
-- **Lifecycle linkage (no dedicated table):** (1) Task notes end with a parseable line: `[Atria lifecycle] intake_item_id=<id> judgment_id=<id>`. (2) Decision `final_values_snapshot` = `{ intake_item_id, judgment_id?, task_id }`.
+- **Lifecycle linkage (no dedicated table):** (1) Task notes end with a parseable line: `[Zenaf lifecycle] intake_item_id=<id> judgment_id=<id>`. (2) Decision `final_values_snapshot` = `{ intake_item_id, judgment_id?, task_id }`.
 
 ---
 

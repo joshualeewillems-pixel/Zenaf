@@ -26,7 +26,7 @@ ambiguities_index:
     summary: "folder_path normalization (slash vs backslash, trailing slash) is not specified; backend receives string as-is after strip()."
     section: "pipeline.steps.analyze"
   - id: "role_limit_global"
-    summary: "Changing role_limit in atria_tools affects all council runs, not just folder workflow."
+    summary: "Changing role_limit in zenaf_tools affects all council runs, not just folder workflow."
     section: "constraint_opportunities"
 
 # --- 1. END-TO-END PIPELINE (machine-readable steps) ---
@@ -65,7 +65,7 @@ pipeline:
       code_path:
         frontend: "frontend/src/App.tsx — runMode('analyze', path) → fetch /run"
         api: "api/main.py — _run_analyze(params)"
-        backend: "local_ai/atria_tools.py — analyze_file_steward_folder(path)"
+        backend: "local_ai/zenaf_tools.py — analyze_file_steward_folder(path)"
         implementation: "tools/file_steward/app.py — analyze_folder_structure(folder_path)"
       model_calls: 0
       ambiguities:
@@ -92,7 +92,7 @@ pipeline:
           simulate_tree: "tree structure for UI"
       code_path:
         api: "api/main.py — _run_assess_uncertainty(params) → _run_simulate(params)"
-        backend: "local_ai/atria_tools.simulate_folder_plan(path, allowed_folders=None)"
+        backend: "local_ai/zenaf_tools.simulate_folder_plan(path, allowed_folders=None)"
       model_calls: 0
       note: "Simulate may use LLM second pass if configured in File Steward; default is algorithmic only."
 
@@ -118,7 +118,7 @@ pipeline:
       code_path:
         frontend: "frontend/src/App.tsx — runMode('recommend', path)"
         api: "api/main.py — _run_recommend(params); normalizes raw to exclude folder_plan"
-        backend: "local_ai/atria_tools.py — recommend_child_folders(path)"
+        backend: "local_ai/zenaf_tools.py — recommend_child_folders(path)"
         implementation: "tools/file_steward/app.py — recommend_child_folders(folder_path); internal infer_latent_buckets + assign_children_to_buckets → flatten"
       model_calls: 0
       ambiguities:
@@ -163,7 +163,7 @@ pipeline:
       code_path:
         frontend: "frontend/src/App.tsx — runCouncil() builds context_block via buildContextBlock() + buildAgentThreadContext(); POST /run/stream"
         api: "api/main.py — _council_stream_gen(params, request.context)"
-        backend: "local_ai/atria_tools.py — run_council_stream(question, context=context_str, ...)"
+        backend: "local_ai/zenaf_tools.py — run_council_stream(question, context=context_str, ...)"
       model_calls: "N seats (parallel) + 1 synthesis if do_synthesis; N capped by COUNCIL_MAX_SEATS (3)"
       council_context_for_folder_workflow:
         # What the frontend puts in context_block when "Use current result as context" is ON and last mode was recommend:
@@ -188,7 +188,7 @@ pipeline:
         result: "proposed_assignments, suggested_child_folders (= allowed + Unsorted), etc."
       code_path:
         api: "api/main.py — _run_simulate(params)"
-        backend: "local_ai/atria_tools.simulate_folder_plan(path, allowed_folders=params.suggested_folders)"
+        backend: "local_ai/zenaf_tools.simulate_folder_plan(path, allowed_folders=params.suggested_folders)"
       model_calls: 0
       frontend_display_rules:
         - "targetFolders for tree = effectiveSimulateTargetFolders (approvedFolders + Unsorted if missing)"
@@ -326,13 +326,13 @@ council:
     provider_function: "get_council_provider"
     module: "local_ai/providers/__init__.py"
     resolution_order:
-      - "Env ATRIA_COUNCIL_MODEL → OllamaProvider(model=...)"
+      - "Env ZENAF_COUNCIL_MODEL → OllamaProvider(model=...)"
       - "Config OLLAMA_COUNCIL_MODEL → OllamaProvider(model=...)"
       - "get_default_provider()"
     override_from_workflow: false
   packet:
     source_function: "build_council_decision_packet"
-    source_file: "local_ai/atria_tools.py"
+    source_file: "local_ai/zenaf_tools.py"
     block_order: [ "context", "question", "working_memory", "recent_tool_summary", "constraints", "operator_priorities" ]
     truncation_limits:
       context: { constant: "MAX_CONTEXT_CHARS", value: 800 }
@@ -352,20 +352,20 @@ council:
       Required guardrail: <one guardrail that must be in place>
       Next step: <one practical next step consistent with your mandate>
       Response:
-    role_limit_source: "local_ai/atria_tools.py (run_council and run_council_stream); variable name role_limit"
+    role_limit_source: "local_ai/zenaf_tools.py (run_council and run_council_stream); variable name role_limit"
     synthesis_prompt_literal: |
-      You are Atria synthesizing a council discussion. Below are perspectives from the council on the same question.
+      You are Zenaf synthesizing a council discussion. Below are perspectives from the council on the same question.
       Do NOT repeat or summarize each role response. Instead, produce a short, structured synthesis with:
       - Points of agreement (1–3 bullets)
       - Points of disagreement or tension (1–3 bullets)
       - Recommended action (2–4 sentences, including the key trade-off and any critical guardrails)
       Keep the synthesis concise and decision-ready.
     synthesis_template: "{COUNCIL_SYNTHESIS_PROMPT}\n\nQuestion: {q}\n\nSeat summaries:\n{combined}\n\nDecision recommendation:"
-    synthesis_fallback: "When no seat output: packet + 'As Atria (chief of staff / integrator), give one short decision recommendation (2–4 sentences)...'"
+    synthesis_fallback: "When no seat output: packet + 'As Zenaf (chief of staff / integrator), give one short decision recommendation (2–4 sentences)...'"
   output_handling:
     stream_format: "SSE data: { chunk: string, done: boolean }"
     ui_interpretation: "free_form_text"
-    parsing: "None — CouncilText component only styles lines ending with ':' and 'Atria synthesis:'; no extraction of Position or other fields"
+    parsing: "None — CouncilText component only styles lines ending with ':' and 'Zenaf synthesis:'; no extraction of Position or other fields"
     display_location: "Right-hand AI agents panel; also setResult(councilText) and lastCouncilResult; not in left-panel Workflow result (JSON)"
 
 # --- 6. OUTPUT EXPECTATIONS (council) ---
@@ -389,13 +389,13 @@ constraint_opportunities:
   goal: "Constrain council to: suggest only parent folder categories from list; brief reasoning; no long narrative; no restructuring logic"
   safest_locations:
     - option: "Global role_limit tightening"
-      file: "local_ai/atria_tools.py"
+      file: "local_ai/zenaf_tools.py"
       function: "run_council and run_council_stream"
       symbol: "role_limit"
       line_approx: "919-931 (run_council), 1159-1175 (run_council_stream)"
       note: "Tightening role_limit affects all council runs, not just folder workflow."
     - option: "Folder-scoped constraint block"
-      file: "local_ai/atria_tools.py"
+      file: "local_ai/zenaf_tools.py"
       functions: [ "build_council_decision_packet", "run_council_stream" ]
       approach: "Add parameter (e.g. constrain_to_folder_advice: bool or context flag); when True, append Constraints block or extra instruction for folder-only advice"
       frontend_change: "Pass flag or context field when invoking council from folder workflow (e.g. context.constrain_to_folder_advice or params.workflow_kind: 'folder')"
@@ -416,7 +416,7 @@ file_responsibilities:
     - "_run_analyze, _run_recommend, _run_simulate, _run_assess_uncertainty"
     - "_council_stream_gen: context_str from context.context_block or context.folder_path"
     - "Council stream: no recent_tool_summary or key_constraints from this path"
-  "local_ai/atria_tools.py":
+  "local_ai/zenaf_tools.py":
     - "analyze_file_steward_folder, recommend_child_folders, simulate_folder_plan"
     - "build_council_decision_packet, run_council, run_council_stream"
     - "role_limit, COUNCIL_*_PROMPT, get_council_provider()"

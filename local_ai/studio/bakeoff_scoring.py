@@ -15,8 +15,8 @@ from local_ai.llm.execution_principal import ExecutionPrincipal
 from local_ai.llm.provider_registry import normalize_provider_id
 from local_ai.llm.resolver import get_council_llm_adapter_for_principal
 
-JUDGE_PROVIDER_ENV = "ATRIA_STUDIO_BAKEOFF_JUDGE_PROVIDER"
-JUDGE_MODEL_ENV = "ATRIA_STUDIO_BAKEOFF_JUDGE_MODEL"
+JUDGE_PROVIDER_ENV = "ZENAF_STUDIO_BAKEOFF_JUDGE_PROVIDER"
+JUDGE_MODEL_ENV = "ZENAF_STUDIO_BAKEOFF_JUDGE_MODEL"
 
 _MAX_OUTPUT_CHARS_FOR_JUDGE = 14_000
 

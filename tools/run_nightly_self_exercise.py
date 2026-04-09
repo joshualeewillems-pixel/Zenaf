@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Nightly self-exercise harness for Atria (read-only; no self-modifying AI).
+Nightly self-exercise harness for Zenaf (read-only; no self-modifying AI).
 
 Single entrypoint:
   python tools/run_nightly_self_exercise.py [--profile quick|standard|full]
@@ -8,9 +8,9 @@ Single entrypoint:
 Desktop UI (Windows-friendly): python tools/nightly_harness_gui.py  or  tools/NightlyHarness.bat
 
 Requires API running (default http://127.0.0.1:8010) for smoke / adversarial / stress.
-Set ATRIA_NIGHTLY_EMAIL + ATRIA_NIGHTLY_PASSWORD for authenticated VE / learning / focus flows.
+Set ZENAF_NIGHTLY_EMAIL + ZENAF_NIGHTLY_PASSWORD for authenticated VE / learning / focus flows.
 
-Optional small cloud sample after local green: set ATRIA_NIGHTLY_CLOUD_BUDGET_USD (e.g. 0.5).
+Optional small cloud sample after local green: set ZENAF_NIGHTLY_CLOUD_BUDGET_USD (e.g. 0.5).
 
 Safety: does not rewrite product code, alter schemas, mutate mailbox (poll off by default),
 persist profiles, or auto-commit fixes.
@@ -19,9 +19,9 @@ See tools/nightly_self_exercise/ for modules.
 
 User flow scripts (API): tools/nightly_self_exercise/user_flows.py — runs with standard/full unless
 ``--skip-user-flows``. Stress read loop: ``--user-flow-stress-iterations`` or env
-``ATRIA_NIGHTLY_USER_FLOW_STRESS_ITER`` (full profile defaults to 12 when unset and flag is -1).
+``ZENAF_NIGHTLY_USER_FLOW_STRESS_ITER`` (full profile defaults to 12 when unset and flag is -1).
 
-Browser flows: ``e2e/nightly/*.spec.ts`` — enable with ``ATRIA_NIGHTLY_PLAYWRIGHT=1`` (dev servers required).
+Browser flows: ``e2e/nightly/*.spec.ts`` — enable with ``ZENAF_NIGHTLY_PLAYWRIGHT=1`` (dev servers required).
 Product UI: ``flows-a-core-interactions.spec.ts`` (Vision Map node + Soil/Water/Fruit + council question prefill; system prompt Discuss / Remind me later / Dismiss; VE evaluate dismiss + Distill stub) and ``flows-b-boundaries.spec.ts`` (PASS/BOUNDARY probes); see ``playwright-report/results.json`` for attachments.
 """
 from __future__ import annotations
@@ -119,14 +119,14 @@ def shutil_which(cmd: str) -> str | None:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Atria nightly self-exercise harness")
+    ap = argparse.ArgumentParser(description="Zenaf nightly self-exercise harness")
     ap.add_argument(
         "--profile",
         choices=("quick", "standard", "full"),
-        default=str(os.environ.get("ATRIA_NIGHTLY_PROFILE") or "standard").strip().lower(),
+        default=str(os.environ.get("ZENAF_NIGHTLY_PROFILE") or "standard").strip().lower(),
         help="quick=build+core smoke; standard=default local+optional cloud; full=stress+adversarial+smoke council",
     )
-    ap.add_argument("--api-base", default=os.environ.get("ATRIA_API_BASE", "http://127.0.0.1:8010"))
+    ap.add_argument("--api-base", default=os.environ.get("ZENAF_API_BASE", "http://127.0.0.1:8010"))
     ap.add_argument("--out-dir", default="", help="Override output dir (default logs/nightly_self_exercise/<ts>)")
     ap.add_argument("--skip-frontend", action="store_true")
     ap.add_argument("--skip-pytest", action="store_true")
@@ -134,20 +134,20 @@ def main() -> int:
     ap.add_argument("--skip-adversarial", action="store_true")
     ap.add_argument("--skip-stress", action="store_true")
     ap.add_argument("--intake-poll", action="store_true", help="POST /intake/email/poll (no mailbox mutation; may 503)")
-    ap.add_argument("--stress-iterations", type=int, default=int(os.environ.get("ATRIA_NIGHTLY_STRESS_ITER", "8")))
-    ap.add_argument("--stress-workers", type=int, default=int(os.environ.get("ATRIA_NIGHTLY_STRESS_WORKERS", "3")))
+    ap.add_argument("--stress-iterations", type=int, default=int(os.environ.get("ZENAF_NIGHTLY_STRESS_ITER", "8")))
+    ap.add_argument("--stress-workers", type=int, default=int(os.environ.get("ZENAF_NIGHTLY_STRESS_WORKERS", "3")))
     ap.add_argument("--skip-user-flows", action="store_true", help="Skip scripted API user flows (VE/settings/prompt-signals)")
     ap.add_argument(
         "--user-flow-stress-iterations",
         type=int,
         default=-1,
-        help="Repeat authenticated read stress (0=off). Default -1: env ATRIA_NIGHTLY_USER_FLOW_STRESS_ITER or full=12",
+        help="Repeat authenticated read stress (0=off). Default -1: env ZENAF_NIGHTLY_USER_FLOW_STRESS_ITER or full=12",
     )
     args = ap.parse_args()
 
     profile = args.profile if args.profile in ("quick", "standard", "full") else "standard"
-    email = (os.environ.get("ATRIA_NIGHTLY_EMAIL") or "").strip() or None
-    password = (os.environ.get("ATRIA_NIGHTLY_PASSWORD") or "").strip() or None
+    email = (os.environ.get("ZENAF_NIGHTLY_EMAIL") or "").strip() or None
+    password = (os.environ.get("ZENAF_NIGHTLY_PASSWORD") or "").strip() or None
 
     prev_metrics: dict = {}
     if LAST_RUN_POINTER.is_file():
@@ -170,7 +170,7 @@ def main() -> int:
     run_user_flows = profile != "quick" and not args.skip_user_flows
     uf_stress_iter = args.user_flow_stress_iterations
     if uf_stress_iter < 0:
-        uf_stress_iter = int(os.environ.get("ATRIA_NIGHTLY_USER_FLOW_STRESS_ITER", "0") or 0)
+        uf_stress_iter = int(os.environ.get("ZENAF_NIGHTLY_USER_FLOW_STRESS_ITER", "0") or 0)
         if profile == "full" and uf_stress_iter == 0:
             uf_stress_iter = 12
     run_user_flow_stress = run_user_flows and uf_stress_iter > 0 and bool(email and password)
@@ -414,7 +414,7 @@ def main() -> int:
             if args.skip_user_flows:
                 skip_why = "--skip-user-flows"
             elif not email or not password:
-                skip_why = "no ATRIA_NIGHTLY_EMAIL/PASSWORD"
+                skip_why = "no ZENAF_NIGHTLY_EMAIL/PASSWORD"
             elif uf_stress_iter <= 0:
                 skip_why = "iterations=0 (full profile defaults to 12 unless env overrides)"
             else:
@@ -436,7 +436,7 @@ def main() -> int:
             log_a = out_dir / "adversarial_batch.txt"
             _progress("running adversarial_council_batch...")
             env = os.environ.copy()
-            env.setdefault("ATRIA_API_BASE", args.api_base)
+            env.setdefault("ZENAF_API_BASE", args.api_base)
             adv_started = time.time()
             code, dur = _run_cmd(
                 "adversarial",
@@ -577,7 +577,7 @@ def main() -> int:
             cloud_skip = (
                 "profile quick (cloud sample disabled)"
                 if profile == "quick"
-                else "ATRIA_NIGHTLY_CLOUD_BUDGET_USD is 0 (local-only)"
+                else "ZENAF_NIGHTLY_CLOUD_BUDGET_USD is 0 (local-only)"
             )
             results.append(
                 StepResult(
@@ -596,7 +596,7 @@ def main() -> int:
                     ok=True,
                     duration_s=0,
                     classification="skipped",
-                    detail="cloud sample needs ATRIA_NIGHTLY_EMAIL/PASSWORD",
+                    detail="cloud sample needs ZENAF_NIGHTLY_EMAIL/PASSWORD",
                 )
             )
             _progress("nightly_cloud_sample skipped (no credentials)")
@@ -661,7 +661,7 @@ def main() -> int:
                 _progress(f"nightly_cloud_sample {'ok' if cs.ok else 'FAIL'}")
 
         # --- Optional Playwright (env only) ---
-        if os.environ.get("ATRIA_NIGHTLY_PLAYWRIGHT", "").strip().lower() in ("1", "true", "yes", "on"):
+        if os.environ.get("ZENAF_NIGHTLY_PLAYWRIGHT", "").strip().lower() in ("1", "true", "yes", "on"):
             _progress("running playwright_e2e...")
             e2e = REPO_ROOT / "e2e" / "nightly"
             log_e = out_dir / "playwright.txt"
@@ -675,7 +675,7 @@ def main() -> int:
                     out_dir / "playwright_npm_install.txt",
                 )
                 env = os.environ.copy()
-                env.setdefault("ATRIA_E2E_BASE_URL", "http://127.0.0.1:5173")
+                env.setdefault("ZENAF_E2E_BASE_URL", "http://127.0.0.1:5173")
                 code, dur = _run_cmd(
                     "playwright",
                     [npm, "exec", "playwright", "test"],

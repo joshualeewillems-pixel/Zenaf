@@ -162,7 +162,7 @@ function traceHypotheses(
 function executionFlowSourcePrefix(coordinationEvidenceSource: string | null | undefined): string {
   const s = String(coordinationEvidenceSource ?? '').trim()
   if (s === 'council_stream') return '[COUNCIL] '
-  if (s === 'atria-client-trace') return '[HUMAN] '
+  if (s === 'zenaf-client-trace') return '[HUMAN] '
   return ''
 }
 
@@ -188,7 +188,7 @@ function appendExecutionFlowReadingEvidence(
 function isHumanCheckpointFlowReading(r: ExecutionFlowReadingSummary): boolean {
   return (
     String(r.pointer_kind ?? '').trim() === 'activity_event' &&
-    String(r.coordination_evidence_source ?? '').trim() === 'atria-client-trace'
+    String(r.coordination_evidence_source ?? '').trim() === 'zenaf-client-trace'
   )
 }
 
@@ -199,7 +199,7 @@ const _flowPositiveHit = (x: ExecutionFlowReadingSummary): boolean => x.impact =
 
 /**
  * At most one negative + one positive hypothesis from execution_flow_readings (compact; council preflight).
- * Prefer activity_event + atria-client-trace when choosing gate and wording; council_stream fallback.
+ * Prefer activity_event + zenaf-client-trace when choosing gate and wording; council_stream fallback.
  */
 function maybeAppendExecutionFlowReadingHypotheses(
   readings: readonly ExecutionFlowReadingSummary[] | undefined | null,
@@ -352,7 +352,7 @@ export function developmentalGuidanceUserSummary(ctx: DevelopmentalGuidanceConte
   }
   if (blocks.length === 0) return ''
   return [
-    'A quick read on this map view (this shapes how Atria listens for this run; it is not saved as a profile):',
+    'A quick read on this map view (this shapes how Zenaf listens for this run; it is not saved as a profile):',
     '',
     ...blocks,
   ].join('\n\n')

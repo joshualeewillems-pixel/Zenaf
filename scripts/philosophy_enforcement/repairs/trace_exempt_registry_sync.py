@@ -88,7 +88,7 @@ def repair_trace_exempt_registry_gaps(
             f"    id: '{eid}',\n"
             "    reason:\n"
             "      'Declared via # charter-trace-exempt on a Vision Execution route; "
-            "entry added by philosophy auto-repair — confirm scope with ATRIA_SYSTEM_CHARTER §4 "
+            "entry added by philosophy auto-repair — confirm scope with ZENAF_SYSTEM_CHARTER §4 "
             "and GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.',\n"
             "  },\n"
         )

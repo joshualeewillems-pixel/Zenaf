@@ -69,7 +69,7 @@ The app should track a single **optional** `FocusContext` (or push/pop stack lat
 - **Universal header strip** (`App.tsx` `UniversalContextStrip`): visible across primary cockpit views; when there is no VE field focus and the user is not on Vision → Execution, optional **Where** crumbs (workspace topic, etc.).
 - **Voice-to-field:** Single **record** control (**`FocusContextRecordButton`**) — circle when idle with focus, square while recording; **`POST /api/transcribe`** then insert at captured selection; **`VeVoiceRecordingProvider`** + **`VisionExecutionFocusProvider`**.
 - **Vision Execution:** Detail panels + inline **create** forms for idea / initiative / project / task use **`VeFocusRegion`** and synthetic **`__ve_new_*__`** ids; registry includes initiative/project **title** and project **brief** where needed.
-- **Workspace council:** **Your reply** registers **`council` / `__council_reply__` / `reply`** so the strip shows focus and voice targets the chat field; **`ATRIA_VOICE_TRANSCRIPT_DOM_FIRST`** (cancelable) consumes transcripts before the generic VE insert event when the textarea is active.
+- **Workspace council:** **Your reply** registers **`council` / `__council_reply__` / `reply`** so the strip shows focus and voice targets the chat field; **`ZENAF_VOICE_TRANSCRIPT_DOM_FIRST`** (cancelable) consumes transcripts before the generic VE insert event when the textarea is active.
 - **Still out of scope:** Settings, file tree, native context menus, registering every possible input in the app, dependency-engine automation.
 
 ---

@@ -86,14 +86,14 @@ export function mandateIdFromCouncilSeatLabel(raw: string): MandateIdKey | null 
     .trim()
     .toLowerCase()
     .replace(/:\s*$/, '')
-  if (!n || n.startsWith('atria synthesis')) return null
+  if (!n || n.startsWith('zenaf synthesis')) return null
   if (/thinking partner/.test(n)) return 'thinking_partner'
   if (/govern|what are the rules|compliance|legal|risk guardrail/.test(n)) return 'governance'
   if (/operator|execution|make it happen|\bcoo\b/.test(n)) return 'operator'
   if (/analyst|evidence|what'?s true|context analyst|research|data science/.test(n)) return 'analyst'
   if (/strateg|big picture|founder|\bceo\b/.test(n)) return 'strategist'
   if (/brand|new angle|narrative|marketing|creative/.test(n)) return 'creative'
-  if (/integrat|holistic practitioner|atria(?!\s+synthesis)|how it fits|chief of staff|synthes/.test(n))
+  if (/integrat|holistic practitioner|zenaf(?!\s+synthesis)|how it fits|chief of staff|synthes/.test(n))
     return 'integrator'
   if (/risk|what could go wrong|skeptic/.test(n)) return 'risk'
   if (

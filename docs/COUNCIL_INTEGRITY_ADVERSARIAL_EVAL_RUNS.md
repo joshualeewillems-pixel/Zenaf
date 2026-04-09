@@ -131,7 +131,7 @@ Council routing requests cloud seat provider but **no key** → **seam fallback*
 
 **3. Context / setup**  
 - Configure so OpenAI (or chosen cloud) is selected for a seat but **no API key** in env/settings.  
-- Use default or multi-seat council with **Atria synthesis** on.  
+- Use default or multi-seat council with **Zenaf synthesis** on.  
 - Confirm meta in SSE / logs: fallback note if present.
 
 **4. Expected failure mode**  
@@ -218,7 +218,7 @@ No authoritative primary → integrity does not claim “anchored”.
 ## Run 7 — PRIMARY present but synthesis empty / error stub
 
 **1. Scenario**  
-Synthesis step fails or returns empty after seats (e.g. timeout, provider error). Stream path appends `Atria synthesis:\n[Error: …]`.
+Synthesis step fails or returns empty after seats (e.g. timeout, provider error). Stream path appends `Zenaf synthesis:\n[Error: …]`.
 
 **2. Exact prompt**  
 `Give a one-line synthesis of alignment across seats.`

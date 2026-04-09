@@ -1,7 +1,7 @@
 # Personality Profile — Design Note
 
 **Status:** Design  
-**Scope:** Formalize Atria’s implicit personality layer into a structured, versioned cognitive profile that can be deployed as a “seat at the table” in councils and workspaces.  
+**Scope:** Formalize Zenaf’s implicit personality layer into a structured, versioned cognitive profile that can be deployed as a “seat at the table” in councils and workspaces.  
 **Goal:** Distill a user’s cognitive style into an interpretable, governable, portable, and marketable profile — without uncontrolled self-training, hidden memory blobs, or raw-data exposure.
 
 ---
@@ -162,4 +162,4 @@ This keeps the layer **interpretable** (you can inspect what’s in the profile)
 - **No hidden personality embeddings.** Profile dimensions (voice, reasoning, decision fingerprint, heuristics, constraints, domain map, examples) are human-readable and editable. Derivation can use ML to propose updates, but the stored artifact is interpretable and governable.  
 - **No direct raw-data resale.** Marketplace and sharing deal in packaged profiles and seats, not raw activity logs, transcripts, or PII.
 
-**Goal:** Make this layer **interpretable**, **governable**, **portable**, and **marketable** — so Atria can offer a “seat at the table” for a user’s cognitive style without becoming an uncontrolled or opaque personality engine.
+**Goal:** Make this layer **interpretable**, **governable**, **portable**, and **marketable** — so Zenaf can offer a “seat at the table” for a user’s cognitive style without becoming an uncontrolled or opaque personality engine.

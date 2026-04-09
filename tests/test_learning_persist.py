@@ -20,7 +20,7 @@ def _reset_persist_and_buffer():
 
 def test_append_and_file_contents(tmp_path, monkeypatch):
     p = tmp_path / "learn.jsonl"
-    monkeypatch.setenv("ATRIA_LEARNING_PERSIST_PATH", str(p))
+    monkeypatch.setenv("ZENAF_LEARNING_PERSIST_PATH", str(p))
     LC.init_learning_persistence_from_env()
     rid = LC.capture_general_delegation_outcome(
         surface="s",
@@ -67,7 +67,7 @@ def test_replay_last_line_wins_per_record_id(tmp_path, monkeypatch):
     }
     row2 = {**row1, "ts_ms": 200, "user_outcome": "applied"}
     p.write_text(json.dumps(row1) + "\n" + json.dumps(row2) + "\n", encoding="utf-8")
-    monkeypatch.setenv("ATRIA_LEARNING_PERSIST_PATH", str(p))
+    monkeypatch.setenv("ZENAF_LEARNING_PERSIST_PATH", str(p))
     LC.init_learning_persistence_from_env()
     buf = LC.get_learning_buffer()
     assert buf.size() == 1
@@ -95,14 +95,14 @@ def test_replay_skips_corrupt_lines(tmp_path, monkeypatch):
         "capture_mode": "full",
     }
     p.write_text("not-json\n" + json.dumps(good) + "\n", encoding="utf-8")
-    monkeypatch.setenv("ATRIA_LEARNING_PERSIST_PATH", str(p))
+    monkeypatch.setenv("ZENAF_LEARNING_PERSIST_PATH", str(p))
     LC.init_learning_persistence_from_env()
     assert LC.get_learning_buffer().size() == 1
 
 
 def test_user_outcome_appends_second_line(tmp_path, monkeypatch):
     p = tmp_path / "learn.jsonl"
-    monkeypatch.setenv("ATRIA_LEARNING_PERSIST_PATH", str(p))
+    monkeypatch.setenv("ZENAF_LEARNING_PERSIST_PATH", str(p))
     LC.init_learning_persistence_from_env()
     rid = LC.capture_general_delegation_outcome(
         surface="s",
@@ -126,8 +126,8 @@ def test_rotation_before_append(tmp_path, monkeypatch):
     p = tmp_path / "learn.jsonl"
     # Pre-fill file larger than cap (~0.001 MiB ≈ 1048 bytes)
     p.write_bytes(b"x" * 2000)
-    monkeypatch.setenv("ATRIA_LEARNING_PERSIST_PATH", str(p))
-    monkeypatch.setenv("ATRIA_LEARNING_PERSIST_MAX_MB", "0.001")
+    monkeypatch.setenv("ZENAF_LEARNING_PERSIST_PATH", str(p))
+    monkeypatch.setenv("ZENAF_LEARNING_PERSIST_MAX_MB", "0.001")
     LC.init_learning_persistence_from_env()
     LC.capture_general_delegation_outcome(
         surface="s",

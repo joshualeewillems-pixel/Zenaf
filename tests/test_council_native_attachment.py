@@ -35,7 +35,7 @@ def test_council_authenticated_fallback_local_when_no_cloud_key():
             with patch.object(R, "resolve_cloud_api_key", return_value=(None, "none")):
                 with patch("local_ai.execution_policy.run_context.get_policy_provider_override", return_value=None):
                     with patch("local_ai.execution_policy.run_context.get_ollama_model_override", return_value=None):
-                        with patch.dict("os.environ", {"ATRIA_COUNCIL_MODEL": "mycouncil"}, clear=False):
+                        with patch.dict("os.environ", {"ZENAF_COUNCIL_MODEL": "mycouncil"}, clear=False):
                             ad = R.get_council_llm_adapter_for_principal(pr)
     assert isinstance(ad, R._OllamaLLMAdapter)
     assert ad._inner.model == "mycouncil"
@@ -53,7 +53,7 @@ def test_council_anonymous_skips_main_attachment_branch():
         with patch.object(R, "user_llm_adapter_gate_for_principal", return_value=None):
             with patch("local_ai.execution_policy.run_context.get_policy_provider_override", return_value=None):
                 with patch("local_ai.execution_policy.run_context.get_ollama_model_override", return_value=None):
-                    with patch.dict("os.environ", {"ATRIA_COUNCIL_MODEL": "anonmodel"}, clear=False):
+                    with patch.dict("os.environ", {"ZENAF_COUNCIL_MODEL": "anonmodel"}, clear=False):
                         ad = R.get_council_llm_adapter_for_principal(pr)
     assert isinstance(ad, R._OllamaLLMAdapter)
     tr = R.peek_council_native_attachment_trace()
@@ -70,7 +70,7 @@ def test_privacy_gate_skips_main_attachment():
             with patch.object(R, "resolve_cloud_api_key", return_value=("sk-x", "env")):
                 with patch("local_ai.execution_policy.run_context.get_policy_provider_override", return_value=None):
                     with patch("local_ai.execution_policy.run_context.get_ollama_model_override", return_value=None):
-                        with patch.dict("os.environ", {"ATRIA_COUNCIL_MODEL": "priv-local"}, clear=False):
+                        with patch.dict("os.environ", {"ZENAF_COUNCIL_MODEL": "priv-local"}, clear=False):
                             ad = R.get_council_llm_adapter_for_principal(
                                 pr, allows_externalization=False
                             )

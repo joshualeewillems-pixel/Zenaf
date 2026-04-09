@@ -1,6 +1,8 @@
 /**
- * Flow Spine — deterministic read of movement / coherence / strain / ripeness.
- * Single narrative gravity for map copy, invite ranking, mediation tone.
+ * Flow Spine Charter — canonical deterministic read of movement / coherence / strain / ripeness.
+ * Single narrative gravity for map copy, invite ranking, mediation tone. Do not fork competing scores.
+ *
+ * Reception: consumers must document axes read, behavior change, and hard vs productive tension (see charter plan).
  */
 
 import type { ActionId } from '../vision-execution/focus/types'
@@ -184,4 +186,23 @@ export function assessFlow(input: FlowInput): FlowAssessment {
     trunkSummary: text,
     bestNextLabel: next,
   }
+}
+
+/**
+ * Mediation strip copy derived from flow.
+ * FLOW_RECEPTION fragment: maps grounding/tension/clarify bands to non-closing phrasing (charter v1).
+ */
+export function mediationFlowToneLine(assessment: FlowAssessment | null): string | null {
+  if (!assessment) return null
+  const { dominantIssue, axes } = assessment
+  if (dominantIssue === 'structure' || (axes.grounding < 0.45 && axes.structure < 0.5)) {
+    return 'Favor structure and concrete steps over synthesis until grounding catches up.'
+  }
+  if (dominantIssue === 'tension' || axes.tension > 0.65) {
+    return 'Tensions are elevated—surface tradeoffs and constraints before closing the loop.'
+  }
+  if (dominantIssue === 'clarify') {
+    return 'Articulation is thin—clarify the core intent before heavy structuring.'
+  }
+  return null
 }

@@ -1,14 +1,14 @@
 /**
- * Dispatched before {@link ATRIA_VE_FOCUS_INSERT_TEXT}. Listeners that insert into the
+ * Dispatched before {@link ZENAF_VE_FOCUS_INSERT_TEXT}. Listeners that insert into the
  * actual `document.activeElement` (e.g. council reply) must call `preventDefault()` so
  * the transcript is not routed to the last Vision Execution–registered field.
  */
-export const ATRIA_VOICE_TRANSCRIPT_DOM_FIRST = 'atria-voice-transcript-dom-first'
+export const ZENAF_VOICE_TRANSCRIPT_DOM_FIRST = 'zenaf-voice-transcript-dom-first'
 
 export type VoiceTranscriptDomFirstDetail = { text: string }
 
 /** Dispatched on `window` to insert text at the captured selection in the matching VE field */
-export const ATRIA_VE_FOCUS_INSERT_TEXT = 'atria-ve-focus-insert-text'
+export const ZENAF_VE_FOCUS_INSERT_TEXT = 'zenaf-ve-focus-insert-text'
 
 export type VeFocusInsertTextDetail = {
   entity_type: string

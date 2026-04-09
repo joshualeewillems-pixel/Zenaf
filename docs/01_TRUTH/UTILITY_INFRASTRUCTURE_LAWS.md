@@ -6,7 +6,7 @@ Last updated: 2026-04-04
 Source rationale: docs/02_ACTIVE_DESIGN/SYSTEM_UTILITY_CONVERGENCE_AUDIT.md (final answer + convergence map)
 -->
 
-**Purpose:** Declare **strict mandates** for cross-surface **utility infrastructure**. This is not a product redesign; it names what **must** converge so Atria behaves as **one system** rather than isolated tabs. Implementation may lag; **new work** shall not contradict these laws without an explicit TRUTH revision.
+**Purpose:** Declare **strict mandates** for cross-surface **utility infrastructure**. This is not a product redesign; it names what **must** converge so Zenaf behaves as **one system** rather than isolated tabs. Implementation may lag; **new work** shall not contradict these laws without an explicit TRUTH revision.
 
 **Relationship:** Pairs with `TRUTH_CONVERGENCE.md` (locked decision: Utility Infrastructure Convergence), philosophy **#1 Traceability** and **#7 Execution seam** in `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md`, and server contracts `local_ai/council_preflight.py` / `build_enriched_council_context`.
 

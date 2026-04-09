@@ -53,7 +53,7 @@ def format_failure_report(
     commit = str(report.get("commit") or (sha[:7] if sha else "?"))
 
     lines = [
-        "Atria wave-autonomy",
+        "Zenaf wave-autonomy",
         f"Wave: {wave_id}",
         f"Status: FAILED ({block})",
     ]
@@ -87,7 +87,7 @@ def format_success_report(
     req = bool((report.get("promotion") or {}).get("requires_manual_flag", True))
 
     lines = [
-        "Atria wave-autonomy",
+        "Zenaf wave-autonomy",
         f"Wave: {wave_id}",
         "Status: OK (exit gate passed)",
     ]

@@ -102,10 +102,10 @@ function meetingExternalEngineOptionsFromProviders(rows: ProviderStatusRow[]): {
  * Extraction-time packet: populated from GET /workspace-identity (branch-safe) or legacy manual JSON.
  * Meeting extract never scans the filesystem; server builds packet from gitignored snapshot only.
  */
-const WORKSPACE_PACKET_SESSION_KEY = 'atria_workspace_packet'
-const WORKSPACE_IDENTITY_BRANCH_SESSION_KEY = 'atria_workspace_identity_branch'
+const WORKSPACE_PACKET_SESSION_KEY = 'zenaf_workspace_packet'
+const WORKSPACE_IDENTITY_BRANCH_SESSION_KEY = 'zenaf_workspace_identity_branch'
 /** Absolute paths; persisted in this browser only. Empty → scan uses server default (repo root). */
-const WORKSPACE_IDENTITY_SCAN_ROOTS_STORAGE_KEY = 'atria_workspace_identity_scan_roots'
+const WORKSPACE_IDENTITY_SCAN_ROOTS_STORAGE_KEY = 'zenaf_workspace_identity_scan_roots'
 
 export type WorkspaceIdentityStatusResponse = {
   status: string
@@ -131,7 +131,7 @@ export type WorkspaceIdentityStatusResponse = {
     reasoningThemeCount?: number
     clusterCount?: number
   } | null
-  /** Server Atria repo root when client sends roots: [] */
+  /** Server Zenaf repo root when client sends roots: [] */
   defaultScanRoot?: string
   /** Paths recorded in the last snapshot */
   lastScanSourceRoots?: string[] | null
@@ -279,9 +279,9 @@ import {
   useVisionExecutionFocusOptional,
   useVisionExecutionGraphDataOptional,
   focusDescriptorFromVeSelection,
-  ATRIA_VE_FOCUS_APPLY_REWRITE,
+  ZENAF_VE_FOCUS_APPLY_REWRITE,
   type VeFocusApplyRewriteDetail,
-  ATRIA_VE_FOCUS_INSERT_TEXT,
+  ZENAF_VE_FOCUS_INSERT_TEXT,
   insertTextAtSelection,
   type VeFocusInsertTextDetail,
 } from './focus'
@@ -929,7 +929,7 @@ function deriveVeSelectionFromDetailState(
   return null
 }
 
-const PERSPECTIVE_AGENTS_STORAGE_KEY = 'atria-perspective-agents'
+const PERSPECTIVE_AGENTS_STORAGE_KEY = 'zenaf-perspective-agents'
 
 const TABS: { id: TabId; label: string }[] = [
   { id: 'meeting_capture', label: 'Meeting Capture' },
@@ -1544,8 +1544,8 @@ function InitiativeDetailPanel({
       else if (fk === 'philosophical_alignment_ai') setForm((f) => ({ ...f, philosophical_alignment_ai: d.text }))
       else if (fk === 'dependencies') setForm((f) => ({ ...f, dependencies: d.text }))
     }
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, handler)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, handler)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, handler)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, handler)
   }, [initiativeId])
 
   useEffect(() => {
@@ -1566,8 +1566,8 @@ function InitiativeDetailPanel({
         return { ...f, [formKey]: next }
       })
     }
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, handler)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, handler)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, handler)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, handler)
   }, [initiativeId])
 
   const refreshExecutionSteps = useCallback(async () => {
@@ -2080,6 +2080,26 @@ function InitiativeDetailPanel({
         </div>
         <TraceabilityMeta notesOrDescription={initiative.notes} />
         {saveError && <p className="text-red-400 text-xs">{saveError}</p>}
+        <div
+          className="rounded-lg border border-slate-700/80 bg-slate-900/40 px-3 py-2 mb-2 space-y-1"
+          data-testid="initiative-channel-legend"
+        >
+          <div className="text-[10px] uppercase tracking-wide text-slate-500">Fields by maintenance channel</div>
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400 leading-snug">
+            <span>
+              <span className="text-slate-300 font-medium">Water</span> — owner, seats, timeframe, execution cadence
+            </span>
+            <span>
+              <span className="text-slate-300 font-medium">Soil</span> — brief, decision narrative, alignment, recommendation
+            </span>
+            <span>
+              <span className="text-slate-300 font-medium">Condition</span> — status, risks, dependencies, next step, kill criteria
+            </span>
+            <span>
+              <span className="text-slate-300 font-medium">Fruit</span> — execution steps checklist, measurable outputs
+            </span>
+          </div>
+        </div>
         <DetailSection title="Identity / scope" defaultOpen={true}>
           <DetailField label="Title" value={(form.title as string) ?? ''} onChange={(v) => setForm((f) => ({ ...f, title: v }))} />
           <VeFocusRegion
@@ -3127,8 +3147,8 @@ function IdeaDetailPanel({
       if (d.field_key === 'title') setForm((p) => ({ ...p, title: d.text }))
       if (d.field_key === 'summary') setForm((p) => ({ ...p, summary: d.text }))
     }
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, handler)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, handler)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, handler)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, handler)
   }, [ideaId])
 
   useEffect(() => {
@@ -3148,8 +3168,8 @@ function IdeaDetailPanel({
         return { ...p, [formKey]: next }
       })
     }
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, handler)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, handler)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, handler)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, handler)
   }, [ideaId])
 
   const handleSave = async (nextStatus?: string) => {
@@ -4489,8 +4509,8 @@ function TaskDetailPanel({
       if (d.field_key === 'title') setForm((p) => ({ ...p, title: d.text }))
       if (d.field_key === 'description') setForm((p) => ({ ...p, description: d.text }))
     }
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, handler)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, handler)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, handler)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, handler)
   }, [taskId])
 
   useEffect(() => {
@@ -4505,8 +4525,8 @@ function TaskDetailPanel({
         return { ...p, [formKey]: next }
       })
     }
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, handler)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, handler)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, handler)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, handler)
   }, [taskId])
 
   const handleSave = async () => {
@@ -5598,7 +5618,7 @@ export function VisionExecutionView({
     // Live title/summary/description/status are pushed from IdeaDetailPanel (unsaved edits included).
   }, [detailIdeaId, councilIdeaLabelsRef])
 
-  const EXECUTION_VIEW_STORAGE_KEY = 'atria-execution-view-mode'
+  const EXECUTION_VIEW_STORAGE_KEY = 'zenaf-execution-view-mode'
   const [executionViewMode, setExecutionViewMode] = useState<ProjectsViewMode>(() => {
     try {
       if (typeof localStorage !== 'undefined') {
@@ -5627,8 +5647,8 @@ export function VisionExecutionView({
   }, [])
 
   // Meeting Capture: paste / upload → extract → staging → review → commit
-  const STAGING_STORAGE_KEY = 'atria-meeting-staging'
-  const SHOW_REVIEW_STORAGE_KEY = 'atria-meeting-show-review'
+  const STAGING_STORAGE_KEY = 'zenaf-meeting-staging'
+  const SHOW_REVIEW_STORAGE_KEY = 'zenaf-meeting-show-review'
   const [meetingNotes, setMeetingNotes] = useState('')
   const [extractResult, setExtractResult] = useState<ExtractMeetingResponse | null>(null)
   const [meetingCaptureView, setMeetingCaptureView] = useState<'structured' | 'harvest'>('structured')
@@ -5793,7 +5813,7 @@ export function VisionExecutionView({
       const name = e && typeof e === 'object' && 'name' in e ? String((e as { name: string }).name) : ''
       if (name === 'AbortError') {
         setError(
-          'Folder picker request timed out. Check for a folder dialog hidden behind other windows, or restart the Atria API if the server stopped responding.',
+          'Folder picker request timed out. Check for a folder dialog hidden behind other windows, or restart the Zenaf API if the server stopped responding.',
         )
       } else {
         setError(e instanceof Error ? e.message : 'Could not open folder picker')
@@ -8036,7 +8056,7 @@ export function VisionExecutionView({
           <div className="rounded-lg border border-slate-600 bg-slate-900/50 p-3 text-xs space-y-3">
             <p className="text-slate-500 leading-snug">
               Identity is built from these folders only. Custom roots are saved in this browser (localStorage). Browse
-              folder opens the system picker on the computer running the Atria API (the same machine the scan reads
+              folder opens the system picker on the computer running the Zenaf API (the same machine the scan reads
               from), not a web-only file dialog.
             </p>
             <div className="space-y-1.5">
@@ -8074,7 +8094,7 @@ export function VisionExecutionView({
               </ul>
               {workspaceScanRootsUser.length === 0 && effectiveWorkspaceScanRoots.length > 0 && (
                 <p className="text-slate-500 text-[10px] leading-snug">
-                  Using the Atria repository root. Add absolute paths above to scan your real project folders instead.
+                  Using the Zenaf repository root. Add absolute paths above to scan your real project folders instead.
                 </p>
               )}
               <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -8167,8 +8187,8 @@ export function VisionExecutionView({
                   className="px-2 py-1 rounded border border-violet-700 text-violet-200 hover:bg-violet-950/40 disabled:opacity-50"
                   title={
                     workspaceScanRootsUser.length > 0
-                      ? 'Deep scan of your custom roots; writes .atria/workspace-identity/ (gitignored)'
-                      : 'Deep scan of default repository root; writes .atria/workspace-identity/ (gitignored)'
+                      ? 'Deep scan of your custom roots; writes .zenaf/workspace-identity/ (gitignored)'
+                      : 'Deep scan of default repository root; writes .zenaf/workspace-identity/ (gitignored)'
                   }
                 >
                   Deep rescan
@@ -9952,11 +9972,11 @@ function CreateIdeaForm({
         setNote((prev) => insertTextAtSelection(prev, d.text, d.selectionStart, d.selectionEnd))
       }
     }
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     return () => {
-      window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-      window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+      window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+      window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     }
   }, [])
 
@@ -10034,11 +10054,11 @@ function CreateInitiativeForm({
         setBrief((prev) => insertTextAtSelection(prev, d.text, d.selectionStart, d.selectionEnd))
       }
     }
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     return () => {
-      window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-      window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+      window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+      window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     }
   }, [])
 
@@ -10115,11 +10135,11 @@ function CreateProjectForm({
         setBrief((prev) => insertTextAtSelection(prev, d.text, d.selectionStart, d.selectionEnd))
       }
     }
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     return () => {
-      window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-      window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+      window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+      window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     }
   }, [])
 
@@ -10194,11 +10214,11 @@ function CreateTaskForm({
         setTitle((prev) => insertTextAtSelection(prev, d.text, d.selectionStart, d.selectionEnd))
       }
     }
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     return () => {
-      window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
-      window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+      window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
+      window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
     }
   }, [])
 

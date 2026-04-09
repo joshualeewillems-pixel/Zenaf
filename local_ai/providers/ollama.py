@@ -16,7 +16,7 @@ import config as _config  # noqa: E402
 
 
 class OllamaProvider:
-    """Local Ollama API. Single method used by Atria: generate(prompt) -> response text."""
+    """Local Ollama API. Single method used by Zenaf: generate(prompt) -> response text."""
 
     def __init__(
         self,

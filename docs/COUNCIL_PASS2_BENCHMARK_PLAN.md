@@ -27,18 +27,18 @@ Each condition is run once per scenario (3 runs per condition, 15 runs total per
 
 ### 2.1 Concurrency
 
-**Current:** `local_ai/atria_tools.py` uses `max_workers=min(3, len(tasks))` in four places (two in `run_council`, two in `run_council_stream`).
+**Current:** `local_ai/zenaf_tools.py` uses `max_workers=min(3, len(tasks))` in four places (two in `run_council`, two in `run_council_stream`).
 
 **Minimal change for benchmark only:** Introduce a single override used only when set.
 
-- Add at module level in `local_ai/atria_tools.py`:
+- Add at module level in `local_ai/zenaf_tools.py`:
   - `COUNCIL_MAX_WORKERS_OVERRIDE: int | None = None`
 - In all four `ThreadPoolExecutor` call sites, set:
   - `workers = COUNCIL_MAX_WORKERS_OVERRIDE if COUNCIL_MAX_WORKERS_OVERRIDE is not None else min(3, len(tasks))`
   - `with ThreadPoolExecutor(max_workers=workers) as executor: ...`
 
 **Benchmark script:** Before calling `run_council`, set  
-`local_ai.atria_tools.COUNCIL_MAX_WORKERS_OVERRIDE = 1` (or 2, 3). After the run (or at start of next condition), set back to `None` so normal behavior is unchanged.
+`local_ai.zenaf_tools.COUNCIL_MAX_WORKERS_OVERRIDE = 1` (or 2, 3). After the run (or at start of next condition), set back to `None` so normal behavior is unchanged.
 
 No change to `run_council_stream` for the benchmark if we only use non-streaming `run_council` for eval (recommended: same as Pass 1).
 
@@ -48,8 +48,8 @@ No change to `run_council_stream` for the benchmark if we only use non-streaming
 
 **Minimal change for benchmark only:** Allow one optional override so the benchmark can swap model without changing config or production defaults.
 
-- **Option A (env var):** In `get_council_provider()`, if `os.environ.get("ATRIA_COUNCIL_MODEL")` is set, return `OllamaProvider(model=os.environ["ATRIA_COUNCIL_MODEL"], timeout=...)` (use existing `MODEL_TIMEOUT` or council timeout from config if present); otherwise return current behavior. Benchmark script sets `os.environ["ATRIA_COUNCIL_MODEL"] = "qwen2.5:3b"` before importing/calling council (and clears or unsets for “current” conditions).
-- **Option B (override in atria_tools):** Benchmark script monkey-patches `local_ai.providers.get_council_provider` to return `OllamaProvider(model=benchmark_model)` for the duration of the run. No production code change; script is self-contained but fragile if import order or caching changes.
+- **Option A (env var):** In `get_council_provider()`, if `os.environ.get("ZENAF_COUNCIL_MODEL")` is set, return `OllamaProvider(model=os.environ["ZENAF_COUNCIL_MODEL"], timeout=...)` (use existing `MODEL_TIMEOUT` or council timeout from config if present); otherwise return current behavior. Benchmark script sets `os.environ["ZENAF_COUNCIL_MODEL"] = "qwen2.5:3b"` before importing/calling council (and clears or unsets for “current” conditions).
+- **Option B (override in zenaf_tools):** Benchmark script monkey-patches `local_ai.providers.get_council_provider` to return `OllamaProvider(model=benchmark_model)` for the duration of the run. No production code change; script is self-contained but fragile if import order or caching changes.
 
 **Recommendation:** Option A (env var). One small, clear code path in `get_council_provider()`; benchmark script sets env per condition and runs the same `run_council()` path as production.
 
@@ -57,15 +57,15 @@ No change to `run_council_stream` for the benchmark if we only use non-streaming
 
 - In `local_ai/providers/__init__.py`, in `get_council_provider()`:
   - `import os`
-  - If `os.environ.get("ATRIA_COUNCIL_MODEL")`:
-    - Return `OllamaProvider(model=os.environ["ATRIA_COUNCIL_MODEL"])` (timeout from config or default).
+  - If `os.environ.get("ZENAF_COUNCIL_MODEL")`:
+    - Return `OllamaProvider(model=os.environ["ZENAF_COUNCIL_MODEL"])` (timeout from config or default).
   - Else:
     - Return `get_default_provider()` as today.
 
 **Benchmark script:**
 
-- For conditions 1–3 (current model): do not set `ATRIA_COUNCIL_MODEL` (or set it to `qwen3:8b` if config might differ).
-- For conditions 4–5: set `os.environ["ATRIA_COUNCIL_MODEL"] = "<chosen_smaller_model>"` before the run(s) for that condition.
+- For conditions 1–3 (current model): do not set `ZENAF_COUNCIL_MODEL` (or set it to `qwen3:8b` if config might differ).
+- For conditions 4–5: set `os.environ["ZENAF_COUNCIL_MODEL"] = "<chosen_smaller_model>"` before the run(s) for that condition.
 
 ### 2.3 Reuse of Pass 1 scenarios and roles
 
@@ -100,7 +100,7 @@ Candidates that are typically faster than qwen3:8b on the same hardware and can 
 
 - **Total latency (s):** Wall-clock time for `run_council(...)`.
 - **Seats completed:** Count of seat blocks in the output that are not `[Error: ...]` or timeout. Max 3.
-- **Synthesis ran:** Boolean (whether “Atria synthesis:” appears in output).
+- **Synthesis ran:** Boolean (whether “Zenaf synthesis:” appears in output).
 - **Output saved:** Full text for optional manual review (readability / decision usefulness).
 
 ### 4.2 Primary metric to determine the winner: **seats completed (and total latency as tiebreaker)**
@@ -132,8 +132,8 @@ Candidates that are typically faster than qwen3:8b on the same hardware and can 
 
 | File | Change |
 |------|--------|
-| `local_ai/atria_tools.py` | Add `COUNCIL_MAX_WORKERS_OVERRIDE = None`. In all four `ThreadPoolExecutor` usages, use `workers = COUNCIL_MAX_WORKERS_OVERRIDE if COUNCIL_MAX_WORKERS_OVERRIDE is not None else min(3, len(tasks))`. |
-| `local_ai/providers/__init__.py` | In `get_council_provider()`, if `os.environ.get("ATRIA_COUNCIL_MODEL")` set, return `OllamaProvider(model=...)`; else unchanged. |
+| `local_ai/zenaf_tools.py` | Add `COUNCIL_MAX_WORKERS_OVERRIDE = None`. In all four `ThreadPoolExecutor` usages, use `workers = COUNCIL_MAX_WORKERS_OVERRIDE if COUNCIL_MAX_WORKERS_OVERRIDE is not None else min(3, len(tasks))`. |
+| `local_ai/providers/__init__.py` | In `get_council_provider()`, if `os.environ.get("ZENAF_COUNCIL_MODEL")` set, return `OllamaProvider(model=...)`; else unchanged. |
 | `scripts/eval_council_pass2.py` | New script: loop over 5 conditions × 3 scenarios, set env and override, call `run_council`, collect metrics, print table and winner. |
 
 No change to prompt structure, timeout values, or streaming path for the benchmark itself. Overrides are used only when set (benchmark or future config); default behavior remains Pass 1 behavior.

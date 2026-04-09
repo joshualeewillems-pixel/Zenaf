@@ -233,7 +233,7 @@ def _build_system_index_payload() -> dict:
             ],
             "main_files": [
                 "api/main.py",
-                "local_ai/atria_tools.py",
+                "local_ai/zenaf_tools.py",
                 "local_ai/council_teacher.py",
             ],
             "artifacts": ["council_teacher_runs", "CouncilRunArtifact"],
@@ -291,7 +291,7 @@ def _build_system_index_payload() -> dict:
                 {"method": "POST", "path": "/run", "mode": "content_script"},
                 {"method": "POST", "path": "/run", "mode": "content_newsletter"},
             ],
-            "main_files": ["api/main.py", "local_ai/atria_tools.py"],
+            "main_files": ["api/main.py", "local_ai/zenaf_tools.py"],
             "artifacts": ["content output text"],
         },
         {
@@ -321,7 +321,7 @@ def _build_system_index_payload() -> dict:
                 {"method": "POST", "path": "/run", "mode": "assess_uncertainty"},
                 {"method": "POST", "path": "/run", "mode": "reassess_low_confidence"},
             ],
-            "main_files": ["api/main.py", "local_ai/atria_tools.py", "tools/file_steward/app.py"],
+            "main_files": ["api/main.py", "local_ai/zenaf_tools.py", "tools/file_steward/app.py"],
             "artifacts": ["analysis/simulation payloads"],
         },
         {
@@ -342,15 +342,15 @@ def _build_system_index_payload() -> dict:
             "artifacts": ["learning_records", "delegation_path metadata"],
         },
         {
-            "id": "atria_next_step",
-            "name": "Atria Ask / Next Step",
+            "id": "zenaf_next_step",
+            "name": "Zenaf Ask / Next Step",
             "purpose": "Generate next-step recommendations from question + context.",
             "status": "active",
             "inspectability": "none",
             "teacher_support": "none",
             "ui_entry_points": [{"label": "Workspace Organizer", "location": "App > Workspace Organizer"}],
             "api_entry_points": [{"method": "POST", "path": "/run", "mode": "next_step"}],
-            "main_files": ["api/main.py", "local_ai/atria_tools.py", "local_ai/delegation/workspace_next_step.py"],
+            "main_files": ["api/main.py", "local_ai/zenaf_tools.py", "local_ai/delegation/workspace_next_step.py"],
             "artifacts": ["next_step payload", "learning_record_id (when captured)"],
         },
     ]
@@ -375,7 +375,7 @@ def _build_system_index_payload() -> dict:
         {
             "id": "council_seat_prompts",
             "name": "Council Seat Prompts",
-            "definition": "local_ai/atria_tools.py",
+            "definition": "local_ai/zenaf_tools.py",
             "composition": "_build_council_persona_block + _assemble_council_seat_prompt",
             "versioning": "code_based",
             "exposed_in_studio": True,
@@ -383,7 +383,7 @@ def _build_system_index_payload() -> dict:
         {
             "id": "council_synthesis_prompt",
             "name": "Council Synthesis Prompt",
-            "definition": "local_ai/atria_tools.py",
+            "definition": "local_ai/zenaf_tools.py",
             "composition": "_run_council_synthesis",
             "versioning": "code_based",
             "exposed_in_studio": True,
@@ -555,7 +555,7 @@ def studio_me(current_user: dict = Depends(get_current_admin_user)):
 
 @router.get("/council/prompts")
 def studio_council_prompts(current_user: dict = Depends(get_current_admin_user)):
-    from local_ai import atria_tools as T
+    from local_ai import zenaf_tools as T
     from local_ai.council_teacher import TEACHER_PROMPT_VERSIONS
 
     personas = {}

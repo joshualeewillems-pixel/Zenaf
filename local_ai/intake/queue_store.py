@@ -41,7 +41,7 @@ def get_queue(
     Return queue items with optional filters and sort.
     lane: filter by lane id; status: filter by status; search: substring in subject + summary (case-insensitive).
     sort: created_desc (newest first) or created_asc (oldest first).
-    include_archived: if False (default), exclude items with archived=True (internal hide in Atria only).
+    include_archived: if False (default), exclude items with archived=True (internal hide in Zenaf only).
     """
     ids = list(_order)
     items = [_items[i] for i in ids if i in _items]
@@ -99,7 +99,7 @@ def update_item(
     """
     Update status, notes, assigned_to, or archived. If lane_override and correction_note are provided,
     record a correction in the judgment layer and set lane_override and judgment_id on the item.
-    archived=True hides the item from default queue list (internal Atria only; no mailbox change).
+    archived=True hides the item from default queue list (internal Zenaf only; no mailbox change).
     """
     if item_id not in _items:
         return None

@@ -10,8 +10,8 @@ export type MapEdgeEndpointMeta = {
 }
 
 /**
- * Edge motion + weight from relationship recency and endpoint condition (projection-only).
- * Uses the newer of the two touches as “last activity” on the link.
+ * Edge motion + weight from relationship recency and endpoint `ConditionState` (projection-only).
+ * Node stone paint uses `condition_severity` only; edges intentionally stay on merged condition for now.
  */
 export function computeMapEdgeVitality(
   source: MapEdgeEndpointMeta | undefined,

@@ -1,10 +1,14 @@
 /**
  * Growth triad (0–1): Water / Soil / Fruit — derived only from existing VE + map payload fields.
- * No backend changes; heuristics are explainable and tunable in one place.
+ *
+ * **Soil** = grounding / substrate depth (filled brief, boundaries, criteria, etc.). Map **soil rim** visualizes
+ * **deficit** (`1 − soil`), not presence. Not recency (water) or structural strain (condition). Council summary
+ * nudges soil as “formed meaning,” not pulse.
  */
 import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
-import type { MapNodePayload } from './ontology'
 import type { VisionMapEntityBundle } from './blockersFromVe'
+import { MAP_SOIL_TIER_LOW_BELOW, MAP_SOIL_TIER_MEDIUM_BELOW } from './mapNodeAppearance'
+import type { MapNodePayload } from './ontology'
 import { effectiveGrowthTriad } from './effectiveGrowthTriad'
 
 export type GrowthTriadMetrics = {
@@ -41,37 +45,56 @@ function soilFromIdea(e: Idea): number {
   const desired = textDepth(e.desired_outcome, [12, 48, 120])
   const sum = textDepth(e.summary, [20, 80, 200])
   const desc = textDepth(e.description, [40, 150, 400])
-  const links = clamp01(((e.linked_people?.length ?? 0) + (e.linked_ideas?.length ?? 0)) * 0.12)
-  return clamp01(0.12 + desired * 0.32 + sum * 0.28 + desc * 0.22 + links)
+  const notes = textDepth(e.notes, [25, 90, 220])
+  const links = clamp01(((e.linked_people?.length ?? 0) + (e.linked_ideas?.length ?? 0)) * 0.1)
+  return clamp01(0.1 + desired * 0.28 + sum * 0.24 + desc * 0.2 + notes * 0.14 + links)
 }
 
 function soilFromInitiative(e: Initiative): number {
   const brief = textDepth(e.brief, [30, 100, 220])
+  const notes = textDepth(e.notes, [25, 100, 260])
   const next = textDepth(e.next_step_ai, [15, 60, 140])
   const risks = textDepth(e.risks, [10, 60, 160])
   const deps = textDepth(e.dependencies, [10, 50, 140])
   const kill = textDepth(e.kill_criteria, [8, 40, 100])
+  const rec = textDepth(e.recommendation, [20, 80, 200])
+  const align = textDepth(e.philosophical_alignment_ai, [20, 80, 180])
+  const estCost = textDepth(e.estimated_cost_ai, [8, 40, 90])
+  const estTime = textDepth(e.estimated_timeframe_ai, [8, 40, 90])
   const seats = (e.seats ?? []).filter((s) => s.assigned_person_id?.trim()).length
-  const seatScore = clamp01(seats * 0.08 + (e.owner_id?.trim() ? 0.12 : 0))
-  return clamp01(0.1 + brief * 0.28 + next * 0.18 + risks * 0.14 + deps * 0.14 + kill * 0.08 + seatScore)
+  const seatScore = clamp01(seats * 0.05 + (e.owner_id?.trim() ? 0.06 : 0))
+  return clamp01(
+    0.08 +
+      brief * 0.22 +
+      notes * 0.12 +
+      next * 0.12 +
+      risks * 0.1 +
+      deps * 0.1 +
+      kill * 0.06 +
+      rec * 0.08 +
+      align * 0.06 +
+      (estCost + estTime) * 0.04 +
+      seatScore,
+  )
 }
 
 function soilFromProject(e: Project): number {
   const brief = textDepth(e.brief, [25, 90, 200])
   const next = textDepth(e.next_step_ai, [12, 50, 120])
   const deliv = textDepth(e.deliverables, [15, 80, 200])
-  const notes = textDepth(e.notes, [20, 100, 250])
-  const dates = (e.start_date ? 0.06 : 0) + (e.end_date ? 0.06 : 0)
-  const assets = clamp01((e.required_assets?.length ?? 0) * 0.05)
-  return clamp01(0.1 + brief * 0.26 + next * 0.16 + deliv * 0.18 + notes * 0.12 + dates + assets)
+  const notes = textDepth(e.notes, [20, 100, 280])
+  const dates = (e.start_date ? 0.05 : 0) + (e.end_date ? 0.05 : 0)
+  const assets = clamp01((e.required_assets?.length ?? 0) * 0.04)
+  return clamp01(0.08 + brief * 0.24 + next * 0.14 + deliv * 0.16 + notes * 0.14 + dates + assets)
 }
 
 function soilFromTask(e: Task): number {
   const crit = textDepth(e.completion_criteria, [15, 60, 140])
   const desc = textDepth(e.description, [20, 80, 180])
-  const deps = clamp01((e.dependency_ids?.length ?? 0) * 0.07)
-  const assets = clamp01((e.required_asset_ids?.length ?? 0) * 0.06)
-  return clamp01(0.15 + crit * 0.38 + desc * 0.28 + deps + assets)
+  const notes = textDepth(e.notes, [15, 70, 200])
+  const deps = clamp01((e.dependency_ids?.length ?? 0) * 0.06)
+  const assets = clamp01((e.required_asset_ids?.length ?? 0) * 0.05)
+  return clamp01(0.12 + crit * 0.32 + desc * 0.24 + notes * 0.12 + deps + assets)
 }
 
 function fruitFromGrowth(g: MapNodePayload['growth']): number {
@@ -139,38 +162,49 @@ export function computeFruitProgress(p: MapNodePayload, bundle: VisionMapEntityB
   return clamp01(g)
 }
 
-/** Soil: description, outcomes, constraints, dependencies — from VE row when available */
+/**
+ * Council runs that produced a substantive summary count as “formation” (soil), not pulse (water).
+ * Capped so this never outweighs actual filled VE fields.
+ */
+export function councilFormationSoilBump(p: MapNodePayload): number {
+  const s = (p.councilTeacher?.summary || '').trim()
+  if (s.length >= 160) return 0.08
+  if (s.length >= 72) return 0.055
+  if (s.length >= 24) return 0.03
+  if (p.councilTeacher?.last_run_at) return 0.018
+  return 0
+}
+
+/** Soil: structural completeness from VE row (+ small council-summary formation bump). */
 export function computeSoilQuality(p: MapNodePayload, bundle: VisionMapEntityBundle | null): number {
+  let base: number
   if (p.kind === 'fruit') {
     const parentId = p.parentRef?.id
-    if (!bundle || !parentId) return 0.72
-    const proj = bundle.projects.find((x) => x.id === parentId)
-    return proj ? soilFromProject(proj) * 0.85 + 0.1 : 0.65
+    if (!bundle || !parentId) base = 0.62
+    else {
+      const proj = bundle.projects.find((x) => x.id === parentId)
+      base = proj ? soilFromProject(proj) * 0.85 + 0.08 : 0.58
+    }
+  } else if (!bundle) {
+    base = clamp01(0.28 + textDepth(p.summaryLines.join(' '), [40, 120, 280]) * 0.5)
+  } else {
+    const { ref } = p
+    if (ref.veType === 'idea') {
+      const e = bundle.ideas.find((x) => x.id === ref.id)
+      base = e ? soilFromIdea(e) : 0.3
+    } else if (ref.veType === 'initiative') {
+      const e = bundle.initiatives.find((x) => x.id === ref.id)
+      base = e ? soilFromInitiative(e) : 0.3
+    } else if (ref.veType === 'project') {
+      const e = bundle.projects.find((x) => x.id === ref.id)
+      base = e ? soilFromProject(e) : 0.3
+    } else if (ref.veType === 'task') {
+      const e = bundle.tasks.find((x) => x.id === ref.id)
+      base = e ? soilFromTask(e) : 0.3
+    } else base = 0.42
   }
 
-  if (!bundle) {
-    return clamp01(0.35 + textDepth(p.summaryLines.join(' '), [40, 120, 280]) * 0.45)
-  }
-
-  const { ref } = p
-  if (ref.veType === 'idea') {
-    const e = bundle.ideas.find((x) => x.id === ref.id)
-    return e ? soilFromIdea(e) : 0.35
-  }
-  if (ref.veType === 'initiative') {
-    const e = bundle.initiatives.find((x) => x.id === ref.id)
-    return e ? soilFromInitiative(e) : 0.35
-  }
-  if (ref.veType === 'project') {
-    const e = bundle.projects.find((x) => x.id === ref.id)
-    return e ? soilFromProject(e) : 0.35
-  }
-  if (ref.veType === 'task') {
-    const e = bundle.tasks.find((x) => x.id === ref.id)
-    return e ? soilFromTask(e) : 0.35
-  }
-
-  return 0.45
+  return clamp01(base + councilFormationSoilBump(p))
 }
 
 export function computeGrowthTriad(p: MapNodePayload, bundle: VisionMapEntityBundle | null): GrowthTriadMetrics {
@@ -181,26 +215,38 @@ export function computeGrowthTriad(p: MapNodePayload, bundle: VisionMapEntityBun
   }
 }
 
-/** Same semantics as the right-panel triad — single source for map surface + bars. */
+/**
+ * Triad for map + panel. Server `growth_triad.soil` is field-depth only; add council formation bump here
+ * so soil can reflect meaning captured in council summaries without touching water (recency).
+ */
 export function mapVisualTriad(p: MapNodePayload, bundle: VisionMapEntityBundle | null): GrowthTriadMetrics {
-  return effectiveGrowthTriad(p, bundle)
+  const base = effectiveGrowthTriad(p, bundle)
+  const server =
+    p.vitality_source === 'server' &&
+    p.growth_triad &&
+    typeof p.growth_triad.soil === 'number' &&
+    Number.isFinite(p.growth_triad.soil)
+  if (server) {
+    return { ...base, soil: clamp01(base.soil + councilFormationSoilBump(p)) }
+  }
+  return base
 }
 
 /** One short sentence; visuals carry most meaning */
 export function growthTriadCaption(m: GrowthTriadMetrics, kindLabel: string): string {
   const lowW = m.water < 0.38
-  const lowS = m.soil < 0.38
+  const lowS = m.soil < MAP_SOIL_TIER_LOW_BELOW
   const lowF = m.fruit < 0.35
   const hiF = m.fruit > 0.72
 
   const parts: string[] = []
   if (lowW) parts.push('under-watered')
-  if (lowS) parts.push('loosely defined')
+  if (lowS) parts.push('lightly grounded')
   if (lowF && !hiF) parts.push('little output yet')
   if (hiF && !lowF) parts.push('strong output signal')
 
   if (parts.length === 0) {
-    if (m.water > 0.75 && m.soil > 0.65) return `${kindLabel} reads tended and structured.`
+    if (m.water > 0.75 && m.soil >= MAP_SOIL_TIER_MEDIUM_BELOW) return `${kindLabel} reads tended and well grounded.`
     return `${kindLabel} shows mixed signals — use the bars as a quick read.`
   }
 

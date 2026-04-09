@@ -2,7 +2,7 @@
 """
 Active-now Vision Execution reseed (approved Section A only).
 
-- Clears ideas / initiatives / projects / tasks for owner@local.atria only.
+- Clears ideas / initiatives / projects / tasks for owner@local.zenaf only.
 - Does NOT delete persons, assets, or core profiles.
 - Tier B/C, matching expansion, radar expansion, substrate: excluded by design.
 
@@ -11,6 +11,7 @@ Run from repo root:
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -38,12 +39,24 @@ def _clear_execution_graph(owner_id: str) -> None:
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description="Active-now Vision Execution reseed for one user.")
+    ap.add_argument(
+        "--user-email",
+        default="owner@local.zenaf",
+        help="Account to seed (default: owner@local.zenaf). Examples: phil@local.zenaf, phil@local.atria",
+    )
+    args = ap.parse_args()
+    email = (args.user_email or "").strip()
+    if not email:
+        raise SystemExit("--user-email cannot be empty")
+
     failures: list[str] = []
     storage.get_connection()
-    owner = storage.get_user_by_email("owner@local.atria")
+    owner = storage.get_user_by_email(email)
     if not owner:
-        raise SystemExit("owner@local.atria not found — bootstrap user first.")
+        raise SystemExit(f"{email!r} not found — bootstrap user first.")
     owner_id = owner["id"]
+    print(f"Active-now reseed for {email} (id={owner_id})…")
 
     print("Clearing user-scoped ideas/initiatives/projects/tasks…")
     _clear_execution_graph(owner_id)
@@ -78,7 +91,7 @@ def main() -> None:
             summary="Reorder the automatic council packet, fix on-screen advisor labels (including risk), and document reading order.",
             description=(
                 "Status: planned cleanup steps — docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md, "
-                "docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md, docs/01_TRUTH/SYSTEM_REFERENCE.md."
+                "docs/ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE.md, docs/01_TRUTH/SYSTEM_REFERENCE.md."
             ),
             status="Contextualized",
             tags=[],

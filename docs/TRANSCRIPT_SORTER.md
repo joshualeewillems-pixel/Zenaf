@@ -277,7 +277,7 @@ The bridge from transcript judgments into Vision Execution should follow the sam
       - `segment_id`
       - optionally a snippet of `source_text`.
     - e.g. in task notes:
-      - `[Atria lifecycle] transcript_id=<id> segment_id=<seg_id>`
+      - `[Zenaf lifecycle] transcript_id=<id> segment_id=<seg_id>`
   - Optionally create a corresponding Vision Execution **Decision** when a task reflects a concrete decision outcome (same pattern as intake bridge).
 
 #### 4.2 Confirming candidate decisions
@@ -293,7 +293,7 @@ The bridge from transcript judgments into Vision Execution should follow the sam
   - Create a Vision Execution **Decision** entity with:
     - summary, rationale, participants.
     - **provenance** back to the transcript:
-      - `[Atria lifecycle] transcript_id=<id> segment_id=<seg_id>`
+      - `[Zenaf lifecycle] transcript_id=<id> segment_id=<seg_id>`
   - If the decision implies follow-up work, the operator can manually create linked tasks using the normal Vision Execution paths.
 
 #### 4.3 Lifecycle alignment

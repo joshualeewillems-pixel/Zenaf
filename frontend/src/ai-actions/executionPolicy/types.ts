@@ -3,12 +3,12 @@
  * Client cannot read `local_ai.config` or env; legacy council env is server-only.
  */
 
-import type { AiActionKind, AtriaSurface } from '../types'
+import type { AiActionKind, ZenafSurface } from '../types'
 
 export type LegacyProviderRoute = 'default' | 'council'
 
 export type ActionRoutingContext = {
-  surface: AtriaSurface
+  surface: ZenafSurface
   action_kind: AiActionKind
   action_intent?: string | null
   streaming?: boolean | null

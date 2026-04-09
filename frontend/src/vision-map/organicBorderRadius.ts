@@ -12,6 +12,44 @@ export function hash01(seed: string): number {
   return ((h >>> 0) % 10000) / 10000
 }
 
+const bumpRadiusPair = (x: number, y: number): readonly [number, number] => {
+  const s = x + y
+  if (s >= 100) return [x, y] as const
+  const add = (100 - s) / 2
+  return [x + add, y + add] as const
+}
+
+/**
+ * Horizontal % (of box width) and vertical % (of box height) for each corner — same numbers that drive
+ * `border-radius: … / …` on the stone mask (`organicEllipticalBorderRadiusFromSeed`).
+ */
+export function organicEllipticalBorderRadiusArrays(
+  hA: number,
+  hB: number,
+  hC: number,
+  hD: number,
+  hE: number,
+  hF: number,
+): Readonly<{ h: readonly [number, number, number, number]; v: readonly [number, number, number, number] }> {
+  const t = (u: number, lo: number, hi: number) => lo + (hi - lo) * u
+
+  let a = t(hA, 46.5, 54.5)
+  let b = t(hB, 46.5, 54.5)
+  let c = t(hC, 46.5, 54.5)
+  let d = t(hD, 46.5, 54.5)
+  ;[a, b] = bumpRadiusPair(a, b)
+  ;[c, d] = bumpRadiusPair(c, d)
+
+  let e = t(hE, 48, 57)
+  let f = t(hF, 48, 57)
+  let g = t(hC, 48, 57)
+  let h = t(hD, 48, 57)
+  ;[e, h] = bumpRadiusPair(e, h)
+  ;[f, g] = bumpRadiusPair(f, g)
+
+  return { h: [a, b, c, d], v: [e, f, g, h] }
+}
+
 export function organicEllipticalBorderRadiusPct(
   hA: number,
   hB: number,
@@ -20,30 +58,9 @@ export function organicEllipticalBorderRadiusPct(
   hE: number,
   hF: number,
 ): string {
-  const t = (u: number, lo: number, hi: number) => lo + (hi - lo) * u
   const fmt = (n: number) => (Math.round(n * 10) / 10).toFixed(1).replace(/\.0$/, '')
-  const bumpPair = (x: number, y: number) => {
-    const s = x + y
-    if (s >= 100) return [x, y] as const
-    const add = (100 - s) / 2
-    return [x + add, y + add] as const
-  }
-
-  let a = t(hA, 46.5, 54.5)
-  let b = t(hB, 46.5, 54.5)
-  let c = t(hC, 46.5, 54.5)
-  let d = t(hD, 46.5, 54.5)
-  ;[a, b] = bumpPair(a, b)
-  ;[c, d] = bumpPair(c, d)
-
-  let e = t(hE, 48, 57)
-  let f = t(hF, 48, 57)
-  let g = t(hC, 48, 57)
-  let h = t(hD, 48, 57)
-  ;[e, h] = bumpPair(e, h)
-  ;[f, g] = bumpPair(f, g)
-
-  return `${fmt(a)}% ${fmt(b)}% ${fmt(c)}% ${fmt(d)}% / ${fmt(e)}% ${fmt(f)}% ${fmt(g)}% ${fmt(h)}%`
+  const { h, v } = organicEllipticalBorderRadiusArrays(hA, hB, hC, hD, hE, hF)
+  return `${fmt(h[0])}% ${fmt(h[1])}% ${fmt(h[2])}% ${fmt(h[3])}% / ${fmt(v[0])}% ${fmt(v[1])}% ${fmt(v[2])}% ${fmt(v[3])}%`
 }
 
 export function organicEllipticalBorderRadiusFromSeed(seed: string): string {

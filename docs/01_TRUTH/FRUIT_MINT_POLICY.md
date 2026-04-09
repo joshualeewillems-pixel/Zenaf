@@ -122,7 +122,7 @@ If this policy is sound, it must **gracefully** address the following. **Respons
 
 ### Scenario 3 — The silent integration (edge-case success)
 
-**Setup:** Real friction on a project (\(T_{\text{avoid}}\)), user **leaves** Atria for weeks, does real-world work, returns and marks the task **Done**. **No** intermediate \(T_{\text{eng}}\) `execution_flow_reading` rows.
+**Setup:** Real friction on a project (\(T_{\text{avoid}}\)), user **leaves** Zenaf for weeks, does real-world work, returns and marks the task **Done**. **No** intermediate \(T_{\text{eng}}\) `execution_flow_reading` rows.
 
 **Test:** Does the system **miss** a real arc?
 

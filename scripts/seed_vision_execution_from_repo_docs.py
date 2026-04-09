@@ -5,16 +5,25 @@ planning/docs (not generic product fiction).
 
 - Clears ideas / initiatives / projects / tasks for the default local owner.
 - Clears all persons, capacity_profiles, assets (demo-era global rows).
-- Keeps one core profile for owner@local.atria (oldest by created_at); deletes extras.
+- Keeps one core profile for owner@local.zenaf (oldest by created_at); deletes extras.
 - Inserts ideas, initiatives, projects, and tasks with description citations to source docs.
 
 Run from repo root:
   python scripts/seed_vision_execution_from_repo_docs.py
 
-Requires default owner user (bootstrap). See storage._DEFAULT_OWNER_EMAIL.
+Requires default owner user (bootstrap). See storage._DEFAULT_OWNER_EMAIL (owner@local.zenaf — not owner@zenaf).
+
+Fresh start: wipe another account’s graph or clear adjunct noise first, then reseed this script:
+  python scripts/reset_vision_execution.py --mode workspace --user-email owner@local.zenaf --apply --confirm RESET --reseed doc
+  (or reset without --reseed, then run this file separately).
+
+Other dev users (same doc graph, their own user_id):
+  python scripts/seed_vision_execution_from_repo_docs.py --user-email phil@local.zenaf
+  python scripts/seed_vision_execution_from_repo_docs.py --user-email phil@local.atria
 """
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -63,9 +72,9 @@ def _dedupe_core_profiles(owner_id: str) -> dict:
     if not profiles:
         return storage.create_core_profile(
             M.CoreProfileCreate(
-                name="Atria — local build",
+                name="Zenaf — local build",
                 core_definition=(
-                    "Atria is a local-first assistant: email intake, a council of advisor perspectives, "
+                    "Zenaf is a local-first assistant: email intake, a council of advisor perspectives, "
                     "and Vision & Execution so plans stay tied to real work (people, assets, tasks)."
                 ),
                 current_goals=(
@@ -111,11 +120,23 @@ def _idea(
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description="Doc-aligned Vision Execution seed for one user.")
+    ap.add_argument(
+        "--user-email",
+        default="owner@local.zenaf",
+        help="Account to seed (default: owner@local.zenaf). Examples: phil@local.zenaf, phil@local.atria",
+    )
+    args = ap.parse_args()
+    email = (args.user_email or "").strip()
+    if not email:
+        raise SystemExit("--user-email cannot be empty")
+
     storage.get_connection()
-    owner = storage.get_user_by_email("owner@local.atria")
+    owner = storage.get_user_by_email(email)
     if not owner:
-        raise SystemExit("owner@local.atria not found — run API once to bootstrap users.")
+        raise SystemExit(f"{email!r} not found — run API once to bootstrap users.")
     owner_id = owner["id"]
+    print(f"Seeding Vision Execution for {email} (id={owner_id})…")
 
     print("Clearing user-scoped execution graph + global demo persons/assets…")
     _clear_execution_graph(owner_id)
@@ -199,7 +220,7 @@ def main() -> None:
             (
                 "Status: documentation pass (and optional inline references in code comments). "
                 "Detail: docs/03_IMPLEMENTATION_PLANS/NEXT_CLEANUP_STEPS_PROPOSAL.md (step 3), "
-                "docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md."
+                "docs/ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE.md."
             ),
             desired_outcome="New contributors can answer “what does the council read first?” from docs alone.",
             status="Contextualized",
@@ -212,7 +233,7 @@ def main() -> None:
             ),
             (
                 "Status: concept and partial use — needs a deliberate decision on rollout. "
-                "Detail: docs/01_TRUTH/ACTIVE_VS_PLANNED.md, docs/ATRIA_ARCHITECTURE.md."
+                "Detail: docs/01_TRUTH/ACTIVE_VS_PLANNED.md, docs/ZENAF_ARCHITECTURE.md."
             ),
             desired_outcome="No feature accidentally skips the same safety bar we use elsewhere.",
             status="Captured",
@@ -445,7 +466,7 @@ def main() -> None:
             priority="Low",
             deliverables="Decision memo plus either one integrated call site or an explicit “not yet” note with rationale.",
             current_focus="Cross-cutting policy design",
-            notes="Background: docs/OPEN_QUESTIONS.md, architecture intent in docs/ATRIA_ARCHITECTURE.md",
+            notes="Background: docs/OPEN_QUESTIONS.md, architecture intent in docs/ZENAF_ARCHITECTURE.md",
         ),
         M.ProjectCreate(
             initiative_id=in3,

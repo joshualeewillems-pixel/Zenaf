@@ -12,7 +12,7 @@ Recommend Child Folders is wired in both the API and the cockpit frontend. This 
 
 - **`_run_recommend(params)`** (new)
   - Requires `params.folder_path` (non-blank). If missing or blank, raises `ValueError` → API returns **400** with detail `"recommend requires params.folder_path"`.
-  - Calls **`recommend_child_folders(folder_path)`** from `local_ai.atria_tools` (existing File Steward / Atria engine). No new business logic.
+  - Calls **`recommend_child_folders(folder_path)`** from `local_ai.zenaf_tools` (existing File Steward / Zenaf engine). No new business logic.
   - If the engine returns an `error` key (e.g. folder not found), returns that dict so the handler can respond with `ok: false` and `error`.
   - On success, returns a **compact** dict with only:
     - `folder_path`
@@ -94,11 +94,11 @@ Recommend Child Folders is wired in both the API and the cockpit frontend. This 
 1. **Start API and frontend**  
    - From repo root: `python -m uvicorn api.main:app --reload --host 127.0.0.1 --port 8010`  
    - From `frontend/`: `npm run dev`  
-   - Open http://localhost:5173
+   - Open http://127.0.0.1:5173
 
 2. **Recommend with valid path**  
    - Click **Recommend**.  
-   - Enter a folder path (e.g. `.` or `C:\Users\...\Atria`).  
+   - Enter a folder path (e.g. `.` or `C:\Users\...\Zenaf`).  
    - Click **Run**.  
    - You should see: human-readable block (folder, inferred context, suggested child folders as tags, notes if any) and the raw JSON below.
 
@@ -116,5 +116,5 @@ Recommend Child Folders is wired in both the API and the cockpit frontend. This 
 
 ## Backend / engine integration
 
-- **Single source of truth:** `local_ai.atria_tools.recommend_child_folders(folder_path)`, which delegates to File Steward’s `recommend_child_folders`. No new recommendation logic in the API.
+- **Single source of truth:** `local_ai.zenaf_tools.recommend_child_folders(folder_path)`, which delegates to File Steward’s `recommend_child_folders`. No new recommendation logic in the API.
 - **API role:** Validate input (folder_path required), call the engine, return compact JSON or forward engine errors. The API stays thin and does not duplicate business logic.

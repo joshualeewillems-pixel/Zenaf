@@ -1,5 +1,5 @@
 {
-  "name": "atria-nightly-e2e",
+  "name": "zenaf-nightly-e2e",
   "private": true,
   "scripts": {
     "test": "playwright test"

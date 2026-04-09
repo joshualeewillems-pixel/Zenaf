@@ -10,7 +10,7 @@ Optional operator brief for council alignment (file-based, not workspace transla
 
 Environment:
 
-- ``ATRIA_OPERATOR_BRIEF_ENABLED`` — If ``0``, ``false``, ``no``, or ``off`` (case-insensitive),
+- ``ZENAF_OPERATOR_BRIEF_ENABLED`` — If ``0``, ``false``, ``no``, or ``off`` (case-insensitive),
   operator priority and philosophical orientation loaders return empty strings without reading
   the file (even if present). Default when unset: enabled (backward compatible).
 """
@@ -29,7 +29,7 @@ _cache_philosophy: str | None = None
 
 
 def _operator_brief_loading_enabled() -> bool:
-    raw = (os.environ.get("ATRIA_OPERATOR_BRIEF_ENABLED", "") or "").strip().lower()
+    raw = (os.environ.get("ZENAF_OPERATOR_BRIEF_ENABLED", "") or "").strip().lower()
     if raw in ("0", "false", "no", "off"):
         return False
     return True

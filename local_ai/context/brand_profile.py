@@ -2,8 +2,8 @@
 Brand Profile: operator-defined identity fields formatted for Brand seat council injection.
 
 Loaded from ``brand-profile.json`` beside ``translation-template.json`` under
-``.atria/workspace-identity/v1/``. Merged into the Brand seat persona at persona-build time
-(see ``_build_council_persona_block`` in ``atria_tools``), which prefixes the merged body with
+``.zenaf/workspace-identity/v1/``. Merged into the Brand seat persona at persona-build time
+(see ``_build_council_persona_block`` in ``zenaf_tools``), which prefixes the merged body with
 ``Reference context:``. Wording below is written as **constraints** so the model treats the
 profile as binding for that seat.
 """
@@ -33,7 +33,7 @@ _brand_cache_profile: dict[str, Any] = {}
 
 
 def _default_identity_v1_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / ".atria" / "workspace-identity" / "v1"
+    return Path(__file__).resolve().parents[2] / ".zenaf" / "workspace-identity" / "v1"
 
 
 def brand_profile_path(base_dir: Path | None = None) -> Path:

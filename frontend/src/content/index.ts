@@ -1,3 +1,4 @@
+export { ContentNarrativeFrame } from './ContentNarrativeFrame'
 export { ContentView } from './ContentView'
 export type { ContentViewProps } from './ContentView'
 export { ContentFrontDoor } from './ContentFrontDoor'

@@ -272,7 +272,7 @@ def get_council_llm_adapter_for_principal(
     """
     Default council seats (no per-seat override): policy provider, routed Ollama model,
     authenticated ``main`` attachment (profile default_provider path),
-    then ``ATRIA_COUNCIL_MODEL`` / ``OLLAMA_COUNCIL_MODEL`` / profile ollama (local council stack).
+    then ``ZENAF_COUNCIL_MODEL`` / ``OLLAMA_COUNCIL_MODEL`` / profile ollama (local council stack).
     """
     import os
 
@@ -392,7 +392,7 @@ def get_council_llm_adapter_for_principal(
         from local_ai import config as _config
     except Exception:
         _config = None
-    council_model = os.environ.get("ATRIA_COUNCIL_MODEL", "").strip()
+    council_model = os.environ.get("ZENAF_COUNCIL_MODEL", "").strip()
     if not council_model and _config and getattr(_config, "OLLAMA_COUNCIL_MODEL", None):
         council_model = str(_config.OLLAMA_COUNCIL_MODEL).strip()
     if council_model:

@@ -123,7 +123,7 @@ def test_log_coordination_client_checkpoint_requires_owned_entity(ve_conn: sqlit
     sums = list_execution_flow_summaries_for_entity("user-x", "project", "proj-ok", limit=10)
     linked = [s for s in sums if s.get("pointer") == aid and s.get("pointer_kind") == "activity_event"]
     assert len(linked) == 1
-    assert linked[0].get("coordination_evidence_source") == "atria-client-trace"
+    assert linked[0].get("coordination_evidence_source") == "zenaf-client-trace"
     assert linked[0].get("impact") == "positive"
     assert linked[0].get("dimension") == "capacity"
     assert linked[0].get("confidence") == pytest.approx(0.6)
@@ -187,7 +187,7 @@ def test_log_coordination_client_checkpoint_suggestion_other_outcome_stays_neutr
 def test_two_applied_suggestion_checkpoints_produce_two_positive_human_flow_readings(
     ve_conn: sqlite3.Connection,
 ) -> None:
-    """Production-shaped inputs for frontend ≥2 positive activity_event + atria-client-trace cluster."""
+    """Production-shaped inputs for frontend ≥2 positive activity_event + zenaf-client-trace cluster."""
     _insert_project(ve_conn, "user-z", "proj-p2")
     log_coordination_client_checkpoint(
         "user-z",
@@ -211,7 +211,7 @@ def test_two_applied_suggestion_checkpoints_produce_two_positive_human_flow_read
         for s in sums
         if s.get("impact") == "positive"
         and s.get("pointer_kind") == "activity_event"
-        and s.get("coordination_evidence_source") == "atria-client-trace"
+        and s.get("coordination_evidence_source") == "zenaf-client-trace"
     ]
     assert len(human_pos) >= 2
     for s in human_pos:

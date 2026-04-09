@@ -2,7 +2,7 @@ import type {
   AiActionTrace,
   AiActionKind,
   AiUserOutcome,
-  AtriaSurface,
+  ZenafSurface,
   CouncilIntegrityReviewSample,
 } from './types'
 
@@ -15,7 +15,7 @@ function randomId(): string {
 }
 
 export function createAiActionTrace(partial: {
-  surface: AtriaSurface
+  surface: ZenafSurface
   action_kind: AiActionKind
   subject_type: string
   subject_id: string

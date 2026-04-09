@@ -24,6 +24,10 @@ Extra columns in the JSON (not in the original task list): `ve_ui_exposed` — w
 | 3 | `local_ai/vision_execution/schema.sql` | **Persistence** — columns must exist for durable keys |
 | 4 | `local_ai/vision_execution/ve_integration_schema.py` | **Integration slice** — must become a generated subset of (1) after wiring |
 
+## Four-channel maintenance (water / soil / condition / fruit)
+
+Runtime scoring and “clean stone” readiness are centralized in **`assessNodeFlowAndChannels`** ([`frontend/src/flow/assessNodeFlowAndChannels.ts`](../../frontend/src/flow/assessNodeFlowAndChannels.ts)); numeric gates are documented in **`cleanStoneContract.ts`**. The inventory JSON includes a **`maintenance_channels`** block listing planned per-field extensions (`primary_channel`, `secondary_channels`, etc.). Map finalize, map side panel, and VE focus invite ranking all consume this path so channel state cannot drift per surface.
+
 ## Entity summaries (human view)
 
 ### Core profile (`core_profile`)

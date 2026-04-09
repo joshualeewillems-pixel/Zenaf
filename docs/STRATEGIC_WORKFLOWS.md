@@ -1,14 +1,14 @@
 # Strategic Planning & Brainstorming — System Overview
 
 **Status:** Living design / usage note  
-**Scope:** How the current Atria cockpit supports strategic planning and brainstorming with the council, AI agents, Vision Execution, and Content.  
+**Scope:** How the current Zenaf cockpit supports strategic planning and brainstorming with the council, AI agents, Vision Execution, and Content.  
 **Use:** This doc is intended to be kept up to date and used as the reference when you ask “explain the whole system” in the future.
 
 ---
 
 ## 1. High-level structure
 
-Atria’s strategic layer is organized into three main surfaces, all sharing context and AI agents:
+Zenaf’s strategic layer is organized into three main surfaces, all sharing context and AI agents:
 
 - **Workspace Organizer (Cockpit)** — Folder-oriented analysis and council workflow for *one current topic* (e.g. a project folder, desktop area).  
 - **Perspectives / AI agents** — The **Profiles** (perspectives) and **Seats** (Profile × Mandate) used for council runs and advisory chat.  
@@ -37,8 +37,8 @@ The **AI Agents panel** on the right is the primary thinking interface: question
       - Main risk  
       - Required guardrail  
       - Next step  
-    - Optionally runs an Atria/Integrator **synthesis** if seats disagree (or if explicitly enabled), summarizing agreement, tension, and a recommended action.
-  - Results are shown in the AI Agents thread with seat headers (Strategist, Operator, etc.) and a highlighted `Atria synthesis:` block when present.
+    - Optionally runs an Zenaf/Integrator **synthesis** if seats disagree (or if explicitly enabled), summarizing agreement, tension, and a recommended action.
+  - Results are shown in the AI Agents thread with seat headers (Strategist, Operator, etc.) and a highlighted `Zenaf synthesis:` block when present.
 
 - **Web Research** (`mode = web_research`) — For quick external context; outputs a short summary of findings.  
 - **Next Step** (`mode = next_step`) — Uses current context and your question to suggest a single concrete next action (Recommendation / Rationale / Alternatives / Caution).
@@ -194,7 +194,7 @@ This section captures the lower-level, code-oriented view of the same system.
     - SSE stream (`/run/stream`) yields `data: {"chunk": "...", "done": bool}`; chunks are rendered via `CouncilText` (seat headers + structured fields).
 - **Perspectives** live in `frontend/src/perspectives/`:
   - `types.ts` defines `PerspectiveAgent` and `BUILT_IN_PERSPECTIVES`.
-  - `PerspectivesView` manages localStorage persistence (`atria-perspective-agents`) and passes `perspectiveAgents` up to `App.tsx`.
+  - `PerspectivesView` manages localStorage persistence (`zenaf-perspective-agents`) and passes `perspectiveAgents` up to `App.tsx`.
 - **Mandates** live in `frontend/src/mandates.ts`:
   - `Mandate` type + `BUILT_IN_MANDATES` (strategist, governance, operator, integrator, creative, analyst).
   - `DEFAULT_MANDATES_BY_PROFILE` in `App.tsx` maps built-in profiles → default mandate ids.
@@ -216,18 +216,18 @@ This section captures the lower-level, code-oriented view of the same system.
 - **Council (non-stream)**:
   - `_run_council(params, context)`:
     - Normalizes `context_str` from `context.context_block` / `context.folder_path`.
-    - Passes `question`, `included_agents`, `perspective_definitions`, and `include_synthesis` into `local_ai.atria_tools.run_council(...)`.
+    - Passes `question`, `included_agents`, `perspective_definitions`, and `include_synthesis` into `local_ai.zenaf_tools.run_council(...)`.
 - **Council streaming**:
   - `_council_stream_gen(params, context)` calls `run_council_stream` and wraps each `(chunk, done)` as SSE `data: {...}` lines for `/run/stream`.
 - `/vision-execution` router proxies to `local_ai.vision_execution.service` for VE CRUD and radar.
 
-### 6.3 Council runtime (`local_ai/atria_tools.py`)
+### 6.3 Council runtime (`local_ai/zenaf_tools.py`)
 
 - **Providers** (`local_ai/providers/__init__.py`):
   - `get_default_provider()` → `OllamaProvider` by default.
   - `get_council_provider()` currently delegates to `get_default_provider()`, but isolates council from other modes for future model changes.
 - **System prompts**:
-  - Built-in council seats use `BUILT_IN_PERSONA_DEFINITIONS` in `atria_tools.py` (strategist, operator, analyst, governance, brand, …), composed into seat prompts; not separate `COUNCIL_*_PROMPT` constants per role.
+  - Built-in council seats use `BUILT_IN_PERSONA_DEFINITIONS` in `zenaf_tools.py` (strategist, operator, analyst, governance, brand, …), composed into seat prompts; not separate `COUNCIL_*_PROMPT` constants per role.
   - `_build_perspective_system_prompt(defn)` merges profile fields and optional `mandate` for custom seats.
 - **Decision packet**:
   - `build_council_decision_packet(question, context, recent_tool_summary, key_constraints)` composes a base text block including question and relevant context.
@@ -249,7 +249,7 @@ This section captures the lower-level, code-oriented view of the same system.
     - Logs per-seat timing and status to `debug-5581d2.log` (`role_index`, `name`, `status`, `duration_ms`, `error`).
 - **Synthesis control**:
   - As seat chunks are collected, council parses `Position:` lines and tracks a `positions` set.
-  - `include_synthesis` + `positions_disagree` determine whether Atria/Integrator synthesis runs.
+  - `include_synthesis` + `positions_disagree` determine whether Zenaf/Integrator synthesis runs.
 - **Seat accounting**:
   - After seats (and optional synthesis), council compares:
     - `expected_seats` (derived from requested roles/definitions),

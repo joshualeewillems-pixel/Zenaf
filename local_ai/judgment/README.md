@@ -1,10 +1,10 @@
 # Judgment Layer
 
-Shared, neutral protocol for reasoning events. **Not** fused into Atria Core; **not** the same as the future personality-training layer.
+Shared, neutral protocol for reasoning events. **Not** fused into Zenaf Core; **not** the same as the future personality-training layer.
 
 ## Design intent
 
-- **Atria Core** = orchestration / system coordination  
+- **Zenaf Core** = orchestration / system coordination  
 - **Judgment Layer** = shared protocol: observations, interpretation, proposed action, confidence, reason codes, review/correction  
 - **Modules** (intake, vision→execution, council) use the judgment layer  
 - **PersonalityProfile / JudgmentProfile** = (future) pluggable lenses that influence judgment over time; not the same thing as judgment itself  

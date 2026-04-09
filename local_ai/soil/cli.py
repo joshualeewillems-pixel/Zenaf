@@ -168,13 +168,13 @@ def _cmd_promote(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="Atria soil layer CLI")
+    p = argparse.ArgumentParser(description="Zenaf soil layer CLI")
     sub = p.add_subparsers(dest="command", required=True)
 
     a = sub.add_parser("append", help="Append a soil Markdown item")
     a.add_argument(
         "--root",
-        help="Soil root (default: ATRIA_SOIL_ROOT or ~/.atria/soil/v1)",
+        help="Soil root (default: ZENAF_SOIL_ROOT or ~/.zenaf/soil/v1)",
     )
     a.add_argument("--entity-type", required=True)
     a.add_argument("--entity-id", default="", help="Logical entity id (omit for _root default bucket)")
@@ -194,7 +194,7 @@ def build_parser() -> argparse.ArgumentParser:
     pr = sub.add_parser("promote", help="Write soil/promoted/*.json audit record")
     pr.add_argument(
         "--root",
-        help="Soil root (default: ATRIA_SOIL_ROOT or ~/.atria/soil/v1)",
+        help="Soil root (default: ZENAF_SOIL_ROOT or ~/.zenaf/soil/v1)",
     )
     pr.add_argument("--entity-type", required=True, help="Node that owns soil/promoted/")
     pr.add_argument("--entity-id", default="")

@@ -40,7 +40,7 @@ SCENARIOS = [
 
 def run_one(question: str, context: str | None) -> tuple[float, str]:
     """Run council once; return (latency_seconds, full_text)."""
-    from local_ai.atria_tools import run_council
+    from local_ai.zenaf_tools import run_council
 
     t0 = time.perf_counter()
     result = run_council(
@@ -78,7 +78,7 @@ def main() -> None:
             continue
 
         latencies.append(elapsed)
-        has_synthesis = "Atria synthesis:" in (text or "")
+        has_synthesis = "Zenaf synthesis:" in (text or "")
         synthesis_ran.append(has_synthesis)
         outputs.append(text or "")
 

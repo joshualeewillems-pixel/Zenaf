@@ -1,4 +1,4 @@
-# Atria API bridge. Run from repo root: uvicorn api.main:app --reload
+# Zenaf API bridge. Run from repo root: uvicorn api.main:app --reload
 # Dependencies for all cockpit modes: Analyze, Simulate, Assess, Recommend, Council, Web Research, Next Step
 fastapi>=0.109.0
 python-multipart>=0.0.9

@@ -8,6 +8,7 @@ Capacity profiles are created for each person.
 Run from repo root: python scripts/seed_vision_execution.py
 Or: PYTHONPATH=. python scripts/seed_vision_execution.py
 """
+import argparse
 import sys
 from pathlib import Path
 
@@ -20,20 +21,32 @@ from local_ai.vision_execution import storage, models as M
 
 
 def main() -> None:
+    ap = argparse.ArgumentParser(description="Demo Vision Execution seed (people, assets, graph) for one user.")
+    ap.add_argument(
+        "--user-email",
+        default="owner@local.zenaf",
+        help="Account to seed (default: owner@local.zenaf). Examples: phil@local.zenaf, phil@local.atria",
+    )
+    args = ap.parse_args()
+    email = (args.user_email or "").strip()
+    if not email:
+        raise SystemExit("--user-email cannot be empty")
+
     # Ensure DB init/migrations run and default owner bootstrap is available.
     storage.get_connection()
-    owner = storage.get_user_by_email("owner@local.atria")
+    owner = storage.get_user_by_email(email)
     if not owner:
         raise RuntimeError(
-            "Default local owner user is missing. Run API/storage init and verify ATRIA_BOOTSTRAP_PASSWORD setup."
+            f"User {email!r} is missing. Run API/storage init and verify bootstrap passwords."
         )
     owner_id = owner["id"]
+    print(f"Demo seed for {email} (id={owner_id})…")
 
     # --- 1 core profile ---
     core = storage.create_core_profile(M.CoreProfileCreate(
-        name="Atria — sample core profile",
+        name="Zenaf — sample core profile",
         core_definition=(
-            "Atria connects email intake, advisor-style council perspectives, and Vision & Execution so thinking "
+            "Zenaf connects email intake, advisor-style council perspectives, and Vision & Execution so thinking "
             "turns into owned work: initiatives, projects, tasks, people, and assets in one place."
         ),
         current_goals=(
@@ -65,7 +78,7 @@ def main() -> None:
 
     # --- 6 ideas ---
     ideas_data = [
-        {"title": "One workspace from idea to shipped task", "summary": "Ideas, initiatives, projects, tasks, people, and assets visible together.", "description": "Vision & Execution is the shell: capture thinking, decide, break down work, and see load — without hopping tools.", "status": "Contextualized", "tags": ["product", "vision-execution"], "created_by": person_ids[0], "desired_outcome": "Anyone can answer “what are we doing and who owns it?” inside Atria."},
+        {"title": "One workspace from idea to shipped task", "summary": "Ideas, initiatives, projects, tasks, people, and assets visible together.", "description": "Vision & Execution is the shell: capture thinking, decide, break down work, and see load — without hopping tools.", "status": "Contextualized", "tags": ["product", "vision-execution"], "created_by": person_ids[0], "desired_outcome": "Anyone can answer “what are we doing and who owns it?” inside Zenaf."},
         {"title": "Show real capacity before we commit", "summary": "Make overload visible from estimated weekly hours versus capacity.", "description": "Derived totals from active projects should warn before we stack another initiative.", "status": "Captured", "tags": ["capacity"], "created_by": person_ids[1], "desired_outcome": "No silent overcommit; trade-offs are explicit."},
         {"title": "AI initiative review you can trust", "summary": "Model proposes cost, timeframe, alignment — humans apply or discard.", "description": "Evaluation flow should feel like a structured brief, not a black-box score.", "status": "Evaluated", "tags": ["ai", "initiatives"], "created_by": person_ids[0], "desired_outcome": "Faster go/no-go with clear reasoning attached."},
         {"title": "Assets that explain how work depends on them", "summary": "Register tools and services; link to initiatives and projects.", "description": "Distinguish casual references from true blockers; show who needs access.", "status": "Clarifying", "tags": ["assets"], "created_by": person_ids[2], "desired_outcome": "No mystery tools gating delivery."},

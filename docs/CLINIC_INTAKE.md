@@ -70,7 +70,7 @@ The current email integration is **mirror-only**. It must not change the origina
 
 We **separate two concerns**:
 
-- **Identity login** — Who is using the app (e.g. “Sign in to Atria”). Used for access control, preferences, audit. If we add **Sign in with Apple**, it is **identity/authentication only**. It does **not** grant read access to the user’s Apple Mail or iCloud Mail. Do not assume “Sign in with Apple” solves mailbox-reading for Apple Mail/iCloud Mail; a separate iCloud Mail integration would be needed for that.
+- **Identity login** — Who is using the app (e.g. “Sign in to Zenaf”). Used for access control, preferences, audit. If we add **Sign in with Apple**, it is **identity/authentication only**. It does **not** grant read access to the user’s Apple Mail or iCloud Mail. Do not assume “Sign in with Apple” solves mailbox-reading for Apple Mail/iCloud Mail; a separate iCloud Mail integration would be needed for that.
 - **Mailbox access** — Permission to read a specific mailbox for intake (Gmail, Outlook, etc.). This is **provider-specific OAuth** (or IMAP + app password as fallback). The real user-friendly path is OAuth per provider; IMAP + app password stays as a fallback/dev path.
 
 **Preferred paths for mailbox access (email ingestion)**
@@ -102,7 +102,7 @@ To use **Connect Gmail** in the app you must create OAuth credentials and set en
    - `INTAKE_GOOGLE_CLIENT_ID` = your Client ID
    - `INTAKE_GOOGLE_CLIENT_SECRET` = your Client secret
    - Optional: `INTAKE_GOOGLE_REDIRECT_URI` (default `http://127.0.0.1:8010/intake/oauth/google/callback`)
-   - Optional: `INTAKE_OAUTH_FRONTEND_URL` (where to send user after success; default `http://localhost:5173`)
+   - Optional: `INTAKE_OAUTH_FRONTEND_URL` (where to send user after success; default `http://127.0.0.1:5173`)
 
 Then in the app click **Connect Gmail (no app password)** → sign in with Google → grant mail access → you are redirected back and Poll email will use OAuth. Tokens are stored in `intake_gmail_oauth.json` (add to .gitignore; already listed).
 

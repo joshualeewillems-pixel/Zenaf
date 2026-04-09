@@ -91,7 +91,7 @@ Add to recommendations: [optional one line]
 
 **5.1 Backend: folder constraint constant and role_limit**
 
-- **File:** `local_ai/atria_tools.py`
+- **File:** `local_ai/zenaf_tools.py`
 - **Add:** A constant for the folder-workflow constraint text, e.g. `FOLDER_COUNCIL_CONSTRAINT`, and a constant for the folder role_limit string (e.g. `FOLDER_COUNCIL_ROLE_LIMIT`).
 - **Edit:** `run_council_stream`:
   - Add an optional parameter, e.g. `folder_workflow: bool = False`.
@@ -106,7 +106,7 @@ Add to recommendations: [optional one line]
 - **Edit:** `_council_stream_gen(params, context)`:
   - After building `context_str`, set `folder_workflow = (context or {}).get('workflow_kind') == 'folder'`.
   - When calling `run_council_stream`, pass `folder_workflow=folder_workflow`.
-  - Do **not** pass `key_constraints` from the API; the backend will set `key_constraints` and `role_limit` internally when `folder_workflow` is True, so the folder constraint constant lives only in `atria_tools`.
+  - Do **not** pass `key_constraints` from the API; the backend will set `key_constraints` and `role_limit` internally when `folder_workflow` is True, so the folder constraint constant lives only in `zenaf_tools`.
   - Ensure `request.context` is passed through as-is so `workflow_kind` is available (it already is).
 
 **5.3 Frontend: set workflow_kind when invoking council from folder flow**
@@ -118,7 +118,7 @@ Add to recommendations: [optional one line]
 
 **5.4 Optional: single-seat folder advisor**
 
-- **File:** `local_ai/atria_tools.py`
+- **File:** `local_ai/zenaf_tools.py`
 - **Edit:** Inside `run_council_stream`, when `folder_workflow` is True, optionally:
   - Build one task with the folder packet and folder role_limit (no built-in role names; one generic “Folder advisor” system line or reuse a minimal system prompt).
   - Skip synthesis.
@@ -150,7 +150,7 @@ Add to recommendations: [optional one line]
 | **Output shape** | “Suggested parent folders (from the list above only):” then “- &lt;folder&gt; — &lt;short reason&gt;” and optional “Add these to my recommendations: …”. |
 | **Path** | Reuse current council path; no new mode; optional single-seat folder advisor when `folder_workflow` is True. |
 | **Model** | Current council model. |
-| **First edits** | 1) `atria_tools.py`: add `FOLDER_COUNCIL_CONSTRAINT` and `FOLDER_COUNCIL_ROLE_LIMIT`; in `run_council_stream` add `folder_workflow` and use them. 2) `api/main.py`: in `_council_stream_gen` set `folder_workflow` from `context.get('workflow_kind')` and pass to `run_council_stream`. 3) `frontend/src/App.tsx`: set `context.workflow_kind = 'folder'` when council is run from the recommend step. |
+| **First edits** | 1) `zenaf_tools.py`: add `FOLDER_COUNCIL_CONSTRAINT` and `FOLDER_COUNCIL_ROLE_LIMIT`; in `run_council_stream` add `folder_workflow` and use them. 2) `api/main.py`: in `_council_stream_gen` set `folder_workflow` from `context.get('workflow_kind')` and pass to `run_council_stream`. 3) `frontend/src/App.tsx`: set `context.workflow_kind = 'folder'` when council is run from the recommend step. |
 | **UI** | Keep full council text initially; add a structured “folder suggestions” view and “Add to recommendations” once the format is stable. |
 
 ---

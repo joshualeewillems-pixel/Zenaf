@@ -41,8 +41,9 @@ export {
 export { VeVoiceRecordingProvider, useVeVoiceRecording } from './veVoiceRecordingContext'
 export { VeFocusRegion } from './VeFocusRegion'
 export { ContextActionBarContent } from './ContextActionBarContent'
-export type { FocusInvite, FocusInviteKind } from './focusInviteTypes'
+export type { FocusInvite, FocusInviteFlowTier, FocusInviteKind } from './focusInviteTypes'
 export { deriveFocusInvites } from './deriveFocusInvites'
+export { useFlowAssessmentFromCore } from './useFlowAssessmentFromCore'
 export {
   FOCUS_INVITE_ENTITY_TYPES,
   STRUCTURED_FILL_ACTION_IDS,
@@ -72,10 +73,10 @@ export { getFieldCapabilities, actionsForField, ACTION_LABELS } from './fieldCap
 export { focusFieldRegistryKey } from './focusRegistryKey'
 export { TranscribableFieldRegion } from './TranscribableFieldRegion'
 export { useCoreProfileVoiceInsert, CORE_PROFILE_CREATE_ENTITY_ID } from './useCoreProfileVoiceInsert'
-export { ATRIA_VE_FOCUS_APPLY_REWRITE, type VeFocusApplyRewriteDetail } from './applyRewriteEvent'
+export { ZENAF_VE_FOCUS_APPLY_REWRITE, type VeFocusApplyRewriteDetail } from './applyRewriteEvent'
 export {
-  ATRIA_VE_FOCUS_INSERT_TEXT,
-  ATRIA_VOICE_TRANSCRIPT_DOM_FIRST,
+  ZENAF_VE_FOCUS_INSERT_TEXT,
+  ZENAF_VOICE_TRANSCRIPT_DOM_FIRST,
   insertTextAtSelection,
   type VeFocusInsertTextDetail,
   type VoiceTranscriptDomFirstDetail,

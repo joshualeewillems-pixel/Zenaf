@@ -6,35 +6,35 @@
 import type { PrivacyPolicyInput } from './executionPolicy/types'
 import { DEFAULT_TRACE_PRIVACY_FLAGS, type TracePrivacyFlags } from './tracePrivacy'
 
-export const ATRIA_PRIVACY_MODE_STORAGE_KEY = 'atria_privacy_mode'
+export const ZENAF_PRIVACY_MODE_STORAGE_KEY = 'zenaf_privacy_mode'
 
-export type AtriaPrivacyMode = 'normal' | 'protected' | 'restricted' | 'local_only'
+export type ZenafPrivacyMode = 'normal' | 'protected' | 'restricted' | 'local_only'
 
 const VALID_MODES = new Set<string>(['normal', 'protected', 'restricted', 'local_only'])
 
-export function readPrivacyMode(): AtriaPrivacyMode {
+export function readPrivacyMode(): ZenafPrivacyMode {
   if (typeof localStorage === 'undefined') return 'normal'
   try {
-    const v = localStorage.getItem(ATRIA_PRIVACY_MODE_STORAGE_KEY)?.trim().toLowerCase()
-    if (v && VALID_MODES.has(v)) return v as AtriaPrivacyMode
+    const v = localStorage.getItem(ZENAF_PRIVACY_MODE_STORAGE_KEY)?.trim().toLowerCase()
+    if (v && VALID_MODES.has(v)) return v as ZenafPrivacyMode
   } catch {
     /* ignore */
   }
   return 'normal'
 }
 
-export function writePrivacyMode(mode: AtriaPrivacyMode): void {
+export function writePrivacyMode(mode: ZenafPrivacyMode): void {
   if (typeof localStorage === 'undefined') return
   if (!VALID_MODES.has(mode)) return
   try {
-    localStorage.setItem(ATRIA_PRIVACY_MODE_STORAGE_KEY, mode)
+    localStorage.setItem(ZENAF_PRIVACY_MODE_STORAGE_KEY, mode)
   } catch {
     /* ignore */
   }
 }
 
 /** Partial merged after profile `require_local`; `undefined` fields use defaults in merge. */
-export function privacyModeToPartialPrivacyPolicy(mode: AtriaPrivacyMode): Partial<PrivacyPolicyInput> | undefined {
+export function privacyModeToPartialPrivacyPolicy(mode: ZenafPrivacyMode): Partial<PrivacyPolicyInput> | undefined {
   switch (mode) {
     case 'normal':
       return undefined

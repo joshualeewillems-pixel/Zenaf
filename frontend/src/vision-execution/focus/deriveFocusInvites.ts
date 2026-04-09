@@ -1,3 +1,5 @@
+import type { FlowAssessment } from '../../flow/flowAssessment'
+import { isInviteAction } from '../../flow/flowAssessment'
 import { CONVERSATION_ENTITY_FIELD_KEY } from './conversationEntityFocus'
 import {
   CONVERSATION_ENTITY_INVITE_REGISTRY_FIELD,
@@ -10,7 +12,14 @@ import {
 import type { FocusInvite, FocusInviteKind } from './focusInviteTypes'
 import { ACTION_LABELS, getFieldCapabilities } from './fieldCapabilityRegistry'
 import type { ActionId, FocusContextCore } from './types'
-import type { NodeInterpretation } from '../../flow/unifiedNodeAssessmentTypes'
+
+const RANK_FALLBACK = 100
+
+function flowRankIndex(action: ActionId, ranked: FlowAssessment['rankedActions']): number {
+  if (!isInviteAction(action)) return RANK_FALLBACK
+  const i = ranked.indexOf(action)
+  return i === -1 ? RANK_FALLBACK : i
+}
 
 /** Outcome-oriented chip copy for structured_fill (rewrite only in v1). */
 function structuredFillInviteLabel(
@@ -79,16 +88,19 @@ function kindRank(k: FocusInviteKind): number {
   return k === 'conversational' ? 0 : 1
 }
 
-const CLARIFY_FIRST_DISTILL_LABEL = 'Clarify scope first'
+type Row = { invite: FocusInvite; kind: FocusInviteKind; regIdx: number }
 
 /**
- * Invites for idea / initiative / project / task (registry-backed). Ordering: conversational before
- * structured_fill, then Appendix B order = index in `allowed_actions` for that registry row.
- * When map `interpretation.stance === 'clarify_first'`, rank `distill` first with clarify-oriented copy.
+ * FLOW_RECEPTION (invite layer)
+ * (1) Reads: full `FlowAssessment` when provided — `rankedActions`, `primaryAction`, `dominantIssue` (via sort order).
+ * (2) Behavior: registry `allowed_actions` = capability allowlist; conversational rows sorted by index in
+ *     `flowAssessment.rankedActions`; `flowTier` primary | secondary | tertiary by sort position.
+ * (3) Hard vs productive: hard — do not treat demoted chips as co-equal (tertiary styling); summarize_for_council
+ *     still allowed if in registry (user may choose; productive tension). No blocking clicks in v1.
  */
 export function deriveFocusInvites(
   core: FocusContextCore | null | undefined,
-  interpretation?: NodeInterpretation | null,
+  flowAssessment?: FlowAssessment | null,
 ): FocusInvite[] {
   if (!core) return []
   if (!isInviteEntityType(core.entity_type)) return []
@@ -101,13 +113,11 @@ export function deriveFocusInvites(
   const allowed = caps?.allowed_actions
   if (!allowed?.length) return []
 
-  type Row = { invite: FocusInvite; kind: FocusInviteKind; regIdx: number }
   const rows: Row[] = []
 
   for (let i = 0; i < allowed.length; i++) {
     const action = allowed[i]!
     if (EXCLUDED_INVITE_ACTION_IDS.has(action)) continue
-    // Rewrite lives on the context action bar for brief; do not duplicate as an invite chip.
     if (action === 'rewrite' && regField === 'brief') continue
     const kind: FocusInviteKind = STRUCTURED_FILL_ACTION_IDS.has(action) ? 'structured_fill' : 'conversational'
     rows.push({
@@ -122,27 +132,27 @@ export function deriveFocusInvites(
     })
   }
 
-  rows.sort((a, b) => {
-    const d = kindRank(a.kind) - kindRank(b.kind)
-    if (d !== 0) return d
-    return a.regIdx - b.regIdx
-  })
-
-  if (interpretation?.stance === 'clarify_first') {
-    const di = rows.findIndex((r) => r.invite.sourceAction === 'distill')
-    if (di > 0) {
-      const [row] = rows.splice(di, 1)
-      if (row) {
-        row.invite = {
-          ...row.invite,
-          label: CLARIFY_FIRST_DISTILL_LABEL,
-        }
-        rows.unshift(row)
-      }
-    } else if (di === 0) {
-      rows[0]!.invite = { ...rows[0]!.invite, label: CLARIFY_FIRST_DISTILL_LABEL }
-    }
+  if (!flowAssessment) {
+    rows.sort((a, b) => {
+      const d = kindRank(a.kind) - kindRank(b.kind)
+      if (d !== 0) return d
+      return a.regIdx - b.regIdx
+    })
+    return rows.slice(0, MAX_FOCUS_INVITES_VISIBLE).map((r) => r.invite)
   }
 
-  return rows.slice(0, MAX_FOCUS_INVITES_VISIBLE).map((r) => r.invite)
+  const conv = rows.filter((r) => r.kind === 'conversational')
+  const struct = rows.filter((r) => r.kind === 'structured_fill')
+  conv.sort((a, b) => {
+    const ai = flowRankIndex(a.invite.sourceAction, flowAssessment.rankedActions)
+    const bi = flowRankIndex(b.invite.sourceAction, flowAssessment.rankedActions)
+    if (ai !== bi) return ai - bi
+    return a.regIdx - b.regIdx
+  })
+  conv.forEach((r, i) => {
+    r.invite.flowTier = i === 0 ? 'primary' : i === 1 ? 'secondary' : 'tertiary'
+  })
+  struct.sort((a, b) => a.regIdx - b.regIdx)
+  const merged = [...conv, ...struct]
+  return merged.slice(0, MAX_FOCUS_INVITES_VISIBLE).map((r) => r.invite)
 }

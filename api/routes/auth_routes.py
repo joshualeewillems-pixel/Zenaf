@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from local_ai.vision_execution import models as M
 from local_ai.vision_execution import service as S
 
-SESSION_COOKIE_NAME = "atria_session"
+SESSION_COOKIE_NAME = "zenaf_session"
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

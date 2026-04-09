@@ -39,7 +39,7 @@ on:
     - cron: "0 6 * * 1"
 
 concurrency:
-  group: atria-wave-autonomy
+  group: zenaf-wave-autonomy
   cancel-in-progress: false
 
 jobs:
@@ -188,7 +188,7 @@ jobs:
               --git-ref "${{ github.ref }}" \
               --sha "${{ github.sha }}")
           else
-            BODY="Atria wave-autonomy FAILED (no wave_exit_report.json). Repo=${{ github.repository }} run=${{ github.run_id }} url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            BODY="Zenaf wave-autonomy FAILED (no wave_exit_report.json). Repo=${{ github.repository }} run=${{ github.run_id }} url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           fi
           python scripts/philosophy_enforcement/notify_twilio_sms.py --body "$BODY"
 

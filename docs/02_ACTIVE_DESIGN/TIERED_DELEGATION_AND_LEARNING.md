@@ -98,11 +98,11 @@ v1: **In-memory** ring buffer (`LearningBuffer`, default max 5_000 entries), thr
 
 ### Durable persistence (append-only JSONL)
 
-**Enable:** set **`ATRIA_LEARNING_PERSIST_PATH`** to a file path (e.g. `data/learning_records.jsonl`). On API startup, `init_learning_persistence_from_env()` replays the file into the ring buffer (same shape as export). **Missing file** → start empty; **corrupt lines** → skipped with a warning; process keeps running.
+**Enable:** set **`ZENAF_LEARNING_PERSIST_PATH`** to a file path (e.g. `data/learning_records.jsonl`). On API startup, `init_learning_persistence_from_env()` replays the file into the ring buffer (same shape as export). **Missing file** → start empty; **corrupt lines** → skipped with a warning; process keeps running.
 
 **Writes:** each new capture appends one UTF-8 JSON line (`LearningRecord.to_json_dict()`). **`user_outcome` updates** append a **second** line with the same `record_id` and the updated row; replay keeps the **last line per `record_id`** (chronological order in the buffer uses `ts_ms`).
 
-**Rotation (optional):** **`ATRIA_LEARNING_PERSIST_MAX_MB`** — before an append, if the file exists and size ≥ this cap, it is renamed to `basename.YYYYMMDD-HHMMSS.rotated` and a new active file is created. Operators can archive `.rotated` files alongside the active log for longitudinal jobs. **Secure the path** with OS permissions (same sensitivity as export dumps).
+**Rotation (optional):** **`ZENAF_LEARNING_PERSIST_MAX_MB`** — before an append, if the file exists and size ≥ this cap, it is renamed to `basename.YYYYMMDD-HHMMSS.rotated` and a new active file is created. Operators can archive `.rotated` files alongside the active log for longitudinal jobs. **Secure the path** with OS permissions (same sensitivity as export dumps).
 
 **Why JSONL (not SQLite here):** matches export/NDJSON tooling, zero migrations, easy `grep`/stream processing, simple rotation.
 
@@ -119,7 +119,7 @@ v1: **In-memory** ring buffer (`LearningBuffer`, default max 5_000 entries), thr
 
 ### Offline dedupe + analysis prep (CLI)
 
-Use **`scripts/atria_learning_jsonl_prep.py`** (library: `local_ai/delegation/learning_jsonl_prep.py`) to merge **one or more** JSONL files (active + `*.rotated`), **dedupe by `record_id` with last-line-wins** in file stream order, and emit:
+Use **`scripts/zenaf_learning_jsonl_prep.py`** (library: `local_ai/delegation/learning_jsonl_prep.py`) to merge **one or more** JSONL files (active + `*.rotated`), **dedupe by `record_id` with last-line-wins** in file stream order, and emit:
 
 - **Cleaned JSONL** (`-o`): one row per `record_id`, sorted by `ts_ms` then `record_id`.
 - **Summary JSON** (`--summary-json`): `dedupe` line stats + per-dimension counts (`action_intent`, `surface`, `delegation_tier`, `provider_used`, `model_used`, validation pass/fail, `user_outcome`, `capture_mode`).
@@ -129,7 +129,7 @@ Use **`scripts/atria_learning_jsonl_prep.py`** (library: `local_ai/delegation/le
 
 **Privacy:** reads only stored JSON fields; no prompt rehydration or external joins.
 
-**Evidence pass (post-clean):** **`scripts/atria_learning_analysis.py`** reads cleaned JSONL and prints:
+**Evidence pass (post-clean):** **`scripts/zenaf_learning_analysis.py`** reads cleaned JSONL and prints:
 
 - validation **failure rate** by `action_intent`
 - **user_outcome** distributions by `action_intent` and by `surface`
@@ -140,13 +140,13 @@ Use **`scripts/atria_learning_jsonl_prep.py`** (library: `local_ai/delegation/le
 
 Library: `local_ai/delegation/learning_record_analysis.py` (notebook-friendly: `load_cleaned_jsonl`, `run_full_analysis`, `format_analysis_report`).
 
-Example: `python scripts/atria_learning_analysis.py data/learning_clean.jsonl --json-out analysis.json`
+Example: `python scripts/zenaf_learning_analysis.py data/learning_clean.jsonl --json-out analysis.json`
 
 **Recommended next analyses after a cleaned file:** see *First prompt-tuning analyses* below.
 
 ### Inspect / export (env-gated, authenticated)
 
-**Enable:** set **`ATRIA_LEARNING_EXPORT_ENABLED=1`** (or `true` / `yes` / `on`). If unset, export endpoints return **403**.
+**Enable:** set **`ZENAF_LEARNING_EXPORT_ENABLED=1`** (or `true` / `yes` / `on`). If unset, export endpoints return **403**.
 
 **Routes** (all require a logged-in user via `get_current_user`):
 
@@ -154,7 +154,7 @@ Example: `python scripts/atria_learning_analysis.py data/learning_clean.jsonl --
 |--------|------|---------|
 | `GET` | `/vision-execution/learning-records/stats` | Aggregate counts: `delegation_tier`, `capture_mode`, `user_outcome`, validation pass/fail (full buffer snapshot). |
 | `GET` | `/vision-execution/learning-records/inspect` | Paginated JSON: `offset`, `limit` (1–500), `order` `asc`\|`desc`, plus `records` array. |
-| `GET` | `/vision-execution/learning-records/export` | Same pagination; `format=jsonl` (default, `application/x-ndjson`, attachment `atria_learning_export.jsonl`) or `format=json` (same shape as inspect). |
+| `GET` | `/vision-execution/learning-records/export` | Same pagination; `format=jsonl` (default, `application/x-ndjson`, attachment `zenaf_learning_export.jsonl`) or `format=json` (same shape as inspect). |
 
 **Privacy posture:** Export is a **verbatim dump of stored rows** — no second redaction pass. Restrictive modes already produced **`capture_mode: minimal`**, empty/redacted snapshots, and hash-only prompt references (see *Privacy modes and learning* above).
 

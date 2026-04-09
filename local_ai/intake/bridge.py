@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 # Prefix for provenance line in task notes; parseable for lifecycle queries.
-LIFECYCLE_NOTES_PREFIX = "[Atria lifecycle]"
+LIFECYCLE_NOTES_PREFIX = "[Zenaf lifecycle]"
 
 
 def _append_lifecycle_provenance(notes: str, intake_item_id: str, judgment_id: str | None) -> str:

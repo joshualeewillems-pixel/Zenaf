@@ -32,5 +32,5 @@
 ## Backend flow
 
 - **API:** `POST /run` with `mode: "web_research"` and `params.query` → `_run_web_research(params)`.
-- **Engine:** `local_ai.atria_tools.web_research(query)` → `DDGS().text(query, max_results=5)` → returns `query`, `findings`, `sources`, `notes`.
+- **Engine:** `local_ai.zenaf_tools.web_research(query)` → `DDGS().text(query, max_results=5)` → returns `query`, `findings`, `sources`, `notes`.
 - **Frontend:** Displays `top_findings` and uses the result in the agent thread.

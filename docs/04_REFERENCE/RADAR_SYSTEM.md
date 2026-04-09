@@ -2,7 +2,7 @@
 
 **Status:** Design  
 **Scope:** Generalize Radar into a shared cross-system signal layer that aggregates attention signals from multiple modules while keeping the current Vision Execution radar behavior intact.  
-**Goal:** Make Radar the nervous system of Atria in a clean, elegant, minimally imposing way — one system, multiple emitters, multiple views.
+**Goal:** Make Radar the nervous system of Zenaf in a clean, elegant, minimally imposing way — one system, multiple emitters, multiple views.
 
 ---
 
@@ -152,4 +152,4 @@ Thin, incremental steps:
 - **Do not overbuild persistence yet.** Signals can be computed on demand from current state. Optional later: store signals and resolution_state in a small table or store for history and resolution tracking.
 - **Keep the first step thin and deterministic.** One schema, one emitter (VE), same VE view. Then add emitters and views incrementally.
 
-**Goal:** Make Radar the nervous system of Atria — one shared signal layer, multiple emitters, multiple views — in a clean, elegant, minimally imposing way.
+**Goal:** Make Radar the nervous system of Zenaf — one shared signal layer, multiple emitters, multiple views — in a clean, elegant, minimally imposing way.

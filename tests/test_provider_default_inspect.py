@@ -39,7 +39,7 @@ def test_build_provider_policy_includes_credential_visibility():
     cv = (pol.get("current_session") or {}).get("credential_visibility")
     assert isinstance(cv, dict)
     assert cv.get("anonymous_openai_cloud_allowed") is False
-    assert cv.get("system", {}).get("openai_env_var") == "ATRIA_SYSTEM_OPENAI_KEY"
+    assert cv.get("system", {}).get("openai_env_var") == "ZENAF_SYSTEM_OPENAI_KEY"
     assert "openai_configured" in cv.get("system", {})
     aa = cv.get("account_authenticated") or {}
     assert aa.get("openai_effective_source") in ("env", "settings", "none")

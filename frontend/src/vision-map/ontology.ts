@@ -17,8 +17,14 @@ export type GrowthState =
   | 'decaying'
   | 'pruned'
 
-/** Health / supervision channel (orthogonal to growth) */
+/**
+ * Legacy merged signal for resolver input, edges, and prose — **not** a node paint channel.
+ * Map stone condition is only `condition_severity` (cracks).
+ */
 export type ConditionState = 'healthy' | 'blocked' | 'teacher-warned' | 'teacher-vetoed' | 'stale'
+
+/** Unified structural damage for map chrome (0 smooth → 3 critical). Set in graph finalize. */
+export type ConditionSeverity = 0 | 1 | 2 | 3
 
 export type VeEntityType = 'idea' | 'initiative' | 'project' | 'task' | 'outcome'
 
@@ -45,7 +51,10 @@ export type MapNodePayload = {
   label: string
   subtitle?: string
   growth: GrowthState
+  /** Feeds `resolveConditionSeverity` and edge vitality; node chrome must not branch on this. */
   condition: ConditionState
+  /** Cracked-stone severity — **only** map structural paint channel; set in graph finalize. */
+  condition_severity?: ConditionSeverity
   ref: MapEntityRef
   /** Outcome (fruit): VE entity to anchor council / operator context */
   parentRef?: MapEntityRef
@@ -63,7 +72,7 @@ export type MapNodePayload = {
   growth_triad?: { water: number; soil: number; fruit: number }
   vitality_source?: 'server' | 'client'
   /**
-   * Unified triad snapshot for map + panel (same semantics as `effectiveGrowthTriad`).
+   * Unified triad for map + panel — from `mapVisualTriad` (includes council formation bump on soil when server vitality is used).
    * Set in `buildLiveVisionMapGraph`; optional on older/sample graphs.
    */
   map_visual_triad?: { water: number; soil: number; fruit: number }

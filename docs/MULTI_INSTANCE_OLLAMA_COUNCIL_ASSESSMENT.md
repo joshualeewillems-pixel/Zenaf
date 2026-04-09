@@ -9,7 +9,7 @@
 
 ### 1.1 Current flow
 
-- **`local_ai/atria_tools.py`**
+- **`local_ai/zenaf_tools.py`**
   - `run_council` and `run_council_stream` each call `get_council_provider()` **once** at the start and receive a **single** provider instance.
   - That same provider is passed into every `_run_one_role(..., provider)` submitted to the `ThreadPoolExecutor` (four call sites: two in `run_council`, two in `run_council_stream`).
   - Synthesis uses the same provider: `provider.generate(synthesis_prompt, timeout=25)`.
@@ -20,8 +20,8 @@
 | Location | Current behavior | Change needed for per-seat instances |
 |----------|------------------|--------------------------------------|
 | **`local_ai/providers/__init__.py`** | `get_council_provider()` returns a single provider. | Either (a) add something like `get_council_providers() -> list` that returns one provider per instance (e.g. one per URL), or (b) have `get_council_provider()` return a router object that implements `.generate(...)` and internally selects instance (e.g. round-robin). Callers would then need to support (a) or (b). |
-| **`local_ai/atria_tools.py`** | Builds one `provider`, then `executor.submit(_run_one_role, idx, name, prompt, provider)` for every task. | **Option A (provider list):** Obtain a list of providers; for each task, pass `providers[seat_index % len(providers)]` into `_run_one_role`. So change from one shared `provider` to a per-task provider. Requires building the task list with an associated provider per task, or resolving provider by index at submit time. |
-| **`local_ai/atria_tools.py`** | Synthesis uses `provider.generate(...)`. | Decide which instance runs synthesis: e.g. first instance, or a dedicated “synthesis” URL, or round-robin. Same provider interface; only which provider is chosen. |
+| **`local_ai/zenaf_tools.py`** | Builds one `provider`, then `executor.submit(_run_one_role, idx, name, prompt, provider)` for every task. | **Option A (provider list):** Obtain a list of providers; for each task, pass `providers[seat_index % len(providers)]` into `_run_one_role`. So change from one shared `provider` to a per-task provider. Requires building the task list with an associated provider per task, or resolving provider by index at submit time. |
+| **`local_ai/zenaf_tools.py`** | Synthesis uses `provider.generate(...)`. | Decide which instance runs synthesis: e.g. first instance, or a dedicated “synthesis” URL, or round-robin. Same provider interface; only which provider is chosen. |
 | **`local_ai/config.py`** | Single `OLLAMA_URL`. | Add configuration for multiple council instances (see §3). |
 | **`local_ai/providers/ollama.py`** | `OllamaProvider(base_url=..., model=..., timeout=...)`. | No change. Each instance is already a separate `OllamaProvider(base_url=url_i)`. |
 
@@ -124,7 +124,7 @@ Recommendation: start with **`OLLAMA_COUNCIL_URLS`** as an optional list. If abs
 
 | Question | Answer |
 |----------|--------|
-| Where would provider routing change? | `get_council_provider()` (or new `get_council_providers()`), config (add `OLLAMA_COUNCIL_URLS` or equivalent), and the four executor call sites in `atria_tools.py` that today pass a single `provider` — they would pass a provider per seat (e.g. by index from a list). Synthesis would use one chosen provider. |
+| Where would provider routing change? | `get_council_provider()` (or new `get_council_providers()`), config (add `OLLAMA_COUNCIL_URLS` or equivalent), and the four executor call sites in `zenaf_tools.py` that today pass a single `provider` — they would pass a provider per seat (e.g. by index from a list). Synthesis would use one chosen provider. |
 | Does the current abstraction support per-seat selection? | Yes. `_run_one_role` already takes a `provider` and calls `provider.generate(...)`. Passing a different `OllamaProvider(base_url=...)` per seat is enough; no protocol change. |
 | What configuration shape? | Optional `OLLAMA_COUNCIL_URLS: list[str]` (or list of dicts with `url`/`model`/`timeout`). If unset or empty, keep current single-provider behavior. |
 | What bottlenecks remain? | Same machine + same GPU: contention and 2× model memory; often no gain. Synthesis remains one call. Multiple GPUs or multiple machines are where multi-instance helps. |

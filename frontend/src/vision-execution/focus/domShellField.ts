@@ -1,6 +1,6 @@
 /**
  * Discover plain <input>/<textarea> controls for shell-wide focus + voice insert.
- * Skips regions already handled by {@link TranscribableFieldRegion} (`data-atria-transcribe-region`).
+ * Skips regions already handled by {@link TranscribableFieldRegion} (`data-zenaf-transcribe-region`).
  */
 
 import type { EntityType, FieldKind, FocusDescriptor, FocusSurface } from './types'
@@ -12,8 +12,8 @@ export function isEligibleDomTextControl(
 ): el is HTMLInputElement | HTMLTextAreaElement {
   if (!(el instanceof HTMLTextAreaElement) && !(el instanceof HTMLInputElement)) return false
   if (el.disabled) return false
-  if (el.closest('[data-atria-transcribe-off]')) return false
-  if (el.closest('[data-atria-transcribe-region]')) return false
+  if (el.closest('[data-zenaf-transcribe-off]')) return false
+  if (el.closest('[data-zenaf-transcribe-region]')) return false
   if (el instanceof HTMLTextAreaElement) return !el.readOnly
   if (el.readOnly) return false
   const t = (el.getAttribute('type') ?? 'text').toLowerCase()
@@ -75,24 +75,24 @@ function parseFieldKind(raw: string | null | undefined): FieldKind | undefined {
   return allowed.includes(raw as FieldKind) ? (raw as FieldKind) : undefined
 }
 
-/** Build a focus descriptor from a native control (optional `data-atria-*` overrides). */
+/** Build a focus descriptor from a native control (optional `data-zenaf-*` overrides). */
 export function domControlToFocusDescriptor(
   el: HTMLInputElement | HTMLTextAreaElement,
   stableEntityId: string,
 ): FocusDescriptor {
   const fieldKey =
-    el.getAttribute('data-atria-field-key')?.trim() ||
+    el.getAttribute('data-zenaf-field-key')?.trim() ||
     (el.name && el.name.trim()) ||
     (el.id && el.id.trim()) ||
     'text'
-  const labelAttr = el.getAttribute('data-atria-field-label')?.trim()
+  const labelAttr = el.getAttribute('data-zenaf-field-label')?.trim()
   const aria = el.getAttribute('aria-label')?.trim()
   const ph = (el.getAttribute('placeholder') ?? '').trim()
   const fieldLabel = labelAttr || aria || (ph ? ph.slice(0, 80) : fieldKey)
-  const fieldKind = parseFieldKind(el.getAttribute('data-atria-field-kind')) ?? 'idea_body'
-  const entityType = parseEntityType(el.getAttribute('data-atria-entity-type')) ?? 'app_field'
-  const entityId = el.getAttribute('data-atria-entity-id')?.trim() || stableEntityId
-  const surface = parseSurface(el.getAttribute('data-atria-surface')) ?? 'shell'
+  const fieldKind = parseFieldKind(el.getAttribute('data-zenaf-field-kind')) ?? 'idea_body'
+  const entityType = parseEntityType(el.getAttribute('data-zenaf-entity-type')) ?? 'app_field'
+  const entityId = el.getAttribute('data-zenaf-entity-id')?.trim() || stableEntityId
+  const surface = parseSurface(el.getAttribute('data-zenaf-surface')) ?? 'shell'
 
   return {
     surface,

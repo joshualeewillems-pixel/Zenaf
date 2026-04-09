@@ -25,7 +25,7 @@ export type InfluenceLink = {
   weight: InfluenceWeight
 }
 
-const STORAGE_KEY = 'atria-entity-influences-v1'
+const STORAGE_KEY = 'zenaf-entity-influences-v1'
 
 export type InfluencesStore = Record<string, InfluenceLink[]>
 

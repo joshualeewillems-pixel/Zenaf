@@ -36,13 +36,13 @@ def _clear_buffer():
 
 
 def test_export_forbidden_when_env_disabled(client, monkeypatch):
-    monkeypatch.delenv("ATRIA_LEARNING_EXPORT_ENABLED", raising=False)
+    monkeypatch.delenv("ZENAF_LEARNING_EXPORT_ENABLED", raising=False)
     r = client.get("/vision-execution/learning-records/export")
     assert r.status_code == 403
 
 
 def test_export_jsonl_when_enabled(client, monkeypatch):
-    monkeypatch.setenv("ATRIA_LEARNING_EXPORT_ENABLED", "1")
+    monkeypatch.setenv("ZENAF_LEARNING_EXPORT_ENABLED", "1")
     rid = capture_general_delegation_outcome(
         surface="s",
         action_intent="a",
@@ -70,7 +70,7 @@ def test_export_jsonl_when_enabled(client, monkeypatch):
 
 
 def test_stats_endpoint(client, monkeypatch):
-    monkeypatch.setenv("ATRIA_LEARNING_EXPORT_ENABLED", "1")
+    monkeypatch.setenv("ZENAF_LEARNING_EXPORT_ENABLED", "1")
     capture_general_delegation_outcome(
         surface="s",
         action_intent="x",
@@ -91,7 +91,7 @@ def test_stats_endpoint(client, monkeypatch):
 
 
 def test_inspect_json_pagination(client, monkeypatch):
-    monkeypatch.setenv("ATRIA_LEARNING_EXPORT_ENABLED", "1")
+    monkeypatch.setenv("ZENAF_LEARNING_EXPORT_ENABLED", "1")
     for i in range(3):
         capture_general_delegation_outcome(
             surface="s",

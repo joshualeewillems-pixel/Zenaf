@@ -13,7 +13,7 @@ Superseded by: docs/01_TRUTH/CODEBASE_TRUTH_RULES.md
 |---|--------|--------------------|------|
 | 1 | **Intake classification** | `local_ai/intake/pipeline.py`, `classifier.py`, `judgment/__init__.py` | Classification + proposed action |
 | 2 | **Intake lane correction** | `local_ai/intake/queue_store.py`, `judgment/create_correction_record` | Correction / override |
-| 3 | **Council run** | `local_ai/atria_tools.py`, `judgment_substrate.py` | Multi-seat recommendation |
+| 3 | **Council run** | `local_ai/zenaf_tools.py`, `judgment_substrate.py` | Multi-seat recommendation |
 | 4 | **Initiative evaluate** | `local_ai/vision_execution/initiative_evaluate.py`, VE API + frontend | Recommendation → apply/reject |
 | 5 | **VE decision (record)** | `local_ai/vision_execution/storage.py`, `models.DecisionCreate` | Persisted decision (multiple types) |
 | 6 | **Intake graduate to task** | `local_ai/intake/bridge.py` | Resolution (item → task) + decision record |
@@ -22,7 +22,7 @@ Superseded by: docs/01_TRUTH/CODEBASE_TRUTH_RULES.md
 | 9 | **Signal create** | `local_ai/signals/service.py`, storage | Creation (often from extraction/triage) |
 | 10 | **Signal update** (ack/link/resolve/dismiss) | `local_ai/signals/storage.py` (update_signal) | Resolution / dismissal / linking |
 | 11 | **Transcript sorter promote** | `frontend/TranscriptSorter.tsx`, POST `/decisions` | User confirms candidate → decision record |
-| 12 | **Suggest next step** | `local_ai/atria_tools.py` | Ephemeral recommendation (no persistence) |
+| 12 | **Suggest next step** | `local_ai/zenaf_tools.py` | Ephemeral recommendation (no persistence) |
 
 ---
 

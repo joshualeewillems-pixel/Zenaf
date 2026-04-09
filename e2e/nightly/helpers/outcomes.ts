@@ -4,24 +4,24 @@ import type { Page, TestInfo } from '@playwright/test'
  * Nightly / Playwright classification for fringe probes (see flows-b-boundaries.spec.ts).
  * Surfaces in HTML report as annotations + small text attachments (not a hard failure).
  */
-export type AtriaClassification = 'PASS' | 'BOUNDARY'
+export type ZenafClassification = 'PASS' | 'BOUNDARY'
 
 export async function classify(
   info: TestInfo,
-  kind: AtriaClassification,
+  kind: ZenafClassification,
   detail: string,
   options?: { screenshot?: Page },
 ): Promise<void> {
-  const line = `[ATRIA_E2E] ${kind}: ${detail}`
-  info.annotations.push({ type: 'atria-classification', description: line })
-  await info.attach('atria-classification.txt', {
+  const line = `[ZENAF_E2E] ${kind}: ${detail}`
+  info.annotations.push({ type: 'zenaf-classification', description: line })
+  await info.attach('zenaf-classification.txt', {
     body: `${line}\n`,
     contentType: 'text/plain',
   })
   if (options?.screenshot) {
     const buf = await options.screenshot.screenshot({ fullPage: false }).catch(() => null)
     if (buf) {
-      await info.attach('atria-boundary-screenshot.png', {
+      await info.attach('zenaf-boundary-screenshot.png', {
         body: buf,
         contentType: 'image/png',
       })

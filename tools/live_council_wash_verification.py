@@ -15,8 +15,8 @@ import sys
 import uuid
 from types import SimpleNamespace
 
-from local_ai import config as atria_config
-from local_ai.atria_tools import _council_provider_shim_is_cloud
+from local_ai import config as zenaf_config
+from local_ai.zenaf_tools import _council_provider_shim_is_cloud
 from local_ai.council_preflight import build_enriched_council_context, parse_preflight_from_request
 from local_ai.council_teacher import CouncilTeacherSettings, run_council_with_teacher
 from local_ai.council_wash import prepare_council_contexts
@@ -81,7 +81,7 @@ def main() -> int:
     allows_ext = bool(wash_trace.get("safety_allow_cloud_with_wash"))
 
     omodel = (
-        (getattr(atria_config, "OLLAMA_COUNCIL_MODEL", None) or atria_config.OLLAMA_MODEL or "")
+        (getattr(zenaf_config, "OLLAMA_COUNCIL_MODEL", None) or zenaf_config.OLLAMA_MODEL or "")
         .strip()
         or "qwen2:7b-instruct"
     )

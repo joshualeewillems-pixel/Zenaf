@@ -31,7 +31,7 @@ export function countWorkoutRatingsInStorage(thread: WorkoutMessage[]): number {
   for (const m of thread) {
     if (m.kind === 'user') continue
     try {
-      const raw = sessionStorage.getItem(`atria.resonance.v1.${m.responseId}`)
+      const raw = sessionStorage.getItem(`zenaf.resonance.v1.${m.responseId}`)
       if (raw != null && raw.trim() !== '') n += 1
     } catch {
       /* ignore */

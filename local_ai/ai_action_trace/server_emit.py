@@ -1,7 +1,7 @@
 """
 Emit AiActionTrace-shaped records from the API process when no client trace runs.
 
-- Logs one JSON line at INFO on logger ``atria.server_ai_action`` (prefix SERVER_AI_ACTION_TRACE).
+- Logs one JSON line at INFO on logger ``zenaf.server_ai_action`` (prefix SERVER_AI_ACTION_TRACE).
 - Appends a compact row to ``activity.log`` via ``log_activity_simple`` for durable lineage.
 
 Align fields with ``frontend/src/ai-actions/types.ts`` (AiActionTrace).
@@ -25,7 +25,7 @@ from local_ai.activity import (
     log_activity_simple,
 )
 
-_logger = logging.getLogger("atria.server_ai_action")
+_logger = logging.getLogger("zenaf.server_ai_action")
 
 
 def _now_iso() -> str:
@@ -108,7 +108,7 @@ def emit_server_ai_action_trace(
 ) -> str:
     trace_id = (trace_id or "").strip() or str(uuid.uuid4())
     payload: dict[str, Any] = {
-        "schema": "atria_ai_action_trace_v1",
+        "schema": "zenaf_ai_action_trace_v1",
         "origin": "server",
         "trace_id": trace_id,
         "surface": surface,

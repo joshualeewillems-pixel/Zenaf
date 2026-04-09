@@ -1,12 +1,12 @@
 # Subject / Node Primitive — Architecture Note
 
-**Status:** Intent / future-facing  \n**Scope:** Record the deeper architectural direction for Atria’s object model without changing current business modules.  \n**Goal:** Describe the generic **Subject/Node** primitive and how existing entities may eventually become typed expressions of it to support Mandelbrot-scaling decision architecture.
+**Status:** Intent / future-facing  \n**Scope:** Record the deeper architectural direction for Zenaf’s object model without changing current business modules.  \n**Goal:** Describe the generic **Subject/Node** primitive and how existing entities may eventually become typed expressions of it to support Mandelbrot-scaling decision architecture.
 
 ---
 
 ## 1. Subject / Node concept
 
-In the long term, Atria is evolving toward a **Mandelbrot-scaling cognitive operating system**: the same loop
+In the long term, Zenaf is evolving toward a **Mandelbrot-scaling cognitive operating system**: the same loop
 
 > observation → judgment → decision → execution → outcome
 
@@ -28,7 +28,7 @@ In this framing, a Subject is the object that flows through the **observation �
 
 ## 2. Why concrete business modules exist today
 
-Today, Atria uses **practical, hard-coded business entities** because it is serving a specific operator and set of workflows:
+Today, Zenaf uses **practical, hard-coded business entities** because it is serving a specific operator and set of workflows:
 
 - Vision Execution: ideas, initiatives, projects, tasks, decisions, people, assets, capacity (see `local_ai/vision_execution/models.py`).  \n- Content: content briefs, generated scripts/newsletters (see `ContentBrief` and related tools).  \n- Intake and transcript sorter: intake items, judgments, candidate tasks/decisions/ideas.  \n- Council: seat judgments and run artifacts (see `judgment_substrate.py` and council tools).
 

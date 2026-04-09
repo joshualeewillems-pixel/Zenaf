@@ -1,4 +1,4 @@
-# Atria system reference (merged)
+# Zenaf system reference (merged)
 
 <!--
 Status: Canonical
@@ -14,10 +14,10 @@ Supersedes: `docs/05_ARCHIVE/SYSTEM_INTENT.md`, `docs/05_ARCHIVE/SYSTEM_STAGES_A
 
 # Part I — Intent & philosophy
 
-## 1.1 Atria as a symbiosis layer
+## 1.1 Zenaf as a symbiosis layer
 
-- **Atria is not “an AI assistant.”** It is a **human–AI symbiosis layer** that sits between people and their tools. It coordinates context, decisions, and execution across modules; it does not try to replace every system underneath.
-- Humans remain the **source of judgment, taste, and final decisions**. Atria’s job is to surface patterns, propose actions, and wire tools together so that humans can steer more effectively.
+- **Zenaf is not “an AI assistant.”** It is a **human–AI symbiosis layer** that sits between people and their tools. It coordinates context, decisions, and execution across modules; it does not try to replace every system underneath.
+- Humans remain the **source of judgment, taste, and final decisions**. Zenaf’s job is to surface patterns, propose actions, and wire tools together so that humans can steer more effectively.
 - The architecture should always favor: **augment judgment and workflow** rather than “automate away the human.”
 
 ## 1.2 The core loop
@@ -25,14 +25,14 @@ Supersedes: `docs/05_ARCHIVE/SYSTEM_INTENT.md`, `docs/05_ARCHIVE/SYSTEM_STAGES_A
 1. **Human signal** — The user acts or expresses intent: asks a question, edits content, triages inbox, makes a VE decision, runs transcript sorter, etc.
 2. **System distillation** — Modules compress raw activity into **signals** (e.g. decisions, preferences, drift, risk) and **profiles** (distilled cognitive models), never into opaque logs.
 3. **Advisory simulation** — Council, profiles + mandates, and other reasoning modes simulate perspectives and propose options (“advice, not orders”).
-4. **Execution amplification** — When the user chooses, Atria fans out work into the right tools (tasks, content drafts, handoffs, queues) with structured context.
+4. **Execution amplification** — When the user chooses, Zenaf fans out work into the right tools (tasks, content drafts, handoffs, queues) with structured context.
 5. **Human steering** — The human reviews, accepts/rejects/edits, and the outcome feeds back into distillation (through explicit, versioned updates), closing the loop.
 
 Every step has a clear input, explicit state changes, and a human checkpoint before lasting decisions or profile updates.
 
 ## 1.3 Signals as first-class inputs
 
-- **Signals, not raw logs.** Atria consumes **signals** from modules: transcript sorter, Content, Vision Execution decisions, inbox triage, folder sorting, intake corrections, etc. Signals describe *what changed* and *why it matters*.
+- **Signals, not raw logs.** Zenaf consumes **signals** from modules: transcript sorter, Content, Vision Execution decisions, inbox triage, folder sorting, intake corrections, etc. Signals describe *what changed* and *why it matters*.
 - Signals drive: Radar and orientation (“what needs attention”); distillation for profiles and decision fingerprints; council prompts (recent decisions, context, constraints).
 - Signals should be **summarized and structured** and **scoped and purpose-limited**, not a monolithic “memory dump.”
 
@@ -63,13 +63,13 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 
 ## 2.2 Content and orchestration
 
-- Atria is the **conductor** of the media pipeline (shared brief, tool-shaped handoffs, production/distribution tracking). It does **not** replace specialist tools. Vision Execution remains the system of record; content work is in service of VE. *(CONTENT_PIPELINE)*
+- Zenaf is the **conductor** of the media pipeline (shared brief, tool-shaped handoffs, production/distribution tracking). It does **not** replace specialist tools. Vision Execution remains the system of record; content work is in service of VE. *(CONTENT_PIPELINE)*
 - **Minimal pipeline stages (content):** Source distillation → Content brief creation → Script/copy generation → Media asset packaging → Distribution planning → Export/publish handoff.
 
 ## 2.3 Cockpit and progression
 
 - **Progression:** User-controlled; one processor at a time. No automatic chaining; suggested next actions are visible and user-chosen. No hidden state. *(COCKPIT_PROGRESSION_DESIGN)*
-- **Truth sources:** No single shared prompt builder; each module constructs its own prompt. **Exception (Zenaf / all–Thinking Partner council):** turn-specific contract is centralized in **`local_ai/response_trunk.py`** and prepended as **RESPONSE CONTRACT — TECHNICAL HEADER** (see **§2.7**). Structured memory is often used for attribution and storage **without** being pasted into prompts; **exceptions** include **core profile** reconcile/conversation (structured fields + `raw_notes` + thread — see **§2.6**). *(ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE — general pattern; core profile is a deliberate inclusion.)*
+- **Truth sources:** No single shared prompt builder; each module constructs its own prompt. **Exception (Zenaf / all–Thinking Partner council):** turn-specific contract is centralized in **`local_ai/response_trunk.py`** and prepended as **RESPONSE CONTRACT — TECHNICAL HEADER** (see **§2.7**). Structured memory is often used for attribution and storage **without** being pasted into prompts; **exceptions** include **core profile** reconcile/conversation (structured fields + `raw_notes` + thread — see **§2.6**). *(ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE — general pattern; core profile is a deliberate inclusion.)*
 - **Focus mediation (header strip — implemented slice):** A single **Focus context** strip reflects **registered field focus** across cockpit views: Vision Execution fields (`VeFocusRegion`), Execution inline creates, and Workspace **council “Your reply”** (synthetic `council` / `__council_reply__`). **Rewrite** stays registry-gated; **voice** records, transcribes (`/api/transcribe`), and inserts at the captured cursor. **Goal:** keep mediation explicit (what field is “hot”) and avoid misrouting transcripts; **not** a full catalog of every input in the app.
 
 ## 2.4 Developmental influence (direction)
@@ -92,7 +92,7 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 
 ## 2.7 Zenaf / single-voice council — response contract & integration *(implemented)*
 
-- **Role:** When every active seat is **Thinking Partner**, the council run uses a **conversational** body (`_run_council_conversational_partner_body` in **`local_ai/atria_tools.py`**) instead of structured seat templates + synthesis.
+- **Role:** When every active seat is **Thinking Partner**, the council run uses a **conversational** body (`_run_council_conversational_partner_body` in **`local_ai/zenaf_tools.py`**) instead of structured seat templates + synthesis.
 - **System layer:** **`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM`** identifies the model as a **System Interface** (concise operational voice; parser-safe tags).
 - **Turn contract:** **`local_ai/response_trunk.build_response_control_block`** prepends **RESPONSE CONTRACT — TECHNICAL HEADER** with **`mode_directives`** (routing, **PRIORITY AMNESIA** when `question_kind == priority_resolution`, **field checklist** — e.g. **`[DRAFT_VALUE]`** + **`[ID]`** on priority turns), **`syntax_rules`** (ID + draft tag discipline; no code fences for saves), **`grounding_fences`** (lane / PRIMARY authority).
 - **Latency budget:** Provider call for this path uses a **15 second** timeout — prompts are expected to stay within that budget.
@@ -142,7 +142,7 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 ## 3.5 Council working memory, truth order
 
 - When subject_ref has entity_type/entity_id: pull list_decisions(entity_type, entity_id, limit=N) into “Related decisions” block. *(COUNCIL_WORKING_MEMORY_DESIGN)*
-- **Truth-source order (council):** Task (context + question) first, then system facts, then operator priorities, then constraints. No structured memory injection until artifact store and retrieval hooks exist. *(ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE)*
+- **Truth-source order (council):** Task (context + question) first, then system facts, then operator priorities, then constraints. No structured memory injection until artifact store and retrieval hooks exist. *(ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE)*
 
 ## 3.6 Zenaf field checklist & priority amnesia *(implemented)*
 
@@ -158,11 +158,11 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 - **Intake:** POST email/fax → pipeline → queue → mirror; GET/PATCH queue; judgment creation and correction; mirror load on API startup.
 - **Vision Execution:** Full CRUD (core profiles, ideas, initiatives, projects, tasks, persons, assets, capacity, decisions); **Signal** entity + API (POST/GET/PATCH signals); **Radar** as view over Signal + buckets from initiatives/projects/tasks/capacity; SQLite; API under /vision-execution. **Focus + voice:** Detail fields and inline create (idea / initiative / project / task) register in `VisionExecutionFocusProvider`; context bar **Rewrite** where `fieldCapabilityRegistry` allows; voice insert via `veVoiceRecordingContext` + field selection capture.
 - **Activity:** ActivityEvent log (activity.log); enums ActivityType, ActivityEntityType; get_recent_activity(limit); signal lifecycle events (created, acknowledged, linked, resolved, dismissed).
-- **Council:** run_council / run_council_stream; POST /run and /run/stream mode=council; **`perspective_definitions`** (always at least one seat; default **Thinking Partner** / **Atria** in cockpit). **All seats Thinking Partner** → **Zenaf** conversational path (**System Interface** system text + **RESPONSE CONTRACT — TECHNICAL HEADER** from **`local_ai/response_trunk.py`**, mediation/trunk slice from **`local_ai/conversation_trunk.py`**, **15s** LLM timeout, **`integration_commit`** for **`[DRAFT_VALUE]`** / pending saves), **no synthesis**. **Mixed with structured roles** → structured seat prompts + **synthesis** when enabled. **`council_preflight`** may include **`developmental_guidance`** (read model → bounded packet block via **`local_ai/council_preflight.py`** + **`local_ai/developmental_guidance.py`**). **`priority_resolution`** may use **thread amnesia** (no prior messages in packet). **Your reply** participates in the same **focus / voice** strip as VE (`CouncilQuestionTextarea` in `App.tsx`: synthetic focus + `ATRIA_VOICE_TRANSCRIPT_DOM_FIRST` / `ATRIA_VE_FOCUS_INSERT_TEXT` handlers). Assistant **`[ID: …]`** mentions render as chips via **`EntityMentionText`** when the UI uses it on raw text.
+- **Council:** run_council / run_council_stream; POST /run and /run/stream mode=council; **`perspective_definitions`** (always at least one seat; default **Thinking Partner** / **Zenaf** in cockpit). **All seats Thinking Partner** → **Zenaf** conversational path (**System Interface** system text + **RESPONSE CONTRACT — TECHNICAL HEADER** from **`local_ai/response_trunk.py`**, mediation/trunk slice from **`local_ai/conversation_trunk.py`**, **15s** LLM timeout, **`integration_commit`** for **`[DRAFT_VALUE]`** / pending saves), **no synthesis**. **Mixed with structured roles** → structured seat prompts + **synthesis** when enabled. **`council_preflight`** may include **`developmental_guidance`** (read model → bounded packet block via **`local_ai/council_preflight.py`** + **`local_ai/developmental_guidance.py`**). **`priority_resolution`** may use **thread amnesia** (no prior messages in packet). **Your reply** participates in the same **focus / voice** strip as VE (`CouncilQuestionTextarea` in `App.tsx`: synthetic focus + `ZENAF_VOICE_TRANSCRIPT_DOM_FIRST` / `ZENAF_VE_FOCUS_INSERT_TEXT` handlers). Assistant **`[ID: …]`** mentions render as chips via **`EntityMentionText`** when the UI uses it on raw text.
 - **Perspectives:** Frontend types, list, detail, creator, import/export; localStorage; passed to council as custom definitions.
 - **Foundation shell split (as-built):** In `mainView === 'perspectives'`, actor/detail/training/editor content is rendered in a Foundation-local right pane. The global council/chat aside remains the shared shell surface and is not repurposed by Foundation detail state.
 - **File Steward:** Analyze, Recommend, Assess, Simulate; folder picker; simulation tree with effective target folders and filtered overrides.
-- **Web research / Next step:** atria_tools; wired to /run.
+- **Web research / Next step:** zenaf_tools; wired to /run.
 - **Intake API:** Config, Gmail OAuth, POST email/fax, POST email/poll, GET/PATCH queue, judgment.
 - **Policy layer:** data_access with tiers and request_access; used by mirror.get_item_with_content().
 - **Synthetic intake:** Generate cases, evaluate pipeline, export failures; pytest intake quality and synthetic regression.
@@ -208,7 +208,7 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 | **Vision map** | Spatial/orienting view of execution tree + interpretive growth UI; optional link to signals/council depth. | **Implemented** as projection + panel; heuristics client-only; no map-specific API. Details: **`VISION_MAP_AND_ZEN_PROJECTION.md`**. |
 | **Developmental guidance** | Hypothesis-level read model; transparent to user; influences prompts as **optional labeled context**, not silent routing. | **v1 implemented:** client assembly + **`council_preflight.developmental_guidance`** + enriched council string + cockpit panel. No unified durable store; not yet wired to next-step / harvest / scripts beyond council. |
 | **Focus context + voice** | Registered field focus in header; voice inserts at cursor; no transcript misrouting to wrong field. | **Implemented:** universal strip + VE regions + Execution inline creates + council **Your reply** (`council` synthetic entity); registry-backed Rewrite; transcribe API; DOM-first event for council. Not every textarea in the app is registered. |
-| **Zenaf / council precision** | Turn-level contract in backend; **`[DRAFT_VALUE]`** / **`[ID]`** discipline; fast LLM budget; optional thread amnesia on priority turns. | **Implemented:** **`local_ai/response_trunk.py`**, **`local_ai/integration_commit.py`**, **`local_ai/council_preflight.py`** (history policy), **`local_ai/atria_tools.py`** conversational path (**15s** timeout), **`EntityMentionText`** for **`[ID: …]`** chips. Detail: **§2.7**, **§3.6**; law: **`CODEBASE_TRUTH_RULES.md`** §9. |
+| **Zenaf / council precision** | Turn-level contract in backend; **`[DRAFT_VALUE]`** / **`[ID]`** discipline; fast LLM budget; optional thread amnesia on priority turns. | **Implemented:** **`local_ai/response_trunk.py`**, **`local_ai/integration_commit.py`**, **`local_ai/council_preflight.py`** (history policy), **`local_ai/zenaf_tools.py`** conversational path (**15s** timeout), **`EntityMentionText`** for **`[ID: …]`** chips. Detail: **§2.7**, **§3.6**; law: **`CODEBASE_TRUTH_RULES.md`** §9. |
 
 ---
 
@@ -285,7 +285,7 @@ Every step has a clear input, explicit state changes, and a human checkpoint bef
 | Concern | Location |
 |---------|----------|
 | **AI action traces (client), result panel, field rewrite `action_intent` map** | `frontend/src/ai-actions/` (`types.ts`, `traceHelpers.ts`, `traceSink.ts`, `AiActionResultPanel.tsx`, `fieldRewriteIntent.ts`); VE wiring: `vision-execution/focus/ContextActionBarContent.tsx`, `VisionExecutionView.tsx` |
-| **Focus context strip, voice recording, DOM-first transcript routing** | `frontend/src/App.tsx` (`UniversalContextStrip`, `CouncilQuestionTextarea`, council event listeners); `vision-execution/focus/VisionExecutionFocusContext.tsx`, `VeFocusRegion.tsx`, `veVoiceRecordingContext.tsx`, `FocusContextRecordButton.tsx`, `insertTextEvent.ts` (`ATRIA_VOICE_TRANSCRIPT_DOM_FIRST`, `ATRIA_VE_FOCUS_INSERT_TEXT`), `fieldCapabilityRegistry.ts`, `types.ts` (`EntityType` includes `council`) |
+| **Focus context strip, voice recording, DOM-first transcript routing** | `frontend/src/App.tsx` (`UniversalContextStrip`, `CouncilQuestionTextarea`, council event listeners); `vision-execution/focus/VisionExecutionFocusContext.tsx`, `VeFocusRegion.tsx`, `veVoiceRecordingContext.tsx`, `FocusContextRecordButton.tsx`, `insertTextEvent.ts` (`ZENAF_VOICE_TRANSCRIPT_DOM_FIRST`, `ZENAF_VE_FOCUS_INSERT_TEXT`), `fieldCapabilityRegistry.ts`, `types.ts` (`EntityType` includes `council`) |
 | Signal model, service, storage | `local_ai/signals/models.py`, `service.py`, `storage.py` |
 | Activity events, enums, log, reader | `local_ai/activity.py` |
 | Radar (view) | `local_ai/vision_execution/radar.py` — uses `SigS.list_signals(status_not_in=[...])`, `_signal_to_radar_item()` |

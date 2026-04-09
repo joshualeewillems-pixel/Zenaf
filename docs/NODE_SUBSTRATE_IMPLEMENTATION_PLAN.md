@@ -3,7 +3,7 @@
 <!-- STATUS: Superseded. See docs/01_TRUTH/CODEBASE_TRUTH_RULES.md §5b and local_ai/judgment_substrate.py (SubjectRef, JudgmentTrunk). node_adapters / subject_adapters were attempted and retired (tombstoned). -->
 
 **Status:** Architecture direction / implementation plan *(historical — node adapter path not pursued)*  
-**Goal:** Introduce a minimal internal **NodeRef** and **NodeSnapshot** layer for cross-module identity and relationships, to reduce future retrofit cost as Atria moves toward a multi-user office environment (4+ users, divergent workflows).  
+**Goal:** Introduce a minimal internal **NodeRef** and **NodeSnapshot** layer for cross-module identity and relationships, to reduce future retrofit cost as Zenaf moves toward a multi-user office environment (4+ users, divergent workflows).  
 **Constraint:** Additive and internal only. Do not replace or rewrite existing business modules (VE, Content, Intake, etc.).
 
 ---
@@ -96,7 +96,7 @@ NodeSnapshot
 
 4. **Council / judgment**
    - Keep `run_council(subject_ref=..., object_snapshot=...)` and existing API as-is.
-   - Optionally: if a caller has a `NodeRef`, they can pass `subject_ref=node_ref_to_subject_ref(node_ref)` and (if needed) build `object_snapshot` from `NodeSnapshot` (e.g. from an adapter). No change to atria_tools or API required for Phase 1.
+   - Optionally: if a caller has a `NodeRef`, they can pass `subject_ref=node_ref_to_subject_ref(node_ref)` and (if needed) build `object_snapshot` from `NodeSnapshot` (e.g. from an adapter). No change to zenaf_tools or API required for Phase 1.
 
 5. **New code paths only**
    - Any **new** feature that needs cross-module identity or workspace/owner (e.g. “list all nodes for this user”, “link this task to this brief”) can use NodeRef/NodeSnapshot and the adapters. Existing features continue to use current entities and SubjectRef where they already do.
@@ -129,7 +129,7 @@ NodeSnapshot
 | **Intake storage** | No change to intake item schema or persistence. |
 | **API contracts** | RunParams, council API, VE API, intake API keep current shapes. No mandatory `node_ref` or `workspace_id` in request/response. |
 | **judgment_substrate.py** | SubjectRef, SubjectSnapshot, JudgmentSnapshot, SeatJudgment, CouncilRunArtifact stay as-is. No replacement by NodeRef in this file. |
-| **atria_tools.py** | `run_council` and `run_council_stream` keep `subject_ref` and `object_snapshot`; no need to accept NodeRef directly unless we add a thin adapter at the call site. |
+| **zenaf_tools.py** | `run_council` and `run_council_stream` keep `subject_ref` and `object_snapshot`; no need to accept NodeRef directly unless we add a thin adapter at the call site. |
 | **Frontend** | No new UI, no workspace or user selectors. Node layer is internal only. |
 | **Persistence** | No new “nodes” table, no global node store. *(Tombstoned adapter modules are not a supported path.)* |
 
@@ -141,6 +141,6 @@ NodeSnapshot
 - **Location:** `local_ai/node_substrate.py` (types + normalize + node_ref_to_subject_ref). **`node_adapters.py` retired (tombstoned).** Prefer **`judgment_substrate.py`** for identity/judgment primitives.
 - **Path:** Phase 1 originally included adapters — **superseded** by SubjectRef + JudgmentTrunk + VE persistence; historical Phase 2/3 notes below remain directional only.
 - **Adapters:** Not in use; do not revive `node_adapters` / `subject_adapters`.
-- **Do not change:** VE/Content/Intake storage and models, API contracts, judgment_substrate types, atria_tools signatures, frontend.
+- **Do not change:** VE/Content/Intake storage and models, API contracts, judgment_substrate types, zenaf_tools signatures, frontend.
 
 This keeps the Node substrate additive and internal, and reduces future retrofit cost for multi-user support, shared references, judgment targets, and cross-module linking without destabilizing current product behavior.

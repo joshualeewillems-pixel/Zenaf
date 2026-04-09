@@ -27,7 +27,7 @@ def load_program_state(repo: Path) -> dict[str, Any]:
     if not path.is_file():
         raise ProgramStateError(
             f"Missing program state file: {path}. "
-            "Create docs/01_TRUTH/convergence_program_state.json (see ATRIA_CONVERGENCE_PROGRAM_PLAN.md)."
+            "Create docs/01_TRUTH/convergence_program_state.json (see ZENAF_CONVERGENCE_PROGRAM_PLAN.md)."
         )
     try:
         raw = path.read_text(encoding="utf-8")

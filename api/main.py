@@ -1,5 +1,5 @@
 """
-Atria API: thin FastAPI bridge to the local_ai engine.
+Zenaf API: thin FastAPI bridge to the local_ai engine.
 POST /run dispatches to existing tools; no duplicated business logic.
 """
 import subprocess
@@ -10,6 +10,10 @@ from pathlib import Path
 _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
+
+from local_ai.env_legacy_aliases import apply_zenaf_env_legacy_aliases
+
+_ENV_LEGACY_ALIASES_APPLIED = apply_zenaf_env_legacy_aliases()
 
 import json
 import logging
@@ -25,27 +29,28 @@ from local_ai.perf_trace import perf_begin, perf_mark, perf_read_context, perf_r
 
 logger = logging.getLogger(__name__)
 # Council perf correlation (`local_ai.perf_trace`): always INFO for this logger so runs are diagnosable without raising root log noise.
-logging.getLogger("atria.perf").setLevel(logging.INFO)
-logging.getLogger("atria.ollama").setLevel(logging.INFO)
-logging.getLogger("atria.server_ai_action").setLevel(logging.INFO)
+logging.getLogger("zenaf.perf").setLevel(logging.INFO)
+logging.getLogger("zenaf.ollama").setLevel(logging.INFO)
+logging.getLogger("zenaf.server_ai_action").setLevel(logging.INFO)
 
 app = FastAPI(
-    title="Atria API",
+    title="Zenaf API",
     description="Bridge for the cockpit frontend; calls local_ai engine.",
     version="0.1.0",
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    # Dev SPA is bound to 127.0.0.1 only (see frontend/vite.config.ts) so cookies align with API_BASE.
+    allow_origins=["http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=[
-        "X-Atria-Model-Used",
-        "X-Atria-Provider-Used",
-        "X-Atria-Routing-Override",
-        "X-Atria-Perf-Run-Id",
+        "X-Zenaf-Model-Used",
+        "X-Zenaf-Provider-Used",
+        "X-Zenaf-Routing-Override",
+        "X-Zenaf-Perf-Run-Id",
     ],
 )
 
@@ -110,10 +115,10 @@ def _check_startup_dependencies() -> None:
         ("pandas", "pandas", "Required for Analyze/Simulate/Recommend/Assess (File Steward)."),
         ("duckduckgo_search", "duckduckgo-search", "Required for Web Research mode."),
         ("local_ai", "local_ai", "Engine package (must be run from repo root)."),
-        ("local_ai.atria_tools", "local_ai.atria_tools", "Engine tools (analyze, council, web_research, etc.)."),
+        ("local_ai.zenaf_tools", "local_ai.zenaf_tools", "Engine tools (analyze, council, web_research, etc.)."),
         ("local_ai.providers", "local_ai.providers", "Provider modules (council resolves via ExecutionPrincipal + resolver)."),
     ]
-    print("Atria API startup checks")
+    print("Zenaf API startup checks")
     for module_name, pip_name, _reason in checks:
         try:
             __import__(module_name)
@@ -126,6 +131,17 @@ def _check_startup_dependencies() -> None:
 @app.on_event("startup")
 def _on_startup() -> None:
     """Run dependency checks when the API process starts."""
+    if _ENV_LEGACY_ALIASES_APPLIED:
+        print(
+            "  env: legacy ATRIA_* / vendor aliases applied (source→dest): "
+            + ", ".join(f"{src}→{dest}" for dest, src in _ENV_LEGACY_ALIASES_APPLIED)
+        )
+    try:
+        from local_ai.legacy_atria_migration import run_all_legacy_atria_migrations
+
+        run_all_legacy_atria_migrations(_repo_root)
+    except Exception as e:
+        print(f"  legacy .atria migration skipped or failed: {e}")
     _check_startup_dependencies()
     try:
         from local_ai.vision_execution import storage as _vst
@@ -181,7 +197,7 @@ class RunParams(BaseModel):
     folder_path: str | None = None
     question: str | None = None
     query: str | None = None
-    included_agents: list[str] | None = None  # council: strategist, operator, analyst, governance, brand, atria
+    included_agents: list[str] | None = None  # council: strategist, operator, analyst, governance, brand, zenaf
     # Council: full definitions for selected perspectives (so custom perspectives get their own voice)
     perspective_definitions: list[dict] | None = None
     # Reassess low-confidence: items from assess, one perspective as reviewer
@@ -231,7 +247,7 @@ class RunRequest(BaseModel):
     params: RunParams | None = None
     context: dict | None = None  # optional; for progression, previous result summary, etc.
     routing_context: RunRoutingContext | None = None
-    # Explicit execution plane: "account" (default) or "system" (requires ATRIA_SYSTEM_EXECUTION_KEY + header).
+    # Explicit execution plane: "account" (default) or "system" (requires ZENAF_SYSTEM_EXECUTION_KEY + header).
     execution_scope: str | None = None
 
 
@@ -357,7 +373,7 @@ def _log_council_routing_trace(mode: str, request: RunRequest, exec_meta: dict) 
             logger.warning(
                 "council: workspace_council intent resolved to ollama — check ai_execution_policy.json "
                 "overrides_by_action_intent.workspace_council; for cloud OpenAI use an authenticated user "
-                "(OPENAI_API_KEY or Settings key) or system ATRIA_SYSTEM_OPENAI_KEY; anonymous does not use OPENAI_API_KEY."
+                "(OPENAI_API_KEY or Settings key) or system ZENAF_SYSTEM_OPENAI_KEY; anonymous does not use OPENAI_API_KEY."
             )
 
 
@@ -452,7 +468,7 @@ if path:
 def _run_analyze(params: RunParams) -> dict:
     if not params or not (params.folder_path or "").strip():
         raise ValueError("analyze requires params.folder_path")
-    from local_ai.atria_tools import analyze_file_steward_folder
+    from local_ai.zenaf_tools import analyze_file_steward_folder
     return analyze_file_steward_folder(params.folder_path.strip())
 
 
@@ -462,7 +478,7 @@ CONFIDENCE_THRESHOLD = 0.4
 def _run_simulate(params: RunParams) -> dict:
     if not params or not (params.folder_path or "").strip():
         raise ValueError("simulate requires params.folder_path")
-    from local_ai.atria_tools import simulate_folder_plan
+    from local_ai.zenaf_tools import simulate_folder_plan
     allowed = params.suggested_folders if params.suggested_folders else None
     return simulate_folder_plan(params.folder_path.strip(), allowed_folders=allowed)
 
@@ -470,7 +486,7 @@ def _run_simulate(params: RunParams) -> dict:
 def _run_recommend(params: RunParams) -> dict:
     if not params or not (params.folder_path or "").strip():
         raise ValueError("recommend requires params.folder_path")
-    from local_ai.atria_tools import recommend_child_folders
+    from local_ai.zenaf_tools import recommend_child_folders
     raw = recommend_child_folders(params.folder_path.strip())
     if raw.get("error"):
         return raw
@@ -521,7 +537,7 @@ def _run_reassess_low_confidence(params: RunParams) -> list:
     """Perspective-driven reassessment of low-confidence items; optional folder_path for content-based deeper pass. Returns list of {item_name, suggested_folder, rationale, status, confidence}."""
     if not params or not (params.low_confidence_items and params.perspective_definition):
         raise ValueError("reassess_low_confidence requires params.low_confidence_items and params.perspective_definition")
-    from local_ai.atria_tools import reassess_low_confidence
+    from local_ai.zenaf_tools import reassess_low_confidence
     folder_path = (params.folder_path or "").strip() or None
     return reassess_low_confidence(
         items=params.low_confidence_items,
@@ -535,7 +551,7 @@ def _run_web_research(params: RunParams) -> dict:
     """Call web_research(query). query required. Returns query, top_findings, sources, notes."""
     if not params or not (params.query or "").strip():
         raise ValueError("web_research requires params.query")
-    from local_ai.atria_tools import web_research
+    from local_ai.zenaf_tools import web_research
     raw = web_research(params.query.strip())
     if raw.get("error"):
         return raw
@@ -557,7 +573,7 @@ def _run_content_generate(params: RunParams, *, execution_principal: ExecutionPr
     refinement = (getattr(params, "content_refinement", None) or "").strip().lower() or None
     if output_type not in ("script", "newsletter"):
         return "Error: content_output_type must be 'script' or 'newsletter'."
-    from local_ai.atria_tools import generate_content
+    from local_ai.zenaf_tools import generate_content
     return generate_content(brief, source, output_type, refinement=refinement, execution_principal=execution_principal)
 
 
@@ -596,8 +612,8 @@ def _run_next_step(
             context_str = f"Folder: {context['folder_path'].strip()}"
     question = (params.question or "").strip() if params else ""
 
-    from local_ai.atria_tools import build_next_step_prompt, generate_next_step_raw, parse_next_step_model_output
-    from local_ai.atria_tools import suggest_next_step
+    from local_ai.zenaf_tools import build_next_step_prompt, generate_next_step_raw, parse_next_step_model_output
+    from local_ai.zenaf_tools import suggest_next_step
     from local_ai.execution_policy.externalization import (
         WORKSPACE_NEXT_STEP_INTENT,
         maybe_externalize_for_cloud,
@@ -1079,7 +1095,7 @@ def _run_council(
     # Keep existing behavior when teacher is off.
     if s.teacher_mode == "off":
         setattr(_run_council, "_last_teacher_meta", None)
-        from local_ai.atria_tools import run_council
+        from local_ai.zenaf_tools import run_council
 
         return run_council(
             question,
@@ -1246,7 +1262,7 @@ def _enrich_context_with_ambiguity_resolution(context_str: str | None, signals: 
     if not queries:
         return context_str
     try:
-        from local_ai.atria_tools import web_research
+        from local_ai.zenaf_tools import web_research
     except ImportError:
         return context_str
     findings: list[str] = []
@@ -1509,7 +1525,7 @@ def _council_stream_gen(
 
     perf_mark("_council_stream_gen_no_teacher_path", teacher_mode=getattr(s, "teacher_mode", None))
     setattr(_council_stream_gen, "_last_teacher_meta", None)
-    from local_ai.atria_tools import run_council_stream
+    from local_ai.zenaf_tools import run_council_stream
 
     council_integrity_run_id = str(uuid.uuid4())
     council_preflight_dict = _stream_preflight
@@ -1884,16 +1900,16 @@ def run_stream(body: RunRequest, http_request: Request):
         )
     headers: dict[str, str] = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     if exec_meta.get("model_used"):
-        headers["X-Atria-Model-Used"] = str(exec_meta["model_used"])
+        headers["X-Zenaf-Model-Used"] = str(exec_meta["model_used"])
     if exec_meta.get("provider_used"):
-        headers["X-Atria-Provider-Used"] = str(exec_meta["provider_used"])
+        headers["X-Zenaf-Provider-Used"] = str(exec_meta["provider_used"])
     if "routing_override_active" in exec_meta:
-        headers["X-Atria-Routing-Override"] = "1" if exec_meta["routing_override_active"] else "0"
+        headers["X-Zenaf-Routing-Override"] = "1" if exec_meta["routing_override_active"] else "0"
     if exec_meta.get("execution_principal_ref"):
-        headers["X-Atria-Execution-Principal"] = str(exec_meta["execution_principal_ref"])
+        headers["X-Zenaf-Execution-Principal"] = str(exec_meta["execution_principal_ref"])
     if exec_meta.get("execution_scope"):
-        headers["X-Atria-Execution-Scope"] = str(exec_meta["execution_scope"])
-    headers["X-Atria-Perf-Run-Id"] = perf_correlation_id
+        headers["X-Zenaf-Execution-Scope"] = str(exec_meta["execution_scope"])
+    headers["X-Zenaf-Perf-Run-Id"] = perf_correlation_id
 
     def _stream_body():
         _cid = _stream_perf_cid or perf_correlation_id
@@ -1956,4 +1972,4 @@ def run_stream(body: RunRequest, http_request: Request):
 @app.get("/health")
 def health():
     """Simple health check for dev and deployment."""
-    return {"status": "ok", "service": "atria-api"}
+    return {"status": "ok", "service": "zenaf-api"}

@@ -4,7 +4,7 @@ import { deriveBlockersMarkdown } from './blockersFromVe'
 import type { ExecutionStep } from '../vision-execution/types'
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import { explainTeacherMarkdown } from './mapCouncilActions'
-import { effectiveGrowthTriad } from './effectiveGrowthTriad'
+import { assessNodeFlowAndChannels } from '../flow/assessNodeFlowAndChannels'
 import { growthTriadCaption } from './mapGrowthMetrics'
 import { MapGrowthTriad } from './MapGrowthTriad'
 import type { GrowthTriadMetrics } from './mapGrowthMetrics'
@@ -22,7 +22,7 @@ import { MapTriadInspectorContent, type TriadInspectorSection } from './mapTriad
 import { DeferredPromptTodosSection } from '../vision-execution/DeferredPromptTodosSection'
 import { mapWorkspaceRemindersTitle } from '../developmentalGuidance/systemPromptTitle'
 import { buildTriadSuggestedQuestion } from './triadConversationPrompts'
-import { assessNodeFlowAndChannels } from '../flow/assessNodeFlowAndChannels'
+import { effectiveGrowthTriad } from './effectiveGrowthTriad'
 
 type Props = {
   selected: MapNodePayload | null
@@ -184,10 +184,11 @@ export function MapChatShell({
     setTriadSection('soil')
   }, [selected?.ref.id, selected?.ref.veType])
 
-  const unifiedAssessment = useMemo(
-    () => (selected ? assessNodeFlowAndChannels(selected, { bundle: entityBundle, councilRuns: [] }) : null),
-    [selected, entityBundle],
-  )
+  const unifiedAssessment = useMemo(() => {
+    if (!selected) return null
+    return assessNodeFlowAndChannels(selected, { bundle: entityBundle, councilRuns: [] })
+  }, [selected, entityBundle])
+
   const interpretation = unifiedAssessment?.interpretation ?? null
 
   const growthTriad = useMemo(() => {
@@ -196,12 +197,16 @@ export function MapChatShell({
     return selected ? effectiveGrowthTriad(selected, entityBundle) : null
   }, [growthTriadOverride, unifiedAssessment, selected, entityBundle])
 
+  /** Map-side flow read — same path as invite ranking (`deriveFocusInvites`). */
+  const flowRead = unifiedAssessment?.flow ?? null
+
   const growthCaption = useMemo(
     () =>
       growthCaptionOverride ??
-      interpretation?.summary ??
-      (selected && growthTriad ? growthTriadCaption(growthTriad, growthKindLabel(selected.kind)) : ''),
-    [growthCaptionOverride, interpretation?.summary, selected, growthTriad],
+      (flowRead?.trunkSummary ??
+        interpretation?.summary ??
+        (selected && growthTriad ? growthTriadCaption(growthTriad, growthKindLabel(selected.kind)) : '')),
+    [growthCaptionOverride, flowRead?.trunkSummary, interpretation?.summary, selected, growthTriad],
   )
   const guidanceScript = useMemo(
     () => (selected && growthTriad ? buildGuidanceScriptForNode(selected, growthTriad) : null),
@@ -512,6 +517,34 @@ export function MapChatShell({
                     activeSegment={triadSection}
                     onSegmentClick={onTriadSegmentClick}
                   />
+                ) : null}
+                {unifiedAssessment ? (
+                  <div
+                    data-testid="map-maintenance-readout"
+                    className="rounded-lg border border-stone-800 bg-stone-900/50 px-3 py-2 space-y-1"
+                  >
+                    <div className="text-[10px] uppercase tracking-wide text-stone-500">Maintenance readout</div>
+                    <p className="text-[11px] text-stone-400 leading-snug">
+                      <span className="text-stone-500">Weakest channel:</span>{' '}
+                      <span data-testid="map-lowest-channel" className="text-stone-200">
+                        {unifiedAssessment.lowest_channel}
+                      </span>
+                      <span className="text-stone-600"> · </span>
+                      <span className="text-stone-500">Dominant issue:</span>{' '}
+                      <span data-testid="map-dominant-issue" className="text-stone-200">
+                        {unifiedAssessment.flow.dominantIssue}
+                      </span>
+                      <span className="text-stone-600"> · </span>
+                      <span className="text-stone-500">Clean stone:</span>{' '}
+                      <span data-testid="map-clean-stone-ready" className="text-stone-200">
+                        {unifiedAssessment.clean_stone_ready ? 'yes' : 'no'}
+                      </span>
+                    </p>
+                    <p className="text-[10px] text-stone-600 leading-snug">
+                      Aligns map chrome, this panel, and invite ranking via <code className="text-stone-500">assessNodeFlowAndChannels</code>
+                      (rules v{unifiedAssessment.rules_version}).
+                    </p>
+                  </div>
                 ) : null}
                 <MapTriadInspectorContent
                   selected={selected}

@@ -2,6 +2,7 @@ import type { MapNodePayload } from './ontology'
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import { isStaleIso } from './deriveVisualState'
 import { PROJECTION_UNSCOPED_INITIATIVE_ID } from './mapCouncilActions'
+import { effectiveConditionSeverity } from './resolveConditionSeverity'
 
 function projectsUnderInitiative(bundle: VisionMapEntityBundle, initiativeId: string) {
   return bundle.projects.filter((p) => {
@@ -13,7 +14,7 @@ function projectsUnderInitiative(bundle: VisionMapEntityBundle, initiativeId: st
 /** One-line “living” read for the chat shell header. */
 export function livingSummaryLine(p: MapNodePayload, bundle: VisionMapEntityBundle | null): string {
   const g = p.growth
-  const c = p.condition
+  const sev = effectiveConditionSeverity(p)
   const growthPhrase =
     g === 'growing'
       ? 'is growing'
@@ -40,12 +41,17 @@ export function livingSummaryLine(p: MapNodePayload, bundle: VisionMapEntityBund
             ? 'This fruit'
             : 'This seed'
 
+  const stoneRead =
+    sev >= 3
+      ? 'Map stone: critical fractures.'
+      : sev === 2
+        ? 'Map stone: clear structural cracks.'
+        : sev === 1
+          ? 'Map stone: light hairline stress.'
+          : 'Map stone: smooth.'
+
   if (p.kind === 'flower') {
-    if (c === 'blocked') return `${noun} is blocked — the stem should read tense until cleared.`
-    if (c === 'stale') return `${noun} has gone quiet; worth a nudge or scope check.`
-    if (c === 'teacher-warned') return `${noun} sits under a teacher warning — keep supervision in view.`
-    if (c === 'teacher-vetoed') return `${noun} is framed by teacher veto — treat downstream text as supervised.`
-    return `${noun} ${growthPhrase}; the row reads ${c === 'healthy' ? 'steady' : 'mixed'}.`
+    return `${noun} ${growthPhrase}. ${stoneRead}`
   }
 
   if (p.kind === 'fruit') {
@@ -53,9 +59,7 @@ export function livingSummaryLine(p: MapNodePayload, bundle: VisionMapEntityBund
   }
 
   if (p.kind === 'seed') {
-    if (c === 'stale') return `${noun} has rested a long while; promote, link, or prune intentionally.`
-    if (c === 'blocked') return `${noun} carries tension at the root before it becomes a tree.`
-    return `${noun} ${growthPhrase}, still adjacent to formal structure.`
+    return `${noun} ${growthPhrase}, still adjacent to formal structure. ${stoneRead}`
   }
 
   if (p.kind === 'branch' && bundle && p.ref.veType === 'project') {
@@ -65,11 +69,10 @@ export function livingSummaryLine(p: MapNodePayload, bundle: VisionMapEntityBund
     const bits: string[] = []
     if (blocked >= 1) bits.push(`${blocked} flower${blocked > 1 ? 's' : ''} read blocked`)
     if (staleT >= 1) bits.push(`${staleT} quiet petal${staleT > 1 ? 's' : ''}`)
-    if (c === 'teacher-warned') bits.push('a teacher warning rides this branch')
-    if (c === 'teacher-vetoed') bits.push('teacher veto touches this branch')
     const stem = `${noun} ${growthPhrase}`
-    if (bits.length === 0) return `${stem}; downstream tasks look even from timestamps.`
-    return `${stem}, while ${bits.join('; ')}.`
+    const tail = sev >= 1 ? ` ${stoneRead}` : ''
+    if (bits.length === 0) return `${stem}; downstream tasks look even from timestamps.${tail}`
+    return `${stem}, while ${bits.join('; ')}.${tail}`
   }
 
   if (p.kind === 'tree' && bundle && p.ref.veType === 'initiative') {
@@ -88,21 +91,20 @@ export function livingSummaryLine(p: MapNodePayload, bundle: VisionMapEntityBund
     if (blockedFlowers >= 1)
       bits.push(`${blockedFlowers} blocked flower${blockedFlowers > 1 ? 's' : ''} under the canopy`)
     if (staleFlowers >= 3) bits.push(`${staleFlowers} quiet tasks across the field`)
-    if (c === 'teacher-warned') bits.push('teacher conflict signal in scope')
-    if (c === 'teacher-vetoed') bits.push('teacher veto in scope')
     const stem = `${noun} ${growthPhrase}`
-    if (bits.length === 0) return `${stem}; the understory looks evenly tended from timestamps.`
-    return `${stem}, while ${bits.join('; ')}.`
+    const tail = sev >= 1 ? ` ${stoneRead}` : ''
+    if (bits.length === 0) return `${stem}; the understory looks evenly tended from timestamps.${tail}`
+    return `${stem}, while ${bits.join('; ')}.${tail}`
   }
 
-  return `${noun} ${growthPhrase}; ${c === 'healthy' ? 'supervision reads calm.' : `condition reads ${c.replace('teacher-', '')}.`}`
+  return `${noun} ${growthPhrase}. ${stoneRead}`
 }
 
 /** Prose read on the node’s state — not raw enum labels. */
 export function interpretiveNodeSummary(p: MapNodePayload): string {
   const kind = p.kind
   const g = p.growth
-  const c = p.condition
+  const sev = effectiveConditionSeverity(p)
 
   const kindPhrase =
     kind === 'tree'
@@ -124,20 +126,17 @@ export function interpretiveNodeSummary(p: MapNodePayload): string {
   else if (g === 'pruned') life = 'Lifecycle reads closed or parked: treat as archival context.'
 
   let tension = ''
-  if (c === 'blocked') {
+  if (sev >= 3) {
     tension =
-      'Tension: blocked — execution is waiting on something; the map dims and jitters slightly to draw the eye without screaming.'
-  } else if (c === 'stale') {
+      'Structural read: heavy fractures on the map stone — critical instability (veto, hard block, or equivalent). Cracks are the signal, not glow or hatch.'
+  } else if (sev === 2) {
     tension =
-      'Tension: stale — time has passed without fresh updates; worth a quick operator check before trusting the snapshot.'
-  } else if (c === 'teacher-warned') {
+      'Structural read: branching cracks on the map stone — execution or supervision tension needs attention before it widens.'
+  } else if (sev === 1) {
     tension =
-      'Tension: conflicted — teacher supervision flagged a disagreement or risk while keeping native output visible.'
-  } else if (c === 'teacher-vetoed') {
-    tension =
-      'Tension: high — teacher enforcement replaced or refused native output; treat recommendations as supervisory.'
+      'Structural read: hairline cracks on the map stone — light stress; worth a glance before trusting the snapshot.'
   } else {
-    tension = 'Supervision channel reads calm: no veto or warning correlated to this node from recent studio runs.'
+    tension = 'Structural read: smooth stone — no material fracture signal on the map for this row.'
   }
 
   return [kindPhrase, life, tension].filter(Boolean).join(' ')
@@ -145,10 +144,10 @@ export function interpretiveNodeSummary(p: MapNodePayload): string {
 
 export function tensionBadges(p: MapNodePayload): { key: string; label: string; tone: 'amber' | 'slate' | 'red' | 'violet' }[] {
   const out: { key: string; label: string; tone: 'amber' | 'slate' | 'red' | 'violet' }[] = []
-  if (p.condition === 'blocked') out.push({ key: 'blocked', label: 'Blocked', tone: 'amber' })
-  if (p.condition === 'stale') out.push({ key: 'stale', label: 'Stale', tone: 'slate' })
-  if (p.condition === 'teacher-warned') out.push({ key: 'conflicted', label: 'Conflicted', tone: 'amber' })
-  if (p.condition === 'teacher-vetoed') out.push({ key: 'vetoed', label: 'Vetoed', tone: 'red' })
+  const sev = effectiveConditionSeverity(p)
+  if (sev >= 3) out.push({ key: 'critical', label: 'Critical', tone: 'slate' })
+  else if (sev === 2) out.push({ key: 'fractured', label: 'Fractured', tone: 'slate' })
+  else if (sev === 1) out.push({ key: 'stressed', label: 'Stressed', tone: 'slate' })
   if (p.growth === 'decaying') out.push({ key: 'at-risk', label: 'At risk', tone: 'violet' })
   return out
 }

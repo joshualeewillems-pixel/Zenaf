@@ -58,7 +58,7 @@ def test_null_context_matches_default_ollama_model(monkeypatch):
 
 
 def test_null_context_council_route_uses_council_model(monkeypatch):
-    monkeypatch.delenv("ATRIA_COUNCIL_MODEL", raising=False)
+    monkeypatch.delenv("ZENAF_COUNCIL_MODEL", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_MODEL", "default-m", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_COUNCIL_MODEL", "council-m", raising=False)
     r = resolve_execution_policy_for_action(None, legacy_route="council", policy_config=_policy())
@@ -67,12 +67,12 @@ def test_null_context_council_route_uses_council_model(monkeypatch):
 
 
 def test_null_context_council_env_overrides_config(monkeypatch):
-    monkeypatch.setenv("ATRIA_COUNCIL_MODEL", "env-council-model")
+    monkeypatch.setenv("ZENAF_COUNCIL_MODEL", "env-council-model")
     monkeypatch.setattr("local_ai.config.OLLAMA_MODEL", "default-m", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_COUNCIL_MODEL", "council-m", raising=False)
     r = _unwrap(resolve_execution_policy_for_action(None, legacy_route="council", policy_config=_policy()))
     assert r.primary.model == "env-council-model"
-    monkeypatch.delenv("ATRIA_COUNCIL_MODEL", raising=False)
+    monkeypatch.delenv("ZENAF_COUNCIL_MODEL", raising=False)
 
 
 def test_empty_overrides_same_as_implicit_default(monkeypatch):

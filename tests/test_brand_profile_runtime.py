@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from local_ai.atria_tools import _build_council_persona_block, _built_in_persona_dict, _council_seat_is_brand
+from local_ai.zenaf_tools import _build_council_persona_block, _built_in_persona_dict, _council_seat_is_brand
 from local_ai.context import brand_profile as bp
 
 

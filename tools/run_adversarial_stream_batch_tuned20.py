@@ -68,7 +68,7 @@ SCENARIOS_BASE: list[Scenario] = [
             "in the EU AI Act and quantum-safe cryptography for our rollout."
         ),
         # Seats only see PRIMARY-scoped workflow tradeoffs; synthesis still receives the full overreach ask
-        # via `question` (see _assemble_council_seat_prompt vs _run_council_synthesis in atria_tools).
+        # via `question` (see _assemble_council_seat_prompt vs _run_council_synthesis in zenaf_tools).
         seat_question=(
             "For Internal Workflow Cleanup only: summarize tradeoffs of staying within the Q3 scope "
             "described in PRIMARY. Do not discuss external regulations, the EU AI Act, or cryptography."
@@ -301,10 +301,10 @@ def run_stream(url: str, sc: Scenario, timeout_s: float) -> dict[str, Any]:
 
 
 def _stream_url() -> str:
-    u = (os.environ.get("ATRIA_ADVERSARIAL_STREAM_URL") or "").strip()
+    u = (os.environ.get("ZENAF_ADVERSARIAL_STREAM_URL") or "").strip()
     if u:
         return u
-    base = (os.environ.get("ATRIA_API_BASE") or "http://127.0.0.1:8010").rstrip("/")
+    base = (os.environ.get("ZENAF_API_BASE") or "http://127.0.0.1:8010").rstrip("/")
     return f"{base}/run/stream"
 
 

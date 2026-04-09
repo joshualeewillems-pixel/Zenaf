@@ -1,4 +1,4 @@
-# Atria Cockpit (frontend)
+# Zenaf Cockpit (frontend)
 
 
 
@@ -32,7 +32,7 @@ npm run dev
 
 
 
-Open http://localhost:5173. Start the Atria API on port **8010** (see `api/README.md`).
+Open **http://127.0.0.1:5173** (dev server binds to this host so cookies match `http://127.0.0.1:8010`). Start the Zenaf API on port **8010** (see `api/README.md`).
 
 
 

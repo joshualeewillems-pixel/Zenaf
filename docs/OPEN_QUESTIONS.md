@@ -7,7 +7,7 @@ Architectural ambiguities and unresolved decisions visible in the codebase. Wher
 ## 1. Intake-Specific vs Platform-Wide
 
 - **Judgment layer:** Implemented only for intake domain (`DOMAIN_INTAKE`). `local_ai/judgment/README.md` and naming suggest a shared “judgment” protocol, but persistence is intake-mirror-only. **Open:** Should other domains (e.g. Vision Execution, council decisions) ever persist judgments through this layer or a separate store?
-- **Policy layer:** Documented in `docs/ATRIA_ARCHITECTURE.md` as shared (“intake, council/perspectives, File Steward, future connectors”). Only `local_ai/intake/mirror.get_item_with_content()` uses it. **Open:** Is the intent that every future consumer of Tier B/C or external egress must call `request_access`, and how will that be enforced or adopted?
+- **Policy layer:** Documented in `docs/ZENAF_ARCHITECTURE.md` as shared (“intake, council/perspectives, File Steward, future connectors”). Only `local_ai/intake/mirror.get_item_with_content()` uses it. **Open:** Is the intent that every future consumer of Tier B/C or external egress must call `request_access`, and how will that be enforced or adopted?
 - **Queue and mirror:** Queue and mirror are intake concepts (email/fax items). **Open:** Is “queue” ever intended to be a generic platform primitive (e.g. other domains with their own queues), or always intake-specific?
 
 ---
@@ -29,7 +29,7 @@ Architectural ambiguities and unresolved decisions visible in the codebase. Wher
 
 ## 4. Mailbox Mutation Assumptions
 
-- **Read-only today:** `email_ingestion` only reads from IMAP; no mark-read, move, or delete. **Open:** When mailbox mutations are added, will they be driven from the mirror and `mailbox_action` table (as described in ATRIA_ARCHITECTURE.md) for audit and idempotency?
+- **Read-only today:** `email_ingestion` only reads from IMAP; no mark-read, move, or delete. **Open:** When mailbox mutations are added, will they be driven from the mirror and `mailbox_action` table (as described in ZENAF_ARCHITECTURE.md) for audit and idempotency?
 - **Sync state and cursors:** `mirror_sync` has `last_poll_at` and `cursor`; no code sets them. **Open:** What cursor semantics are expected (e.g. IMAP UID, or provider-specific), and should poll always update sync state after a successful run?
 
 ---

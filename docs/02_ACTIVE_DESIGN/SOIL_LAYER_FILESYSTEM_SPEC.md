@@ -41,13 +41,13 @@ This document defines **soil**: a **local-first**, **human-inspectable**, **type
 
 Resolution order (first match wins):
 
-1. Environment variable **`ATRIA_SOIL_ROOT`**: absolute path to the soil version root (the directory that contains `nodes/`).
-2. **Default:** `{user_home}/.atria/soil/v1`  
+1. Environment variable **`ZENAF_SOIL_ROOT`**: absolute path to the soil version root (the directory that contains `nodes/`).
+2. **Default:** `{user_home}/.zenaf/soil/v1`  
    On Windows, `user_home` is the user profile directory (e.g. `%USERPROFILE%`).
 
-**Documented optional convention:** power users may symlink or set `ATRIA_SOIL_ROOT` to a folder under OneDrive/Desktop for sync — at their own risk (merge conflicts are manual).
+**Documented optional convention:** power users may symlink or set `ZENAF_SOIL_ROOT` to a folder under OneDrive/Desktop for sync — at their own risk (merge conflicts are manual).
 
-The implementation **must not** silently fall back to a path inside the git repo unless the user sets `ATRIA_SOIL_ROOT` to that path.
+The implementation **must not** silently fall back to a path inside the git repo unless the user sets `ZENAF_SOIL_ROOT` to that path.
 
 ---
 
@@ -85,7 +85,7 @@ Nested VE hierarchy (initiative → project → task) may be reflected **logical
     promoted/                  # promotion audit records only (§8)
 ```
 
-**`canonical/`:** Optional human or tooling use (notes, exports). **Not** treated as source of truth by Atria unless a future product explicitly says otherwise. The minimal kernel creates an empty `canonical/` directory when ensuring a node.
+**`canonical/`:** Optional human or tooling use (notes, exports). **Not** treated as source of truth by Zenaf unless a future product explicitly says otherwise. The minimal kernel creates an empty `canonical/` directory when ensuring a node.
 
 **`soil/promoted/`:** Contains **promotion event records** (JSON), not general soil markdown items.
 
@@ -346,7 +346,7 @@ Extending the allowlist **requires** a spec bump or additive section in this doc
 
 The first code slice **only**:
 
-1. Resolves `ATRIA_SOIL_ROOT` / default root.
+1. Resolves `ZENAF_SOIL_ROOT` / default root.
 2. Ensures `{node_dir}`, `node.json`, `canonical/`, `soil/{categories}/`, `soil/promoted/`.
 3. Appends a soil Markdown file with valid frontmatter and `capture_source`.
 4. Writes a promotion JSON record under `soil/promoted/`.
@@ -357,7 +357,7 @@ The first code slice **only**:
 
 ### 12.1 CLI examples (`python -m local_ai.soil.cli`)
 
-`--root` is optional on each subcommand (defaults to `ATRIA_SOIL_ROOT` / `~/.atria/soil/v1`). For `named_system_capture`, `--capture-name` must be one of §6.3.
+`--root` is optional on each subcommand (defaults to `ZENAF_SOIL_ROOT` / `~/.zenaf/soil/v1`). For `named_system_capture`, `--capture-name` must be one of §6.3.
 
 ```bash
 python -m local_ai.soil.cli append \

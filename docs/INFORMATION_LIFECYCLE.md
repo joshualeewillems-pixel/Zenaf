@@ -1,6 +1,6 @@
 # Information Lifecycle
 
-How information moves through Atria from observation to outcome, and how the system records this lifecycle. The lifecycle **links** Vision Execution (durable core), Intake (staging/triage), and Judgment (reasoning) without duplicating them.
+How information moves through Zenaf from observation to outcome, and how the system records this lifecycle. The lifecycle **links** Vision Execution (durable core), Intake (staging/triage), and Judgment (reasoning) without duplicating them.
 
 ---
 
@@ -11,7 +11,7 @@ How information moves through Atria from observation to outcome, and how the sys
 | **1. Observation** | External input captured (e.g. intake email, file, user message). | Intake (or future: File Steward, council input). |
 | **2. Judgment** | AI or human interpretation (signals, classification, proposals). | Judgment layer (reasoning); persisted today via intake mirror for intake domain. |
 | **3. Decision** | Durable commitment recorded in Vision Execution (e.g. decision record or task creation). | Vision Execution. |
-| **4. Action** | Execution steps taken (task assignment, file change, external operation). | Vision Execution + external systems; Atria records intent or result. |
+| **4. Action** | Execution steps taken (task assignment, file change, external operation). | Vision Execution + external systems; Zenaf records intent or result. |
 | **5. Outcome** | Final result or resolution: **derived** (inferred from task/decision state) or **explicit** (human/AI assessment when completion ≠ success). | Vision Execution; derived by default; explicit assessment optional for learning. |
 
 ---
@@ -53,7 +53,7 @@ How information moves through Atria from observation to outcome, and how the sys
 
 | Field | Value |
 |-------|--------|
-| **Owned by** | Vision Execution (task updates, assignment, status) and external systems (mailbox move, file write). Atria records intent or result where it has visibility. |
+| **Owned by** | Vision Execution (task updates, assignment, status) and external systems (mailbox move, file write). Zenaf records intent or result where it has visibility. |
 | **Object types** | Task status/assignee updates; mailbox_action (audit); future: outbound API calls, file operations. |
 | **Identifiers to link** | **action_ref**: task_id + action type (e.g. `status_change`, `assigned`), or mailbox_action id, or external system id. Lifecycle can reference one or more action refs. |
 | **Minimal metadata to record** | For lifecycle: action_type (e.g. `task_created`, `task_assigned`, `task_done`, `mailbox_marked_read`), target_entity_type, target_entity_id, optional at (timestamp). Do not log full payloads; reference the owning store. |
@@ -134,7 +134,7 @@ A **lifecycle record** is a thin link object. It points at existing objects; it 
 
 **Identifiers linked end-to-end:** observation_id (intake item) → judgment_id → decision_id and task_id → outcome (derived; optional explicit assessment). All stored in existing subsystems; lifecycle is the chain of IDs (in Decision snapshot or in a single lifecycle row).
 
-**Implemented:** The first path (intake item → task) is implemented. POST `/intake/queue/{item_id}/create-task` creates the task and a Vision Execution Decision; task notes include a parseable `[Atria lifecycle] intake_item_id=... judgment_id=...` line; Decision `final_values_snapshot` holds intake_item_id, judgment_id, task_id. See `local_ai/intake/bridge.py` and INTAKE_TO_CORE_BRIDGE.md.
+**Implemented:** The first path (intake item → task) is implemented. POST `/intake/queue/{item_id}/create-task` creates the task and a Vision Execution Decision; task notes include a parseable `[Zenaf lifecycle] intake_item_id=... judgment_id=...` line; Decision `final_values_snapshot` holds intake_item_id, judgment_id, task_id. See `local_ai/intake/bridge.py` and INTAKE_TO_CORE_BRIDGE.md.
 
 ---
 
@@ -163,4 +163,4 @@ A **lifecycle record** is a thin link object. It points at existing objects; it 
 | Record **minimal** final_values_snapshot (ids + decision_type, not full item/judgment payload). | Store full judgment interpretation or full queue item in the snapshot. |
 | Treat lifecycle as **reference chain**: observation → judgment → decision → task → outcome. | Build a parallel “lifecycle” store that replicates intake mirror or Vision Execution tables. |
 
-**Principle:** The lifecycle is a **link layer** so Atria can later analyze “which observations led to which decisions and outcomes.” The source of truth for each stage remains its owning subsystem (Intake mirror, Judgment/mirror, Vision Execution). Lifecycle records only connect them by id. **Outcome:** Prefer **derived** (inferred from state) to keep the model lightweight; add **explicit outcome assessment** (human or AI) when “completion” is not the same as “successful outcome” and we want to learn from it.
+**Principle:** The lifecycle is a **link layer** so Zenaf can later analyze “which observations led to which decisions and outcomes.” The source of truth for each stage remains its owning subsystem (Intake mirror, Judgment/mirror, Vision Execution). Lifecycle records only connect them by id. **Outcome:** Prefer **derived** (inferred from state) to keep the model lightweight; add **explicit outcome assessment** (human or AI) when “completion” is not the same as “successful outcome” and we want to learn from it.

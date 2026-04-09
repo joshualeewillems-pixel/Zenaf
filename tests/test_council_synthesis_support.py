@@ -1,6 +1,6 @@
 """Coarse synthesis vs seat support heuristic (bounded integrity)."""
 
-from local_ai.atria_tools import _compute_synthesis_support_vs_seats
+from local_ai.zenaf_tools import _compute_synthesis_support_vs_seats
 
 
 def test_support_high_overlap():
@@ -38,8 +38,8 @@ def test_short_synthesis_defaults_supported():
     assert _compute_synthesis_support_vs_seats("Yes.", seats) == "supported"
 
 
-def test_strips_atria_synthesis_header():
+def test_strips_zenaf_synthesis_header():
     seats = ["Governance: Compliance review before launch."]
     # Header line stripped; vocabulary echoes seats (stopwords like "before" are omitted from overlap tokens).
-    syn = "Atria synthesis:\nGovernance compliance review launch."
+    syn = "Zenaf synthesis:\nGovernance compliance review launch."
     assert _compute_synthesis_support_vs_seats(syn, seats) == "supported"

@@ -1,6 +1,6 @@
 /**
  * Stress: cycle primary views repeatedly to catch flaky layout / memory issues.
- * Set ATRIA_E2E_NAV_STRESS_ROUNDS (default 8).
+ * Set ZENAF_E2E_NAV_STRESS_ROUNDS (default 8).
  */
 import { test, expect } from '@playwright/test'
 import { loginIfConfigured } from './helpers'
@@ -17,7 +17,7 @@ const NAV_CYCLE = [
 
 test.describe('navigation stress', () => {
   test('round-trip primary nav many times', async ({ page }) => {
-    const rounds = Math.min(40, Math.max(1, parseInt(process.env.ATRIA_E2E_NAV_STRESS_ROUNDS || '8', 10) || 8))
+    const rounds = Math.min(40, Math.max(1, parseInt(process.env.ZENAF_E2E_NAV_STRESS_ROUNDS || '8', 10) || 8))
     const res = await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 60000 })
     expect(res?.ok() || res?.status() === 304).toBeTruthy()
     await loginIfConfigured(page)

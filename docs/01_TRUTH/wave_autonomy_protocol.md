@@ -43,7 +43,7 @@ Human narrative of what happened in a session may still be appended to `rogue_ru
 
 Workflow **`.github/workflows/wave-autonomy.yml`** uses:
 
-- `concurrency.group: atria-wave-autonomy`
+- `concurrency.group: zenaf-wave-autonomy`
 - `cancel-in-progress: false`
 
 So a **second** scheduled or manual run **waits** for the first to finish instead of overlapping. Adjust only if you accept overlapping autonomy (not recommended).

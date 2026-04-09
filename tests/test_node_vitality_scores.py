@@ -8,8 +8,8 @@ from local_ai.vision_execution.node_vitality_scores import (
 )
 
 
-def test_rules_version_v1() -> None:
-    assert RULES_VERSION == "v1"
+def test_rules_version_v2() -> None:
+    assert RULES_VERSION == "v2"
 
 
 def test_task_done_fruit_and_soil() -> None:

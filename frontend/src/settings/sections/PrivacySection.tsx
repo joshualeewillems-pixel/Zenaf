@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import type { AtriaPrivacyMode } from '../../ai-actions/privacyModeBridge'
+import type { ZenafPrivacyMode } from '../../ai-actions/privacyModeBridge'
 import { readPrivacyMode, writePrivacyMode } from '../../ai-actions/privacyModeBridge'
 
-const OPTIONS: { value: AtriaPrivacyMode; label: string; hint: string }[] = [
+const OPTIONS: { value: ZenafPrivacyMode; label: string; hint: string }[] = [
   { value: 'normal', label: 'Normal', hint: 'Default execution and traces (this device only).' },
   { value: 'protected', label: 'Protected', hint: 'Stricter allowlists; trace input snapshots redacted.' },
   { value: 'restricted', label: 'Restricted', hint: 'Local-friendly allowlist, no cloud fallbacks in chain; stricter traces.' },
@@ -10,7 +10,7 @@ const OPTIONS: { value: AtriaPrivacyMode; label: string; hint: string }[] = [
 ]
 
 export function PrivacySection() {
-  const [mode, setMode] = useState<AtriaPrivacyMode>(() => readPrivacyMode())
+  const [mode, setMode] = useState<ZenafPrivacyMode>(() => readPrivacyMode())
   const hint = OPTIONS.find((o) => o.value === mode)?.hint ?? ''
 
   return (
@@ -22,15 +22,15 @@ export function PrivacySection() {
         </p>
       </div>
       <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-        <label htmlFor="atria-privacy-mode" className="text-sm text-slate-300 shrink-0">
+        <label htmlFor="zenaf-privacy-mode" className="text-sm text-slate-300 shrink-0">
           Mode
         </label>
         <select
-          id="atria-privacy-mode"
+          id="zenaf-privacy-mode"
           className="rounded-lg border border-slate-600 bg-slate-900 text-slate-100 text-sm px-3 py-2 max-w-md"
           value={mode}
           onChange={(e) => {
-            const next = e.target.value as AtriaPrivacyMode
+            const next = e.target.value as ZenafPrivacyMode
             writePrivacyMode(next)
             setMode(next)
           }}

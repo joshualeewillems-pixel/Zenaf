@@ -1,18 +1,18 @@
 ## Policy-Aware LLM Routing — Design Note
 
 **Status:** Intent / architecture direction  
-**Scope:** Future design for routing Atria requests to external LLM providers under explicit policy control.  
+**Scope:** Future design for routing Zenaf requests to external LLM providers under explicit policy control.  
 **Goal:** Treat external model usage as a **policy** problem (safety, compliance, contractual constraints), not just a provider integration, especially for PHI / HIPAA-adjacent workflows.
 
 ---
 
 ## 1. Context and intent
 
-Atria is evolving toward a **bring-your-own LLM provider** model: customers may configure local models, hosted APIs, or third-party services for council and other reasoning tasks.
+Zenaf is evolving toward a **bring-your-own LLM provider** model: customers may configure local models, hosted APIs, or third-party services for council and other reasoning tasks.
 
 For **healthcare and adjacent domains**, simply redacting or de-identifying text before calling an external model is **not sufficient** to guarantee HIPAA compliance. Provider eligibility, contracts, data handling guarantees, and feature constraints all matter.
 
-Therefore, Atria should:
+Therefore, Zenaf should:
 
 - Treat LLM routing as a **policy decision** informed by configuration, contracts, and data sensitivity.  
 - Make provider capabilities and restrictions **explicit**.  
@@ -25,7 +25,7 @@ This note records the direction; it does **not** change current behavior.
 
 ## 2. Operating modes
 
-Atria should eventually support at least three routing modes for reasoning workflows (including council):
+Zenaf should eventually support at least three routing modes for reasoning workflows (including council):
 
 ### 2.1 PHI-safe mode
 
@@ -80,7 +80,7 @@ At a high level, council and similar reasoning pipelines should pass through a *
 
 - **Provider adapter**  
   - Encapsulates how to call a given provider (Ollama, Azure OpenAI, Anthropic, etc.).  
-  - Enforces the provider’s declared constraints (e.g. no PHI, restricted tools, logging behavior) and exposes a uniform interface to the rest of Atria.
+  - Enforces the provider’s declared constraints (e.g. no PHI, restricted tools, logging behavior) and exposes a uniform interface to the rest of Zenaf.
 
 This seam is intentionally simple to describe and can be inserted in front of council and other LLM-heavy flows without rewriting business logic.
 

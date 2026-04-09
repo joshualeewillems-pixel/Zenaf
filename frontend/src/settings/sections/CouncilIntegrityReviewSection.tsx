@@ -41,7 +41,7 @@ export function CouncilIntegrityReviewSection() {
       <div>
         <h2 className="text-sm font-semibold text-slate-100">Council synthesis integrity (review)</h2>
         <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-          After council runs with <span className="text-slate-300">Include Atria synthesis</span>, a compact integrity row
+          After council runs with <span className="text-slate-300">Include Zenaf synthesis</span>, a compact integrity row
           is attached to the in-memory AI trace ring (this browser only, max ~32 traces total). Use export to compare
           combined summary vs human judgment — not a full analytics pipeline.
         </p>

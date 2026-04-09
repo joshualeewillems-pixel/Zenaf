@@ -55,7 +55,7 @@ def main() -> None:
     from tkinter import ttk, scrolledtext, messagebox
 
     root = tk.Tk()
-    root.title("Atria — Nightly harness")
+    root.title("Zenaf — Nightly harness")
     root.minsize(520, 420)
     root.geometry("720x560")
 
@@ -68,7 +68,7 @@ def main() -> None:
     ttk.Label(
         frm,
         text="Pick a profile and hit Run. API should be up (default http://127.0.0.1:8010). "
-        "Set ATRIA_NIGHTLY_EMAIL / ATRIA_NIGHTLY_PASSWORD in your environment for full smoke.",
+        "Set ZENAF_NIGHTLY_EMAIL / ZENAF_NIGHTLY_PASSWORD in your environment for full smoke.",
         wraplength=680,
     ).pack(anchor=tk.W)
 
@@ -102,7 +102,7 @@ def main() -> None:
     row3 = ttk.Frame(frm)
     row3.pack(fill=tk.X, pady=4)
     ttk.Label(row3, text="Cloud budget USD (0 = local only; sets env for this run only):").pack(side=tk.LEFT)
-    budget_var = tk.StringVar(value=os.environ.get("ATRIA_NIGHTLY_CLOUD_BUDGET_USD", "0"))
+    budget_var = tk.StringVar(value=os.environ.get("ZENAF_NIGHTLY_CLOUD_BUDGET_USD", "0"))
     ttk.Entry(row3, textvariable=budget_var, width=8).pack(side=tk.LEFT, padx=6)
     ttk.Label(row3, text="(digits only, e.g. 0.5)", foreground="gray").pack(side=tk.LEFT, padx=4)
 
@@ -182,7 +182,7 @@ def main() -> None:
         # Match pipe decoding below so progress lines and report dump are UTF-8 on Windows.
         env.setdefault("PYTHONUTF8", "1")
         if b_raw:
-            env["ATRIA_NIGHTLY_CLOUD_BUDGET_USD"] = b_raw
+            env["ZENAF_NIGHTLY_CLOUD_BUDGET_USD"] = b_raw
 
         kw: dict = {
             "cwd": str(REPO_ROOT),

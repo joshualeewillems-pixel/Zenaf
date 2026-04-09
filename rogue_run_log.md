@@ -23,8 +23,8 @@ Protocol: enforcement → bounded fix → rerun; max 2 fix attempts per violatio
 ## Wave 2D — Deterministic Commit
 
 - **Branch:** `auto/wave-2d-commit`
-- **Track A:** `check_deterministic_commit.py` — `integration_commit.py` contract markers; `infer_draft_value_from_context(` in `atria_tools.py` requires preceding `deterministic-commit` comment.
-- **Track B:** `atria_tools.py` — audit comment + `_ollama_log.info` when infer fallback produces a pending payload.
+- **Track A:** `check_deterministic_commit.py` — `integration_commit.py` contract markers; `infer_draft_value_from_context(` in `zenaf_tools.py` requires preceding `deterministic-commit` comment.
+- **Track B:** `zenaf_tools.py` — audit comment + `_ollama_log.info` when infer fallback produces a pending payload.
 - **Matrix:** Philosophy 8 automation in JSON + row 8 in `GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX.md`.
 - **Enforcement:** `run_all.py` → philosophy 8 **pass**; summary pass count 4, fail 0.
 - **Git:** `ae972d4` `Auto: Completed Wave 2D Deterministic Commit`.

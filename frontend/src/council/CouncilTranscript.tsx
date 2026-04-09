@@ -39,8 +39,8 @@ const COUNCIL_STRUCTURAL_HEADERS = new Set(
   ].map((s) => s.toLowerCase()),
 )
 
-export function stripAtriaSynthesisBlock(text: string): string {
-  return text.replace(/\n?Atria synthesis:\s*[\s\S]*$/i, '').trimEnd()
+export function stripZenafSynthesisBlock(text: string): string {
+  return text.replace(/\n?Zenaf synthesis:\s*[\s\S]*$/i, '').trimEnd()
 }
 
 function normalizeHeaderForLookup(trimmed: string): string {
@@ -78,7 +78,7 @@ function iconForMandate(id: MandateIdKey): PerspectiveIconId {
 type CouncilTranscriptProps = {
   text: string
   /** When true (default), remove integrator synthesis block from display. */
-  stripAtriaSynthesis?: boolean
+  stripZenafSynthesis?: boolean
   /** When true (default), color + icon for seat call lines (e.g. “Governance:”). */
   decorateSeatHeaders?: boolean
   /** When set, UUID / labeled entity mentions in body lines become chips that open a scoped sub-thread. */
@@ -87,11 +87,11 @@ type CouncilTranscriptProps = {
 
 export function CouncilTranscript({
   text,
-  stripAtriaSynthesis = true,
+  stripZenafSynthesis = true,
   decorateSeatHeaders = true,
   onOpenEntity,
 }: CouncilTranscriptProps) {
-  const source = stripAtriaSynthesis ? stripAtriaSynthesisBlock(text) : text
+  const source = stripZenafSynthesis ? stripZenafSynthesisBlock(text) : text
   const lines = source.split('\n')
   return (
     <div className="whitespace-pre-wrap font-sans text-xs">
@@ -107,7 +107,7 @@ export function CouncilTranscript({
           !isNumberedListLine &&
           trimmed.endsWith(':') &&
           trimmed.length > 1 &&
-          !trimmed.toLowerCase().startsWith('atria synthesis') &&
+          !trimmed.toLowerCase().startsWith('zenaf synthesis') &&
           !trimmed.startsWith('Position:') &&
           !trimmed.startsWith('Primary reason:') &&
           !trimmed.startsWith('Main risk:') &&

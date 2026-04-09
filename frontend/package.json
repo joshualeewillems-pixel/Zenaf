@@ -1,5 +1,5 @@
 {
-  "name": "atria-cockpit",
+  "name": "zenaf-cockpit",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "split:cracks": "node scripts/split-cracks-vectorized.mjs"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.1",

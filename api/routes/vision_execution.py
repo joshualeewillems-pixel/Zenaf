@@ -617,14 +617,14 @@ def get_resonance_patterns(
 
 
 _LEARNING_EXPORT_DISABLED_DETAIL = (
-    "Learning export/inspect is disabled. Set environment variable ATRIA_LEARNING_EXPORT_ENABLED=1 "
+    "Learning export/inspect is disabled. Set environment variable ZENAF_LEARNING_EXPORT_ENABLED=1 "
     "(or true/yes/on) to enable read-only buffer export for operators."
 )
 
 
 @router.get("/learning-records/stats")
 def learning_records_stats(current_user: dict = Depends(get_current_user)):
-    """Aggregate counts over the in-memory buffer (no row bodies). Gated by ``ATRIA_LEARNING_EXPORT_ENABLED``."""
+    """Aggregate counts over the in-memory buffer (no row bodies). Gated by ``ZENAF_LEARNING_EXPORT_ENABLED``."""
     _ = current_user
     from local_ai.delegation import learning_capture as LC
 
@@ -659,7 +659,7 @@ def learning_records_export(
 ):
     """
     Download a slice of the buffer as **JSON Lines** (default) or a single JSON document
-    (same fields as ``/inspect``). Requires auth + ``ATRIA_LEARNING_EXPORT_ENABLED``.
+    (same fields as ``/inspect``). Requires auth + ``ZENAF_LEARNING_EXPORT_ENABLED``.
     """
     _ = current_user
     from local_ai.delegation import learning_capture as LC
@@ -671,7 +671,7 @@ def learning_records_export(
         return Response(
             content=body.encode("utf-8"),
             media_type="application/x-ndjson; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="atria_learning_export.jsonl"'},
+            headers={"Content-Disposition": 'attachment; filename="zenaf_learning_export.jsonl"'},
         )
     return LC.inspect_learning_buffer(offset=offset, limit=limit, order=order)  # type: ignore[arg-type]
 
@@ -1008,7 +1008,7 @@ def list_decisions(
 def coordination_client_checkpoint(
     body: M.CoordinationClientCheckpointCreate, current_user: dict = Depends(get_current_user)
 ):
-    """Log a client-originated coordination checkpoint (``atria-client-trace`` activity). Returns ``activity_event_id``."""
+    """Log a client-originated coordination checkpoint (``zenaf-client-trace`` activity). Returns ``activity_event_id``."""
     try:
         aid = S.log_coordination_client_checkpoint(current_user["id"], body)
     except ValueError as e:
@@ -1592,7 +1592,7 @@ def candidate_requests_for_material_offer(
 @router.post("/distill-source")
 def distill_source(body: dict = Body(...), current_user: dict = Depends(get_current_user)):
     """Extract key themes and claims from source materials for pre-filling a content brief."""
-    from local_ai.atria_tools import distill_content_source
+    from local_ai.zenaf_tools import distill_content_source
     from local_ai.llm.execution_principal import principal_for_vision_execution_user
 
     source = (body.get("source_materials") or body.get("source") or "").strip()
@@ -2337,7 +2337,7 @@ def dismiss_aspiration_proposal_route(proposal_id: str, current_user: dict = Dep
 @router.post("/workspace-identity/scan")
 def post_workspace_identity_scan(body: M.WorkspaceIdentityScanRequest):
     """
-    Bounded deep/light scan of provided roots (default: repo root). Writes .atria/workspace-identity/v1/.
+    Bounded deep/light scan of provided roots (default: repo root). Writes .zenaf/workspace-identity/v1/.
     Does not run during meeting extract.
     """
     from local_ai.workspace_identity.snapshot import (

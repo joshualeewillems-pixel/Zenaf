@@ -18,12 +18,12 @@ const OPTIONAL_PERMISSION_ROWS: PermissionRow[] = [
   {
     key: 'behavioral_tracking',
     label: 'Behavioral tracking',
-    hint: 'Allow Atria to store interaction events used to understand usage patterns.',
+    hint: 'Allow Zenaf to store interaction events used to understand usage patterns.',
   },
   {
     key: 'personalization',
     label: 'Personalization / adaptive responses',
-    hint: 'Allow Atria to adapt guidance and response style from prior behavior signals.',
+    hint: 'Allow Zenaf to adapt guidance and response style from prior behavior signals.',
   },
   {
     key: 'interaction_pattern_storage',

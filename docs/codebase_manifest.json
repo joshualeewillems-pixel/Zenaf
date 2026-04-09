@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "Machine-readable inventory of major Atria modules. Generated from docs/01_TRUTH/CODEBASE_INVENTORY.md and current repo.",
+  "description": "Machine-readable inventory of major Zenaf modules. Generated from docs/01_TRUTH/CODEBASE_INVENTORY.md and current repo.",
   "version": "1.0",
   "generated": "2026-03-11",
   "modules": [
@@ -11,11 +11,11 @@
       "responsibilities": [
         "FastAPI app and HTTP entrypoint",
         "Startup: dependency checks and mirror load",
-        "POST /run and /run/stream dispatch by mode to atria_tools",
+        "POST /run and /run/stream dispatch by mode to zenaf_tools",
         "Mount Vision Execution and Intake routers",
         "Health and CORS"
       ],
-      "depends_on": ["local_ai.atria_tools", "local_ai.intake", "local_ai.judgment", "local_ai.vision_execution", "local_ai.providers"],
+      "depends_on": ["local_ai.zenaf_tools", "local_ai.intake", "local_ai.judgment", "local_ai.vision_execution", "local_ai.providers"],
       "persisted_data": [],
       "external_boundary_risk": "low",
       "notes": "No route calls mirror.get_item_with_content(); product contract is Tier A intake only (see docs/01_TRUTH/TRUTH_CONVERGENCE.md)."
@@ -149,14 +149,14 @@
         "Workspace: maybe_externalize_for_cloud before generate_next_step_raw; rebind before JSON parse. Initiative compiled: maybe_externalize_structured_initiative_evaluate_for_cloud (initiative_id + user_id substrings), rebind before JSON parse",
         "Tiered direction: general_lane.py (broad compile + optional parse); learning_capture.py non-blocking LearningRecord ring buffer after structured outcomes; privacy-aware redaction for restricted/local_only"
       ],
-      "depends_on": ["local_ai.execution_policy.externalization", "local_ai.atria_tools"],
+      "depends_on": ["local_ai.execution_policy.externalization", "local_ai.zenaf_tools"],
       "persisted_data": [],
       "external_boundary_risk": "medium",
-      "notes": "See COMPILED_DELEGATION_V1.md and TIERED_DELEGATION_AND_LEARNING.md; shared strict rebind in delegation/externalized_inference.py; learning_record_id on structured paths, core_profile_conversation, idea_evaluate (general capture when routed OpenAI); client outcomes via POST /vision-execution/learning-records/user-outcome; env-gated GET /vision-execution/learning-records/{stats,inspect,export} when ATRIA_LEARNING_EXPORT_ENABLED (test_learning_export.py); optional append-only JSONL ATRIA_LEARNING_PERSIST_PATH (+ ATRIA_LEARNING_PERSIST_MAX_MB) in learning_persist.py, startup in api/main.py (test_learning_persist.py); offline dedupe/summary scripts/atria_learning_jsonl_prep.py + local_ai/delegation/learning_jsonl_prep.py (test_learning_jsonl_prep.py); evidence analysis scripts/atria_learning_analysis.py + local_ai/delegation/learning_record_analysis.py (test_learning_record_analysis.py); tests include test_idea_evaluate_learning.py, test_core_profile_conversation_general_lane.py, test_learning_capture.py, test_delegation_externalized_inference.py."
+      "notes": "See COMPILED_DELEGATION_V1.md and TIERED_DELEGATION_AND_LEARNING.md; shared strict rebind in delegation/externalized_inference.py; learning_record_id on structured paths, core_profile_conversation, idea_evaluate (general capture when routed OpenAI); client outcomes via POST /vision-execution/learning-records/user-outcome; env-gated GET /vision-execution/learning-records/{stats,inspect,export} when ZENAF_LEARNING_EXPORT_ENABLED (test_learning_export.py); optional append-only JSONL ZENAF_LEARNING_PERSIST_PATH (+ ZENAF_LEARNING_PERSIST_MAX_MB) in learning_persist.py, startup in api/main.py (test_learning_persist.py); offline dedupe/summary scripts/zenaf_learning_jsonl_prep.py + local_ai/delegation/learning_jsonl_prep.py (test_learning_jsonl_prep.py); evidence analysis scripts/zenaf_learning_analysis.py + local_ai/delegation/learning_record_analysis.py (test_learning_record_analysis.py); tests include test_idea_evaluate_learning.py, test_core_profile_conversation_general_lane.py, test_learning_capture.py, test_delegation_externalized_inference.py."
     },
     {
-      "name": "atria_tools",
-      "path": "local_ai/atria_tools.py",
+      "name": "zenaf_tools",
+      "path": "local_ai/zenaf_tools.py",
       "status": "implemented",
       "responsibilities": [
         "File Steward wrappers: scan_folder, analyze_folder_structure, recommend_child_folders, assess_plan_strength, simulate_folder_plan, reassess_low_confidence",
@@ -182,7 +182,7 @@
         "Intake: config, OAuth, poll, queue list, PATCH item, judgment"
       ],
       "depends_on": ["api"],
-      "persisted_data": ["localStorage: atria-perspective-agents (cache + anonymous)", "SQLite user_council_workspace when signed in"],
+      "persisted_data": ["localStorage: zenaf-perspective-agents (cache + anonymous)", "SQLite user_council_workspace when signed in"],
       "external_boundary_risk": "low",
       "notes": "Single large App.tsx. Workspace/Content /run flows: trace coverage per ai-actions/aiTraceExemptRegistry.ts. No route uses get_item_with_content (Tier B/C by product contract)."
     },
@@ -192,7 +192,7 @@
       "status": "implemented",
       "responsibilities": [
         "Folder scan, analyze, recommend children, assess plan strength, simulate folder plan",
-        "Invoked via atria_tools (lazy import); not a registered adapter"
+        "Invoked via zenaf_tools (lazy import); not a registered adapter"
       ],
       "depends_on": [],
       "persisted_data": [],

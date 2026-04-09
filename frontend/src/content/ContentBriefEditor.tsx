@@ -89,6 +89,10 @@ export function ContentBriefEditor({
           </select>
         </div>
       </div>
+      <p className="text-[11px] text-slate-500 leading-snug">
+        Tie this package to execution context when it matters — same pattern future journal and council records will use to
+        attach narrative to initiatives and projects.
+      </p>
 
       <div>
         <label className="block text-xs text-slate-500 uppercase tracking-wide mb-1">Audience</label>

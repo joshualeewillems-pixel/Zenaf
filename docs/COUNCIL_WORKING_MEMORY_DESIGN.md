@@ -1,6 +1,6 @@
 # Council working-memory pull — minimal design
 
-**Status:** Implemented (see §7 and atria_tools.py)  
+**Status:** Implemented (see §7 and zenaf_tools.py)  
 **Scope:** Fast council only. No full memory framework, no conversation-history injection, no changes to cockpit/next-step/content flows.  
 **Goal:** Define the smallest useful working-memory layer for council now that latency is acceptable, without prompt bloat or fluff.
 
@@ -12,7 +12,7 @@
 |--------|----------------|-----------------------------------|--------|
 | **subject_ref** | Passed into `run_council` / `run_council_stream`; normalized in `judgment_substrate.normalize_subject_ref`; stored in `context_ref` and `CouncilRunArtifact.seat_judgments[].subject` | **No** — not in packet text | Identity: entity_type, entity_id, title, summary, extra. API already accepts `params.subject_ref` (dict). |
 | **object_snapshot** | Passed as dict to `run_council`; stored in `context_ref["object_snapshot"]` | **No** — not serialized into prompt | Caller-defined small snapshot; can be used for a 1–2 line “current object” line if kept tiny. |
-| **Recent VE decisions** | `ve_storage.list_decisions(entity_type, entity_id, limit)`; `_get_recent_decision_context`, `collect_decision_context`, `_format_decision_context_block` in `atria_tools.py` | **Yes** — built-in path only | Per-seat block “Recent decisions relevant to your role” (limit=5, perspective-filtered). Not in shared packet. |
+| **Recent VE decisions** | `ve_storage.list_decisions(entity_type, entity_id, limit)`; `_get_recent_decision_context`, `collect_decision_context`, `_format_decision_context_block` in `zenaf_tools.py` | **Yes** — built-in path only | Per-seat block “Recent decisions relevant to your role” (limit=5, perspective-filtered). Not in shared packet. |
 | **Related decisions for subject** | Same `list_decisions`; when `entity_type` and `entity_id` are set, can call `list_decisions(entity_type, entity_id, limit=N)` | **No** | Ideal for “recent decisions **about this object**” in working memory. |
 | **NodeSnapshot** | `node_substrate.NodeSnapshot` *(type only; `node_adapters` **retired/tombstoned**)* | **No** — no prompt builder reads them | Prefer **SubjectRef** (`judgment_substrate`) at call sites; `node_ref_to_subject_ref` bridges NodeRef→SubjectRef. Do not inject raw NodeSnapshot into packet. |
 | **JudgmentSnapshot / CouncilRunArtifact** | `judgment_substrate`; produced by council run; stored in VE `ai_proposal_snapshot` | **No** — not fed back into prompts | Output only. Do not add past council run summaries to default working memory (bloat risk). |
@@ -68,11 +68,11 @@ Rationale: Model sees the decision problem first, then a minimal “what is this
 ## 4. Smallest safe implementation path (council only)
 
 - **Files to touch**
-  - `local_ai/atria_tools.py` only (and optionally `docs/ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md` for the new block and order).
+  - `local_ai/zenaf_tools.py` only (and optionally `docs/ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE.md` for the new block and order).
 
 - **Functions**
 
-  1. **`_build_working_memory_block(subject_ref, object_snapshot, max_related=3, max_chars=400) -> str | None`** (new, in `atria_tools.py`)
+  1. **`_build_working_memory_block(subject_ref, object_snapshot, max_related=3, max_chars=400) -> str | None`** (new, in `zenaf_tools.py`)
      - If no subject_ref (or normalized ref is empty): return `None`.
      - Build one line: `Object under consideration: <entity_type> [entity_id] <title or summary>` (truncate title/summary to ~60 chars).
      - If object_snapshot is a dict with 1–2 keys (e.g. `status`, `summary`), append one short line; else skip.
@@ -116,7 +116,7 @@ When `subject_ref = { entity_type: "task", entity_id: "abc-123", title: "Ship lo
 
 ```
 Context:
-Folder: /projects/atria
+Folder: /projects/zenaf
 
 Question:
 Should we prioritize the login flow or the dashboard next?
@@ -145,7 +145,7 @@ When no subject_ref is provided, the packet is unchanged from today (no “Worki
 |------|----------------|
 | **Default working-memory policy** | Current subject snapshot (1–2 lines) + up to 3 related VE decisions; total block ≤ 400 chars. |
 | **Truth order** | context → question → **working_memory** → recent_tool_summary → constraints → operator_priorities. |
-| **Files to touch first** | `local_ai/atria_tools.py`: add `_build_working_memory_block`, extend `build_council_decision_packet`, pass subject_ref/object_snapshot from `run_council`/`run_council_stream`. |
+| **Files to touch first** | `local_ai/zenaf_tools.py`: add `_build_working_memory_block`, extend `build_council_decision_packet`, pass subject_ref/object_snapshot from `run_council`/`run_council_stream`. |
 | **Example packet** | See §6. |
 | **Out of scope** | Full memory framework, conversation history, shared artifacts, other prompt paths, synthesis input change. |
 

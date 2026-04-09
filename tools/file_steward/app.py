@@ -1469,7 +1469,7 @@ def analyze_folder_structure(folder_path):
     Reusable non-UI analysis of a folder. No file moves, no UI.
     Uses existing File Steward logic: pattern detection, domain inference, suggested children.
     Limited to immediate children only; caps item count and list sizes for large folders.
-    Returns a dict suitable for callers (e.g. Atria) or for further processing.
+    Returns a dict suitable for callers (e.g. Zenaf) or for further processing.
     """
     p = Path(folder_path).expanduser().resolve()
     if not p.exists():
@@ -1536,7 +1536,7 @@ def simulate_folder_plan(
     """
     Non-destructive preview of how File Steward would organize a folder.
     Pass 1: deterministic classification (unchanged).
-    Optional pass 2: for low-confidence / Unsorted / fallback items, uses the shared model provider (same as Atria).
+    Optional pass 2: for low-confidence / Unsorted / fallback items, uses the shared model provider (same as Zenaf).
     Capped at MAX_ANALYZE_ITEMS for large folders.
     If allowed_folders is provided (user-approved list), only those folders are used; any suggestion
     not in the list is mapped to "Unsorted".
@@ -1948,12 +1948,12 @@ def _needs_second_pass(assignment: dict) -> bool:
 
 
 def _get_llm_adapter():
-    """Principal-based adapter (same stack as Atria). Ensures Atria root is on path when run from tools/file_steward."""
+    """Principal-based adapter (same stack as Zenaf). Ensures Zenaf root is on path when run from tools/file_steward."""
     import sys
-    atria_root = Path(__file__).resolve().parent.parent.parent
-    atria_root_str = str(atria_root)
-    if atria_root_str not in sys.path:
-        sys.path.insert(0, atria_root_str)
+    zenaf_root = Path(__file__).resolve().parent.parent.parent
+    zenaf_root_str = str(zenaf_root)
+    if zenaf_root_str not in sys.path:
+        sys.path.insert(0, zenaf_root_str)
     from local_ai.llm.execution_principal import anonymous_account_principal
     from local_ai.llm.resolver import get_llm_adapter_for_principal
 
@@ -1969,7 +1969,7 @@ def _llm_suggest_child(
     folder_context: str | None = None,
 ) -> dict:
     """
-    Ask the shared model provider (same as Atria) for a suggested child folder for one item.
+    Ask the shared model provider (same as Zenaf) for a suggested child folder for one item.
     Returns {suggested_child, confidence, reason, engine: "llm_pass2"} or {error: "..."}.
     Non-destructive; no file moves.
     """
@@ -2030,7 +2030,7 @@ def refine_low_confidence_with_llm(
 ) -> list:
     """
     Run optional LLM second pass on assignments that need it.
-    Uses the shared model provider (same as Atria).
+    Uses the shared model provider (same as Zenaf).
     Returns a new list (non-destructive); low-confidence/Unsorted/fallback items
     are replaced with LLM result when successful; others are copied as-is.
     """

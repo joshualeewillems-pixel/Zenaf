@@ -1,4 +1,4 @@
-"""Run scored Studio council-native bakeoffs for 7 Atria-specific prompts.
+"""Run scored Studio council-native bakeoffs for 7 Zenaf-specific prompts.
 
 This is an admin-side helper that uses the same underlying bakeoff + scoring
 logic as the Studio endpoint (council_native_attachment lane).
@@ -66,7 +66,7 @@ def main() -> int:
         PromptSpec(
             pid=2,
             text=(
-                "Atria is in clarify-first mode.\n"
+                "Zenaf is in clarify-first mode.\n"
                 "\n"
                 "The question is vague and no PRIMARY CONTEXT is authoritative.\n"
                 "\n"
@@ -89,7 +89,7 @@ def main() -> int:
         PromptSpec(
             pid=4,
             text=(
-                "Atria is allowed to externalize, but must sanitize data.\n"
+                "Zenaf is allowed to externalize, but must sanitize data.\n"
                 "\n"
                 "Context includes:\n"
                 "- user email\n"
@@ -102,7 +102,7 @@ def main() -> int:
         PromptSpec(
             pid=5,
             text=(
-                "In Atria, the Operator and Strategist roles sometimes conflict.\n"
+                "In Zenaf, the Operator and Strategist roles sometimes conflict.\n"
                 "\n"
                 "Operator wants an executable next step.\n"
                 "Strategist wants correct framing and alignment.\n"
@@ -123,7 +123,7 @@ def main() -> int:
         PromptSpec(
             pid=7,
             text=(
-                "What are the most dangerous failure modes for a multi-agent council system like Atria when answering vague user questions?"
+                "What are the most dangerous failure modes for a multi-agent council system like Zenaf when answering vague user questions?"
             ),
         ),
     ]

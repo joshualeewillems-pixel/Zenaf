@@ -11,15 +11,15 @@
 
 | Step | UI action | Frontend | API | Backend | Model? |
 |------|-----------|----------|-----|---------|--------|
-| **Analyze** | User picks folder, clicks "Run Analyze" | `runMode('analyze', path)` → `POST /run` with `mode: 'analyze'`, `params: { folder_path }` | `api/main.py` → `_run_analyze(params)` | `atria_tools.analyze_file_steward_folder(path)` → `tools/file_steward/app.py` → `analyze_folder_structure(folder_path)` | **No** |
+| **Analyze** | User picks folder, clicks "Run Analyze" | `runMode('analyze', path)` → `POST /run` with `mode: 'analyze'`, `params: { folder_path }` | `api/main.py` → `_run_analyze(params)` | `zenaf_tools.analyze_file_steward_folder(path)` → `tools/file_steward/app.py` → `analyze_folder_structure(folder_path)` | **No** |
 | **Assess (optional)** | "Run Assess uncertainty" | `runMode('assess', path)` → `POST /run` with `mode: 'assess_uncertainty'` | `_run_assess_uncertainty(params)` | Calls `_run_simulate(params)` (no suggested_folders), then filters low-confidence; returns assess summary + simulate_tree | **No** (simulate may use LLM in a second pass if configured; default path is algorithmic) |
-| **Recommend** | "Run Suggest Folders" | `runMode('recommend', path)` → `POST /run` with `mode: 'recommend'` | `_run_recommend(params)` | `atria_tools.recommend_child_folders(path)` → `app.recommend_child_folders(folder_path)` | **No** |
+| **Recommend** | "Run Suggest Folders" | `runMode('recommend', path)` → `POST /run` with `mode: 'recommend'` | `_run_recommend(params)` | `zenaf_tools.recommend_child_folders(path)` → `app.recommend_child_folders(folder_path)` | **No** |
 
 **Functions responsible:**
 
-- **Analyzing folder contents:** `tools/file_steward/app.py` → `analyze_folder_structure(folder_path)`. Wrapper: `local_ai/atria_tools.py` → `analyze_file_steward_folder()` (and `analyze_folder_structure()`).
-- **Generating suggested folders:** `tools/file_steward/app.py` → `recommend_child_folders(folder_path)`. Wrapper: `local_ai/atria_tools.py` → `recommend_child_folders()`.
-- **Invoking council:** User clicks "Ask Council" (or "Run Council" from AI agents panel). Frontend calls `runCouncil()` → `POST /run/stream` with `mode: 'council'`, `params: { question, included_agents?, perspective_definitions? }`, `context: { folder_path?, context_block? }`. API → `_council_stream_gen(params, request.context)` → `local_ai/atria_tools.run_council_stream(question, context=context_str, ...)`.
+- **Analyzing folder contents:** `tools/file_steward/app.py` → `analyze_folder_structure(folder_path)`. Wrapper: `local_ai/zenaf_tools.py` → `analyze_file_steward_folder()` (and `analyze_folder_structure()`).
+- **Generating suggested folders:** `tools/file_steward/app.py` → `recommend_child_folders(folder_path)`. Wrapper: `local_ai/zenaf_tools.py` → `recommend_child_folders()`.
+- **Invoking council:** User clicks "Ask Council" (or "Run Council" from AI agents panel). Frontend calls `runCouncil()` → `POST /run/stream` with `mode: 'council'`, `params: { question, included_agents?, perspective_definitions? }`, `context: { folder_path?, context_block? }`. API → `_council_stream_gen(params, request.context)` → `local_ai/zenaf_tools.run_council_stream(question, context=context_str, ...)`.
 - **Passing council output back to UI:** SSE stream yields `data: {"chunk": "...", "done": false|true}`. Frontend accumulates chunks into `fullText`, then sets `setResult(councilText)`, `setLastCouncilResult(councilText)`, and appends to `agentThread`. Council output is shown in the **AI agents** (right) panel as free-form text via `CouncilText`; it is **not** shown in the left-panel "Workflow result (JSON)" (that is only for analyze/simulate/assess/recommend).
 
 ### 1.2 Pipeline diagram
@@ -181,7 +181,7 @@ Body: `{ mode: 'council', params: { question, perspective_definitions? }, contex
 - `context_str` = `context["context_block"]` if present, else `"Folder: " + context["folder_path"]` if present, else None.  
 - No `recent_tool_summary` or `key_constraints` are sent from the frontend in this flow; they stay None.
 
-**Packet built in:** `local_ai/atria_tools.py` → `build_council_decision_packet(question, context=context_str, recent_tool_summary=None, key_constraints=None, subject_ref=..., object_snapshot=...)`.
+**Packet built in:** `local_ai/zenaf_tools.py` → `build_council_decision_packet(question, context=context_str, recent_tool_summary=None, key_constraints=None, subject_ref=..., object_snapshot=...)`.
 
 **Prompt sent to council (per seat):**
 
@@ -209,7 +209,7 @@ So in practice:
 - **Suggested folder list:** Not in the context block. It appears in the **question** if the user uses the prefilled question that includes `approvedFolders.join(', ')`.
 
 **Council output:**  
-Streamed back as SSE; frontend concatenates chunks. Full text is stored in `lastCouncilResult` and shown in the right-hand AI agents panel via `CouncilText` (which only does light formatting of lines ending with `:` and "Atria synthesis:"). No parsing into structured fields for display; the UI treats the response as **free-form text**.
+Streamed back as SSE; frontend concatenates chunks. Full text is stored in `lastCouncilResult` and shown in the right-hand AI agents panel via `CouncilText` (which only does light formatting of lines ending with `:` and "Zenaf synthesis:"). No parsing into structured fields for display; the UI treats the response as **free-form text**.
 
 ---
 
@@ -237,9 +237,9 @@ The UI does **not** parse Position / Primary reason / etc. It displays the raw s
 
 **Council workflow:** Uses **`get_council_provider()`** only.
 
-- **Where:** `local_ai/atria_tools.py` in `run_council` and `run_council_stream`: `from local_ai.providers import get_council_provider` then `provider = get_council_provider()`.
+- **Where:** `local_ai/zenaf_tools.py` in `run_council` and `run_council_stream`: `from local_ai.providers import get_council_provider` then `provider = get_council_provider()`.
 - **Config:** `local_ai/providers/__init__.py` → `get_council_provider()`:
-  - If `ATRIA_COUNCIL_MODEL` env is set → `OllamaProvider(model=council_model)`.
+  - If `ZENAF_COUNCIL_MODEL` env is set → `OllamaProvider(model=council_model)`.
   - Else if `local_ai.config.OLLAMA_COUNCIL_MODEL` is set → `OllamaProvider(model=...)`.
   - Else → `get_default_provider()` (default Ollama model).
 - **Analyze / Recommend / Simulate (non-LLM path):** No model. If simulate uses an LLM second pass (e.g. `use_llm_second_pass`), that uses `get_default_provider()` inside File Steward (`tools/file_steward/app.py`), not council provider.
@@ -264,13 +264,13 @@ To make council in this workflow only suggest parent-folder categories, give bri
 
 **Exact file/function:**
 
-- **Primary:** `local_ai/atria_tools.py` → **`role_limit`** (the string appended to every seat prompt: "Return your answer in this exact structured format: Position: ... Primary reason: ..."). Tightening that string (e.g. "Keep to 1–2 sentences per field; do not propose new folder structures or renaming.") would apply to all council runs, not just folder.
+- **Primary:** `local_ai/zenaf_tools.py` → **`role_limit`** (the string appended to every seat prompt: "Return your answer in this exact structured format: Position: ... Primary reason: ..."). Tightening that string (e.g. "Keep to 1–2 sentences per field; do not propose new folder structures or renaming.") would apply to all council runs, not just folder.
 - **Scoped option:** Add an optional parameter to `build_council_decision_packet` or to `run_council`/`run_council_stream` (e.g. `constrain_to_folder_advice: bool`) and, when True, append a short **Constraints** or **Instructions** block to the packet (e.g. "Limit advice to choosing among the given folder options; one short reason per seat; do not propose new categories or restructuring."). The frontend would need to pass this when invoking council from the folder workflow (e.g. via `context.constrain_to_folder_advice` or a new param). Constraint would then live in **`build_council_decision_packet`** (add a short folder-advice-only block when requested) or in the **packet assembly** in **`run_council`**/`run_council_stream` when building the prompt for the request.
 
 **Summary:**
 
-- **Safest single place** that affects all council runs: **`local_ai/atria_tools.py`**, the **`role_limit`** string (around lines 921–931).
-- **Safest scoped place** (folder workflow only): **`local_ai/atria_tools.py`** — add a folder-specific constraint block when the request is for folder advice (e.g. when context or a flag indicates "folder options" use case), either in **`build_council_decision_packet`** (new param + optional block) or in **`run_council`**/`run_council_stream` when constructing the prompt.
+- **Safest single place** that affects all council runs: **`local_ai/zenaf_tools.py`**, the **`role_limit`** string (around lines 921–931).
+- **Safest scoped place** (folder workflow only): **`local_ai/zenaf_tools.py`** — add a folder-specific constraint block when the request is for folder advice (e.g. when context or a flag indicates "folder options" use case), either in **`build_council_decision_packet`** (new param + optional block) or in **`run_council`**/`run_council_stream` when constructing the prompt.
 
 ---
 
@@ -294,7 +294,7 @@ To make council in this workflow only suggest parent-folder categories, give bri
 - Optional: `Constraints:\n` + key_constraints
 - Optional: `Operator priorities:\n` + truncated to 220
 
-**role_limit** (appended to every seat prompt in `local_ai/atria_tools.py`):
+**role_limit** (appended to every seat prompt in `local_ai/zenaf_tools.py`):
 
 ```
 Return your answer in this exact structured format:
@@ -311,7 +311,7 @@ Response:
 **COUNCIL_SYNTHESIS_PROMPT** (used for synthesis step):
 
 ```
-You are Atria synthesizing a council discussion. Below are perspectives from the council on the same question.
+You are Zenaf synthesizing a council discussion. Below are perspectives from the council on the same question.
 Do NOT repeat or summarize each role response. Instead, produce a short, structured synthesis with:
 - Points of agreement (1–3 bullets)
 - Points of disagreement or tension (1–3 bullets)
@@ -321,12 +321,12 @@ Keep the synthesis concise and decision-ready.
 
 **Synthesis prompt template:**  
 `{COUNCIL_SYNTHESIS_PROMPT}\n\nQuestion: {q}\n\nSeat summaries:\n{combined}\n\nDecision recommendation:`  
-(or with `{combined}` as raw seat output if no summaries). Fallback when no seat output: packet + "As Atria (chief of staff / integrator), give one short decision recommendation (2–4 sentences)..."
+(or with `{combined}` as raw seat output if no summaries). Fallback when no seat output: packet + "As Zenaf (chief of staff / integrator), give one short decision recommendation (2–4 sentences)..."
 
 **Per-seat prompt:**  
 `{system}\n\n` + optional `{decisions_block}\n\n` (built-in roles only) + `{packet}{role_limit}`.
-| **Model** | **Council:** `get_council_provider()` → `OllamaProvider(model=ATRIA_COUNCIL_MODEL or config.OLLAMA_COUNCIL_MODEL or default)`. Analyze/Recommend: no model. |
+| **Model** | **Council:** `get_council_provider()` → `OllamaProvider(model=ZENAF_COUNCIL_MODEL or config.OLLAMA_COUNCIL_MODEL or default)`. Analyze/Recommend: no model. |
 | **Analysis object structure** | §2: folder_path, item_count, file_count, folder_count, repeated_tokens, repeated_years, extension_breakdown, inferred_context_domain, suggested_child_folders [, truncated, total_items_seen, items_analyzed ]. |
 | **Where folder suggestions are generated** | `tools/file_steward/app.py` → `recommend_child_folders(folder_path)`; returned list = schema + dynamic + themes, capped at 30. API returns it as `suggested_child_folders`. |
-| **Where council is invoked** | Frontend: `runCouncil()` → `POST /run/stream` (mode=council). API: `_council_stream_gen`. Backend: `run_council_stream()` in `local_ai/atria_tools.py`. |
-| **Safest place to constrain council output** | **`local_ai/atria_tools.py`** — either (1) tighten **`role_limit`** for all council, or (2) add a folder-only constraint block when building the packet or prompt (new param/flag from frontend so only folder workflow gets the constraint). |
+| **Where council is invoked** | Frontend: `runCouncil()` → `POST /run/stream` (mode=council). API: `_council_stream_gen`. Backend: `run_council_stream()` in `local_ai/zenaf_tools.py`. |
+| **Safest place to constrain council output** | **`local_ai/zenaf_tools.py`** — either (1) tighten **`role_limit`** for all council, or (2) add a folder-only constraint block when building the packet or prompt (new param/flag from frontend so only folder workflow gets the constraint). |

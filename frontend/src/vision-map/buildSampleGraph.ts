@@ -10,6 +10,7 @@ import {
   treeTopLeftForColumn,
   VISION_MAP_LAYOUT,
 } from './mapVisionLayout'
+import { mapEntityNodeLayoutPx } from './mapEntityNodeLayout'
 
 const RF_STONE_WRAPPER_CLASS = 'map-rf-node-stone'
 
@@ -42,6 +43,7 @@ export function buildSampleVisionMapGraph(): {
     type: 'entityMap',
     className: RF_STONE_WRAPPER_CLASS,
     position: seedTopLeftAboveTree(treeTL),
+    ...mapEntityNodeLayoutPx('seed'),
     data: payloads.get(`seed:${idea.id}`)!,
   })
 
@@ -50,6 +52,7 @@ export function buildSampleVisionMapGraph(): {
     type: 'entityMap',
     className: RF_STONE_WRAPPER_CLASS,
     position: treeTL,
+    ...mapEntityNodeLayoutPx('tree'),
     data: payloads.get(`tree:${initiative.id}`)!,
   })
 
@@ -65,6 +68,7 @@ export function buildSampleVisionMapGraph(): {
       type: 'entityMap',
       className: RF_STONE_WRAPPER_CLASS,
       position: bTL,
+      ...mapEntityNodeLayoutPx('branch'),
       data: payloads.get(`branch:${p.id}`)!,
     })
   })
@@ -76,6 +80,7 @@ export function buildSampleVisionMapGraph(): {
       type: 'entityMap',
       className: RF_STONE_WRAPPER_CLASS,
       position: fruitTopLeft(treeTL, outcomeAngles[i] ?? Math.PI / 2),
+      ...mapEntityNodeLayoutPx('fruit'),
       data: payloads.get(`fruit:${o.id}`)!,
     })
   })
@@ -98,6 +103,7 @@ export function buildSampleVisionMapGraph(): {
         type: 'entityMap',
         className: RF_STONE_WRAPPER_CLASS,
         position: taskTopLeft(bTL, ti, n),
+        ...mapEntityNodeLayoutPx('flower'),
         data: payloads.get(`flower:${t.id}`)!,
       })
     })

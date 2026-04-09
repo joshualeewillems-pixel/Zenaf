@@ -127,7 +127,7 @@ def test_compile_general_prompt_stable_prefix():
         destination_hint="d",
         task_instruction="t",
     )
-    assert p1.startswith("You are assisting the Atria local-first assistant.")
+    assert p1.startswith("You are assisting the Zenaf local-first assistant.")
     assert "Surface: s" in p1
 
 

@@ -51,113 +51,13 @@ Extend the **output** of the flow layer (whether on `FlowAssessment`, `UnifiedNo
 
 | Field | Role | Example shape |
 |-------|------|----------------|
-| `stance` | `proceed` vs `clarify_first` — **clarify_first is strict and rare** (see below) | Only when one answer would **materially change** the recommended action |
-| `summary` | Single narrative (issue + weakest channel + implication) | “Structure is limiting progress; grounding is thin and output remains low…” |
-| `actionLine` | Proceed: primary move. Clarify: **kind of move** (short), not a second question — avoid duplicating `clarificationQuestion` in the panel | Proceed: “Expand into steps tied to outcomes.” Clarify: “We need one clarification before choosing the next move.” |
-| `chatPrefill` | Composer seed; must stay **consistent** with visible question | Proceed: action-oriented prompt. Clarify: **same as** `clarificationQuestion` (or near-identical). |
-| `clarificationQuestion` | The **single** discriminating question (shown once in UI when clarify) | Required when `clarify_first`. |
-| `ambiguityType` | **Transport enum** — not display copy; **bias to exact parity** with `local_ai/conversation_trunk.AmbiguityType` now, not later | See type block below. |
-| `blockingClarification` | Optional explicit flag (`stance === 'clarify_first'` ⇒ true) for UI/analytics without re-deriving | Same as “needs answer to proceed” conceptually. |
+| `summary` | Single narrative (issue + weakest channel + implication) | “Structure is limiting progress; grounding is thin and output remains low, so this work cannot yet convert effort into results.” |
+| `actionLine` | One clear move (verb + intent; channel-modulated) | “Expand this into concrete steps tied to measurable outcomes.” |
+| `chatPrefill` | Composer seed aligned with same read | “What concrete milestones would prove this initiative produces real results?” |
 
-Same `dominantIssue`, `primaryAction`, `lowest_channel` drive these fields — **zero competing generators** for product-facing text (see **Node interpretation** section below).
+Same `dominantIssue`, `primaryAction`, `lowest_channel` drive all three — **zero competing generators** for product-facing text.
 
 **Triad segment click:** Prefill and inspector focus must use this contract (or the same helper) so clicks do not suggest a **wrong dimension** (e.g. soil selected but water-flavored question).
-
----
-
-## Node interpretation: clarification as first-class (not a fallback)
-
-**Problem:** Clarification behavior is split across `conversation_trunk` (mediation), `council_preflight`, and gap elicitation, but **not** driven by `assessNodeFlowAndChannels` / unified assessment. That invites a **second narrative path** (“model guessed you need clarity”) vs “the map read says we must clarify.”
-
-**Rule:** Lack of clarity is a **primary outcome** of the same interpretation pipeline as `summary` / `actionLine` / `chatPrefill` — not a downstream fallback when copy is missing.
-
-### Type shape (TS — names can ship as `NodeInterpretation` on the unified DTO)
-
-```ts
-export type InterpretationStance = 'proceed' | 'clarify_first'
-
-/**
- * Transport enum for `council_preflight` / trunk — NOT user-facing label text.
- * Values must stay in lockstep with `local_ai/conversation_trunk.AmbiguityType`;
- * add or rename only when the server enum changes, then update both sides in one PR.
- */
-export type NodeInterpretationAmbiguityType =
-  | 'missing_definition'
-  | 'unclear_priority'
-  | 'competing_priorities'
-  | 'unresolved_dependency'
-  | 'ownership_gap'
-  | 'unknown'
-
-export type NodeInterpretation = {
-  stance: InterpretationStance
-  /** True iff one discriminating answer is required before a responsible next move (redundant with stance but explicit for UI + analytics). */
-  blockingClarification?: boolean
-  /** Single narrative spine (dominant issue + weakest channel + implication). */
-  summary: string
-  /** Proceed: primary recommended move. Clarify: short “kind of stall” line only — do not repeat the question text here. */
-  actionLine: string
-  /** Composer seed; must not contradict summary or (when clarify) clarificationQuestion. */
-  chatPrefill: string
-  /** Exactly one discriminating question; required when stance === 'clarify_first'. */
-  clarificationQuestion?: string
-  /** Drives trunk `ambiguity_type` when overriding mediation. */
-  ambiguityType?: NodeInterpretationAmbiguityType
-}
-```
-
-Set **`blockingClarification: true`** when `stance === 'clarify_first'` (omit or `false` otherwise) unless you later split “soft suggest question” from “hard block” in a later revision.
-
-Attach as **`interpretation: NodeInterpretation`** on `UnifiedNodeAssessment` (or merge fields onto the same type if you prefer a flat DTO).
-
-### Where logic lives
-
-| Piece | Location |
-|-------|----------|
-| Stance + clarification question + ambiguity mapping | **`frontend/src/flow/deriveNodeInterpretation.ts`** (new): pure function `(unified: UnifiedNodeAssessment, ctx: { kind, ref, … }) → NodeInterpretation`. Called from **`assessNodeFlowAndChannels`** at the end (single export path) so all consumers get one object. |
-| Low-level flow prose today | Keep **`assessFlow` / `buildSummary`** as inputs only; **do not** add a second user-facing question generator outside `deriveNodeInterpretation`. |
-| UI | **`MapChatShell`**: **`clarify_first`** — **avoid duplicate question text**: show **`summary`** (why) + **`clarificationQuestion`** once (the actual question); composer from **`chatPrefill`** (same or near-identical to that question). Use **`actionLine`** only as a **short non-repeating** line (e.g. “One clarification needed before the next move”) or fold into layout so you do **not** get: summary + actionLine + question + prefilled question all reading as four versions of the same ask. |
-| Invites | **`deriveFocusInvites`**: when `clarify_first`, rank **one** clarify-oriented invite **first**. **Do not** invent a new invite/mode family: prefer existing **`distill`** (or nearest `InviteAction`) with **clarify-oriented copy/framing** unless product later adds a dedicated label. |
-| Dev snapshot → API | Extend **`MapTriadDevelopmentalSnapshot`** (or parallel field in council payload) with `node_interpretation: NodeInterpretation` JSON so the server does not re-infer stance. |
-| Trunk override | **`local_ai/atria_tools.py`**: after `derive_mediation_profile(...)`, if preflight has `node_interpretation.stance === "clarify_first"` and non-empty **`clarification_question`**, force **`mediation_move = "ask_discriminating_question"`** and set **`ambiguity_type`** from the payload (transport enum parity). **Do not** rely on `classify_question_kind` alone for that mediation decision when this branch applies. **Guard:** only override when the user has **not** clearly pivoted in the composer (e.g. empty draft, session opener, or message still matches prefill) so the system does not feel stubborn. |
-| Preflight merge | **`council_preflight.py`**: parse/validate `node_interpretation`; echo into Context block so trunk instructions stay consistent. |
-
-### Stance derivation — **conservative** (product law)
-
-**Encode at top of `deriveNodeInterpretation.ts` (file header comment):**
-
-> Use **`clarify_first`** only when **one discriminating answer would materially change the recommended action**.  
-> Otherwise keep **`proceed`** and let **`actionLine`** drive repair.
-
-**`clarify_first` means:** “The system cannot **responsibly** choose the next move without one answer” — **not** “this node is weak” or “soil/fruit is low.” Ordinary underdevelopment → **`proceed`** with an action-oriented recommendation.
-
-**Set `clarify_first` when** (examples — tighten in code; all should satisfy the product law):
-
-- **Missing definition / scope ambiguity** that blocks choosing between materially different next moves (e.g. no boundary, cannot tell whether to expand vs narrow vs escalate).
-- **Conflicting signals** such that picking `primaryAction` would be **unsafe** without resolution (explicit rules, not generic `clean_stone_ready === false`).
-- **Ownership or dependency ambiguity** that **blocks** the next move (not merely low water score).
-
-**Do not** set `clarify_first` for:
-
-- Low soil or low fruit **alone** (weak but interpretable → still recommend).
-
-**`clarificationQuestion`:** Exactly one string from a **small template table** keyed by `(dominantIssue, lowest_channel)` so the question is **discriminating** and aligned.
-
-When **`clarify_first`**: **`chatPrefill`** = **`clarificationQuestion`** (or near-identical); **`actionLine`** = short **non-duplicative** stall descriptor (see MapChatShell row). Set **`blockingClarification: true`**.
-
-### Minimal integration diff (ordered)
-
-1. **`unifiedNodeAssessmentTypes.ts`** — add `NodeInterpretation`, `interpretation?: NodeInterpretation` on `UnifiedNodeAssessment` (or required once shipped).
-2. **`deriveNodeInterpretation.ts`** — implement stance + question + ambiguity mapping + summary/actionLine/chatPrefill assembly (may call refactored `buildSummary` internals or duplicate minimal copy keys until `flowAssessment.ts` exports a single builder).
-3. **`assessNodeFlowAndChannels.ts`** — append `interpretation: deriveNodeInterpretation(...)` to return value.
-4. **`MapChatShell.tsx`** + triad click handler — consume `interpretation`; prefill and labels from `chatPrefill` / `clarificationQuestion`.
-5. **`deriveFocusInvites.ts`** (+ types) — accept optional `interpretation`; prioritize clarify invite when `clarify_first`.
-6. **`developmentalGuidance/types.ts`** — extend `MapTriadDevelopmentalSnapshot` with `node_interpretation?`.
-7. **`VisionMapView.tsx` / App council payload** — pass snapshot field into `council_preflight`.
-8. **`council_preflight.py`** — validate and format `node_interpretation` into PRIMARY / Context.
-9. **`atria_tools.py`** — mediation override branch when `node_interpretation.stance == "clarify_first"`.
-10. **Tests:** `deriveNodeInterpretation.test.ts`; council/trunk test for mediation override + composer pivot guard; golden cases for **proceed** vs **strict clarify_first**.
-11. **Invariant test (product-level):** for a given node read, **`summary`**, **`actionLine`**, and **`chatPrefill`** must **not contradict** each other (lightweight table/snapshot test is enough). Same generator family, one interpretation, multiple expressions.
 
 ---
 
@@ -272,9 +172,7 @@ This matches product copy you already use (e.g. fruit-weak → “What measurabl
 
 **Phase 0 — Output contract (ontology)**
 
-- Add `NodeInterpretation` (`stance`, `blockingClarification?`, `summary`, `actionLine`, `chatPrefill`, optional `clarificationQuestion`, `ambiguityType` as **transport enum** synced with trunk) via **`deriveNodeInterpretation`**; invoke at end of **`assessNodeFlowAndChannels`**.
-- Stance **`clarify_first`** is **conservative** (product law in `deriveNodeInterpretation` header); when set, single question + **`chatPrefill`** alignment + trunk override via **`council_preflight`** + **`atria_tools`** (with composer pivot guard).
-- Add **non-contradiction** tests for interpretation fields (see Node interpretation section).
+- Add `summary` / `actionLine` / `chatPrefill` (names TBD) to the flow or unified assessment pipeline — one function (or paired `buildSummary` + builders) consuming `FlowAssessment` + `lowest_channel` + `channels` + entity kind.
 - Wire **triad click prefill** to this contract (or shared helper keyed by active section + same inputs) to fix **wrong-dimension** prefills.
 
 **Phase 1 — Retire parallel guidance**

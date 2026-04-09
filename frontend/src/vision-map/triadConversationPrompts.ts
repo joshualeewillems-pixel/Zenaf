@@ -1,6 +1,7 @@
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import { STAGE_FOCUSED_QUESTIONS } from './guidanceScripts'
 import type { GrowthTriadMetrics } from './mapGrowthMetrics'
+import { MAP_SOIL_TIER_LOW_BELOW } from './mapNodeAppearance'
 import { resolveInspectEntityRef } from './mapTriadInspector'
 import type { TriadInspectorSection } from './mapTriadInspector'
 import type { MapNodePayload } from './ontology'
@@ -81,7 +82,7 @@ function clipLabel(label: string): string {
 function metricNudge(section: TriadInspectorSection, metrics: GrowthTriadMetrics | null): 0 | 1 {
   if (!metrics) return 0
   if (section === 'water' && metrics.water < 0.42) return 1
-  if (section === 'soil' && metrics.soil < 0.42) return 1
+  if (section === 'soil' && metrics.soil < MAP_SOIL_TIER_LOW_BELOW) return 1
   if (section === 'fruit' && metrics.fruit < 0.42) return 1
   return 0
 }

@@ -1,4 +1,4 @@
-# Atria Boot Flow
+# Zenaf Boot Flow
 
 <!--
 Last updated: 2026-04-04 — mirror_sync / perspectives aligned with poll path + TRUTH_CONVERGENCE.
@@ -25,7 +25,7 @@ What happens on startup and during normal operation. Based on the current codeba
 
 4. **`@app.on_event("startup")` → `_on_startup()`**  
    - **Step A:** `_check_startup_dependencies()`  
-     - Imports: `pandas`, `duckduckgo_search`, `local_ai`, `local_ai.atria_tools`, `local_ai.providers`.  
+     - Imports: `pandas`, `duckduckgo_search`, `local_ai`, `local_ai.zenaf_tools`, `local_ai.providers`.  
      - Prints ok/fail per module; does not abort the process.  
    - **Step B:** `mirror.load_into_memory()`  
      - If `intake_mirror.db` does not exist: returns `False`; nothing loaded.  
@@ -38,7 +38,7 @@ What happens on startup and during normal operation. Based on the current codeba
 5. **Vision Execution DB**  
    - Not opened or migrated at API startup.  
    - First request that hits `local_ai.vision_execution.storage` triggers `get_connection()` → `init_db(conn)` and schema creation from `schema.sql`.  
-   - During init, `_ensure_default_owner_and_backfill` creates **`owner@local.atria`** (admin) when missing, then **`phil@local.atria`** / display **Phil** (non-admin) when missing — for local multi-user checks. Passwords: `ATRIA_BOOTSTRAP_PASSWORD` or dev fallback `local-dev-owner`; `ATRIA_PHIL_BOOTSTRAP_PASSWORD` or dev fallback `phil-local-dev`.  
+   - During init, `_ensure_default_owner_and_backfill` creates **`owner@local.zenaf`** (admin) when missing, then **`phil@local.zenaf`** / display **Phil** (non-admin) when missing — for local multi-user checks. Passwords: `ZENAF_BOOTSTRAP_PASSWORD` or dev fallback `local-dev-owner`; `ZENAF_PHIL_BOOTSTRAP_PASSWORD` or dev fallback `phil-local-dev`.  
    - Admins may create additional accounts via **`POST /auth/admin/users`** (cookie session of an admin user required).
 
 ---

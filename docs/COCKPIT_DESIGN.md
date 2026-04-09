@@ -1,6 +1,6 @@
-# Atria Cockpit: Frontend Architecture & MVP Proposal
+# Zenaf Cockpit: Frontend Architecture & MVP Proposal
 
-**Goal:** A polished, local-first workflow cockpit for Atria—visual operating surface, not a chatbot. One processing mode active at a time; Python remains the backend/engine.
+**Goal:** A polished, local-first workflow cockpit for Zenaf—visual operating surface, not a chatbot. One processing mode active at a time; Python remains the backend/engine.
 
 ---
 
@@ -37,24 +37,24 @@
                              │ HTTP (localhost)
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  ATRIA API (Python, thin layer)                                  │
+│  ZENAF API (Python, thin layer)                                  │
 │  - Small FastAPI/Flask server                                    │
 │  - One route per mode (or /run with { mode, params })            │
-│  - Calls existing atria_tools / File Steward / provider / council │
+│  - Calls existing zenaf_tools / File Steward / provider / council │
 └────────────────────────────┬────────────────────────────────────┘
                              │
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │  EXISTING ENGINE (unchanged)                                     │
-│  - local_ai/atria_tools.py                                       │
+│  - local_ai/zenaf_tools.py                                       │
 │  - tools/file_steward (analyze, recommend, assess, simulate)     │
 │  - local_ai/providers, config, context, council, web_research    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 - **Cockpit:** UI only; no business logic. Sends “run this mode with these params” to the API.
-- **Atria API:** Thin adapter: maps HTTP requests to the right tool(s), returns JSON. Keeps all orchestration in Python.
-- **Engine:** Current Atria + File Steward + provider + council + context; no change for cockpit MVP.
+- **Zenaf API:** Thin adapter: maps HTTP requests to the right tool(s), returns JSON. Keeps all orchestration in Python.
+- **Engine:** Current Zenaf + File Steward + provider + council + context; no change for cockpit MVP.
 
 ---
 
@@ -98,7 +98,7 @@
   - Cards can show a short label and optionally a one-line description. In MVP they don’t need to show last result on the card; the central area is the single source of truth.
 
 - **Global chrome**
-  - Header: “Atria” + optional “Local” or “Offline” indicator.
+  - Header: “Zenaf” + optional “Local” or “Offline” indicator.
   - Footer or sidebar: optional settings (e.g. folder defaults, “Phil context on/off” later).
 
 **No separate “chat” screen in MVP.** The cockpit is mode + focus + result. If you add conversation later, it can be a separate tab or a slide-over, still backed by the same Python engine.
@@ -107,7 +107,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│  Atria · Local-first workflow cockpit                            │
+│  Zenaf · Local-first workflow cockpit                            │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐            │
@@ -137,7 +137,7 @@
 **MVP 1 (minimal):**
 
 1. **Backend**
-   - Add a minimal **Atria API** (e.g. FastAPI) in the repo (e.g. `local_ai/api/` or `api/` at root).
+   - Add a minimal **Zenaf API** (e.g. FastAPI) in the repo (e.g. `local_ai/api/` or `api/` at root).
    - Single route: **POST /run** with `{ "mode": "analyze", "params": { "folder_path": "..." } }`.
    - Implement only for **mode: "analyze"** (call `analyze_file_steward_folder`), return JSON (e.g. same dict the tool returns). All other modes return `501` or a clear “not implemented” message.
 
@@ -151,7 +151,7 @@
 3. **No Tauri in MVP 1.** Run the frontend with `npm run dev` and the API with `uvicorn` (or similar); use the browser. Add Tauri in a follow-up when the flow is stable.
 
 4. **Deliverables**
-   - Atria API server (one endpoint, analyze only).
+   - Zenaf API server (one endpoint, analyze only).
    - Cockpit UI: layout, mode cards, focus area, Analyze flow end-to-end.
    - README or short doc: how to start API + cockpit and run “Analyze” on a folder.
 
@@ -169,7 +169,7 @@
 | Item | Recommendation |
 |------|----------------|
 | **Stack** | React, TypeScript, Vite, Tailwind; Tauri 2 for later desktop packaging. |
-| **Architecture** | Cockpit (UI) → Atria API (thin Python) → existing engine (atria_tools, File Steward, provider, council, context). |
+| **Architecture** | Cockpit (UI) → Zenaf API (thin Python) → existing engine (zenaf_tools, File Steward, provider, council, context). |
 | **API** | POST /run with `mode` + `params`; optional GET /context. |
 | **Layout** | Single cockpit screen: central “current focus” (input + result) + surrounding mode cards; one mode active at a time. |
 | **Smallest MVP** | API with Analyze only; cockpit with all seven mode cards and Analyze working end-to-end; no Tauri yet. |

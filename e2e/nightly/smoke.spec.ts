@@ -2,7 +2,7 @@
 
  * Minimal browser smoke: app shell loads. Requires `npm run dev` (frontend) + API on 8010 (Vite proxy).
 
- * Credentials optional: set ATRIA_E2E_EMAIL / ATRIA_E2E_PASSWORD to walk past login if your build shows a login form.
+ * Credentials optional: set ZENAF_E2E_EMAIL / ZENAF_E2E_PASSWORD to walk past login if your build shows a login form.
 
  */
 

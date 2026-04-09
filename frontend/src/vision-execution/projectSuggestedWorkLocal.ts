@@ -3,7 +3,7 @@
  * Not synced; regenerating replaces items and clears checks.
  */
 
-const STORAGE_KEY = 'atria-project-suggested-work-v1'
+const STORAGE_KEY = 'zenaf-project-suggested-work-v1'
 
 export type ProjectSuggestionKind =
   | 'missing_ownership'

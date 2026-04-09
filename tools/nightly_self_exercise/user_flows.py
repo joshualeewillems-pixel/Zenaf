@@ -409,7 +409,7 @@ def run_user_flow_suite(
             (
                 "uf_authenticated_skipped",
                 True,
-                "known_gap: set ATRIA_NIGHTLY_EMAIL and ATRIA_NIGHTLY_PASSWORD for full VE / settings / prompt-signal flows",
+                "known_gap: set ZENAF_NIGHTLY_EMAIL and ZENAF_NIGHTLY_PASSWORD for full VE / settings / prompt-signal flows",
             )
         )
         return merge_flow_outcomes(pub, auth_out)

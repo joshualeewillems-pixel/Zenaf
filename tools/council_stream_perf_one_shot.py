@@ -6,7 +6,7 @@ Usage (repo root):
   python tools/council_stream_perf_one_shot.py --no-mock-ollama   # real Ollama (may be slow)
 
 Then grep the printed perf run id in the log file:
-  rg <uuid> atria-perf-council-last.log
+  rg <uuid> zenaf-perf-council-last.log
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-LOG_NAME = "atria-perf-council-last.log"
+LOG_NAME = "zenaf-perf-council-last.log"
 
 
 def _council_body(question: str) -> dict:
@@ -78,7 +78,7 @@ def main() -> int:
     args = p.parse_args()
 
     log_path = ROOT / LOG_NAME
-    perf_logger = logging.getLogger("atria.perf")
+    perf_logger = logging.getLogger("zenaf.perf")
     perf_logger.setLevel(logging.INFO)
     perf_logger.handlers.clear()
     fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
@@ -104,18 +104,18 @@ def main() -> int:
     body = _council_body(args.question.strip())
     client = TestClient(app)
 
-    print("[Atria perf one-shot] POST /run/stream (question=%r)" % (body["params"]["question"],))
+    print("[Zenaf perf one-shot] POST /run/stream (question=%r)" % (body["params"]["question"],))
     if not args.no_mock_ollama:
-        print("[Atria perf one-shot] OllamaProvider.generate is MOCKED for a fast finish.")
+        print("[Zenaf perf one-shot] OllamaProvider.generate is MOCKED for a fast finish.")
 
     with client.stream("POST", "/run/stream", json=body) as res:
-        perf_id = (res.headers.get("X-Atria-Perf-Run-Id") or "").strip()
-        print("[Atria perf] fetch_resolved perfRunId=%s" % perf_id)
+        perf_id = (res.headers.get("X-Zenaf-Perf-Run-Id") or "").strip()
+        print("[Zenaf perf] fetch_resolved perfRunId=%s" % perf_id)
         print(
-            "[Atria perf] headers: X-Atria-Provider-Used=%r X-Atria-Model-Used=%r status=%s"
+            "[Zenaf perf] headers: X-Zenaf-Provider-Used=%r X-Zenaf-Model-Used=%r status=%s"
             % (
-                res.headers.get("X-Atria-Provider-Used"),
-                res.headers.get("X-Atria-Model-Used"),
+                res.headers.get("X-Zenaf-Provider-Used"),
+                res.headers.get("X-Zenaf-Model-Used"),
                 res.status_code,
             )
         )
@@ -125,14 +125,14 @@ def main() -> int:
                 continue
             chunks += 1
             if chunks <= 5:
-                print("[Atria perf] sse line:", line[:200] + ("..." if len(line) > 200 else ""))
-        print("[Atria perf] sse_lines_read=%s" % chunks)
+                print("[Zenaf perf] sse line:", line[:200] + ("..." if len(line) > 200 else ""))
+        print("[Zenaf perf] sse_lines_read=%s" % chunks)
 
     if not args.no_mock_ollama:
         patcher.stop()
 
-    print("[Atria perf one-shot] Log file: %s" % log_path)
-    print("[Atria perf one-shot] Grep: rg %s %s" % (perf_id or "<no-id>", LOG_NAME))
+    print("[Zenaf perf one-shot] Log file: %s" % log_path)
+    print("[Zenaf perf one-shot] Grep: rg %s %s" % (perf_id or "<no-id>", LOG_NAME))
     return 0
 
 

@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
-import { ATRIA_VE_FOCUS_INSERT_TEXT, insertTextAtSelection, type VeFocusInsertTextDetail } from './insertTextEvent'
+import { ZENAF_VE_FOCUS_INSERT_TEXT, insertTextAtSelection, type VeFocusInsertTextDetail } from './insertTextEvent'
 
 const CORE_PROFILE_FIELDS = [
   'name',
@@ -61,7 +61,7 @@ export function useCoreProfileVoiceInsert(params: {
         })
       }
     }
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
   }, [profileId, setForm, setNotes, setProposed, setChatInput])
 }

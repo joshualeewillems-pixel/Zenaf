@@ -13,7 +13,7 @@
 
 | Layer | Owns |
 |--------|------|
-| **Internal (Atria)** | Task intent, bounded context selection, privacy/routing gating, output schema definition, prompt synthesis layout, validation, rebinding placeholders, mapping to API `result`, trace fields |
+| **Internal (Zenaf)** | Task intent, bounded context selection, privacy/routing gating, output schema definition, prompt synthesis layout, validation, rebinding placeholders, mapping to API `result`, trace fields |
 | **Remote model** | Bounded inference: emit **one JSON object** matching the contract — **not** workflow or storage |
 
 ## Pipeline (`workspace_next_step`)
@@ -81,7 +81,7 @@ Unknown keys → validation failure → `ok: false`, explicit error (no line-par
 - **`initiative_id`** — path param from `POST /initiatives/{id}/evaluate` (only if that string appears in the synthesized prompt, e.g. in `brief` or core profile text).
 - **`user_id_for_externalize`** — same value as `user_id` passed to `evaluate_initiative` (account id), only if it appears verbatim in the prompt (e.g. embedded in core profile summary).
 
-Replacements use `[[ATRIA_REF:kind:…]]` tokens (longest id first). **Rebind** runs on raw model output before JSON extract; **fail closed** if tokens are missing, corrupted, or invented (same integrity rules as workspace next step). `redact_externalization_for_privacy` applies when mapping was active. Legacy initiative path is unchanged.
+Replacements use `[[ZENAF_REF:kind:…]]` tokens (longest id first). **Rebind** runs on raw model output before JSON extract; **fail closed** if tokens are missing, corrupted, or invented (same integrity rules as workspace next step). `redact_externalization_for_privacy` applies when mapping was active. Legacy initiative path is unchanged.
 
 **Transport:** `provider.generate(external_prompt)` (shim from `ve_eval_provider_shim`).
 

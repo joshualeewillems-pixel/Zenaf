@@ -35,7 +35,7 @@
 
 ### Step 1 — Backend: folder constraint, role_limit, single seat, no synthesis
 
-**File:** `local_ai/atria_tools.py`
+**File:** `local_ai/zenaf_tools.py`
 
 - **Add** constants (e.g. near other `COUNCIL_*`):
   - `FOLDER_COUNCIL_CONSTRAINT`: text that limits the task to suggesting from the list, brief reasons only, no restructuring/strategy/long narrative.
@@ -109,7 +109,7 @@
 
 ### Step 5 (optional) — Omit operator priorities when folder_workflow
 
-**File:** `local_ai/atria_tools.py`
+**File:** `local_ai/zenaf_tools.py`
 
 - **Edit** `build_council_decision_packet`:
   - Add an optional parameter, e.g. `omit_operator_priorities: bool = False`.

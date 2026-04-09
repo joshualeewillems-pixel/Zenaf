@@ -13,9 +13,9 @@ from typing import Any
 
 # Conservative USD estimates per call type (cheap mini-tier; adjust via env multipliers).
 _DEFAULT_UNIT_COSTS = {
-    "council_stream_sanity": float(os.environ.get("ATRIA_NIGHTLY_EST_USD_COUNCIL", "0.012")),
-    "adversarial_style_stream": float(os.environ.get("ATRIA_NIGHTLY_EST_USD_ADV", "0.018")),
-    "long_context_council": float(os.environ.get("ATRIA_NIGHTLY_EST_USD_LONG", "0.035")),
+    "council_stream_sanity": float(os.environ.get("ZENAF_NIGHTLY_EST_USD_COUNCIL", "0.012")),
+    "adversarial_style_stream": float(os.environ.get("ZENAF_NIGHTLY_EST_USD_ADV", "0.018")),
+    "long_context_council": float(os.environ.get("ZENAF_NIGHTLY_EST_USD_LONG", "0.035")),
 }
 
 
@@ -70,7 +70,7 @@ class BudgetTracker:
 
 
 def parse_cloud_budget_usd() -> float:
-    raw = (os.environ.get("ATRIA_NIGHTLY_CLOUD_BUDGET_USD") or "0").strip()
+    raw = (os.environ.get("ZENAF_NIGHTLY_CLOUD_BUDGET_USD") or "0").strip()
     try:
         v = float(raw)
     except ValueError:

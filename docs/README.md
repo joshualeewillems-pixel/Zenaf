@@ -1,4 +1,4 @@
-# Atria documentation
+# Zenaf documentation
 
 **Note:** This README describes the **target** folder layout and **current** layout. **Truth docs** live under **`docs/01_TRUTH/`**. **High-signal design docs** live under **`docs/02_ACTIVE_DESIGN/`** (see that folder’s `README.md`). **Bounded implementation plans** live under **`docs/03_IMPLEMENTATION_PLANS/`** (see that folder’s `README.md`). **Reference / spec / lookup docs** live under **`docs/04_REFERENCE/`** (see that folder’s `README.md`). **Superseded or frozen docs** live under **`docs/05_ARCHIVE/`**. Other docs remain in the flat `docs/` root until later moves.
 
@@ -33,7 +33,7 @@ Then, in order:
    - **`docs/01_TRUTH/SYSTEM_REFERENCE.md`**
    - **`docs/01_TRUTH/BOOT_FLOW.md`**
    - **`docs/01_TRUTH/VISION_MAP_AND_ZEN_PROJECTION.md`** — Vision map + sand + growth triad (where it is, where it’s going, canonical files).  
-   Still in **`docs/`** root (not moved yet): **`ATRIA_ARCHITECTURE.md`**, **`ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md`**, and the rest of the library.
+   Still in **`docs/`** root (not moved yet): **`ZENAF_ARCHITECTURE.md`**, **`ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE.md`**, and the rest of the library.
 
 2. **`docs/02_ACTIVE_DESIGN/`** — **Design intent** (may run ahead of code). See **`docs/02_ACTIVE_DESIGN/README.md`**. Phase 1 seed: `VISION_EXECUTION_DESIGN.md`, `CORE_PROFILE_ARCHITECTURE.md`, `CONTEXT_ACTION_BAR_DESIGN.md` (**focus strip + voice: see `ACTIVE_VS_PLANNED` for as-built**), `EXECUTION_STEPS_DESIGN.md`, `MEDIATION_EXECUTION_DIRECTION.md`. **Product-wide AI action substrate (traces + outcomes; VE-first client module `frontend/src/ai-actions/`):** **`docs/02_ACTIVE_DESIGN/AI_ACTION_TRACE_AND_ROUTING_DESIGN.md`**. Other design docs (e.g. `COCKPIT_DESIGN.md`) remain under `docs/` until a later pass.
 
@@ -68,7 +68,7 @@ If you only read **four** current-state anchors: **`docs/01_TRUTH/ACTIVE_VS_PLAN
   **`CODEBASE_TRUTH_RULES.md`**, **`CODEBASE_INVENTORY.md`**, **`ACTIVE_VS_PLANNED.md`**, **`SYSTEM_REFERENCE.md`**, **`BOOT_FLOW.md`** — same descriptions as before; paths are now under **`01_TRUTH/`**.
 
 - **Canonical (truth) still at `docs/` root (not moved yet):**  
-  **`ATRIA_ARCHITECTURE.md`**, **`ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md`** — architecture and prompt/truth stack; cross-link with `01_TRUTH` docs.
+  **`ZENAF_ARCHITECTURE.md`**, **`ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE.md`** — architecture and prompt/truth stack; cross-link with `01_TRUTH` docs.
 
 **Conflict order:** runtime code → **`docs/01_TRUTH/CODEBASE_TRUTH_RULES.md`** → **`docs/01_TRUTH/CODEBASE_INVENTORY.md`** / **`docs/01_TRUTH/ACTIVE_VS_PLANNED.md`** / **`docs/01_TRUTH/BOOT_FLOW.md`** → **`docs/01_TRUTH/SYSTEM_REFERENCE.md`** → **`docs/02_ACTIVE_DESIGN/`** (intent) → **`docs/03_IMPLEMENTATION_PLANS/`** (bounded next work; not source of truth) → **`docs/04_REFERENCE/`** (specs / lookup; keep aligned when behavior changes; not canonical truth alone).
 

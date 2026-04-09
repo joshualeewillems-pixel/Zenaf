@@ -2,7 +2,7 @@
 Judgment Layer — shared, neutral protocol for reasoning events.
 
 Design intent:
-- Atria Core = orchestration / system coordination
+- Zenaf Core = orchestration / system coordination
 - Judgment Layer = shared protocol: observations, interpretation, proposed action,
   confidence, reason codes, review/correction
 - Modules (intake, vision→execution, council, etc.) use the judgment layer
@@ -13,7 +13,7 @@ This module defines:
 - JudgmentRecord = one structured reasoning event (minimal shape)
 - Minimal in-memory store for intake domain only; no generic framework yet.
 
-Do not fuse into Atria Core. This is infrastructure used by modules.
+Do not fuse into Zenaf Core. This is infrastructure used by modules.
 """
 from __future__ import annotations
 

@@ -1,65 +1,21 @@
-import type { FC, SVGProps } from 'react'
+import type { SVGProps } from 'react'
 import type { MapNodePayload } from '../ontology'
 import type { MapGlyphTier } from './glyphTier'
 import { mapGlyphTierFromFruit } from './glyphTier'
-
-import IdeaBare from './assets/idea-bare.svg?react'
-import IdeaFlowering from './assets/idea-flowering.svg?react'
-import IdeaFruiting from './assets/idea-fruiting.svg?react'
-import IdeaLeafy from './assets/idea-leafy.svg?react'
-
-import InitiativeBare from './assets/initiative-bare.svg?react'
-import InitiativeFlowering from './assets/initiative-flowering.svg?react'
-import InitiativeFruiting from './assets/initiative-fruiting.svg?react'
-import InitiativeLeafy from './assets/initiative-leafy.svg?react'
-
-import ProjectBare from './assets/project-bare.svg?react'
-import ProjectFlowering from './assets/project-flowering.svg?react'
-import ProjectFruiting from './assets/project-fruiting.svg?react'
-import ProjectLeafy from './assets/project-leafy.svg?react'
-
-import TaskBare from './assets/task-bare.svg?react'
-import TaskFlowering from './assets/task-flowering.svg?react'
-import TaskFruiting from './assets/task-fruiting.svg?react'
-import TaskLeafy from './assets/task-leafy.svg?react'
-
-type SvgCmp = FC<SVGProps<SVGSVGElement>>
-
-const IDEA: Record<MapGlyphTier, SvgCmp> = {
-  leafy: IdeaLeafy,
-  bare: IdeaBare,
-  flowering: IdeaFlowering,
-  fruiting: IdeaFruiting,
-}
-
-const INITIATIVE: Record<MapGlyphTier, SvgCmp> = {
-  leafy: InitiativeLeafy,
-  bare: InitiativeBare,
-  flowering: InitiativeFlowering,
-  fruiting: InitiativeFruiting,
-}
-
-const PROJECT: Record<MapGlyphTier, SvgCmp> = {
-  leafy: ProjectLeafy,
-  bare: ProjectBare,
-  flowering: ProjectFlowering,
-  fruiting: ProjectFruiting,
-}
-
-const TASK: Record<MapGlyphTier, SvgCmp> = {
-  leafy: TaskLeafy,
-  bare: TaskBare,
-  flowering: TaskFlowering,
-  fruiting: TaskFruiting,
-}
+import { DiamondFlowerGlyph } from './DiamondFlowerGlyph'
+import { IdeaSeedEmergenceGlyph, type IdeaEmergenceStage } from './IdeaSeedEmergenceGlyph'
+import { StructuralGrowthGlyph } from './StructuralGrowthGlyph'
 
 export type MapGlyphEntity = 'idea' | 'initiative' | 'project' | 'task'
 
-const BY_ENTITY: Record<MapGlyphEntity, Record<MapGlyphTier, SvgCmp>> = {
-  idea: IDEA,
-  initiative: INITIATIVE,
-  project: PROJECT,
-  task: TASK,
+/** Idea: bare/leafy = stages 1–2; flowering = buried seed (3); fruiting = mound + shoot, no seed (4). */
+const IDEA_EMERGENCE_TIER: Record<MapGlyphTier, IdeaEmergenceStage> = {
+  bare: 1,
+  leafy: 2,
+  flowerBud: 3,
+  flowerPair: 3,
+  flowerTriple: 4,
+  flowerQuad: 4,
 }
 
 export function mapNodeKindToGlyphEntity(kind: MapNodePayload['kind']): MapGlyphEntity | null {
@@ -82,10 +38,46 @@ type MapEntityGlyphProps = {
   tier: MapGlyphTier
 } & SVGProps<SVGSVGElement>
 
-/** Renders the approved SVG asset for one entity + tier (centered by parent). */
+/**
+ * Tasks (flowers): `DiamondFlowerGlyph` — bare/leafy = buds; flowering = 4-diamond; fruiting = fruit outline + gloss.
+ * Ideas (seeds): emergence stages 1–4 via `IdeaSeedEmergenceGlyph` (fruiting = stage 4, shoot only — no seed).
+ * Initiative/project: shared `StructuralGrowthGlyph` (branch rotates 90° for project in `StoneKindGlyph`).
+ */
 export function MapEntityGlyph({ entity, tier, className, ...rest }: MapEntityGlyphProps) {
-  const Cmp = BY_ENTITY[entity][tier]
-  return <Cmp className={className} role="presentation" focusable="false" {...rest} />
+  if (entity === 'task') {
+    return (
+      <DiamondFlowerGlyph
+        taskTier={tier}
+        className={className}
+        role="presentation"
+        focusable="false"
+        {...rest}
+      />
+    )
+  }
+  if (entity === 'idea') {
+    return (
+      <IdeaSeedEmergenceGlyph
+        stage={IDEA_EMERGENCE_TIER[tier]}
+        className={className}
+        role="presentation"
+        focusable="false"
+        {...rest}
+      />
+    )
+  }
+  if (entity === 'initiative' || entity === 'project') {
+    return (
+      <StructuralGrowthGlyph
+        tier={tier}
+        className={className}
+        role="presentation"
+        focusable="false"
+        {...rest}
+      />
+    )
+  }
+  return null
 }
 
 type MapEntityGlyphFromFruitProps = {

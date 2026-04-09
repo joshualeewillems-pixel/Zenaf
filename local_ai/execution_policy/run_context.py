@@ -19,12 +19,12 @@ from typing import Any, Generator, Optional
 logger = logging.getLogger(__name__)
 
 _ollama_model_override: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "atria_ollama_model_override",
+    "zenaf_ollama_model_override",
     default=None,
 )
 
 _policy_provider_override: contextvars.ContextVar[Optional[Any]] = contextvars.ContextVar(
-    "atria_policy_provider_override",
+    "zenaf_policy_provider_override",
     default=None,
 )
 

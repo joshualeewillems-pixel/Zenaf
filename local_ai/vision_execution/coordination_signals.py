@@ -19,7 +19,7 @@ from local_ai.judgment_substrate import (
 )
 
 PointerKind = Literal["activity_event", "council_stream_run"]
-EvidenceSource = Literal["atria-client-trace", "server-execution", "council_stream"]
+EvidenceSource = Literal["zenaf-client-trace", "server-execution", "council_stream"]
 Impact = Literal["positive", "neutral", "negative"]
 Dimension = Literal["clarity", "capacity", "friction"]
 
@@ -63,7 +63,7 @@ def _validate_pointer_pair(pointer: str, pointer_kind: str, evidence_source: str
         raise ValueError("Judgment requires evidence pointer")
     if pointer_kind not in ("activity_event", "council_stream_run"):
         raise ValueError("invalid pointer_kind")
-    if evidence_source not in ("atria-client-trace", "server-execution", "council_stream"):
+    if evidence_source not in ("zenaf-client-trace", "server-execution", "council_stream"):
         raise ValueError("invalid evidence_source")
     if pointer_kind == "council_stream_run" and evidence_source != "council_stream":
         raise ValueError("pointer_kind council_stream_run requires evidence_source council_stream")

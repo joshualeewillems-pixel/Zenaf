@@ -8,7 +8,7 @@ Usage (from repo root):
   python scripts/personal_inbox_fetch_gmail.py --limit 5000
 
 This will:
-- Connect to Gmail IMAP (imap.gmail.com) using the existing Atria Gmail OAuth
+- Connect to Gmail IMAP (imap.gmail.com) using the existing Zenaf Gmail OAuth
   credentials (XOAUTH2), not a password or app password.
 - Read up to N messages from INBOX, newest first.
 - Extract: subject, plain-text body (when available), from, date.
@@ -19,7 +19,7 @@ Safety:
 - Read-only: this script only issues IMAP SELECT and FETCH commands.
 - It does not delete, move, or modify any messages.
 - If Gmail OAuth is not configured, it fails with a clear message instructing
-  you to reconnect Gmail via the existing Atria flow.
+  you to reconnect Gmail via the existing Zenaf flow.
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ def _extract_date(msg: Message) -> str:
 
 def _open_imap_with_oauth() -> imaplib.IMAP4_SSL:
     """
-    Open an IMAP connection to Gmail using the existing Atria Gmail OAuth tokens.
+    Open an IMAP connection to Gmail using the existing Zenaf Gmail OAuth tokens.
 
     This reuses the same token storage and XOAUTH2 helper as intake. No
     passwords or app passwords are used here.
@@ -109,7 +109,7 @@ def _open_imap_with_oauth() -> imaplib.IMAP4_SSL:
     if not gmail_oauth.has_gmail_oauth():
         msg = (
             "Gmail OAuth credentials not found.\n"
-            "Please reconnect Gmail via the existing Atria 'Connect Gmail' flow, "
+            "Please reconnect Gmail via the existing Zenaf 'Connect Gmail' flow, "
             "then re-run this script."
         )
         raise RuntimeError(msg)
@@ -118,7 +118,7 @@ def _open_imap_with_oauth() -> imaplib.IMAP4_SSL:
     if not token_info:
         msg = (
             "Failed to load or refresh Gmail OAuth access token.\n"
-            "Please reconnect Gmail via the existing Atria 'Connect Gmail' flow, "
+            "Please reconnect Gmail via the existing Zenaf 'Connect Gmail' flow, "
             "then re-run this script."
         )
         raise RuntimeError(msg)
@@ -132,7 +132,7 @@ def _open_imap_with_oauth() -> imaplib.IMAP4_SSL:
     typ, _ = imap.authenticate("XOAUTH2", _auth_xoauth2)
     if typ != "OK":
         imap.logout()
-        raise RuntimeError("Gmail XOAUTH2 authentication failed. Try reconnecting Gmail from Atria.")
+        raise RuntimeError("Gmail XOAUTH2 authentication failed. Try reconnecting Gmail from Zenaf.")
     return imap
 
 

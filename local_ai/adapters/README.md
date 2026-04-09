@@ -1,4 +1,4 @@
-# Atria Adapters
+# Zenaf Adapters
 
 Thin connectors to external systems. Adapters **only**:
 
@@ -13,7 +13,7 @@ Adapters **never** contain:
 - Radar or decision memory
 - Priority or lane assignment
 
-Those live in **Atria Core** (e.g. `local_ai/intake/pipeline.py`, `local_ai/vision_execution/`, `local_ai/atria_tools.py`).
+Those live in **Zenaf Core** (e.g. `local_ai/intake/pipeline.py`, `local_ai/vision_execution/`, `local_ai/zenaf_tools.py`).
 
 ---
 
@@ -51,4 +51,4 @@ Default registrations are done in `__init__.py` (e.g. Ollama as `llm.ollama`). M
 - **Intake:** `IntakeItem` from `local_ai.intake.pipeline` — pipeline consumes normalized message content and produces `IntakeItem`; mailbox adapters produce the raw input to the pipeline (e.g. subject, body_plain, external_id, source_label).
 - **Workflow (future):** `NormalizedTask`, `NormalizedProject` in this package or in `vision_execution` — adapter returns these; core maps to/from Vision Execution or radar as needed.
 
-See `docs/ATRIA_ARCHITECTURE.md` for the full hub-and-spoke design.
+See `docs/ZENAF_ARCHITECTURE.md` for the full hub-and-spoke design.

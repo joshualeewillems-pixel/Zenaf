@@ -7,7 +7,7 @@
 Minimal directed edges between:
 
 - **Core profiles** (identity)
-- **Perspectives** (cognitive lenses; agent ids from `atria-perspective-agents` storage)
+- **Perspectives** (cognitive lenses; agent ids from `zenaf-perspective-agents` storage)
 - **People** (execution / capacity actors)
 
 Intended future use: AI behavior weighting, task routing hints, profile export / rental — **not** a full graph product.
@@ -29,7 +29,7 @@ type InfluenceLink = {
 
 ## Storage
 
-- **Key:** `atria-entity-influences-v1`
+- **Key:** `zenaf-entity-influences-v1`
 - **Value:** JSON object map: `sourceKey → InfluenceLink[]`
 - **Source key:** `` `${sourceKind}:${sourceId}` `` (e.g. `core_profile:abc`, `perspective:strategist`, `person:xyz`)
 
@@ -40,7 +40,7 @@ type InfluenceLink = {
 
 ## Conflicts / edge cases
 
-- **Single lens store:** Perspective agents use `localStorage` key `atria-perspective-agents` (Perspectives page + Workspace Organizer council checkboxes).
+- **Single lens store:** Perspective agents use `localStorage` key `zenaf-perspective-agents` (Perspectives page + Workspace Organizer council checkboxes).
 - **Orphan targets:** If a linked entity is deleted server-side, the link row still shows until the user removes it (label may fall back to raw id).
 - **Self-links:** Prevented in the add UI for same kind + id.
 - **Cross-device:** localStorage only — not synced.

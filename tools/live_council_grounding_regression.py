@@ -9,7 +9,7 @@ import re
 import uuid
 from typing import Any
 
-from local_ai import config as atria_config
+from local_ai import config as zenaf_config
 from local_ai.council_preflight import (
     CONTEXT_LEGITIMACY_NOTE_MARKER,
     PRIMARY_CONTEXT_MARKER,
@@ -220,7 +220,7 @@ def _case_payload(name: str) -> tuple[str, dict[str, Any], dict[str, Any] | None
 
 def main() -> None:
     principal = anonymous_account_principal()
-    omodel = (getattr(atria_config, "OLLAMA_COUNCIL_MODEL", None) or atria_config.OLLAMA_MODEL or "").strip()
+    omodel = (getattr(zenaf_config, "OLLAMA_COUNCIL_MODEL", None) or zenaf_config.OLLAMA_MODEL or "").strip()
     settings = CouncilTeacherSettings(
         teacher_mode="shadow",
         teacher_provider="ollama",

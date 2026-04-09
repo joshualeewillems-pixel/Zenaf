@@ -1,15 +1,5 @@
 /* Vision map — zen sand (canvas) + graph / UI + vitality (respect reduced motion) */
 
-@keyframes map-stale-breathe {
-  0%,
-  100% {
-    filter: saturate(0.62) brightness(0.96);
-  }
-  50% {
-    filter: saturate(0.7) brightness(0.99);
-  }
-}
-
 .map-world-wrap {
   position: relative;
   isolation: isolate;
@@ -59,7 +49,7 @@
   z-index: 1;
 }
 
-/* ---- Zen stones: smooth elliptical silhouettes (jittered % border-radius), bevel, cast shadow ---- */
+/* ---- Zen stones: silhouettes, bevel, cast; soil rim = grounding deficit (`MapStoneSoilRim`), gloss = water, cracks = condition ---- */
 .map-stone-node {
   cursor: grab;
   user-select: none;
@@ -92,42 +82,105 @@
   --stone-cast: 0 12px 22px rgba(15, 23, 42, 0.12);
 }
 
-/* Carved icons — no filter (drop-shadow per glyph adds compositing cost across the map). */
+/* Glyph shell; carve + gold layers + optional fruit glow live in `StoneKindGlyph`. */
 .map-stone-glyph {
   display: block;
   margin-inline: auto;
   flex-shrink: 0;
 }
 
-.map-stone-node[data-stone-tone='dark'] .map-stone-glyph {
-  color: #dcd8d0;
+/*
+ * Glyph scale tiers vs baseline B = clamp(3.375rem, 24%, 8.25rem):
+ * initiative (tree) + fruit 2×B, project (branch) 2.5×B, idea (seed) + task (flower) 4×B.
+ * max-width:100% keeps 4× from spilling on narrow stones; % prefers full column when possible.
+ */
+.map-stone-glyph-slot {
+  box-sizing: border-box;
+  aspect-ratio: 1;
+  width: clamp(6.75rem, 48%, 16.5rem);
+  min-width: 6.75rem;
+  min-height: 6.75rem;
+  height: auto;
+  max-width: 100%;
+  transition: width 0.2s ease-out;
 }
 
-/* Initiative tree, project branch, idea seed — mint etched glow (reference art) */
-.map-stone-node[data-stone-tone='dark'] .map-stone-glyph--initiative-tree,
-.map-stone-node[data-stone-tone='dark'] .map-stone-glyph--project-branch,
-.map-stone-node[data-stone-tone='dark'] .map-stone-glyph--idea-seed {
-  color: #d8ebe0;
-  filter: drop-shadow(0 0 1px rgba(200, 235, 215, 0.5)) drop-shadow(0 0 5px rgba(160, 210, 185, 0.22));
+.map-stone-node[data-map-entity-kind='branch'] .map-stone-glyph-slot,
+.map-stone-node[data-map-entity-kind='tree'] .map-stone-glyph-slot {
+  width: clamp(8.4375rem, 60%, 20.625rem);
+  min-width: 8.4375rem;
+  min-height: 8.4375rem;
 }
 
-.map-stone-node[data-stone-tone='light'] .map-stone-glyph {
-  color: #2f2c28;
+.map-stone-node[data-map-entity-kind='seed'] .map-stone-glyph-slot,
+.map-stone-node[data-map-entity-kind='flower'] .map-stone-glyph-slot {
+  width: clamp(6rem, 96%, 33rem);
+  min-width: min(13.5rem, 100%);
+  min-height: min(13.5rem, 100%);
 }
 
-/* Task flower bud/bloom/apple — mint luminous read on pale stone */
-.map-stone-node[data-stone-tone='light'] .map-stone-glyph--task-flower {
-  color: #2a4d3a;
-  filter: drop-shadow(0 0 1.5px rgba(90, 160, 120, 0.45)) drop-shadow(0 0 6px rgba(130, 200, 155, 0.22));
+.map-stone-node[data-glyph-emphasis='focused'] .map-stone-glyph-slot {
+  width: clamp(7.5rem, 55%, 18.5rem);
+  min-width: 7.5rem;
+  min-height: 7.5rem;
 }
 
-/* Rounded silhouette + overflow:hidden here; outer .map-stone-node stays rectangular so labels are not cropped */
+.map-stone-node[data-map-entity-kind='branch'][data-glyph-emphasis='focused'] .map-stone-glyph-slot,
+.map-stone-node[data-map-entity-kind='tree'][data-glyph-emphasis='focused'] .map-stone-glyph-slot {
+  width: clamp(9.375rem, 69%, 23.125rem);
+  min-width: 9.375rem;
+  min-height: 9.375rem;
+}
+
+.map-stone-node[data-map-entity-kind='seed'][data-glyph-emphasis='focused'] .map-stone-glyph-slot,
+.map-stone-node[data-map-entity-kind='flower'][data-glyph-emphasis='focused'] .map-stone-glyph-slot {
+  width: clamp(6rem, 100%, 36rem);
+  min-width: min(15rem, 100%);
+  min-height: min(15rem, 100%);
+}
+
+.map-stone-node[data-glyph-emphasis='selected'] .map-stone-glyph-slot {
+  width: clamp(8.25rem, 62%, 20.5rem);
+  min-width: 8.25rem;
+  min-height: 8.25rem;
+}
+
+.map-stone-node[data-map-entity-kind='branch'][data-glyph-emphasis='selected'] .map-stone-glyph-slot,
+.map-stone-node[data-map-entity-kind='tree'][data-glyph-emphasis='selected'] .map-stone-glyph-slot {
+  width: clamp(10.3125rem, 77.5%, 25.625rem);
+  min-width: 10.3125rem;
+  min-height: 10.3125rem;
+}
+
+.map-stone-node[data-map-entity-kind='seed'][data-glyph-emphasis='selected'] .map-stone-glyph-slot,
+.map-stone-node[data-map-entity-kind='flower'][data-glyph-emphasis='selected'] .map-stone-glyph-slot {
+  width: clamp(6rem, 100%, 39rem);
+  min-width: min(16.5rem, 100%);
+  min-height: min(16.5rem, 100%);
+}
+
+/* Dark carve duplicate (offset up, slightly scaled vs gold); glow via inline filter on `.map-stone-glyph-fg`. */
+.map-stone-node .map-stone-glyph-carve,
+.map-stone-node .map-stone-glyph-carve-svg {
+  color: rgba(12, 10, 9, 0.78);
+}
+
+.map-stone-node .map-stone-glyph-fg,
+.map-stone-node .map-stone-glyph-fg-svg {
+  /* Same vivid gold whether or not the node is selected / water tier (glow still scales with fruit only). */
+  color: #ebbf2e;
+}
+
+/*
+ * Elliptical silhouette (inline % border-radius). Overflow visible so soil brush can sit on the rim and extend
+ * onto the map (RF node wrapper uses overflow:visible). Face layers clip via border-radius + `.map-stone-clip`.
+ */
 .map-stone-shape {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /*
@@ -139,8 +192,15 @@
 }
 
 .map-stone-clip {
-  /* Clipping by parent .map-stone-shape overflow + border-radius (no polygon facets). */
+  /* Elliptical mask per layer (parent `.map-stone-shape` no longer clips overflow). */
   border-radius: inherit;
+  overflow: hidden;
+}
+
+/* Soil rim: 1 − triad.soil (deficit / cleanup cue) — ring SVGs under clipped fill (`MapStoneSoilRim.tsx`). */
+.map-stone-soil-rim {
+  isolation: isolate;
+  overflow: visible;
 }
 
 .map-stone-rim-light {
@@ -168,7 +228,56 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.78' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* map-silhouette-* classes: markers for rim/bevel rules; outline is inline % border-radius + overflow:hidden */
+/*
+ * Water = wet-rock **speculars** (screen). Above grain (z-3); soil rim is behind fill; cracks above (z-6).
+ */
+.map-stone-water-gloss {
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.map-stone-surface.map-water-low .map-stone-water-gloss {
+  opacity: 0;
+  background: none;
+  mix-blend-mode: normal;
+}
+
+/* Medium: primary hit top-left, secondary cooler hit bottom-right */
+.map-stone-surface.map-water-medium .map-stone-water-gloss {
+  opacity: 1;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(ellipse 22% 18% at 16% 14%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.38) 38%, transparent 58%),
+    radial-gradient(ellipse 26% 22% at 84% 82%, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0.1) 44%, transparent 68%);
+}
+
+/* High: stronger primary + broader secondary (polished wet stone) */
+.map-stone-surface.map-water-high .map-stone-water-gloss {
+  opacity: 1;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(ellipse 18% 14% at 14% 12%, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, 0.52) 32%, transparent 54%),
+    radial-gradient(ellipse 24% 20% at 80% 78%, rgba(255, 255, 255, 0.58) 0%, rgba(255, 255, 255, 0.16) 40%, transparent 62%);
+}
+
+.map-stone-node[data-stone-tone='light'].map-water-medium .map-stone-water-gloss {
+  mix-blend-mode: screen;
+  opacity: 0.82;
+  background:
+    radial-gradient(ellipse 20% 16% at 18% 16%, rgba(255, 255, 255, 0.75) 0%, rgba(255, 255, 255, 0.28) 40%, transparent 62%),
+    radial-gradient(ellipse 24% 20% at 82% 80%, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.08) 46%, transparent 70%);
+}
+
+.map-stone-node[data-stone-tone='light'].map-water-high .map-stone-water-gloss {
+  mix-blend-mode: screen;
+  opacity: 0.88;
+  background:
+    radial-gradient(ellipse 16% 12% at 16% 14%, rgba(255, 255, 255, 0.88) 0%, rgba(255, 255, 255, 0.35) 36%, transparent 56%),
+    radial-gradient(ellipse 22% 18% at 78% 76%, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0.12) 42%, transparent 64%);
+}
+
+/* map-silhouette-* classes: rim/bevel rules; outline is inline % border-radius (stack clips via `.map-stone-clip`). */
 
 /* Top bevel + ontology-tinted inner lip (::before); perimeter darken + mass (::after) */
 .map-stone-shape.map-silhouette-tree::before,
@@ -367,34 +476,6 @@
 
 .map-cond-overlay--neutral {
   box-shadow: inset 0 12px 32px rgba(255, 255, 255, 0.035);
-}
-
-.map-cond-overlay--stale-wash {
-  background: rgba(32, 30, 26, 0.12);
-  box-shadow: inset 0 18px 48px rgba(18, 16, 14, 0.14);
-}
-
-.map-cond-overlay--blocked {
-  box-shadow:
-    inset 0 0 0 2px rgba(130, 95, 52, 0.45),
-    inset 0 -20px 44px rgba(48, 38, 28, 0.1);
-}
-
-.map-cond-overlay--warned {
-  box-shadow:
-    inset 0 0 0 2px rgba(145, 105, 62, 0.52),
-    inset 0 0 32px rgba(110, 82, 48, 0.14);
-}
-
-.map-cond-overlay--veto {
-  box-shadow:
-    inset 0 0 0 3px rgba(175, 48, 48, 0.52),
-    inset 0 0 48px rgba(85, 22, 22, 0.14);
-}
-
-.map-cond-overlay--stale {
-  background: rgba(48, 46, 42, 0.11);
-  box-shadow: inset 0 14px 44px rgba(38, 36, 34, 0.14);
 }
 
 /* Zoom panel — parchment chrome, graphite controls */
@@ -700,62 +781,27 @@
   }
 }
 
-@keyframes map-jitter {
-  0%,
-  100% {
-    transform: translate(0, 0);
-  }
-  25% {
-    transform: translate(0.4px, -0.3px);
-  }
-  50% {
-    transform: translate(-0.35px, 0.35px);
-  }
-  75% {
-    transform: translate(0.25px, 0.2px);
-  }
-}
-
 @keyframes map-edge-march {
   to {
     stroke-dashoffset: -32;
   }
 }
 
-/* Healthy vitality pulse removed — surface water + triad carry attention read. */
-
-/* Unified triad-driven surface water — exaggerated steps so dry vs rich is obvious on real data */
-.map-stone-surface.map-surface-water-dry:not(.map-stone-selected) {
-  filter: saturate(0.58) brightness(0.88) contrast(1.04);
+/* Coarse water_level → matte / sheen / wet on the stone face only (filter stays on `.map-stone-shape`, not the glyph column). */
+.map-stone-node.map-water-low:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  filter: saturate(0.52) brightness(0.84) contrast(1.06);
+  box-shadow: var(--stone-inset-stack), 0 7px 14px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.07);
 }
 
-.map-stone-node.map-surface-water-dry:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
-  box-shadow: var(--stone-inset-stack), 0 9px 18px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.08);
+.map-stone-node.map-water-medium:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  filter: saturate(0.82) brightness(0.93) contrast(1.02);
+  box-shadow: var(--stone-inset-stack), var(--stone-cast);
 }
 
-.map-stone-surface.map-surface-water-matte:not(.map-stone-selected) {
-  filter: saturate(0.74) brightness(0.92) contrast(1.02);
-}
-
-.map-stone-surface.map-surface-water-normal:not(.map-stone-selected) {
-  filter: saturate(0.92) brightness(0.98);
-}
-
-.map-stone-surface.map-surface-water-rich:not(.map-stone-selected) {
-  filter: saturate(1.18) brightness(1.045) contrast(1.01);
-}
-
-.map-stone-node.map-surface-water-rich:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
-  box-shadow:
-    var(--stone-inset-stack),
-    var(--stone-cast),
-    inset 0 -22px 46px rgba(255, 255, 255, 0.055),
-    inset 0 4px 18px rgba(255, 255, 255, 0.1),
-    inset 0 0 40px rgba(120, 175, 165, 0.06);
-}
-
-.map-stone-surface.map-surface-stale-wash:not(.map-stone-selected) {
-  filter: saturate(0.68) brightness(0.9) contrast(1.02);
+.map-stone-node.map-water-high:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  filter: saturate(1.28) brightness(1.03) contrast(1.04);
+  /* Wet read = `.map-stone-water-gloss` speculars only — avoid duplicate inset “wash” on the shape */
+  box-shadow: var(--stone-inset-stack), var(--stone-cast);
 }
 
 /* Subtle output / groundedness — not a badge */
@@ -771,17 +817,37 @@
   box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 19px 36px rgba(15, 23, 42, 0.23);
 }
 
-.map-stone-node.map-surface-water-rich.map-fruit-mass-firm:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
-  box-shadow:
-    var(--stone-inset-stack),
-    var(--stone-cast),
-    inset 0 -20px 42px rgba(255, 255, 255, 0.045),
-    inset 0 3px 16px rgba(255, 255, 255, 0.09),
-    0 19px 36px rgba(15, 23, 42, 0.22);
+.map-stone-node.map-water-high.map-fruit-mass-firm:not(.map-node-dimmed):not(.map-stone-selected) > .map-stone-shape {
+  box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 21px 40px rgba(15, 23, 42, 0.23);
 }
 
-.map-stone-stress-svg {
+/* Condition: edge-anchored SVG crack decals — see StoneCrackOverlay.tsx */
+.map-stone-crack-vector-stack {
   border-radius: inherit;
+  isolation: isolate;
+}
+
+/* One isolated stacking context per decal so white ghost (below) never composites as mid-grey under black. */
+.map-stone-crack-vector-stack .map-stone-crack-decal {
+  isolation: isolate;
+}
+
+/* Foreground crack ink: normal blend; high z-index + own isolate so black paints fully above ghost. */
+.map-stone-crack-vector-stack .map-stone-crack-fg {
+  mix-blend-mode: normal;
+  isolation: isolate;
+  position: relative;
+  z-index: 20;
+}
+
+.map-stone-crack-vector-stack .map-stone-crack-fg svg path {
+  fill-opacity: 1;
+  opacity: 1;
+}
+
+.map-stone-crack-vector-stack .map-stone-crack-ghost {
+  mix-blend-mode: normal;
+  z-index: 1;
 }
 
 .map-stone-shape.map-fertilizer-pulse {
@@ -811,16 +877,6 @@
   animation: map-shimmer 4.5s ease-in-out infinite;
 }
 
-.map-vitality-blocked:not(.map-node-dimmed) {
-  opacity: 0.88;
-  animation: map-jitter 0.35s ease-in-out infinite;
-}
-
-.map-vitality-veto:not(.map-node-dimmed) .map-stone-shape {
-  filter: none;
-  box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 0 18px rgba(200, 55, 55, 0.32);
-}
-
 .map-node-dimmed {
   opacity: 0.52;
   filter: saturate(0.72) brightness(0.92);
@@ -829,19 +885,6 @@
 .map-node-lineage:not(.map-node-dimmed) .map-stone-shape {
   filter: none;
   box-shadow: var(--stone-inset-stack), var(--stone-cast), 0 0 16px rgba(72, 84, 92, 0.18);
-}
-
-.map-node-lineage.map-vitality-veto:not(.map-node-dimmed) .map-stone-shape {
-  filter: none;
-  box-shadow:
-    var(--stone-inset-stack),
-    var(--stone-cast),
-    0 0 14px rgba(72, 84, 92, 0.16),
-    0 0 18px rgba(200, 55, 55, 0.3);
-}
-
-.map-vitality-stale:not(.map-node-dimmed) {
-  animation: map-stale-breathe 5.5s ease-in-out infinite;
 }
 
 .map-edge-anim {
@@ -888,8 +931,6 @@
   }
 
   .map-vitality-grow,
-  .map-vitality-blocked,
-  .map-vitality-stale,
   .map-shimmer-layer {
     animation: none !important;
   }
@@ -899,9 +940,6 @@
   .map-edge-anim--stale {
     animation: none !important;
     stroke-dasharray: none !important;
-  }
-  .map-vitality-blocked:not(.map-node-dimmed) {
-    opacity: 0.92;
   }
 }
 

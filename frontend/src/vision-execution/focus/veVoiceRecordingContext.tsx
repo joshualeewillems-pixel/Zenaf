@@ -10,8 +10,8 @@ import {
 } from 'react'
 import { useVisionExecutionFocus } from './VisionExecutionFocusContext'
 import {
-  ATRIA_VE_FOCUS_INSERT_TEXT,
-  ATRIA_VOICE_TRANSCRIPT_DOM_FIRST,
+  ZENAF_VE_FOCUS_INSERT_TEXT,
+  ZENAF_VOICE_TRANSCRIPT_DOM_FIRST,
   type VeFocusInsertTextDetail,
 } from './insertTextEvent'
 import type { FocusContext, FocusContextCore } from './types'
@@ -150,7 +150,7 @@ export function VeVoiceRecordingProvider({ children }: { children: ReactNode }) 
                 : ''
             const clean = transcript.trim()
             if (!clean) return
-            const preempt = new CustomEvent(ATRIA_VOICE_TRANSCRIPT_DOM_FIRST, {
+            const preempt = new CustomEvent(ZENAF_VOICE_TRANSCRIPT_DOM_FIRST, {
               cancelable: true,
               detail: { text: clean },
             })
@@ -164,7 +164,7 @@ export function VeVoiceRecordingProvider({ children }: { children: ReactNode }) 
               selectionStart: target.selectionStart,
               selectionEnd: target.selectionEnd,
             }
-            window.dispatchEvent(new CustomEvent(ATRIA_VE_FOCUS_INSERT_TEXT, { detail }))
+            window.dispatchEvent(new CustomEvent(ZENAF_VE_FOCUS_INSERT_TEXT, { detail }))
           } finally {
             setVoicePhase('idle')
           }

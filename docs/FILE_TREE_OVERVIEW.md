@@ -3,7 +3,7 @@
 Concise tree of architecture-relevant files and directories with one-line descriptions. Not every file is listed.
 
 ```
-Atria/
+Zenaf/
 ├── api/
 │   ├── main.py                    # FastAPI app; startup (dependency check + mirror load); POST /run, /run/stream, /health; mounts auth + settings
 │   └── routes/
@@ -12,8 +12,8 @@ Atria/
 │       ├── settings_routes.py     # /settings: LLM profile, credentials (Fernet), test, notifications JSON
 │       └── vision_execution.py    # /vision-execution: CRUD for ideas, initiatives, projects, tasks, etc.
 ├── local_ai/
-│   ├── atria_tools.py              # File Steward wrappers, council, web research, next step, reassess; used by /run
-│   ├── atria.py                    # CLI/orchestration; run_tool, ask_model (separate from API)
+│   ├── zenaf_tools.py              # File Steward wrappers, council, web research, next step, reassess; used by /run
+│   ├── zenaf.py                    # CLI/orchestration; run_tool, ask_model (separate from API)
 │   ├── providers/
 │   │   ├── __init__.py             # get_default_provider() → OllamaProvider
 │   │   ├── ollama.py               # OllamaProvider
@@ -57,7 +57,7 @@ Atria/
 │   │   └── phil_context.py         # load_phil_context (used in council packet)
 ├── tools/
 │   ├── file_steward/
-│   │   └── app.py                  # Streamlit/file steward; scan_folder, analyze, recommend, etc. (lazy-imported by atria_tools)
+│   │   └── app.py                  # Streamlit/file steward; scan_folder, analyze, recommend, etc. (lazy-imported by zenaf_tools)
 │       └── handlers.py             # List/create/update ideas, people, resources; ai_analyze, ai_prioritize, ai_hypothetical
 ├── frontend/
 │   └── src/
@@ -96,7 +96,7 @@ Atria/
 │   ├── DATA_FLOW.md
 │   ├── FILE_TREE_OVERVIEW.md
 │   ├── OPEN_QUESTIONS.md
-│   └── ATRIA_ARCHITECTURE.md
+│   └── ZENAF_ARCHITECTURE.md
 ├── open-cockpit.bat                # Launcher: run open-cockpit.ps1
 ├── open-cockpit.ps1                # Start API + frontend; open browser (app + API docs)
 └── intake_mirror.db                # Created at repo root by intake mirror (when first write)

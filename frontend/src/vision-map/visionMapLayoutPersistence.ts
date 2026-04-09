@@ -32,7 +32,7 @@ export function visionMapLayoutStorageKey(
   accountContext: string,
   projection: VisionMapLayoutProjectionId = 'live_ve',
 ): string {
-  return `atria.visionMap.layout.v${VISION_MAP_LAYOUT_SCHEMA_VERSION}.${sanitizeContextSegment(accountContext)}.${projection}`
+  return `zenaf.visionMap.layout.v${VISION_MAP_LAYOUT_SCHEMA_VERSION}.${sanitizeContextSegment(accountContext)}.${projection}`
 }
 
 function isFiniteNum(n: unknown): n is number {

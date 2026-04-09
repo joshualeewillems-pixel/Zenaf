@@ -16,7 +16,7 @@
 ## 2. “Suggested work (AI)” (project) — Phase 1 shipped
 
 - **POST** `/vision-execution/projects/{id}/suggested-work` returns coordination hints (`missing_ownership`, `uncovered_work`, `coordination_gap`, `unclear_scope`) — **not** execution steps and **no** task creation.
-- UI: Project **Plan & cadence** → **Generate suggestions**; items render as a **checklist**; **checked** state is **localStorage** only (`atria-project-suggested-work-v1`). Regenerating clears checks and replaces items.
+- UI: Project **Plan & cadence** → **Generate suggestions**; items render as a **checklist**; **checked** state is **localStorage** only (`zenaf-project-suggested-work-v1`). Regenerating clears checks and replaces items.
 - Implementation: `local_ai/vision_execution/project_suggested_work.py`.
 
 ---

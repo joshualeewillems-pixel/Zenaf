@@ -8,7 +8,7 @@ Recommendations: best default, best fast fallback, best specialist, not recommen
 Synthesis out of scope.
 
 Edit CORE_MODEL_CANDIDATES and CONCURRENCY_LEVELS below to change the matrix.
-Set ATRIA_COUNCIL_BENCHMARK_INCLUDE_CEILING=1 to add quality-ceiling model(s) (reported separately).
+Set ZENAF_COUNCIL_BENCHMARK_INCLUDE_CEILING=1 to add quality-ceiling model(s) (reported separately).
 
 Run from repo root: python scripts/eval_council_pass2.py
 """
@@ -36,7 +36,7 @@ CORE_MODEL_CANDIDATES = [
 ]
 # Concurrency levels to test
 CONCURRENCY_LEVELS = (1, 2)
-# Optional quality ceiling (only if ATRIA_COUNCIL_BENCHMARK_INCLUDE_CEILING=1)
+# Optional quality ceiling (only if ZENAF_COUNCIL_BENCHMARK_INCLUDE_CEILING=1)
 CEILING_MODELS = ["qwen3:30b"]
 
 # Error text that indicates model not installed (Ollama)
@@ -76,11 +76,11 @@ TIMEOUT_PATTERN = re.compile(r"timeout|timed\s+out", re.IGNORECASE)
 
 
 def _split_seat_chunks(text: str) -> list[str]:
-    """Split council output into per-seat chunks (exclude Atria synthesis)."""
+    """Split council output into per-seat chunks (exclude Zenaf synthesis)."""
     if not text or not text.strip():
         return []
-    if "Atria synthesis:" in text:
-        text = text[: text.index("Atria synthesis:")].strip()
+    if "Zenaf synthesis:" in text:
+        text = text[: text.index("Zenaf synthesis:")].strip()
     chunks = []
     for header in SEAT_HEADERS:
         idx = text.find(header)
@@ -131,17 +131,17 @@ def _run_one(
     council_model_env: str | None,
 ) -> tuple[float, str, str | None]:
     """Run council once. Returns (latency_seconds, full_text, error_message_or_None)."""
-    import local_ai.atria_tools as atria_tools
+    import local_ai.zenaf_tools as zenaf_tools
 
-    atria_tools.COUNCIL_MAX_WORKERS_OVERRIDE = workers_override
-    prev_model = os.environ.get("ATRIA_COUNCIL_MODEL")
+    zenaf_tools.COUNCIL_MAX_WORKERS_OVERRIDE = workers_override
+    prev_model = os.environ.get("ZENAF_COUNCIL_MODEL")
     try:
         if council_model_env is not None:
-            os.environ["ATRIA_COUNCIL_MODEL"] = council_model_env
+            os.environ["ZENAF_COUNCIL_MODEL"] = council_model_env
         elif prev_model is not None:
-            os.environ.pop("ATRIA_COUNCIL_MODEL", None)
+            os.environ.pop("ZENAF_COUNCIL_MODEL", None)
 
-        from local_ai.atria_tools import run_council
+        from local_ai.zenaf_tools import run_council
 
         t0 = time.perf_counter()
         result = run_council(
@@ -163,11 +163,11 @@ def _run_one(
         err = str(e)
         return 0.0, "", err
     finally:
-        atria_tools.COUNCIL_MAX_WORKERS_OVERRIDE = None
+        zenaf_tools.COUNCIL_MAX_WORKERS_OVERRIDE = None
         if prev_model is not None:
-            os.environ["ATRIA_COUNCIL_MODEL"] = prev_model
+            os.environ["ZENAF_COUNCIL_MODEL"] = prev_model
         else:
-            os.environ.pop("ATRIA_COUNCIL_MODEL", None)
+            os.environ.pop("ZENAF_COUNCIL_MODEL", None)
 
 
 def _evaluate_run(text: str) -> dict:
@@ -217,7 +217,7 @@ def _build_conditions() -> list[dict]:
     for model in CORE_MODEL_CANDIDATES:
         for w in CONCURRENCY_LEVELS:
             conditions.append({"label": f"{model}, concurrency={w}", "model": model, "workers": w})
-    if os.environ.get("ATRIA_COUNCIL_BENCHMARK_INCLUDE_CEILING", "").strip() == "1":
+    if os.environ.get("ZENAF_COUNCIL_BENCHMARK_INCLUDE_CEILING", "").strip() == "1":
         for model in CEILING_MODELS:
             for w in CONCURRENCY_LEVELS:
                 conditions.append(
@@ -288,9 +288,9 @@ def main() -> None:
         workers = cond["workers"]
         print(f"\n--- {label} ---")
         if model:
-            os.environ["ATRIA_COUNCIL_MODEL"] = model
+            os.environ["ZENAF_COUNCIL_MODEL"] = model
         else:
-            os.environ.pop("ATRIA_COUNCIL_MODEL", None)
+            os.environ.pop("ZENAF_COUNCIL_MODEL", None)
 
         latencies: list[float] = []
         useful_runs = 0

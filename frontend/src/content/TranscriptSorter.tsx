@@ -67,7 +67,7 @@ export function TranscriptSorter({ apiBase }: { apiBase: string }) {
       const editedTitle = transcriptTaskTitleEdits[candidate.candidate_task_id]
       const title: string = (editedTitle || candidate.title || 'Task from transcript') as string
       const description: string = candidate.description || candidate.source_text || ''
-      const notesLine = `[Atria lifecycle] transcript_id=${transcriptResult?.transcript_id || 'manual'} segment_id=${candidate.segment_id}`
+      const notesLine = `[Zenaf lifecycle] transcript_id=${transcriptResult?.transcript_id || 'manual'} segment_id=${candidate.segment_id}`
       const payload = {
         project_id: projectId,
         parent_task_id: null,

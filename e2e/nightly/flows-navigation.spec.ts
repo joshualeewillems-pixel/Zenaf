@@ -1,6 +1,6 @@
 /**
  * Primary navigation user flows (logged-in shell). Matches App.tsx nav labels.
- * Requires dev server + API; credentials optional via ATRIA_E2E_EMAIL / ATRIA_E2E_PASSWORD.
+ * Requires dev server + API; credentials optional via ZENAF_E2E_EMAIL / ZENAF_E2E_PASSWORD.
  */
 import { test, expect } from '@playwright/test'
 import { loginIfConfigured } from './helpers'
@@ -26,7 +26,7 @@ test.describe('primary navigation flows', () => {
     test(`nav: ${label}`, async ({ page }) => {
       await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: label }).click()
       await expect(page.locator('body')).toBeVisible()
-      await expect(page.getByRole('heading', { name: /Atria/ })).toBeVisible()
+      await expect(page.getByRole('heading', { name: /Zenaf/ })).toBeVisible()
     })
   }
 })

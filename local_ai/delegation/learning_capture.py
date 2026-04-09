@@ -2,7 +2,7 @@
 Non-blocking learning artifacts for delegated (especially cloud) model calls.
 
 v1: in-memory bounded ring buffer plus **optional** append-only JSONL persistence
-(``ATRIA_LEARNING_PERSIST_PATH``). No training; dataset building for future prompt tuning,
+(``ZENAF_LEARNING_PERSIST_PATH``). No training; dataset building for future prompt tuning,
 heuristics, and local model improvement.
 
 **Privacy:** ``restricted`` / ``local_only`` → minimal records (no raw input/output text).
@@ -200,7 +200,7 @@ def get_learning_buffer() -> LearningBuffer:
 
 def learning_export_enabled() -> bool:
     """Opt-in so authenticated users cannot dump the buffer unless the operator enables export."""
-    v = (os.environ.get("ATRIA_LEARNING_EXPORT_ENABLED") or "").strip().lower()
+    v = (os.environ.get("ZENAF_LEARNING_EXPORT_ENABLED") or "").strip().lower()
     return v in ("1", "true", "yes", "on")
 
 
@@ -289,7 +289,7 @@ def init_learning_persistence_from_env() -> Optional[dict[str, Any]]:
     """
     Call once at API startup if durable learning is desired.
 
-    Reads ``ATRIA_LEARNING_PERSIST_PATH``; replays JSONL into the in-memory buffer (last line per
+    Reads ``ZENAF_LEARNING_PERSIST_PATH``; replays JSONL into the in-memory buffer (last line per
     ``record_id`` wins). Missing file is OK; corrupt lines are skipped.
     """
     return _learning_persist.init_from_env(_global_buffer)

@@ -32,6 +32,10 @@ interface ContentRunResponse {
 const VE_PATH = '/vision-execution'
 const BRIEFS_PATH = '/vision-execution/content-briefs'
 
+/** Shown when ContentView renders its own header (not inside ContentFrontDoor). */
+const CONTENT_TAB_SUBTITLE =
+  'Narrative packages are stored as content briefs: link initiatives and projects, generate script and newsletter drafts, and hand off to tasks. In-tab journaling, council-as-record, richer artifact types, and registries are roadmap — see docs/02_ACTIVE_DESIGN/CONTENT_NARRATIVE_REGISTRAR_ROADMAP.md.'
+
 function statusBadgeClass(status: ContentBriefStatus): string {
   switch (status) {
     case 'in_production':
@@ -44,9 +48,9 @@ function statusBadgeClass(status: ContentBriefStatus): string {
 }
 
 const ZERO_STATE_PLACEHOLDERS = [
-  'e.g. A 2-min product launch video for our new API',
-  'e.g. A newsletter announcing the Q2 roadmap',
-  'e.g. A short explainer on our security practices',
+  'e.g. Reflection after a hard week — what shifted and what you need next',
+  'e.g. Council session notes to tie to an initiative before you shape a script',
+  'e.g. Origin story for a talk; start as a package then generate script',
 ]
 
 export interface ContentViewProps {
@@ -196,7 +200,7 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
 
   const handleCreateFromZeroState = useCallback(
     async (userInput: string) => {
-      const trimmed = userInput.trim() || 'My first content'
+      const trimmed = userInput.trim() || 'My first narrative package'
       const title = trimmed.slice(0, 80)
       const payload: ContentBriefPayload = {
         ...DEFAULT_BRIEF_PAYLOAD,
@@ -419,9 +423,7 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
         {!hideHeader && (
           <div className="p-4 border-b border-slate-700">
             <h2 className="text-xl font-semibold text-slate-100">Content</h2>
-            <p className="text-slate-400 text-sm mt-1">
-              Orchestration layer: shared briefs, draft generation, tool-shaped handoff packages, and VE-linked production tasks.
-            </p>
+            <p className="text-slate-400 text-sm mt-1">{CONTENT_TAB_SUBTITLE}</p>
           </div>
         )}
         <div className="flex-1 min-h-0 overflow-auto flex items-center justify-center p-6">
@@ -432,7 +434,7 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
               </div>
             )}
             <label htmlFor="content-zero-state-input" className="block text-sm font-medium text-slate-300 mb-2">
-              What do you want to create?
+              Start a narrative package (content brief)
             </label>
             <textarea
               id="content-zero-state-input"
@@ -459,12 +461,12 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
                 const el = document.getElementById('content-zero-state-input') as HTMLTextAreaElement | null
                 const value = el?.value?.trim()
                 if (value) handleCreateFromZeroState(value)
-                else handleCreateFromZeroState('My first content')
+                else handleCreateFromZeroState('My first narrative package')
               }}
               disabled={generating}
               className="mt-4 w-full py-3 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-600 disabled:text-slate-400 text-white font-medium text-base transition-colors"
             >
-              {generating ? 'Creating and generating…' : 'Generate content + plan'}
+              {generating ? 'Creating and generating…' : 'Create package and draft script'}
             </button>
           </div>
         </div>
@@ -477,9 +479,7 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
       {!hideHeader && (
         <div className="p-4 border-b border-slate-700">
           <h2 className="text-xl font-semibold text-slate-100">Content</h2>
-          <p className="text-slate-400 text-sm mt-1">
-            Orchestration layer: shared briefs, draft generation, tool-shaped handoff packages, and VE-linked production tasks.
-          </p>
+          <p className="text-slate-400 text-sm mt-1">{CONTENT_TAB_SUBTITLE}</p>
         </div>
       )}
       <div className="flex-1 min-h-0 overflow-auto p-4">
@@ -490,8 +490,11 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
         )}
         <div className="max-w-6xl mx-auto grid gap-4 lg:grid-cols-[340px_1fr_260px]">
           <aside className="rounded-xl border border-slate-600 bg-slate-800/80 overflow-hidden flex flex-col">
-            <div className="p-3 border-b border-slate-700 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-200">Briefs</h3>
+            <div className="p-3 border-b border-slate-700 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-slate-200">Briefs</h3>
+                <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Narrative packages (API: content briefs)</p>
+              </div>
               <button
                 type="button"
                 onClick={handleCreateBrief}
@@ -502,7 +505,7 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
             </div>
             <ul className="flex-1 overflow-y-auto min-h-0 p-2 space-y-1">
               {briefs.length === 0 && (
-                <li className="text-slate-500 text-xs p-2">No briefs yet. Create one to get started.</li>
+                <li className="text-slate-500 text-xs p-2">No packages yet. Create a brief to get started.</li>
               )}
               {briefs.map((b) => (
                 <li key={b.id}>

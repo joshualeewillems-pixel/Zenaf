@@ -1,5 +1,4 @@
 import type { ConditionState, GrowthState } from './ontology'
-
 /**
  * Derive growth from VE-style status strings (read-only heuristic; prototype-friendly).
  */
@@ -51,15 +50,4 @@ export function growthClass(g: GrowthState): string {
     pruned: 'bg-slate-900/95 border-slate-600 opacity-75',
   }
   return map[g] || map.growing
-}
-
-export function conditionClass(c: ConditionState): string {
-  const map: Record<ConditionState, string> = {
-    healthy: 'ring-2 ring-emerald-500/35 ring-offset-2 ring-offset-slate-950',
-    blocked: 'ring-2 ring-amber-500/70 ring-offset-2 ring-offset-slate-950 border border-dashed border-amber-500/50',
-    'teacher-warned': 'ring-2 ring-amber-400 ring-offset-2 ring-offset-slate-950 shadow-[0_0_12px_rgba(251,191,36,0.25)]',
-    'teacher-vetoed': 'ring-2 ring-red-500 ring-offset-2 ring-offset-slate-950 shadow-[0_0_14px_rgba(239,68,68,0.35)]',
-    stale: 'ring-1 ring-slate-500 opacity-80 saturate-50',
-  }
-  return map[c] || map.healthy
 }

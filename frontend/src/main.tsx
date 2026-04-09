@@ -2,7 +2,10 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import { StudioApp } from './studio/StudioApp'
+import { migrateAtriaBrandedBrowserStorage } from './legacy/migrateAtriaBrandedStorage'
 import './index.css'
+
+migrateAtriaBrandedBrowserStorage()
 
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },

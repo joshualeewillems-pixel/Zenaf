@@ -85,6 +85,7 @@ import {
   type CouncilTransportTimings,
   type MediationThreadItemKind,
 } from './conversation/mediationSurfaceTypes'
+import { MediationFlowHint } from './flow/MediationFlowHint'
 import type { ConversationSubject } from './conversation/conversationTrunkTypes'
 import {
   contentForSuggestionExtraction,
@@ -128,9 +129,9 @@ import {
   FocusContextRecordButton,
   TranscribableFieldRegion,
   focusFieldRegistryKey,
-  ATRIA_VOICE_TRANSCRIPT_DOM_FIRST,
-  ATRIA_VE_FOCUS_INSERT_TEXT,
-  ATRIA_VE_FOCUS_APPLY_REWRITE,
+  ZENAF_VOICE_TRANSCRIPT_DOM_FIRST,
+  ZENAF_VE_FOCUS_INSERT_TEXT,
+  ZENAF_VE_FOCUS_APPLY_REWRITE,
   insertTextAtSelection,
   type VeFocusInsertTextDetail,
   type VeFocusApplyRewriteDetail,
@@ -497,7 +498,7 @@ function chatResonanceIntegration(
   if (
     agentLabel === 'Zenaf' ||
     agentLabel === 'Thinking Partner' ||
-    agentLabel === 'Atria (Thinking Partner)'
+    agentLabel === 'Zenaf (Thinking Partner)'
   ) {
     return { seatId: 'zenaf', contextKind: 'zenaf_training' }
   }
@@ -566,7 +567,7 @@ function AgentChatResonanceSlider({
 /** Council thread: per-seat resonance sliders; VE field focus on Vision & Execution, else workspace + folder hash. */
 function CouncilTranscriptResonanceBridge({
   text,
-  stripAtriaSynthesis,
+  stripZenafSynthesis,
   decorateSeatHeaders,
   responseIdPrefix,
   mainView,
@@ -579,7 +580,7 @@ function CouncilTranscriptResonanceBridge({
   onOpenEntity,
 }: {
   text: string
-  stripAtriaSynthesis: boolean
+  stripZenafSynthesis: boolean
   decorateSeatHeaders: boolean
   responseIdPrefix: string
   mainView: MainViewForResonance
@@ -599,7 +600,7 @@ function CouncilTranscriptResonanceBridge({
   return (
     <CouncilTranscriptWithResonance
       text={text}
-      stripAtriaSynthesis={stripAtriaSynthesis}
+      stripZenafSynthesis={stripZenafSynthesis}
       decorateSeatHeaders={decorateSeatHeaders}
       responseIdPrefix={responseIdPrefix}
       entityType={entityType}
@@ -793,7 +794,7 @@ function CouncilQuestionTextarea({
   const ta = (
     <textarea
       data-testid="council-question-input"
-      data-atria-voice-insert="council-question"
+      data-zenaf-voice-insert="council-question"
       ref={textareaRef}
       value={value}
       onChange={onChange}
@@ -897,11 +898,11 @@ function findExistingFolderMatch(name: string, list: string[]): string | null {
   return found ?? null
 }
 
-const PERSPECTIVE_STORAGE_KEY = 'atria-perspective-agents'
+const PERSPECTIVE_STORAGE_KEY = 'zenaf-perspective-agents'
 
 const API_BASE = 'http://127.0.0.1:8010'
 
-/** Same-origin as the dev server so the browser sends `atria_session`. Login uses `/auth` (proxied); absolute `API_BASE` is another host (127.0.0.1 vs localhost) and cookies are not sent → anonymous principal on /run. */
+/** Intake uses absolute `API_BASE` (8010). Dev SPA must load from **127.0.0.1:5173** (see `vite.config.ts`) so the session cookie host matches; `localhost:5173` is a different host and cookies are not sent to 127.0.0.1:8010. `/run` uses relative `RUN_API_BASE` (proxied). */
 const RUN_API_BASE = ''
 
 async function visionExecutionApiErrorText(res: Response): Promise<string> {
@@ -1188,7 +1189,7 @@ interface IntakeQueueItem {
   judgment_id?: string   // judgment layer: one reasoning event per item
   confidence?: number
   confidence_display?: 'high' | 'medium' | 'low'
-  archived?: boolean   // internal hide in Atria queue only
+  archived?: boolean   // internal hide in Zenaf queue only
 }
 
 interface JudgmentRecordInUI {
@@ -1889,7 +1890,7 @@ function App() {
       const el = document.activeElement
       if (
         !(el instanceof HTMLTextAreaElement) ||
-        el.dataset.atriaVoiceInsert !== 'council-question' ||
+        el.dataset.zenafVoiceInsert !== 'council-question' ||
         el !== councilQuestionTextareaRef.current
       ) {
         return
@@ -1907,8 +1908,8 @@ function App() {
         adjustCouncilQuestionTextareaHeight()
       })
     }
-    window.addEventListener(ATRIA_VOICE_TRANSCRIPT_DOM_FIRST, onDomFirstTranscript)
-    return () => window.removeEventListener(ATRIA_VOICE_TRANSCRIPT_DOM_FIRST, onDomFirstTranscript)
+    window.addEventListener(ZENAF_VOICE_TRANSCRIPT_DOM_FIRST, onDomFirstTranscript)
+    return () => window.removeEventListener(ZENAF_VOICE_TRANSCRIPT_DOM_FIRST, onDomFirstTranscript)
   }, [adjustCouncilQuestionTextareaHeight])
 
   useEffect(() => {
@@ -1948,11 +1949,11 @@ function App() {
       }
       setQuestion(d.text)
     }
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
-    window.addEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
     return () => {
-      window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
-      window.removeEventListener(ATRIA_VE_FOCUS_APPLY_REWRITE, onRewrite)
+      window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
+      window.removeEventListener(ZENAF_VE_FOCUS_APPLY_REWRITE, onRewrite)
     }
   }, [adjustCouncilQuestionTextareaHeight])
 
@@ -2763,7 +2764,7 @@ function App() {
     }
     const useBuiltinFullCouncil = invocationKind === 'full_multiseat'
     const includedAgentsForApi = filledSlots.map((s) => s.id)
-    console.debug('[Atria council] runCouncil start', {
+    console.debug('[Zenaf council] runCouncil start', {
       questionLen: q.length,
       seatsFilled: filledSlots.length,
       useBuiltinFullCouncil,
@@ -2822,7 +2823,7 @@ function App() {
       let perfCorrelationId = ''
       perfLog = (stage: string, extra?: Record<string, unknown>) => {
         const msSinceCouncilRunT0 = Math.round(performance.now() - timing.runStartedMs)
-        console.info('[Atria perf]', { stage, msSinceCouncilRunT0, perfRunId: perfCorrelationId || null, ...extra })
+        console.info('[Zenaf perf]', { stage, msSinceCouncilRunT0, perfRunId: perfCorrelationId || null, ...extra })
       }
       perfLog?.('runCouncil_try_start', { questionLen: q.length })
       setCouncilStreamPhase('connecting')
@@ -3005,7 +3006,7 @@ function App() {
         delete council_preflight.node_interpretation
       }
 
-      console.debug('[Atria council] council_preflight snapshot', {
+      console.debug('[Zenaf council] council_preflight snapshot', {
         ve_focus_entity: effectiveCore?.entity_type,
         ve_focus_id: effectiveCore?.entity_id,
         ve_focus_title: council_preflight.ve_focus_title,
@@ -3142,7 +3143,7 @@ function App() {
           .filter((d): d is Record<string, unknown> => d != null)
         if (definitions.length > 0) body.params.perspective_definitions = definitions
       }
-      console.debug('[Atria council] POST /run/stream body', {
+      console.debug('[Zenaf council] POST /run/stream body', {
         mode: body.mode,
         hasRoutingContext: !!body.routing_context,
         hasIncludedAgents: !!(body.params.included_agents && body.params.included_agents.length > 0),
@@ -3157,21 +3158,21 @@ function App() {
         signal: streamAbort.signal,
       })
       timing.fetchResolvedMs = performance.now()
-      perfCorrelationId = res.headers.get('X-Atria-Perf-Run-Id')?.trim() || ''
-      const streamModelUsed = res.headers.get('X-Atria-Model-Used')
+      perfCorrelationId = res.headers.get('X-Zenaf-Perf-Run-Id')?.trim() || ''
+      const streamModelUsed = res.headers.get('X-Zenaf-Model-Used')
       perfLog?.('fetch_resolved', {
         ok: res.ok,
         status: res.status,
         perfRunId: perfCorrelationId || null,
-        providerUsed: res.headers.get('X-Atria-Provider-Used'),
+        providerUsed: res.headers.get('X-Zenaf-Provider-Used'),
         modelUsed: streamModelUsed,
         handshakeMs: Math.round(timing.fetchResolvedMs - timing.runStartedMs),
       })
-      console.debug('[Atria council] response', { ok: res.ok, status: res.status })
+      console.debug('[Zenaf council] response', { ok: res.ok, status: res.status })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         const msg = extractHttpDetailMessage(err) || res.statusText
-        console.debug('[Atria council] HTTP error', msg)
+        console.debug('[Zenaf council] HTTP error', msg)
         setCouncilStreamPhase('errored')
         if (councilRunId) {
           setAgentThread((prev) => prev.filter((m) => m.ephemeralRunId !== councilRunId))
@@ -3179,7 +3180,7 @@ function App() {
         setError(msg)
         if (import.meta.env.DEV && councilTransportTimingRef.current) {
           const t = councilTransportTimingRef.current
-          console.debug('[Atria council] transport (failed at HTTP)', {
+          console.debug('[Zenaf council] transport (failed at HTTP)', {
             handshakeMs: Math.round((t.fetchResolvedMs ?? 0) - t.runStartedMs),
           })
         }
@@ -3188,7 +3189,7 @@ function App() {
       const reader = res.body?.getReader()
       if (!reader) {
         const msg = 'No response body stream (cannot read council output).'
-        console.debug('[Atria council]', msg)
+        console.debug('[Zenaf council]', msg)
         setCouncilStreamPhase('errored')
         if (councilRunId) {
           setAgentThread((prev) => prev.filter((m) => m.ephemeralRunId !== councilRunId))
@@ -3196,7 +3197,7 @@ function App() {
         setError(msg)
         if (import.meta.env.DEV && councilTransportTimingRef.current) {
           const t = councilTransportTimingRef.current
-          console.debug('[Atria council] transport (failed: no reader)', {
+          console.debug('[Zenaf council] transport (failed: no reader)', {
             handshakeMs: Math.round((t.fetchResolvedMs ?? 0) - t.runStartedMs),
           })
         }
@@ -3272,7 +3273,7 @@ function App() {
           const synEnv = ingestSynthesisEnvelopeFromPayload(payload)
           if (synEnv) setCouncilSynthesisIntegrityEnvelope(synEnv)
           if (payload.error) {
-            console.debug('[Atria council] stream payload error', payload.error)
+            console.debug('[Zenaf council] stream payload error', payload.error)
             setCouncilStreamPhase('errored')
             if (councilRunId) {
               setAgentThread((prev) => prev.filter((m) => m.ephemeralRunId !== councilRunId))
@@ -3598,7 +3599,7 @@ function App() {
             ? Math.round(t.firstChunkMs - t.fetchResolvedMs)
             : null
         const totalMs = t.streamEndedMs != null ? Math.round(t.streamEndedMs - t.runStartedMs) : null
-        console.debug('[Atria council] transport timings (success)', {
+        console.debug('[Zenaf council] transport timings (success)', {
           handshakeMs,
           firstTokenMs,
           totalMs,
@@ -3630,7 +3631,7 @@ function App() {
               )
             : null,
       })
-      console.debug('[Atria council] runCouncil done', { outLen: councilText.length })
+      console.debug('[Zenaf council] runCouncil done', { outLen: councilText.length })
     } catch (e) {
       const aborted =
         (typeof DOMException !== 'undefined' && e instanceof DOMException && e.name === 'AbortError') ||
@@ -3642,10 +3643,10 @@ function App() {
         : e instanceof Error
           ? e.message
           : 'Request failed'
-      console.debug('[Atria council] runCouncil catch', msg)
+      console.debug('[Zenaf council] runCouncil catch', msg)
       const tRef = councilTransportTimingRef.current
       const t0 = tRef?.runStartedMs ?? performance.now()
-      ;(perfLog ?? ((stage, extra) => console.info('[Atria perf]', { stage, ...extra })))('runCouncil_catch', {
+      ;(perfLog ?? ((stage, extra) => console.info('[Zenaf perf]', { stage, ...extra })))('runCouncil_catch', {
         aborted,
         message: msg.slice(0, 200),
         msSinceCouncilRunT0: Math.round(performance.now() - t0),
@@ -3667,7 +3668,7 @@ function App() {
             ? Math.round(t.firstChunkMs - t.fetchResolvedMs)
             : null
         const totalMs = t.streamEndedMs != null ? Math.round(t.streamEndedMs - t.runStartedMs) : null
-        console.debug('[Atria council] transport timings (terminal error)', {
+        console.debug('[Zenaf council] transport timings (terminal error)', {
           handshakeMs,
           firstTokenMs,
           totalMs,
@@ -3724,7 +3725,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
-      const folderAdvisorModelUsed = res.headers.get('X-Atria-Model-Used')
+      const folderAdvisorModelUsed = res.headers.get('X-Zenaf-Model-Used')
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         setError(extractHttpDetailMessage(err) || res.statusText)
@@ -4465,7 +4466,7 @@ function App() {
     'thinking' | 'multiseat' | 'folder'
   >('multiseat')
   const [lastCouncilWasFolderWorkflow, setLastCouncilWasFolderWorkflow] = useState(false)
-  /** When true, server runs integrator pass and UI shows “Atria synthesis”; default off. */
+  /** When true, server runs integrator pass and UI shows “Zenaf synthesis”; default off. */
   const [includeCouncilSynthesis, setIncludeCouncilSynthesis] = useState(false)
   const [councilSynthesisIntegrity, setCouncilSynthesisIntegrity] = useState<CouncilSynthesisIntegrityState | null>(null)
   const [councilIntegrityWarning, setCouncilIntegrityWarning] = useState<string | null>(null)
@@ -4842,7 +4843,7 @@ function App() {
   const runSelectedAgent = () => {
     void runCouncil(undefined)
   }
-  // Only block while a run is in flight. Empty question is OK (runCouncil defaults). At least one seat is always implied (default Atria thinking partner).
+  // Only block while a run is in flight. Empty question is OK (runCouncil defaults). At least one seat is always implied (default Zenaf thinking partner).
   const agentRunDisabled = loading || councilTransformLoading
   const agentResponse: string | null =
     lastMode === 'council' && lastCouncilResult ? lastCouncilResult
@@ -5661,7 +5662,7 @@ function App() {
         <div className="flex items-center gap-3 min-w-0">
           <ProfileAvatarControl user={currentUser} onUserUpdated={setCurrentUser} />
           <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-xl font-semibold truncate">Atria · Local-first workflow cockpit</h1>
+            <h1 className="text-xl font-semibold truncate">Zenaf · Local-first workflow cockpit</h1>
             <span className="text-xs text-stone-400 shrink-0 hidden sm:inline">{currentUser.email}</span>
           </div>
         </div>
@@ -5848,7 +5849,7 @@ function App() {
                     <div className="space-y-2">
                       <p className="text-stone-400 text-xs">
                         Create your <span className="text-stone-300">Brand core</span> once — one identity for structured
-                        fields, training, and how Atria represents you. Extra rows on the server, if any, are legacy
+                        fields, training, and how Zenaf represents you. Extra rows on the server, if any, are legacy
                         duplicates, not additional selves.
                       </p>
                       <CreateCoreProfileForm
@@ -6153,7 +6154,7 @@ function App() {
               </button>
               {emailConnectionExpanded && (
               <div className="px-4 pb-4 pt-0">
-              <p className="text-slate-500 text-xs mb-3">Add IMAP credentials so the system can connect and mirror your mailbox (read-only). Saved locally; use Poll email after saving. If you see 404, start the API: run <strong>open-cockpit.bat</strong> from the Atria folder (or in a terminal from repo root: <code className="text-slate-400">uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>).</p>
+              <p className="text-slate-500 text-xs mb-3">Add IMAP credentials so the system can connect and mirror your mailbox (read-only). Saved locally; use Poll email after saving. If you see 404, start the API: run <strong>open-cockpit.bat</strong> from the Zenaf folder (or in a terminal from repo root: <code className="text-slate-400">uvicorn api.main:app --reload --host 127.0.0.1 --port 8010</code>).</p>
               <p className="text-slate-500 text-xs mb-3">
                 <span className="text-slate-400">Identity vs mailbox access:</span> App login is for <em>who you are</em> only. Gmail connection below uses <strong>Google OAuth</strong> (mailbox access, no app password). Or use the IMAP form as fallback.
               </p>
@@ -6446,7 +6447,7 @@ function App() {
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); archiveIntakeItem(item.id) }}
                                     className="text-slate-500 hover:text-slate-300 text-[10px]"
-                                    title="Hide in Atria queue only (no mailbox change)"
+                                    title="Hide in Zenaf queue only (no mailbox change)"
                                   >
                                     Archive
                                   </button>
@@ -6726,7 +6727,7 @@ function App() {
                             type="button"
                             onClick={() => archiveIntakeItem(detailItem.id)}
                             className="text-slate-500 hover:text-slate-300 text-xs"
-                            title="Hide in Atria queue only"
+                            title="Hide in Zenaf queue only"
                           >
                             Archive (hide from queue)
                           </button>
@@ -6799,6 +6800,7 @@ function App() {
             <p className="text-xs text-stone-500 mt-0.5">
               Surface: <span className="text-stone-400">{mainViewLabel(mainView)}</span>
             </p>
+            <MediationFlowHint veSelection={veSelection} />
           </div>
           {showFolderReviewPanel ? (
             <>
@@ -6810,7 +6812,7 @@ function App() {
                 {folderAdvisorLoading || folderAdvisorStreaming ? (
                   <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 border border-yellow-700/50">
                     <p className="text-xs text-yellow-500/90 font-medium mb-1">Refine Categories (AI)</p>
-                    <CouncilTranscript text={folderAdvisorStreaming} decorateSeatHeaders={false} stripAtriaSynthesis={false} />
+                    <CouncilTranscript text={folderAdvisorStreaming} decorateSeatHeaders={false} stripZenafSynthesis={false} />
                     <span className="inline-block w-2 h-4 ml-0.5 bg-yellow-500 animate-pulse" aria-hidden />
                   </div>
                 ) : folderAdvisorResult ? (
@@ -6932,7 +6934,7 @@ function App() {
                   ) : (
                     <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 border border-stone-600">
                       <p className="text-xs text-stone-500 mb-2">Could not parse suggestions. Full response:</p>
-                      <CouncilTranscript text={folderAdvisorResult} decorateSeatHeaders={false} stripAtriaSynthesis={false} />
+                      <CouncilTranscript text={folderAdvisorResult} decorateSeatHeaders={false} stripZenafSynthesis={false} />
                     </div>
                   )
                 ) : (
@@ -7231,12 +7233,12 @@ function App() {
                           m.agentLabel === 'Folder review' ||
                           m.agentLabel === 'Zenaf' ||
                           m.agentLabel === 'Thinking Partner' ||
-                          m.agentLabel === 'Atria (Thinking Partner)') ? (
+                          m.agentLabel === 'Zenaf (Thinking Partner)') ? (
                         <>
                           <CouncilTranscriptResonanceBridge
                             text={m.content}
                             decorateSeatHeaders={m.agentLabel === 'Council'}
-                            stripAtriaSynthesis={
+                            stripZenafSynthesis={
                               m.agentLabel === 'Council' ? !includeCouncilSynthesis : true
                             }
                             responseIdPrefix={
@@ -7257,7 +7259,7 @@ function App() {
                             m.role === 'agent' &&
                             m.agentLabel === 'Council' &&
                             includeCouncilSynthesis &&
-                            /\bAtria synthesis:/i.test(m.content) && (
+                            /\bZenaf synthesis:/i.test(m.content) && (
                               <CouncilSynthesisIntegrityNote
                                 includeSynthesis
                                 state={councilSynthesisIntegrity}
@@ -7320,11 +7322,11 @@ function App() {
                       decorateSeatHeaders={
                         !lastCouncilWasFolderWorkflow && streamingCouncilRunLabel === 'Council'
                       }
-                      stripAtriaSynthesis={
+                      stripZenafSynthesis={
                         lastCouncilWasFolderWorkflow ||
                         streamingCouncilRunLabel === 'Zenaf' ||
                         streamingCouncilRunLabel === 'Thinking Partner' ||
-                        streamingCouncilRunLabel === 'Atria (Thinking Partner)' ||
+                        streamingCouncilRunLabel === 'Zenaf (Thinking Partner)' ||
                         !includeCouncilSynthesis
                       }
                       responseIdPrefix={
@@ -7361,7 +7363,7 @@ function App() {
                           decorateSeatHeaders={
                             lastCouncilPresentationKind === 'multiseat' && !lastCouncilWasFolderWorkflow
                           }
-                          stripAtriaSynthesis={
+                          stripZenafSynthesis={
                             lastCouncilPresentationKind !== 'multiseat' ||
                             lastCouncilWasFolderWorkflow ||
                             !includeCouncilSynthesis
@@ -7379,7 +7381,7 @@ function App() {
                         {lastCouncilPresentationKind === 'multiseat' &&
                           !lastCouncilWasFolderWorkflow &&
                           includeCouncilSynthesis &&
-                          /\bAtria synthesis:/i.test(agentResponse) && (
+                          /\bZenaf synthesis:/i.test(agentResponse) && (
                             <CouncilSynthesisIntegrityNote
                               includeSynthesis={includeCouncilSynthesis}
                               state={councilSynthesisIntegrity}
@@ -7458,7 +7460,7 @@ function App() {
                           onChange={(e) => setIncludeCouncilSynthesis(e.target.checked)}
                           className="rounded border-stone-600 bg-stone-900 text-yellow-700"
                         />
-                        Include Atria synthesis (final integrator pass)
+                        Include Zenaf synthesis (final integrator pass)
                       </label>
                     </div>
                   ) : null}

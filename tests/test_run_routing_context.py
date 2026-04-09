@@ -198,7 +198,7 @@ def test_begin_run_routing_council_mode_uses_ollama_when_policy_primary_ollama(m
 
     monkeypatch.setattr("local_ai.execution_policy.resolve.load_execution_policy_config", fake_load)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("ATRIA_COUNCIL_MODEL", raising=False)
+    monkeypatch.delenv("ZENAF_COUNCIL_MODEL", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_MODEL", "def-m", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_COUNCIL_MODEL", "council-legacy-m", raising=False)
     req = RunRequest(
@@ -323,7 +323,7 @@ def test_begin_run_routing_council_workspace_council_falls_back_ollama_when_open
 def test_begin_run_routing_council_mode_uses_openai_when_policy_override_openai_and_key(monkeypatch):
     """Policy can still target OpenAI for council when key is present."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-real")
-    monkeypatch.delenv("ATRIA_COUNCIL_MODEL", raising=False)
+    monkeypatch.delenv("ZENAF_COUNCIL_MODEL", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_MODEL", "def-m", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_COUNCIL_MODEL", "council-legacy-m", raising=False)
 
@@ -357,7 +357,7 @@ def test_begin_run_routing_council_mode_uses_openai_when_policy_override_openai_
 def test_begin_run_routing_council_anonymous_ignores_openai_env_for_primary_openai(monkeypatch):
     """Option B: OPENAI_API_KEY must not unlock policy OpenAI for account:anonymous (council falls back to Ollama)."""
     monkeypatch.setenv("OPENAI_API_KEY", "sk-should-not-apply-to-anon")
-    monkeypatch.delenv("ATRIA_COUNCIL_MODEL", raising=False)
+    monkeypatch.delenv("ZENAF_COUNCIL_MODEL", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_MODEL", "def-m", raising=False)
     monkeypatch.setattr("local_ai.config.OLLAMA_COUNCIL_MODEL", "council-legacy-m", raising=False)
 

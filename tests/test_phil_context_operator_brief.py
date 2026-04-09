@@ -1,4 +1,4 @@
-"""Optional operator brief env gate (ATRIA_OPERATOR_BRIEF_ENABLED)."""
+"""Optional operator brief env gate (ZENAF_OPERATOR_BRIEF_ENABLED)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
 
 
 def test_operator_brief_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ATRIA_OPERATOR_BRIEF_ENABLED", "0")
+    monkeypatch.setenv("ZENAF_OPERATOR_BRIEF_ENABLED", "0")
     import local_ai.context.phil_context as pc
 
     importlib.reload(pc)
@@ -22,17 +22,17 @@ def test_operator_brief_disabled_by_env(monkeypatch: pytest.MonkeyPatch) -> None
         assert pc.load_operator_priority() == ""
         assert pc.load_philosophical_orientation() == ""
     finally:
-        monkeypatch.delenv("ATRIA_OPERATOR_BRIEF_ENABLED", raising=False)
+        monkeypatch.delenv("ZENAF_OPERATOR_BRIEF_ENABLED", raising=False)
         importlib.reload(pc)
 
 
 def test_operator_brief_false_string(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ATRIA_OPERATOR_BRIEF_ENABLED", "false")
+    monkeypatch.setenv("ZENAF_OPERATOR_BRIEF_ENABLED", "false")
     import local_ai.context.phil_context as pc
 
     importlib.reload(pc)
     try:
         assert pc.load_operator_priority() == ""
     finally:
-        monkeypatch.delenv("ATRIA_OPERATOR_BRIEF_ENABLED", raising=False)
+        monkeypatch.delenv("ZENAF_OPERATOR_BRIEF_ENABLED", raising=False)
         importlib.reload(pc)

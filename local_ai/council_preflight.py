@@ -1,6 +1,9 @@
 """
 Council preflight: merge UI/runtime hints into the council packet before seats run.
 Does not force a single answer/clarify mode per run — seats judge independently.
+
+Future: optional four-channel (water/soil/condition/fruit) summaries from the same
+``UnifiedNodeAssessment`` contract as the vision map may augment grounding blocks here.
 """
 from __future__ import annotations
 
@@ -1458,7 +1461,7 @@ def build_enriched_council_context(
     Single string passed to build_council_decision_packet as `context`.
     Order: PRIMARY (when present and legitimate) → runtime → workflow/thread.
     Vague questions without grounding signals omit authoritative PRIMARY; see CONTEXT NOTE.
-    SYSTEM FAILURE STATE lives only in the instruction layer (see atria_tools), not here.
+    SYSTEM FAILURE STATE lives only in the instruction layer (see zenaf_tools), not here.
     When ``scoped_digression`` is True: BACKGROUND (optional) → PRIMARY → slim runtime + guardrails;
     Vision Execution working set, aspiration, developmental guidance, and full thread merge are omitted.
 

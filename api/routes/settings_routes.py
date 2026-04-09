@@ -8,8 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from api.routes.auth_routes import get_current_user
 from local_ai import config as _config
+from local_ai.llm.credentials import resolve_cloud_api_key
 from local_ai.llm.execution_principal import authenticated_account_principal
-from local_ai.llm.provider_registry import build_provider_status_rows_for_principal, normalize_provider_id
+from local_ai.llm.provider_registry import (
+    build_provider_status_rows,
+    build_provider_status_rows_for_principal,
+    normalize_provider_id,
+)
 from local_ai.vision_execution import models as M
 from local_ai.vision_execution import storage as St
 
@@ -146,7 +151,7 @@ def put_llm_credential(
     if not St.settings_encryption_available():
         raise HTTPException(
             status_code=503,
-            detail="Cannot encrypt API keys: install cryptography, or fix ATRIA_SETTINGS_ENCRYPTION_KEY / ~/.atria/settings_encryption.key.",
+            detail="Cannot encrypt API keys: install cryptography, or fix ZENAF_SETTINGS_ENCRYPTION_KEY / ~/.zenaf/settings_encryption.key.",
         )
     try:
         St.upsert_llm_provider_credential(current_user["id"], pv, body.api_key)
@@ -166,7 +171,9 @@ def post_llm_test(body: M.SettingsLLMTestBody, current_user: dict = Depends(get_
     ephemeral = (body.api_key or "").strip() or None
     key = ephemeral
     if key is None and pv in _KEY_PROVIDERS:
-        key = St.get_decrypted_llm_api_key(uid, pv)
+        p = authenticated_account_principal(uid)
+        k, _src = resolve_cloud_api_key(p, pv)
+        key = k
 
     result_ok = False
     result_err: str | None = None

@@ -46,7 +46,7 @@ IMPLICIT_DEFAULT_SOURCES: list[dict[str, Any]] = [
     },
     {
         "id": "resolver_council",
-        "summary": "Council without native_provider override: policy override → Ollama model override → ATRIA_COUNCIL_MODEL / config OLLAMA_COUNCIL_MODEL → profile ollama_model (else config OLLAMA_MODEL).",
+        "summary": "Council without native_provider override: policy override → Ollama model override → ZENAF_COUNCIL_MODEL / config OLLAMA_COUNCIL_MODEL → profile ollama_model (else config OLLAMA_MODEL).",
         "ollama_selected_when": "Default council path uses local Ollama (not profile default cloud).",
         "openai_suggested_when": "Only when native_provider (or teacher) override requests a cloud id with a key.",
         "fallback_when": "Per-seat explicit provider may fall back to default_provider with a note (council_seat_provider).",
@@ -86,12 +86,12 @@ def _council_model_stack() -> dict[str, Any]:
         from local_ai import config as _config
     except Exception:
         _config = None
-    env = os.environ.get("ATRIA_COUNCIL_MODEL", "").strip()
+    env = os.environ.get("ZENAF_COUNCIL_MODEL", "").strip()
     cfg_cm = str(getattr(_config, "OLLAMA_COUNCIL_MODEL", "") or "").strip() if _config else ""
     cfg_om = str(getattr(_config, "OLLAMA_MODEL", "") or "").strip() if _config else ""
     effective = env or cfg_cm or cfg_om or "(unset — resolver may use profile ollama_model)"
     return {
-        "ATRIA_COUNCIL_MODEL": env or None,
+        "ZENAF_COUNCIL_MODEL": env or None,
         "config_OLLAMA_COUNCIL_MODEL": cfg_cm or None,
         "config_OLLAMA_MODEL": cfg_om or None,
         "effective_council_model_hint": effective,
@@ -421,15 +421,15 @@ def build_credential_visibility_for_user(user_id: str) -> dict[str, Any]:
     Does not expose key material. Anonymous lane never uses OPENAI_API_KEY.
     """
     _, acct_src = resolve_openai_api_key(user_id)
-    sys_openai = bool((os.environ.get("ATRIA_SYSTEM_OPENAI_KEY") or "").strip())
+    sys_openai = bool((os.environ.get("ZENAF_SYSTEM_OPENAI_KEY") or "").strip())
     return {
         "option_b_note": (
             "account:anonymous does not inherit OPENAI_API_KEY; cloud OpenAI requires sign-in + Settings key "
-            "or system scope with ATRIA_SYSTEM_OPENAI_KEY."
+            "or system scope with ZENAF_SYSTEM_OPENAI_KEY."
         ),
         "anonymous_openai_cloud_allowed": False,
         "system": {
-            "openai_env_var": "ATRIA_SYSTEM_OPENAI_KEY",
+            "openai_env_var": "ZENAF_SYSTEM_OPENAI_KEY",
             "openai_configured": sys_openai,
         },
         "account_authenticated": {

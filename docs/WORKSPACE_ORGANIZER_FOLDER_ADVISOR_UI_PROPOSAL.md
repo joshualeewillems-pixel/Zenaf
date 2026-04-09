@@ -144,7 +144,7 @@ No change to `lastCouncilResult` or `lastCouncilWasFolderWorkflow` for the folde
 
 ### 4.6 What not to change
 
-- **Backend:** No changes to API or `atria_tools`. Same `POST /run/stream`, same `workflow_kind: 'folder'`.
+- **Backend:** No changes to API or `zenaf_tools`. Same `POST /run/stream`, same `workflow_kind: 'folder'`.
 - **runCouncil:** Keep as-is for non-folder use (Perspectives, other views). Only the **call sites** for Refine Categories switch to `runFolderAdvisor()`.
 - **Left column:** Workspace Organizer steps, FolderSelector, SummaryCard, SuggestedFoldersEditor (except new prop and callback rename), SimulateTreeGraphical, Step 4 and 5 — no structural change beyond Refine Categories wiring and optional intro line.
 

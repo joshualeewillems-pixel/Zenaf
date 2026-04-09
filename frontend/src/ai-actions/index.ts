@@ -2,7 +2,7 @@ export type {
   AiActionTrace,
   AiActionKind,
   AiUserOutcome,
-  AtriaSurface,
+  ZenafSurface,
   CouncilIntegrityReviewSample,
   CouncilSynthesisCombinedSummary,
   CouncilSynthesisIntegrityState,
@@ -53,14 +53,14 @@ export type {
   HumanAssessmentClassification,
 } from './councilIntegrityReviewExport'
 export {
-  ATRIA_PRIVACY_MODE_STORAGE_KEY,
+  ZENAF_PRIVACY_MODE_STORAGE_KEY,
   extractHttpDetailMessage,
   getTracePrivacyFlagsForCurrentMode,
   privacyModeToPartialPrivacyPolicy,
   readPrivacyMode,
   writePrivacyMode,
 } from './privacyModeBridge'
-export type { AtriaPrivacyMode } from './privacyModeBridge'
+export type { ZenafPrivacyMode } from './privacyModeBridge'
 export { AiActionResultPanel } from './AiActionResultPanel'
 export {
   CLIENT_HINT_COUNCIL_OLLAMA_MODEL,

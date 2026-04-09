@@ -54,7 +54,7 @@ def test_soil_append_requires_auth(client):
 
 
 def test_soil_append_ok(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     r = client_authed.post(
         "/vision-execution/soil/append",
         json={
@@ -74,7 +74,7 @@ def test_soil_append_ok(client_authed, tmp_path, monkeypatch):
 
 
 def test_soil_append_named_capture_allowlisted(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     r = client_authed.post(
         "/vision-execution/soil/append",
         json={
@@ -90,7 +90,7 @@ def test_soil_append_named_capture_allowlisted(client_authed, tmp_path, monkeypa
 
 
 def test_soil_append_named_capture_unknown_name(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     r = client_authed.post(
         "/vision-execution/soil/append",
         json={
@@ -106,7 +106,7 @@ def test_soil_append_named_capture_unknown_name(client_authed, tmp_path, monkeyp
 
 
 def test_soil_append_root_without_explicit_flag(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     monkeypatch.setattr(
         "api.routes.soil_api.verify_ve_subject_exists_for_soil_api",
         soil_api_guard.verify_ve_subject_exists_for_soil_api,
@@ -127,7 +127,7 @@ def test_soil_append_root_without_explicit_flag(client_authed, tmp_path, monkeyp
 
 
 def test_soil_append_root_when_explicit(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     monkeypatch.setattr(
         "api.routes.soil_api.verify_ve_subject_exists_for_soil_api",
         soil_api_guard.verify_ve_subject_exists_for_soil_api,
@@ -148,7 +148,7 @@ def test_soil_append_root_when_explicit(client_authed, tmp_path, monkeypatch):
 
 
 def test_soil_promote_after_append(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     a = client_authed.post(
         "/vision-execution/soil/append",
         json={
@@ -186,7 +186,7 @@ def test_soil_promote_after_append(client_authed, tmp_path, monkeypatch):
 
 
 def test_soil_append_body_at_max_and_over_max(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     ok = client_authed.post(
         "/vision-execution/soil/append",
         json={
@@ -217,7 +217,7 @@ def test_soil_append_body_at_max_and_over_max(client_authed, tmp_path, monkeypat
 
 
 def test_soil_ve_guard_not_found(client_authed, tmp_path, monkeypatch):
-    monkeypatch.setenv("ATRIA_SOIL_ROOT", str(tmp_path))
+    monkeypatch.setenv("ZENAF_SOIL_ROOT", str(tmp_path))
     monkeypatch.setattr(
         "api.routes.soil_api.verify_ve_subject_exists_for_soil_api",
         soil_api_guard.verify_ve_subject_exists_for_soil_api,

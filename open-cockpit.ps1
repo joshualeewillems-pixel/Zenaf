@@ -14,8 +14,8 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\fronten
 Start-Sleep -Seconds 4
 
 # Open app and API docs in default browser
-Start-Process "http://localhost:5173"
+Start-Process "http://127.0.0.1:5173"
 Start-Process "http://127.0.0.1:8010/docs"
 
 Write-Host "Cockpit: API and frontend started in separate windows."
-Write-Host "Browser opened: app (http://localhost:5173) and API docs (http://127.0.0.1:8010/docs)"
+Write-Host "Browser opened: app (http://127.0.0.1:5173) and API docs (http://127.0.0.1:8010/docs)"

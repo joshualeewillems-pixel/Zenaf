@@ -2,12 +2,12 @@
 """
 Charter enforcement — minimal mechanical checks (v0).
 
-Maps to docs/01_TRUTH/ATRIA_SYSTEM_CHARTER.md:
+Maps to docs/01_TRUTH/ZENAF_SYSTEM_CHARTER.md:
   §4 Traceability  — server trace or declared exempt marker on VE LLM routes
   §2 Save/commit   — infer_draft_value_from_context + heuristic scan
   §5 Product honesty — stub UI affordance (Clarify with AI)
 
-Output: stdout report aligned with ATRIA_CHARTER_VIOLATION_LEDGER.md categories.
+Output: stdout report aligned with ZENAF_CHARTER_VIOLATION_LEDGER.md categories.
 Exit code: 0 always (report-only). Set CHARTER_ENFORCE_STRICT=1 to exit 1 on any §4 finding.
 
 Limitations: AST scan is vision_execution router only; POST /run is summarized, not deep-routed.
@@ -163,14 +163,14 @@ def check_commit_determinism() -> list[dict[str, str]]:
                 "detail": "infer_draft_value_from_context defined — fallback when [DRAFT_VALUE] missing; must stay narrow and visible.",
             }
         )
-    atools = _REPO / "local_ai" / "atria_tools.py"
+    atools = _REPO / "local_ai" / "zenaf_tools.py"
     if atools.is_file() and "infer_draft_value_from_context" in atools.read_text(encoding="utf-8"):
         findings.append(
             {
                 "ledger": "Commit / charter 2 (review call sites)",
                 "severity": "minor",
                 "rule": "Charter 2.3",
-                "where": "local_ai/atria_tools.py",
+                "where": "local_ai/zenaf_tools.py",
                 "detail": "Invokes infer_draft_value_from_context — confirm only on conversational integration path with empty task text.",
             }
         )
@@ -212,7 +212,7 @@ def main() -> int:
         ("Charter 5 — phantom / overpromise (Clarify with AI stub)", check_phantom_clarify()),
     ]
 
-    print("Atria charter enforcement check (v0)")
+    print("Zenaf charter enforcement check (v0)")
     print(f"Repo: {_REPO}")
     print(f"Loaded exempt ids from aiTraceExemptRegistry.ts: {sorted(exempt_ids)}")
     print()

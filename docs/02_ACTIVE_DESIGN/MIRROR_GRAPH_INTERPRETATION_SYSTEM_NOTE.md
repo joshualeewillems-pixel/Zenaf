@@ -8,7 +8,7 @@ Owner context: Aligns intake, profile, files, meetings, and future surfaces on o
 
 ## 1. Declared intent
 
-**Atria should push as far as is responsible toward a single pattern:** incoming evidence is **interpreted against an existing or implied system graph**, and the system emits **explicit proposed graph operations** (not only labels or free text). Humans mediate before durable writes. Automation may assist ranking and prefill, not silent commitment.
+**Zenaf should push as far as is responsible toward a single pattern:** incoming evidence is **interpreted against an existing or implied system graph**, and the system emits **explicit proposed graph operations** (not only labels or free text). Humans mediate before durable writes. Automation may assist ranking and prefill, not silent commitment.
 
 This is **strong intent**: new features should default to this shape; existing flows should **migrate toward** it when touched, unless a brief exception is documented.
 

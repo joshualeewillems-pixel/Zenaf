@@ -22,7 +22,7 @@
 | **Staging → review → commit (meeting-shaped)** | `VisionExecutionView` meeting capture: chunk extract, `stagingArea`, sessionStorage `STAGING_STORAGE_KEY`, interpret/review UI. | No shared “staging workspace” for other extractions (e.g. content deliverables) even if server shapes differ. | User mental model is identical; only payload types differ. | Shared review/interpretation utility (adapter layer). |
 | **Bounded transform / evaluate short-circuit** | `boundedCouncilTransform.ts` + `POST /suggest-node-transform` from workspace path in `App.tsx`. | VE has rich evaluate/apply/dismiss flows (`VisionExecutionView`); not the same code path as bounded transform. | Same intent (“reshape this node”) split across stream council vs JSON endpoint. | Shared action utility (router + trace). |
 | **Grouped questions / guide stack UI** | `ThreadInlineGuideStack.tsx` + `guideQuestionDisplay.ts` (conversation thread). | VE insight / evaluation panels use different presentation; not the same grouping component. | Consistent “framing vs risks” grouping reduces cognitive load across surfaces. | Shared interaction utility. |
-| **Note append / record insight** | Patterns scattered (meeting notes, integration commit, digression summary in `atria_tools.py`). | No single client “recordInsight” API with trace + routing. | Handoff from chat → durable note should be one contract. | Shared action utility. |
+| **Note append / record insight** | Patterns scattered (meeting notes, integration commit, digression summary in `zenaf_tools.py`). | No single client “recordInsight” API with trace + routing. | Handoff from chat → durable note should be one contract. | Shared action utility. |
 | **Open entity / deep navigation** | `RadarHomePage` callbacks (`onOpenProject`, …); map `onOpenEntity`; VE internal tab switches. | Radar → VE transition depends on parent wiring; not a global router module. | “Open this id in the right tab” is repeated per surface. | Shared interaction utility. |
 
 ---
@@ -141,7 +141,7 @@
 
 ## Final answer
 
-> If Atria were treated as **one system** rather than a collection of tabs, what utilities would clearly need to become shared infrastructure?
+> If Zenaf were treated as **one system** rather than a collection of tabs, what utilities would clearly need to become shared infrastructure?
 
 1. **Council context assembly** — one client-side **preflight composer** (and optional digression/subject helpers) that all surfaces use before `POST /run` / stream, matching `council_preflight.parse_preflight_from_request` and `build_enriched_council_context` on the server.
 

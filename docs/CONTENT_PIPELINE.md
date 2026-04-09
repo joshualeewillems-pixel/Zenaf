@@ -2,13 +2,13 @@
 
 **Status:** Design  
 **Scope:** Content workspace tab (thin production workspace serving Vision Execution)  
-**Goal:** Make Atria the **conductor of the media pipeline** — shared context, tool-shaped handoff packages, and production/distribution tracking — **not a replacement for every instrument.**
+**Goal:** Make Zenaf the **conductor of the media pipeline** — shared context, tool-shaped handoff packages, and production/distribution tracking — **not a replacement for every instrument.**
 
 ---
 
 ## 0. Orchestration, not replacement
 
-Atria does **not** replace specialist tools (ElevenLabs, HeyGen, page builders, email platforms, etc.). Its role is the **orchestration layer** where those tools can talk to each other through:
+Zenaf does **not** replace specialist tools (ElevenLabs, HeyGen, page builders, email platforms, etc.). Its role is the **orchestration layer** where those tools can talk to each other through:
 
 - **Shared context** — one content brief that stays coherent across source materials, goals, audience, tone, and outputs.
 - **Structured handoff packages** — tool-shaped exports (e.g. script for TTS, script+metadata for avatar, copy for a page) that downstream tools consume.
@@ -22,11 +22,11 @@ Atria does **not** replace specialist tools (ElevenLabs, HeyGen, page builders, 
 4. **Production/distribution handoff tracking** — what’s been handed off, what’s next; tasks live in Vision Execution.
 5. **VE-linked task creation** — create tasks (record narration, produce avatar video, build landing page, send newsletter) attached to the linked project/initiative.
 
-**Atria should not become:** a full media editor, a voice cloning UI, an avatar builder, a page builder, or a full campaign sender.
+**Zenaf should not become:** a full media editor, a voice cloning UI, an avatar builder, a page builder, or a full campaign sender.
 
-**Atria should become:** the place where source materials, goals, audience, tone, and outputs stay coherent; where downstream tool handoffs are prepared and tracked; and where production tasks link back into Vision Execution.
+**Zenaf should become:** the place where source materials, goals, audience, tone, and outputs stay coherent; where downstream tool handoffs are prepared and tracked; and where production tasks link back into Vision Execution.
 
-**Future integrations** should be modeled as: **input sources** (e.g. notebook distillations, meeting notes), **transformation endpoints** (e.g. generate script, generate newsletter), and **distribution endpoints** (e.g. “hand off to ElevenLabs”, “hand off to email platform”) — with Atria holding the brief and the handoff state, not reimplementing the tools.
+**Future integrations** should be modeled as: **input sources** (e.g. notebook distillations, meeting notes), **transformation endpoints** (e.g. generate script, generate newsletter), and **distribution endpoints** (e.g. “hand off to ElevenLabs”, “hand off to email platform”) — with Zenaf holding the brief and the handoff state, not reimplementing the tools.
 
 **Anchor object:** The **Content Brief** is the anchor. All output packages and downstream handoffs derive from that shared brief.
 
@@ -138,7 +138,7 @@ Navigation: Content tab in the same top-level nav as Workspace Organizer, Perspe
 - **Do not auto-publish.** Export and handoff only; publishing stays in external tools (ElevenLabs, HeyGen, email tool, web CMS).
 - **Do not create a separate durable content database unless clearly needed.** Prefer storing briefs (and optionally minimal output metadata) in the existing app/VE data model with strong links to initiatives/projects/tasks.
 - **Keep outputs linked to Vision Execution context.** Every brief and every “create task” action should be traceable to initiative/project/task so Content never becomes a silo.
-- **Do not replace specialist tools.** Atria does not become: a full media editor, a voice cloning UI, an avatar builder, a page builder, or a full campaign sender. It prepares handoff packages and tracks tasks; the actual editing, cloning, building, and sending stay in the specialist tools.
+- **Do not replace specialist tools.** Zenaf does not become: a full media editor, a voice cloning UI, an avatar builder, a page builder, or a full campaign sender. It prepares handoff packages and tracks tasks; the actual editing, cloning, building, and sending stay in the specialist tools.
 
 ---
 

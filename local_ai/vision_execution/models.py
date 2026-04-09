@@ -588,7 +588,7 @@ class DecisionCreate(BaseModel):
 
 
 class CoordinationClientCheckpointCreate(BaseModel):
-    """Client-reported coordination checkpoint (``ActivityEvent.source`` = atria-client-trace)."""
+    """Client-reported coordination checkpoint (``ActivityEvent.source`` = zenaf-client-trace)."""
 
     checkpoint: Literal["ai_action_user_trace", "ai_suggestion_applied"]
     entity_type: str = Field(..., max_length=64)
@@ -757,7 +757,7 @@ class ExtractMeetingSynthesisRequest(BaseModel):
 
 
 class WorkspaceIdentityScanRequest(BaseModel):
-    """Bounded local scan; writes gitignored snapshot under repo .atria/workspace-identity/v1/."""
+    """Bounded local scan; writes gitignored snapshot under repo .zenaf/workspace-identity/v1/."""
 
     roots: list[str] = Field(default_factory=list)
     mode: Literal["deep_initial", "light_refresh"] = "deep_initial"

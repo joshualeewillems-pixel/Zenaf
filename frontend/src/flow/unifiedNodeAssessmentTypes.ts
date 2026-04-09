@@ -10,31 +10,6 @@ import type { FlowAssessment } from './flowAssessment'
 
 export const UNIFIED_NODE_ASSESSMENT_RULES_VERSION = '1'
 
-export type InterpretationStance = 'proceed' | 'clarify_first'
-
-/**
- * Transport enum for council_preflight / trunk — not display copy.
- * Keep in lockstep with `local_ai/conversation_trunk.AmbiguityType`.
- */
-export type NodeInterpretationAmbiguityType =
-  | 'missing_definition'
-  | 'unclear_priority'
-  | 'competing_priorities'
-  | 'unresolved_dependency'
-  | 'ownership_gap'
-  | 'unknown'
-
-export type NodeInterpretation = {
-  stance: InterpretationStance
-  /** True when a discriminating answer is required before a responsible next move. */
-  blockingClarification?: boolean
-  summary: string
-  actionLine: string
-  chatPrefill: string
-  clarificationQuestion?: string
-  ambiguityType?: NodeInterpretationAmbiguityType
-}
-
 export type ChannelId = 'water' | 'soil' | 'condition' | 'fruit'
 
 export type ChannelBand = 'low' | 'medium' | 'high'
@@ -84,6 +59,4 @@ export type UnifiedNodeAssessment = {
   clean_stone_ready: boolean
   rules_version: string
   reason_bindings: ReasonRepairBinding[]
-  /** Single cognitive read: summary, action, prefill, optional clarify-first stance. */
-  interpretation: NodeInterpretation
 }

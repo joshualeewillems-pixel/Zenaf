@@ -1,5 +1,5 @@
 /**
- * PerspectiveAgent (UI: **actor**): a structured interpretive lens for Atria.
+ * PerspectiveAgent (UI: **actor**): a structured interpretive lens for Zenaf.
  * Core data model for the Agent Creator; council payloads still use `perspective_agent_id`.
  */
 
@@ -256,8 +256,8 @@ export const BUILT_IN_PERSPECTIVES: PerspectiveAgent[] = [
 
 /** Earlier ship used conversational titles; upgrade localStorage when the title still matches exactly. */
 const LEGACY_BUILTIN_PERSPECTIVE_NAMES: Record<string, string> = {
-  zenaf: 'Atria (Thinking Partner)',
-  thinking_partner: 'Atria (Thinking Partner)',
+  zenaf: 'Zenaf (Thinking Partner)',
+  thinking_partner: 'Zenaf (Thinking Partner)',
   strategist: 'Big Picture',
   operator: 'Make It Happen',
   analyst: "What's True",
@@ -292,7 +292,7 @@ export function migrateThinkingPartnerAgentIdToZenaf(agents: PerspectiveAgent[])
 /** Fill in any missing built-in ids and refresh legacy default titles; keeps custom user-defined agents. */
 export function normalizeStoredPerspectiveAgents(stored: PerspectiveAgent[]): PerspectiveAgent[] {
   const remapped = migrateThinkingPartnerAgentIdToZenaf(stored)
-  const migrated = migrateLegacyBuiltinPerspectiveNames(remapped).filter((a) => a.id !== 'atria')
+  const migrated = migrateLegacyBuiltinPerspectiveNames(remapped).filter((a) => a.id !== 'zenaf')
   const byId = new Map(migrated.map((a) => [a.id, a]))
   const mergedBuiltins = BUILT_IN_PERSPECTIVES.map((b) => {
     const s = byId.get(b.id)

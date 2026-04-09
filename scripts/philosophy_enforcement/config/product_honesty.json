@@ -1,5 +1,5 @@
 {
-  "$comment": "Grounded in ATRIA_SYSTEM_CHARTER / matrix row 11 + charter_enforcement_check.check_phantom_clarify logic.",
+  "$comment": "Grounded in ZENAF_SYSTEM_CHARTER / matrix row 11 + charter_enforcement_check.check_phantom_clarify logic.",
   "phantom_ui_checks": [
     {
       "id": "clarify_with_ai_stub",

@@ -59,7 +59,7 @@ Map one intent per **top-level extract pipeline** (matches API split today):
 
 Optional future refinement (still strings, not enums): `meeting_extract_chunk_retry` if you want analytics on retries only — not required for first wire.
 
-**`surface`:** `meeting_extraction` (dedicated surface in `AtriaSurface`).  
+**`surface`:** `meeting_extraction` (dedicated surface in `ZenafSurface`).  
 **`subject_type`:** e.g. `meeting_capture` or `workspace_meeting` (pick one product string; no `subject_id` until a persisted meeting entity exists — `null` or empty is OK if trace schema allows).
 
 ---

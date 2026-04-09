@@ -516,7 +516,7 @@ def _should_suppress_hints_for_file(name: str) -> bool:
 
 
 def default_workspace_identity_dir(repo_root: Path | None = None) -> Path:
-    return (repo_root or REPO_ROOT) / ".atria" / "workspace-identity" / "v1"
+    return (repo_root or REPO_ROOT) / ".zenaf" / "workspace-identity" / "v1"
 
 
 def snapshot_path(base: Path | None = None) -> Path:
@@ -528,7 +528,7 @@ def meta_path(base: Path | None = None) -> Path:
 
 
 def compute_branch_key(*, cwd: Path | None = None) -> str:
-    """Prefer git branch@shortSha; else ATRIA_WORKSPACE_LABEL or local-unknown."""
+    """Prefer git branch@shortSha; else ZENAF_WORKSPACE_LABEL or local-unknown."""
     root = cwd or REPO_ROOT
     try:
         br = subprocess.run(
@@ -556,7 +556,7 @@ def compute_branch_key(*, cwd: Path | None = None) -> str:
                 return f"{b}@{s}"
     except Exception as e:
         logger.debug("[workspace-identity] git branch key failed: %s", e)
-    label = (os.environ.get("ATRIA_WORKSPACE_LABEL") or "").strip()
+    label = (os.environ.get("ZENAF_WORKSPACE_LABEL") or "").strip()
     if label:
         return f"label:{label}"
     return "local-unknown"

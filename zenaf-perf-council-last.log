@@ -1,0 +1,30 @@
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=0.00 stage=run_stream_entry question_len=28
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=0.17 stage=run_stream_before_resolve_execution_principal
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=0.25 stage=run_stream_after_resolve_execution_principal ok=True
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=0.27 stage=run_stream_before_begin_run_routing_preflight
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=0.87 stage=run_stream_after_begin_run_routing_preflight provider_used='ollama' model_used='qwen2:7b-instruct' execution_blocked=False
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=0.97 stage=run_stream_immediately_before_return_streaming_response
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=1.29 stage=stream_body_before_yield_stream_open
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=1.51 stage=stream_body_after_yield_stream_open
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=1.55 stage=stream_body_before_construct_council_stream_gen
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=1.57 stage=stream_body_after_construct_council_stream_gen
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=1.58 stage=stream_body_loop_before_begin_run_routing iteration=0
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=2.03 stage=stream_body_loop_before_next_inner iteration=0
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=2.59 stage=_council_stream_gen_enter
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=2.63 stage=_council_stream_gen_before_resolve_council_context
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=5.08 stage=_council_stream_gen_after_resolve_council_context context_len=63
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=6.39 stage=_council_stream_gen_before_prepare_council_contexts
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=6.50 stage=_council_stream_gen_after_prepare_council_contexts native_len=63 cloud_len=244
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=6.53 stage=_council_stream_gen_before_teacher_settings_load
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=21.27 stage=_council_stream_gen_before_native_provider_model_from_studio
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=21.34 stage=_council_stream_gen_after_native_provider_model_from_studio
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=21.36 stage=_council_stream_gen_no_teacher_path teacher_mode='off'
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=25.57 stage=_council_stream_gen_before_run_council_stream_iter
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=25.63 stage=run_council_stream_enter question_len=28 folder_workflow=False has_definitions=True definitions_count=1 include_synthesis=False force_full_council=None
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=27.85 stage=run_council_stream_before_get_council_provider_for_principal
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=27.95 stage=run_council_stream_after_get_council_provider_for_principal provider_class='_CouncilShim' model='qwen2:7b-instruct'
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=28.99 stage=run_council_stream_before_describe_brand_profile_preflight
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=29.89 stage=run_council_stream_after_describe_brand_profile_preflight
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=31.32 stage=run_council_stream_branch_decision single_thinking_partner_voice_stream=True packet_len=371
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=31.40 stage=conversational_partner_before_provider_generate provider_class='_CouncilShim' model='qwen2:7b-instruct' prompt_len=1686 timeout=40
+[zenaf-perf] correlation=407433d0-baf5-4e55-be68-79bc3a56a258 elapsed_ms=31.81 stage=ollama_generate_before_requests_post url='http://localhost:11434/api/generate' model='qwen2:7b-instruct' prompt_len=1686 timeout=40

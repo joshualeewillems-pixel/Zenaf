@@ -1,5 +1,6 @@
 /**
- * Single orchestrator: entity map node → channels + FlowAssessment + interpretation.
+ * Single orchestrator: entity map node → channels + FlowAssessment + derived map fields.
+ * All product-facing map/panel/flow state for a node should flow through here.
  */
 
 import type { VisionMapEntityBundle } from '../vision-map/blockersFromVe'
@@ -9,10 +10,9 @@ import {
   waterLevelFromVital,
   type VitalInput,
 } from '../vision-map/mapVitalForces'
-import type { MapNodePayload, WaterLevel } from '../vision-map/ontology'
-
-type Severity = 0 | 1 | 2 | 3
-import { resolveConditionSeverity } from './resolveConditionSeverity'
+import type { ConditionSeverity, MapNodePayload, WaterLevel } from '../vision-map/ontology'
+import { resolveConditionSeverity } from '../vision-map/resolveConditionSeverity'
+import { MAP_SOIL_TIER_LOW_BELOW, MAP_SOIL_TIER_MEDIUM_BELOW } from '../vision-map/mapNodeAppearance'
 import type { StudioCouncilRunRow } from '../vision-map/studioCouncilTypes'
 import { assessFlow, type FlowInput } from './flowAssessment'
 import { CLEAN_STONE_THRESHOLDS } from './cleanStoneContract'
@@ -25,10 +25,6 @@ import type {
   UnifiedNodeAssessment,
 } from './unifiedNodeAssessmentTypes'
 import { UNIFIED_NODE_ASSESSMENT_RULES_VERSION } from './unifiedNodeAssessmentTypes'
-import { deriveNodeInterpretation } from './deriveNodeInterpretation'
-
-const MAP_SOIL_TIER_LOW_BELOW = 0.38
-const MAP_SOIL_TIER_MEDIUM_BELOW = 0.55
 
 function bandFrom01(score: number, lowBelow: number, medBelow: number): ChannelBand {
   if (score < lowBelow) return 'low'
@@ -44,19 +40,47 @@ function fruitBand(f: number): ChannelBand {
   return bandFrom01(f, 0.35, 0.55)
 }
 
-function conditionBandFromSeverity(sev: Severity): ChannelBand {
+function conditionBandFromSeverity(sev: ConditionSeverity): ChannelBand {
   if (sev >= 2) return 'low'
   if (sev === 1) return 'medium'
   return 'high'
 }
 
-function conditionHealth01(severity: Severity): number {
+/** Builds FlowInput for assessFlow — shared with flowInputAdapter parity */
+export function buildFlowInputForMapNode(
+  payload: MapNodePayload,
+  bundle: VisionMapEntityBundle | null,
+  triad: GrowthTriadMetrics,
+  severity: ConditionSeverity,
+): FlowInput {
+  const hints = structureHintsForEntity(payload.ref, bundle)
+  const kind =
+    payload.ref.veType === 'idea' ||
+    payload.ref.veType === 'initiative' ||
+    payload.ref.veType === 'project' ||
+    payload.ref.veType === 'task'
+      ? payload.ref.veType
+      : undefined
+  return {
+    water: triad.water,
+    soil: triad.soil,
+    fruit: triad.fruit,
+    waterLevel: payload.water_level,
+    conditionSeverity: severity,
+    kind,
+    hasBrief: hints.hasBrief,
+    hasNextStep: hints.hasNextStep,
+    hasDeps: hints.hasDeps,
+  }
+}
+
+function conditionHealth01(severity: ConditionSeverity): number {
   return 1 - severity / 3
 }
 
 function pickLowestChannel(
   triad: GrowthTriadMetrics,
-  severity: Severity,
+  severity: ConditionSeverity,
   water_level: WaterLevel,
 ): ChannelId {
   const wSteward = water_level === 'high' ? 1 : water_level === 'medium' ? 0.55 : 0.22
@@ -77,6 +101,7 @@ function pickLowestChannel(
   return best
 }
 
+/** Minimal bindings for explainable reasons — extend via inventory later */
 const CORE_BINDINGS: ReasonRepairBinding[] = [
   {
     reasonId: 'water_low',
@@ -109,12 +134,11 @@ const CORE_BINDINGS: ReasonRepairBinding[] = [
 
 function buildChannels(
   triad: GrowthTriadMetrics,
-  severity: Severity,
+  severity: ConditionSeverity,
   water_level: WaterLevel,
 ): Record<ChannelId, ChannelAssessment> {
   const waterReady =
-    triad.water >= CLEAN_STONE_THRESHOLDS.water.triad01Min &&
-    water_level !== CLEAN_STONE_THRESHOLDS.water.disallowWaterLevel
+    triad.water >= CLEAN_STONE_THRESHOLDS.water.triad01Min && water_level !== CLEAN_STONE_THRESHOLDS.water.disallowWaterLevel
   const soilReady = triad.soil >= CLEAN_STONE_THRESHOLDS.soil.triad01Min
   const conditionReady = severity <= CLEAN_STONE_THRESHOLDS.condition.maxSeverity
   const fruitReady = triad.fruit >= CLEAN_STONE_THRESHOLDS.fruit.triad01Min
@@ -169,45 +193,27 @@ function buildChannels(
   }
 }
 
-export function buildFlowInputForMapNode(
-  payload: MapNodePayload,
-  bundle: VisionMapEntityBundle | null,
-  triad: GrowthTriadMetrics,
-  severity: Severity,
-): FlowInput {
-  const hints = structureHintsForEntity(payload.ref, bundle)
-  const kind =
-    payload.ref.veType === 'idea' ||
-    payload.ref.veType === 'initiative' ||
-    payload.ref.veType === 'project' ||
-    payload.ref.veType === 'task'
-      ? payload.ref.veType
-      : undefined
-  return {
-    water: triad.water,
-    soil: triad.soil,
-    fruit: triad.fruit,
-    waterLevel: payload.water_level,
-    conditionSeverity: severity,
-    kind,
-    hasBrief: hints.hasBrief,
-    hasNextStep: hints.hasNextStep,
-    hasDeps: hints.hasDeps,
-  }
-}
-
 export type AssessNodeFlowContext = {
   bundle: VisionMapEntityBundle | null
   councilRuns: StudioCouncilRunRow[]
+  /**
+   * When set (live projection), recompute water_level + fertilizer_pulse from vital + runs.
+   * When omitted, use payload fields as-is (idempotent re-assess of finalized graph nodes).
+   */
   vital?: VitalInput
 }
 
+/**
+ * Full unified assessment for a map node. Call from liveProjection finalize and from MapChatShell / tests.
+ */
 export function assessNodeFlowAndChannels(
   basePayload: MapNodePayload,
   ctx: AssessNodeFlowContext,
 ): UnifiedNodeAssessment {
   const ref = basePayload.ref
-  const water_level: WaterLevel = ctx.vital ? waterLevelFromVital(ctx.vital) : basePayload.water_level
+  const water_level: WaterLevel = ctx.vital
+    ? waterLevelFromVital(ctx.vital)
+    : basePayload.water_level
   const fertilizer_pulse = ctx.vital
     ? deriveFertilizerPulse(ref, ctx.vital.entityUpdatedAt ?? null, ctx.councilRuns)
     : basePayload.fertilizer_pulse
@@ -219,7 +225,7 @@ export function assessNodeFlowAndChannels(
   }
 
   const map_visual_triad = mapVisualTriad(payloadForScoring, ctx.bundle)
-  const condition_severity = resolveConditionSeverity(payloadForScoring)
+  const condition_severity = resolveConditionSeverity(payloadForScoring, ctx.bundle)
 
   const flowInput = buildFlowInputForMapNode(payloadForScoring, ctx.bundle, map_visual_triad, condition_severity)
   const flow = assessFlow(flowInput)
@@ -231,11 +237,6 @@ export function assessNodeFlowAndChannels(
     channels.soil.is_ready &&
     channels.condition.is_ready &&
     channels.fruit.is_ready
-
-  const interpretation = deriveNodeInterpretation(
-    { flow, lowest_channel, derived: { condition_severity } },
-    { kind: basePayload.kind, bundle: ctx.bundle, ref: basePayload.ref },
-  )
 
   return {
     ref,
@@ -252,6 +253,5 @@ export function assessNodeFlowAndChannels(
     clean_stone_ready,
     rules_version: UNIFIED_NODE_ASSESSMENT_RULES_VERSION,
     reason_bindings: CORE_BINDINGS,
-    interpretation,
   }
 }

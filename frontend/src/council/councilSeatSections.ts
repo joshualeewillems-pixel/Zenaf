@@ -1,4 +1,4 @@
-import { stripAtriaSynthesisBlock } from './CouncilTranscript'
+import { stripZenafSynthesisBlock } from './CouncilTranscript'
 import { mandateIdFromCouncilSeatLabel, type MandateIdKey } from '../mandateSeatAccent'
 
 /** Keep in sync with `CouncilTranscript` structural headers. */
@@ -39,7 +39,7 @@ function normalizeHeaderForLookup(trimmed: string): string {
 
 function isSeatHeaderLine(trimmed: string): boolean {
   if (!trimmed.endsWith(':') || trimmed.length <= 1) return false
-  if (trimmed.toLowerCase().startsWith('atria synthesis')) return false
+  if (trimmed.toLowerCase().startsWith('zenaf synthesis')) return false
   const blockedStarts = [
     'Position:',
     'Primary reason:',
@@ -61,7 +61,7 @@ export function parseCouncilSeatSections(
   text: string,
   stripSynthesis: boolean,
 ): { preambleLines: string[]; sections: CouncilSeatSectionParsed[] } {
-  const source = stripSynthesis ? stripAtriaSynthesisBlock(text) : text
+  const source = stripSynthesis ? stripZenafSynthesisBlock(text) : text
   const lines = source.split('\n')
   const preambleLines: string[] = []
   const sections: CouncilSeatSectionParsed[] = []

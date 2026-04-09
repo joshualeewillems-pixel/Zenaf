@@ -1,5 +1,5 @@
 """
-Model provider layer for Atria.
+Model provider layer for Zenaf.
 
 Prefer ``local_ai.llm.resolver.get_llm_adapter_for_principal`` for execution. This module
 retains ``get_default_provider`` for narrow legacy/testing use only.

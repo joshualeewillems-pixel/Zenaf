@@ -138,8 +138,8 @@ export function ModelConnectionsSection() {
       <h2 className="text-lg font-semibold text-slate-100">Model connections</h2>
       <p className="text-xs text-slate-500">
         For workflow execution (not a chat playground). The API encrypts saved keys using{' '}
-        <code className="text-slate-400">ATRIA_SETTINGS_ENCRYPTION_KEY</code> if set, otherwise a key file at{' '}
-        <code className="text-slate-400">~/.atria/settings_encryption.key</code> (created automatically). Routed
+        <code className="text-slate-400">ZENAF_SETTINGS_ENCRYPTION_KEY</code> if set, otherwise a key file at{' '}
+        <code className="text-slate-400">~/.zenaf/settings_encryption.key</code> (created automatically). Routed
         modes use OpenAI as: <span className="text-slate-300">OPENAI_API_KEY</span> on the server first, then your
         saved key when signed in with cookies on <code className="text-slate-400">POST /run</code>.
         {!data.encryption_configured && (

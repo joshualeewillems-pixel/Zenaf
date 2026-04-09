@@ -637,7 +637,7 @@ export function StudioApp() {
                 <div className="font-semibold text-slate-200">System OpenAI</div>
                 <div>
                   <span className="text-slate-400">Env var:</span>{' '}
-                  <code className="text-amber-300">{sys?.openai_env_var ?? 'ATRIA_SYSTEM_OPENAI_KEY'}</code>
+                  <code className="text-amber-300">{sys?.openai_env_var ?? 'ZENAF_SYSTEM_OPENAI_KEY'}</code>
                 </div>
                 <div>
                   <span className="text-slate-400">Key present:</span>{' '}
@@ -1276,7 +1276,7 @@ export function StudioApp() {
     return (
       <div data-testid="studio-admin-denied" className="min-h-screen bg-slate-900 text-slate-100 p-6">
         <div className="max-w-3xl mx-auto rounded-xl border border-slate-700 bg-slate-800/60 p-6 space-y-3">
-          <h1 className="text-xl font-semibold">Atria Studio</h1>
+          <h1 className="text-xl font-semibold">Zenaf Studio</h1>
           <p className="text-red-300">This surface requires admin access.</p>
           <button
             type="button"
@@ -1298,7 +1298,7 @@ export function StudioApp() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold">Atria Studio</h1>
+            <h1 className="text-xl font-semibold">Zenaf Studio</h1>
             <p className="text-xs text-slate-400">System index + council supervision console</p>
           </div>
           <div className="text-xs text-slate-400">{me?.display_name} · {me?.email}</div>

@@ -356,7 +356,7 @@ def test_run_council_skips_llm_when_direct_handles(monkeypatch, ve_conn) -> None
     def boom(*_a, **_kw):
         raise AssertionError("run_council LLM path should not run when Lane A handles")
 
-    monkeypatch.setattr("local_ai.atria_tools.run_council", boom)
+    monkeypatch.setattr("local_ai.zenaf_tools.run_council", boom)
     monkeypatch.setattr(
         "local_ai.vision_execution.storage.get_studio_council_teacher_settings",
         lambda: {"teacher_mode": "off"},

@@ -97,8 +97,8 @@ export function TaskSoilDevAppend({
         <span className="text-[10px] text-amber-200/50">user_action · this task only</span>
       </div>
       <p className="text-[11px] text-slate-500">
-        Writes under your soil root (<code className="text-slate-400">ATRIA_SOIL_ROOT</code> or{' '}
-        <code className="text-slate-400">~/.atria/soil/v1</code>). Requires signed-in session and a task id you own
+        Writes under your soil root (<code className="text-slate-400">ZENAF_SOIL_ROOT</code> or{' '}
+        <code className="text-slate-400">~/.zenaf/soil/v1</code>). Requires signed-in session and a task id you own
         (others → 404). Body max {SOIL_APPEND_BODY_MAX.toLocaleString()} chars; title capped at 512 in{' '}
         <code className="text-slate-400">node.json</code>.
       </p>

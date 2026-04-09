@@ -9,8 +9,8 @@
 
 | Source | Location | Current form | Could normalize to |
 |--------|----------|--------------|---------------------|
-| **Next-step** | `local_ai/atria_tools.py` — `suggest_next_step()` | Returns dict: `recommendation`, `rationale`, `alternatives`, `caution`. Not persisted. | **Judgment** artifact (subject from context if any; payload = recommendation + rationale). |
-| **Content generation** | `local_ai/atria_tools.py` — `generate_content()` | Returns raw string (script/newsletter). Brief and source in caller. | **Observation** or **judgment** (e.g. “content_generated”, brief_id / linked entity in subject_ref; optional short summary in payload). |
+| **Next-step** | `local_ai/zenaf_tools.py` — `suggest_next_step()` | Returns dict: `recommendation`, `rationale`, `alternatives`, `caution`. Not persisted. | **Judgment** artifact (subject from context if any; payload = recommendation + rationale). |
+| **Content generation** | `local_ai/zenaf_tools.py` — `generate_content()` | Returns raw string (script/newsletter). Brief and source in caller. | **Observation** or **judgment** (e.g. “content_generated”, brief_id / linked entity in subject_ref; optional short summary in payload). |
 | **Folder/workflow summaries** | Frontend `buildContextBlock()` → `context_block` in API | Last analyze/simulate/assess/recommend/council excerpt sent as string to council or next_step. | Not a single “artifact” today; could be **observation** (e.g. “workflow_snapshot”) if we explicitly write a compact summary to the shared store. |
 | **Transcript sorter** | `local_ai/transcripts` — `sort_transcript()` | Returns structured topics, deliverables, candidate tasks/decisions. Judgment-only; no storage. | **Judgment** artifact (subject = call/transcript ref if provided; payload = topics + candidates). |
 | **Intake judgments** | Intake mirror (`mirror_judgment`) | JudgmentRecord: interpretation, proposed_action, confidence, etc. Already persisted in intake. | **Judgment** artifact: write a **reference** or a small summary into shared store when judgment is created/updated, with subject_ref = intake item; link to judgment_id. |
@@ -24,10 +24,10 @@
 
 | Source | Location | Current form | Could normalize to |
 |--------|----------|--------------|---------------------|
-| **SeatJudgment** | `local_ai/judgment_substrate.py`; produced in `atria_tools.run_council()` | Per-seat: position, primary_reason, main_risk, next_step, seat_id, etc. Returned in `CouncilRunArtifact.seats`. | **Judgment** artifacts: one per seat (subject_ref from run; payload = position, reason, risk, next_step; source = council, source_model = provider name). |
+| **SeatJudgment** | `local_ai/judgment_substrate.py`; produced in `zenaf_tools.run_council()` | Per-seat: position, primary_reason, main_risk, next_step, seat_id, etc. Returned in `CouncilRunArtifact.seats`. | **Judgment** artifacts: one per seat (subject_ref from run; payload = position, reason, risk, next_step; source = council, source_model = provider name). |
 | **CouncilRunArtifact** | Same; returned when `return_artifact=True` | question, subject, seats, synthesis_text, distinct_positions, provider_name, model_name. | **Judgment** (or “council_run”) artifact: one summary record (subject_ref, payload = question + synthesis + positions; source = council). |
 | **VE decisions** | `local_ai/vision_execution/storage.py` — `create_decision`, `list_decisions` | Decision: entity_type, entity_id, decision_type, ai_proposal_snapshot (often council artifact), final_values_snapshot. Already persisted. | **Decision** artifacts: when a Decision is created (especially with ai_proposal_snapshot from council), optionally write a **reference** artifact (subject_ref = entity; decision_id; type = decision) so general model can list “recent decisions.” |
-| **Council context today** | `atria_tools.collect_decision_context`, `_get_recent_decision_context` | Reads VE `list_decisions` and builds text for council packet. | **Retrieval hook:** optionally augment or substitute with `list_artifacts(types=["judgment","decision"], limit=N)` so council sees recent general-model judgments and decisions as well. |
+| **Council context today** | `zenaf_tools.collect_decision_context`, `_get_recent_decision_context` | Reads VE `list_decisions` and builds text for council packet. | **Retrieval hook:** optionally augment or substitute with `list_artifacts(types=["judgment","decision"], limit=N)` so council sees recent general-model judgments and decisions as well. |
 
 **Summary:** Council **writers:** (1) after `run_council`, write each SeatJudgment + one CouncilRunArtifact summary as judgment artifacts; (2) when VE `create_decision` is called with council in ai_proposal_snapshot, optionally write a decision artifact ref. Council **readers:** (1) keep existing VE `list_decisions`; (2) add optional “recent shared artifacts” in `build_council_decision_packet` (or a dedicated “recent judgments/decisions” block) from the new store.
 
@@ -88,14 +88,14 @@ No call-site changes in Phase 1. No council or general model writes yet. This va
 
 | What | Where | Notes |
 |------|--------|--------|
-| After `run_council` when artifact is built | `local_ai/atria_tools.py` | If return_artifact and CouncilRunArtifact is built: for each SeatJudgment write one SharedArtifact (type=judgment, source=council, payload=position/reason/risk/next_step); write one summary artifact (type=judgment, payload=question+synthesis+positions). Subject_ref from run. |
+| After `run_council` when artifact is built | `local_ai/zenaf_tools.py` | If return_artifact and CouncilRunArtifact is built: for each SeatJudgment write one SharedArtifact (type=judgment, source=council, payload=position/reason/risk/next_step); write one summary artifact (type=judgment, payload=question+synthesis+positions). Subject_ref from run. |
 | Optional: augment council packet with recent artifacts | `build_council_decision_packet` or helper | Only when a flag/config is set; call get_recent_for_context(limit, types) and append truncated block. Default off. |
 
 ### Phase 3 — General path (write + optional read)
 
 | What | Where | Notes |
 |------|--------|--------|
-| After `suggest_next_step` | `local_ai/atria_tools.py` | Optionally write one SharedArtifact (type=judgment, source=general, payload=recommendation+rationale). Subject_ref from context if parseable (e.g. from request) or None. |
+| After `suggest_next_step` | `local_ai/zenaf_tools.py` | Optionally write one SharedArtifact (type=judgment, source=general, payload=recommendation+rationale). Subject_ref from context if parseable (e.g. from request) or None. |
 | Optional: next-step context from artifacts | `suggest_next_step` or API | When flag set, prepend get_recent_for_context(limit, types) to context. Default off. |
 
 ### Defer (do not implement in initial cut)
@@ -115,9 +115,9 @@ No call-site changes in Phase 1. No council or general model writes yet. This va
 |-------|----------------|--------|
 | **1** | **New:** `local_ai/shared_artifacts.py` | SharedArtifact model, write_artifact, list_artifacts, get_recent_for_context; append-only storage. |
 | **1** | `local_ai/judgment_substrate.py` | None (reuse SubjectRef via import). |
-| **2** | `local_ai/atria_tools.py` | After building CouncilRunArtifact, call write_artifact for each seat + one summary. Optional: in build_council_decision_packet (or helper), if enabled, call get_recent_for_context and append. |
+| **2** | `local_ai/zenaf_tools.py` | After building CouncilRunArtifact, call write_artifact for each seat + one summary. Optional: in build_council_decision_packet (or helper), if enabled, call get_recent_for_context and append. |
 | **2** | `local_ai/config.py` (optional) | Add e.g. COUNCIL_USE_SHARED_ARTIFACTS = False so council can optionally pull recent artifacts. |
-| **3** | `local_ai/atria_tools.py` | In suggest_next_step, optionally write one judgment artifact; optionally prepend get_recent_for_context to context when enabled. |
+| **3** | `local_ai/zenaf_tools.py` | In suggest_next_step, optionally write one judgment artifact; optionally prepend get_recent_for_context to context when enabled. |
 | **3** | `api/main.py` (optional) | Pass a request or config flag so next-step knows whether to include recent artifacts in context. |
 
 **Do not touch (unless necessary):** VE storage schema, intake mirror schema, judgment_substrate types (SubjectRef, JudgmentSnapshot, SeatJudgment, CouncilRunArtifact), frontend, content generation pipeline, transcript persistence.

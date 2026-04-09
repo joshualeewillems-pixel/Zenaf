@@ -1,6 +1,6 @@
 # Core Hierarchy
 
-Design note: **Vision Execution is the primary core of Atria.** Intake is subordinate and serves Vision Execution. No subsystem should become a second durable center of work.
+Design note: **Vision Execution is the primary core of Zenaf.** Intake is subordinate and serves Vision Execution. No subsystem should become a second durable center of work.
 
 **Guiding rule:** Vision Execution is the durable center for organizational meaning and execution state. All other subsystems support it or feed into it; none should evolve into an independent durable silo.
 
@@ -76,7 +76,7 @@ Council, File Steward, Idea Lab, and similar tools should **feed the Vision Exec
 | **Judgment vs decisions** | Keep judgment as the reasoning/audit layer. When intake or council produces a “decision” that should be organizational record, also write a Vision Execution decision (or task/initiative) linked to the context. Do not treat judgment persistence as the execution store. |
 | **Mirror and queue** | Intake mirror remains the source of truth for **staging** (queue, triage judgments, sync, mailbox audit). It is not the source of truth for execution. Naming and docs should reflect “staging mirror” / “triage state,” not “second core.” |
 | **Tools and persistence** | When adding persistence for council, Idea Lab, or File Steward, prefer: (1) ephemeral or short-lived cache, or (2) write-through to Vision Execution (ideas, tasks, decisions). Avoid new long-lived “content” or “decision” DBs that duplicate Vision Execution’s role. |
-| **Docs and manifest** | Update ATRIA_ARCHITECTURE, CODEBASE_INVENTORY, PLATFORM_PRIMITIVES, and codebase_manifest.json to state that Vision Execution is the primary core and intake is subordinate staging; judgment is reasoning infrastructure; tools feed the core. |
+| **Docs and manifest** | Update ZENAF_ARCHITECTURE, CODEBASE_INVENTORY, PLATFORM_PRIMITIVES, and codebase_manifest.json to state that Vision Execution is the primary core and intake is subordinate staging; judgment is reasoning infrastructure; tools feed the core. |
 
 ---
 

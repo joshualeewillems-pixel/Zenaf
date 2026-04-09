@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" aria-hidden="true">
-  <rect
-    width="64"
-    height="64"
-    fill="currentColor"
-    style="mask-image:url(/vision-map-glyphs/initiative-sheet.png);mask-mode:luminance;mask-size:200% 200%;mask-position:100% 0%;mask-repeat:no-repeat;-webkit-mask-image:url(/vision-map-glyphs/initiative-sheet.png);-webkit-mask-size:200% 200%;-webkit-mask-position:100% 0%;-webkit-mask-repeat:no-repeat;"
-  />
-</svg>

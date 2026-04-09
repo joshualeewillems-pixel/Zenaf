@@ -1,4 +1,4 @@
-"""Council mini-suite: POST /run with X-Atria-Session; load stored rows for comparison."""
+"""Council mini-suite: POST /run with X-Zenaf-Session; load stored rows for comparison."""
 from __future__ import annotations
 
 import json
@@ -11,10 +11,10 @@ from typing import Any
 # repo root
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-BASE = os.environ.get("ATRIA_API_BASE", "http://127.0.0.1:8010").rstrip("/")
+BASE = os.environ.get("ZENAF_API_BASE", "http://127.0.0.1:8010").rstrip("/")
 
-EMAIL = os.environ.get("ATRIA_SUITE_EMAIL", "owner@local.atria")
-PASSWORD = os.environ.get("ATRIA_BOOTSTRAP_PASSWORD", "").strip() or "local-dev-owner"
+EMAIL = os.environ.get("ZENAF_SUITE_EMAIL", "owner@local.zenaf")
+PASSWORD = os.environ.get("ZENAF_BOOTSTRAP_PASSWORD", "").strip() or "local-dev-owner"
 
 
 def session_token() -> str:
@@ -28,10 +28,10 @@ def session_token() -> str:
         r.read()
         cookies = r.headers.get_all("Set-Cookie") or []
     for c in cookies:
-        m = re.search(r"atria_session=([^;]+)", c)
+        m = re.search(r"zenaf_session=([^;]+)", c)
         if m:
             return m.group(1)
-    raise RuntimeError("no atria_session in login response")
+    raise RuntimeError("no zenaf_session in login response")
 
 
 def post_run(token: str, question: str, perspective_definitions: list[dict] | None) -> dict[str, Any]:
@@ -53,7 +53,7 @@ def post_run(token: str, question: str, perspective_definitions: list[dict] | No
     req = urllib.request.Request(
         f"{BASE}/run",
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "X-Atria-Session": token},
+        headers={"Content-Type": "application/json", "X-Zenaf-Session": token},
     )
     with urllib.request.urlopen(req, timeout=600) as r:
         return json.loads(r.read().decode())

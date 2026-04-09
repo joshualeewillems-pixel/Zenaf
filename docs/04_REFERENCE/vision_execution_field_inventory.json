@@ -192,5 +192,12 @@
     "capacity_profile.overcapacity": "True when active weekly hours exceed the weekly capacity you set.",
     "asset.required_by_display": "Derived list of initiatives or projects that mark this asset as required — read-only summary.",
     "asset.linked_idea_ids": "Ideas this asset relates to for context — does not by itself mean the asset blocks delivery."
+  },
+  "maintenance_channels": {
+    "schema_version": "1",
+    "canonical_channel_ids": ["water", "soil", "condition", "fruit", "meta"],
+    "orchestrator": "frontend/src/flow/assessNodeFlowAndChannels.ts",
+    "clean_stone_thresholds": "frontend/src/flow/cleanStoneContract.ts",
+    "per_field_keys_planned": ["primary_channel", "secondary_channels", "deficit_reason_ids", "preferred_action_id"]
   }
 }

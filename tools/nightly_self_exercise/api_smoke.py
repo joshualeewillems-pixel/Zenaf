@@ -220,7 +220,7 @@ def run_api_smoke(
                     )
     else:
         for name, msg in [
-            ("auth_login", "no ATRIA_NIGHTLY_EMAIL/PASSWORD"),
+            ("auth_login", "no ZENAF_NIGHTLY_EMAIL/PASSWORD"),
             ("ve_list_ideas", "auth required"),
             ("ve_create_idea", "auth required"),
             ("ve_patch_idea", "auth required"),
@@ -246,7 +246,7 @@ def run_api_smoke(
         add(
             "council_stream",
             True,
-            "skipped (known_gap: set ATRIA_NIGHTLY_EMAIL and ATRIA_NIGHTLY_PASSWORD for stream probe)",
+            "skipped (known_gap: set ZENAF_NIGHTLY_EMAIL and ZENAF_NIGHTLY_PASSWORD for stream probe)",
         )
         return out
 

@@ -5,8 +5,8 @@ import os
 import requests
 
 # Default for Test / generate when no model is stored. Use a current alias — dated Claude 3
-# snapshots often return not_found_error on the Messages API. Override with ATRIA_ANTHROPIC_MODEL.
-DEFAULT_MODEL = (os.environ.get("ATRIA_ANTHROPIC_MODEL") or "").strip() or "claude-haiku-4-5"
+# snapshots often return not_found_error on the Messages API. Override with ZENAF_ANTHROPIC_MODEL.
+DEFAULT_MODEL = (os.environ.get("ZENAF_ANTHROPIC_MODEL") or "").strip() or "claude-haiku-4-5"
 
 
 def _effective_model(model: str | None) -> str:

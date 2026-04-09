@@ -4,8 +4,8 @@ Multi-user sanity: log in as owner and phil, call GET /auth/me for each (separat
 
 Requires API up (default http://127.0.0.1:8010). Uses the same dev defaults as storage bootstrap:
 
-  owner@local.atria  — ATRIA_BOOTSTRAP_PASSWORD or local-dev-owner
-  phil@local.atria   — ATRIA_PHIL_BOOTSTRAP_PASSWORD or phil-local-dev
+  owner@local.zenaf  — ZENAF_BOOTSTRAP_PASSWORD or local-dev-owner
+  phil@local.zenaf   — ZENAF_PHIL_BOOTSTRAP_PASSWORD or phil-local-dev
 
 Run: python tools/stress_two_user_login.py
 """
@@ -49,12 +49,12 @@ def _me(opener: urllib.request.OpenerDirector, base: str) -> dict:
 
 
 def main() -> int:
-    base = os.environ.get("ATRIA_API_BASE", "http://127.0.0.1:8010").rstrip("/")
-    owner_pwd = (os.environ.get("ATRIA_BOOTSTRAP_PASSWORD") or "").strip() or "local-dev-owner"
-    phil_pwd = (os.environ.get("ATRIA_PHIL_BOOTSTRAP_PASSWORD") or "").strip() or "phil-local-dev"
+    base = os.environ.get("ZENAF_API_BASE", "http://127.0.0.1:8010").rstrip("/")
+    owner_pwd = (os.environ.get("ZENAF_BOOTSTRAP_PASSWORD") or "").strip() or "local-dev-owner"
+    phil_pwd = (os.environ.get("ZENAF_PHIL_BOOTSTRAP_PASSWORD") or "").strip() or "phil-local-dev"
     pairs = [
-        ("owner@local.atria", owner_pwd),
-        ("phil@local.atria", phil_pwd),
+        ("owner@local.zenaf", owner_pwd),
+        ("phil@local.zenaf", phil_pwd),
     ]
     print(f"API {base}", flush=True)
     for email, pwd in pairs:

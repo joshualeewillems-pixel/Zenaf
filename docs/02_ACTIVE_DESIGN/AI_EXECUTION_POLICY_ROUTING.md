@@ -112,7 +112,7 @@ Single **versioned** JSON document (or YAML) loadable at startup and overridable
 - `GlobalPriority = 'quality' | 'speed' | 'cost' | 'privacy' | 'balanced'`  
 - `ProviderModelRef = { provider: string; model: string }`  
 - `ExecutionPolicyResolution = { primary: ProviderModelRef; fallback_chain: ProviderModelRef[]; allow_cloud: boolean; flags: Record<string, boolean | string> }`  
-- `ActionRoutingContext = { surface: AtriaSurface; action_kind: AiActionKind; action_intent: string | null; streaming?: boolean; sensitivity?: 'low' | 'medium' | 'high' }`
+- `ActionRoutingContext = { surface: ZenafSurface; action_kind: AiActionKind; action_intent: string | null; streaming?: boolean; sensitivity?: 'low' | 'medium' | 'high' }`
 
 ---
 
@@ -124,7 +124,7 @@ Single **versioned** JSON document (or YAML) loadable at startup and overridable
 | **Resolver (TS)** | `frontend/src/ai-actions/executionPolicy/` — `types.ts`, `resolveExecutionPolicyForAction.ts`, `defaultPolicy.ts` (embedded fallback if file missing). | Client-side resolution for: future headers/body hints, devtools, aligning trace `model_used` with intent. |
 | **Resolver (Python)** | `local_ai/execution_policy/` — `types.py`, `load.py`, `resolve.py`; JSON at `config/ai_execution_policy.json`. | **Must** be where `/run` and VE routes actually call `generate()` when Phase 2 wires execution. |
 | **Wire point (backend)** | Thin: `local_ai/providers/router.py` or extend `get_default_provider()` → `get_provider_for_context(ctx: ActionRoutingContext)` delegating to resolver **only when** context is passed; default path = today’s behavior. | No per-feature `if council:`. |
-| **Wire point (frontend)** | Optional Phase 1: attach resolution result to `AiActionTrace.model_used` / `prompt_version` metadata; optional `X-Atria-Routing-Hint` header on fetch — **server may ignore** until implemented. | Zero breaking change. |
+| **Wire point (frontend)** | Optional Phase 1: attach resolution result to `AiActionTrace.model_used` / `prompt_version` metadata; optional `X-Zenaf-Routing-Hint` header on fetch — **server may ignore** until implemented. | Zero breaking change. |
 
 Avoid scattering `OllamaProvider(model=...)` in new feature code; **one** resolver + existing provider factory.
 
@@ -148,7 +148,7 @@ Avoid scattering `OllamaProvider(model=...)` in new feature code; **one** resolv
 ### Phase 2 — Single backend seam
 
 - Introduce `get_provider_for_routing(resolution: ExecutionPolicyResolution)` that returns first **registered** provider that matches `provider` id (today: only `ollama` fully wired).  
-- In **`atria_tools`** (or one shared helper used by `/run` and VE services), thread optional `ActionRoutingContext` from API body `routing_context` (optional field) **defaulting to null** → legacy path = `get_default_provider()` / `get_council_provider()` exactly as today.  
+- In **`zenaf_tools`** (or one shared helper used by `/run` and VE services), thread optional `ActionRoutingContext` from API body `routing_context` (optional field) **defaulting to null** → legacy path = `get_default_provider()` / `get_council_provider()` exactly as today.  
 - Map high-level modes to substrate metadata in **one table** (e.g. `council` → `structured_evaluation` + `workspace_council`) — **one file**, not per-handler if statements.
 
 ### Phase 3 — Frontend opt-in
@@ -169,7 +169,7 @@ Avoid scattering `OllamaProvider(model=...)` in new feature code; **one** resolv
 **Today (truth):**
 
 - **`local_ai/providers/get_default_provider()`** → `OllamaProvider()` with model from env/config.  
-- **`get_council_provider()`** → env `ATRIA_COUNCIL_MODEL` or `config.OLLAMA_COUNCIL_MODEL` or default.  
+- **`get_council_provider()`** → env `ZENAF_COUNCIL_MODEL` or `config.OLLAMA_COUNCIL_MODEL` or default.  
 - **`POST /run`** and VE routes invoke tools/services that call `.generate(prompt, **kwargs)` directly — **no** substrate metadata on the wire.
 
 **Alignment:**

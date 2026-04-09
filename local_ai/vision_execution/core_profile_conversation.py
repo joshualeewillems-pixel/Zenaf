@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 def _zenaf_voice_preamble() -> str:
   """Bias training replies toward the Zenaf (synthesis) seat — developmental, integrative, life-coach orientation."""
-  from local_ai.atria_tools import _built_in_persona_dict
+  from local_ai.zenaf_tools import _built_in_persona_dict
 
   z = _built_in_persona_dict("zenaf")
   purpose = str(z.get("purpose") or "").strip()

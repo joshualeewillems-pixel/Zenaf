@@ -87,9 +87,9 @@ Superseded by: docs/01_TRUTH/CODEBASE_INVENTORY.md
 
 ### Service / storage / schema
 
-- **Content-owned:** `content_briefs` table (id, title, status, payload JSON, created_at, updated_at). CRUD in `local_ai.vision_execution.storage`; routes in `api.routes.vision_execution`. `distill_content_source` and `generate_content` in `local_ai.atria_tools`.
+- **Content-owned:** `content_briefs` table (id, title, status, payload JSON, created_at, updated_at). CRUD in `local_ai.vision_execution.storage`; routes in `api.routes.vision_execution`. `distill_content_source` and `generate_content` in `local_ai.zenaf_tools`.
 - **Shared with VE:** Same SQLite DB and `vision_execution` router. Initiatives, projects, tasks, decisions are VE entities; Content only reads initiatives/projects and writes tasks (and TranscriptSorter writes decisions).
-- **Shared with app:** `POST /run` is on the main FastAPI app; content generation is one of many modes. LLM provider and atria_tools are shared.
+- **Shared with app:** `POST /run` is on the main FastAPI app; content generation is one of many modes. LLM provider and zenaf_tools are shared.
 
 ### Core vs incidental
 
@@ -144,7 +144,7 @@ Superseded by: docs/01_TRUTH/CODEBASE_INVENTORY.md
 **Reasons:**
 
 1. **Designed to be VE-linked.** Briefs link to initiatives/projects; “Create selected tasks” and “Mark in production” are execution handoffs. The value is tight integration with Vision Execution, not a generic content tool.
-2. **Single backend keeps deployment simple.** One DB, one API host; no CORS or multi-origin setup. Fits “one Atria app” today.
+2. **Single backend keeps deployment simple.** One DB, one API host; no CORS or multi-origin setup. Fits “one Zenaf app” today.
 3. **Extraction is feasible later** if we introduce clear seams: configurable API base(s), minimal types for Initiative/Project, and an optional separate deploy of “Content-only” backend that still calls VE (or proxies) for initiatives/projects/tasks.
 4. **Publishing as an internal route** is already the case: Content is one main view in the same app. “Publish online as one route/view” could mean serving the same SPA with a route like `/content` and a nav that highlights Content; that’s a small change (e.g. add a router and route `/content`).
 

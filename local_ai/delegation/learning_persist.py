@@ -2,7 +2,7 @@
 Append-only JSONL persistence for LearningRecord dicts.
 
 - Same payload as ``LearningRecord.to_json_dict()`` (already redacted at capture).
-- Optional rotation via ``ATRIA_LEARNING_PERSIST_MAX_MB``.
+- Optional rotation via ``ZENAF_LEARNING_PERSIST_MAX_MB``.
 - Startup replay: last line per ``record_id`` wins (supports outcome-update re-append).
 """
 
@@ -27,17 +27,17 @@ _init_done = False
 
 
 def _env_path() -> str:
-    return (os.environ.get("ATRIA_LEARNING_PERSIST_PATH") or "").strip()
+    return (os.environ.get("ZENAF_LEARNING_PERSIST_PATH") or "").strip()
 
 
 def _env_max_bytes() -> Optional[int]:
-    raw = (os.environ.get("ATRIA_LEARNING_PERSIST_MAX_MB") or "").strip()
+    raw = (os.environ.get("ZENAF_LEARNING_PERSIST_MAX_MB") or "").strip()
     if not raw:
         return None
     try:
         return int(float(raw) * 1024 * 1024)
     except ValueError:
-        logger.warning("learning_persist: invalid ATRIA_LEARNING_PERSIST_MAX_MB=%r; rotation disabled", raw)
+        logger.warning("learning_persist: invalid ZENAF_LEARNING_PERSIST_MAX_MB=%r; rotation disabled", raw)
         return None
 
 

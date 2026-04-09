@@ -2,7 +2,7 @@
 Shared data access policy for content derived from external systems (mailbox, files, etc.).
 
 Two boundaries:
-- Trusted local: modules and users running inside Atria on trusted infrastructure.
+- Trusted local: modules and users running inside Zenaf on trusted infrastructure.
 - External egress: anything that sends content outside that boundary (remote APIs, web, telemetry, etc.).
 
 Three tiers:

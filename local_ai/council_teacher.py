@@ -235,7 +235,7 @@ def run_council_with_teacher(
     last_integration_commit_dict: dict[str, Any] | None = None,
     pending_ve_elicitation_dict: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from local_ai.atria_tools import run_council
+    from local_ai.zenaf_tools import run_council
     from local_ai.conversation_trunk import (
         conversation_subject_to_json,
         merge_conversation_subject,

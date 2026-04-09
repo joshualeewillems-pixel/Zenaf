@@ -181,6 +181,12 @@ def build_provider_status_rows_for_principal(
                     )
                 else:
                     reasons.append("No OpenAI key (set OPENAI_API_KEY on the server or save a key in Settings).")
+            elif pid == "anthropic":
+                reasons.append("No API key (set ANTHROPIC_API_KEY on the server or save a key in Settings).")
+            elif pid == "google":
+                reasons.append("No API key (set GOOGLE_API_KEY or GEMINI_API_KEY on the server or save a key in Settings).")
+            elif pid == "xai":
+                reasons.append("No API key (set XAI_API_KEY on the server or save a key in Settings).")
             elif needs_stored_api_key(pid):
                 reasons.append("No API key saved for this provider.")
         row = {
@@ -261,7 +267,7 @@ def user_llm_adapter_gate_for_principal(
         if principal.scope == "system":
             return (
                 f"{display_name(pid)} has no API key in the system credential namespace "
-                f"(set ATRIA_SYSTEM_* key for this provider)."
+                f"(set ZENAF_SYSTEM_* key for this provider)."
             )
         if pid == "openai":
             if principal.scope == "account" and not principal.account_user_id:
@@ -274,8 +280,23 @@ def user_llm_adapter_gate_for_principal(
         if needs_stored_api_key(pid):
             if not principal.account_user_id:
                 return (
-                    f"{display_name(pid)} requires signing in to save API keys in Settings. "
-                    "Anonymous account runs cannot use the server's OPENAI_API_KEY."
+                    f"{display_name(pid)} requires signing in to use account-scoped API keys "
+                    "(env keys for this provider are not applied to anonymous runs)."
+                )
+            if pid == "anthropic":
+                return (
+                    "Anthropic is enabled but no API key is available. "
+                    "Set ANTHROPIC_API_KEY on the API server or save a key in Settings."
+                )
+            if pid == "google":
+                return (
+                    "Google (Gemini) is enabled but no API key is available. "
+                    "Set GOOGLE_API_KEY or GEMINI_API_KEY on the server or save a key in Settings."
+                )
+            if pid == "xai":
+                return (
+                    "xAI is enabled but no API key is available. "
+                    "Set XAI_API_KEY on the server or save a key in Settings."
                 )
             return f"{display_name(pid)} is enabled but no API key is saved. Add one in Settings."
     return None

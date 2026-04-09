@@ -47,7 +47,7 @@ def test_resolve_account_no_cookie():
     assert p.principal_ref == "account:anonymous"
 
 
-def test_resolve_account_x_atria_session_header(monkeypatch):
+def test_resolve_account_x_zenaf_session_header(monkeypatch):
     """Scripted clients can pass session token when cookies are not sent."""
     from local_ai.vision_execution import service as S
 
@@ -63,7 +63,7 @@ def test_resolve_account_x_atria_session_header(monkeypatch):
     req = Request(
         {
             "type": "http",
-            "headers": [(b"x-atria-session", b"tok-ok")],
+            "headers": [(b"x-zenaf-session", b"tok-ok")],
             "method": "POST",
             "path": "/run",
         },
@@ -75,7 +75,7 @@ def test_resolve_account_x_atria_session_header(monkeypatch):
 
 
 def test_resolve_system_requires_config_and_header(monkeypatch):
-    monkeypatch.delenv("ATRIA_SYSTEM_EXECUTION_KEY", raising=False)
+    monkeypatch.delenv("ZENAF_SYSTEM_EXECUTION_KEY", raising=False)
 
     async def receive():
         return {"type": "http.request", "body": b"", "more_body": False}
@@ -85,11 +85,11 @@ def test_resolve_system_requires_config_and_header(monkeypatch):
     assert p is None
     assert "not configured" in (err or "").lower()
 
-    monkeypatch.setenv("ATRIA_SYSTEM_EXECUTION_KEY", "secret-sys")
+    monkeypatch.setenv("ZENAF_SYSTEM_EXECUTION_KEY", "secret-sys")
     req2 = Request(
         {
             "type": "http",
-            "headers": [(b"x-atria-system-execution-key", b"wrong")],
+            "headers": [(b"x-zenaf-system-execution-key", b"wrong")],
             "method": "POST",
             "path": "/run",
         },
@@ -102,7 +102,7 @@ def test_resolve_system_requires_config_and_header(monkeypatch):
     req3 = Request(
         {
             "type": "http",
-            "headers": [(b"x-atria-system-execution-key", b"secret-sys")],
+            "headers": [(b"x-zenaf-system-execution-key", b"secret-sys")],
             "method": "POST",
             "path": "/run",
         },

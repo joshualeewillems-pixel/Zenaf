@@ -189,7 +189,7 @@ def write_report_md(
     lines.append("## Known-gap vs new-bug")
     lines.append(
         "- **known_gap**: Missing credentials, LLM/stream fragility (concurrent council stress, sole `council_stream` smoke miss), "
-        "Playwright not installed, export gate (`ATRIA_LEARNING_EXPORT_ENABLED`), etc.\n"
+        "Playwright not installed, export gate (`ZENAF_LEARNING_EXPORT_ENABLED`), etc.\n"
         "- **new-bug**: Unexpected 5xx, pytest regression, adversarial mismatch count increase — investigate.\n"
         "- **Table:** `GAP` = `known_gap` (informational; not counted as a hard failure in the digest).\n"
     )

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { CoreProfile } from './types'
 import { TranscribableFieldRegion, CORE_PROFILE_CREATE_ENTITY_ID } from './focus'
-import { ATRIA_VE_FOCUS_INSERT_TEXT, insertTextAtSelection, type VeFocusInsertTextDetail } from './focus/insertTextEvent'
+import { ZENAF_VE_FOCUS_INSERT_TEXT, insertTextAtSelection, type VeFocusInsertTextDetail } from './focus/insertTextEvent'
 import { readPrivacyMode } from '../ai-actions/privacyModeBridge'
 import type { PerspectiveAgent } from '../perspectives/types'
 import { AvatarDisplay } from '../components/AvatarDisplay'
@@ -9,7 +9,7 @@ import { CORE_PROFILE_ACTION_INTENTS } from './coreProfileTrace'
 
 /** localStorage key for Brand ↔ Zenaf training thread (ZenafPresence + any future senders). */
 export function coreProfileConversationStorageKey(profileId: string) {
-  return `atria-core-profile-conversation-${profileId}`
+  return `zenaf-core-profile-conversation-${profileId}`
 }
 
 /** POST /core-profiles/:id/conversation body routing (Zenaf training voice). */
@@ -147,14 +147,14 @@ export function CreateCoreProfileForm({
       else if (field_key === 'core_definition') setCoreDefinition((p) => insertTextAtSelection(p, text, a, b))
       else if (field_key === 'current_goals') setCurrentGoals((p) => insertTextAtSelection(p, text, a, b))
     }
-    window.addEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
-    return () => window.removeEventListener(ATRIA_VE_FOCUS_INSERT_TEXT, onInsert)
+    window.addEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
+    return () => window.removeEventListener(ZENAF_VE_FOCUS_INSERT_TEXT, onInsert)
   }, [])
 
   return (
     <div className="rounded-xl border border-[color:var(--color-border)] bg-surface p-4 space-y-3">
       <p className="text-[11px] text-warm-white/50 leading-relaxed">
-        This becomes your <span className="text-warm-white/70">Brand core</span> — the single structured source Atria uses
+        This becomes your <span className="text-warm-white/70">Brand core</span> — the single structured source Zenaf uses
         for your voice and constraints. Perspectives are lenses on top, not competing identities.
       </p>
       <div>
@@ -172,7 +172,7 @@ export function CreateCoreProfileForm({
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Phil · Atria build"
+            placeholder="e.g. Phil · Zenaf build"
             className="w-full px-3 py-2 rounded-lg bg-canvas border border-[color:var(--color-border-strong)] text-[color:var(--map-ink-primary)] placeholder:text-[color:var(--map-muted-ink)] text-sm"
           />
         </TranscribableFieldRegion>

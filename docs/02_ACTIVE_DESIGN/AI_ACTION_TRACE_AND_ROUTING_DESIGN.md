@@ -7,7 +7,7 @@
 
 ## 1. System-wide AI action model
 
-### 1.1 Surfaces (`AtriaSurface`)
+### 1.1 Surfaces (`ZenafSurface`)
 
 Where the user invoked the action (analytics, routing defaults, UX context):
 
@@ -58,7 +58,7 @@ In-memory ring buffer; future DB row should align with this:
 | Field | Purpose |
 |--------|---------|
 | `trace_id` | UUID |
-| `surface` | `AtriaSurface` |
+| `surface` | `ZenafSurface` |
 | `action_kind` | `AiActionKind` |
 | `action_intent` | Optional finer intent (`snake_case` string); see above |
 | `subject_type` / `subject_id` | What was targeted |
@@ -89,7 +89,7 @@ Shared UI: **`AiActionResultPanel`** (`frontend/src/ai-actions/AiActionResultPan
 
 | Universal | VE-specific (today) |
 |-----------|---------------------|
-| `AiActionTrace`, `AtriaSurface`, `AiActionKind`, outcome enum | `VeFocusRegion`, `/vision-execution/...` routes, `ATRIA_VE_FOCUS_APPLY_REWRITE` event |
+| `AiActionTrace`, `ZenafSurface`, `AiActionKind`, outcome enum | `VeFocusRegion`, `/vision-execution/...` routes, `ZENAF_VE_FOCUS_APPLY_REWRITE` event |
 | `field_text_rewrite` + Apply/Dismiss/Copy pattern | Which fields are wrapped, `fieldCapabilityRegistry`, focus bar placement |
 | `suggestion_batch` | Project “Suggested work (AI)” payload and checklist UX |
 | `structured_evaluation` | Initiative/idea evaluate endpoints and proposal UI |

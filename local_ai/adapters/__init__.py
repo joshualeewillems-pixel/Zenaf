@@ -1,5 +1,5 @@
 """
-Atria adapter layer: thin connectors to external systems.
+Zenaf adapter layer: thin connectors to external systems.
 
 Adapters only authenticate, fetch/send, and normalize. Core owns all decision logic.
 Use the registry to resolve adapters by kind + name so core and API stay decoupled from concrete implementations.

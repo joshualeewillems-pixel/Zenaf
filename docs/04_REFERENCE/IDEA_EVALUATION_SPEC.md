@@ -1,7 +1,7 @@
 # Idea Evaluation — Design Spec & Implementation Brief
 
 **Status:** Design / spec only. No backend or UI implementation in this document.  
-**Scope:** Correct evaluation contract for Ideas in Atria; stage intent; MVP vs later; UI implications.
+**Scope:** Correct evaluation contract for Ideas in Zenaf; stage intent; MVP vs later; UI implications.
 
 ---
 
@@ -81,7 +81,7 @@ All fields optional string (or enum where noted). Empty string or omit = “not 
 
 ### What an Idea is (vs Initiative / Project / Task)
 
-| Entity | Role in Atria |
+| Entity | Role in Zenaf |
 |--------|----------------|
 | **Idea** | Raw possibility or hypothesis. Not yet committed. Supports capture → clarify → **evaluate** → **decide** (promote, attach, shelve, delete). |
 | **Initiative** | Committed strategic effort. Has owner, status, scoring, projects. Source can be an idea (`source_idea_id`). |

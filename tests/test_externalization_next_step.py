@@ -113,8 +113,8 @@ def test_redact_restricted_omits_token_strings():
     d = redact_externalization_for_privacy(
         privacy_mode="restricted",
         integrity_ok=False,
-        unresolved_tokens=("[[ATRIA_REF:subject_id:xx:abcd1234]]",),
-        invalid_tokens=("[[ATRIA_REF:subject_id:yy:deadbeef]]",),
+        unresolved_tokens=("[[ZENAF_REF:subject_id:xx:abcd1234]]",),
+        invalid_tokens=("[[ZENAF_REF:subject_id:yy:deadbeef]]",),
     )
     assert d["externalization_integrity_ok"] is False
     assert d["externalization_unresolved_count"] == 1

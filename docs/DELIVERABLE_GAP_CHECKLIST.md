@@ -5,7 +5,7 @@ Status: Working backlog (not a release gate spec)
 Last updated: 2026-03-27
 -->
 
-This document consolidates **partial implementations**, **integration gaps**, and **testing / go-to-market** work needed for Atria to function as a **reasonably solid, marketable** product. It merges the **conversation backlog**, **`docs/01_TRUTH/ACTIVE_VS_PLANNED.md`**, **`docs/01_TRUTH/CODEBASE_INVENTORY.md`**, **`README.md`**, and targeted code notes. It is **not** exhaustive file-by-file coverage.
+This document consolidates **partial implementations**, **integration gaps**, and **testing / go-to-market** work needed for Zenaf to function as a **reasonably solid, marketable** product. It merges the **conversation backlog**, **`docs/01_TRUTH/ACTIVE_VS_PLANNED.md`**, **`docs/01_TRUTH/CODEBASE_INVENTORY.md`**, **`README.md`**, and targeted code notes. It is **not** exhaustive file-by-file coverage.
 
 **How to use:** Treat items as a prioritized backlog; link PRs/issues when closing gaps. Canonical “what exists vs planned” detail remains in **`ACTIVE_VS_PLANNED.md`**.
 
@@ -74,7 +74,7 @@ Do **not** implement persistence, schemas, or storage for this yet. When/if buil
 
 | Item | Notes |
 |------|--------|
-| **Runbook** | Install, ports (**README** defaults **8010**; align with local overrides), Ollama vs OpenAI, **`ATRIA_SETTINGS_ENCRYPTION_KEY`**, DB file locations and backup. |
+| **Runbook** | Install, ports (**README** defaults **8010**; align with local overrides), Ollama vs OpenAI, **`ZENAF_SETTINGS_ENCRYPTION_KEY`**, DB file locations and backup. |
 | **User-facing story** | What the product does/does not do: **local vs cloud**, integrity labels, **anonymous** limits (e.g. OpenAI key). |
 | **Support playbook** | Mirror recovery, council fallback meta, known stubs. |
 | **Security / compliance positioning** | README: **not production-hardened** by default; align marketing claims with cookie auth, CORS, and key handling. |

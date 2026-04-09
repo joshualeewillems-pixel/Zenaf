@@ -1,12 +1,12 @@
 import { expect, type Page } from '@playwright/test'
 
 /**
- * Optional login when ATRIA_E2E_EMAIL / ATRIA_E2E_PASSWORD are set.
+ * Optional login when ZENAF_E2E_EMAIL / ZENAF_E2E_PASSWORD are set.
  * Returns true if the app appears to be past any login gate.
  */
 export async function loginIfConfigured(page: Page): Promise<boolean> {
-  const email = process.env.ATRIA_E2E_EMAIL
-  const password = process.env.ATRIA_E2E_PASSWORD
+  const email = process.env.ZENAF_E2E_EMAIL
+  const password = process.env.ZENAF_E2E_PASSWORD
   if (!email || !password) return true
   const emailInput = page.locator('input[type="email"], input[name="email"], #email').first()
   if (await emailInput.isVisible().catch(() => false)) {

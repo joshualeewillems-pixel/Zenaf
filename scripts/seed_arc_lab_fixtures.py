@@ -3,7 +3,7 @@
 Seed synthetic arc-detector fixtures under a dedicated lab user (NOT real user truth).
 
 Creates:
-  - User arc_lab_synthetic@local.atria (display name marks synthetic lane)
+  - User arc_lab_synthetic@local.zenaf (display name marks synthetic lane)
   - One holder initiative + ARC-LAB:* projects with backdated execution_flow_reading rows
 
 Does not touch production owner data except adding the lab user row.
@@ -40,7 +40,7 @@ from local_ai.judgment_substrate import (
 from local_ai.vision_execution import models as M
 from local_ai.vision_execution import storage
 
-LAB_EMAIL = "arc_lab_synthetic@local.atria"
+LAB_EMAIL = "arc_lab_synthetic@local.zenaf"
 LAB_DISPLAY = "ARC LAB (synthetic — not real user truth)"
 TITLE_PREFIX = "ARC-LAB:"
 
@@ -73,7 +73,7 @@ def _flow_trunk(
             pointer=pointer,
             context={
                 "pointer_kind": "activity_event",
-                "coordination_evidence_source": "atria-client-trace",
+                "coordination_evidence_source": "zenaf-client-trace",
             },
         ),
         verdict=JudgmentVerdict(kind="execution_flow_reading", payload=payload),

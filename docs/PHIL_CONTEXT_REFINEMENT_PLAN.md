@@ -11,7 +11,7 @@
 |----------|--------------|
 | **`local_ai/context/phil_context.py`** | Single function `load_phil_context()` reads `phil_brand_brief.md`, looks for first of `## Council context`, `## Phil Context`, `## Distilled`, else start of file; returns up to 300 words. One global cache. |
 | **`local_ai/context/phil_brand_brief.md`** | Contains a short "## Council context" block: Mission, Strength, Common bottleneck, Best intervention, Tone. Already somewhat operational but labeled as generic "Phil Context". |
-| **`local_ai/atria_tools.py` → `build_council_decision_packet()`** | Unconditionally appends `Phil Context:\n{_truncate(phil, MAX_PHIL_CONTEXT_CHARS)}` (300 chars) to the **shared packet** sent to **every** council seat. No distinction by seat or by purpose. |
+| **`local_ai/zenaf_tools.py` → `build_council_decision_packet()`** | Unconditionally appends `Phil Context:\n{_truncate(phil, MAX_PHIL_CONTEXT_CHARS)}` (300 chars) to the **shared packet** sent to **every** council seat. No distinction by seat or by purpose. |
 
 **Problem:** The same block is presented to every seat as "Phil Context", which reads like global task truth or worldview. The content (bottleneck, intervention, tone) is really **operator preference / priority** and should be framed and scoped as such.
 
@@ -45,7 +45,7 @@
 
 No change to file path or filename; still `phil_brand_brief.md`.
 
-### 3.2 Council packet: use priority only, relabel (`local_ai/atria_tools.py`)
+### 3.2 Council packet: use priority only, relabel (`local_ai/zenaf_tools.py`)
 
 - In **`build_council_decision_packet()`**:
   - **Remove** the current “Phil Context” block (the one that calls `load_phil_context()` and appends `Phil Context:\n...`).
@@ -102,7 +102,7 @@ If we keep “## Council context” as the fallback source for operator priority
 
 1. **`phil_context.py`**: Add `load_operator_priority()` and `load_philosophical_orientation()` with separate caches and section logic; make `load_phil_context()` return `load_operator_priority()`.
 2. **`phil_brand_brief.md`**: Add `## Operator priority` (or keep `## Council context` as fallback) and `## Philosophical orientation`; keep content short under Operator priority.
-3. **`atria_tools.py`**: In `build_council_decision_packet()`, replace Phil Context block with Operator priority block (new label, `MAX_OPERATOR_PRIORITY_CHARS`, call `load_operator_priority()`).
+3. **`zenaf_tools.py`**: In `build_council_decision_packet()`, replace Phil Context block with Operator priority block (new label, `MAX_OPERATOR_PRIORITY_CHARS`, call `load_operator_priority()`).
 4. **Optional later:** Use `load_philosophical_orientation()` in synthesis prompt or general assistant when we want mission alignment.
 
 This keeps the operator-priority shortcut, repositions it in the truth hierarchy (preference/weighting, not task truth or global philosophy), and reserves longer philosophical content for contexts where it is explicitly needed.

@@ -39,7 +39,7 @@ TranscriptSorter is **smaller** (one sort call) but **outcome parity** is harder
 
 | Field | Reconcile | Conversation |
 |-------|-----------|----------------|
-| **`surface`** | `vision_execution` *(recommended: no new `AtriaSurface` value; routes live under VE API)* — optional later: `core_profile` if you add one enum for analytics clarity | Same |
+| **`surface`** | `vision_execution` *(recommended: no new `ZenafSurface` value; routes live under VE API)* — optional later: `core_profile` if you add one enum for analytics clarity | Same |
 | **`action_kind`** | `structured_evaluation` — structured multi-field JSON proposal fits the design doc bucket | `suggestion_batch` — single assistant “deliverable” the user may keep or ignore (closest fit without a chat-specific kind) |
 | **`action_intent`** | `core_profile_reconcile` | `core_profile_conversation` |
 | **`subject_type`** | `core_profile` | `core_profile` |

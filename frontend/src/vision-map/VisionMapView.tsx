@@ -42,6 +42,7 @@ import { resolveInspectEntityRef } from './mapTriadInspector'
 import { fetchNodeVitalityMap, fetchVisionMapEntities } from './veMapApi'
 import { fetchStudioCouncilRuns } from './fetchStudioCouncilRuns'
 import { buildLiveVisionMapGraph } from './liveProjection'
+import { MAP_ENTITY_FALLBACK_LAYOUT_PX, mapEntityNodeLayoutPx } from './mapEntityNodeLayout'
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import { applyFocusToVisionMap } from './visionMapFocus'
 import { MapSandRakeControls } from './MapSandRakeControls'
@@ -70,7 +71,7 @@ import {
   type NestState,
 } from './nesting'
 import { applyLocalRepulsion, expandRelativePositions } from './nestLayout'
-import { effectiveGrowthTriad } from './effectiveGrowthTriad'
+import { mapVisualTriad } from './mapGrowthMetrics'
 import { detectMissingDimensions } from './guidanceScripts'
 import { assessNodeFlowAndChannels } from '../flow/assessNodeFlowAndChannels'
 import { useVisionExecutionFocusOptional } from '../vision-execution/focus/VisionExecutionFocusContext'
@@ -83,9 +84,9 @@ const edgeTypes = { mapFlow: MapFlowEdge }
 const TRACKPAD_ZOOM_GAIN = 2.2
 const SCENE_BASE_HEIGHT_PX = 560
 const SCENE_CONTENT_PADDING_PX = 260
-/** Fallback node size before React Flow measures (EntityMapNode-ish). */
-const DEFAULT_ENTITY_W = 228
-const DEFAULT_ENTITY_H = 180
+/** Fallback node size before React Flow measures — matches painted stone box (see mapEntityNodeLayout). */
+const DEFAULT_ENTITY_W = MAP_ENTITY_FALLBACK_LAYOUT_PX.width
+const DEFAULT_ENTITY_H = MAP_ENTITY_FALLBACK_LAYOUT_PX.height
 const INITIAL_MAP_ZOOM = 1
 const ORIENT_RETRY_MS = 600
 
@@ -830,7 +831,7 @@ function VisionMapFlow({
 
   const developmentalSnapshotForPrompt = useMemo((): MapTriadDevelopmentalSnapshot | null => {
     if (!selectedNodeId || !selectedPayload) return null
-    const triad = selectedNestTriad ?? effectiveGrowthTriad(selectedPayload, entityBundle)
+    const triad = selectedNestTriad ?? mapVisualTriad(selectedPayload, entityBundle)
     const missing_dimensions = detectMissingDimensions(triad)
     let node_interpretation = null as MapTriadDevelopmentalSnapshot['node_interpretation']
     if (!selectedNestTriad) {
@@ -870,7 +871,13 @@ function VisionMapFlow({
     let maxY = Number.NEGATIVE_INFINITY
     for (const n of nodes) {
       const y = n.position.y
-      const h = n.measured?.height ?? (n.type === 'nestGroup' ? NEST_NODE_LAYOUT_HEIGHT_PX : 180)
+      const h =
+        n.measured?.height ??
+        (n.type === 'nestGroup'
+          ? NEST_NODE_LAYOUT_HEIGHT_PX
+          : n.type === 'entityMap'
+            ? mapEntityNodeLayoutPx((n.data as MapNodePayload).kind).height
+            : MAP_ENTITY_FALLBACK_LAYOUT_PX.height)
       minY = Math.min(minY, y)
       maxY = Math.max(maxY, y + h)
     }
@@ -914,8 +921,20 @@ function VisionMapFlow({
     setMapViewportReady(false)
     window.setTimeout(() => {
       const pick = bg.nodes[Math.floor(Math.random() * bg.nodes.length)]!
-      const cx = pick.position.x + DEFAULT_ENTITY_W / 2
-      const cy = pick.position.y + DEFAULT_ENTITY_H / 2
+      const lw =
+        pick.type === 'entityMap'
+          ? mapEntityNodeLayoutPx(pick.data.kind).width
+          : pick.type === 'nestGroup'
+            ? NEST_NODE_LAYOUT_WIDTH_PX
+            : DEFAULT_ENTITY_W
+      const lh =
+        pick.type === 'entityMap'
+          ? mapEntityNodeLayoutPx(pick.data.kind).height
+          : pick.type === 'nestGroup'
+            ? NEST_NODE_LAYOUT_HEIGHT_PX
+            : DEFAULT_ENTITY_H
+      const cx = pick.position.x + lw / 2
+      const cy = pick.position.y + lh / 2
       void rf.setCenter(cx, cy, { zoom: INITIAL_MAP_ZOOM, duration: 0 }).then(() => {
         setMapViewportReady(true)
         setZoomLevel(INITIAL_MAP_ZOOM)
@@ -924,7 +943,7 @@ function VisionMapFlow({
   }, [layoutStorageKey, rf])
 
   const mapHelpTitle =
-    'Live VE projection · glow = water (owner = lush; stale = dry) · green ring = recent update or council · fruit = shipped project + deliverables · drag stones · pan: empty map / Space / right-drag / two-finger trackpad'
+    'Live VE projection · gloss/wetness = water (stewardship) · stone cracks = structural severity (0–3) · green ring = recent update or council · fruit = shipped project + deliverables · drag stones · pan: empty map / Space / right-drag / two-finger trackpad'
 
   return (
     <div className="flex flex-1 min-h-0 flex-col bg-stone-900">

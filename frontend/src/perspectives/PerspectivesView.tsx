@@ -11,7 +11,7 @@ import {
 } from './types'
 import { AgentList } from './AgentList'
 
-const STORAGE_KEY = 'atria-perspective-agents'
+const STORAGE_KEY = 'zenaf-perspective-agents'
 
 function loadFromStorage(): PerspectiveAgent[] {
   try {

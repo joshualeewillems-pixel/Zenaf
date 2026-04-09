@@ -12,7 +12,7 @@ import type { EntityMentionOpenPayload } from '../components/EntityMentionText'
 
 export type CouncilTranscriptWithResonanceProps = {
   text: string
-  stripAtriaSynthesis: boolean
+  stripZenafSynthesis: boolean
   decorateSeatHeaders: boolean
   /** e.g. integrity run id or stable thread key */
   responseIdPrefix: string
@@ -33,7 +33,7 @@ export type CouncilTranscriptWithResonanceProps = {
 
 export function CouncilTranscriptWithResonance({
   text,
-  stripAtriaSynthesis,
+  stripZenafSynthesis,
   decorateSeatHeaders,
   responseIdPrefix,
   entityType,
@@ -46,8 +46,8 @@ export function CouncilTranscriptWithResonance({
 }: CouncilTranscriptWithResonanceProps) {
   const { preambleLines, sections } = useMemo(() => {
     const cleaned = sanitizeCouncilAssistantTextForDisplay(text)
-    return parseCouncilSeatSections(cleaned, stripAtriaSynthesis)
-  }, [text, stripAtriaSynthesis])
+    return parseCouncilSeatSections(cleaned, stripZenafSynthesis)
+  }, [text, stripZenafSynthesis])
 
   const pendingPath =
     pendingIntegration?.integration_state === 'proposed'
@@ -115,7 +115,7 @@ export function CouncilTranscriptWithResonance({
         {recordStrip}
         <CouncilTranscript
           text={text}
-          stripAtriaSynthesis={stripAtriaSynthesis}
+          stripZenafSynthesis={stripZenafSynthesis}
           decorateSeatHeaders={decorateSeatHeaders}
           onOpenEntity={onOpenEntity}
         />
@@ -139,7 +139,7 @@ export function CouncilTranscriptWithResonance({
       {preambleText.trim() ? (
         <CouncilTranscript
           text={preambleText}
-          stripAtriaSynthesis={false}
+          stripZenafSynthesis={false}
           decorateSeatHeaders={decorateSeatHeaders}
           onOpenEntity={onOpenEntity}
         />
@@ -151,7 +151,7 @@ export function CouncilTranscriptWithResonance({
           <div key={responseId} className="space-y-0">
             <CouncilTranscript
               text={block}
-              stripAtriaSynthesis={false}
+              stripZenafSynthesis={false}
               decorateSeatHeaders={decorateSeatHeaders}
               onOpenEntity={onOpenEntity}
             />

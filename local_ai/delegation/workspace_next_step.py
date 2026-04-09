@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping, Optional
 
-from local_ai.atria_tools import generate_next_step_raw
+from local_ai.zenaf_tools import generate_next_step_raw
 from local_ai.execution_policy.externalization import (
     WORKSPACE_NEXT_STEP_INTENT,
     maybe_externalize_for_cloud,

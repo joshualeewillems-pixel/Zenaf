@@ -1,12 +1,12 @@
 # Human–AI symbiosis — guiding principle (direction, not spec)
 
-**Status:** North-star intent and constraints for how Atria may evolve. **Not** a commitment to build everything described here. **Do not** treat this as permission to add invasive capture, hidden modeling, or premature persistence.
+**Status:** North-star intent and constraints for how Zenaf may evolve. **Not** a commitment to build everything described here. **Do not** treat this as permission to add invasive capture, hidden modeling, or premature persistence.
 
 ---
 
 ## System direction — human–AI symbiosis
 
-Atria is evolving toward a human–AI symbiosis layer.
+Zenaf is evolving toward a human–AI symbiosis layer.
 
 **Long-term direction:**
 
@@ -74,7 +74,7 @@ Atria is evolving toward a human–AI symbiosis layer.
 
 ## Current product reality
 
-**Right now, Atria is:**
+**Right now, Zenaf is:**
 
 - a decision and interpretation environment
 - a system that helps users:
@@ -118,7 +118,7 @@ Design current structures so they can **later** support:
 
 ## Summary
 
-Atria is moving toward a symbiotic learning system. **But today** it must remain simple, user-trust-first, non-invasive, and grounded in real, immediate usefulness.
+Zenaf is moving toward a symbiotic learning system. **But today** it must remain simple, user-trust-first, non-invasive, and grounded in real, immediate usefulness.
 
 **Do not sacrifice present clarity for future vision.**
 

@@ -6,7 +6,7 @@ Data tiers:
 - Tier B (sanitized): cleaned body text stored in mirror_item.sanitized_body_text; lower exposure.
 - Tier C (raw): placeholder only (raw_content_ref); full raw not stored yet.
 
-Mailbox = external source of truth. Mirror = Atria's durable operational memory.
+Mailbox = external source of truth. Mirror = Zenaf's durable operational memory.
 In-memory queue = working set (Tier A). load_into_memory() loads Tier A only.
 """
 from __future__ import annotations

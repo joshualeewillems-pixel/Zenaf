@@ -5,7 +5,7 @@ import sys
 
 
 def main() -> int:
-    path = r"C:\Users\philc\.cursor\projects\c-Users-philc-OneDrive-Desktop-Atria\agent-tools\06b3446a-e940-48e9-aa55-5065b66ff524.txt"
+    path = r"C:\Users\philc\.cursor\projects\c-Users-philc-OneDrive-Desktop-Zenaf\agent-tools\06b3446a-e940-48e9-aa55-5065b66ff524.txt"
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
 

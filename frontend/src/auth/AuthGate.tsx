@@ -6,7 +6,7 @@ interface AuthGateProps {
 }
 
 export function AuthGate({ onLogin, loading = false }: AuthGateProps) {
-  const [email, setEmail] = useState('owner@local.atria')
+  const [email, setEmail] = useState('owner@local.zenaf')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
 

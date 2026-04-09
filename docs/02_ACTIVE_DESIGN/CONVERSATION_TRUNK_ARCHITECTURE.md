@@ -7,7 +7,7 @@ Last updated: 2026-03-31
 
 ## Problem
 
-Atria’s conversational surfaces still behave like **parallel mini-systems** rather than one pipeline with variations:
+Zenaf’s conversational surfaces still behave like **parallel mini-systems** rather than one pipeline with variations:
 
 - Map chat (guidance scripts, triad, stage lens)
 - Vision & Execution focus chat / council
@@ -102,7 +102,7 @@ USER ASK → surface path → surface heuristics → surface answer shape
 **Trunk candidates (logic to centralize):**
 
 - Context resolution and PRIMARY legitimacy: `local_ai/council_preflight.py`
-- Council / Thinking Partner instruction stack: `local_ai/atria_tools.py` (`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM`, Thinking Partner injects, Zenaf persona)
+- Council / Thinking Partner instruction stack: `local_ai/zenaf_tools.py` (`COUNCIL_CONVERSATIONAL_PARTNER_SYSTEM`, Thinking Partner injects, Zenaf persona)
 - State vs synthesis rule (prompt text — should follow trunk `question_kind`): same file + `frontend/src/perspectives/types.ts` (Zenaf constraints)
 - Developmental / lens packet: `local_ai/developmental_guidance.py`, `frontend/src/developmentalGuidance/buildDevelopmentalGuidanceContext.ts`
 - VE triad from focus: `frontend/src/developmentalGuidance/buildVeMapTriadSnapshot.ts`
@@ -132,10 +132,10 @@ Paste into a new agent chat when designing or migrating code:
 
 ```markdown
 ## Goal
-Design and implement a **Conversation Trunk** for Atria so all chat surfaces share one pipeline: subject resolution → question classification → context assembly → response contract → branch enrichments → model call. Surfaces add only thin enrichments.
+Design and implement a **Conversation Trunk** for Zenaf so all chat surfaces share one pipeline: subject resolution → question classification → context assembly → response contract → branch enrichments → model call. Surfaces add only thin enrichments.
 
 ## Constraints
-- Read the repo; cite real files (`local_ai/atria_tools.py`, `local_ai/council_preflight.py`, `local_ai/developmental_guidance.py`, `frontend/src/App.tsx`, `frontend/src/vision-map/MapChatShell.tsx`, workout paths).
+- Read the repo; cite real files (`local_ai/zenaf_tools.py`, `local_ai/council_preflight.py`, `local_ai/developmental_guidance.py`, `frontend/src/App.tsx`, `frontend/src/vision-map/MapChatShell.tsx`, workout paths).
 - Phased PRs; do not rewrite all paths at once.
 - Preserve safety/state rules (state/inventory from Context; no invented facts).
 
@@ -153,4 +153,4 @@ For “what do we still need to do to the ‘finalize website’ idea?” with f
 
 - **`docs/01_TRUTH/ACTIVE_VS_PLANNED.md`** — As-built surfaces and gaps
 - **`docs/01_TRUTH/CODEBASE_TRUTH_RULES.md`** — Routing and persistence expectations
-- **`ATRIA_PROMPT_AND_TRUTH_ARCHITECTURE.md`** (repo root / `docs/`) — Prompt and truth stack (may overlap; keep trunk doc as the **conversation unification** anchor)
+- **`ZENAF_PROMPT_AND_TRUTH_ARCHITECTURE.md`** (repo root / `docs/`) — Prompt and truth stack (may overlap; keep trunk doc as the **conversation unification** anchor)

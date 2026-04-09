@@ -1,0 +1,566 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-03-30T01:58:00Z",
+  "branchKey": "local-unknown",
+  "sourceRoots": [
+    "C:\\Users\\philc\\OneDrive\\Desktop\\A DAILY ROUTINE",
+    "C:\\Users\\philc\\OneDrive\\Desktop\\A Electro Acupuncture",
+    "C:\\Users\\philc\\OneDrive\\Desktop\\A powerful day",
+    "C:\\Users\\philc\\OneDrive\\Desktop\\A SUCCESS PROGRAMS",
+    "C:\\Users\\philc\\OneDrive\\Desktop\\A To Look At",
+    "C:\\Users\\philc\\OneDrive\\Desktop\\Bought",
+    "C:\\Users\\philc\\OneDrive\\Desktop\\PROJECTS IN ACTION",
+    "C:\\Users\\philc\\OneDrive\\Desktop\\PROMOTION"
+  ],
+  "domainHints": [
+    "Joe DIspenza",
+    "Micro orbit",
+    "Tony Robins",
+    "Vagus nerve",
+    "Transformation",
+    "Microbiom",
+    "Nutrition",
+    "Stop it class",
+    "Signature talk",
+    "Spirit Science",
+    "Barios Unidos",
+    "Block THerapy",
+    "Click funnels",
+    "Jack Canfield",
+    "SOUND hElaing",
+    "Trauma relief",
+    "Book writing",
+    "FOcus groujp",
+    "Neal Walsche",
+    "Reset Howard",
+    "Elevan labs",
+    "Jean Huston",
+    "Mind Valley",
+    "Sage Levine",
+    "Soul Speaks",
+    "Story brand",
+    "Book Ideas",
+    "Heart math",
+    "Peace walk",
+    "Teach Back",
+    "Alan Wats",
+    "Chi GOng",
+    "RAM DASS",
+    "Wim Hoff",
+    "AI labs",
+    "Gua Sha",
+    "Ram Das",
+    "Mission-goals",
+    "Manifestationj",
+    "Advertizing"
+  ],
+  "rawIndex": {
+    "surfaces": [
+      {
+        "label": "A powerful day",
+        "pathRelative": "A powerful day",
+        "kind": "folder"
+      },
+      {
+        "label": "Audoi books",
+        "pathRelative": "Audoi books",
+        "kind": "folder"
+      },
+      {
+        "label": "BEST",
+        "pathRelative": "BEST",
+        "kind": "folder"
+      },
+      {
+        "label": "Hemisync",
+        "pathRelative": "Hemisync",
+        "kind": "folder"
+      },
+      {
+        "label": "Manifestationj",
+        "pathRelative": "Manifestationj",
+        "kind": "folder"
+      },
+      {
+        "label": "REMOVE NEGATIVITY  sleeping",
+        "pathRelative": "REMOVE NEGATIVITY  sleeping",
+        "kind": "folder"
+      },
+      {
+        "label": "Sleep -Wipe out negativity",
+        "pathRelative": "Sleep -Wipe out negativity",
+        "kind": "folder"
+      },
+      {
+        "label": "A POWER TALKS _ LISTEN OFTEN",
+        "pathRelative": "A powerful day/A POWER TALKS _ LISTEN OFTEN",
+        "kind": "folder"
+      },
+      {
+        "label": "Awareness faci;litator school",
+        "pathRelative": "A powerful day/Awareness faci;litator school",
+        "kind": "folder"
+      },
+      {
+        "label": "CONstipation",
+        "pathRelative": "A powerful day/CONstipation",
+        "kind": "folder"
+      },
+      {
+        "label": "How to achieve action mindset",
+        "pathRelative": "A powerful day/How to achieve action mindset",
+        "kind": "folder"
+      },
+      {
+        "label": "Joe DIspenza",
+        "pathRelative": "A powerful day/Joe DIspenza",
+        "kind": "folder"
+      },
+      {
+        "label": "Meeditation music",
+        "pathRelative": "A powerful day/Meeditation music",
+        "kind": "folder"
+      },
+      {
+        "label": "Micro orbit",
+        "pathRelative": "A powerful day/Micro orbit",
+        "kind": "folder"
+      },
+      {
+        "label": "PROCRASTINATION",
+        "pathRelative": "A powerful day/PROCRASTINATION",
+        "kind": "folder"
+      },
+      {
+        "label": "Tony Robins",
+        "pathRelative": "A powerful day/Tony Robins",
+        "kind": "folder"
+      },
+      {
+        "label": "Transformation",
+        "pathRelative": "A powerful day/Transformation",
+        "kind": "folder"
+      },
+      {
+        "label": "VIsualization",
+        "pathRelative": "A powerful day/VIsualization",
+        "kind": "folder"
+      },
+      {
+        "label": "walsh",
+        "pathRelative": "A powerful day/walsh",
+        "kind": "folder"
+      },
+      {
+        "label": "New folder",
+        "pathRelative": "Manifestationj/New folder",
+        "kind": "folder"
+      },
+      {
+        "label": "Vagus nerve",
+        "pathRelative": "A powerful day/CONstipation/Vagus nerve",
+        "kind": "folder"
+      },
+      {
+        "label": "Awareness faci;litator school",
+        "pathRelative": "Awareness faci;litator school",
+        "kind": "folder"
+      },
+      {
+        "label": "CONstipation",
+        "pathRelative": "CONstipation",
+        "kind": "folder"
+      },
+      {
+        "label": "How to achieve action mindset",
+        "pathRelative": "How to achieve action mindset",
+        "kind": "folder"
+      },
+      {
+        "label": "Joe DIspenza",
+        "pathRelative": "Joe DIspenza",
+        "kind": "folder"
+      },
+      {
+        "label": "Meeditation music",
+        "pathRelative": "Meeditation music",
+        "kind": "folder"
+      },
+      {
+        "label": "Micro orbit",
+        "pathRelative": "Micro orbit",
+        "kind": "folder"
+      },
+      {
+        "label": "PROCRASTINATION",
+        "pathRelative": "PROCRASTINATION",
+        "kind": "folder"
+      },
+      {
+        "label": "Tony Robins",
+        "pathRelative": "Tony Robins",
+        "kind": "folder"
+      },
+      {
+        "label": "Transformation",
+        "pathRelative": "Transformation",
+        "kind": "folder"
+      }
+    ],
+    "fingerprints": [
+      {
+        "rootId": "7ef091672cba",
+        "entryCount": 30,
+        "maxMtime": 1746879083
+      },
+      {
+        "rootId": "a8c8e0af3dbe",
+        "entryCount": 12,
+        "maxMtime": 1761830591
+      },
+      {
+        "rootId": "3bec853a108d",
+        "entryCount": 17,
+        "maxMtime": 1765665583
+      },
+      {
+        "rootId": "7cff7b8e8f06",
+        "entryCount": 103,
+        "maxMtime": 1762643117
+      },
+      {
+        "rootId": "38e7fa35b639",
+        "entryCount": 34,
+        "maxMtime": 1755372931
+      },
+      {
+        "rootId": "30df795c5902",
+        "entryCount": 108,
+        "maxMtime": 1755372935
+      },
+      {
+        "rootId": "11fb349fcbe5",
+        "entryCount": 297,
+        "maxMtime": 1774804960
+      },
+      {
+        "rootId": "a9bbdb96000b",
+        "entryCount": 77,
+        "maxMtime": 1754337574
+      }
+    ]
+  },
+  "buffers": {
+    "surface_shallow": {
+      "phrases": [
+        "Joe DIspenza",
+        "Micro orbit",
+        "Tony Robins",
+        "Vagus nerve",
+        "Transformation",
+        "Microbiom",
+        "Nutrition",
+        "Stop it class",
+        "Signature talk",
+        "Spirit Science",
+        "Barios Unidos",
+        "Block THerapy",
+        "Click funnels",
+        "Jack Canfield",
+        "SOUND hElaing",
+        "Trauma relief",
+        "Book writing",
+        "FOcus groujp",
+        "Neal Walsche",
+        "Reset Howard",
+        "Elevan labs",
+        "Jean Huston",
+        "Mind Valley",
+        "Sage Levine",
+        "Soul Speaks",
+        "Story brand",
+        "Book Ideas",
+        "Heart math",
+        "Peace walk",
+        "Teach Back",
+        "Alan Wats",
+        "Chi GOng",
+        "RAM DASS",
+        "Wim Hoff",
+        "AI labs",
+        "Gua Sha",
+        "Ram Das",
+        "Mission-goals",
+        "Manifestationj",
+        "Advertizing"
+      ],
+      "pathSketches": [
+        "Nutrition/Microbiom",
+        "Advertizing",
+        "Beckwith",
+        "BEST",
+        "BOOK FILE",
+        "Breath Apps",
+        "Breathing",
+        "Click funnels",
+        "Computer info",
+        "EMF",
+        "Firefly",
+        "GOALS",
+        "Gratitude",
+        "Heart math",
+        "Hemisync",
+        "Jack Canfield",
+        "Jean Huston",
+        "Journalling",
+        "Mastermind",
+        "Micro orbit",
+        "Mind valley",
+        "Mind Valley",
+        "Neal Walsche",
+        "NLP",
+        "Nutrition"
+      ]
+    },
+    "associative_cluster": {
+      "clusters": [
+        {
+          "id": "c-0",
+          "parentSketch": ".",
+          "members": [
+            "A mastermind",
+            "Advertizing",
+            "AI how to use",
+            "Beckwith",
+            "BEST",
+            "Block THerapy",
+            "Book",
+            "BOOK FILE"
+          ],
+          "weight": 59
+        },
+        {
+          "id": "c-1",
+          "parentSketch": "Book",
+          "members": [
+            "Alan Wats",
+            "Book writing",
+            "Diabetes",
+            "Grounding",
+            "Joe dispenza",
+            "Microbiom",
+            "Mission-goals",
+            "New folder"
+          ],
+          "weight": 17
+        },
+        {
+          "id": "c-2",
+          "parentSketch": "AI how to use",
+          "members": [
+            "AI labs",
+            "Elevan labs",
+            "FOR JOSH",
+            "Video"
+          ],
+          "weight": 4
+        },
+        {
+          "id": "c-3",
+          "parentSketch": "AI how to use/Video",
+          "members": [
+            "A hypnosis",
+            "Joe Dispenza",
+            "New folder"
+          ],
+          "weight": 3
+        },
+        {
+          "id": "c-4",
+          "parentSketch": "Book/Microbiom",
+          "members": [
+            "First chapter",
+            "New folder",
+            "SIBO"
+          ],
+          "weight": 3
+        },
+        {
+          "id": "c-5",
+          "parentSketch": "Jean Huston",
+          "members": [
+            "New folder",
+            "Week 1",
+            "Week 2"
+          ],
+          "weight": 3
+        }
+      ]
+    },
+    "structural_translation": {
+      "buckets": [
+        {
+          "bucket": "general",
+          "labels": [
+            "WHat makes the4 healing haven a healing haven",
+            "How to r4ecover closed windows from reboot",
+            "Conversation-McTaggart, Braden, Lipton",
+            "20 signs pan crease  not working well",
+            "Coherence advantage class- Mastermind",
+            "Core writing for microbiom chapter",
+            "Classes for Living from the heart",
+            "NLP and transformational training",
+            "The Hear REvolution Book project",
+            "Emotional SOverenty-vagus nerve",
+            "Events tha Change Peoples Lives",
+            "Morning and evening meditations"
+          ]
+        }
+      ]
+    },
+    "functional": {
+      "activityTags": [],
+      "roleHints": [
+        "clinical"
+      ]
+    },
+    "reasoning": {
+      "themes": [
+        "AI how to use/Video: 3 co-occurring items",
+        "Book/Microbiom: 3 co-occurring items",
+        "AI how to use: 4 co-occurring items",
+        "Jean Huston: 3 co-occurring items",
+        "general: 12 structural labels",
+        "Co-occurring group: 8 items",
+        "Book: 8 co-occurring items"
+      ],
+      "namedPrograms": [
+        "clinical"
+      ],
+      "tags": [
+        "clinical"
+      ]
+    }
+  },
+  "bufferGraph": {
+    "version": 1,
+    "layers": [
+      {
+        "index": 0,
+        "key": "surface_shallow"
+      },
+      {
+        "index": 1,
+        "key": "associative_cluster"
+      },
+      {
+        "index": 2,
+        "key": "structural_translation"
+      },
+      {
+        "index": 3,
+        "key": "functional"
+      },
+      {
+        "index": 4,
+        "key": "reasoning"
+      }
+    ],
+    "edges": [
+      {
+        "from": "surface_shallow",
+        "to": "associative_cluster",
+        "pass": 0,
+        "layer": 0
+      },
+      {
+        "from": "associative_cluster",
+        "to": "structural_translation",
+        "pass": 1,
+        "layer": 1
+      },
+      {
+        "from": "structural_translation",
+        "to": "functional",
+        "pass": 2,
+        "layer": 2
+      },
+      {
+        "from": "functional",
+        "to": "reasoning",
+        "pass": 3,
+        "layer": 3
+      }
+    ]
+  },
+  "scanHealth": {
+    "nodeCapReached": false,
+    "maxDepthHit": 4,
+    "truncated": false,
+    "ignored": [
+      "$recycle.bin",
+      ".git",
+      ".gradle",
+      ".idea",
+      ".mypy_cache",
+      ".pytest_cache",
+      ".trash",
+      ".venv",
+      ".vscode",
+      "__macosx",
+      "__pycache__",
+      "appdata",
+      "application data",
+      "blob storage",
+      "blob_storage",
+      "build",
+      "code cache",
+      "cookies",
+      "coverage",
+      "dawncache",
+      "dist",
+      "download",
+      "downloads",
+      "file system",
+      "gpucache",
+      "grshadercache",
+      "history",
+      "htmlcov",
+      "indexeddb",
+      "inetcache",
+      "jump lists",
+      "jumplist",
+      "local settings",
+      "local storage",
+      "mediacache",
+      "node_modules",
+      "npm-cache",
+      "offlineworker",
+      "package cache",
+      "pnpm-store",
+      "recent",
+      "safe browsing",
+      "sent",
+      "service worker",
+      "session storage",
+      "shadercache",
+      "system volume information",
+      "target",
+      "temporary internet files",
+      "thumbcache",
+      "thumbnail",
+      "thumbnails",
+      "trash",
+      "venv",
+      "videodecodestats",
+      "webrtccache"
+    ],
+    "pathRecords": 208,
+    "junkPathSegments": 323,
+    "nodesWalked": 678,
+    "identityQualityWarning": null
+  },
+  "provenance": {
+    "scan_kind": "deep_initial"
+  }
+}

@@ -72,6 +72,7 @@ import {
 import { applyLocalRepulsion, expandRelativePositions } from './nestLayout'
 import { effectiveGrowthTriad } from './effectiveGrowthTriad'
 import { detectMissingDimensions } from './guidanceScripts'
+import { assessNodeFlowAndChannels } from '../flow/assessNodeFlowAndChannels'
 import { useVisionExecutionFocusOptional } from '../vision-execution/focus/VisionExecutionFocusContext'
 import { mapPayloadToConversationFocusDescriptor } from './mapFocusDescriptor'
 import { VeRadarAwarenessStrip } from './VeRadarAwarenessStrip'
@@ -831,6 +832,13 @@ function VisionMapFlow({
     if (!selectedNodeId || !selectedPayload) return null
     const triad = selectedNestTriad ?? effectiveGrowthTriad(selectedPayload, entityBundle)
     const missing_dimensions = detectMissingDimensions(triad)
+    let node_interpretation = null as MapTriadDevelopmentalSnapshot['node_interpretation']
+    if (!selectedNestTriad) {
+      node_interpretation = assessNodeFlowAndChannels(selectedPayload, {
+        bundle: entityBundle,
+        councilRuns: [],
+      }).interpretation
+    }
     return {
       node_id: selectedNodeId,
       is_nest_aggregate: Boolean(selectedNestTriad),
@@ -839,6 +847,7 @@ function VisionMapFlow({
       missing_dimensions,
       node_label: selectedPayload.label?.trim() || null,
       triad_scope: 'vision_map',
+      node_interpretation,
     }
   }, [selectedNodeId, selectedPayload, entityBundle, selectedNestTriad])
 

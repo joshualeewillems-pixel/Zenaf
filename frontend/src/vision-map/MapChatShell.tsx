@@ -22,6 +22,7 @@ import { MapTriadInspectorContent, type TriadInspectorSection } from './mapTriad
 import { DeferredPromptTodosSection } from '../vision-execution/DeferredPromptTodosSection'
 import { mapWorkspaceRemindersTitle } from '../developmentalGuidance/systemPromptTitle'
 import { buildTriadSuggestedQuestion } from './triadConversationPrompts'
+import { assessNodeFlowAndChannels } from '../flow/assessNodeFlowAndChannels'
 
 type Props = {
   selected: MapNodePayload | null
@@ -183,15 +184,24 @@ export function MapChatShell({
     setTriadSection('soil')
   }, [selected?.ref.id, selected?.ref.veType])
 
-  const growthTriad = useMemo(
-    () => growthTriadOverride ?? (selected ? effectiveGrowthTriad(selected, entityBundle) : null),
-    [growthTriadOverride, selected, entityBundle],
+  const unifiedAssessment = useMemo(
+    () => (selected ? assessNodeFlowAndChannels(selected, { bundle: entityBundle, councilRuns: [] }) : null),
+    [selected, entityBundle],
   )
+  const interpretation = unifiedAssessment?.interpretation ?? null
+
+  const growthTriad = useMemo(() => {
+    if (growthTriadOverride) return growthTriadOverride
+    if (unifiedAssessment) return unifiedAssessment.derived.map_visual_triad
+    return selected ? effectiveGrowthTriad(selected, entityBundle) : null
+  }, [growthTriadOverride, unifiedAssessment, selected, entityBundle])
+
   const growthCaption = useMemo(
     () =>
       growthCaptionOverride ??
+      interpretation?.summary ??
       (selected && growthTriad ? growthTriadCaption(growthTriad, growthKindLabel(selected.kind)) : ''),
-    [growthCaptionOverride, selected, growthTriad],
+    [growthCaptionOverride, interpretation?.summary, selected, growthTriad],
   )
   const guidanceScript = useMemo(
     () => (selected && growthTriad ? buildGuidanceScriptForNode(selected, growthTriad) : null),
@@ -262,6 +272,13 @@ export function MapChatShell({
       resetThread: true,
       developmentalSnapshotForPrompt: devSnapshotRef.current,
     })
+    const u = assessNodeFlowAndChannels(selected, { bundle: entityBundle, councilRuns: [] })
+    if (u.interpretation.stance === 'clarify_first' && u.interpretation.chatPrefill.trim()) {
+      councilInteractRef.current({
+        type: 'suggest_council_prefill',
+        text: u.interpretation.chatPrefill,
+      })
+    }
   }, [selected, growthTriad, entityBundle])
 
   const runGuidanceAction = (action: NonNullable<typeof guidanceScript>['suggested_actions'][number]) => {
@@ -506,12 +523,32 @@ export function MapChatShell({
                   initiativeExecutionSteps={initiativeExecutionSteps}
                   initiativeExecutionStepsLoading={initiativeExecutionStepsLoading}
                 />
-                {guidanceScript ? (
+                {interpretation || guidanceScript ? (
                   <div className="rounded-lg border border-stone-700/70 bg-stone-900/25 px-3 py-2.5 space-y-2">
-                    <div className="text-[10px] uppercase tracking-wide text-stone-500">Best next step</div>
-                    <p data-testid="map-best-next-step" className="text-xs text-stone-200 leading-relaxed">
-                      {guidanceScript.next_best_question}
-                    </p>
+                    <div className="text-[10px] uppercase tracking-wide text-stone-500">
+                      {interpretation?.stance === 'clarify_first' ? 'Clarify first' : 'Best next step'}
+                    </div>
+                    {interpretation?.stance === 'clarify_first' && interpretation.clarificationQuestion ? (
+                      <p data-testid="map-clarification-question" className="text-xs text-stone-200 leading-relaxed">
+                        {interpretation.clarificationQuestion}
+                      </p>
+                    ) : interpretation ? (
+                      <div className="space-y-1.5">
+                        <p data-testid="map-interpretation-action-line" className="text-xs text-stone-200 leading-relaxed">
+                          {interpretation.actionLine}
+                        </p>
+                        <p
+                          data-testid="map-interpretation-chat-prefill"
+                          className="text-[11px] text-stone-500 leading-relaxed"
+                        >
+                          Suggested in chat: {interpretation.chatPrefill}
+                        </p>
+                      </div>
+                    ) : guidanceScript ? (
+                      <p data-testid="map-best-next-step" className="text-xs text-stone-200 leading-relaxed">
+                        {guidanceScript.next_best_question}
+                      </p>
+                    ) : null}
                     <div className="flex flex-wrap gap-1.5">
                       <button
                         type="button"
@@ -530,7 +567,7 @@ export function MapChatShell({
                         </button>
                       ) : null}
                     </div>
-                    {guidanceScript.optional_assessment ? (
+                    {guidanceScript?.optional_assessment ? (
                       <p className="text-[10px] text-stone-500 leading-snug">{guidanceScript.optional_assessment}</p>
                     ) : null}
                     {commitStructureNote ? <p className="text-[11px] text-stone-400">{commitStructureNote}</p> : null}

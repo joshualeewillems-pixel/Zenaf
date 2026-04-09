@@ -10,6 +10,7 @@ import {
 import type { FocusInvite, FocusInviteKind } from './focusInviteTypes'
 import { ACTION_LABELS, getFieldCapabilities } from './fieldCapabilityRegistry'
 import type { ActionId, FocusContextCore } from './types'
+import type { NodeInterpretation } from '../../flow/unifiedNodeAssessmentTypes'
 
 /** Outcome-oriented chip copy for structured_fill (rewrite only in v1). */
 function structuredFillInviteLabel(
@@ -78,11 +79,17 @@ function kindRank(k: FocusInviteKind): number {
   return k === 'conversational' ? 0 : 1
 }
 
+const CLARIFY_FIRST_DISTILL_LABEL = 'Clarify scope first'
+
 /**
  * Invites for idea / initiative / project / task (registry-backed). Ordering: conversational before
  * structured_fill, then Appendix B order = index in `allowed_actions` for that registry row.
+ * When map `interpretation.stance === 'clarify_first'`, rank `distill` first with clarify-oriented copy.
  */
-export function deriveFocusInvites(core: FocusContextCore | null | undefined): FocusInvite[] {
+export function deriveFocusInvites(
+  core: FocusContextCore | null | undefined,
+  interpretation?: NodeInterpretation | null,
+): FocusInvite[] {
   if (!core) return []
   if (!isInviteEntityType(core.entity_type)) return []
 
@@ -120,6 +127,22 @@ export function deriveFocusInvites(core: FocusContextCore | null | undefined): F
     if (d !== 0) return d
     return a.regIdx - b.regIdx
   })
+
+  if (interpretation?.stance === 'clarify_first') {
+    const di = rows.findIndex((r) => r.invite.sourceAction === 'distill')
+    if (di > 0) {
+      const [row] = rows.splice(di, 1)
+      if (row) {
+        row.invite = {
+          ...row.invite,
+          label: CLARIFY_FIRST_DISTILL_LABEL,
+        }
+        rows.unshift(row)
+      }
+    } else if (di === 0) {
+      rows[0]!.invite = { ...rows[0]!.invite, label: CLARIFY_FIRST_DISTILL_LABEL }
+    }
+  }
 
   return rows.slice(0, MAX_FOCUS_INVITES_VISIBLE).map((r) => r.invite)
 }

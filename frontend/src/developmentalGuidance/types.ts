@@ -1,3 +1,5 @@
+import type { NodeInterpretation } from '../flow/unifiedNodeAssessmentTypes'
+
 /**
  * Mirrors local_ai/developmental_guidance.py — JSON-serializable read model for council_preflight.
  * Hypothesis wording stays non-diagnostic; server normalizes confidence (caps high → medium).
@@ -89,4 +91,6 @@ export type MapTriadDevelopmentalSnapshot = {
   node_label?: string | null
   /** When set, hypotheses / evidence refs distinguish VE tab focus from map selection. */
   triad_scope?: 'vision_map' | 've_execution_focus'
+  /** Unified map node interpretation (stance, summary, prefill) for trunk mediation override. */
+  node_interpretation?: NodeInterpretation | null
 }

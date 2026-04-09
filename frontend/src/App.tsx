@@ -2977,6 +2977,10 @@ function App() {
       if (developmentalGuidance && !councilScopedDigression) {
         council_preflight.developmental_guidance = developmentalGuidance
       }
+      const mapInterp = mapTriadForGuidance && 'node_interpretation' in mapTriadForGuidance ? mapTriadForGuidance.node_interpretation : null
+      if (mapInterp) {
+        council_preflight.node_interpretation = mapInterp
+      }
 
       if (councilScopedDigression) {
         const dig = councilScopedDigression
@@ -2998,6 +3002,7 @@ function App() {
         }
         council_preflight.is_scoped_digression = true
         delete council_preflight.developmental_guidance
+        delete council_preflight.node_interpretation
       }
 
       console.debug('[Atria council] council_preflight snapshot', {

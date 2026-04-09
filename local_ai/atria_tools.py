@@ -914,6 +914,33 @@ def _run_council_conversational_partner_body(
             user_id=ve_elicitation_user_id,
             question_kind=_qk,
         )
+    # Map node interpretation: conservative clarify_first → ask_discriminating_question (do not rely on classify_question_kind alone).
+    _ni = council_preflight_dict.get("node_interpretation") if isinstance(council_preflight_dict, dict) else None
+    if isinstance(_ni, dict):
+        _st = str(_ni.get("stance") or "").strip()
+        _clq = str(_ni.get("clarificationQuestion") or _ni.get("clarification_question") or "").strip()
+        if _st == "clarify_first" and _clq:
+            _qs = (question or "").strip()
+            _emptyish = len(_qs) == 0 or _qs == "__ZENAF_SESSION_OPENER__"
+            _prefill_ok = _qs == _clq or (_clq and _qs.startswith(_clq[: min(48, len(_clq))]))
+            if _emptyish or _prefill_ok:
+                _amb_raw = str(_ni.get("ambiguityType") or _ni.get("ambiguity_type") or "unknown").strip()
+                _allowed_amb = frozenset(
+                    {
+                        "missing_definition",
+                        "unclear_priority",
+                        "competing_priorities",
+                        "unresolved_dependency",
+                        "ownership_gap",
+                        "unknown",
+                    }
+                )
+                _amb = _amb_raw if _amb_raw in _allowed_amb else "unknown"
+                _mediation = {
+                    "ambiguity_type": _amb,
+                    "resolution_mode": "sharpen",
+                    "mediation_move": "ask_discriminating_question",
+                }
     _trunk_block = conversational_partner_trunk_instructions(
         question_kind=_qk,
         output_contract=_oc,

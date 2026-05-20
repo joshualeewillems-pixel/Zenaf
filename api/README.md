@@ -73,7 +73,7 @@ uvicorn api.main:app --reload --host 127.0.0.1 --port 8010
 
 - **POST /auth/login**, **POST /auth/logout**, **GET /auth/me**, **PATCH /auth/me** — Session cookie auth; PATCH updates `display_name` (min 1 char).
 
-- **Dev users** — On first Vision Execution DB init, **`owner@local.zenaf`** (admin) and **`phil@local.zenaf`** / display **Phil** (non-admin) are created if missing. Passwords: `ZENAF_BOOTSTRAP_PASSWORD` or fallback `local-dev-owner`; `ZENAF_PHIL_BOOTSTRAP_PASSWORD` or fallback `phil-local-dev`. **Changing `.env` later does not change existing password hashes.** If login fails, try `local-dev-owner` / `phil-local-dev`, or run `python scripts/set_dev_user_password.py --email owner@local.zenaf --password <new>` (API off).
+- **Dev users** — On first Vision Execution DB init, **`owner@local.zenaf`** (admin) and **`phil@local.zenaf`** / display **Phil** (non-admin) are created if missing. Passwords: `ZENAF_BOOTSTRAP_PASSWORD` or fallback `local-dev-owner`; `ZENAF_PHIL_BOOTSTRAP_PASSWORD` or fallback `phil-local-dev`. **Changing `.env` later does not change existing password hashes.** If login fails, try `local-dev-owner` / `phil-local-dev`, or run `python scripts/set_dev_user_password.py --email owner@local.zenaf --password <new>` (API off). **Change bootstrap passwords before any shared or public deployment.**
 
 - **POST /auth/admin/users** — Admin only (session cookie). JSON body: `email`, `password`, optional `display_name`, optional `is_admin`. Creates another login account.
 

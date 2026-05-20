@@ -1,15 +1,14 @@
-# Zenaf — developer handoff
+# Zenaf
 
-Local-first **workflow cockpit**: workspace organizer (File Steward + `/run` modes), intake/email queue, **Vision → Execution** (ideas → initiatives → projects → tasks), content tools, **Settings** (account, LLM keys, notification prefs). **FastAPI** backend + **React / Vite** SPA.
+Local-first **workflow cockpit**: workspace organizer (File Steward + `/run` modes), intake/email queue, **Vision → Execution** (ideas → initiatives → projects → tasks), **Philosophy Council** and **operator supervision** (Studio), content tools, and **Settings** (account, LLM keys, notification prefs). **FastAPI** backend + **React / Vite** SPA.
 
-**Not production-hardened** by default: cookie auth, local SQLite, dev-oriented CORS.
+**License:** [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). If you **modify** this software and **run it as a network service** for others, you must offer corresponding source to users (AGPL section 13).
 
-Use this README to **clone, run, and orient** another developer on this build.
+**Status:** Experimental / dev-oriented — **not production-hardened** (cookie auth, local SQLite, dev CORS). See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ---
 
-## Receiving developer — do this first
-
+## Quick start for contributors
 1. **Get the tree** — full repo checkout at a path with no spaces if possible (fewer tooling edge cases).
 2. **Python 3.11+** — `python --version` (or `python3`).
 3. **Node.js LTS** + npm — `node -v`, `npm -v`.
@@ -24,9 +23,9 @@ Use this README to **clone, run, and orient** another developer on this build.
    ```bash
    cd frontend && npm install && cd ..
    ```
-7. **Optional — encrypted LLM keys in Settings:** set `ZENAF_SETTINGS_ENCRYPTION_KEY` (see [Environment](#environment)). The Settings UI will warn if it is missing; without it, **saving** API keys fails (503); much of the app still runs for local/workflow use.
-8. **Start stack** — Windows: `.\open-cockpit.ps1` from root, or use [Manual run](#manual-run-all-platforms) below.
-9. **Sanity check:** browser **http://127.0.0.1:5173** (app) and **http://127.0.0.1:8010/docs** (OpenAPI). Optional: `curl http://127.0.0.1:8010/health`.
+7. **Optional env** — copy [`.env.example`](.env.example) to `.env.local` (never commit). Set `ZENAF_SETTINGS_ENCRYPTION_KEY` if you want to save LLM API keys in Settings (see [Environment](#environment)).
+8. **Start stack** — Windows: `.\open-cockpit.bat` or `.\operator_console.bat` (agentic sync + Studio + cockpit), or [Manual run](#manual-run-all-platforms).
+9. **Sanity check:** **http://127.0.0.1:5173** (cockpit), **http://127.0.0.1:5173/studio** (admin Studio), **http://127.0.0.1:8010/docs** (OpenAPI). Dev login: `owner@local.zenaf` — see [api/README.md](api/README.md).
 
 ---
 
@@ -49,9 +48,9 @@ From repo root:
 .\open-cockpit.ps1
 ```
 
-Or double-click **`open-cockpit.bat`** (runs the same script).
+Or double-click **`open-cockpit.bat`** (cockpit + API docs) or **`operator_console.bat`** (conformance + notifications + supervisor sync, then Studio supervisor tab + cockpit).
 
-Starts API on **127.0.0.1:8010** and frontend on **5173**, opens the app and Swagger in the browser.
+Starts API on **127.0.0.1:8010** and frontend on **5173**.
 
 ---
 
@@ -84,7 +83,43 @@ Frontend dev server listens on **127.0.0.1:5173** (not `localhost`, so it matche
 
 ---
 
-## Verify a clean handoff
+## Operator Studio (admin)
+
+| URL | Purpose |
+|-----|---------|
+| http://127.0.0.1:5173/studio?tab=supervisor | **Operator Supervisor** — one-now queue, Run next orchestration |
+| http://127.0.0.1:5173/studio?tab=council | Philosophy Council + notifications sidebar |
+| http://127.0.0.1:5173/studio | System conformance index + operator hub |
+
+Docs: [OPERATOR_SUPERVISOR.md](docs/02_ACTIVE_DESIGN/OPERATOR_SUPERVISOR.md), [OPERATOR_BURDEN.md](docs/02_ACTIVE_DESIGN/OPERATOR_BURDEN.md).
+
+---
+
+## Forking and publishing
+
+- **Clone** this repo; local SQLite and reports are created on first run (not shipped in git).
+- Copy [`.env.example`](.env.example) for optional configuration.
+- Regenerate conformance reports: `python scripts/system_conformance_report.py`
+- **Maintainers:** first public GitHub push checklist in [PUBLISHING.md](PUBLISHING.md).
+
+### What this repository does not ship
+
+- Personal databases (`*.db`), `activity.log`, debug logs
+- Notification / operator-supervisor state under `reports/notifications/`, `reports/operator_supervisor/`
+- Twilio or cloud API secrets (use `.env.local`, gitignored)
+- Production deployment hardening
+
+---
+
+## Community
+
+- **Contributing:** [CONTRIBUTING.md](CONTRIBUTING.md)
+- **Security:** [SECURITY.md](SECURITY.md)
+- **Issues / PRs:** enable on your GitHub fork; after publish, link your public repo here.
+
+---
+
+## Verify a clean install
 
 ```bash
 # From repo root, API running
@@ -105,6 +140,8 @@ cd frontend && npm run build
 | **`ZENAF_LEARNING_PERSIST_PATH`** | Optional path to an **append-only JSONL** file for `LearningRecord` rows (same redacted shape as capture). Loaded on API startup into the ring buffer; new rows append after each capture/outcome update. Missing file is OK; corrupt lines skipped with a warning. |
 | **`ZENAF_LEARNING_PERSIST_MAX_MB`** | Optional. If set, when the JSONL exceeds this size (MiB), it is rotated to `*.YYYYMMDD-HHMMSS.rotated` before the next append. |
 | **Ollama / provider config** | Default local LLM; cloud providers optional via Settings UI when encryption key is set. |
+
+Full optional list: [`.env.example`](.env.example).
 
 ---
 
@@ -152,10 +189,9 @@ Non-blocking capture of **delegated** (often cloud) calls into **`LearningRecord
 
 | Read | Why |
 |------|-----|
-| **`docs/README.md`** | How docs are organized; what to trust first. |
-| **`docs/01_TRUTH/ACTIVE_VS_PLANNED.md`** | What is implemented vs stubbed vs not built. |
-| **`docs/01_TRUTH/CODEBASE_INVENTORY.md`** | Overview, build/tooling, routes, DBs. |
-| **`docs/01_TRUTH/CODEBASE_TRUTH_RULES.md`** | LLM routing, `/auth` vs `/settings`, persistence expectations. |
+| **`docs/01_TRUTH/README.md`** | **Canonical truth index** — conflict order, four tiers, what to read for each question. |
+| **`docs/01_TRUTH/ACTIVE_VS_PLANNED.md`** | As-built: implemented vs stubbed vs not built. |
+| **`docs/01_TRUTH/CODEBASE_TRUTH_RULES.md`** | Implementation law (routing, persistence, council). |
 | **`docs/01_TRUTH/BOOT_FLOW.md`** | API startup and mirror load order. |
 | **`docs/02_ACTIVE_DESIGN/TIERED_DELEGATION_AND_LEARNING.md`** | Tiers, `LearningRecord`, export/persist, offline scripts, privacy modes. |
 | **`api/README.md`** | API install, auth/settings endpoints. |
@@ -175,7 +211,9 @@ pytest tests/
 |--------|---------|
 | **`scripts/zenaf_learning_jsonl_prep.py`** | Dedupe merged JSONL; write cleaned file + optional summary JSON. |
 | **`scripts/zenaf_learning_analysis.py`** | Analysis report on **cleaned** JSONL (prompt/validator prioritization). |
-| *Others* | Seeds, intake helpers, vision execution seeds — browse `scripts/`. |
+| **`operator_console.bat`** | Operator launcher: sync agentic pipelines, open Studio + cockpit |
+| **`system_train.bat`** | Conformance report + notifications + supervisor sync + Studio |
+| *Others* | Seeds, intake helpers — browse `scripts/`. |
 
 ---
 

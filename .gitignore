@@ -1,6 +1,14 @@
 # Python bytecode caches
 __pycache__/
 
+# Local runtime data — never publish
+*.db
+*.db-journal
+activity.log
+debug-*.log
+intake_mirror.db
+data/vision_execution/
+
 # Local workspace identity mirror (bounded scan; not system of record)
 .zenaf/workspace-identity/
 
@@ -23,5 +31,21 @@ last_packet.txt
 # Wave exit gate local report (CI uploads as artifact)
 wave_exit_report.json
 
+# Generated / machine-local reports (regenerate via scripts)
+reports/arc_detection/
+reports/system_conformance/
+reports/philosophy_council/sessions/
+reports/philosophy_council/queued/
+reports/philosophy_enforcement/
+
 # ARC lab: machine-specific user/project ids (regenerate: python scripts/seed_arc_lab_fixtures.py)
 reports/arc_lab/manifest.json
+
+# Local notification credentials (Twilio SMS etc.) — never commit
+.env.local
+.env.notifications
+# Notification state (per-machine, contains operator decision history)
+reports/notifications/
+reports/operator_supervisor/
+# Local debug helper (redacts secrets but still local-only)
+scripts/_debug_notif_env.py

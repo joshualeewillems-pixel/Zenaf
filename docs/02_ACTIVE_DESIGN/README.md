@@ -3,10 +3,12 @@
 This folder defines **how the system is intended to work** — product and UX intent, target behavior, and architecture direction.
 
 - Docs here **may describe behavior not yet implemented** or only partially shipped.
-- If **code conflicts with design**, treat **`docs/01_TRUTH/ACTIVE_VS_PLANNED.md`** (and truth-layer docs in `docs/01_TRUTH/`) as the **as-built** record.
+- If **code conflicts with design**, use the conflict order in **`docs/01_TRUTH/README.md`**; as-built record is **`ACTIVE_VS_PLANNED.md`**.
 - **Do not assume design = reality.** Design informs roadmap; truth docs and the codebase describe what actually runs today.
 
 See also **`docs/README.md`** for how this layer fits with `01_TRUTH` and future `03` / `04` / `05` folders.
+
+**Open source:** clone and contribute via root [CONTRIBUTING.md](../../CONTRIBUTING.md); publish checklist [PUBLISHING.md](../../PUBLISHING.md).
 
 ## Active design docs (index)
 
@@ -28,3 +30,6 @@ See also **`docs/README.md`** for how this layer fits with `01_TRUTH` and future
 - **`PROFILE_IDENTITY_ONTOLOGY.md`** — Law vs user canonical core vs legacy rows vs system perspectives; `is_canonical`, meeting guidance, influence de-peering; **user weights stay orthogonal** to default identity.
 - **`CONVERSATION_TRUNK_ARCHITECTURE.md`** — Target **unified conversation pipeline** (trunk: classification + context + response contract; branches: VE / map / workspace / training enrichments only). Addresses split-brain behavior across council, map chat, VE, and training; includes draft contract + Cursor prompt for phased implementation.
 - **`SOIL_LAYER_FILESYSTEM_SPEC.md`** — **Soil v1 complete (parked):** spec + kernel + CLI + soil API + dev append + checklist §12.3; **no** read hooks / auto-capture / council. Re-open only with an explicit charter; until then prefer core convergence work.
+- **`OPERATOR_BURDEN.md`** — Product law for attention compression: one `now_item`, ingest prune, smallest-next-slice bias; governs supervisor feed + notification surfaces.
+- **`OPERATOR_SUPERVISOR.md`** — Unified operator queue (Studio tab + cockpit strip); orchestrated pause/resume; API fields `now_item`, `burden_message`, `overflow_count`. Launcher: **`operator_console.bat`** at repo root (sync + Studio supervisor tab + cockpit).
+- **`NOTIFICATIONS.md`** — Rare SMS triggers, cooldown, dry-run; deep-links to supervisor tab.

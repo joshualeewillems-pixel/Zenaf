@@ -57,6 +57,7 @@
 @layer base {
   body {
     margin: 0;
+    overflow-x: clip;
     font-family: system-ui, -apple-system, sans-serif;
   }
 
@@ -91,5 +92,20 @@
   .btn-primary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+}
+
+
+/* ---- Mobile (below md): keep layout usable on phones. Desktop unchanged. ---- */
+@media (max-width: 767.98px) {
+  /* Comfortable touch targets for form controls */
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    min-height: 44px;
+  }
+  /* Never let long unbroken strings force horizontal page scroll */
+  p, h1, h2, h3, h4, span, div, td, th, li {
+    overflow-wrap: anywhere;
   }
 }

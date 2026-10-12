@@ -5658,23 +5658,23 @@ function App() {
     />
     <LeaveVisionSurfacesFocusClear mainView={mainView} />
     <div className="h-dvh min-h-0 overflow-hidden bg-stone-900 text-stone-100 flex flex-col">
-      <header className="shrink-0 border-b border-stone-700 px-6 py-4 flex items-center justify-between bg-stone-900 z-20">
+      <header className="shrink-0 border-b border-stone-700 px-3 py-3 md:px-6 md:py-4 flex items-center justify-between gap-2 bg-stone-900 z-20">
         <div className="flex items-center gap-3 min-w-0">
           <ProfileAvatarControl user={currentUser} onUserUpdated={setCurrentUser} />
           <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-xl font-semibold truncate">Zenaf · Local-first workflow cockpit</h1>
+            <h1 className="text-base md:text-xl font-semibold truncate">Zenaf · Local-first workflow cockpit</h1>
             <span className="text-xs text-stone-400 shrink-0 hidden sm:inline">{currentUser.email}</span>
           </div>
         </div>
         <nav
-          className="flex items-center gap-1"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto"
           aria-label="Primary"
         >
           {/* Core: Foundation (actors / profiles) + Vision & Execution */}
           <button
             type="button"
             onClick={() => setMainView('perspectives')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+            className={`px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
               mainView === 'perspectives'
                 ? 'bg-stone-700 text-stone-100 ring-1 ring-yellow-600/35'
                 : 'text-stone-200 hover:text-white border border-transparent hover:border-yellow-700/30 hover:bg-stone-800/80'
@@ -5688,7 +5688,7 @@ function App() {
               setVeSelection(null)
               setMainView('vision_map')
             }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors ${
+            className={`px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
               mainView === 'vision_map'
                 ? 'bg-stone-700 text-stone-100 ring-1 ring-emerald-700/35'
                 : 'text-stone-200 hover:text-white border border-transparent hover:border-emerald-700/25 hover:bg-stone-800/80'
@@ -5702,7 +5702,7 @@ function App() {
               setVeSelection(null)
               setMainView('vision_execution')
             }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-medium transition-colors ${
               mainView === 'vision_execution'
                 ? 'bg-stone-700 text-stone-100'
                 : 'text-stone-300 hover:text-stone-100'
@@ -5722,7 +5722,7 @@ function App() {
           <button
             type="button"
             onClick={() => setMainView('workspace')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-medium transition-colors ${
               mainView === 'workspace' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
             }`}
           >
@@ -5731,7 +5731,7 @@ function App() {
           <button
             type="button"
             onClick={() => setMainView('content')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-medium transition-colors ${
               mainView === 'content' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
             }`}
           >
@@ -5749,7 +5749,7 @@ function App() {
           <button
             type="button"
             onClick={() => setMainView('settings')}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+            className={`px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-medium transition-colors ${
               mainView === 'settings' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
             }`}
           >
@@ -5758,7 +5758,7 @@ function App() {
           <button
             type="button"
             onClick={handleLogout}
-            className="px-3 py-1.5 rounded-lg text-sm font-medium text-stone-300 hover:text-stone-100 border border-stone-700 hover:border-stone-600 transition-colors"
+            className="px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-medium text-stone-300 hover:text-stone-100 border border-stone-700 hover:border-stone-600 transition-colors"
           >
             Logout
           </button>
@@ -5773,10 +5773,10 @@ function App() {
         useLastResultAsContext={useLastResultAsContext}
       />
 
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex flex-col md:flex-row min-h-0 min-w-0">
         {/* Left: main content (changes by tab) */}
         {mainView === 'perspectives' ? (
-          <div className="flex-1 flex min-h-0 overflow-hidden bg-surface/20">
+          <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden bg-surface/20">
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <div className="shrink-0 border-b border-[color:var(--color-border)] px-4 py-3 bg-surface/40">
                 <p className="text-[10px] font-medium text-warm-white/50 uppercase tracking-wide">Foundation</p>
@@ -5809,7 +5809,7 @@ function App() {
                 />
               </div>
             </div>
-            <aside className="w-[380px] shrink-0 border-l border-[color:var(--color-border)] bg-surface/40 min-h-0 flex flex-col">
+            <aside className="w-full md:w-[380px] md:shrink-0 border-t md:border-t-0 md:border-l border-[color:var(--color-border)] bg-surface/40 min-h-0 max-h-[50vh] md:max-h-none flex flex-col">
               <div className="shrink-0 p-4 border-b border-stone-700">
                 <h2 className="text-base font-semibold text-stone-100">Foundation</h2>
                 <p className="text-stone-400 text-xs mt-1">Detail, training, and actor editor.</p>
@@ -5975,7 +5975,7 @@ function App() {
           </div>
         ) : (
           /* Workspace Organizer */
-          <main className="flex-1 min-h-0 overflow-auto p-6 max-w-3xl mx-auto space-y-10">
+          <main className="flex-1 min-w-0 min-h-0 overflow-auto p-4 md:p-6 max-w-3xl mx-auto space-y-10">
             {error && (
               <div className="rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm p-3">
                 {error}
@@ -6378,7 +6378,7 @@ function App() {
                     return (
                       <div
                         key={laneId}
-                        className={`flex-shrink-0 flex flex-col rounded-lg border border-slate-600 bg-slate-800/40 ${expanded ? 'w-[450px] min-w-[450px]' : 'w-[4.5rem] min-w-[4.5rem]'}`}
+                        className={`flex-shrink-0 flex flex-col rounded-lg border border-slate-600 bg-slate-800/40 ${expanded ? 'w-full md:w-[450px] md:min-w-[450px]' : 'w-[4.5rem] min-w-[4.5rem]'}`}
                       >
                         <button
                           type="button"
@@ -6567,7 +6567,7 @@ function App() {
                         <p className="text-slate-500 text-xs uppercase tracking-wide mb-0.5">Subject</p>
                         <p className="text-slate-200 break-words">{detailItem.subject || '(No subject)'}</p>
                       </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                         <div><span className="text-slate-500">Source</span> {detailItem.source_label || '—'}</div>
                         <div><span className="text-slate-500">Received</span> {detailItem.created_at ? intakeQueueRelativeTime(detailItem.created_at) : '—'}</div>
                         <div><span className="text-slate-500">Category</span> {detailItem.category}</div>
@@ -6645,7 +6645,7 @@ function App() {
                           <p className="text-slate-500 text-[10px]">
                             Creates a task in the Vision Execution core and records a minimal lifecycle link (intake item → judgment → task).
                           </p>
-                          <div className="grid grid-cols-2 gap-2 mb-1">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-1">
                             <div>
                               <label className="block text-slate-500 text-[10px] mb-0.5">Project ID</label>
                               <input
@@ -6667,7 +6667,7 @@ function App() {
                               />
                             </div>
                           </div>
-                          <div className="grid grid-cols-2 gap-2 mb-1">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-1">
                             <div>
                               <label className="block text-slate-500 text-[10px] mb-0.5">Summary (optional)</label>
                               <textarea
@@ -6761,10 +6761,10 @@ function App() {
 
         {/* Right: Folder review result (when in folder workflow) or conversation panel */}
         <aside
-          className={`w-[380px] shrink-0 sticky top-0 flex flex-col min-h-0 h-[calc(100vh-8rem)] max-h-[calc(100vh-4.5rem)] bg-stone-800/60 overflow-x-hidden shadow-lg ${
+          className={`w-full md:w-[380px] md:shrink-0 md:sticky md:top-0 flex flex-col min-h-0 h-auto md:h-[calc(100vh-8rem)] max-h-[55vh] md:max-h-[calc(100vh-4.5rem)] bg-stone-800/60 overflow-x-hidden shadow-lg ${
             mainView === 'vision_map'
-              ? 'order-first border-r border-stone-700 rounded-r-lg'
-              : 'border-l border-stone-700 rounded-l-lg'
+              ? 'order-first border-t md:border-t-0 md:border-r border-stone-700 rounded-t-lg md:rounded-t-none md:rounded-r-lg'
+              : 'border-t md:border-t-0 md:border-l border-stone-700 rounded-t-lg md:rounded-t-none md:rounded-l-lg'
           }`}
         >
           {error && (mainView !== 'workspace' || workoutActive) && (

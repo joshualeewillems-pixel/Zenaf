@@ -1,0 +1,55 @@
+{
+  "$schema_comment": "Declared exemptions for trace_coverage checker (client AiActionTrace expectation). Update with GLOBAL_PHILOSOPHY_INTEGRATION_MATRIX + charter. Phase 2A: entries below are cockpit path gaps—revisit when UI calls these routes with stable literals; then add pushAiActionTrace and remove exemption.",
+  "version": 1,
+  "exempt_endpoints": [
+    {
+      "methods": ["POST"],
+      "path_contains": "/api/transcribe",
+      "reason": "Utility speech-to-text (Whisper); not a cockpit AI reasoning/action event requiring client trace."
+    },
+    {
+      "methods": ["POST"],
+      "path_contains": "/focus-actions/stub",
+      "reason": "Reserved/local UI stub path (no backend LLM); align if route is added."
+    }
+  ],
+  "exempt_routes": [
+    {
+      "methods": ["POST"],
+      "path_contains": "/studio/attachment-lane/bakeoff",
+      "reason": "Operator/Studio surface. Mirrors 'studio_admin_surface' in aiTraceExemptRegistry.ts. Exempt from client trace parity until merged with main cockpit."
+    },
+    {
+      "methods": ["POST"],
+      "path_contains": "/reconcile",
+      "reason": "POST /vision-execution/core-profiles/{id}/reconcile: server LLM + server trace hooks; no cockpit fetcher with path literals in frontend/src yet (2A backlog)."
+    },
+    {
+      "methods": ["POST"],
+      "path_contains": "{profile_id}/conversation",
+      "reason": "POST /vision-execution/core-profiles/{id}/conversation: server-only exploratory assistant; cockpit wiring/trace when UI POST lands (2A backlog)."
+    },
+    {
+      "methods": ["POST"],
+      "path_contains": "/extract-segment-summary",
+      "reason": "Meeting pipeline sub-stage; not called from cockpit with this path string—internal/long-meeting flow only until wired (2A)."
+    },
+    {
+      "methods": ["POST"],
+      "path_contains": "/extract-meeting-segments",
+      "reason": "Meeting pipeline sub-stage; cockpit uses /extract-meeting; segments route has no FE path literal match yet (2A)."
+    },
+    {
+      "methods": ["POST"],
+      "path_contains": "/extract-meeting-synthesis",
+      "reason": "Meeting hierarchical synthesis path; no cockpit fetcher with this literal yet (2A)."
+    }
+  ],
+  "exempt_inline_llm": [
+    {
+      "module_suffix": "local_ai/integration_commit.py",
+      "symbol": "infer_draft_value_from_context",
+      "reason": "Narrow auto-fill inside an already-traced council/integration path; not a standalone user-facing AI surface."
+    }
+  ]
+}

@@ -63,7 +63,7 @@ export function BrandStructuredProfilePanel({
 
   const previewSource = (profile?.core_definition ?? '').trim()
 
-  const title = displayName.trim() || brandActor.name || 'Brand'
+  const title = displayName.trim() || brandActor.name || 'Storyteller'
 
   if (loading) {
     return (
@@ -154,17 +154,17 @@ export function CreateCoreProfileForm({
   return (
     <div className="rounded-xl border border-[color:var(--color-border)] bg-surface p-4 space-y-3">
       <p className="text-[11px] text-warm-white/50 leading-relaxed">
-        This becomes your <span className="text-warm-white/70">Brand core</span> — the single structured source Zenaf uses
+        This becomes your <span className="text-warm-white/70">core profile</span> — the single structured source Zenaf uses
         for your voice and constraints. Perspectives are lenses on top, not competing identities.
       </p>
       <div>
-        <label className="block text-xs font-medium text-warm-white/55 mb-1">Brand core name</label>
+        <label className="block text-xs font-medium text-warm-white/55 mb-1">Core profile name</label>
         <TranscribableFieldRegion
           surface="core_profile"
           entity_type="core_profile"
           entity_id={CORE_PROFILE_CREATE_ENTITY_ID}
           field_key="name"
-          field_label="Brand core name"
+          field_label="Core profile name"
           field_kind="idea_body"
           getCurrentText={() => name}
         >
@@ -211,7 +211,7 @@ export function CreateCoreProfileForm({
           <textarea
             value={current_goals}
             onChange={(e) => setCurrentGoals(e.target.value)}
-            placeholder="What you’re optimizing for right now (Brand core)"
+            placeholder="What you’re optimizing for right now (core profile)"
             rows={2}
             className="w-full px-3 py-2 rounded-lg bg-canvas border border-[color:var(--color-border-strong)] text-[color:var(--map-ink-primary)] placeholder:text-[color:var(--map-muted-ink)] text-sm resize-y"
           />

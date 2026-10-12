@@ -12,7 +12,7 @@ export function AgentList({
   yourProfileActorId,
   getMakeOwnAction,
   showArchetypeProvenance,
-  brandCardDisplayName,
+  profileCardDisplayName,
 }: {
   agents: PerspectiveAgent[]
   selectedId: string | null
@@ -28,8 +28,8 @@ export function AgentList({
   getMakeOwnAction?: (agent: PerspectiveAgent) => { label: string; onClick: () => void } | null
   /** Foundation Yours: show “Based on …” from source_archetype_id. */
   showArchetypeProvenance?: boolean
-  /** Foundation: override Brand card title with core profile name. */
-  brandCardDisplayName?: string
+  /** Foundation: override the core-voice card title with the core profile name. */
+  profileCardDisplayName?: string
 }) {
   if (agents.length === 0) {
     return (
@@ -55,7 +55,7 @@ export function AgentList({
               showArchetypeProvenance ? archetypeLabelForSourceId(agent.source_archetype_id) : null
             }
             primaryTitleOverride={
-              yourProfileActorId && agent.id === yourProfileActorId ? brandCardDisplayName : undefined
+              yourProfileActorId && agent.id === yourProfileActorId ? profileCardDisplayName : undefined
             }
           />
         </li>

@@ -11,9 +11,10 @@ export type PerspectiveIconId =
   | 'spiral'
   | 'map'
   | 'compass'
+  | 'note'
 
 export const PERSPECTIVE_ICON_OPTIONS: Array<{ id: PerspectiveIconId; label: string; hint: string }> = [
-  { id: 'chess', label: 'Chess piece', hint: 'Big picture — direction and leverage' },
+  { id: 'chess', label: 'Chess piece', hint: 'Counterpoint — pressure-testing assumptions' },
   { id: 'gear', label: 'Gear', hint: 'Make it happen — sequencing and systems' },
   { id: 'magnifier', label: 'Magnifying glass', hint: "What's true — evidence and tradeoffs" },
   { id: 'scales', label: 'Scales', hint: 'What are the rules — constraints and guardrails' },
@@ -21,18 +22,22 @@ export const PERSPECTIVE_ICON_OPTIONS: Array<{ id: PerspectiveIconId; label: str
   { id: 'orb', label: 'Orb network', hint: 'How it fits together — synthesis' },
   { id: 'spiral', label: 'Circle spiral', hint: 'Holistic view — patterns across the whole' },
   { id: 'map', label: 'Map', hint: 'Context — terrain and what matters here' },
-  { id: 'compass', label: 'Compass', hint: 'Workflow — priorities and next moves' },
+  { id: 'compass', label: 'Compass', hint: 'Direction — leverage and where choices lead' },
+  { id: 'note', label: 'Musical note', hint: 'Tone and rhythm — cadence and listening' },
 ]
 
+/** Default icon per built-in actor id; the 7 strand agents each own one. */
 const DEFAULT_ICON_BY_AGENT_ID: Record<string, PerspectiveIconId> = {
-  zenaf: 'spiral',
-  thinking_partner: 'spiral',
-  strategist: 'chess',
-  operator: 'gear',
-  analyst: 'magnifier',
-  governance: 'scales',
-  brand: 'mask',
-  skeptic: 'compass',
+  zenaf: 'orb',
+  thinking_partner: 'orb',
+  storyteller: 'mask',
+  patternist: 'magnifier',
+  seer: 'spiral',
+  songwriter: 'note',
+  maker: 'gear',
+  mediator: 'scales',
+  guide: 'compass',
+  skeptic: 'chess',
 }
 
 function normalize(text: string): string {
@@ -152,6 +157,13 @@ export function PerspectiveRoleIcon({
         <>
           <circle cx="12" cy="12" r="7.5" />
           <path d="M15.8 8.2l-2.2 5.4-5.4 2.2 2.2-5.4 5.4-2.2z" />
+        </>
+      )}
+      {icon === 'note' && (
+        <>
+          <circle cx="7" cy="17.5" r="2.5" />
+          <circle cx="17" cy="15.5" r="2.5" />
+          <path d="M9.5 17.5V7l10-2.5v11" />
         </>
       )}
     </svg>

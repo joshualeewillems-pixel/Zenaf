@@ -52,7 +52,7 @@ export function InfluencesLinksSection({
   perspectiveAgents,
   emphasisNestedProfiles,
   onLinksChanged,
-  /** When set, new core-profile links may only target this id (Brand core); existing legacy targets stay visible. */
+  /** When set, new core-profile links may only target this id (core profile); existing legacy targets stay visible. */
   canonicalCoreProfileId,
 }: {
   sourceKind: InfluenceSourceKind
@@ -220,21 +220,21 @@ export function InfluencesLinksSection({
         <p className="text-[11px] text-warm-white/45 mt-1 leading-snug">
           This {sourceKind === 'core_profile' ? 'profile' : sourceKind === 'perspective' ? 'actor' : 'record'} is{' '}
           <span className="text-warm-white/55">partially shaped by</span> your{' '}
-          <span className="text-warm-white/60">Brand core</span> (or a legacy row), and by{' '}
+          <span className="text-warm-white/60">core profile</span> (or a legacy row), and by{' '}
           <span className="text-warm-white/60">actor lenses</span> — not by other full identities. Weight is how strongly
           each link applies. Saved in this browser only for now.
         </p>
       </div>
       {links.length === 0 ? (
         <p className="text-[11px] text-warm-white/40">
-          No shaping links yet — link your Brand core and/or actor lenses below.
+          No shaping links yet — link your core profile and/or actor lenses below.
         </p>
       ) : emphasisNestedProfiles ? (
         <div className="space-y-3">
           {profileLinkIndices.length > 0 && (
             <div>
               <p className="text-[10px] font-semibold text-accent/90 uppercase tracking-wide mb-1.5">
-                Brand core / legacy rows
+                Core profile / legacy rows
               </p>
               <ul className="space-y-2">{profileLinkIndices.map((i) => renderLinkRow(i))}</ul>
             </div>
@@ -267,7 +267,7 @@ export function InfluencesLinksSection({
           </select>
         </div>
         <div className="space-y-0.5 flex-1 min-w-[8rem]">
-          <label className="block text-[10px] text-warm-white/45">Brand core, legacy row, or actor</label>
+          <label className="block text-[10px] text-warm-white/45">Core profile, legacy row, or actor</label>
           <select
             value={addTargetId}
             onChange={(e) => setAddTargetId(e.target.value)}

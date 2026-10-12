@@ -1,0 +1,41 @@
+# Zenaf staging — local parity for the hosted Docker image.
+#
+# 1. cp .env.example .env   (or export the vars below in your shell)
+# 2. docker compose up --build
+# 3. Open http://127.0.0.1:8010 and log in as owner@local.zenaf
+#    with your ZENAF_BOOTSTRAP_PASSWORD.
+#
+# LLM: the container has no Ollama. For cloud LLM, set e.g.
+#   ZENAF_LLM_PROVIDER=anthropic  +  ANTHROPIC_API_KEY=...
+# (OPENAI_API_KEY / GOOGLE_API_KEY / XAI_API_KEY also work via the existing
+# provider registry.) Without a provider key, LLM features stay disabled but
+# the app boots and the UI is fully testable.
+
+services:
+  zenaf:
+    build: .
+    image: zenaf:staging
+    environment:
+      ZENAF_PROD: "1"
+      # Generate: python -c 'import secrets; print(secrets.token_hex(32))'
+      ZENAF_SECRET_KEY: "${ZENAF_SECRET_KEY:?set ZENAF_SECRET_KEY (see above)}"
+      ZENAF_BOOTSTRAP_PASSWORD: "${ZENAF_BOOTSTRAP_PASSWORD:?set ZENAF_BOOTSTRAP_PASSWORD}"
+      PORT: "8010"
+      # Optional overrides (uncomment as needed):
+      # ZENAF_LLM_PROVIDER: "anthropic"
+      # ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # ZENAF_DB_DIR: "/app/data"   # default; change only to relocate the volume
+    volumes:
+      - zenaf-data:/app/data
+    ports:
+      - "8010:8010"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  zenaf-data:

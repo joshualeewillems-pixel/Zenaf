@@ -2044,4 +2044,10 @@ if _is_prod() and _SPA_INDEX.is_file():
         # API namespaces must 404 honestly, never fall through to the SPA.
         if any(("/" + full_path).startswith(p) for p in _SPA_EXCLUDED_PREFIXES):
             raise HTTPException(status_code=404, detail="Not found")
-        return FileResponse(str(_SPA_INDEX))
+        # Never let browsers cache the SPA shell: a stale index.html points at
+        # the previous deploy's hashed bundles, so phones keep showing the old
+        # app after a release. Hashed assets under /assets/ stay cached.
+        return FileResponse(
+            str(_SPA_INDEX),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )

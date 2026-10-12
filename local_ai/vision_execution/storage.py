@@ -16,6 +16,7 @@ from typing import Any
 
 from . import models as M
 from local_ai.env_legacy_aliases import is_legacy_atria_import_disabled
+from local_ai.hosted_config import is_prod as _is_prod
 from local_ai.activity import (
     ActivityEntityType,
     ActivityType,
@@ -873,6 +874,9 @@ def _sync_phil_llm_from_owner_if_phil_has_no_credentials(conn: sqlite3.Connectio
 
 def _ensure_dev_user_phil(conn: sqlite3.Connection) -> None:
     """Second local dev account for multi-user / isolation checks (idempotent)."""
+    if _is_prod():
+        # No dev fixture accounts in production.
+        return
     if conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_DEV_EMAIL,)).fetchone():
         return
     pwd = os.environ.get("ZENAF_PHIL_BOOTSTRAP_PASSWORD", "").strip()
@@ -899,6 +903,11 @@ def _ensure_default_owner_and_backfill(conn: sqlite3.Connection) -> None:
     if owner is None:
         bootstrap_password = os.environ.get("ZENAF_BOOTSTRAP_PASSWORD", "").strip()
         if not bootstrap_password:
+            if _is_prod():
+                raise RuntimeError(
+                    "ZENAF_BOOTSTRAP_PASSWORD must be set in production (ZENAF_PROD=1); "
+                    "refusing to create the owner account with a dev fallback password."
+                )
             print(
                 "WARNING: ZENAF_BOOTSTRAP_PASSWORD is not set. "
                 "Using local-dev fallback bootstrap password for owner@local.zenaf. "

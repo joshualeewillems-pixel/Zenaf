@@ -424,7 +424,7 @@ export function StudioApp() {
     <div className="space-y-4">
       <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
         <h2 className="font-medium mb-2">System Summary</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 text-xs text-slate-200">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2 text-xs text-slate-200">
           <div className="rounded border border-slate-800 px-2 py-2">
             <div className="text-slate-400">Total capabilities</div>
             <div className="text-lg font-semibold">{String(systemIndex?.summary?.total_capabilities ?? '—')}</div>
@@ -905,7 +905,7 @@ export function StudioApp() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3">
         <h2 className="font-medium">Teacher Controls</h2>
-        <div className="grid grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
           <label className="text-slate-300">Mode</label>
           <select
             className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
@@ -958,7 +958,7 @@ export function StudioApp() {
             <option value="replace">replace</option>
           </select>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-sm border-t border-slate-700 pt-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm border-t border-slate-700 pt-3">
           <div className="col-span-2 text-slate-400 text-xs">Attachment roles (defaults when POST /run omits native_provider)</div>
           <label className="text-slate-300">Main (cloud)</label>
           <div className="flex gap-1">

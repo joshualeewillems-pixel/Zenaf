@@ -88,14 +88,24 @@ export function mandateIdFromCouncilSeatLabel(raw: string): MandateIdKey | null 
     .replace(/:\s*$/, '')
   if (!n || n.startsWith('zenaf synthesis')) return null
   if (/thinking partner/.test(n)) return 'thinking_partner'
-  if (/govern|what are the rules|compliance|legal|risk guardrail/.test(n)) return 'governance'
-  if (/operator|execution|make it happen|\bcoo\b/.test(n)) return 'operator'
-  if (/analyst|evidence|what'?s true|context analyst|research|data science/.test(n)) return 'analyst'
-  if (/strateg|big picture|founder|\bceo\b/.test(n)) return 'strategist'
-  if (/brand|new angle|narrative|marketing|creative/.test(n)) return 'creative'
+  if (/govern|mediator|what are the rules|compliance|legal|risk guardrail/.test(n)) return 'governance'
+  if (/operator|maker|execution|make it happen|\bcoo\b/.test(n)) return 'operator'
+  if (/analyst|patternist|evidence|what'?s true|context analyst|research|data science/.test(n)) return 'analyst'
+  if (/strateg|\bguide\b|big picture|founder|\bceo\b/.test(n)) return 'strategist'
+  if (/brand|storyteller|\bseer\b|songwriter|new angle|narrative|marketing|creative/.test(n)) return 'creative'
   if (/integrat|holistic practitioner|zenaf(?!\s+synthesis)|how it fits|chief of staff|synthes/.test(n))
     return 'integrator'
   if (/risk|what could go wrong|skeptic/.test(n)) return 'risk'
+  const NEW_AGENT_TO_MANDATE: Record<string, MandateIdKey> = {
+    guide: 'strategist',
+    maker: 'operator',
+    patternist: 'analyst',
+    mediator: 'governance',
+    storyteller: 'creative',
+    seer: 'creative',
+    songwriter: 'creative',
+  }
+  if (n in NEW_AGENT_TO_MANDATE) return NEW_AGENT_TO_MANDATE[n]
   if (
     n === 'governance' ||
     n === 'operator' ||

@@ -179,7 +179,7 @@ def test_append_resonance_rating(ve_conn: sqlite3.Connection) -> None:
         eid,
         0.82,
         "resp-seat-1",
-        "strategist",
+        "guide",
         "council_seat",
         None,
     )
@@ -198,7 +198,7 @@ def test_append_resonance_rating(ve_conn: sqlite3.Connection) -> None:
     pl = trunk["verdict"]["payload"]
     assert pl["score"] == pytest.approx(0.82)
     assert pl["response_id"] == "resp-seat-1"
-    assert pl["seat_id"] == "strategist"
+    assert pl["seat_id"] == "guide"
     assert pl["context_kind"] == "council_seat"
     assert pl["subject_perspective_id"] is None
 
@@ -207,9 +207,9 @@ def test_get_resonance_pattern(ve_conn: sqlite3.Connection) -> None:
     uid = "u-pat"
     append_resonance_rating(uid, "core_profile", "cp-1", 0.8, "r1", "zenaf", "zenaf_training", None)
     time.sleep(0.02)
-    append_resonance_rating(uid, "core_profile", "cp-1", 0.2, "r2", "strategist", "council_seat", None)
+    append_resonance_rating(uid, "core_profile", "cp-1", 0.2, "r2", "guide", "council_seat", None)
     time.sleep(0.02)
-    append_resonance_rating(uid, "core_profile", "cp-1", 0.9, "r3", "strategist", "council_seat", None)
+    append_resonance_rating(uid, "core_profile", "cp-1", 0.9, "r3", "guide", "council_seat", None)
     time.sleep(0.02)
     append_resonance_rating(uid, "core_profile", "cp-1", 0.1, "r4", "analyst", "council_seat", None)
 
@@ -219,14 +219,14 @@ def test_get_resonance_pattern(ve_conn: sqlite3.Connection) -> None:
     assert full["high_resonance_count"] == 2
     assert full["low_resonance_count"] == 2
     assert full["average_by_seat_id"]["zenaf"] == pytest.approx(0.8)
-    assert full["average_by_seat_id"]["strategist"] == pytest.approx((0.2 + 0.9) / 2)
+    assert full["average_by_seat_id"]["guide"] == pytest.approx((0.2 + 0.9) / 2)
     assert full["average_by_context_kind"]["zenaf_training"] == pytest.approx(0.8)
     assert full["average_by_context_kind"]["council_seat"] == pytest.approx((0.2 + 0.9 + 0.1) / 3)
 
-    filtered = get_resonance_pattern(uid, context_kind="council_seat", seat_id="strategist", limit=100)
+    filtered = get_resonance_pattern(uid, context_kind="council_seat", seat_id="guide", limit=100)
     assert filtered["total_ratings"] == 2
     assert filtered["average_score"] == pytest.approx((0.2 + 0.9) / 2)
-    assert filtered["average_by_seat_id"]["strategist"] == pytest.approx((0.2 + 0.9) / 2)
+    assert filtered["average_by_seat_id"]["guide"] == pytest.approx((0.2 + 0.9) / 2)
     assert filtered["high_resonance_count"] == 1
     assert filtered["low_resonance_count"] == 1
 
@@ -262,10 +262,10 @@ def test_escalation_signal_derivation(ve_conn: sqlite3.Connection) -> None:
 
     # Fresh user for level 2: 5+ ratings, 2 sessions, same seat with 3× scores in [0.4, 0.7]
     uid2 = "u-esc2"
-    j0 = append_resonance_rating(uid2, et, eid, 0.5, "l2a", "strategist", "council_seat", None)
+    j0 = append_resonance_rating(uid2, et, eid, 0.5, "l2a", "guide", "council_seat", None)
     _set_judgment_created_at(ve_conn, j0, "2026-01-01T10:00:00+00:00")
     for i, sc in enumerate([0.45, 0.55, 0.65, 0.8]):
-        jid = append_resonance_rating(uid2, et, eid, sc, f"l2b{i}", "strategist", "council_seat", None)
+        jid = append_resonance_rating(uid2, et, eid, sc, f"l2b{i}", "guide", "council_seat", None)
         _set_judgment_created_at(ve_conn, jid, "2026-02-02T10:00:00+00:00")
     p2 = get_resonance_pattern(uid2, limit=200)
     assert p2["total_ratings"] == 5
@@ -278,7 +278,7 @@ def test_escalation_signal_derivation(ve_conn: sqlite3.Connection) -> None:
         jid = append_resonance_rating(uid3, et, eid, 0.9, f"z{i}", "zenaf", "zenaf_training", None)
         _set_judgment_created_at(ve_conn, jid, "2026-03-01T12:00:00+00:00")
     for i in range(5):
-        jid = append_resonance_rating(uid3, et, eid, 0.35, f"c{i}", "strategist", "council_seat", None)
+        jid = append_resonance_rating(uid3, et, eid, 0.35, f"c{i}", "guide", "council_seat", None)
         _set_judgment_created_at(ve_conn, jid, "2026-03-02T12:00:00+00:00")
     p3 = get_resonance_pattern(uid3, limit=200)
     assert p3["total_ratings"] == 10

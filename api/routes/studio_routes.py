@@ -559,7 +559,7 @@ def studio_council_prompts(current_user: dict = Depends(get_current_admin_user))
     from local_ai.council_teacher import TEACHER_PROMPT_VERSIONS
 
     personas = {}
-    for role in ("strategist", "operator", "analyst", "governance", "brand"):
+    for role in T.COUNCIL_ROLE_KEYS:
         try:
             personas[role] = T._built_in_persona_dict(role)  # noqa: SLF001 - intentional admin inspection
         except Exception:

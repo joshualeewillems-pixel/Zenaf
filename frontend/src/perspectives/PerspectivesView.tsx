@@ -33,7 +33,7 @@ function saveToStorage(agents: PerspectiveAgent[]) {
 
 /**
  * Foundation: two columns (System | Yours).
- * Selection list only — actor detail, Brand hero, and edit/create forms render in App’s Foundation panel.
+ * Selection list only — actor detail, the core-voice hero, and edit/create forms render in App’s Foundation panel.
  */
 export function PerspectivesView({
   agents: externalAgents,
@@ -42,7 +42,7 @@ export function PerspectivesView({
   selectedActorId,
   onSelectActorId,
   onRequestNewActor,
-  brandCoreProfileDisplayName = '',
+  coreProfileDisplayName = '',
 }: {
   agents: PerspectiveAgent[]
   onAgentsChange: (agents: PerspectiveAgent[]) => void
@@ -50,8 +50,8 @@ export function PerspectivesView({
   selectedActorId: string | null
   onSelectActorId: (id: string) => void
   onRequestNewActor: () => void
-  /** User-defined core profile name for the Brand row (synced from server + Brand panel). */
-  brandCoreProfileDisplayName?: string
+  /** User-defined core profile name for the core-voice row (synced from server + core panel). */
+  coreProfileDisplayName?: string
 }) {
   const agents = externalAgents
 
@@ -62,11 +62,11 @@ export function PerspectivesView({
 
   const userAgents = useMemo(() => agents.filter(isUserDefined), [agents])
 
-  const brandAgent = useMemo(() => agents.find((a) => a.id === 'brand'), [agents])
+  const storytellerAgent = useMemo(() => agents.find((a) => a.id === 'storyteller'), [agents])
   const yoursActors = useMemo(() => {
-    const tail = userAgents.filter((a) => a.id !== 'brand')
-    return brandAgent ? [brandAgent, ...tail] : tail
-  }, [brandAgent, userAgents])
+    const tail = userAgents.filter((a) => a.id !== 'storyteller')
+    return storytellerAgent ? [storytellerAgent, ...tail] : tail
+  }, [storytellerAgent, userAgents])
 
   useEffect(() => {
     if (useStorage && externalAgents.length === 0) {
@@ -132,11 +132,11 @@ export function PerspectivesView({
               <AgentList
                 agents={yoursActors}
                 selectedId={selectedActorId}
-                yourProfileActorId="brand"
-                emptyMessage="Brand and your custom actors appear here."
+                yourProfileActorId="storyteller"
+                emptyMessage="Your storyteller and custom actors appear here."
                 onSelect={(a) => onSelectActorId(a.id)}
                 showArchetypeProvenance
-                brandCardDisplayName={brandCoreProfileDisplayName}
+                profileCardDisplayName={coreProfileDisplayName}
               />
               <button
                 type="button"

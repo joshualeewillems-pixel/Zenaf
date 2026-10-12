@@ -29,6 +29,7 @@ import {
   InfluencesLinksSection,
 } from './perspectives'
 import { PerspectiveWorkoutPanel } from './perspectives/PerspectiveWorkoutPanel'
+import { LivingTreeView } from './living-tree/LivingTree'
 import {
   formatWorkoutContextBlock,
   countWorkoutRatingsInStorage,
@@ -452,6 +453,7 @@ function LeaveVisionSurfacesFocusClear({
   mainView,
 }: {
   mainView:
+    | 'living_tree'
     | 'workspace'
     | 'perspectives'
     | 'content'
@@ -480,6 +482,7 @@ function workspaceFolderEntityId(folderPath: string, lastFolderPath: string): st
 }
 
 type MainViewForResonance =
+  | 'living_tree'
   | 'workspace'
   | 'perspectives'
   | 'content'
@@ -623,6 +626,7 @@ function UniversalContextStrip({
   useLastResultAsContext,
 }: {
   mainView:
+    | 'living_tree'
     | 'workspace'
     | 'perspectives'
     | 'content'
@@ -974,7 +978,7 @@ const MODES = [
   { id: 'recommend', label: 'Recommend', description: 'Suggested child folders' },
   { id: 'assess', label: 'Assess Uncertainty', description: 'Plan strength and weak suggestions' },
   { id: 'simulate', label: 'Simulate', description: 'Preview folder plan' },
-  { id: 'council', label: 'Council', description: 'Strategist, Operator, Analyst, Governance, Skeptic, Brand, Zenaf, …' },
+  { id: 'council', label: 'Council', description: 'Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide, Skeptic, Zenaf, …' },
   { id: 'web_research', label: 'Web Research', description: 'Lightweight web lookup' },
   { id: 'next_step', label: 'Next Step', description: 'One concrete action' },
   { id: 'email_intake', label: 'Email Intake', description: 'Ingest email into the intake queue' },
@@ -1035,17 +1039,6 @@ function formatDigressionBackgroundBlock(thread: DigressionBackgroundThreadRow[]
 /** Reply starter only — full system suggestion stays expanded in the thread above. */
 const DISCUSS_REPLY_STARTER = 'Regarding the suggestion above: '
 const HANDOFF_COMMIT_STARTER = 'Following up from the previous topic: '
-
-// Council agents (right panel). Real-world analog per user spec.
-const COUNCIL_AGENTS = [
-  { id: 'strategist' as const, label: 'Strategist', analog: 'CEO / Founder' },
-  { id: 'operator' as const, label: 'Operator', analog: 'COO' },
-  { id: 'analyst' as const, label: 'Analyst', analog: 'Data science / research' },
-  { id: 'governance' as const, label: 'Governance', analog: 'Legal / compliance' },
-  { id: 'brand' as const, label: 'Brand', analog: 'Marketing / narrative' },
-  { id: 'zenaf' as const, label: 'Zenaf', analog: 'Chief of staff / integrator' },
-]
-type CouncilAgentId = (typeof COUNCIL_AGENTS)[number]['id']
 
 /**
  * One council seat. `actorId` is the selected **actor** (saved agent) id; API still uses `perspective_agent_id`.
@@ -4884,15 +4877,16 @@ function App() {
     }
   }, [resolveCouncilInsightText, currentUser?.id, streamingCouncilRunLabel])
 
-  // Top-level view: Vision map (default), Workspace Organizer, Perspectives, Content, Vision → Execution
+  // Top-level view: Living Tree (default), Vision map, Workspace Organizer, Perspectives, Content, Vision → Execution
   type MainView =
+    | 'living_tree'
     | 'workspace'
     | 'perspectives'
     | 'content'
     | 'vision_map'
     | 'vision_execution'
     | 'settings'
-  const [mainView, setMainView] = useState<MainView>('vision_map')
+  const [mainView, setMainView] = useState<MainView>('living_tree')
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
   /** Avoid new object identity on every VisionExecutionView `bundleForFocus` refresh when ids are unchanged. */
   const stableVeSelectionForExecutionView = useMemo(
@@ -4920,13 +4914,13 @@ function App() {
   const [perspectivesCoreProfiles, setPerspectivesCoreProfiles] = useState<CoreProfile[]>([])
   const [perspectivesLinksLoading, setPerspectivesLinksLoading] = useState(false)
   const [perspectivesPageError, setPerspectivesPageError] = useState<string | null>(null)
-  const [foundationSelectedActorId, setFoundationSelectedActorId] = useState<string | null>('brand')
+  const [foundationSelectedActorId, setFoundationSelectedActorId] = useState<string | null>('storyteller')
   const [foundationActorUi, setFoundationActorUi] = useState<'browse' | 'create_actor' | 'edit_actor'>('browse')
   const [foundationEditAgent, setFoundationEditAgent] = useState<PerspectiveAgent | null>(null)
   /** Foundation "Train AI" enters shared council shell with a Zenaf preset. */
   const [foundationTrainingMode, setFoundationTrainingMode] = useState(false)
-  /** Core profile `name` field — drives Foundation Brand card title. */
-  const [foundationBrandCardTitle, setFoundationBrandCardTitle] = useState('')
+  /** Core profile `name` field — drives the Foundation core-voice card title. */
+  const [foundationCoreProfileCardTitle, setFoundationCoreProfileCardTitle] = useState('')
   /** Perspective Workout: ephemeral directed training in the aside (replaces council UI while active). */
   const [workoutActive, setWorkoutActive] = useState(false)
   const [workoutPerspective, setWorkoutPerspective] = useState<PerspectiveAgent | null>(null)
@@ -5179,11 +5173,11 @@ function App() {
   useEffect(() => {
     if (mainView !== 'perspectives') return
     if (!brandCoreProfileId) {
-      setFoundationBrandCardTitle('')
+      setFoundationCoreProfileCardTitle('')
       return
     }
     const row = perspectivesCoreProfiles.find((p) => p.id === brandCoreProfileId)
-    setFoundationBrandCardTitle((row?.name ?? '').trim())
+    setFoundationCoreProfileCardTitle((row?.name ?? '').trim())
   }, [mainView, brandCoreProfileId, perspectivesCoreProfiles])
 
   useEffect(() => {
@@ -5670,6 +5664,18 @@ function App() {
           className="flex min-w-0 items-center gap-1 overflow-x-auto"
           aria-label="Primary"
         >
+          {/* Home: Living Tree */}
+          <button
+            type="button"
+            onClick={() => setMainView('living_tree')}
+            className={`px-3 py-2 md:py-1.5 min-h-[44px] md:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
+              mainView === 'living_tree'
+                ? 'bg-stone-700 text-stone-100 ring-1 ring-yellow-600/35'
+                : 'text-stone-200 hover:text-white border border-transparent hover:border-yellow-700/30 hover:bg-stone-800/80'
+            }`}
+          >
+            Tree
+          </button>
           {/* Core: Foundation (actors / profiles) + Vision & Execution */}
           <button
             type="button"
@@ -5775,14 +5781,18 @@ function App() {
 
       <div className="flex-1 flex flex-col md:flex-row min-h-0 min-w-0">
         {/* Left: main content (changes by tab) */}
-        {mainView === 'perspectives' ? (
+        {mainView === 'living_tree' ? (
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden">
+            <LivingTreeView onNavigate={(view) => setMainView(view)} />
+          </div>
+        ) : mainView === 'perspectives' ? (
           <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden bg-surface/20">
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <div className="shrink-0 border-b border-[color:var(--color-border)] px-4 py-3 bg-surface/40">
                 <p className="text-[10px] font-medium text-warm-white/50 uppercase tracking-wide">Foundation</p>
                 <h1 className="text-lg font-semibold text-warm-white mt-0.5">Actors</h1>
                 <p className="text-[11px] text-warm-white/50 mt-1 max-w-3xl leading-relaxed">
-                  System archetypes are read-only. <span className="text-warm-white/65">Brand is your one core identity</span>
+                  System archetypes are read-only. <span className="text-warm-white/65">Your Storyteller is your core voice</span>
                   ; other actors are lenses and collaborators, not alternate yous.
                 </p>
                 {perspectivesPageError && <p className="text-flare text-xs mt-2">{perspectivesPageError}</p>}
@@ -5805,7 +5815,7 @@ function App() {
                     setFoundationEditAgent(null)
                     setFoundationSelectedActorId(null)
                   }}
-                  brandCoreProfileDisplayName={foundationBrandCardTitle}
+                  coreProfileDisplayName={foundationCoreProfileCardTitle}
                 />
               </div>
             </div>
@@ -5825,7 +5835,7 @@ function App() {
                     }}
                     onCancel={() => {
                       setFoundationActorUi('browse')
-                      setFoundationSelectedActorId('brand')
+                      setFoundationSelectedActorId('storyteller')
                     }}
                   />
                 ) : foundationActorUi === 'edit_actor' && foundationEditAgent ? (
@@ -5842,13 +5852,13 @@ function App() {
                       setFoundationEditAgent(null)
                     }}
                   />
-                ) : foundationSelectedActorId === 'brand' ? (
+                ) : foundationSelectedActorId === 'storyteller' ? (
                   perspectivesLinksLoading ? (
                     <p className="text-stone-500 text-sm">Loading profile…</p>
                   ) : !brandCoreProfileId ? (
                     <div className="space-y-2">
                       <p className="text-stone-400 text-xs">
-                        Create your <span className="text-stone-300">Brand core</span> once — one identity for structured
+                        Create your <span className="text-stone-300">core profile</span> once — one identity for structured
                         fields, training, and how Zenaf represents you. Extra rows on the server, if any, are legacy
                         duplicates, not additional selves.
                       </p>
@@ -5861,22 +5871,22 @@ function App() {
                     </div>
                   ) : (
                     (() => {
-                      const brandActor = perspectiveAgents.find((a) => a.id === 'brand')
-                      if (!brandActor) {
-                        return <p className="text-stone-500 text-sm">Brand actor missing.</p>
+                      const storytellerActor = perspectiveAgents.find((a) => a.id === 'storyteller')
+                      if (!storytellerActor) {
+                        return <p className="text-stone-500 text-sm">Storyteller actor missing.</p>
                       }
                       return (
                         <>
                           <BrandStructuredProfilePanel
                             key={brandCoreProfileId}
                             profileId={brandCoreProfileId}
-                            brandActor={brandActor}
-                            displayName={foundationBrandCardTitle.trim() || brandActor.name || 'Brand'}
+                            brandActor={storytellerActor}
+                            displayName={foundationCoreProfileCardTitle.trim() || storytellerActor.name || 'Storyteller'}
                             apiGet={veApiGet}
                             onTrainWithZenaf={() => {
                               handleEnterFoundationTrainingMode()
                             }}
-                            onWorkout={() => handleStartWorkout(brandActor)}
+                            onWorkout={() => handleStartWorkout(storytellerActor)}
                           />
                           <AspirationsFoundationPanel apiGet={veApiGet} apiPatch={veApiPatch} apiPost={veApiPost} />
                         </>
@@ -5899,7 +5909,7 @@ function App() {
                         ? (ag) => {
                             if (!window.confirm(`Delete the actor “${ag.name}”? This cannot be undone.`)) return
                             setPerspectiveAgents((prev) => prev.filter((a) => a.id !== ag.id))
-                            setFoundationSelectedActorId('brand')
+                            setFoundationSelectedActorId('storyteller')
                           }
                         : undefined
                     }

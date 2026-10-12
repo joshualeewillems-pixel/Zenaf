@@ -1102,7 +1102,7 @@ function StagedCard<T extends StagedItem>({
             <>
               {scalarForUi(placementHint.profile_name).trim() ? (
                 <p className="text-[11px] text-slate-500">
-                  Brand core (placement):{' '}
+                  Core profile (placement):{' '}
                   <span className="text-slate-300">{scalarForUi(placementHint.profile_name)}</span>
                 </p>
               ) : null}

@@ -13,7 +13,7 @@ export type InfluenceTargetKind = 'core_profile' | 'perspective'
 
 /** Display labels for target type (dropdowns, row editors). */
 export const INFLUENCE_TARGET_KIND_LABEL: Record<InfluenceTargetKind, string> = {
-  core_profile: 'Brand / legacy row',
+  core_profile: 'Core profile / legacy row',
   perspective: 'Actor (lens)',
 }
 

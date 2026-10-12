@@ -17,7 +17,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 # Default 3 seats (Pass 1)
-INCLUDED_ROLES = ["strategist", "operator", "analyst"]
+INCLUDED_ROLES = ["guide", "maker", "patternist"]
 
 SCENARIOS = [
     {

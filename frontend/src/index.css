@@ -108,4 +108,12 @@
   p, h1, h2, h3, h4, span, div, td, th, li {
     overflow-wrap: anywhere;
   }
+  /* Nav items must never wrap mid-word; scroll horizontally instead */
+  nav, nav * {
+    overflow-wrap: normal;
+  }
+  nav button {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
 }

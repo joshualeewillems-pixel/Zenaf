@@ -187,7 +187,8 @@ function layout(exp: Record<string, boolean>): Map<string, Placed> {
     place(n, CX, TRUNK_TOP, a, 130, spU, 5, 1, 'up', 'you', n.strand)
   })
   DOWN.forEach((n, i) => {
-    const a = -Math.PI / 2 - spD / 2 + (spD * i) / Math.max(1, DOWN.length - 1)
+    // Roots fan DOWNWARD from the trunk bottom (+π/2 in SVG coords, where +y is down).
+    const a = Math.PI / 2 - spD / 2 + (spD * i) / Math.max(1, DOWN.length - 1)
     place(n, CX, TRUNK_BOTTOM, a, 120, spD, 4.6, 1, 'dn', 'you', n.strand)
   })
   return P

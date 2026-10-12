@@ -1,0 +1,20 @@
+# Keep the image lean and secret-free.
+.git
+.gitignore
+.github
+node_modules
+frontend/node_modules
+frontend/dist
+data/
+logs/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example

@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .schema import ImportSession, PresenceEvent, TrainingSignal
+from .schema import ContributionClaim, ImportSession, PresenceEvent, TrainingSignal
 
 # Anchor the data dir to the repo root so the location is stable regardless
 # of the process working directory.
@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS import_sessions (
     file_name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'uploaded',
     counts TEXT NOT NULL DEFAULT '{}',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    provenance TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS presence_events (
     event_id TEXT PRIMARY KEY,
@@ -70,6 +71,22 @@ CREATE TABLE IF NOT EXISTS training_signals (
 CREATE INDEX IF NOT EXISTS idx_signals_session ON training_signals(session_id);
 CREATE INDEX IF NOT EXISTS idx_signals_status ON training_signals(status);
 CREATE INDEX IF NOT EXISTS idx_signals_zone ON training_signals(zone);
+CREATE TABLE IF NOT EXISTS contribution_claims (
+    claim_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    event_ids TEXT NOT NULL DEFAULT '[]',
+    work_title TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL,
+    parts TEXT NOT NULL DEFAULT '',
+    extent TEXT NOT NULL DEFAULT '{}',
+    collaborators TEXT NOT NULL DEFAULT '[]',
+    note TEXT NOT NULL DEFAULT '',
+    attestations TEXT NOT NULL DEFAULT '[]',
+    license_id TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (session_id) REFERENCES import_sessions(session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_claims_session ON contribution_claims(session_id);
 """
 
 
@@ -107,6 +124,7 @@ def _session_from_row(row: sqlite3.Row) -> ImportSession:
         status=row["status"],
         counts=_json_loads(row["counts"], {}),
         created_at=_parse_dt(row["created_at"]) or datetime.now(timezone.utc),
+        provenance=_json_loads(row["provenance"], {}),
     )
 
 
@@ -142,6 +160,23 @@ def _signal_from_row(row: sqlite3.Row) -> TrainingSignal:
     )
 
 
+def _claim_from_row(row: sqlite3.Row) -> ContributionClaim:
+    return ContributionClaim(
+        claim_id=row["claim_id"],
+        session_id=row["session_id"],
+        event_ids=_json_loads(row["event_ids"], []),
+        work_title=row["work_title"] or "",
+        role=row["role"],
+        parts=row["parts"] or "",
+        extent=_json_loads(row["extent"], {}),
+        collaborators=_json_loads(row["collaborators"], []),
+        note=row["note"] or "",
+        attestations=_json_loads(row["attestations"], []),
+        license_id=row["license_id"] or "",
+        created_at=_parse_dt(row["created_at"]) or datetime.now(timezone.utc),
+    )
+
+
 class PresenceStore:
     """SQLite-backed, append-only store for ingestion sessions and signals."""
 
@@ -153,6 +188,16 @@ class PresenceStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # Migration guard: databases created before provenance existed.
+            cols = {
+                r["name"]
+                for r in self._conn.execute("PRAGMA table_info(import_sessions)")
+            }
+            if "provenance" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE import_sessions "
+                    "ADD COLUMN provenance TEXT NOT NULL DEFAULT '{}'"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -165,8 +210,9 @@ class PresenceStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO import_sessions "
-                "(session_id, source, file_name, status, counts, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(session_id, source, file_name, status, counts, created_at, "
+                " provenance) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.session_id,
                     session.source,
@@ -174,6 +220,7 @@ class PresenceStore:
                     session.status,
                     json.dumps(session.counts),
                     _iso(session.created_at),
+                    json.dumps(session.provenance),
                 ),
             )
             self._conn.commit()
@@ -354,3 +401,63 @@ class PresenceStore:
                     (session_id,),
                 ).fetchone()
         return int(row["n"])
+
+    # -- contribution claims ---------------------------------------------
+
+    def save_claim(self, claim: ContributionClaim) -> ContributionClaim:
+        """Create or replace a contribution claim.
+
+        Claims are user assertions about their own part in collaborative
+        work — freely editable, unlike append-only signals.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO contribution_claims "
+                "(claim_id, session_id, event_ids, work_title, role, parts, "
+                " extent, collaborators, note, attestations, license_id, "
+                " created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    claim.claim_id,
+                    claim.session_id,
+                    json.dumps(claim.event_ids),
+                    claim.work_title,
+                    claim.role,
+                    claim.parts,
+                    json.dumps(claim.extent),
+                    json.dumps(claim.collaborators),
+                    claim.note,
+                    json.dumps(claim.attestations),
+                    claim.license_id,
+                    _iso(claim.created_at),
+                ),
+            )
+            self._conn.commit()
+        return claim
+
+    def list_claims(self, session_id: str) -> list[ContributionClaim]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM contribution_claims WHERE session_id = ? "
+                "ORDER BY rowid",
+                (session_id,),
+            ).fetchall()
+        return [_claim_from_row(r) for r in rows]
+
+    def get_claim(self, claim_id: str) -> ContributionClaim | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM contribution_claims WHERE claim_id = ?",
+                (claim_id,),
+            ).fetchone()
+        return _claim_from_row(row) if row else None
+
+    def delete_claim(self, claim_id: str) -> bool:
+        """Remove a claim. Returns True if a row was deleted."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM contribution_claims WHERE claim_id = ?",
+                (claim_id,),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0

@@ -220,7 +220,7 @@ class RunParams(BaseModel):
     folder_path: str | None = None
     question: str | None = None
     query: str | None = None
-    included_agents: list[str] | None = None  # council: strategist, operator, analyst, governance, brand, zenaf
+    included_agents: list[str] | None = None  # council: seer, guide, songwriter, storyteller, patternist, maker, mediator, zenaf
     # Council: full definitions for selected perspectives (so custom perspectives get their own voice)
     perspective_definitions: list[dict] | None = None
     # Reassess low-confidence: items from assess, one perspective as reviewer

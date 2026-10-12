@@ -276,10 +276,10 @@ def test_seat_postprocess_grounding_accepts_explicit_question_brief_without_titl
     )
 
 
-def test_operator_persona_swaps_executable_constraint_when_clarify_only():
+def test_maker_persona_swaps_executable_constraint_when_clarify_only():
     from local_ai.zenaf_tools import _built_in_persona_dict, _build_council_persona_block
 
-    op = _built_in_persona_dict("operator")
+    op = _built_in_persona_dict("maker")
     normal = _build_council_persona_block(op, council_clarify_only=False)
     clarify = _build_council_persona_block(op, council_clarify_only=True)
     assert "executable in this product today" in normal.lower()

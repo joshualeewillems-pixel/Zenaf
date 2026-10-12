@@ -1,4 +1,4 @@
-"""Brand profile read path and Brand-seat persona injection."""
+"""Brand profile read path and Storyteller-seat persona injection."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from local_ai.zenaf_tools import _build_council_persona_block, _built_in_persona_dict, _council_seat_is_brand
+from local_ai.zenaf_tools import _build_council_persona_block, _built_in_persona_dict, _council_seat_is_storyteller
 from local_ai.context import brand_profile as bp
 
 
@@ -59,22 +59,24 @@ def test_describe_brand_profile_preflight(tmp_path: Path) -> None:
     assert s["brand_profile_display_name"] == "Acme"
 
 
-def test_council_seat_is_brand() -> None:
-    assert _council_seat_is_brand({"id": "brand", "name": "Brand"})
-    assert _council_seat_is_brand({"name": "Brand"})
-    assert not _council_seat_is_brand({"id": "operator", "name": "Operator"})
+def test_council_seat_is_storyteller() -> None:
+    assert _council_seat_is_storyteller({"id": "storyteller", "name": "Storyteller"})
+    assert _council_seat_is_storyteller({"name": "Storyteller"})
+    # legacy Brand seat id still receives the narrative context injection
+    assert _council_seat_is_storyteller({"id": "brand", "name": "Brand"})
+    assert not _council_seat_is_storyteller({"id": "maker", "name": "Maker"})
 
 
-def test_brand_persona_block_includes_profile_text() -> None:
-    defn = _built_in_persona_dict("brand")
+def test_storyteller_persona_block_includes_profile_text() -> None:
+    defn = _built_in_persona_dict("storyteller")
     with patch.object(bp, "read_brand_profile", return_value={"missionStatement": "Mission line one."}):
         block = _build_council_persona_block(defn, council_clarify_only=False)
     assert "Mission line one." in block
     assert "Brand identity constraints" in block
 
 
-def test_operator_persona_block_does_not_include_brand_profile() -> None:
-    defn = _built_in_persona_dict("operator")
+def test_maker_persona_block_does_not_include_brand_profile() -> None:
+    defn = _built_in_persona_dict("maker")
     with patch.object(bp, "read_brand_profile", return_value={"missionStatement": "Secret"}):
         block = _build_council_persona_block(defn, council_clarify_only=False)
     assert "Secret" not in block

@@ -11,6 +11,7 @@ from local_ai.llm.adapter import BlockedLLMAdapter, LLMRequest, LLMAdapter
 from local_ai.llm.credentials import resolve_cloud_api_key
 from local_ai.llm.execution_principal import ExecutionPrincipal
 from local_ai.llm.provider_registry import user_llm_adapter_gate_for_principal
+from local_ai.hosted_config import default_llm_provider as _hosted_default_provider
 from local_ai.providers.ollama import OllamaProvider
 
 # Last council native attachment resolution (per asyncio context / request). For provider_resolution only.
@@ -118,7 +119,7 @@ def get_llm_adapter_for_principal(principal: ExecutionPrincipal) -> LLMAdapter:
         base = (profile.get("ollama_base_url") or "").strip() or None
         return _OllamaLLMAdapter(base_url=base, model=str(routed_om).strip())
 
-    dp = (profile.get("default_provider") or "ollama").strip().lower()
+    dp = (profile.get("default_provider") or _hosted_default_provider() or "ollama").strip().lower()
     model = profile.get("default_model") or None
 
     if dp == "ollama":
@@ -244,7 +245,7 @@ def _try_main_attachment_adapter_for_council_native(
     ``main`` attachment: same substrate as ``get_llm_adapter_for_principal`` after policy + routed Ollama
     (profile ``default_provider`` / ``default_model``, gates + keys). Gated by ``allows_externalization``.
     """
-    dp = (profile.get("default_provider") or "ollama").strip().lower()
+    dp = (profile.get("default_provider") or _hosted_default_provider() or "ollama").strip().lower()
     model = profile.get("default_model") or None
     if dp == "ollama":
         msg = user_llm_adapter_gate_for_principal(principal, "ollama", profile)

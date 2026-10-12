@@ -251,7 +251,7 @@ export function LinkChooser(props: LinkChooserProps) {
   const hasAnyExecutionData = initiatives.length > 0 || projects.length > 0 || tasks.length > 0
 
   return (
-    <div className="rounded-lg border border-slate-600 bg-slate-800 p-4 shadow-xl min-w-[320px] max-w-[28rem] flex flex-col max-h-[85vh]">
+    <div className="rounded-lg border border-slate-600 bg-slate-800 p-4 shadow-xl min-w-0 w-[calc(100vw-2rem)] sm:min-w-[320px] sm:w-auto sm:max-w-[28rem] flex flex-col max-h-[85vh]">
       <div className="flex justify-between items-center gap-2 mb-3 shrink-0">
         <h4 className="text-sm font-medium text-slate-200">
           {isPickNote ? 'Add note to…' : 'Link to existing'}

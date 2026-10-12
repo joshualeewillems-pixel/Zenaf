@@ -21,7 +21,7 @@ from uuid import uuid4
 
 from .adapters.registry import detect_source
 from .distill import CompleteFn, DistillError, distill_events
-from .schema import ImportSession
+from .schema import ContributionClaim, ImportSession
 from .store import DATA_DIR, PresenceStore
 
 # One-way dependency: presence_ingest -> identity. identity only imports
@@ -130,12 +130,14 @@ def run_distill(
     if session is None:
         raise PresenceIngestError(f"Unknown import session: {session_id}")
     events = store.list_events(session_id)
+    claims = store.list_claims(session_id)
     candidates = distill_events(
         events,
         complete_fn=complete_fn,
         zone_hint=zone_hint,
         actor=actor,
         session_id=session_id,
+        claims=claims,
     )
     store.save_candidate_signals(candidates)
     counts = dict(session.counts)
@@ -192,3 +194,79 @@ def delete_session(
         shutil.rmtree(session_dir, ignore_errors=True)
     store.delete_events(session_id)
     store.update_session(session_id, status="deleted")
+
+
+# -- contribution claims -----------------------------------------------
+
+
+def define_contribution(
+    session_id: str,
+    *,
+    role: str,
+    work_title: str = "",
+    parts: str = "",
+    extent: dict | None = None,
+    collaborators: list[str] | None = None,
+    note: str = "",
+    event_ids: list[str] | None = None,
+    store: PresenceStore | None = None,
+) -> ContributionClaim:
+    """Record the user's part in a collaborative work ("I played guitar").
+
+    Claims are opt-in per item and scope distillation: signals distilled
+    from covered events learn from the user's contribution only, and the
+    claim keeps the identity license honest (it covers contributions, never
+    whole works). Requires an active identity license, like imports.
+
+    Raises PresenceIngestError for an unknown session, empty role, or
+    event_ids outside the session; LicenseRequired when no license exists.
+    """
+    role = (role or "").strip()
+    if not role:
+        raise PresenceIngestError("A contribution claim requires a role.")
+    store = store or PresenceStore()
+    session = store.get_session(session_id)
+    if session is None:
+        raise PresenceIngestError(f"Unknown import session: {session_id}")
+
+    lic = identity_service.get_license()
+    if lic is None or lic.status != "active":
+        raise LicenseRequired()
+
+    event_ids = list(event_ids or [])
+    if event_ids:
+        known = {e.event_id for e in store.list_events(session_id)}
+        unknown = [eid for eid in event_ids if eid not in known]
+        if unknown:
+            raise PresenceIngestError(
+                f"event_ids not in session {session_id}: {unknown[:5]}"
+            )
+
+    claim = ContributionClaim(
+        claim_id=f"claim-{uuid4().hex[:12]}",
+        session_id=session_id,
+        event_ids=event_ids,
+        work_title=work_title.strip(),
+        role=role,
+        parts=parts.strip(),
+        extent=dict(extent or {}),
+        collaborators=[c.strip() for c in (collaborators or []) if c.strip()],
+        note=note.strip(),
+        attestations=[],
+        license_id=lic.license_id,
+        created_at=datetime.now(timezone.utc),
+    )
+    return store.save_claim(claim)
+
+
+def remove_contribution(
+    claim_id: str,
+    *,
+    store: PresenceStore | None = None,
+) -> bool:
+    """Delete a contribution claim. Claims are user assertions — freely
+    removable, unlike append-only signals. Returns True if deleted."""
+    store = store or PresenceStore()
+    if store.get_claim(claim_id) is None:
+        raise PresenceIngestError(f"Unknown contribution claim: {claim_id}")
+    return store.delete_claim(claim_id)

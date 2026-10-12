@@ -17,12 +17,11 @@ primary_region = "lax"
   min_machines_running = 1
   processes = ["app"]
 
-  [http_service.checks]
-    [http_service.checks.alive]
-      type = "http"
-      path = "/healthz"
-      interval = "30s"
-      timeout = "5s"
+  [[http_service.checks]]
+    type = "http"
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
 
 [[vm]]
   cpu_kind = "shared"

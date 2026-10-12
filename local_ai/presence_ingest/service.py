@@ -24,6 +24,11 @@ from .distill import CompleteFn, DistillError, distill_events
 from .schema import ImportSession
 from .store import DATA_DIR, PresenceStore
 
+# One-way dependency: presence_ingest -> identity. identity only imports
+# presence_ingest lazily inside functions, so this module-level import is safe.
+from local_ai.identity import LicenseRequired
+from local_ai.identity import service as identity_service
+
 UPLOAD_ROOT = DATA_DIR / "uploads"
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB cap, enforced by the API layer too
 
@@ -46,8 +51,16 @@ def start_import(
 ) -> ImportSession:
     """Detect source, parse (redacting at capture), and persist the session.
 
-    Raises PresenceIngestError if the file is not a recognized export.
+    Requires an active identity license: imports are re-anchored under the
+    owner's license at capture, and the license_id is stamped into the
+    session's and every event's provenance. Raises LicenseRequired if none
+    exists, PresenceIngestError if the file is not a recognized export.
     """
+    lic = identity_service.get_license()
+    if lic is None or lic.status != "active":
+        raise LicenseRequired()
+    license_id = lic.license_id
+
     path = Path(file_path)
     if not path.is_file():
         raise PresenceIngestError(f"Upload not found: {path}")
@@ -78,10 +91,13 @@ def start_import(
         status="uploaded",
         counts={},
         created_at=datetime.now(timezone.utc),
+        provenance={"license_id": license_id, "reanchored": True},
     )
     store.create_session(session)
 
     events = list(adapter.iter_events(stored_path))
+    for e in events:
+        e.provenance["license_id"] = license_id
     store.save_events(session_id, events)
     counts = {"events": len(events), "skipped": adapter.last_skipped}
     store.update_session(session_id, status="parsed", counts=counts)
@@ -100,9 +116,15 @@ def run_distill(
 ) -> int:
     """Distill a parsed session's events into pending candidate signals.
 
-    Returns the number of candidates. Raises PresenceIngestError if the
-    session is unknown; DistillError (from distill) if the LLM is unreachable.
+    Requires the train:self consent scope (default-deny). Returns the number
+    of candidates. Raises PresenceIngestError if the session is unknown;
+    ScopeDenied if the scope is not granted; DistillError (from distill) if
+    the LLM is unreachable.
     """
+    from local_ai.identity.scopes import require_scope
+
+    require_scope("train:self")
+
     store = store or PresenceStore()
     session = store.get_session(session_id)
     if session is None:

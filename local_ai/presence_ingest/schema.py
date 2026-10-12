@@ -69,3 +69,5 @@ class ImportSession(BaseModel):
     status: SessionStatus = "uploaded"
     counts: dict[str, int] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Identity license this import was re-anchored under (set at import).
+    provenance: dict[str, Any] = Field(default_factory=dict)

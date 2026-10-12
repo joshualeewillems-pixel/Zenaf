@@ -394,7 +394,13 @@ def _service_env(tmp_path):
     return PresenceStore(db_path=db), uploads
 
 
-def test_service_full_flow(tmp_path):
+def test_service_full_flow(tmp_path, monkeypatch):
+    monkeypatch.setenv("ZENAF_DATA_DIR", str(tmp_path / "zenaf-data"))
+    from local_ai.identity import service as ident
+    from local_ai.identity.store import IdentityStore
+
+    ident.issue_license(store=IdentityStore())
+    ident.grant_scope("train:self")
     store, uploads = _service_env(tmp_path)
     try:
         src = _write_chatgpt_export(tmp_path)
@@ -434,8 +440,13 @@ def test_service_full_flow(tmp_path):
         store.close()
 
 
-def test_service_rejects_unknown_format(tmp_path):
+def test_service_rejects_unknown_format(tmp_path, monkeypatch):
+    monkeypatch.setenv("ZENAF_DATA_DIR", str(tmp_path / "zenaf-data"))
+    from local_ai.identity import service as ident
+    from local_ai.identity.store import IdentityStore
     from local_ai.presence_ingest.service import PresenceIngestError
+
+    ident.issue_license(store=IdentityStore())
 
     store, uploads = _service_env(tmp_path)
     try:

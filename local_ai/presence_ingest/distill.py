@@ -17,7 +17,13 @@ from collections import defaultdict
 from typing import Callable
 from uuid import uuid4
 
-from .schema import PresenceEvent, SignalLayer, SignalValence, TrainingSignal
+from .schema import (
+    ContributionClaim,
+    PresenceEvent,
+    SignalLayer,
+    SignalValence,
+    TrainingSignal,
+)
 
 CompleteFn = Callable[[str], str]
 
@@ -86,7 +92,58 @@ def _group_batches(events: list[PresenceEvent]) -> list[list[PresenceEvent]]:
     return batches
 
 
-def _build_prompt(batch: list[PresenceEvent], zone_hint: str) -> str:
+def _matching_claims(
+    batch: list[PresenceEvent],
+    claims: list[ContributionClaim],
+    session_id: str,
+) -> list[ContributionClaim]:
+    """Claims covering this batch: session-level claims, or claims whose
+    event_ids intersect the batch. Deterministic order (claim creation order
+    is preserved by the caller)."""
+    batch_ids = {e.event_id for e in batch}
+    matched: list[ContributionClaim] = []
+    for claim in claims:
+        if claim.session_id != session_id:
+            continue
+        if not claim.event_ids or set(claim.event_ids) & batch_ids:
+            matched.append(claim)
+    return matched
+
+
+def _contribution_section(claims: list[ContributionClaim] | None) -> str:
+    """Prompt section scoping extraction to the user's claimed contribution.
+
+    Empty string when no claims apply — distillation behavior is unchanged.
+    """
+    if not claims:
+        return ""
+    lines = [
+        "",
+        "The user's contribution to the collaborative work(s) in these excerpts:",
+    ]
+    for claim in claims:
+        bits = [f'Role: {claim.role}']
+        if claim.work_title:
+            bits.insert(0, f'Work: "{claim.work_title}"')
+        if claim.parts:
+            bits.append(f"Parts: {claim.parts}")
+        if claim.collaborators:
+            bits.append(f"Other contributors: {', '.join(claim.collaborators)}")
+        lines.append("- " + " | ".join(bits))
+    lines.append(
+        "Extract training signals about the USER'S CONTRIBUTION ONLY. "
+        "Treat the rest of the collaborative work — other contributors' "
+        "parts, the overall production — as context for understanding the "
+        "contribution, not as training data itself."
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _build_prompt(
+    batch: list[PresenceEvent],
+    zone_hint: str,
+    claims: list[ContributionClaim] | None = None,
+) -> str:
     lines = []
     for i, event in enumerate(batch):
         ts = event.ts.isoformat() if event.ts else "unknown time"
@@ -98,8 +155,9 @@ def _build_prompt(batch: list[PresenceEvent], zone_hint: str) -> str:
         lines.append(event.text)
         lines.append("")
     transcript = "\n".join(lines)
+    contribution_section = _contribution_section(claims)
     return f"""You are distilling training signal for a personal AI doppelganger from the user's own digital history. The excerpts below are already redacted (PII replaced with tokens like [EMAIL]); do not attempt to recover it.
-
+{contribution_section}
 Extract up to {_MAX_SIGNALS_PER_BATCH} candidate training signals. Focus on:
 (a) decisions the user made or leaned toward,
 (b) values/beliefs revealed — what they praised, rejected, or pushed back on,
@@ -166,8 +224,13 @@ def distill_events(
     zone_hint: str = "general",
     actor: str = "user",
     session_id: str = "",
+    claims: list[ContributionClaim] | None = None,
 ) -> list[TrainingSignal]:
     """Distill events into candidate TrainingSignals (status=pending).
+
+    When contribution claims are supplied, batches they cover get an
+    extraction prompt scoped to the user's contribution, and the resulting
+    signals are tagged with the claim id and role.
 
     Raises DistillError if the LLM is unreachable. Never fabricates signals:
     a batch whose extractions fail to parse simply yields no candidates.
@@ -178,10 +241,27 @@ def distill_events(
     now_ms = int(time.time() * 1000)
     candidates: list[TrainingSignal] = []
     for batch in _group_batches(events):
-        prompt = _build_prompt(batch, zone_hint)
+        batch_claims = _matching_claims(batch, claims or [], session_id)
+        prompt = _build_prompt(batch, zone_hint, batch_claims)
         raw = complete(prompt)  # may raise DistillError — propagated, not swallowed
         event_ids = [e.event_id for e in batch]
         sources = sorted({e.source for e in batch})
+        context_ref: dict = {
+            "session_id": session_id,
+            "source_events": event_ids,
+        }
+        provenance: dict = {
+            "sources": sources,
+            "source_events": len(batch),
+            "adapter": "presence_ingest.distill",
+            "distilled_at_ms": now_ms,
+            "zone_hint": zone_hint,
+        }
+        if batch_claims:
+            # First match wins for tagging; the prompt lists all matches.
+            primary = batch_claims[0]
+            context_ref["contribution_claim_id"] = primary.claim_id
+            provenance["contribution_role"] = primary.role
         for item in _parse_extractions(raw):
             coerced = _coerce_extraction(item)
             if coerced is None:
@@ -194,20 +274,11 @@ def distill_events(
                     zone=coerced["zone"],
                     actor=actor,
                     summary=coerced["summary"],
-                    context_ref={
-                        "session_id": session_id,
-                        "source_events": event_ids,
-                    },
+                    context_ref=dict(context_ref),
                     payload_redacted=coerced["detail"],
                     valence=coerced["valence"],  # type: ignore[typeddict-item]
                     correction_diff=None,
-                    provenance={
-                        "sources": sources,
-                        "source_events": len(batch),
-                        "adapter": "presence_ingest.distill",
-                        "distilled_at_ms": now_ms,
-                        "zone_hint": zone_hint,
-                    },
+                    provenance=dict(provenance),
                     supersedes=None,
                     status="pending",
                     session_id=session_id,

@@ -11,11 +11,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 def _session_cookie_settings() -> dict:
-    # Local-first dev default. Not production-safe without secure deployment settings.
+    # Production (ZENAF_PROD=1): Secure=True — the platform terminates TLS.
+    # Local dev default: Secure=False (plain http://127.0.0.1).
+    from local_ai.hosted_config import session_cookie_secure
+
     return {
         "httponly": True,
         "samesite": "lax",
-        "secure": False,
+        "secure": session_cookie_secure(),
         "path": "/",
     }
 

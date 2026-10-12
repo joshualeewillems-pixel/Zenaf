@@ -4887,6 +4887,7 @@ function App() {
     | 'vision_execution'
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('living_tree')
+  const [navOpen, setNavOpen] = useState(false)
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
   /** Avoid new object identity on every VisionExecutionView `bundleForFocus` refresh when ids are unchanged. */
   const stableVeSelectionForExecutionView = useMemo(
@@ -5661,7 +5662,7 @@ function App() {
           </div>
         </div>
         <nav
-          className="flex min-w-0 items-center gap-1 overflow-x-auto"
+          className="hidden md:flex min-w-0 items-center gap-1 overflow-x-auto"
           aria-label="Primary"
         >
           {/* Home: Living Tree */}
@@ -5769,6 +5770,67 @@ function App() {
             Logout
           </button>
         </nav>
+        {/* Mobile hamburger menu — the 7 nav items don't fit a phone row */}
+        <div className="md:hidden relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setNavOpen((o) => !o)}
+            className="flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-stone-200 hover:text-white hover:bg-stone-800/80"
+            aria-label="Open menu"
+            aria-expanded={navOpen}
+          >
+            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
+              <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
+            </svg>
+          </button>
+          {navOpen && (
+            <>
+              <div className="fixed inset-0 z-20" onClick={() => setNavOpen(false)} aria-hidden />
+              <div className="absolute right-0 top-full mt-1 w-60 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl z-30 py-1.5" role="menu">
+                {(
+                  [
+                    { view: 'living_tree', label: 'Tree' },
+                    { view: 'perspectives', label: 'Foundation' },
+                    { view: 'vision_map', label: 'Vision map' },
+                    { view: 'vision_execution', label: 'Vision (tables)' },
+                    { view: 'workspace', label: 'Workspace Organizer' },
+                    { view: 'content', label: 'Content' },
+                    { view: 'settings', label: 'Settings' },
+                  ] as Array<{ view: MainView; label: string }>
+                ).map((item) => (
+                  <button
+                    key={item.view}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      if (item.view === 'vision_map' || item.view === 'vision_execution') setVeSelection(null)
+                      setMainView(item.view)
+                      setNavOpen(false)
+                    }}
+                    className={`block w-full text-left px-4 py-3 min-h-[44px] text-[15px] font-semibold ${
+                      mainView === item.view ? 'text-yellow-500/90 bg-stone-800/60' : 'text-stone-200'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+                <div className="border-t border-stone-800 mt-1.5 pt-1.5">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setNavOpen(false)
+                      handleLogout()
+                    }}
+                    className="block w-full text-left px-4 py-3 min-h-[44px] text-[15px] font-medium text-stone-400"
+                  >
+                    Logout
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </header>
 
       {mainView !== 'living_tree' && (

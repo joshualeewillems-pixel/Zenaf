@@ -69,6 +69,14 @@ try:
 except Exception as e:
     print(f"Ingest routes not loaded: {e}")
 
+# Identity license + consent scopes + takeout: the ownership layer. Every
+# doppelganger's data is the owner's property; scopes gate every use.
+try:
+    from api.routes.identity_routes import router as identity_router
+    app.include_router(identity_router)
+except Exception as e:
+    print(f"Identity routes not loaded: {e}")
+
 # Intake: clinic email/fax → classification, PHI redaction → queue.
 try:
     from api.routes.intake_routes import router as intake_router

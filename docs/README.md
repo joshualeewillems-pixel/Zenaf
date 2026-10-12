@@ -54,11 +54,11 @@ If you only read **four** current-state anchors: **`docs/01_TRUTH/ACTIVE_VS_PLAN
 | Folder | Purpose | Status |
 |--------|---------|--------|
 | **`00_START_HERE/`** | Optional ultra-short orientation. | Not created yet. |
-| **`01_TRUTH/`** | Canonical **as-built** facts, governance rules, system reference, boot flow. | **Partially populated** (five core docs). |
-| **`02_ACTIVE_DESIGN/`** | **Target** UX/architecture/product design. | **Seeded** (core VE / profile / mediation design set). |
+| **`01_TRUTH/`** | Canonical **as-built** facts, system reference, boot flow. Slimmed 2026-10-12: governance/charter/tokenomics docs moved to `05_ARCHIVE/`. | **Curated** (six core docs). |
+| **`02_ACTIVE_DESIGN/`** | **Target** UX/architecture/product design, now centered on the agent-economy vision. See `TRAINING_SIGNAL_DESIGN.md`. | **Curated** (profiles, council, delegation, traces, routing). |
 | **`03_IMPLEMENTATION_PLANS/`** | Phases, proposals, cleanup steps. | **Seeded** (see folder `README.md`). |
-| **`04_REFERENCE/`** | Specs, tab maps, checklists, YAML. | **Seeded** (see folder `README.md`). |
-| **`05_ARCHIVE/`** | Superseded or frozen docs. | **Seeded** (superseded system notes + audits). |
+| **`04_REFERENCE/`** | Specs, tab maps, checklists, YAML (VE reference). | **Seeded** (see folder `README.md`). |
+| **`05_ARCHIVE/`** | Superseded, frozen, or parked-scope docs (governance theater, tokenomics/fruit, content/meeting/soil/file-steward/intake/mediation designs). | **Populated** (2026-10-12 archival). |
 
 ---
 

@@ -2,15 +2,25 @@
 Transcript sorter API: paste transcript → structured topics and candidate tasks/decisions.
 
 Prefix: /transcripts
+
+DEPRECATION NOTICE (2026-10-12, agent-economy refocus): the transcript sorter is
+PARKED — deprioritized, not maintained. The backend was relocated to
+parked/local_ai-transcripts/ and is loaded from there for backward compatibility.
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from local_ai.transcripts import sort_transcript
+# Parked module: load from parked/local_ai-transcripts (relocated 2026-10-12).
+_PARKED_TRANSCRIPTS = str(Path(__file__).resolve().parent.parent.parent / "parked" / "local_ai-transcripts")
+if _PARKED_TRANSCRIPTS not in sys.path:
+    sys.path.insert(0, _PARKED_TRANSCRIPTS)
+from sorter import sort_transcript  # noqa: E402  (parked module)
 
 
 router = APIRouter(prefix="/transcripts", tags=["transcripts"])

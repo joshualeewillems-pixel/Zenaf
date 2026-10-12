@@ -69,3 +69,42 @@ class ImportSession(BaseModel):
     status: SessionStatus = "uploaded"
     counts: dict[str, int] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    # Identity license this import was re-anchored under (set at import).
+    provenance: dict[str, Any] = Field(default_factory=dict)
+
+
+class ContributionClaim(BaseModel):
+    """The user's asserted part in a collaborative work.
+
+    "I played guitar in this song." Imported material is often collaborative;
+    a claim scopes distillation to the user's contribution (the rest of the
+    work becomes context, not training data) and keeps the identity license
+    honest — it covers the user's contributions, never whole works.
+
+    Claims are user assertions, not audit records: freely editable and
+    deletable by the user. `attestations` is reserved for future multi-party
+    confirmation (collaborators on Zenaf confirming each other's parts) and
+    is always empty for now.
+    """
+
+    claim_id: str
+    session_id: str
+    event_ids: list[str] = Field(
+        default_factory=list,
+        description="Specific events this claim covers; empty = session-level.",
+    )
+    work_title: str = ""  # e.g. "Midnight Run (song)"
+    role: str  # required, e.g. "guitar"
+    parts: str = ""  # free text: "lead guitar, verses; not the solo"
+    extent: dict[str, Any] = Field(
+        default_factory=dict,
+        description='Optional structured scope, e.g. {"sections": [...]}.',
+    )
+    collaborators: list[str] = Field(default_factory=list)
+    note: str = ""
+    attestations: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Reserved for future multi-party confirmation.",
+    )
+    license_id: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

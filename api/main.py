@@ -61,6 +61,14 @@ try:
 except Exception as e:
     print(f"Vision Execution routes not loaded: {e}")
 
+# Presence ingestion: "bring your history" — import digital-presence exports,
+# distill into candidate training signals, review before they train anything.
+try:
+    from api.routes.ingest_routes import router as ingest_router
+    app.include_router(ingest_router)
+except Exception as e:
+    print(f"Ingest routes not loaded: {e}")
+
 # Intake: clinic email/fax → classification, PHI redaction → queue.
 try:
     from api.routes.intake_routes import router as intake_router

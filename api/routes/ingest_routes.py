@@ -14,10 +14,14 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from local_ai.identity import LicenseRequired, ScopeDenied
-from local_ai.presence_ingest.schema import ImportSession, TrainingSignal
+from local_ai.presence_ingest.schema import (
+    ContributionClaim,
+    ImportSession,
+    TrainingSignal,
+)
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
 
@@ -26,6 +30,26 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 class ReviewBody(BaseModel):
     approvals: dict[str, bool] = {}
+
+
+class ContributionClaimBody(BaseModel):
+    """Define the user's part in a collaborative work."""
+
+    work_title: str = ""
+    role: str
+    parts: str = ""
+    extent: dict = {}
+    collaborators: list[str] = []
+    note: str = ""
+    event_ids: list[str] = []
+
+    @field_validator("role")
+    @classmethod
+    def _role_not_blank(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("role is required")
+        return v
 
 
 def _service():
@@ -163,3 +187,61 @@ def delete_ingest_session(session_id: str):
     except PresenceIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return {"session_id": session_id, "deleted": True}
+
+
+@router.post(
+    "/sessions/{session_id}/contributions",
+    response_model=ContributionClaim,
+    status_code=201,
+)
+def define_contribution_claim(session_id: str, body: ContributionClaimBody):
+    """Claim the user's part in a collaborative work ("I played guitar").
+
+    Opt-in per item; scopes distillation to the contribution and keeps the
+    identity license honest (contributions, not whole works).
+    """
+    from local_ai.presence_ingest.service import PresenceIngestError
+
+    try:
+        return _service().define_contribution(
+            session_id,
+            role=body.role,
+            work_title=body.work_title,
+            parts=body.parts,
+            extent=body.extent,
+            collaborators=body.collaborators,
+            note=body.note,
+            event_ids=body.event_ids,
+        )
+    except LicenseRequired:
+        raise HTTPException(
+            status_code=409,
+            detail="Issue an identity license first: POST /identity/license/issue",
+        )
+    except PresenceIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get(
+    "/sessions/{session_id}/contributions",
+    response_model=list[ContributionClaim],
+)
+def list_contribution_claims(session_id: str):
+    """List a session's contribution claims."""
+    store = _store()
+    if store.get_session(session_id) is None:
+        raise HTTPException(status_code=404, detail="Unknown import session.")
+    return store.list_claims(session_id)
+
+
+@router.delete("/contributions/{claim_id}")
+def delete_contribution_claim(claim_id: str):
+    """Remove a contribution claim (claims are user assertions, freely
+    removable — unlike append-only signals)."""
+    from local_ai.presence_ingest.service import PresenceIngestError
+
+    try:
+        _service().remove_contribution(claim_id)
+    except PresenceIngestError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    return {"claim_id": claim_id, "deleted": True}

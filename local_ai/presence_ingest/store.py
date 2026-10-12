@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS import_sessions (
     file_name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'uploaded',
     counts TEXT NOT NULL DEFAULT '{}',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    provenance TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS presence_events (
     event_id TEXT PRIMARY KEY,
@@ -107,6 +108,7 @@ def _session_from_row(row: sqlite3.Row) -> ImportSession:
         status=row["status"],
         counts=_json_loads(row["counts"], {}),
         created_at=_parse_dt(row["created_at"]) or datetime.now(timezone.utc),
+        provenance=_json_loads(row["provenance"], {}),
     )
 
 
@@ -153,6 +155,16 @@ class PresenceStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # Migration guard: databases created before provenance existed.
+            cols = {
+                r["name"]
+                for r in self._conn.execute("PRAGMA table_info(import_sessions)")
+            }
+            if "provenance" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE import_sessions "
+                    "ADD COLUMN provenance TEXT NOT NULL DEFAULT '{}'"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -165,8 +177,9 @@ class PresenceStore:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO import_sessions "
-                "(session_id, source, file_name, status, counts, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(session_id, source, file_name, status, counts, created_at, "
+                " provenance) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.session_id,
                     session.source,
@@ -174,6 +187,7 @@ class PresenceStore:
                     session.status,
                     json.dumps(session.counts),
                     _iso(session.created_at),
+                    json.dumps(session.provenance),
                 ),
             )
             self._conn.commit()

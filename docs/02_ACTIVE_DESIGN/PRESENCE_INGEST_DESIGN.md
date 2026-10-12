@@ -93,6 +93,41 @@ The distillation prompt asks the LLM to extract along the spec's three layers
 Valence follows the spec: `endorsed` / `rejected` / `corrected` / `observed`,
 defaulting to `observed` unless the evidence is explicit.
 
+## Contribution claims ("I played guitar in this song")
+
+Imported material is often collaborative — and the doppelganger must learn
+from the *user's part*, not the whole. A contribution claim is the user's
+assertion of their role in a collaborative work: role ("guitar"), parts
+("lead guitar, verses; not the solo"), optional extent (sections, time
+ranges), and collaborators if known.
+
+Three reasons claims exist:
+
+1. **Epistemic.** Signals distilled from claimed events learn from the
+   contribution; the rest of the work — other contributors' parts, the
+   overall production — becomes context, not training data. Without this,
+   the model would train on the drummer's playing and call it yours.
+2. **License honesty.** The identity license covers the user's
+   *contributions*, never whole works. Claims are what keep re-anchoring
+   truthful: importing a song re-anchors *your guitar performance*, not
+   the song.
+3. **Zones.** A claim's role maps naturally onto specialization zones
+   (guitar → music), timestamped, feeding the temporal snapshots that
+   enable era rental.
+
+Lifecycle: define (`POST /ingest/sessions/{sid}/contributions`, opt-in per
+item — never a gate on the simple path) → distill (the extraction prompt is
+injected with "the user's contribution was X; learn from the contribution
+only"; resulting signals are tagged with `contribution_claim_id` and
+`contribution_role`) → review (the usual approval gate still applies).
+
+Claims are user assertions, not audit records: freely editable and
+deletable, unlike append-only signals. The schema carries an `attestations`
+field, reserved and always empty for now, for future multi-party
+confirmation — when both collaborators are on Zenaf, contributions can be
+mutually confirmed, becoming the trust layer for collaborative training
+data the way the training metric is for rentals.
+
 ## Honest caveats
 
 - An import is a **foundation, not the whole picture**. People roleplay and

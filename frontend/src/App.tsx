@@ -20,7 +20,7 @@ import {
   isUserDefined,
   createAgent,
 } from './perspectives/types'
-import { iconHintFor } from './perspectives/roleIcons'
+import { apiBase } from './apiBase'; import { iconHintFor } from './perspectives/roleIcons'
 import { AvatarDisplay } from './components/AvatarDisplay'
 import {
   PerspectivesView,
@@ -900,9 +900,9 @@ function findExistingFolderMatch(name: string, list: string[]): string | null {
 
 const PERSPECTIVE_STORAGE_KEY = 'zenaf-perspective-agents'
 
-const API_BASE = 'http://127.0.0.1:8010'
+const API_BASE = apiBase()
 
-/** Intake uses absolute `API_BASE` (8010). Dev SPA must load from **127.0.0.1:5173** (see `vite.config.ts`) so the session cookie host matches; `localhost:5173` is a different host and cookies are not sent to 127.0.0.1:8010. `/run` uses relative `RUN_API_BASE` (proxied). */
+/** Intake uses absolute `API_BASE` (see `apiBase.ts`). Local dev: the SPA must load from **127.0.0.1:5173** (see `vite.config.ts`) so the session cookie host matches; `localhost:5173` is a different host and cookies are not sent to 127.0.0.1:8010. Hosted builds set VITE_API_BASE="" (same origin). `/run` uses relative `RUN_API_BASE` (proxied in dev). */
 const RUN_API_BASE = ''
 
 async function visionExecutionApiErrorText(res: Response): Promise<string> {

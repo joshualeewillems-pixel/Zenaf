@@ -1,0 +1,50 @@
+# Deploys the staging app to Fly.io on every push to the hosted-mode branch.
+# Required repo secrets (Settings > Secrets and variables > Actions):
+#   FLY_API_TOKEN     - Fly.io personal access token (profile menu > Access tokens)
+#   ANTHROPIC_API_KEY - optional; enables cloud LLM features in staging
+name: Deploy staging to Fly.io
+
+on:
+  push:
+    branches: [feature/hosted-mode-v2]
+
+jobs:
+  deploy:
+    name: Deploy to Fly.io
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure app and volume exist
+        run: |
+          flyctl apps create zenaf-staging 2>/dev/null || true
+          if ! flyctl volumes list --app zenaf-staging 2>/dev/null | grep -q zenaf_data; then
+            flyctl volumes create zenaf_data --app zenaf-staging --region lax --size 1 --yes
+          fi
+
+      - name: Set secrets
+        run: |
+          EXISTING="$(flyctl secrets list --app zenaf-staging 2>/dev/null || true)"
+          ARGS=""
+          if echo "$EXISTING" | grep -q ZENAF_BOOTSTRAP_PASSWORD; then
+            echo "bootstrap password already set, keeping it"
+          elif [ -n "${{ secrets.ZENAF_BOOTSTRAP_PASSWORD }}" ]; then
+            ARGS="$ARGS ZENAF_BOOTSTRAP_PASSWORD=${{ secrets.ZENAF_BOOTSTRAP_PASSWORD }}"
+          else
+            echo "::error::Set the ZENAF_BOOTSTRAP_PASSWORD repo secret to your chosen owner password."
+            exit 1
+          fi
+          echo "$EXISTING" | grep -q ZENAF_SECRET_KEY \
+            || ARGS="$ARGS ZENAF_SECRET_KEY=$(openssl rand -hex 32)"
+          ARGS="$ARGS ZENAF_LLM_PROVIDER=anthropic"
+          if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            ARGS="$ARGS ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+          fi
+          # shellcheck disable=SC2086
+          flyctl secrets set --app zenaf-staging $ARGS
+
+      - name: Deploy
+        run: flyctl deploy --remote-only --app zenaf-staging

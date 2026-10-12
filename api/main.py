@@ -15,6 +15,13 @@ from local_ai.env_legacy_aliases import apply_zenaf_env_legacy_aliases
 
 _ENV_LEGACY_ALIASES_APPLIED = apply_zenaf_env_legacy_aliases()
 
+# Hosted mode: import first so ZENAF_DB_DIR aliasing precedes any storage import,
+# and fail fast on misconfigured production before the app is built.
+from local_ai.hosted_config import is_prod as _is_prod
+from local_ai.hosted_config import validate_prod_config as _validate_prod_config
+
+_validate_prod_config()
+
 import json
 import logging
 import os
@@ -1989,3 +1996,52 @@ def run_stream(body: RunRequest, http_request: Request):
 def health():
     """Simple health check for dev and deployment."""
     return {"status": "ok", "service": "zenaf-api"}
+
+
+@app.get("/healthz")
+def healthz():
+    """Platform health check (load balancers expect /healthz)."""
+    return {"ok": True}
+
+
+# --- Hosted mode: serve the built frontend ---------------------------------
+# In production (ZENAF_PROD=1) the Docker image bakes the Vite build into
+# api/static/. API routes above take precedence (registered first); anything
+# else serves the SPA. Dev behavior is unchanged (no static dir present).
+_STATIC_DIR = _repo_root / "api" / "static"
+_SPA_INDEX = _STATIC_DIR / "index.html"
+# Prefixes that must never fall through to the SPA (real 404s, not index.html).
+_SPA_EXCLUDED_PREFIXES = (
+    "/run",
+    "/auth",
+    "/intake",
+    "/transcripts",
+    "/settings",
+    "/studio",
+    "/transcribe",
+    "/vision-execution",
+    "/ingest",
+    "/identity",
+    "/health",
+    "/healthz",
+    "/folder-picker",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+)
+
+if _is_prod() and _SPA_INDEX.is_file():
+    from fastapi.responses import FileResponse
+
+    @app.get("/{full_path:path}")
+    def _spa_fallback(full_path: str):
+        # Serve real static files (favicon, manifest, hashed assets) when present.
+        # Guard against path traversal: resolved candidate must stay under _STATIC_DIR.
+        if full_path:
+            _candidate = (_STATIC_DIR / full_path).resolve()
+            if _STATIC_DIR.resolve() in _candidate.parents and _candidate.is_file():
+                return FileResponse(str(_candidate))
+        # API namespaces must 404 honestly, never fall through to the SPA.
+        if any(("/" + full_path).startswith(p) for p in _SPA_EXCLUDED_PREFIXES):
+            raise HTTPException(status_code=404, detail="Not found")
+        return FileResponse(str(_SPA_INDEX))

@@ -6,7 +6,7 @@ name: Deploy staging to Fly.io
 
 on:
   push:
-    branches: [feature/hosted-mode-v2]
+    branches: [main]
 
 jobs:
   deploy:

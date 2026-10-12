@@ -1,6 +1,18 @@
 # Zenaf
 
-Local-first **workflow cockpit**: workspace organizer (File Steward + `/run` modes), intake/email queue, **Vision → Execution** (ideas → initiatives → projects → tasks), **Philosophy Council** and **operator supervision** (Studio), content tools, and **Settings** (account, LLM keys, notification prefs). **FastAPI** backend + **React / Vite** SPA.
+An economy of **personally trained AI agents**. Zenaf learns how *you* decide — your
+council deliberations, your working patterns, the ideals you aspire toward — and
+distills them into a **digital doppelgänger**: a decision-making model of you,
+sliceable by specialization zones, that works for you first and is designed to one
+day be rentable into other users' councils at a price you set. Current focus: the
+**training-signal pipeline** — see
+[`docs/02_ACTIVE_DESIGN/TRAINING_SIGNAL_DESIGN.md`](docs/02_ACTIVE_DESIGN/TRAINING_SIGNAL_DESIGN.md).
+
+Built on: the **Philosophy Council** (multi-seat deliberation), **core profiles +
+perspectives** (Person → Profile → Seat), **Vision → Execution** (ideas →
+initiatives → projects → tasks — the evidence base profiles train on), a delegation
+learning loop, and local-first execution (Ollama by default, cloud providers
+optional). **FastAPI** backend + **React / Vite** SPA.
 
 **License:** [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). If you **modify** this software and **run it as a network service** for others, you must offer corresponding source to users (AGPL section 13).
 

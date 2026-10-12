@@ -16,6 +16,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from local_ai.identity import LicenseRequired, ScopeDenied
 from local_ai.presence_ingest.schema import ImportSession, TrainingSignal
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -75,6 +76,11 @@ async def upload_export(file: UploadFile = File(...)):
                 tmp.write(chunk)
         try:
             session = _service().start_import(tmp_path, filename)
+        except LicenseRequired:
+            raise HTTPException(
+                status_code=409,
+                detail="Issue an identity license first: POST /identity/license/issue",
+            )
         except PresenceIngestError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
         return session
@@ -106,6 +112,16 @@ def distill_session(session_id: str):
 
     try:
         count = _service().run_distill(session_id)
+    except LicenseRequired:
+        raise HTTPException(
+            status_code=409,
+            detail="Issue an identity license first: POST /identity/license/issue",
+        )
+    except ScopeDenied as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=f"{exc} Grant it via POST /identity/scopes.",
+        )
     except PresenceIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except DistillError as exc:

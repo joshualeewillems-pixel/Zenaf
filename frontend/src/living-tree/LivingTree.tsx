@@ -13,6 +13,12 @@
  * Honest seed state: the 7 agents at 0% trained, no children, no markets,
  * no rentals, no dollar amounts. Training begins via "Upload source
  * materials".
+ *
+ * Rendering robustness: node positions live in React state (not a mutated
+ * ref), and the initial state is the fully laid-out tree — so the SVG has
+ * content on the very first paint, with no dependency on the animation loop
+ * to populate it. Critical SVG sizing is inline so the graphic cannot
+ * collapse even if the <style> block is ever stripped.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BRAID_ORDER, STRANDS, strandColor, type StrandKey } from './strands'
@@ -334,43 +340,61 @@ export function LivingTreeView({
   const [exp, setExp] = useState<Record<string, boolean>>({})
   const [view, setView] = useState<'tree' | 'menu'>('tree')
   const [menuItem, setMenuItem] = useState<string | null>(null)
-  const liveRef = useRef<Map<string, LiveNode>>(new Map())
-  const animTok = useRef(0)
-  const [, setTick] = useState(0)
 
   const braid = useMemo(() => computeBraid(), [])
+  // Target positions, recomputed synchronously whenever expansion changes.
+  const target = useMemo(() => relax(layout(exp)), [exp])
 
-  // Re-layout + animate whenever selection or expansion changes.
+  // Displayed nodes live in state and are seeded with the fully laid-out
+  // tree, so the SVG renders content on the very first paint. The effect
+  // below only animates transitions between layouts.
+  const [nodes, setNodes] = useState<LiveNode[]>(() =>
+    [...target.values()].map((p) => ({ ...p, op: 1 })),
+  )
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+
   useEffect(() => {
-    const P = relax(layout(exp))
-    for (const id of [...liveRef.current.keys()]) {
-      if (!P.has(id)) liveRef.current.delete(id)
+    const from = new Map(nodesRef.current.map((n) => [n.datum.id, n]))
+    // Skip the animation when nothing moved (e.g. first mount: display
+    // already equals target).
+    let moved = from.size !== target.size
+    if (!moved) {
+      for (const [id, p] of target) {
+        const f = from.get(id)
+        if (!f || Math.abs(f.x - p.x) > 0.01 || Math.abs(f.y - p.y) > 0.01) {
+          moved = true
+          break
+        }
+      }
     }
-    const myTok = ++animTok.current
-    const from = new Map<string, LiveNode>()
-    liveRef.current.forEach((v, k) => from.set(k, { ...v }))
+    if (!moved) return
     const t0 = performance.now()
     const DUR = 480
     let raf = 0
+    let cancelled = false
     const frame = (t: number) => {
-      if (myTok !== animTok.current) return
+      if (cancelled) return
       const k = ease(Math.min(1, (t - t0) / DUR))
-      P.forEach((p, id) => {
+      const next: LiveNode[] = []
+      target.forEach((p, id) => {
         const f = from.get(id)
-        const x = !f ? p.px : f.x + (p.x - f.x) * k
-        const y = !f ? p.py : f.y + (p.y - f.y) * k
-        const op = !f ? k : f.op + (1 - f.op) * k
-        liveRef.current.set(id, { ...p, x, y, op })
+        next.push({
+          ...p,
+          x: f ? f.x + (p.x - f.x) * k : p.px,
+          y: f ? f.y + (p.y - f.y) * k : p.py,
+          op: f ? f.op + (1 - f.op) * k : k,
+        })
       })
-      setTick((n) => n + 1)
+      setNodes(next)
       if (k < 1) raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
     return () => {
-      animTok.current++
+      cancelled = true
       cancelAnimationFrame(raf)
     }
-  }, [sel, exp])
+  }, [target])
 
   const onTap = (id: string) => {
     if (id === 'you') {
@@ -379,7 +403,7 @@ export function LivingTreeView({
       setSel(null)
       return
     }
-    const live = liveRef.current.get(id)
+    const live = nodesRef.current.find((n) => n.datum.id === id)
     if (live && live.kids.length) {
       setExp((e) => {
         const next = { ...e }
@@ -391,7 +415,7 @@ export function LivingTreeView({
     setSel((s) => (s === id ? null : id))
   }
 
-  const nodes = [...liveRef.current.values()]
+  const nodeById = useMemo(() => new Map(nodes.map((n) => [n.datum.id, n])), [nodes])
 
   const renderPanel = () => {
     if (view === 'menu') {
@@ -445,7 +469,7 @@ export function LivingTreeView({
     }
     const d = sel ? findDatum(sel) : null
     if (!d) return <div className="lhint">Tap any node to read its story.</div>
-    const live = liveRef.current.get(sel!)
+    const live = nodeById.get(sel!)
     const col = live ? strandCol(live) : '#c9a86a'
     const tag = d.id === 'you' ? 'THE SOURCE' : d.pct == null ? 'NOT YET TRAINED' : `${d.pct}% TRAINED`
     return (
@@ -472,14 +496,17 @@ export function LivingTreeView({
   }
 
   return (
-    <div className="ltree">
+    <div
+      className="ltree"
+      style={{ boxSizing: 'border-box', width: '100%', maxWidth: 430, margin: '0 auto' }}
+    >
       <style>{`
 .ltree{box-sizing:border-box;width:100%;max-width:430px;margin:0 auto;background:#0b0a09;border:1px solid rgba(201,168,106,.25);border-radius:20px;padding:18px 12px 14px;color:#f5f0e8;font-family:system-ui,-apple-system,sans-serif;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overflow-x:clip}
 .ltree *{box-sizing:border-box}
 .lhead{text-align:center}
 .lhead h2{margin:0;font-size:18px;font-weight:650}
 .lhead h2 em{color:#c9a86a;font-style:italic}
-.lhead p{margin:6px 8px 0;font-size:11.5px;color:rgba(245,240,232,.6);line-height:1.55}
+.lhead p{margin:6px 8px 0;font-size:11.5px;color:rgba(245,240,232,.6);line-height:1.55;overflow-wrap:break-word}
 .llegend{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;margin:10px 4px 0;font-size:10px;color:rgba(245,240,232,.55)}
 .llegend span{display:inline-flex;align-items:center;gap:4px}
 .llegend i{width:8px;height:8px;border-radius:50%;display:inline-block}
@@ -493,7 +520,7 @@ export function LivingTreeView({
 .lnarr{margin:10px 4px 0;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.3);border-radius:14px;padding:12px 14px;min-height:120px}
 .lnarr h3{margin:0 0 3px;font-size:13.5px}
 .lnarr .ltag{font-size:10.5px;font-weight:700;letter-spacing:.08em;margin-bottom:5px}
-.lnarr p{margin:0;font-size:12px;line-height:1.6;color:rgba(245,240,232,.82);font-style:italic}
+.lnarr p{margin:0;font-size:12px;line-height:1.6;color:rgba(245,240,232,.82);font-style:italic;overflow-wrap:break-word}
 .lnarr .lhint{color:rgba(245,240,232,.45);font-style:normal;text-align:center;padding:12px 0 4px;font-size:12px}
 .lnarr .lnote{font-style:normal;color:rgba(245,240,232,.6);font-size:11.5px;margin-bottom:8px}
 .lrow{display:flex;align-items:center;justify-content:space-between;width:100%;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.25);border-radius:10px;color:#f5f0e8;font-size:13px;font-weight:600;padding:10px 12px;min-height:44px;margin:0 0 6px;cursor:pointer;font-family:inherit;text-align:left}
@@ -532,7 +559,13 @@ export function LivingTreeView({
           })}
         </div>
       </div>
-      <svg className="lsvg" viewBox="-30 0 460 790" role="img" aria-label="Braided living tree">
+      <svg
+        className="lsvg"
+        viewBox="-30 0 460 790"
+        role="img"
+        aria-label="Braided living tree"
+        style={{ display: 'block', width: '100%', height: 'auto', aspectRatio: '460 / 790', minHeight: 200 }}
+      >
         {/* braided trunk */}
         <g>
           {braid.map((s, i) => (
@@ -546,7 +579,7 @@ export function LivingTreeView({
         <g>
           {nodes.flatMap((p) => {
             if (!p.par) return []
-            const par = liveRef.current.get(p.par)
+            const par = nodeById.get(p.par)
             if (!par) return []
             const col = strandCol(p)
             let sx = par.x

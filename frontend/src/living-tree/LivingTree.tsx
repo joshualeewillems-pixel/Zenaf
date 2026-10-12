@@ -417,6 +417,34 @@ export function LivingTreeView({
 
   const nodeById = useMemo(() => new Map(nodes.map((n) => [n.datum.id, n])), [nodes])
 
+  // Dynamic viewBox fitted to the actual content (nodes + braid + labels),
+  // computed from the stable target layout so it doesn't jitter mid-animation.
+  // The honest seed state is compact; a fixed tall viewBox left the tree tiny
+  // in a sea of empty space.
+  const viewBox = useMemo(() => {
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    target.forEach((p) => {
+      const r = p.side === 'c' ? 44 : 22
+      minX = Math.min(minX, p.x - r - 34)
+      maxX = Math.max(maxX, p.x + r + 34)
+      minY = Math.min(minY, p.y - r - 18)
+      maxY = Math.max(maxY, p.y + r + 18)
+    })
+    minX = Math.min(minX, CX - BRAID_A - 34)
+    maxX = Math.max(maxX, CX + BRAID_A + 34)
+    minY = Math.min(minY, TRUNK_TOP - 28)
+    maxY = Math.max(maxY, TRUNK_BOTTOM + 28)
+    const pad = 14
+    const vx = Math.floor(minX - pad)
+    const vy = Math.floor(minY - pad)
+    const vw = Math.ceil(maxX - minX + pad * 2)
+    const vh = Math.ceil(maxY - minY + pad * 2)
+    return `${vx} ${vy} ${vw} ${vh}`
+  }, [target])
+
   const renderPanel = () => {
     if (view === 'menu') {
       if (menuItem) {
@@ -561,10 +589,10 @@ export function LivingTreeView({
       </div>
       <svg
         className="lsvg"
-        viewBox="-30 0 460 790"
+        viewBox={viewBox}
         role="img"
         aria-label="Braided living tree"
-        style={{ display: 'block', width: '100%', height: 'auto', aspectRatio: '460 / 790', minHeight: 200 }}
+        style={{ display: 'block', width: '100%', height: 'auto', minHeight: 200 }}
       >
         {/* braided trunk */}
         <g>

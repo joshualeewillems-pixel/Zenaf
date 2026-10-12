@@ -2112,7 +2112,7 @@ function InitiativeDetailPanel({
           >
             <DetailField label="Brief" value={(form.brief as string) ?? ''} onChange={(v) => setForm((f) => ({ ...f, brief: v }))} textarea rows={3} />
           </VeFocusRegion>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <DetailField label="Owner" value={(form.owner_id as string) ?? ''} onChange={(v) => setForm((f) => ({ ...f, owner_id: v || null }))} options={[{ value: '', label: 'None' }, ...ownerOptions]} />
             <DetailField label="Status" value={(form.status as string) ?? 'Draft'} onChange={(v) => setForm((f) => ({ ...f, status: v }))} options={INITIATIVE_STATUS_OPTIONS} />
           </div>
@@ -2413,7 +2413,7 @@ function InitiativeDetailPanel({
                 </button>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               <DetailField
                 label="Estimated cost"
                 value={(form.estimated_cost_ai as string) ?? ''}
@@ -3688,7 +3688,7 @@ function IdeaDetailPanel({
                       : 'Run evaluation to fill. Empty fields show placeholders until then.'}
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
                   <DetailField label="Estimated cost (range)" value={analysis.estimated_cost_range} onChange={(v) => setAnalysis((a) => ({ ...a, estimated_cost_range: v }))} placeholder="No estimate returned" readOnly={!hasEvaluationResults || !analysisEditable} />
                   <DetailField label="Time to build" value={analysis.time_to_build} onChange={(v) => setAnalysis((a) => ({ ...a, time_to_build: v }))} placeholder="No estimate returned" readOnly={!hasEvaluationResults || !analysisEditable} />
                   <DetailField label="Time to ROI" value={analysis.time_to_roi} onChange={(v) => setAnalysis((a) => ({ ...a, time_to_roi: v }))} placeholder="No estimate returned" readOnly={!hasEvaluationResults || !analysisEditable} />
@@ -8770,7 +8770,7 @@ export function VisionExecutionView({
               </div>
               <div className="pt-2 border-t border-slate-700 space-y-2">
                 <div className="text-xs font-medium text-slate-300">Lifecycle actions</div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <input value={seatConsentVersion} onChange={(e) => setSeatConsentVersion(e.target.value)} placeholder="consent_version (required for shared*)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   <input value={seatShareUntil} onChange={(e) => setSeatShareUntil(e.target.value)} placeholder="share_until (authoritative for lifecycle actions)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                 </div>
@@ -8873,7 +8873,7 @@ export function VisionExecutionView({
               </div>
               <div className="pt-2 border-t border-slate-700 space-y-2">
                 <div className="text-xs font-medium text-slate-300">Lifecycle actions</div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <input value={offerConsentVersion} onChange={(e) => setOfferConsentVersion(e.target.value)} placeholder="consent_version (required for shared*)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   <input value={offerShareUntil} onChange={(e) => setOfferShareUntil(e.target.value)} placeholder="share_until (authoritative for lifecycle actions)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                 </div>
@@ -8960,16 +8960,16 @@ export function VisionExecutionView({
                 </ul>
                 <div className="grid grid-cols-1 gap-2">
                   <input value={materialRequestForm.title} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, title: e.target.value }))} placeholder="Title" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialRequestForm.material_type} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, material_type: e.target.value }))} placeholder="Material type" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialRequestForm.resource_nature} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, resource_nature: e.target.value }))} placeholder="Resource nature" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>
                   <input value={materialRequestForm.category_tags_csv} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, category_tags_csv: e.target.value }))} placeholder="Category tags (comma-separated)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialRequestForm.quantity_needed} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, quantity_needed: e.target.value }))} placeholder="Quantity needed" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialRequestForm.quantity_unit} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, quantity_unit: e.target.value }))} placeholder="Quantity unit" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialRequestForm.availability_start} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, availability_start: e.target.value }))} placeholder="Availability start (ISO)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialRequestForm.availability_end} onChange={(e) => setMaterialRequestForm((p) => ({ ...p, availability_end: e.target.value }))} placeholder="Availability end (ISO)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>
@@ -8987,7 +8987,7 @@ export function VisionExecutionView({
                 </div>
                 <div className="pt-2 border-t border-slate-700 space-y-2">
                   <div className="text-xs font-medium text-slate-300">Lifecycle actions</div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialRequestConsentVersion} onChange={(e) => setMaterialRequestConsentVersion(e.target.value)} placeholder="consent_version (required for shared*)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialRequestShareUntil} onChange={(e) => setMaterialRequestShareUntil(e.target.value)} placeholder="share_until (authoritative for lifecycle actions)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>
@@ -9044,16 +9044,16 @@ export function VisionExecutionView({
                 </ul>
                 <div className="grid grid-cols-1 gap-2">
                   <input value={materialOfferForm.title} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, title: e.target.value }))} placeholder="Title" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialOfferForm.material_type} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, material_type: e.target.value }))} placeholder="Material type" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialOfferForm.resource_nature} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, resource_nature: e.target.value }))} placeholder="Resource nature" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>
                   <input value={materialOfferForm.category_tags_csv} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, category_tags_csv: e.target.value }))} placeholder="Category tags (comma-separated)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialOfferForm.quantity_available} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, quantity_available: e.target.value }))} placeholder="Quantity available" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialOfferForm.quantity_unit} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, quantity_unit: e.target.value }))} placeholder="Quantity unit" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialOfferForm.availability_start} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, availability_start: e.target.value }))} placeholder="Availability start (ISO)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialOfferForm.availability_end} onChange={(e) => setMaterialOfferForm((p) => ({ ...p, availability_end: e.target.value }))} placeholder="Availability end (ISO)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>
@@ -9071,7 +9071,7 @@ export function VisionExecutionView({
                 </div>
                 <div className="pt-2 border-t border-slate-700 space-y-2">
                   <div className="text-xs font-medium text-slate-300">Lifecycle actions</div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input value={materialOfferConsentVersion} onChange={(e) => setMaterialOfferConsentVersion(e.target.value)} placeholder="consent_version (required for shared*)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                     <input value={materialOfferShareUntil} onChange={(e) => setMaterialOfferShareUntil(e.target.value)} placeholder="share_until (authoritative for lifecycle actions)" className="px-2 py-1.5 rounded bg-slate-900 border border-slate-600 text-slate-100 text-xs" />
                   </div>

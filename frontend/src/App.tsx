@@ -5771,13 +5771,15 @@ function App() {
         </nav>
       </header>
 
-      <UniversalContextStrip
-        mainView={mainView}
-        currentTopic={currentTopic}
-        currentFocusHasResult={currentFocusHasResult}
-        activeMode={activeMode}
-        useLastResultAsContext={useLastResultAsContext}
-      />
+      {mainView !== 'living_tree' && (
+        <UniversalContextStrip
+          mainView={mainView}
+          currentTopic={currentTopic}
+          currentFocusHasResult={currentFocusHasResult}
+          activeMode={activeMode}
+          useLastResultAsContext={useLastResultAsContext}
+        />
+      )}
 
       <div className="flex-1 flex flex-col md:flex-row min-h-0 min-w-0">
         {/* Left: main content (changes by tab) */}
@@ -6769,7 +6771,9 @@ function App() {
           </main>
         )}
 
-        {/* Right: Folder review result (when in folder workflow) or conversation panel */}
+        {/* Right: Folder review result (when in folder workflow) or conversation panel.
+            Hidden on the Living Tree home view so the tree owns the screen. */}
+        {mainView !== 'living_tree' && (
         <aside
           className={`w-full md:w-[380px] md:shrink-0 md:sticky md:top-0 flex flex-col min-h-0 h-auto md:h-[calc(100vh-8rem)] max-h-[55vh] md:max-h-[calc(100vh-4.5rem)] bg-stone-800/60 overflow-x-hidden shadow-lg ${
             mainView === 'vision_map'
@@ -7701,6 +7705,7 @@ function App() {
           ) : null}
           <ZenafPresence brandCoreProfileId={brandCoreProfileId} onOpen={() => setMainView('perspectives')} />
         </aside>
+        )}
       </div>
     </div>
     </FocusInviteRunProvider>

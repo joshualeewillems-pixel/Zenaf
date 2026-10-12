@@ -18,6 +18,7 @@ of the active product surface.
 | `parked/test_soil_api.py`, `parked/test_soil_kernel.py` | Tests for the soil layer. | Moved with the soil layer. |
 | `parked/local_ai-transcripts/` | Transcript sorter backend (`sort_transcript`). | Satellite feature; not part of the agent-economy core. The API route (`api/routes/transcript_routes.py`) stays wired but is marked deprecated and loads the module from its parked location. |
 | `parked/frontend-src-inbox-triage/` | Intake triage UI panels. | Intake *product surface* parked. Nothing imported it (already orphaned). The intake mirror/queue engine (`local_ai/intake/`) stays in place. |
+| `parked/github-workflows-philosophy-enforcement.yml` | CI workflow enforcing the old workflow-cockpit philosophy matrix (`scripts/philosophy_enforcement/run_all.py` + routing tests on every PR to main). | Old-vision machinery: its TRUTH docs were archived by the agent-economy refocus, so the workflow fails on every run. `scripts/philosophy_enforcement/` is left in place but inert without the workflow trigger. Restore by moving the file back to `.github/workflows/`. |
 
 ## Parked in place (not moved — too deeply wired to relocate safely)
 

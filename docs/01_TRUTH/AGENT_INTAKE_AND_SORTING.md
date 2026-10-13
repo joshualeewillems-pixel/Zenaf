@@ -43,21 +43,27 @@ trains until the user reviews and approves it.
 Instead of a separate black-box classifier, **the seven strand agents do the
 claiming**. When an agent is connected, each strand agent reads its
 description / instructions / examples and makes a case — "this belongs to me,
-because…" — or passes. The strongest claim becomes the primary strand;
-strong secondary claims become cross-strand links.
+because…" — or passes. Every strand with a claim above threshold trains on
+the agent's material, weighted by claim strength.
+
+**Training influence is multi-frame, not winner-take-all.** There is no
+reason the same data wouldn't shape several agents: a negotiation coach that
+writes brilliant follow-up emails trains the Mediator *and* the Storyteller.
+The strongest claim becomes the *display* anchor (the Living Tree branch),
+but it gates nothing — the material routes to every qualifying strand.
 
 Why this instead of a keyword classifier:
 
 - **Explainable.** Every placement comes with reasoning the user can read and
   argue with, not a score from a void.
-- **Multi-strand native.** A 70% Word / 30% People agent isn't forced into one
-  bucket. It lives primarily in Word with a visible, consented link to People.
+- **Multi-strand native.** A 70% Word / 30% People agent feeds both, weighted.
+  No rounding off.
 - **Dogfooding.** The product uses itself to grow itself — the council is the
   intake engine, not a sidecar.
 - **Progressive.** v1 is rule-based (fast, deterministic, no AI needed, fully
-  testable). v2 upgrades the claiming to local Ollama. v3 lets the council
-  genuinely deliberate. The contract — `sort(agent) -> SortResult` — doesn't
-  change across versions.
+  testable). v2 upgrades the claiming to a frontier LLM (see "Engine choice"
+  below). v3 lets the council genuinely deliberate. The contract —
+  `sort(agent) -> SortResult` — doesn't change across versions.
 
 ### Skill vs. talent vs. project
 
@@ -176,12 +182,39 @@ connect(name, platform, description, instructions?, examples?)
 
 - `local_ai/agent_intake/`: `schema.py`, `sorter.py` (rule-based strand
   markers + kind markers), `pipeline.py`, `store.py` (SQLite).
-- API: `POST /api/agents/connect`, `GET /api/agents/pending`,
-  `POST /api/agents/{id}/confirm`, `GET /api/agents`.
+- API: `POST /agents/connect`, `GET /agents/pending`,
+  `POST /agents/{id}/confirm`, `GET /agents`.
 - Tests: sorter accuracy on a labeled fixture set; pipeline redaction +
   review-queue behavior.
-- v2 (not this PR): Ollama claiming, probing questions, Tree branches, project
-  semantic linking.
+- v2 (not this PR): frontier-LLM claiming, probing questions, Tree branches,
+  project semantic linking, account scrubbing (below).
+
+## Engine choice: frontier LLMs for the scrub, not slow local models
+
+The claiming/scrubbing step is a *batch* job — it runs at intake time, not in
+a real-time loop. For batch understanding work, a frontier LLM (GPT, Claude)
+returns better judgments in seconds than a slow local pipeline returns in
+minutes. v1's rule-based sorter stays as the instant offline default (and the
+testable contract), but v2's claiming engine should call out to a frontier
+model with the seven strand personas as the prompt framing — each strand
+reads the material and argues its claim. Local models remain an option for
+the privacy-maximal path, but they are not the default for this job.
+
+## Account scrubbing: the seven as harvesters
+
+Beyond one-at-a-time agent intake, the user connects *accounts* — ChatGPT,
+Claude, and whatever else exposes access — and the seven strand agents scrub
+them for material: custom instructions, conversation patterns, recurring
+topics, demonstrated capabilities. Each strand pulls what belongs to it;
+everything lands in the review queue before it trains anything.
+
+Honest constraints: neither ChatGPT nor Claude offers a public personal-data
+API today, so "log in and scrub" can't be a direct integration yet. The
+feasible v1 paths are: OAuth where it exists (Gmail already works), official
+exports (ChatGPT/Claude/X — the presence-ingestion adapters), and
+browser-assisted capture later. The architecture treats every source as an
+adapter behind the same `sort()` contract, so a real ChatGPT/Claude account
+adapter slots in the day the platform allows it — no redesign.
 
 ## What makes this cleverer than what exists
 

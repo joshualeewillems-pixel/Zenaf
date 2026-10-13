@@ -294,3 +294,21 @@ def test_schema_round_trip():
     restored = ConnectedAgent.from_dict(agent.to_dict())
     assert restored == agent
     assert restored.sort.primary_strand == "word"
+
+
+def test_multi_frame_weights():
+    # An agent with strong signals in two strands trains both, not just the top.
+    result = sort(
+        "Negotiation Coach",
+        "It coaches me through difficult conversations and writes brilliant "
+        "follow-up emails. Helps with team leadership and drafting proposals.",
+    )
+    assert result.primary_strand in ("people", "word")
+    assert len(result.strand_weights) >= 2, (
+        f"expected multi-strand weights, got {result.strand_weights}"
+    )
+    assert "people" in result.strand_weights
+    assert "word" in result.strand_weights
+    # weights survive the round trip
+    restored = SortResult.from_dict(result.to_dict())
+    assert restored.strand_weights == result.strand_weights

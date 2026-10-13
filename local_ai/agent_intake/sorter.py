@@ -118,6 +118,10 @@ _KIND_MARKERS: dict[str, tuple[str, ...]] = {
 _SCORE_SATURATION = 4.0
 # Below this confidence the system should probe, not guess.
 _PROBE_THRESHOLD = 0.35
+# Strands scoring at or above this train on the agent's material.
+# Training influence is multi-frame: every qualifying strand gets the data,
+# weighted by its score — the same data routinely shapes several agents.
+_WEIGHT_THRESHOLD = 0.25
 
 _FACULTY_BY_KEY = {s.key: s.faculty for s in STRANDS}
 
@@ -220,9 +224,17 @@ def sort(
     second_score = claims[1].score if len(claims) > 1 else 0.0
     confidence = round((top_score - second_score) / top_score, 3) if top_score > 0 else 0.0
 
+    # Multi-frame influence: every strand at/above threshold trains on this
+    # agent's material, weighted by claim strength. primary_strand remains the
+    # display anchor (Tree branch) but gates nothing.
+    strand_weights = {
+        c.strand: c.score for c in claims if c.score >= _WEIGHT_THRESHOLD
+    }
+
     return SortResult(
         primary_strand=primary,
         claims=claims,
+        strand_weights=strand_weights,
         kind=kind,  # type: ignore[arg-type]
         kind_reasoning=_kind_reasoning(kind, kind_matched),
         linked_projects=[],  # v2: semantic project linking

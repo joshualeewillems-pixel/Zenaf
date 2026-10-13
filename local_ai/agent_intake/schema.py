@@ -40,12 +40,19 @@ class StrandClaim:
 
 @dataclass
 class SortResult:
-    """The sorter's verdict on where a connected agent belongs."""
+    """The sorter's verdict on where a connected agent belongs.
 
-    primary_strand: str  # StrandKey
+    Training influence is multi-frame: strand_weights maps EVERY strand with a
+    claim above threshold to its weight, and the agent's material routes to
+    all of them. primary_strand (the max) is only the display anchor for the
+    Living Tree branch — it does not gate training.
+    """
+
+    primary_strand: str  # StrandKey; display anchor (max weight), not a gate
     claims: list[StrandClaim]  # all seven, sorted by score desc
-    kind: AgentKind
-    kind_reasoning: str
+    strand_weights: dict[str, float] = field(default_factory=dict)  # strand -> 0.0-1.0, thresholded
+    kind: AgentKind = "undecided"
+    kind_reasoning: str = ""
     linked_projects: list[str] = field(default_factory=list)
     confidence: float = 0.0  # 0.0–1.0; low confidence triggers probing
     needs_probing: bool = False
@@ -54,6 +61,7 @@ class SortResult:
         return {
             "primary_strand": self.primary_strand,
             "claims": [c.to_dict() for c in self.claims],
+            "strand_weights": dict(self.strand_weights),
             "kind": self.kind,
             "kind_reasoning": self.kind_reasoning,
             "linked_projects": list(self.linked_projects),
@@ -66,6 +74,7 @@ class SortResult:
         return cls(
             primary_strand=str(d.get("primary_strand", "")),
             claims=[StrandClaim.from_dict(c) for c in (d.get("claims") or [])],
+            strand_weights=dict(d.get("strand_weights") or {}),
             kind=d.get("kind", "undecided"),
             kind_reasoning=str(d.get("kind_reasoning", "")),
             linked_projects=list(d.get("linked_projects") or []),

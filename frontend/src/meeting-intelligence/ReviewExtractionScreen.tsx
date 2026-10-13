@@ -2072,7 +2072,7 @@ export function ReviewExtractionScreen({
         className={
           perCardActions
             ? 'grid gap-6 grid-cols-1 w-full min-w-0'
-            : 'grid gap-6 md:grid-cols-2 w-full min-w-0'
+            : 'grid gap-6 lg:grid-cols-2 w-full min-w-0'
         }
       >
         {staging.summary && (

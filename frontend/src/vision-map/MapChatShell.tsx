@@ -442,7 +442,7 @@ export function MapChatShell({
   return (
     <aside
       data-testid="vision-map-inspector"
-      className="map-ui-panel flex flex-col h-full min-h-0 w-full md:w-[360px] md:shrink-0 border-t md:border-t-0 md:border-l border-stone-800/90 bg-stone-950/85 backdrop-blur-md shadow-[-12px_0_40px_rgba(39,36,31,0.35)]"
+      className="map-ui-panel flex flex-col h-full min-h-0 w-full lg:w-[360px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-stone-800/90 bg-stone-950/85 backdrop-blur-md shadow-[-12px_0_40px_rgba(39,36,31,0.35)]"
     >
       <div className="px-4 py-3 border-b border-stone-700 flex items-start justify-between gap-2 min-w-0">
         <div className="min-w-0 flex-1 pr-2">

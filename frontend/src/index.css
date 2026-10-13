@@ -96,8 +96,9 @@
 }
 
 
-/* ---- Mobile (below md): keep layout usable on phones. Desktop unchanged. ---- */
-@media (max-width: 767.98px) {
+/* ---- Below lg: phones in any orientation (+ small tablets) get the stacked
+   layout. 768px (md) wrongly treated landscape phones as desktop. ---- */
+@media (max-width: 1023.98px) {
   /* Comfortable touch targets for form controls */
   input:not([type='checkbox']):not([type='radio']),
   select,

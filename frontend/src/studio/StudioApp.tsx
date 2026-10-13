@@ -424,7 +424,7 @@ export function StudioApp() {
     <div className="space-y-4">
       <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
         <h2 className="font-medium mb-2">System Summary</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-2 text-xs text-slate-200">
+        <div className="grid grid-cols-1 lg:grid-cols-2 lg:grid-cols-5 gap-2 text-xs text-slate-200">
           <div className="rounded border border-slate-800 px-2 py-2">
             <div className="text-slate-400">Total capabilities</div>
             <div className="text-lg font-semibold">{String(systemIndex?.summary?.total_capabilities ?? '—')}</div>
@@ -632,7 +632,7 @@ export function StudioApp() {
           <section className="rounded-xl border border-amber-900/50 bg-slate-900/60 p-4">
             <h2 className="font-medium mb-1 text-amber-200">System & credential visibility (admin)</h2>
             <p className="text-xs text-slate-400 mb-3">{credVis.option_b_note}</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 text-xs">
               <div className="rounded border border-slate-800 p-3 space-y-1">
                 <div className="font-semibold text-slate-200">System OpenAI</div>
                 <div>
@@ -663,7 +663,7 @@ export function StudioApp() {
                   <code className="text-amber-300">{acct?.openai_effective_source ?? '—'}</code>
                 </div>
               </div>
-              <div className="rounded border border-slate-800 p-3 md:col-span-2 space-y-1">
+              <div className="rounded border border-slate-800 p-3 lg:col-span-2 space-y-1">
                 <div className="font-semibold text-slate-200">Anonymous cloud OpenAI</div>
                 <div>
                   <span className="text-slate-400">Allowed:</span>{' '}
@@ -905,7 +905,7 @@ export function StudioApp() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
       <section className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3">
         <h2 className="font-medium">Teacher Controls</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-sm">
           <label className="text-slate-300">Mode</label>
           <select
             className="bg-slate-800 border border-slate-600 rounded px-2 py-1"
@@ -958,7 +958,7 @@ export function StudioApp() {
             <option value="replace">replace</option>
           </select>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm border-t border-slate-700 pt-3">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-sm border-t border-slate-700 pt-3">
           <div className="col-span-2 text-slate-400 text-xs">Attachment roles (defaults when POST /run omits native_provider)</div>
           <label className="text-slate-300">Main (cloud)</label>
           <div className="flex gap-1">
@@ -1119,7 +1119,7 @@ export function StudioApp() {
           </div>
 
           {runTab === 'overview' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 text-xs">
               <div><span className="text-slate-400">run id:</span> {selectedRunDetail.id}</div>
               <div><span className="text-slate-400">timestamp:</span> {selectedRunDetail.created_at}</div>
               <div><span className="text-slate-400">question:</span> {String(selectedRunDetail.native_artifact?.question ?? '—')}</div>
@@ -1129,7 +1129,7 @@ export function StudioApp() {
               <div><span className="text-slate-400">vetoed:</span> {selectedRunDetail.teacher_vetoed ? 'yes' : 'no'}</div>
               <div><span className="text-slate-400">warning:</span> {selectedRunDetail.teacher_warning ? 'yes' : 'no'}</div>
               <div><span className="text-slate-400">reason codes:</span> {(selectedRunDetail.teacher_reason_codes ?? []).join(', ') || '—'}</div>
-              <div className="md:col-span-2"><span className="text-slate-400">teacher notes:</span> {selectedRunDetail.teacher_notes ?? '—'}</div>
+              <div className="lg:col-span-2"><span className="text-slate-400">teacher notes:</span> {selectedRunDetail.teacher_notes ?? '—'}</div>
               <div><span className="text-slate-400">final policy:</span> {selectedRunDetail.final_selection_policy ?? '—'}</div>
               <div><span className="text-slate-400">native:</span> {selectedRunDetail.native_provider ?? '—'} / {selectedRunDetail.native_model ?? '—'}</div>
               <div><span className="text-slate-400">teacher:</span> {selectedRunDetail.teacher_provider_effective ?? '—'} / {selectedRunDetail.teacher_model_effective ?? '—'}</div>
@@ -1231,7 +1231,7 @@ export function StudioApp() {
 
           {runTab === 'compare' && (
             <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
                 <div><span className="text-slate-400">same_decision:</span> {String(selectedRunDetail.comparison?.same_decision ?? '—')}</div>
                 <div><span className="text-slate-400">same_next_move:</span> {String(selectedRunDetail.comparison?.same_next_move ?? '—')}</div>
               </div>

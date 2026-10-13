@@ -111,7 +111,7 @@ export function PerspectivesView({
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex-1 overflow-auto min-h-0 p-4">
-        <div className="grid gap-6 md:grid-cols-2 max-w-5xl mx-auto h-full min-h-0">
+        <div className="grid gap-6 lg:grid-cols-2 max-w-5xl mx-auto h-full min-h-0">
           <aside className="space-y-4">
             <div>
               <p className="text-xs font-medium text-warm-white/80 uppercase tracking-wide mb-1">System</p>

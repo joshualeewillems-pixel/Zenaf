@@ -493,3 +493,41 @@ def test_project_miner_rule_fallback_without_key(monkeypatch):
     result = mine_projects("USER: can you please summarize this long document for me today?")
     assert result.engine == "rule_based"
     assert len(result.standalone_tasks) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Bookmarklet-extracted text intake
+# ---------------------------------------------------------------------------
+
+def test_connect_via_extracted_text(tmp_path, monkeypatch):
+    from local_ai.agent_intake import pipeline as P
+    from local_ai.agent_intake.store import AgentStore
+    # rule-based fallback (no API key)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    store = AgentStore(db_path=str(tmp_path / "t.db"))
+    agent = P.connect_via_extracted_text(
+        url="https://chatgpt.com/share/abc123",
+        transcript="USER: help me write better\n\nASSISTANT: tell me about your voice",
+        title="Writing help",
+        store=store,
+    )
+    assert agent.source_platform == "chatgpt_share"
+    assert agent.status == "pending_review"
+    assert len(agent.examples) >= 1
+
+
+def test_connect_via_extracted_text_requires_transcript(tmp_path):
+    from local_ai.agent_intake import pipeline as P
+    from local_ai.agent_intake.store import AgentStore
+    from local_ai.agent_intake.pipeline import AgentIntakeError
+    import pytest
+    store = AgentStore(db_path=str(tmp_path / "t.db"))
+    with pytest.raises(AgentIntakeError):
+        P.connect_via_extracted_text(url="https://chatgpt.com/share/abc", transcript="  ", store=store)
+
+
+def test_split_transcript():
+    from local_ai.agent_intake.pipeline import _split_transcript
+    chunks = _split_transcript("USER: one\n\nASSISTANT: two\n\nUSER: three")
+    assert len(chunks) == 3
+    assert chunks[0].startswith("USER:")

@@ -301,6 +301,26 @@ def connect_share_text(body: ShareTextBody):
     return {"agent": agent.to_dict(), "mined": mined}
 
 
+class IntakeChatBody(BaseModel):
+    """One message to the Muse intake guide."""
+
+    message: str
+    history: list[dict] = []
+
+
+@router.post("/intake/chat", status_code=200)
+def intake_chat(body: IntakeChatBody):
+    """Chat with Muse to connect a conversation.
+
+    Paste conversation text (or drop a share link); Muse routes it through
+    the intake pipeline and replies conversationally. Anything else gets a
+    plain Muse reply as the intake guide.
+    """
+    from local_ai.agent_intake import intake_chat as ichat
+
+    return ichat.handle_message(body.message, body.history)
+
+
 class MineBody(BaseModel):
     """Mine a transcript for proposed projects and tasks."""
 

@@ -18,7 +18,6 @@ from local_ai.vision_execution import storage as VEStorage
 from local_ai.signals import service as SigS
 from local_ai.signals.models import SignalCreate, SignalUpdate
 from api.routes.auth_routes import get_current_user
-from api.routes.soil_api import attach_soil_routes
 from local_ai.ai_action_trace.server_emit import (
     enrich_meeting_debug_llm_meta,
     emit_server_ai_action_trace,
@@ -27,7 +26,6 @@ from local_ai.ai_action_trace.server_emit import (
 )
 
 router = APIRouter(prefix="/vision-execution", tags=["vision-execution"])
-attach_soil_routes(router)
 
 _R = TypeVar("_R")
 _PERMISSION_BEHAVIORAL_TRACKING = "behavioral_tracking"

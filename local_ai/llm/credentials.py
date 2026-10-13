@@ -17,6 +17,7 @@ CredentialSource = Literal["none", "system_env", "env", "settings", "account_sto
 
 # Authenticated account: same resolution order as OpenAI (env first, then Settings). Anonymous skips env (Option B).
 _ACCOUNT_CLOUD_ENV_KEYS: dict[str, tuple[str, ...]] = {
+    "meta": ("META_API_KEY", "MODEL_API_KEY"),
     "anthropic": ("ANTHROPIC_API_KEY",),
     "google": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
     "xai": ("XAI_API_KEY",),
@@ -54,6 +55,7 @@ def resolve_cloud_api_key(principal: ExecutionPrincipal, provider_id: str) -> tu
             "anthropic": "ZENAF_SYSTEM_ANTHROPIC_API_KEY",
             "google": "ZENAF_SYSTEM_GOOGLE_API_KEY",
             "xai": "ZENAF_SYSTEM_XAI_API_KEY",
+            "meta": "ZENAF_SYSTEM_META_API_KEY",
         }
         en = env_names.get(pid)
         if not en:

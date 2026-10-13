@@ -16,16 +16,15 @@ CONVERSATION_MARKERS = ("USER:", "ASSISTANT:", "Human:", "Assistant:", "ChatGPT"
 
 
 def _claude_say(system: str, user: str, user_id: str | None = None) -> str | None:
-    """Ask Claude for a reply; None when no key or the call fails."""
-    from .llm_keys import resolve_anthropic_key
+    """Ask the intake provider for a reply; None when no key or the call fails."""
+    from . import llm_keys
 
-    key = resolve_anthropic_key(user_id, operation="intake_chat")
-    if not key:
-        return None
     try:
-        from local_ai.providers import anthropic
-
-        return anthropic.generate(key, f"{system}\n\nUser: {user}\n\nReply:")
+        return llm_keys.generate(
+            f"{system}\n\nUser: {user}\n\nReply:",
+            user_id=user_id,
+            operation="intake_chat",
+        )
     except Exception:
         return None
 

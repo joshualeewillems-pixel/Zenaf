@@ -147,9 +147,9 @@ Be conservative: only propose what the transcript evidences. Prefer fewer, sharp
 
 
 def _api_key(user_id: str | None = None) -> str | None:
-    from .llm_keys import resolve_anthropic_key
+    from . import llm_keys
 
-    return resolve_anthropic_key(user_id, operation="mine")
+    return llm_keys.resolve_key(llm_keys.resolve_intake_provider(), user_id, operation="mine")
 
 
 def _parse_mining_json(raw: str) -> MiningResult:
@@ -230,12 +230,13 @@ def mine_projects(transcript: str, model: str | None = None, user_id: str | None
     api_key = _api_key(user_id)
     if api_key:
         try:
-            from local_ai.providers import anthropic as provider
+            from . import llm_keys
 
-            raw = provider.generate(
-                api_key,
+            raw = llm_keys.generate(
                 _MINING_PROMPT.format(transcript=transcript[:12000]),
-                model=model,
+                api_key=api_key,
+                user_id=user_id,
+                operation="mine",
             )
             return _parse_mining_json(raw)
         except Exception:

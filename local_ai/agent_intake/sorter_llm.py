@@ -58,9 +58,9 @@ def _strand_block() -> str:
 
 
 def _api_key(user_id: str | None = None) -> str | None:
-    from .llm_keys import resolve_anthropic_key
+    from . import llm_keys
 
-    return resolve_anthropic_key(user_id, operation="sort")
+    return llm_keys.resolve_key(llm_keys.resolve_intake_provider(), user_id, operation="sort")
 
 
 def sort_with_llm(
@@ -71,12 +71,12 @@ def sort_with_llm(
     model: str | None = None,
     user_id: str | None = None,
 ) -> SortResult:
-    """Sort via Anthropic. Raises on missing key or unparseable response."""
-    from local_ai.providers import anthropic as provider
+    """Sort via the intake provider. Raises on missing key or unparseable response."""
+    from . import llm_keys
 
     api_key = _api_key(user_id)
     if not api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY is not configured")
+        raise RuntimeError("No API key for the intake provider")
 
     prompt = _CLAIM_PROMPT.format(
         strands=_strand_block(),
@@ -85,7 +85,7 @@ def sort_with_llm(
         instructions=instructions or "(none)",
         examples="\n---\n".join(examples or []) or "(none)",
     )
-    raw = provider.generate(api_key, prompt, model=model)
+    raw = llm_keys.generate(prompt, api_key=api_key, user_id=user_id, operation="sort")
 
     # Extract the JSON object (the model may wrap it in fences or prose).
     m = re.search(r"\{.*\}", raw, re.S)

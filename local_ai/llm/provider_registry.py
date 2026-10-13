@@ -20,7 +20,7 @@ TestStatus = Literal["never", "passed", "failed"]
 # Order matches product surface (Settings + execution).
 EXECUTION_PROVIDER_IDS: tuple[str, ...] = ("ollama", "openai", "anthropic", "google", "xai")
 
-_CLOUD_KEY_PROVIDERS = frozenset({"openai", "anthropic", "google", "xai"})
+_CLOUD_KEY_PROVIDERS = frozenset({"openai", "anthropic", "google", "xai", "meta"})
 
 
 def normalize_provider_id(raw: str) -> str:
@@ -46,6 +46,10 @@ def default_model_hint(provider_id: str) -> str:
         from local_ai.providers import xai as px
 
         return px.DEFAULT_MODEL
+    if pid == "meta":
+        from local_ai.providers import meta as pm
+
+        return pm.DEFAULT_MODEL
     if pid == "ollama":
         return (_config.OLLAMA_MODEL or "llama3.2").strip() or "llama3.2"
     return ""
@@ -59,6 +63,7 @@ def display_name(provider_id: str) -> str:
         "anthropic": "Anthropic",
         "google": "Google (Gemini)",
         "xai": "xAI",
+        "meta": "Meta",
     }.get(pid, pid)
 
 

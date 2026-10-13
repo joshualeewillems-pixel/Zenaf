@@ -124,11 +124,12 @@ def verify_license(*, store: IdentityStore | None = None) -> bool:
 
 
 def grant_scope(
-    scope: str, note: str = "", *, store: IdentityStore | None = None
+    scope: str, note: str = "", *, store: IdentityStore | None = None, user_id: str | None = None
 ) -> list[str]:
     """Grant a scope. Raises ValueError for unknown scope strings."""
     store = store or IdentityStore()
     s = validate_scope(scope)
+    uid = (user_id or "").strip()
     store.append_scope_event(
         ScopeEvent(
             event_id=f"se-{uuid4().hex[:12]}",
@@ -136,17 +137,19 @@ def grant_scope(
             action="grant",
             ts=datetime.now(timezone.utc),
             note=note or "",
+            user_id=uid,
         )
     )
-    return sorted(store.active_scopes())
+    return sorted(store.active_scopes(user_id=user_id))
 
 
 def revoke_scope(
-    scope: str, note: str = "", *, store: IdentityStore | None = None
+    scope: str, note: str = "", *, store: IdentityStore | None = None, user_id: str | None = None
 ) -> list[str]:
     """Revoke a scope. Raises ValueError for unknown scope strings."""
     store = store or IdentityStore()
     s = validate_scope(scope)
+    uid = (user_id or "").strip()
     store.append_scope_event(
         ScopeEvent(
             event_id=f"se-{uuid4().hex[:12]}",
@@ -154,9 +157,10 @@ def revoke_scope(
             action="revoke",
             ts=datetime.now(timezone.utc),
             note=note or "",
+            user_id=uid,
         )
     )
-    return sorted(store.active_scopes())
+    return sorted(store.active_scopes(user_id=user_id))
 
 
 # -- takeout -----------------------------------------------------------

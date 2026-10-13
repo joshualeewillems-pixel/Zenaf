@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS scope_events (
     scope TEXT NOT NULL,
     action TEXT NOT NULL,
     ts TEXT NOT NULL,
-    note TEXT NOT NULL DEFAULT ''
+    note TEXT NOT NULL DEFAULT '',
+    user_id TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_scope_events_scope ON scope_events(scope);
 CREATE TABLE IF NOT EXISTS deletion_receipts (
@@ -95,6 +96,7 @@ def _event_from_row(row: sqlite3.Row) -> ScopeEvent:
         action=row["action"],
         ts=_parse_dt(row["ts"]) or datetime.now(timezone.utc),
         note=row["note"] or "",
+        user_id=row["user_id"] if "user_id" in row.keys() else "",
     )
 
 
@@ -120,7 +122,10 @@ class IdentityStore:
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
+            cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(scope_events)").fetchall()]
             self._conn.executescript(_SCHEMA)
+            if cols and "user_id" not in cols:
+                self._conn.execute("ALTER TABLE scope_events ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
             self._conn.commit()
 
     def close(self) -> None:
@@ -173,14 +178,15 @@ class IdentityStore:
     def append_scope_event(self, event: ScopeEvent) -> ScopeEvent:
         with self._lock:
             self._conn.execute(
-                "INSERT INTO scope_events (event_id, scope, action, ts, note) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO scope_events (event_id, scope, action, ts, note, user_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     event.event_id,
                     event.scope,
                     event.action,
                     _iso(event.ts),
                     event.note,
+                    event.user_id or "",
                 ),
             )
             self._conn.commit()
@@ -193,10 +199,18 @@ class IdentityStore:
             ).fetchall()
         return [_event_from_row(r) for r in rows]
 
-    def active_scopes(self) -> set[str]:
-        """Fold the append-only ledger: grant adds, revoke removes."""
+    def active_scopes(self, user_id: str | None = None) -> set[str]:
+        """Fold the append-only ledger: grant adds, revoke removes.
+
+        Per-user when user_id is given: that user's grants plus global
+        (user_id="") grants apply. A user's revoke only revokes their own
+        and global grants — never another user's.
+        """
+        uid = (user_id or "").strip()
         active: set[str] = set()
         for e in self.list_scope_events():
+            if uid and e.user_id and e.user_id != uid:
+                continue
             if e.action == "grant":
                 active.add(e.scope)
             elif e.action == "revoke":

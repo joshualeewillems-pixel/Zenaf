@@ -57,8 +57,10 @@ def _strand_block() -> str:
     return "\n".join(lines)
 
 
-def _api_key() -> str | None:
-    return (os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
+def _api_key(user_id: str | None = None) -> str | None:
+    from .llm_keys import resolve_anthropic_key
+
+    return resolve_anthropic_key(user_id, operation="sort")
 
 
 def sort_with_llm(
@@ -67,11 +69,12 @@ def sort_with_llm(
     instructions: str | None = None,
     examples: list[str] | None = None,
     model: str | None = None,
+    user_id: str | None = None,
 ) -> SortResult:
     """Sort via Anthropic. Raises on missing key or unparseable response."""
     from local_ai.providers import anthropic as provider
 
-    api_key = _api_key()
+    api_key = _api_key(user_id)
     if not api_key:
         raise RuntimeError("ANTHROPIC_API_KEY is not configured")
 
@@ -148,14 +151,15 @@ def sort_primary(
     description: str,
     instructions: str | None = None,
     examples: list[str] | None = None,
+    user_id: str | None = None,
 ) -> tuple[SortResult, str]:
     """Primary entry point: LLM sorter first, rule-based fallback.
 
     Returns (SortResult, engine) where engine is "anthropic" or "rule_based".
     """
-    if _api_key():
+    if _api_key(user_id):
         try:
-            return sort_with_llm(name, description, instructions, examples), "anthropic"
+            return sort_with_llm(name, description, instructions, examples, user_id=user_id), "anthropic"
         except Exception:
             pass  # fall through to rule-based
     from .sorter import sort as rule_sort

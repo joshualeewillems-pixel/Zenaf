@@ -37,6 +37,7 @@ class ScopeEvent(BaseModel):
     action: ScopeAction
     ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     note: str = ""
+    user_id: str = ""  # whose consent; "" = global (pre-multi-user) grant
 
 
 class DeletionReceipt(BaseModel):

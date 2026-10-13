@@ -32,7 +32,15 @@ export default function AgentIntakeView() {
           history: [...msgs, userMsg].slice(-10).map((m) => ({ role: m.role, content: m.text.slice(0, 2000) })),
         }),
       })
+      if (r.status === 401) {
+        setMsgs((m) => [...m, { role: 'muse', text: 'Please sign in to connect conversations.' }])
+        return
+      }
       const data = await r.json()
+      if (r.status === 403) {
+        setMsgs((m) => [...m, { role: 'muse', text: data.detail || 'Intake needs your permission first — check Settings → Identity.' }])
+        return
+      }
       setMsgs((m) => [...m, { role: 'muse', text: data.reply || 'Hmm, that didn\u2019t come through. Try again?' }])
     } catch {
       setMsgs((m) => [...m, { role: 'muse', text: 'I couldn\u2019t reach the server. Check your connection and try again.' }])

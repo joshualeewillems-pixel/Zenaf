@@ -376,3 +376,62 @@ def test_share_link_needs_browser_when_empty():
     html = '<html><head></head><body><div id="root"></div><script src="/app.js"></script></body></html>'
     conv = _parse_chatgpt("https://chatgpt.com/share/x", html)
     assert conv.needs_browser
+
+
+# ---------------------------------------------------------------------------
+# LLM sorter (primary engine, rule-based fallback)
+# ---------------------------------------------------------------------------
+
+def test_llm_sorter_falls_back_without_key(monkeypatch):
+    from local_ai.agent_intake import sorter_llm
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result, engine = sorter_llm.sort_primary(
+        "Writer", "It helps me write cold emails with a clear process."
+    )
+    assert engine == "rule_based"
+    assert result.primary_strand == "word"
+
+
+def test_llm_sorter_parses_claims(monkeypatch):
+    import json
+    from local_ai.agent_intake import sorter_llm
+    fake_response = json.dumps({
+        "claims": [
+            {"strand": "self", "score": 0.9, "reasoning": "philosophical judgment throughout"},
+            {"strand": "word", "score": 0.6, "reasoning": "refines writing voice"},
+            {"strand": "people", "score": 0.4, "reasoning": "relational exploration"},
+            {"strand": "number", "score": 0.0, "reasoning": "no data here"},
+            {"strand": "image", "score": 0.0, "reasoning": "passing"},
+            {"strand": "sound", "score": 0.0, "reasoning": "passing"},
+            {"strand": "body", "score": 0.0, "reasoning": "passing"},
+        ],
+        "kind": "talent",
+        "kind_reasoning": "intuition and taste language",
+    })
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "local_ai.providers.anthropic.generate", lambda *a, **k: fake_response
+    )
+    result = sorter_llm.sort_with_llm("Wishcraft", "philosophical partner")
+    assert result.primary_strand == "self"
+    assert result.kind == "talent"
+    # multi-frame: self + word + people all above threshold
+    assert set(result.strand_weights) == {"self", "word", "people"}
+    assert len(result.claims) == 7
+
+
+def test_llm_sorter_invalid_kind_defaults_undecided(monkeypatch):
+    import json
+    from local_ai.agent_intake import sorter_llm
+    fake_response = json.dumps({
+        "claims": [{"strand": "word", "score": 0.8, "reasoning": "writing"}],
+        "kind": "superpower",
+        "kind_reasoning": "x",
+    })
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "local_ai.providers.anthropic.generate", lambda *a, **k: fake_response
+    )
+    result = sorter_llm.sort_with_llm("X", "writing")
+    assert result.kind == "undecided"
+    assert len(result.claims) == 7  # missing strands filled as passes

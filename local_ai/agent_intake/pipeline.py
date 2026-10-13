@@ -19,7 +19,7 @@ from local_ai.strands import strand_keys
 
 from .schema import KINDS, ConnectedAgent, SortResult
 from .share_link import SharedConversation, detect_source, fetch_shared_conversation
-from .sorter import sort
+from .sorter_llm import sort_primary
 from .store import AgentStore
 
 DEFAULT_CORRECTIONS_LOG = Path.home() / ".zenaf" / "agent_intake_corrections.jsonl"
@@ -55,7 +55,7 @@ def connect_agent(
     redacted_instructions = redact_text(instructions) if instructions else None
     redacted_examples = [redact_text(e) for e in (examples or []) if e]
 
-    result = sort(
+    result, _engine = sort_primary(
         redacted_name,
         redacted_description,
         redacted_instructions,

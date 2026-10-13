@@ -193,16 +193,19 @@ connect(name, platform, description, instructions?, examples?)
 - v2 (not this PR): frontier-LLM claiming, probing questions, Tree branches,
   project semantic linking, account scrubbing (below).
 
-## Engine choice: frontier LLMs for the scrub, not slow local models
+## Engine choice: frontier LLMs are the primary modality
 
 The claiming/scrubbing step is a *batch* job — it runs at intake time, not in
-a real-time loop. For batch understanding work, a frontier LLM (GPT, Claude)
-returns better judgments in seconds than a slow local pipeline returns in
-minutes. v1's rule-based sorter stays as the instant offline default (and the
-testable contract), but v2's claiming engine should call out to a frontier
-model with the seven strand personas as the prompt framing — each strand
-reads the material and argues its claim. Local models remain an option for
-the privacy-maximal path, but they are not the default for this job.
+a real-time loop. For batch understanding work, a frontier LLM returns better
+judgments in seconds than a slow local pipeline returns in minutes. So the
+Anthropic-powered sorter (`sorter_llm.py`, built on the existing
+`local_ai/providers/anthropic.py` integration) is the **primary** engine: it
+prompts Claude with the seven strand personas, each strand reads the material
+and argues its claim, and the JSON response becomes the SortResult.
+
+The rule-based sorter (`sorter.py`) remains as the instant offline fallback —
+no key, no network, or LLM failure — and as the deterministic testable
+contract. `sort_primary()` tries the LLM first, falls back silently.
 
 ## Account scrubbing: the seven as harvesters
 

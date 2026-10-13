@@ -33,8 +33,10 @@ type TreeDatum = {
   id: string
   strand: StrandKey | null
   name: string
-  /** Training percent 0–100, or null when not measurable. Honest seed: 0. */
-  pct: number | null
+  /** Training depth, unbounded ≥ 0. Infinite endeavor — there is no 100%. Honest seed: 0. */
+  depth: number | null
+  /** ISO timestamp of the last training investment, or null when never tended. */
+  lastTended: string | null
   narrative: string
   kids?: TreeDatum[]
 }
@@ -56,17 +58,58 @@ const NARRATIVES: Record<StrandKey, string> = {
 /** Roots: the 7 agents, ordered to follow the braid. Honest seed — 0%, no children. */
 const DOWN: TreeDatum[] = BRAID_ORDER.map((key) => {
   const s = STRANDS.find((x) => x.key === key)!
-  return { id: `agent-${key}`, strand: key, name: s.agentName, pct: 0, narrative: NARRATIVES[key], kids: [] }
+  return { id: `agent-${key}`, strand: key, name: s.agentName, depth: 0, lastTended: null, narrative: NARRATIVES[key], kids: [] }
 })
 
-/** Markets above the trunk. Honest seed — none yet; they open once there is training worth renting. */
-const UP: TreeDatum[] = []
+/** Development above the trunk: each strand grown into a human capacity.
+Honest seed — depth mirrors the root's training; they grow as you invest below. */
+const DEVELOPMENTS: Record<StrandKey, { name: string; narrative: string }> = {
+  word: {
+    name: 'Expression',
+    narrative:
+      'The Storyteller grown up: saying what is true, well — in work that stands on its own. Still a seed; it grows as you feed the roots below.',
+  },
+  number: {
+    name: 'Clarity',
+    narrative:
+      'The Patternist grown up: seeing through complexity to the few things that matter. Sharpens with every tradeoff you log.',
+  },
+  image: {
+    name: 'Vision',
+    narrative:
+      'The Seer grown up: perceiving what is coming, not just what is there. Opens as your eye trains.',
+  },
+  sound: {
+    name: 'Resonance',
+    narrative:
+      'The Songwriter grown up: timing, cadence, moving people. Grows every time you make something that lands.',
+  },
+  body: {
+    name: 'Craft',
+    narrative: 'The Maker grown up: embodied skill, the hands that know. Built rep by rep.',
+  },
+  people: {
+    name: 'Trust',
+    narrative:
+      'The Mediator grown up: the relationships you have actually built — the rooms that trust you. Grows with every hard conversation held well.',
+  },
+  self: {
+    name: 'Wisdom',
+    narrative:
+      'The Guide grown up: integrated self-knowledge, the compass you can hand to someone else. Deepens with every owned decision.',
+  },
+}
+const UP: TreeDatum[] = BRAID_ORDER.map((key) => {
+  const d = DEVELOPMENTS[key]
+  return { id: `dev-${key}`, strand: key, name: d.name, depth: 0, lastTended: null, narrative: d.narrative, kids: [] }
+})
 
 const YOU: TreeDatum = {
   id: 'you',
   strand: null,
   name: 'YOU',
-  pct: null,
+  depth: null,
+  lastTended: null,
   narrative: 'Every decision you make trains the roots. Every rental grows the branches.',
   kids: [],
 }
@@ -195,6 +238,27 @@ function layout(exp: Record<string, boolean>): Map<string, Placed> {
   return P
 }
 
+/** Attention is the water: what you tend grows, what you ignore recedes.
+Effective depth decays exponentially toward 0 with a ~90-day half-life, so a
+neglected node visibly shrinks. Re-tending regrows from the decayed value —
+like muscle memory, it comes back faster than it first grew. */
+const ATTENTION_HALF_LIFE_DAYS = 90
+function effectiveDepth(depth: number | null, lastTended: string | null): number {
+  const d = Math.max(0, depth ?? 0)
+  if (d <= 0 || !lastTended) return 0
+  const days = (Date.now() - new Date(lastTended).getTime()) / 86400000
+  if (days <= 0) return d
+  return d * Math.pow(0.5, days / ATTENTION_HALF_LIFE_DAYS)
+}
+
+/** Node radius: investment made visible. Growth is asymptotic — the node
+approaches its full size but never arrives, because the endeavor is infinite.
+Neglect shrinks it. YOU stays fixed. */
+function nodeR(p: Placed): number {
+  if (p.side === 'c') return 34
+  return 12 + 10 * (1 - Math.exp(-effectiveDepth(p.datum.depth, p.datum.lastTended)))
+}
+
 function labelWidth(p: Placed): number {
   const fs = p.depth >= 3 ? 6.5 : 7.5
   return p.datum.name.length * fs * 0.56 + 14
@@ -207,7 +271,7 @@ function relax(P: Map<string, Placed>): Map<string, Placed> {
   const need = new Map<string, number>()
   P.forEach((p, id) => {
     home.set(id, { x: p.x, y: p.y })
-    need.set(id, id === 'you' ? 70 : 32 + labelWidth(p) * 0.58)
+    need.set(id, id === 'you' ? 70 : nodeR(p) + 20 + labelWidth(p) * 0.58)
   })
   for (let it = 0; it < 140; it++) {
     for (let a = 0; a < ids.length; a++) {
@@ -429,7 +493,7 @@ export function LivingTreeView({
     let maxX = -Infinity
     let maxY = -Infinity
     target.forEach((p) => {
-      const r = p.side === 'c' ? 44 : 22
+      const r = p.side === 'c' ? 44 : nodeR(p) + 10
       minX = Math.min(minX, p.x - r - 34)
       maxX = Math.max(maxX, p.x + r + 34)
       minY = Math.min(minY, p.y - r - 18)
@@ -468,7 +532,7 @@ export function LivingTreeView({
                   <div key={s.key} className="lstat">
                     <span className="ldot" style={{ background: s.color }} />
                     <span className="lname">{s.agentName}</span>
-                    <span className="lpct">0%</span>
+                    <span className="lpct">seed</span>
                     <div className="lbar">
                       <div className="lfill" style={{ width: '0%', background: s.color }} />
                     </div>
@@ -506,7 +570,12 @@ export function LivingTreeView({
     if (!d) return <div className="lhint">Tap any node to read its story.</div>
     const live = nodeById.get(sel!)
     const col = live ? strandCol(live) : '#c9a86a'
-    const tag = d.id === 'you' ? 'THE SOURCE' : d.pct == null ? 'NOT YET TRAINED' : `${d.pct}% TRAINED`
+    const isDev = d.id.startsWith('dev-')
+    const raw = Math.max(0, d.depth ?? 0)
+    const eff = effectiveDepth(d.depth, d.lastTended)
+    const fallow = raw > 0.3 && eff < raw * 0.4
+    const tag =
+      d.id === 'you' ? 'THE SOURCE' : raw <= 0 ? 'SEED' : fallow ? 'FALLOW' : isDev ? 'BLOOMING' : 'DEEPENING'
     return (
       <div>
         <h3>{d.name}</h3>
@@ -514,7 +583,10 @@ export function LivingTreeView({
           {tag}
         </div>
         <p>“{d.narrative}”</p>
-        {d.id !== 'you' && (
+        {fallow && (
+          <p className="lsub">You used to tend this — it is waiting, not gone. Pick it back up and it returns faster than it first grew.</p>
+        )}
+        {d.id !== 'you' && !isDev && (
           <button
             type="button"
             className="lcta"
@@ -525,6 +597,9 @@ export function LivingTreeView({
           >
             Upload source materials to begin training ›
           </button>
+        )}
+        {isDev && (
+          <p className="lsub">Grows as you invest in its root below.</p>
         )}
       </div>
     )
@@ -564,6 +639,7 @@ export function LivingTreeView({
 .lback{background:none;border:none;color:#c9a86a;font-size:12px;font-weight:700;padding:2px 0 8px;min-height:44px;cursor:pointer;font-family:inherit}
 .lcta{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:rgba(201,168,106,.12);border:1px solid rgba(201,168,106,.5);border-radius:10px;color:#f5f0e8;font-size:12.5px;font-weight:700;padding:10px 14px;min-height:44px;cursor:pointer;font-family:inherit}
 .lcta:active{background:rgba(201,168,106,.25)}
+.lsub{margin-top:10px;font-size:12px;color:rgba(245,240,232,.55);font-style:italic}
 .lstats{margin-top:2px}
 .lstat{display:flex;align-items:center;gap:8px;margin:7px 0;font-style:normal}
 .lstat .ldot{width:9px;height:9px;border-radius:50%;flex:none}
@@ -638,7 +714,7 @@ export function LivingTreeView({
             const selected = sel === p.datum.id
             const isYou = p.side === 'c'
             const collapsed = p.kids.length > 0 && !exp[p.datum.id]
-            const faceR = isYou ? 34 : 12
+            const faceR = nodeR(p)
             const initialsText = isYou ? initials ?? 'YOU' : p.datum.name.split(' ')[0].slice(0, 2).toUpperCase()
             return (
               <g

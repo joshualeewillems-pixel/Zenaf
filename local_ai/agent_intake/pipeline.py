@@ -77,6 +77,51 @@ def connect_agent(
     return agent
 
 
+def connect_via_extracted_text(
+    url: str,
+    transcript: str,
+    title: str | None = None,
+    name: str | None = None,
+    store: AgentStore | None = None,
+) -> ConnectedAgent:
+    """Connect an agent from bookmarklet-extracted share-page text.
+
+    The bookmarklet runs inside the rendered page (user's own browser),
+    extracts the conversation, and POSTs it here. Same pipeline as
+    connect_via_share_link, but the JS-rendering step happened client-side.
+    """
+    url = (url or "").strip()
+    transcript = (transcript or "").strip()
+    if not transcript:
+        raise AgentIntakeError("transcript text is required")
+    src = detect_source(url)
+    source = src.key if src else "share"
+    description = (
+        f"Shared {source} conversation"
+        + (f": {title}" if title else "")
+        + f" ({len(transcript)} chars extracted via bookmarklet)."
+    )
+    # Split transcript into per-message examples (best-effort on speaker labels).
+    examples = _split_transcript(transcript)
+    return connect_agent(
+        name=name or title or f"{source} shared chat",
+        platform=f"{source}_share",
+        description=description,
+        examples=examples,
+        store=store,
+    )
+
+
+def _split_transcript(transcript: str) -> list[str]:
+    """Best-effort split of bookmarklet text into per-message examples."""
+    import re
+
+    parts = re.split(r"\n(?=(?:USER|ASSISTANT|HUMAN|AI)\s*:)", transcript, flags=re.I)
+    chunks = [p.strip() for p in parts if p.strip()]
+    # Cap: keep it to ~20 messages of reasonable length.
+    return [c[:2000] for c in chunks[:20]] if len(chunks) > 1 else [transcript[:8000]]
+
+
 def connect_via_share_link(
     url: str,
     name: str | None = None,

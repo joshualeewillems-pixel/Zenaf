@@ -590,3 +590,107 @@ def test_resume_from_render(tmp_path, monkeypatch):
     assert agent.status == "pending_review"
     assert agent.source_platform == "chatgpt_share"
     assert len(agent.examples) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Multi-user hardening: per-user stores, render jobs, and consent scopes
+# ---------------------------------------------------------------------------
+
+def _agent(name: str) -> ConnectedAgent:
+    return ConnectedAgent(
+        id=f"a-{name}",
+        name=name,
+        source_platform="manual",
+        description="test agent",
+        instructions=None,
+        examples=[],
+        sort=None,
+        status="pending_review",
+        created_at="2026-10-13T00:00:00",
+    )
+
+
+def test_store_isolates_users(tmp_path):
+    db = str(tmp_path / "agents.db")
+    sa = AgentStore(db_path=db, user_id="user-a")
+    sb = AgentStore(db_path=db, user_id="user-b")
+    sa.save(_agent("alice-agent"))
+    sb.save(_agent("bob-agent"))
+
+    assert [a.name for a in sa.list_all()] == ["alice-agent"]
+    assert [a.name for a in sb.list_all()] == ["bob-agent"]
+    assert [a.name for a in sa.list_pending()] == ["alice-agent"]
+    # cross-user get/update is denied
+    assert sa.get("a-bob-agent") is None
+    assert sb.update_status("a-alice-agent", "active") is False
+    assert sa.update_status("a-alice-agent", "active") is True
+
+
+def test_store_unscoped_sees_all(tmp_path):
+    """Local single-user mode (no user_id) keeps the old behavior."""
+    db = str(tmp_path / "agents.db")
+    AgentStore(db_path=db, user_id="user-a").save(_agent("x"))
+    assert len(AgentStore(db_path=db).list_all()) == 1
+
+
+def test_pipeline_tags_agent_owner(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    store = AgentStore(db_path=str(tmp_path / "t.db"), user_id="user-a")
+    agent = connect_agent(
+        name="Writer", platform="manual", description="writes things", store=store
+    )
+    assert agent.user_id == "user-a"
+    assert store.get(agent.id) is not None
+    assert AgentStore(db_path=str(tmp_path / "t.db"), user_id="user-b").get(agent.id) is None
+
+
+def test_render_jobs_isolated_by_user(tmp_path):
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+
+    rs = RenderJobStore(db_path=str(tmp_path / "rj.db"))
+    ja = rs.create("https://chatgpt.com/share/a", user_id="user-a")
+    jb = rs.create("https://chatgpt.com/share/b", user_id="user-b")
+
+    # each user only sees their own jobs
+    got_a = rs.next_pending("w1", user_id="user-a")
+    assert got_a is not None and got_a.id == ja.id
+    got_b = rs.next_pending("w1", user_id="user-b")
+    assert got_b is not None and got_b.id == jb.id
+
+    # completing another user's job is denied
+    assert rs.complete(jb.id, "USER: x", user_id="user-a") is None
+    done = rs.complete(ja.id, "USER: hello", user_id="user-a")
+    assert done is not None and done.status == "completed"
+
+    # status polling is owner-only
+    assert rs.get(jb.id, user_id="user-a") is None
+    assert rs.get(jb.id, user_id="user-b") is not None
+
+
+def test_scopes_are_per_user(tmp_path, monkeypatch):
+    from local_ai.identity import service as svc
+    from local_ai.identity.scopes import check_scope
+    from local_ai.identity.store import IdentityStore
+
+    monkeypatch.setenv("ZENAF_DATA_DIR", str(tmp_path))
+    store = IdentityStore()
+    assert check_scope("train:self", store=store, user_id="u1") is False
+    svc.grant_scope("train:self", store=store, user_id="u1")
+    assert check_scope("train:self", store=store, user_id="u1") is True
+    assert check_scope("train:self", store=store, user_id="u2") is False
+    # revoking for u1 doesn't touch a global grant
+    svc.grant_scope("train:self", store=store)  # global
+    svc.revoke_scope("train:self", store=store, user_id="u1")
+    assert check_scope("train:self", store=store, user_id="u2") is True
+
+
+def test_intake_chat_routes_paste_to_pipeline(tmp_path, monkeypatch):
+    from local_ai.agent_intake import intake_chat as ichat
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ZENAF_DATA_DIR", str(tmp_path))
+    long_text = "USER: help me plan my novel\n\nASSISTANT: sure, let's outline it\n\n" * 30
+    out = ichat.handle_message(long_text, user_id="user-a")
+    assert out["agent"] is not None
+    assert out["agent"]["user_id"] == "user-a"
+    assert "review" in out["reply"].lower()

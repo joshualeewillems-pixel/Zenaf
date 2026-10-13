@@ -50,11 +50,14 @@ def validate_scope(scope: str) -> str:
     )
 
 
-def check_scope(scope: str, *, store: IdentityStore | None = None) -> bool:
+def check_scope(
+    scope: str, *, store: IdentityStore | None = None, user_id: str | None = None
+) -> bool:
     """True iff `scope` is currently granted. Default-deny.
 
     A rent:zone:<name> check also passes on an active rent:zone:* grant.
     Unknown scope strings simply return False — deny, don't crash.
+    Per-user when user_id is given (that user's grants + global grants).
     """
     s = (scope or "").strip()
     if not s:
@@ -62,7 +65,7 @@ def check_scope(scope: str, *, store: IdentityStore | None = None) -> bool:
     from .store import IdentityStore as _Store
 
     store = store or _Store()
-    active = store.active_scopes()
+    active = store.active_scopes(user_id=user_id)
     if s in active:
         return True
     if s.startswith("rent:zone:") and "rent:zone:*" in active:
@@ -70,7 +73,9 @@ def check_scope(scope: str, *, store: IdentityStore | None = None) -> bool:
     return False
 
 
-def require_scope(scope: str, *, store: IdentityStore | None = None) -> None:
+def require_scope(
+    scope: str, *, store: IdentityStore | None = None, user_id: str | None = None
+) -> None:
     """Raise ScopeDenied unless `scope` is currently granted."""
-    if not check_scope(scope, store=store):
+    if not check_scope(scope, store=store, user_id=user_id):
         raise ScopeDenied(scope)

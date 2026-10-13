@@ -36,6 +36,7 @@ class RenderJob:
     title: str | None = None
     error: str | None = None
     agent_id: str | None = None  # intake agent waiting on this job
+    user_id: str = ""  # owner; jobs are per-user so renderers can't cross-claim
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +50,7 @@ class RenderJob:
             "title": self.title,
             "error": self.error,
             "agent_id": self.agent_id,
+            "user_id": self.user_id,
         }
 
 
@@ -81,29 +83,35 @@ class RenderJobStore:
                     transcript TEXT,
                     title TEXT,
                     error TEXT,
-                    agent_id TEXT
+                    agent_id TEXT,
+                    user_id TEXT NOT NULL DEFAULT ''
                 )"""
             )
+            cols = [r["name"] for r in c.execute("PRAGMA table_info(render_jobs)").fetchall()]
+            if cols and "user_id" not in cols:
+                c.execute("ALTER TABLE render_jobs ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
 
-    def create(self, url: str, agent_id: str | None = None) -> RenderJob:
+    def create(self, url: str, agent_id: str | None = None, user_id: str | None = None) -> RenderJob:
         job = RenderJob(
             id=uuid.uuid4().hex[:12],
             url=url.strip(),
             status="pending",
             created_at=time.time(),
             agent_id=agent_id,
+            user_id=user_id or "",
         )
         with self._connect() as c:
             c.execute(
-                "INSERT INTO render_jobs (id, url, status, created_at, agent_id)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (job.id, job.url, job.status, job.created_at, job.agent_id),
+                "INSERT INTO render_jobs (id, url, status, created_at, agent_id, user_id)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (job.id, job.url, job.status, job.created_at, job.agent_id, job.user_id),
             )
         return job
 
-    def get(self, job_id: str) -> RenderJob | None:
+    def get(self, job_id: str, user_id: str | None = None) -> RenderJob | None:
         with self._connect() as c:
-            row = c.execute("SELECT * FROM render_jobs WHERE id = ?", (job_id,)).fetchone()
+            q = "SELECT * FROM render_jobs WHERE id = ?" + (" AND user_id = ?" if user_id else "")
+            row = c.execute(q, ((job_id, user_id) if user_id else (job_id,))).fetchone()
         return self._row_to_job(row) if row else None
 
     def _row_to_job(self, row: sqlite3.Row) -> RenderJob:
@@ -118,6 +126,7 @@ class RenderJobStore:
             title=row["title"],
             error=row["error"],
             agent_id=row["agent_id"],
+            user_id=row["user_id"] if "user_id" in row.keys() else "",
         )
 
     def _expire_stale(self, c: sqlite3.Connection) -> None:
@@ -133,13 +142,15 @@ class RenderJobStore:
             (cutoff,),
         )
 
-    def next_pending(self, worker_id: str) -> RenderJob | None:
+    def next_pending(self, worker_id: str, user_id: str | None = None) -> RenderJob | None:
         """Claim the oldest pending (or expired-retryable) job for a worker."""
         with self._connect() as c:
             self._expire_stale(c)
             row = c.execute(
                 "SELECT * FROM render_jobs WHERE status IN ('pending', 'expired')"
-                " ORDER BY created_at ASC LIMIT 1"
+                + (" AND user_id = ?" if user_id else "")
+                + " ORDER BY created_at ASC LIMIT 1",
+                ((user_id,) if user_id else ()),
             ).fetchone()
             if not row:
                 return None
@@ -155,32 +166,37 @@ class RenderJobStore:
             job.claimed_by = worker_id
             return job
 
-    def complete(self, job_id: str, transcript: str, title: str | None = None) -> RenderJob | None:
+    def complete(self, job_id: str, transcript: str, title: str | None = None, user_id: str | None = None) -> RenderJob | None:
         transcript = (transcript or "").strip()
         if not transcript:
-            return self.fail(job_id, "empty transcript")
+            return self.fail(job_id, "empty transcript", user_id=user_id)
         with self._connect() as c:
-            c.execute(
+            cur = c.execute(
                 "UPDATE render_jobs SET status = 'completed', transcript = ?, title = ?"
-                " WHERE id = ?",
-                (transcript, (title or "").strip() or None, job_id),
+                " WHERE id = ?" + (" AND user_id = ?" if user_id else ""),
+                (transcript, (title or "").strip() or None, job_id, *([user_id] if user_id else [])),
             )
+            if cur.rowcount == 0:
+                return None
             row = c.execute("SELECT * FROM render_jobs WHERE id = ?", (job_id,)).fetchone()
         return self._row_to_job(row) if row else None
 
-    def fail(self, job_id: str, error: str) -> RenderJob | None:
+    def fail(self, job_id: str, error: str, user_id: str | None = None) -> RenderJob | None:
         with self._connect() as c:
-            c.execute(
-                "UPDATE render_jobs SET status = 'failed', error = ? WHERE id = ?",
-                (error[:500], job_id),
+            cur = c.execute(
+                "UPDATE render_jobs SET status = 'failed', error = ? WHERE id = ?" + (" AND user_id = ?" if user_id else ""),
+                (error[:500], job_id, *([user_id] if user_id else [])),
             )
+            if cur.rowcount == 0:
+                return None
             row = c.execute("SELECT * FROM render_jobs WHERE id = ?", (job_id,)).fetchone()
         return self._row_to_job(row) if row else None
 
-    def pending_count(self) -> int:
+    def pending_count(self, user_id: str | None = None) -> int:
         with self._connect() as c:
             self._expire_stale(c)
             row = c.execute(
-                "SELECT COUNT(*) AS n FROM render_jobs WHERE status = 'pending'"
+                "SELECT COUNT(*) AS n FROM render_jobs WHERE status = 'pending'" + (" AND user_id = ?" if user_id else ""),
+                ((user_id,) if user_id else ()),
             ).fetchone()
         return row["n"] if row else 0

@@ -18,57 +18,11 @@
 <h1>Send to Zenaf</h1>
 <p>One tap on any ChatGPT or Claude conversation sends it to your Zenaf intake — sorted into strands, mined for projects. No copy/paste.</p>
 
-<h2>iPhone — iOS Shortcut (recommended)</h2>
-<div class="note">Bookmarklets don't run on iPhone Safari. The Shortcut uses Apple's supported path and works every time. One-time setup, then one tap per conversation.</div>
-<ol>
-<li>Open the <b>Shortcuts</b> app, tap <b>+</b> (top right).</li>
-<li>Tap <b>Add Action</b>, search <b>Run JavaScript on Web Page</b>, add it.</li>
-<li>Delete the sample code in that action, paste this instead:
-<pre>// &quot;Send to Zenaf&quot; — iOS Shortcut JavaScript (Run JavaScript on Web Page)
-// Paste this into the Shortcut&#x27;s JavaScript action. It extracts the
-// conversation and calls completion() with a dictionary; the next
-// Shortcut action POSTs it to Zenaf via Get Contents of URL.
+<h2>iPhone — chat with Muse (recommended)</h2>
+<p>Open Zenaf → <b>Connect</b> and paste the conversation (or drop a share link). Muse sorts it into your seven strands and pulls out your projects — no setup, no Shortcut.</p>
+<div class="note">Your intake is private to your account: it needs your sign-in and your <code>train:self</code> consent (Settings → Identity). Nothing trains until you review and approve it.</div>
 
-(function () {
-  var nodes = document.querySelectorAll(&#x27;[data-message-author-role]&#x27;);
-  var out = [];
-  for (var i = 0; i &lt; nodes.length; i++) {
-    var n = nodes[i];
-    var role = n.getAttribute(&#x27;data-message-author-role&#x27;);
-    var label = role === &#x27;user&#x27; ? &#x27;USER&#x27; : role === &#x27;assistant&#x27; ? &#x27;ASSISTANT&#x27; : String(role).toUpperCase();
-    var text = (n.innerText || &#x27;&#x27;).trim();
-    if (text) out.push(label + &#x27;: &#x27; + text);
-  }
-  var transcript;
-  if (out.length) {
-    transcript = out.join(&#x27;\n\n&#x27;);
-  } else {
-    var main = document.querySelector(&#x27;main&#x27;) || document.querySelector(&#x27;article&#x27;) || document.body;
-    transcript = ((main &amp;&amp; main.innerText) || &#x27;&#x27;).trim();
-  }
-  completion({
-    url: location.href,
-    title: document.title || &#x27;shared conversation&#x27;,
-    transcript: transcript.slice(0, 60000)
-  });
-})();</pre></li>
-<li>Tap <b>+</b> below it, search <b>Get Contents of URL</b>, add it.</li>
-<li>In that action: tap <b>URL</b>, enter <code>https://zenaf-staging.fly.dev/agents/connect/share-text</code>. Tap <b>Show More</b>, set <b>Method</b> to <b>POST</b>.</li>
-<li>Tap <b>Headers</b> &rarr; <b>Add new</b>: Key <code>Content-Type</code>, Value <code>application/json</code>.</li>
-<li>Tap <b>Request Body</b> &rarr; <b>JSON</b>, enter:
-<pre>{
-  "url": "Shortcut Result",
-  "title": "Shortcut Result",
-  "transcript": "Shortcut Result"
-}</pre>
-<div class="tap">Tap each <code>"Shortcut Result"</code> &rarr; choose <b>Select Variable</b> &rarr; <b>Shortcut Result</b> &rarr; then pick <b>url</b>, <b>title</b>, <b>transcript</b> respectively.</div></li>
-<li>Tap <b>+</b>, add <b>Show Result</b>. Set it to the <b>Contents of URL</b> variable.</li>
-<li>Tap the shortcut name at top, rename to <b>Send to Zenaf</b>.</li>
-<li>Tap <b>i</b> at the bottom &rarr; enable <b>Show in Share Sheet</b>.</li>
-</ol>
-<p><b>To use:</b> on any ChatGPT/Claude conversation in Safari, tap <b>Share</b> &rarr; <b>Send to Zenaf</b>. The agent appears in your Zenaf review queue.</p>
-
-<h2>Desktop — Browser Extension</h2>
+<h2>Desktop — Browser Extension</h2><h2>Desktop — Browser Extension</h2>
 <p>Fully automatic: install the <b>Zenaf Renderer</b> extension and it picks up render jobs on its own — no taps per conversation. Source at <code>local_ai/agent_intake/extension/</code> in the Zenaf repo: open <code>chrome://extensions</code>, enable Developer mode, <b>Load unpacked</b>, select the folder, then set your Zenaf URL in its Options page.</p>
 </body>
 </html>

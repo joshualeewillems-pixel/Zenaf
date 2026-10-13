@@ -25,6 +25,10 @@ from .store import AgentStore
 DEFAULT_CORRECTIONS_LOG = Path.home() / ".zenaf" / "agent_intake_corrections.jsonl"
 
 
+def _store_user_id(store) -> str | None:
+    return getattr(store, "user_id", None)
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -60,6 +64,7 @@ def connect_agent(
         redacted_description,
         redacted_instructions,
         redacted_examples,
+        user_id=_store_user_id(store),
     )
 
     agent = ConnectedAgent(
@@ -148,7 +153,7 @@ def connect_via_share_link(
     conv = fetch_shared_conversation(url)
     if conv.needs_browser:
         rs = render_store or RenderJobStore()
-        job = rs.create(url)
+        job = rs.create(url, user_id=_store_user_id(store))
         return None, job
     examples = conv.as_examples()
     description = (

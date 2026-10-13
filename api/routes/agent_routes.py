@@ -9,9 +9,10 @@ stored or returned.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
+from api.routes.auth_routes import get_current_user
 from local_ai.agent_intake.pipeline import AgentIntakeError
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -57,10 +58,28 @@ class ConfirmBody(BaseModel):
     corrections: dict = {}
 
 
-def _store():
+def _store(user_id: str | None):
     from local_ai.agent_intake.store import AgentStore
 
-    return AgentStore()
+    return AgentStore(user_id=user_id)
+
+
+def _uid(current_user: dict) -> str:
+    return current_user["id"]
+
+
+def _require_train_self(user_id: str) -> None:
+    """Intake needs the user's explicit train:self consent (default-deny)."""
+    from local_ai.identity import ScopeDenied
+    from local_ai.identity.scopes import require_scope
+
+    try:
+        require_scope("train:self", user_id=user_id)
+    except ScopeDenied:
+        raise HTTPException(
+            status_code=403,
+            detail="Intake needs your 'train:self' consent scope. Grant it in Settings → Identity.",
+        )
 
 
 def _pipeline():
@@ -70,11 +89,13 @@ def _pipeline():
 
 
 @router.post("/connect", status_code=201)
-def connect_agent(body: ConnectBody):
+def connect_agent(body: ConnectBody, current_user: dict = Depends(get_current_user)):
     """Connect an external agent: redact at capture, sort, queue for review.
 
     Returns the agent with its SortResult and status "pending_review".
     """
+    uid = _uid(current_user)
+    _require_train_self(uid)
     try:
         agent = _pipeline().connect_agent(
             name=body.name,
@@ -82,7 +103,7 @@ def connect_agent(body: ConnectBody):
             description=body.description,
             instructions=body.instructions,
             examples=body.examples,
-            store=_store(),
+            store=_store(uid),
         )
     except AgentIntakeError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -96,7 +117,7 @@ def _render_store():
 
 
 @router.post("/connect/share-link", status_code=201)
-def connect_via_share_link(body: ShareLinkBody):
+def connect_via_share_link(body: ShareLinkBody, current_user: dict = Depends(get_current_user)):
     """Connect from a ChatGPT/Claude shared conversation URL.
 
     If the page renders server-side, connects immediately. If it needs
@@ -105,10 +126,12 @@ def connect_via_share_link(body: ShareLinkBody):
     automatically when a renderer completes the job.
     """
     try:
+        uid = _uid(current_user)
+        _require_train_self(uid)
         agent, job = _pipeline().connect_via_share_link(
             url=body.url,
             name=body.name,
-            store=_store(),
+            store=_store(uid),
             render_store=_render_store(),
         )
     except AgentIntakeError as exc:
@@ -144,13 +167,14 @@ def render_job_next(worker_id: str = ""):
 
 
 @router.get("/render-jobs/{job_id}")
-def render_job_status(job_id: str):
-    """Check a render job's status (for UI polling)."""
-    job = _render_store().get(job_id)
+def render_job_status(job_id: str, current_user: dict = Depends(get_current_user)):
+    """Check a render job's status (for UI polling). Owner only."""
+    uid = _uid(current_user)
+    job = _render_store().get(job_id, user_id=uid)
     if job is None:
         raise HTTPException(status_code=404, detail="unknown render job")
     d = job.to_dict()
-    d["pending_count"] = _render_store().pending_count()
+    d["pending_count"] = _render_store().pending_count(user_id=uid)
     return d
 
 
@@ -177,12 +201,16 @@ def render_job_complete(job_id: str, body: RenderCompleteBody):
     from local_ai.agent_intake import project_miner
 
     rs = _render_store()
-    job = rs.complete(job_id, body.transcript, body.title)
+    existing = rs.get(job_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="unknown render job")
+    owner = existing.user_id or ""
+    job = rs.complete(job_id, body.transcript, body.title, user_id=owner or None)
     if job is None:
         raise HTTPException(status_code=404, detail="unknown render job")
     try:
         agent = _pipeline().resume_from_render(
-            job_id, name=(body.name or "").strip() or None, store=_store(), render_store=rs
+            job_id, name=(body.name or "").strip() or None, store=_store(owner or None), render_store=rs
         )
     except AgentIntakeError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -191,7 +219,7 @@ def render_job_complete(job_id: str, body: RenderCompleteBody):
     try:
         from dataclasses import asdict
 
-        result = project_miner.mine_projects(body.transcript)
+        result = project_miner.mine_projects(body.transcript, user_id=owner or None)
         mined = {
             "engine": result.engine,
             "initiatives": [asdict(i) for i in result.initiatives],
@@ -208,37 +236,42 @@ def render_job_complete(job_id: str, body: RenderCompleteBody):
 def render_job_fail(job_id: str, body: dict | None = None):
     """A renderer reports it could not extract the page."""
     error = str((body or {}).get("error", "renderer failed"))[:500]
-    job = _render_store().fail(job_id, error)
+    rs = _render_store()
+    existing = rs.get(job_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="unknown render job")
+    job = rs.fail(job_id, error, user_id=existing.user_id or None)
     if job is None:
         raise HTTPException(status_code=404, detail="unknown render job")
     return job.to_dict()
 
 
 @router.get("/pending")
-def list_pending_agents():
+def list_pending_agents(current_user: dict = Depends(get_current_user)):
     """Review queue: agents awaiting accept/correct."""
-    return [a.to_dict() for a in _store().list_pending()]
+    return [a.to_dict() for a in _store(_uid(current_user)).list_pending()]
 
 
 @router.get("")
-def list_agents():
+def list_agents(current_user: dict = Depends(get_current_user)):
     """All connected agents."""
-    return [a.to_dict() for a in _store().list_all()]
+    return [a.to_dict() for a in _store(_uid(current_user)).list_all()]
 
 
 @router.post("/{agent_id}/confirm")
-def confirm_agent(agent_id: str, body: ConfirmBody):
+def confirm_agent(agent_id: str, body: ConfirmBody, current_user: dict = Depends(get_current_user)):
     """Accept the sort, correct it, or archive the agent.
 
     Corrections ("no, this is a People talent") are logged as
     ideals-guidance training signals for the v2 sorter.
     """
     try:
+        uid = _uid(current_user)
         agent = _pipeline().confirm_agent(
             agent_id,
             accepted=body.accepted,
             corrections=body.corrections or None,
-            store=_store(),
+            store=_store(uid),
         )
     except AgentIntakeError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -263,7 +296,7 @@ class ShareTextBody(BaseModel):
 
 
 @router.post("/connect/share-text", status_code=201)
-def connect_share_text(body: ShareTextBody):
+def connect_share_text(body: ShareTextBody, current_user: dict = Depends(get_current_user)):
     """Connect an agent from bookmarklet-extracted share-page text.
 
     The Zenaf bookmarklet runs inside the rendered page in the user's own
@@ -274,12 +307,14 @@ def connect_share_text(body: ShareTextBody):
     from local_ai.agent_intake import project_miner
 
     try:
+        uid = _uid(current_user)
+        _require_train_self(uid)
         agent = _pipeline().connect_via_extracted_text(
             url=body.url,
             transcript=body.transcript,
             title=(body.title or "").strip() or None,
             name=(body.name or "").strip() or None,
-            store=_store(),
+            store=_store(uid),
         )
     except AgentIntakeError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -288,7 +323,7 @@ def connect_share_text(body: ShareTextBody):
     try:
         from dataclasses import asdict
 
-        result = project_miner.mine_projects(body.transcript)
+        result = project_miner.mine_projects(body.transcript, user_id=owner or None)
         mined = {
             "engine": result.engine,
             "initiatives": [asdict(i) for i in result.initiatives],
@@ -309,7 +344,7 @@ class IntakeChatBody(BaseModel):
 
 
 @router.post("/intake/chat", status_code=200)
-def intake_chat(body: IntakeChatBody):
+def intake_chat(body: IntakeChatBody, current_user: dict = Depends(get_current_user)):
     """Chat with Muse to connect a conversation.
 
     Paste conversation text (or drop a share link); Muse routes it through
@@ -318,7 +353,9 @@ def intake_chat(body: IntakeChatBody):
     """
     from local_ai.agent_intake import intake_chat as ichat
 
-    return ichat.handle_message(body.message, body.history)
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    return ichat.handle_message(body.message, body.history, user_id=uid)
 
 
 class MineBody(BaseModel):
@@ -336,7 +373,7 @@ class MineBody(BaseModel):
 
 
 @router.post("/mine-projects", status_code=200)
-def mine_projects(body: MineBody):
+def mine_projects(body: MineBody, current_user: dict = Depends(get_current_user)):
     """Read a transcript like a chief of staff: propose projects and tasks.
 
     Returns proposed projects (with nested tasks) and standalone tasks, each
@@ -348,7 +385,9 @@ def mine_projects(body: MineBody):
     from local_ai.agent_intake import project_miner
     from dataclasses import asdict
 
-    result = project_miner.mine_projects(body.transcript)
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    result = project_miner.mine_projects(body.transcript, user_id=uid)
     return {
         "engine": result.engine,
         "initiatives": [asdict(i) for i in result.initiatives],
@@ -370,7 +409,7 @@ class ConfirmMinedBody(BaseModel):
 
 
 @router.post("/mined-projects/confirm", status_code=201)
-def confirm_mined_projects(body: ConfirmMinedBody):
+def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(get_current_user)):
     """Create Vision Execution entities from confirmed mined proposals.
 
     Respects the VE hierarchy (initiatives → projects → tasks, plus ideas).
@@ -378,8 +417,7 @@ def confirm_mined_projects(body: ConfirmMinedBody):
     """
     from local_ai.agent_intake import project_miner
 
-    if not body.user_id.strip():
-        raise HTTPException(status_code=422, detail="user_id is required")
+    uid = _uid(current_user)  # authoritative: never trust the client-supplied user_id
 
     def _task(d: dict) -> project_miner.ProposedTask:
         return project_miner.ProposedTask(
@@ -425,7 +463,7 @@ def confirm_mined_projects(body: ConfirmMinedBody):
     )
     selected = set(body.selected_titles) if body.selected_titles is not None else None
     try:
-        return project_miner.create_confirmed(result, body.user_id.strip(), selected)
+        return project_miner.create_confirmed(result, uid, selected)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)[:300])
 

@@ -96,6 +96,7 @@ class ConnectedAgent:
     sort: SortResult | None
     status: AgentStatus
     created_at: str  # ISO-8601
+    user_id: str = ""  # owner; "" = pre-multi-user row, claimed on migration
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -108,6 +109,7 @@ class ConnectedAgent:
             "sort": self.sort.to_dict() if self.sort else None,
             "status": self.status,
             "created_at": self.created_at,
+            "user_id": self.user_id,
         }
 
     @classmethod

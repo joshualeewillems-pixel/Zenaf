@@ -15,13 +15,11 @@ SHARE_URL_RE = re.compile(r"https?://[^\s)>\"]+")
 CONVERSATION_MARKERS = ("USER:", "ASSISTANT:", "Human:", "Assistant:", "ChatGPT", "Muse:")
 
 
-def _api_key() -> str | None:
-    return (os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
-
-
-def _claude_say(system: str, user: str) -> str | None:
+def _claude_say(system: str, user: str, user_id: str | None = None) -> str | None:
     """Ask Claude for a reply; None when no key or the call fails."""
-    key = _api_key()
+    from .llm_keys import resolve_anthropic_key
+
+    key = resolve_anthropic_key(user_id, operation="intake_chat")
     if not key:
         return None
     try:
@@ -60,7 +58,9 @@ Rules:
 - Never invent what an intake found — only describe results you're given."""
 
 
-def handle_message(message: str, history: list[dict] | None = None) -> dict:
+def handle_message(
+    message: str, history: list[dict] | None = None, user_id: str | None = None
+) -> dict:
     """Route one chat message. Returns {"reply": str, "agent": dict | None}."""
     from local_ai.agent_intake import pipeline, project_miner
 
@@ -73,7 +73,7 @@ def handle_message(message: str, history: list[dict] | None = None) -> dict:
     urls = _share_urls(msg)
     if urls:
         try:
-            agent, job = pipeline.connect_via_share_link(urls[0], store=_store())
+            agent, job = pipeline.connect_via_share_link(urls[0], store=_store(user_id))
         except Exception as exc:
             return {"reply": f"I couldn't read that link ({exc}). Paste the conversation text instead and I'll connect it.", "agent": None}
         if agent is None:
@@ -85,19 +85,21 @@ def handle_message(message: str, history: list[dict] | None = None) -> dict:
                 ),
                 "agent": None,
             }
-        return _intake_done(agent, urls[0])
+        return _intake_done(agent, urls[0], user_id=user_id)
 
     # 2. Pasted conversation → run the full intake.
     if _looks_like_conversation(msg):
         try:
-            agent = pipeline.connect_via_extracted_text(url="pasted-conversation", transcript=msg, store=_store())
+            agent = pipeline.connect_via_extracted_text(
+                url="pasted-conversation", transcript=msg, store=_store(user_id)
+            )
         except Exception as exc:
             return {"reply": f"That didn't go through ({exc}). Try pasting again?", "agent": None}
-        mined = _mine(msg)
-        return _intake_done(agent, "pasted-conversation", mined=mined)
+        mined = _mine(msg, user_id)
+        return _intake_done(agent, "pasted-conversation", mined=mined, user_id=user_id)
 
     # 3. Anything else → Muse responds conversationally.
-    reply = _claude_say(CONCIERGE_SYSTEM, msg)
+    reply = _claude_say(CONCIERGE_SYSTEM, msg, user_id)
     if reply is None:
         reply = (
             "I can connect one of your AI conversations — paste the text here or drop a share link. "
@@ -107,19 +109,19 @@ def handle_message(message: str, history: list[dict] | None = None) -> dict:
     return {"reply": reply, "agent": None}
 
 
-def _store():
+def _store(user_id: str | None = None):
     from local_ai.agent_intake.store import AgentStore
 
-    return AgentStore()
+    return AgentStore(user_id=user_id)
 
 
-def _mine(transcript: str) -> dict:
+def _mine(transcript: str, user_id: str | None = None) -> dict:
     from local_ai.agent_intake import project_miner
 
     try:
         from dataclasses import asdict
 
-        result = project_miner.mine_projects(transcript)
+        result = project_miner.mine_projects(transcript, user_id=user_id)
         return {
             "initiatives": [asdict(i) for i in result.initiatives],
             "projects": [asdict(p) for p in result.projects],
@@ -130,7 +132,7 @@ def _mine(transcript: str) -> dict:
         return {"initiatives": [], "projects": [], "standalone_tasks": [], "ideas": []}
 
 
-def _intake_done(agent, source: str, mined: dict | None = None) -> dict:
+def _intake_done(agent, source: str, mined: dict | None = None, user_id: str | None = None) -> dict:
     """Turn a connected agent into Muse's conversational reply."""
     d = agent.to_dict() if hasattr(agent, "to_dict") else dict(agent)
     sort = d.get("sort") or {}
@@ -158,6 +160,7 @@ def _intake_done(agent, source: str, mined: dict | None = None) -> dict:
           "the top strands in plain words, and what you pulled out. Remind them "
           "it's in their review queue and nothing trains until they approve.",
         facts,
+        user_id,
     )
     if reply is None:
         reply = (

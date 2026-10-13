@@ -146,8 +146,10 @@ Respond with ONLY valid JSON in this exact shape:
 Be conservative: only propose what the transcript evidences. Prefer fewer, sharper items over many vague ones. Not every transcript has initiatives — only propose one when multiple projects clearly share a unifying direction."""
 
 
-def _api_key() -> str | None:
-    return (os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
+def _api_key(user_id: str | None = None) -> str | None:
+    from .llm_keys import resolve_anthropic_key
+
+    return resolve_anthropic_key(user_id, operation="mine")
 
 
 def _parse_mining_json(raw: str) -> MiningResult:
@@ -219,13 +221,13 @@ def _parse_mining_json(raw: str) -> MiningResult:
     )
 
 
-def mine_projects(transcript: str, model: str | None = None) -> MiningResult:
+def mine_projects(transcript: str, model: str | None = None, user_id: str | None = None) -> MiningResult:
     """Propose projects and tasks from a transcript. LLM-first, rule fallback."""
     transcript = (transcript or "").strip()
     if not transcript:
         return MiningResult(initiatives=[], projects=[], standalone_tasks=[], ideas=[], engine="rule_based")
 
-    api_key = _api_key()
+    api_key = _api_key(user_id)
     if api_key:
         try:
             from local_ai.providers import anthropic as provider

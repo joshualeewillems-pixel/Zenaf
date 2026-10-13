@@ -71,11 +71,12 @@ const YOU: TreeDatum = {
   kids: [],
 }
 
-const MENU: Array<{ id: string; title: string; desc: string; cta?: 'vision_map' }> = [
+const MENU: Array<{ id: string; title: string; desc: string; cta?: 'vision_map' | 'agent_intake' }> = [
   {
     id: 'upload',
     title: 'Upload source materials',
-    desc: 'Drop in your ChatGPT, Claude, or X exports. Redaction happens at capture — nothing trains until you review and approve it.',
+    desc: 'Connect a ChatGPT or Claude conversation — paste a share link or send one from your browser. Redaction happens at capture — nothing trains until you review and approve it.',
+    cta: 'agent_intake',
   },
   {
     id: 'projects',
@@ -333,7 +334,7 @@ export function LivingTreeView({
   initials,
 }: {
   /** Navigate the app shell (e.g. onNavigate('vision_map') for Current projects). */
-  onNavigate: (view: 'vision_map') => void
+  onNavigate: (view: 'vision_map' | 'agent_intake') => void
   /** Initials rendered on the central profile node; defaults to "YOU". */
   initials?: string
 }) {
@@ -480,6 +481,11 @@ export function LivingTreeView({
             {m.cta === 'vision_map' && (
               <button type="button" className="lcta" onClick={() => onNavigate('vision_map')}>
                 Open the Vision Map ›
+              </button>
+            )}
+            {m.cta === 'agent_intake' && (
+              <button type="button" className="lcta" onClick={() => onNavigate('agent_intake')}>
+                Connect a conversation ›
               </button>
             )}
           </div>

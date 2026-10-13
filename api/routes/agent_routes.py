@@ -89,23 +89,129 @@ def connect_agent(body: ConnectBody):
     return agent.to_dict()
 
 
+def _render_store():
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+
+    return RenderJobStore()
+
+
 @router.post("/connect/share-link", status_code=201)
 def connect_via_share_link(body: ShareLinkBody):
     """Connect from a ChatGPT/Claude shared conversation URL.
 
-    Accepts the link, fetches and parses the transcript, then runs the
-    standard connect pipeline. 422 if the URL is unsupported or the page
-    needs JavaScript rendering (caller should paste the text instead).
+    If the page renders server-side, connects immediately. If it needs
+    JavaScript, queues a render job for a registered browser and returns
+    {"status": "pending_render", "job_id"} — the pipeline resumes
+    automatically when a renderer completes the job.
     """
     try:
-        agent = _pipeline().connect_via_share_link(
+        agent, job = _pipeline().connect_via_share_link(
             url=body.url,
             name=body.name,
             store=_store(),
+            render_store=_render_store(),
         )
     except AgentIntakeError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    return agent.to_dict()
+    if job is not None:
+        return {
+            "status": "pending_render",
+            "job_id": job.id,
+            "message": (
+                "This page needs JavaScript rendering. A registered browser "
+                "(desktop extension or iOS Shortcut) will pick it up; the "
+                "agent will appear in your review queue when rendering completes."
+            ),
+        }
+    assert agent is not None
+    return {"status": "connected", **agent.to_dict()}
+
+
+# ---------------------------------------------------------------------------
+# Render jobs — for registered browsers (desktop extension, iOS Shortcut).
+# ---------------------------------------------------------------------------
+
+
+@router.get("/render-jobs/next")
+def render_job_next(worker_id: str = ""):
+    """A registered renderer polls here to claim its next job.
+
+    Returns {"job": {...} | None}. Claiming is atomic — one job per worker.
+    """
+    worker_id = (worker_id or "").strip() or "anonymous"
+    job = _render_store().next_pending(worker_id)
+    return {"job": job.to_dict() if job else None}
+
+
+@router.get("/render-jobs/{job_id}")
+def render_job_status(job_id: str):
+    """Check a render job's status (for UI polling)."""
+    job = _render_store().get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown render job")
+    d = job.to_dict()
+    d["pending_count"] = _render_store().pending_count()
+    return d
+
+
+class RenderCompleteBody(BaseModel):
+    transcript: str
+    title: str | None = None
+    name: str | None = None  # optional agent name override
+
+    @field_validator("transcript")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("transcript is required")
+        return v
+
+
+@router.post("/render-jobs/{job_id}/complete", status_code=201)
+def render_job_complete(job_id: str, body: RenderCompleteBody):
+    """A renderer submits the extracted transcript; the intake pipeline resumes.
+
+    Returns the connected agent (with sort + mined projects) in one call.
+    """
+    from local_ai.agent_intake import project_miner
+
+    rs = _render_store()
+    job = rs.complete(job_id, body.transcript, body.title)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown render job")
+    try:
+        agent = _pipeline().resume_from_render(
+            job_id, name=(body.name or "").strip() or None, store=_store(), render_store=rs
+        )
+    except AgentIntakeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    # Mine projects/tasks from the transcript (best-effort, same as share-text).
+    mined: dict = {"engine": "none", "initiatives": [], "projects": [], "standalone_tasks": [], "ideas": []}
+    try:
+        from dataclasses import asdict
+
+        result = project_miner.mine_projects(body.transcript)
+        mined = {
+            "engine": result.engine,
+            "initiatives": [asdict(i) for i in result.initiatives],
+            "projects": [asdict(p) for p in result.projects],
+            "standalone_tasks": [asdict(t) for t in result.standalone_tasks],
+            "ideas": [asdict(i) for i in result.ideas],
+        }
+    except Exception:
+        pass
+    return {"agent": agent.to_dict(), "mined": mined}
+
+
+@router.post("/render-jobs/{job_id}/fail", status_code=200)
+def render_job_fail(job_id: str, body: dict | None = None):
+    """A renderer reports it could not extract the page."""
+    error = str((body or {}).get("error", "renderer failed"))[:500]
+    job = _render_store().fail(job_id, error)
+    if job is None:
+        raise HTTPException(status_code=404, detail="unknown render job")
+    return job.to_dict()
 
 
 @router.get("/pending")

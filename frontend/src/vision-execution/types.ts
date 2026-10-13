@@ -48,29 +48,22 @@ export interface Initiative {
   brief: string
   status: string
   owner_id: string | null
-  priority_rank_manual: number | null
-  strategic_value_manual: number | null
-  energy_impact_manual: number | null
-  /** Model-suggested priority (0–5); compare to priority_rank_manual for override signal. */
+  /** Model-suggested priority (0–5). AI metadata, not a user decision. */
   evaluation_priority: number | null
   estimated_cost_ai: string
   estimated_timeframe_ai: string
   philosophical_alignment_ai: string
   next_step_ai: string
   seats?: InitiativeSeat[]
-  /** Legacy seat transport (reserved for old saved data). */
-  required_people: string[]
   required_assets: string[]
   dependencies: string
   risks: string
   recommendation: string
-  counts_toward_capacity: number
-  manual_override: string
   kill_criteria: string
   notes: string
   created_at: string
   updated_at: string
-  /** Derived (read-only): 0–100 score from manual rankings; null if any score missing */
+  /** Derived (read-only): 0–100 score from AI evaluation_priority; null when missing */
   weightedScore?: number | null
   /** Derived (read-only): true when score ≥ 60, brief set, status Draft/Evaluating */
   approvalReady?: boolean
@@ -114,12 +107,6 @@ export interface Project {
   start_date: string | null
   end_date: string | null
   estimated_weekly_hours: number | null
-  /** Legacy column; UI folds into `brief` on load and clears on save. */
-  deliverables: string
-  /** Legacy; UI no longer edits — cleared on save. */
-  complexity: string
-  /** Legacy; UI no longer edits — cleared on save. */
-  current_focus: string
   next_step_ai: string
   notes: string
   created_at: string

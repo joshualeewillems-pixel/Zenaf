@@ -454,7 +454,7 @@ function layoutProjectsUnderTree(
       }),
     )
 
-    if (projectLooksDone(proj) && (proj.deliverables || '').trim()) {
+    if (projectLooksDone(proj) && (proj.brief || '').trim()) {
       const fid = `fruit-proj-${proj.id}-deliver`
       const fruitRef: MapEntityRef = { veType: 'outcome', id: fid }
       nodes.push({
@@ -467,13 +467,13 @@ function layoutProjectsUnderTree(
           payload(
             {
               kind: 'fruit',
-              label: clip(proj.deliverables.trim(), 72),
+              label: clip(proj.brief.trim(), 72),
               subtitle: 'Outcome (fruit)',
               ref: fruitRef,
               parentRef: pref,
               summaryLines: [
-                'From completed/shipped project `deliverables` column.',
-                clip(proj.deliverables.trim(), 400),
+                'From completed/shipped project brief.',
+                clip(proj.brief.trim(), 400),
               ],
               growth: 'fruiting',
               condition: 'healthy',

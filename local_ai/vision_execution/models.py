@@ -215,25 +215,17 @@ class InitiativeCreate(BaseModel):
     brief: str = ""
     status: str = "Draft"
     owner_id: str | None = None
-    priority_rank_manual: int | None = None
-    strategic_value_manual: int | None = None
-    energy_impact_manual: int | None = None
-    # Model-suggested priority (0–5); preserved for human vs model delta learning.
+    # Model-suggested priority (0–5); AI metadata, not a user decision.
     evaluation_priority: int | None = None
     estimated_cost_ai: str = ""
     estimated_timeframe_ai: str = ""
     philosophical_alignment_ai: str = ""
     next_step_ai: str = ""
-    # Legacy seat transport (reserved for backward compatibility).
-    # Prefer `seats` going forward.
-    required_people: list[str] = Field(default_factory=list)
     seats: list[InitiativeSeat] = Field(default_factory=list)
     required_assets: list[str] = Field(default_factory=list)
     dependencies: str = ""
     risks: str = ""
     recommendation: str = ""
-    counts_toward_capacity: int = 1
-    manual_override: str = ""
     kill_criteria: str = ""
     notes: str = ""
 
@@ -244,23 +236,16 @@ class InitiativeUpdate(BaseModel):
     brief: str | None = None
     status: str | None = None
     owner_id: str | None = None
-    priority_rank_manual: int | None = None
-    strategic_value_manual: int | None = None
-    energy_impact_manual: int | None = None
     evaluation_priority: int | None = None
     estimated_cost_ai: str | None = None
     estimated_timeframe_ai: str | None = None
     philosophical_alignment_ai: str | None = None
     next_step_ai: str | None = None
-    # Legacy seat transport (reserved for backward compatibility).
-    required_people: list[str] | None = None
     seats: list[InitiativeSeat] | None = None
     required_assets: list[str] | None = None
     dependencies: str | None = None
     risks: str | None = None
     recommendation: str | None = None
-    counts_toward_capacity: int | None = None
-    manual_override: str | None = None
     kill_criteria: str | None = None
     notes: str | None = None
 
@@ -316,9 +301,6 @@ class ProjectCreate(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     estimated_weekly_hours: float | None = None
-    deliverables: str = ""
-    complexity: str = ""
-    current_focus: str = ""
     next_step_ai: str = ""
     notes: str = ""
 
@@ -334,9 +316,6 @@ class ProjectUpdate(BaseModel):
     start_date: str | None = None
     end_date: str | None = None
     estimated_weekly_hours: float | None = None
-    deliverables: str | None = None
-    complexity: str | None = None
-    current_focus: str | None = None
     next_step_ai: str | None = None
     notes: str | None = None
 
@@ -856,15 +835,17 @@ def row_to_idea(row: tuple) -> dict[str, Any]:
 
 
 def row_to_initiative(row: tuple) -> dict[str, Any]:
+    # Cut fields (manual scores, required_people, manual_override,
+    # counts_toward_capacity) are still selected positionally but omitted here.
     return {
         "id": row[0], "source_idea_id": row[1], "title": row[2], "brief": row[3], "status": row[4],
-        "owner_id": row[5], "priority_rank_manual": row[6], "strategic_value_manual": row[7],
-        "energy_impact_manual": row[8], "evaluation_priority": row[9],
+        "owner_id": row[5],
+        "evaluation_priority": row[9],
         "estimated_cost_ai": row[10], "estimated_timeframe_ai": row[11],
         "philosophical_alignment_ai": row[12], "next_step_ai": row[13],
-        "required_people": _json_loads_list(row[14]), "required_assets": _json_loads_list(row[15]),
+        "required_assets": _json_loads_list(row[15]),
         "dependencies": row[16], "risks": row[17], "recommendation": row[18],
-        "counts_toward_capacity": row[19], "manual_override": row[20], "kill_criteria": row[21],
+        "kill_criteria": row[21],
         "notes": row[22], "created_at": row[23], "updated_at": row[24],
     }
 
@@ -887,6 +868,8 @@ def row_to_execution_step(row: tuple) -> dict[str, Any]:
 
 
 def row_to_project(row: tuple) -> dict[str, Any]:
+    # Legacy columns deliverables/complexity/current_focus are still selected
+    # positionally (columns exist) but omitted from the output.
     # With required_assets: 19 columns; without (legacy): 18 columns
     n = len(row)
     required_assets = _json_loads_list(row[7]) if n > 7 else []
@@ -894,8 +877,7 @@ def row_to_project(row: tuple) -> dict[str, Any]:
         "id": row[0], "initiative_id": row[1], "title": row[2], "brief": row[3], "status": row[4],
         "owner_id": row[5], "supporting_owner_ids": _json_loads_list(row[6]), "required_assets": required_assets,
         "priority": row[8] if n > 8 else "", "start_date": row[9] if n > 9 else None, "end_date": row[10] if n > 10 else None,
-        "estimated_weekly_hours": row[11] if n > 11 else None, "deliverables": row[12] if n > 12 else "",
-        "complexity": row[13] if n > 13 else "", "current_focus": row[14] if n > 14 else "",
+        "estimated_weekly_hours": row[11] if n > 11 else None,
         "next_step_ai": row[15] if n > 15 else "", "notes": row[16] if n > 16 else "",
         "created_at": row[17] if n > 17 else "", "updated_at": row[18] if n > 18 else "",
     }

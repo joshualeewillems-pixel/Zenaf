@@ -182,7 +182,6 @@ function MapTriadInspectorContentImpl({
         </InspectorCollapsibleSection>
       )
     } else if (ini) {
-      const legacyPeople = (ini.required_people ?? []).filter(Boolean)
       body = (
         <>
           <InspectorCollapsibleSection title="Identity / scope" hint="Owner and status (same headings as Vision & Execution)." defaultOpen>
@@ -190,7 +189,6 @@ function MapTriadInspectorContentImpl({
             <FieldBlock label="Status">{ini.status || '—'}</FieldBlock>
           </InspectorCollapsibleSection>
           <InspectorCollapsibleSection title="Resourcing reality" hint="Seats, dependencies, and capacity signals — read-only here." defaultOpen={false}>
-            <FieldBlock label="Counts toward capacity">{String(ini.counts_toward_capacity ?? '—')}</FieldBlock>
             {(ini.seats?.length ?? 0) > 0 ? (
               <div className="space-y-1.5">
                 <div className="text-[10px] uppercase tracking-wide text-stone-500">Seats (role · person · effort)</div>
@@ -208,7 +206,6 @@ function MapTriadInspectorContentImpl({
             ) : (
               <FieldBlock label="Seats">—</FieldBlock>
             )}
-            {legacyPeople.length > 0 ? idList('Legacy required people (ids)', legacyPeople) : null}
             <FieldBlock label="Dependencies">{ini.dependencies}</FieldBlock>
           </InspectorCollapsibleSection>
         </>
@@ -296,7 +293,6 @@ function MapTriadInspectorContentImpl({
             <FieldBlock label="Risks">{ini.risks}</FieldBlock>
             <FieldBlock label="Kill criteria">{ini.kill_criteria}</FieldBlock>
             <FieldBlock label="Diagnostics / admin notes">{ini.notes}</FieldBlock>
-            <FieldBlock label="Manual override">{ini.manual_override}</FieldBlock>
           </InspectorCollapsibleSection>
         </>
       )
@@ -403,8 +399,8 @@ function MapTriadInspectorContentImpl({
     } else if (proj) {
       body = (
         <>
-          <InspectorCollapsibleSection title="Deliverables & outputs" hint="Shipped or declared deliverable text plus required assets." defaultOpen>
-            <FieldBlock label="Deliverables (legacy / shipped text)">{proj.deliverables}</FieldBlock>
+          <InspectorCollapsibleSection title="Outputs" hint="Project brief plus required assets." defaultOpen>
+            <FieldBlock label="Brief">{proj.brief}</FieldBlock>
             {idList('Required asset ids', proj.required_assets)}
           </InspectorCollapsibleSection>
         </>

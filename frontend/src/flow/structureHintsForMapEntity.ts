@@ -28,7 +28,7 @@ export function structureHintsForEntity(ref: MapEntityRef, bundle: VisionMapEnti
     return {
       hasBrief: (e.brief || '').trim().length >= 25,
       hasNextStep: (e.next_step_ai || '').trim().length > 5,
-      hasDeps: (e.deliverables || '').trim().length > 20 || (e.required_assets?.length ?? 0) > 0,
+      hasDeps: (e.required_assets?.length ?? 0) > 0,
     }
   }
   if (ref.veType === 'task') {

@@ -1314,9 +1314,9 @@ interface EvaluateProposal {
   recommendation?: string
   /** Model-suggested priority 0–5 (persisted as evaluation_priority on apply). */
   evaluation_priority?: number
-  /** Evaluation-derived; map to strategic_value_manual on apply. */
+  /** Evaluation-derived; informational only (manual scoring removed). */
   strategic_value?: number
-  /** Evaluation-derived; map to energy_impact_manual on apply. */
+  /** Evaluation-derived; informational only (manual scoring removed). */
   energy_impact?: number
   error?: string
   execution_blocked?: boolean
@@ -1377,35 +1377,6 @@ type SeatRole = {
   notes: string
 }
 
-function decodeRequiredPeopleToSeats(raw: unknown, persons: Person[]): SeatRole[] {
-  const arr = Array.isArray(raw) ? raw : []
-  const out: SeatRole[] = []
-  for (const item of arr) {
-    if (typeof item !== 'string') continue
-    const s = item.trim()
-    if (!s) continue
-    if (s.startsWith('{')) {
-      try {
-        const parsed = JSON.parse(s) as any
-        const role = typeof parsed.role === 'string' ? parsed.role : ''
-        const personId = typeof parsed.person_id === 'string' ? parsed.person_id : (parsed.personId ?? null)
-        const effort = typeof parsed.effort === 'string' ? parsed.effort : ''
-        const notes = typeof parsed.notes === 'string' ? parsed.notes : ''
-        if (role) out.push({ role, personId: personId ?? null, effort, notes })
-        continue
-      } catch {
-        // fall through to legacy decoding
-      }
-    }
-    const person = persons.find((p) => p.id === s)
-    if (person) {
-      out.push({ role: person.name || s, personId: s, effort: '', notes: '' })
-    } else {
-      out.push({ role: s, personId: null, effort: '', notes: '' })
-    }
-  }
-  return out
-}
 
 function parseIdeaRequiredRolesToSeats(requiredRoles: string): SeatRole[] {
   const raw = (requiredRoles || '').trim()
@@ -1592,7 +1563,7 @@ function InitiativeDetailPanel({
             effort: s?.estimated_effort ? String(s.estimated_effort) : '',
             notes: String(s?.notes ?? ''),
           }))
-          : decodeRequiredPeopleToSeats(data.required_people ?? [], persons)
+          : []
         const rowsExist = stepRows.length > 0
         setForm({
           title: data.title,
@@ -1600,23 +1571,17 @@ function InitiativeDetailPanel({
           status: data.status,
           source_idea_id: data.source_idea_id ?? '',
           owner_id: data.owner_id ?? '',
-          priority_rank_manual: data.priority_rank_manual ?? null,
           evaluation_priority: data.evaluation_priority ?? null,
-          strategic_value_manual: data.strategic_value_manual ?? null,
-          energy_impact_manual: data.energy_impact_manual ?? null,
           estimated_cost_ai: data.estimated_cost_ai ?? '',
           estimated_timeframe_ai: data.estimated_timeframe_ai ?? '',
           philosophical_alignment_ai: data.philosophical_alignment_ai ?? '',
           next_step_ai: rowsExist ? '' : (data.next_step_ai ?? ''),
           recommendation: data.recommendation ?? '',
-          required_people: [],
           required_assets: data.required_assets ?? [],
           dependencies: data.dependencies ?? '',
           risks: data.risks ?? '',
           kill_criteria: data.kill_criteria ?? '',
           notes: data.notes ?? '',
-          counts_toward_capacity: data.counts_toward_capacity ?? 1,
-          manual_override: data.manual_override ?? '',
         })
         setSeats(decodedSeats)
       })
@@ -1710,16 +1675,6 @@ function InitiativeDetailPanel({
   const handleApplyProposal = async () => {
     if (!evaluateProposal || evaluateProposal.error || !initiativeProposalHasRenderableFields(evaluateProposal)) return
     const newSug = evaluateProposal.evaluation_priority as number
-    const prevEval = initiative?.evaluation_priority ?? null
-    const currentPriority = (form.priority_rank_manual as number | null) ?? null
-    let nextPriority: number | null
-    if (prevEval == null) {
-      nextPriority = newSug
-    } else if (currentPriority != null && currentPriority !== prevEval) {
-      nextPriority = currentPriority
-    } else {
-      nextPriority = newSug
-    }
     const stepsClean = (evaluateProposal.next_steps ?? []).map((s) => String(s ?? '').trim()).filter(Boolean)
     const existingSteps = await apiGet<ExecutionStep[]>(`/initiatives/${initiativeId}/execution-steps`).catch(() => [] as ExecutionStep[])
     const hadRows = Array.isArray(existingSteps) && existingSteps.length > 0
@@ -1744,9 +1699,6 @@ function InitiativeDetailPanel({
       philosophical_alignment_ai: evaluateProposal.philosophical_alignment_ai ?? '',
       recommendation: evaluateProposal.recommendation ?? '',
       evaluation_priority: newSug,
-      strategic_value_manual: evaluateProposal.strategic_value as number,
-      energy_impact_manual: evaluateProposal.energy_impact as number,
-      priority_rank_manual: nextPriority,
     }
     try {
       await apiPost<{ id: string }>('/decisions', {
@@ -1773,9 +1725,6 @@ function InitiativeDetailPanel({
         ? {
             ...prev,
             evaluation_priority: newSug,
-            priority_rank_manual: nextPriority,
-            strategic_value_manual: applied.strategic_value_manual,
-            energy_impact_manual: applied.energy_impact_manual,
             next_step_ai: '',
           }
         : prev,
@@ -1805,16 +1754,12 @@ function InitiativeDetailPanel({
         status: form.status,
         source_idea_id: (form.source_idea_id as string) || null,
         owner_id: (form.owner_id as string) || null,
-        priority_rank_manual: form.priority_rank_manual === '' ? null : Number(form.priority_rank_manual),
         evaluation_priority: form.evaluation_priority === '' || form.evaluation_priority === undefined ? null : Number(form.evaluation_priority),
-        strategic_value_manual: form.strategic_value_manual === '' ? null : Number(form.strategic_value_manual),
-        energy_impact_manual: form.energy_impact_manual === '' ? null : Number(form.energy_impact_manual),
         estimated_cost_ai: form.estimated_cost_ai ?? '',
         estimated_timeframe_ai: form.estimated_timeframe_ai ?? '',
         philosophical_alignment_ai: form.philosophical_alignment_ai ?? '',
         next_step_ai: executionSteps.length > 0 ? '' : (form.next_step_ai ?? ''),
         recommendation: form.recommendation ?? '',
-        required_people: [],
         required_assets: Array.isArray(form.required_assets) ? form.required_assets : [],
         seats: seats.map((s) => ({
           role: s.role,
@@ -1826,8 +1771,6 @@ function InitiativeDetailPanel({
         risks: form.risks ?? '',
         kill_criteria: form.kill_criteria ?? '',
         notes: form.notes ?? '',
-        counts_toward_capacity: form.counts_toward_capacity === '' ? 1 : Number(form.counts_toward_capacity),
-        manual_override: form.manual_override ?? '',
       }
       const status = form.status as string
       if (status === 'Approved' || status === 'Killed') {
@@ -1905,8 +1848,6 @@ function InitiativeDetailPanel({
 
   const commitSeats = (nextSeats: SeatRole[]) => {
     setSeats(nextSeats)
-    // Seats are persisted server-side in `initiative.seats`; keep required_people reserved for legacy.
-    setForm((f) => ({ ...f, required_people: [] }))
   }
 
   const updateSeat = (idx: number, patch: Partial<SeatRole>) => {
@@ -2315,36 +2256,12 @@ function InitiativeDetailPanel({
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-2">
-            <Slider1To5
-              label="Priority (0–5)"
-              value={form.priority_rank_manual as number | null}
-              onChange={(v) => setForm((f) => ({ ...f, priority_rank_manual: v }))}
-              hint={
-                form.evaluation_priority != null &&
-                form.priority_rank_manual != null &&
-                form.priority_rank_manual !== form.evaluation_priority
-                  ? `Model suggested ${form.evaluation_priority} — effective priority differs (preference signal preserved).`
-                  : form.evaluation_priority != null
-                    ? `Last evaluation suggestion: ${form.evaluation_priority}`
-                    : undefined
-              }
-            />
-            <Slider1To5
-              label="Strategic value (evaluation, 0–5)"
-              readOnly
-              value={form.strategic_value_manual as number | null}
-              onChange={() => {}}
-              hint="Set when you apply an evaluation; not editable here."
-            />
-            <Slider1To5
-              label="Energy impact (evaluation, 0–5)"
-              readOnly
-              value={form.energy_impact_manual as number | null}
-              onChange={() => {}}
-              hint="Set when you apply an evaluation; not editable here."
-            />
-          </div>
+          {typeof form.evaluation_priority === 'number' && (
+            <div className="rounded-lg border border-slate-700 bg-slate-900/40 px-3 py-2 text-sm text-slate-300">
+              AI-suggested priority: <strong className="text-slate-100">{form.evaluation_priority} / 5</strong>
+              <span className="ml-2 text-xs text-slate-500">Run an evaluation to refresh it — no manual scoring.</span>
+            </div>
+          )}
 
           <div className="mt-2 rounded-lg border border-slate-700 bg-slate-900/40 p-2 space-y-1">
             <div className="flex items-center justify-between mb-1">
@@ -2885,19 +2802,6 @@ function InitiativeDetailPanel({
             onChange={(v) => setForm((f) => ({ ...f, notes: v }))}
             textarea
             rows={3}
-          />
-          <DetailField
-            label="Counts toward capacity"
-            value={String(form.counts_toward_capacity ?? 1)}
-            onChange={(v) => setForm((f) => ({ ...f, counts_toward_capacity: v === '' ? 1 : Number(v) }))}
-            type="number"
-          />
-          <DetailField
-            label="Manual override"
-            value={(form.manual_override as string) ?? ''}
-            onChange={(v) => setForm((f) => ({ ...f, manual_override: v }))}
-            textarea
-            rows={1}
           />
         </DetailSection>
         <DeferredPromptTodosSection
@@ -3833,13 +3737,6 @@ function IdeaDetailPanel({
 }
 
 /** On first load, fold legacy `deliverables` into the brief editor (single surface). */
-function mergeProjectDeliverablesIntoBrief(brief: string, deliverables: string): string {
-  const b = String(brief ?? '').trimEnd()
-  const d = String(deliverables ?? '').trim()
-  if (!d) return String(brief ?? '')
-  if (!b) return d
-  return `${b}\n\n${d}`
-}
 
 /** Map stored project priority (free text or digit) to 1–5 for the slider. */
 function parseProjectPriority1to5(priority: string | undefined | null): number {
@@ -3937,7 +3834,7 @@ function ProjectDetailPanel({
         setProjectTasks(Array.isArray(t) ? t : [])
         setForm({
           title: p.title,
-          brief: mergeProjectDeliverablesIntoBrief(p.brief ?? '', p.deliverables ?? ''),
+          brief: p.brief ?? '',
           status: p.status,
           initiative_id: p.initiative_id ?? '',
           owner_id: p.owner_id ?? '',

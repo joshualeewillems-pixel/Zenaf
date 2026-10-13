@@ -7,6 +7,15 @@ working on? What did they ask for? What did they say they'd do?
 Proposes Vision Execution projects (ongoing endeavors with a goal) and tasks
 (concrete next actions), each linked to the source transcript. The user reviews
 and confirms before anything is created — nothing is auto-filed.
+
+FIELD MAPPING (backend field -> GUI label, from VisionExecutionView.tsx):
+- Initiative: title->"Title", brief->"Brief", status->"Status"
+- Project: title->"Title", brief->"Brief (scope & outcomes)",
+  initiative_id->"Initiative", current_focus->(project detail)
+- Task: title->"Title", description->"Description", notes->"Notes", status->"Status"
+- Idea: title->"Title", summary->"Short note", description->"Expanded description",
+  desired_outcome->"Intent / what this idea is trying to become"
+Keep these aligned if the GUI labels change.
 """
 from __future__ import annotations
 
@@ -79,10 +88,17 @@ class ProposedIdea:
     source_quote: str = ""
 
     def to_idea_create(self) -> dict[str, Any]:
-        """Map to a Vision Execution IdeaCreate payload."""
+        """Map to a Vision Execution IdeaCreate payload.
+
+        Field mapping follows the GUI labels:
+        - "Title" -> title
+        - "Expanded description" -> description
+        - source quote -> notes
+        """
         return {
             "title": self.title,
-            "body": self.detail + (f"\n\nFrom transcript: {self.source_quote}" if self.source_quote else ""),
+            "description": self.detail,
+            "notes": f"Mined from transcript: {self.source_quote}" if self.source_quote else "",
             "status": "Captured",
         }
 

@@ -139,6 +139,62 @@ def confirm_agent(agent_id: str, body: ConfirmBody):
     return agent.to_dict()
 
 
+class ShareTextBody(BaseModel):
+    """Bookmarklet-extracted share-page text."""
+
+    url: str
+    transcript: str
+    title: str | None = None
+    name: str | None = None
+
+    @field_validator("url", "transcript")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("url and transcript are required")
+        return v
+
+
+@router.post("/connect/share-text", status_code=201)
+def connect_share_text(body: ShareTextBody):
+    """Connect an agent from bookmarklet-extracted share-page text.
+
+    The Zenaf bookmarklet runs inside the rendered page in the user's own
+    browser, extracts the conversation, and POSTs it here — no copy/paste.
+    Runs the standard intake pipeline (redact → sort → review queue) and
+    returns the pending agent plus mined project/task proposals.
+    """
+    from local_ai.agent_intake import project_miner
+
+    try:
+        agent = _pipeline().connect_via_extracted_text(
+            url=body.url,
+            transcript=body.transcript,
+            title=(body.title or "").strip() or None,
+            name=(body.name or "").strip() or None,
+            store=_store(),
+        )
+    except AgentIntakeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    # Mine projects/tasks from the same transcript (best-effort).
+    mined: dict = {"engine": "none", "initiatives": [], "projects": [], "standalone_tasks": [], "ideas": []}
+    try:
+        from dataclasses import asdict
+
+        result = project_miner.mine_projects(body.transcript)
+        mined = {
+            "engine": result.engine,
+            "initiatives": [asdict(i) for i in result.initiatives],
+            "projects": [asdict(p) for p in result.projects],
+            "standalone_tasks": [asdict(t) for t in result.standalone_tasks],
+            "ideas": [asdict(i) for i in result.ideas],
+        }
+    except Exception:
+        pass
+    return {"agent": agent.to_dict(), "mined": mined}
+
+
 class MineBody(BaseModel):
     """Mine a transcript for proposed projects and tasks."""
 

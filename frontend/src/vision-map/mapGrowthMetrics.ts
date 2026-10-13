@@ -81,11 +81,10 @@ function soilFromInitiative(e: Initiative): number {
 function soilFromProject(e: Project): number {
   const brief = textDepth(e.brief, [25, 90, 200])
   const next = textDepth(e.next_step_ai, [12, 50, 120])
-  const deliv = textDepth(e.deliverables, [15, 80, 200])
   const notes = textDepth(e.notes, [20, 100, 280])
   const dates = (e.start_date ? 0.05 : 0) + (e.end_date ? 0.05 : 0)
   const assets = clamp01((e.required_assets?.length ?? 0) * 0.04)
-  return clamp01(0.08 + brief * 0.24 + next * 0.14 + deliv * 0.16 + notes * 0.14 + dates + assets)
+  return clamp01(0.08 + brief * 0.32 + next * 0.16 + notes * 0.2 + dates + assets)
 }
 
 function soilFromTask(e: Task): number {
@@ -132,9 +131,9 @@ export function computeFruitProgress(p: MapNodePayload, bundle: VisionMapEntityB
     const tasks = bundle.tasks.filter((t) => t.project_id === proj.id)
     const doneN = tasks.filter((t) => statusDone(t.status)).length
     const ratio = tasks.length ? doneN / tasks.length : 0
-    const delivBoost = (proj.deliverables || '').trim().length > 30 ? 0.18 : (proj.deliverables || '').trim().length > 0 ? 0.08 : 0
+    const briefBoost = (proj.brief || '').trim().length > 30 ? 0.18 : (proj.brief || '').trim().length > 0 ? 0.08 : 0
     const shipped = statusDone(proj.status) ? 0.35 : 0
-    return clamp01(g * 0.35 + ratio * 0.42 + delivBoost + shipped)
+    return clamp01(g * 0.35 + ratio * 0.42 + briefBoost + shipped)
   }
 
   if (ref.veType === 'initiative') {

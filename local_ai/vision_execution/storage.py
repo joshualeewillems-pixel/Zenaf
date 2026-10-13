@@ -3762,11 +3762,7 @@ def list_initiatives(user_id: str | None = None) -> list[dict[str, Any]]:
         )
     initiatives = [M.row_to_initiative(tuple(r)) for r in cur.fetchall()]
     for init in initiatives:
-        legacy_required_people = init.get("required_people") or []
-        seats = _list_seats_for_initiative(conn, init["id"])
-        if not seats and legacy_required_people:
-            seats = _decode_legacy_required_people_as_seats(legacy_required_people)
-        init["seats"] = seats
+        init["seats"] = _list_seats_for_initiative(conn, init["id"])
     return initiatives
 
 
@@ -3792,21 +3788,7 @@ def get_initiative(initiative_id: str, user_id: str | None = None) -> dict[str, 
     if not row:
         return None
     out = M.row_to_initiative(tuple(row))
-    legacy_required_people = out.get("required_people") or []
-    seats = _list_seats_for_initiative(conn, out["id"])
-    if not seats and legacy_required_people:
-        seats = _decode_legacy_required_people_as_seats(legacy_required_people)
-        # Auto-migrate legacy seat storage into first-class `initiative_seats`,
-        # so future reads do not depend on the temporary `required_people` encoding.
-        try:
-            seats_to_persist = [M.InitiativeSeat(**s) for s in seats]
-            _upsert_initiative_seats(conn, out["id"], seats_to_persist)
-            conn.execute("UPDATE initiatives SET required_people = ? WHERE id = ?", ("[]", out["id"]))
-            conn.commit()
-        except Exception:
-            # If migration fails, still return decoded seats so the UI doesn't break.
-            pass
-    out["seats"] = seats
+    out["seats"] = _list_seats_for_initiative(conn, out["id"])
     return out
 
 
@@ -3821,31 +3803,21 @@ def create_initiative(data: M.InitiativeCreate, user_id: str) -> dict[str, Any]:
         user_id=user_id,
         field_name="source_idea_id",
     )
-    # Prefer first-class `seats`; only fall back to legacy `required_people` transport.
-    seats_to_persist: list[M.InitiativeSeat] = []
-    seats_field = getattr(data, "seats", None)
-    # If the caller provided `seats` (even as []), treat it as authoritative.
-    if seats_field is not None and (seats_field or not data.required_people):
-        seats_to_persist = list(seats_field)
-    elif data.required_people:
-        legacy_seats_dicts = _decode_legacy_required_people_as_seats(data.required_people)
-        seats_to_persist = [M.InitiativeSeat(**s) for s in legacy_seats_dicts]
+    seats_to_persist: list[M.InitiativeSeat] = list(data.seats or [])
     conn.execute(
         """INSERT INTO initiatives (
-          id, user_id, source_idea_id, title, brief, status, owner_id, priority_rank_manual, strategic_value_manual,
-          energy_impact_manual, evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai,
-          required_people, required_assets, dependencies, risks, recommendation, counts_toward_capacity,
-          manual_override, kill_criteria, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+          id, user_id, source_idea_id, title, brief, status, owner_id,
+          evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai,
+          required_assets, dependencies, risks, recommendation,
+          kill_criteria, notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             iid, user_id, data.source_idea_id, data.title, data.brief, data.status, data.owner_id,
-            data.priority_rank_manual, data.strategic_value_manual, data.energy_impact_manual, data.evaluation_priority,
+            data.evaluation_priority,
             data.estimated_cost_ai, data.estimated_timeframe_ai, data.philosophical_alignment_ai, data.next_step_ai,
-            # Seats are first-class; keep required_people empty for legacy compatibility.
-            "[]",
             M._json_dumps_list(data.required_assets),
-            data.dependencies, data.risks, data.recommendation, data.counts_toward_capacity,
-            data.manual_override, data.kill_criteria, data.notes, now, now,
+            data.dependencies, data.risks, data.recommendation,
+            data.kill_criteria, data.notes, now, now,
         ),
     )
     if seats_to_persist:
@@ -3880,21 +3852,14 @@ def update_initiative(initiative_id: str, data: M.InitiativeUpdate, user_id: str
     seats_to_persist: list[M.InitiativeSeat] | None = None
     if "seats" in model_items and model_items["seats"] is not None:
         seats_to_persist = list(model_items["seats"])
-    elif "required_people" in model_items and model_items["required_people"] is not None:
-        legacy_people = model_items["required_people"]
-        if isinstance(legacy_people, list):
-            legacy_seats_dicts = _decode_legacy_required_people_as_seats([str(x) for x in legacy_people])
-        else:
-            legacy_seats_dicts = []
-        seats_to_persist = [M.InitiativeSeat(**s) for s in legacy_seats_dicts]
 
     updates: list[str] = []
     args: list[Any] = []
     nullable_fks = ("source_idea_id", "owner_id")
 
-    # Seats are stored in `initiative_seats`; required_people is only legacy transport.
+    # Seats are stored in `initiative_seats`.
     for k, v in model_items.items():
-        if k in ("seats", "required_people"):
+        if k in ("seats",):
             continue
         if v is not None or (k in nullable_fks):
             if k in ("required_assets",):
@@ -3906,8 +3871,6 @@ def update_initiative(initiative_id: str, data: M.InitiativeUpdate, user_id: str
 
     if seats_to_persist is not None:
         _upsert_initiative_seats(conn, initiative_id, seats_to_persist)
-        updates.append("required_people = ?")
-        args.append("[]")
 
     if not updates:
         return get_initiative(initiative_id, user_id)
@@ -4247,14 +4210,14 @@ def create_project(data: M.ProjectCreate, user_id: str) -> dict[str, Any]:
     conn.execute(
         """INSERT INTO projects (
           id, user_id, initiative_id, title, brief, status, owner_id, supporting_owner_ids, required_assets, priority,
-          start_date, end_date, estimated_weekly_hours, deliverables, complexity, current_focus, next_step_ai,
+          start_date, end_date, estimated_weekly_hours, next_step_ai,
           notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             pid, user_id, data.initiative_id, data.title, data.brief, data.status, data.owner_id,
             M._json_dumps_list(data.supporting_owner_ids), M._json_dumps_list(data.required_assets),
             data.priority, data.start_date, data.end_date,
-            data.estimated_weekly_hours, data.deliverables, data.complexity, data.current_focus, data.next_step_ai,
+            data.estimated_weekly_hours, data.next_step_ai,
             data.notes, now, now,
         ),
     )

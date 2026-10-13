@@ -32,7 +32,6 @@ import re
 # -----------------------------------------------------------------------------
 
 APPROVAL_READY_THRESHOLD = 60
-MANUAL_SCORE_WEIGHTS = (0.4, 0.4, 0.2)  # priority, strategic, energy
 
 
 def _norm_score(v: Any) -> float | None:
@@ -51,13 +50,15 @@ def _norm_score(v: Any) -> float | None:
 
 
 def add_initiative_derived(initiative: dict[str, Any]) -> dict[str, Any]:
-    """Attach weightedScore, approvalReady, returnOnTime. Mutates and returns the same dict."""
-    p = _norm_score(initiative.get("priority_rank_manual"))
-    s = _norm_score(initiative.get("strategic_value_manual"))
-    e = _norm_score(initiative.get("energy_impact_manual"))
-    if p is not None and s is not None and e is not None:
-        weighted = (p * MANUAL_SCORE_WEIGHTS[0] + s * MANUAL_SCORE_WEIGHTS[1] + e * MANUAL_SCORE_WEIGHTS[2]) * (100 / 5)
-        initiative["weightedScore"] = round(weighted, 1)
+    """Attach weightedScore, approvalReady, returnOnTime. Mutates and returns the same dict.
+
+    weightedScore now derives from the AI-suggested evaluation_priority (0–5),
+    scaled to 0–100. The manual scoring fields were removed to reduce decision
+    fatigue — priority is AI-proposed metadata, not a user form.
+    """
+    ai_prio = _norm_score(initiative.get("evaluation_priority"))
+    if ai_prio is not None:
+        initiative["weightedScore"] = round(ai_prio * (100 / 5), 1)
     else:
         initiative["weightedScore"] = None
 
@@ -92,10 +93,10 @@ def add_initiative_derived(initiative: dict[str, Any]) -> dict[str, Any]:
 #   Dates parsed as ISO date (YYYY-MM-DD) or best-effort; invalid format → null.
 #
 # completionReadiness:
-#   0–1 score. Rules: +0.4 if status is Ready or Active; +0.3 if deliverables
+#   0–1 score. Rules: +0.5 if status is Ready or Active; +0.2 if brief
 #   non-empty; +0.3 if next_step_ai non-empty. Capped at 1.0.
 #   Rationale: ready to execute when status is ready/active and we have
-#   deliverables and a next step.
+#   a brief and a next step.
 #
 # unanchoredFlag:
 #   True when initiative_id is null. "Unanchored" = not linked to an initiative.
@@ -128,9 +129,9 @@ def add_project_derived(project: dict[str, Any]) -> dict[str, Any]:
 
     readiness = 0.0
     if (project.get("status") or "").strip() in ("Ready", "Active"):
-        readiness += 0.4
-    if (project.get("deliverables") or "").strip():
-        readiness += 0.3
+        readiness += 0.5
+    if (project.get("brief") or "").strip():
+        readiness += 0.2
     if (project.get("next_step_ai") or "").strip():
         readiness += 0.3
     project["completionReadiness"] = round(min(1.0, readiness), 2)

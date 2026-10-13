@@ -137,3 +137,36 @@ def confirm_agent(agent_id: str, body: ConfirmBody):
     except AgentIntakeError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return agent.to_dict()
+
+
+class MineBody(BaseModel):
+    """Mine a transcript for proposed projects and tasks."""
+
+    transcript: str
+
+    @field_validator("transcript")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("transcript is required")
+        return v
+
+
+@router.post("/mine-projects", status_code=200)
+def mine_projects(body: MineBody):
+    """Read a transcript like a chief of staff: propose projects and tasks.
+
+    Returns proposed projects (with nested tasks) and standalone tasks, each
+    with source quotes. Nothing is created — the user reviews and confirms.
+    Uses the Anthropic engine when configured, rule-based fallback otherwise.
+    """
+    from local_ai.agent_intake import project_miner
+    from dataclasses import asdict
+
+    result = project_miner.mine_projects(body.transcript)
+    return {
+        "engine": result.engine,
+        "projects": [asdict(p) for p in result.projects],
+        "standalone_tasks": [asdict(t) for t in result.standalone_tasks],
+    }

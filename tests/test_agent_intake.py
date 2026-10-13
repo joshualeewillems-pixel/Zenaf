@@ -435,3 +435,44 @@ def test_llm_sorter_invalid_kind_defaults_undecided(monkeypatch):
     result = sorter_llm.sort_with_llm("X", "writing")
     assert result.kind == "undecided"
     assert len(result.claims) == 7  # missing strands filled as passes
+
+
+# ---------------------------------------------------------------------------
+# Project mining
+# ---------------------------------------------------------------------------
+
+def test_project_miner_parses_llm_json(monkeypatch):
+    import json
+    from local_ai.agent_intake import project_miner as pm
+    fake = json.dumps({
+        "projects": [
+            {"title": "Write the book", "goal": "finish draft", "status_hint": "in progress",
+             "source_quote": "my novel", "tasks": [
+                 {"title": "Outline chapter 3", "detail": "", "source_quote": "chapter 3"}]},
+        ],
+        "standalone_tasks": [
+            {"title": "Summarize the doc", "detail": "", "source_quote": "please summarize"},
+        ],
+    })
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr("local_ai.providers.anthropic.generate", lambda *a, **k: fake)
+    result = pm.mine_projects("my novel ... please summarize the doc")
+    assert result.engine == "anthropic"
+    assert len(result.projects) == 1
+    assert result.projects[0].title == "Write the book"
+    assert len(result.projects[0].tasks) == 1
+    assert len(result.standalone_tasks) == 1
+
+
+def test_project_miner_empty_transcript():
+    from local_ai.agent_intake.project_miner import mine_projects
+    result = mine_projects("   ")
+    assert result.projects == [] and result.standalone_tasks == []
+
+
+def test_project_miner_rule_fallback_without_key(monkeypatch):
+    from local_ai.agent_intake.project_miner import mine_projects
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    result = mine_projects("USER: can you please summarize this long document for me today?")
+    assert result.engine == "rule_based"
+    assert len(result.standalone_tasks) >= 1

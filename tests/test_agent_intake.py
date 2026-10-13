@@ -445,23 +445,40 @@ def test_project_miner_parses_llm_json(monkeypatch):
     import json
     from local_ai.agent_intake import project_miner as pm
     fake = json.dumps({
+        "initiatives": [
+            {"title": "Become a published philosopher", "brief": "body of work",
+             "source_quote": "philosophy", "project_titles": ["Write the book"]},
+        ],
         "projects": [
             {"title": "Write the book", "goal": "finish draft", "status_hint": "in progress",
-             "source_quote": "my novel", "tasks": [
+             "source_quote": "my novel", "initiative_title": "Become a published philosopher",
+             "tasks": [
                  {"title": "Outline chapter 3", "detail": "", "source_quote": "chapter 3"}]},
         ],
         "standalone_tasks": [
             {"title": "Summarize the doc", "detail": "", "source_quote": "please summarize"},
+        ],
+        "ideas": [
+            {"title": "A podcast on thresholds", "detail": "maybe someday", "source_quote": "podcast"},
         ],
     })
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr("local_ai.providers.anthropic.generate", lambda *a, **k: fake)
     result = pm.mine_projects("my novel ... please summarize the doc")
     assert result.engine == "anthropic"
+    assert len(result.initiatives) == 1
+    assert result.initiatives[0].project_titles == ["Write the book"]
     assert len(result.projects) == 1
     assert result.projects[0].title == "Write the book"
+    assert result.projects[0].initiative_title == "Become a published philosopher"
     assert len(result.projects[0].tasks) == 1
     assert len(result.standalone_tasks) == 1
+    assert len(result.ideas) == 1
+    # VE payload mapping
+    pc = result.projects[0].to_project_create(initiative_id="init-1")
+    assert pc["initiative_id"] == "init-1" and pc["title"] == "Write the book"
+    ic = result.initiatives[0].to_initiative_create()
+    assert ic["title"] == "Become a published philosopher"
 
 
 def test_project_miner_empty_transcript():

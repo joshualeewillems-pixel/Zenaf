@@ -23,6 +23,16 @@ class ProposedTask:
     detail: str = ""
     source_quote: str = ""  # brief verbatim anchor from the transcript
 
+    def to_task_create(self, project_id: str | None = None) -> dict[str, Any]:
+        """Map to a Vision Execution TaskCreate payload."""
+        return {
+            "project_id": project_id,
+            "title": self.title,
+            "description": self.detail,
+            "notes": f"Mined from transcript: {self.source_quote}" if self.source_quote else "",
+            "status": "Todo",
+        }
+
 
 @dataclass
 class ProposedProject:
@@ -31,47 +41,118 @@ class ProposedProject:
     status_hint: str = ""  # e.g. "draft exists", "just started", "ongoing inquiry"
     source_quote: str = ""
     tasks: list[ProposedTask] = field(default_factory=list)
+    initiative_title: str | None = None  # parent initiative, if the miner placed it
+
+    def to_project_create(self, initiative_id: str | None = None) -> dict[str, Any]:
+        """Map to a Vision Execution ProjectCreate payload."""
+        brief = self.goal
+        if self.source_quote:
+            brief += f"\n\nFrom transcript: {self.source_quote}"
+        return {
+            "initiative_id": initiative_id,
+            "title": self.title,
+            "brief": brief,
+            "status": "Draft",
+            "current_focus": self.status_hint,
+        }
+
+
+@dataclass
+class ProposedInitiative:
+    title: str
+    brief: str = ""
+    source_quote: str = ""
+    project_titles: list[str] = field(default_factory=list)  # projects under it
+
+    def to_initiative_create(self) -> dict[str, Any]:
+        """Map to a Vision Execution InitiativeCreate payload."""
+        brief = self.brief
+        if self.source_quote:
+            brief += f"\n\nFrom transcript: {self.source_quote}"
+        return {"title": self.title, "brief": brief, "status": "Draft"}
+
+
+@dataclass
+class ProposedIdea:
+    title: str
+    detail: str = ""
+    source_quote: str = ""
+
+    def to_idea_create(self) -> dict[str, Any]:
+        """Map to a Vision Execution IdeaCreate payload."""
+        return {
+            "title": self.title,
+            "body": self.detail + (f"\n\nFrom transcript: {self.source_quote}" if self.source_quote else ""),
+            "status": "Captured",
+        }
 
 
 @dataclass
 class MiningResult:
+    initiatives: list[ProposedInitiative]
     projects: list[ProposedProject]
     standalone_tasks: list[ProposedTask]  # tasks not attached to a project
+    ideas: list[ProposedIdea]  # early-stage, not yet committed
     engine: str  # "anthropic" | "rule_based"
 
 
-_MINING_PROMPT = """Read this conversation transcript like a chief of staff. Identify:
+_MINING_PROMPT = """Read this conversation transcript like a chief of staff. Identify work across the full hierarchy:
 
-1. PROJECTS — ongoing endeavors with a goal. Things the person is building, writing, learning, or pursuing across multiple sessions. For each: a short title, the apparent goal, a status hint (draft exists / just started / ongoing inquiry), and a brief quote from the transcript that evidences it.
+1. INITIATIVES — large endeavors that span multiple projects. A body of work with a unifying direction (e.g. "building a philosophy practice" spanning a book, a teaching inquiry, and public writing). For each: title, brief, source quote, and which of the proposed projects belong under it.
 
-2. TASKS — concrete next actions the person asked for, was offered, or implied. For each: a short title, detail, and a brief quote evidencing it. Attach each task to its project when one fits; otherwise list it standalone.
+2. PROJECTS — specific endeavors with a goal. Things the person is building, writing, learning, or pursuing. For each: title, goal, status hint (draft exists / just started / ongoing inquiry), source quote, nested tasks, and the parent initiative title if one fits.
+
+3. TASKS — concrete next actions the person asked for, was offered, or implied. For each: title, detail, source quote. Attach to a project when one fits; otherwise standalone.
+
+4. IDEAS — early-stage thoughts, "I've been thinking about..." — real but not yet committed to. Captured, not actioned.
 
 Transcript:
 {transcript}
 
 Respond with ONLY valid JSON in this exact shape:
 {{
+  "initiatives": [
+    {{"title": "...", "brief": "...", "source_quote": "...",
+      "project_titles": ["..."]}}
+  ],
   "projects": [
     {{"title": "...", "goal": "...", "status_hint": "...", "source_quote": "...",
-      "tasks": [{{"title": "...", "detail": "...", "source_quote": "..."}}]}}
+      "initiative_title": "...", "tasks": [{{"title": "...", "detail": "...", "source_quote": "..."}}]}}
   ],
   "standalone_tasks": [
+    {{"title": "...", "detail": "...", "source_quote": "..."}}
+  ],
+  "ideas": [
     {{"title": "...", "detail": "...", "source_quote": "..."}}
   ]
 }}
 
-Be conservative: only propose what the transcript evidences. Prefer fewer, sharper items over many vague ones."""
+Be conservative: only propose what the transcript evidences. Prefer fewer, sharper items over many vague ones. Not every transcript has initiatives — only propose one when multiple projects clearly share a unifying direction."""
 
 
 def _api_key() -> str | None:
     return (os.environ.get("ANTHROPIC_API_KEY") or "").strip() or None
 
 
-def _parse_mining_json(raw: str) -> tuple[list[ProposedProject], list[ProposedTask]]:
+def _parse_mining_json(raw: str) -> MiningResult:
     m = re.search(r"\{.*\}", raw, re.S)
     if not m:
         raise RuntimeError("miner returned no JSON")
     data = json.loads(m.group(0))
+
+    initiatives: list[ProposedInitiative] = []
+    for i in data.get("initiatives") or []:
+        if not i.get("title"):
+            continue
+        initiatives.append(
+            ProposedInitiative(
+                title=str(i["title"])[:200],
+                brief=str(i.get("brief", ""))[:800],
+                source_quote=str(i.get("source_quote", ""))[:300],
+                project_titles=[str(t)[:200] for t in (i.get("project_titles") or [])],
+            )
+        )
+
     projects: list[ProposedProject] = []
     for p in data.get("projects") or []:
         tasks = [
@@ -91,6 +172,7 @@ def _parse_mining_json(raw: str) -> tuple[list[ProposedProject], list[ProposedTa
                 goal=str(p.get("goal", ""))[:500],
                 status_hint=str(p.get("status_hint", ""))[:200],
                 source_quote=str(p.get("source_quote", ""))[:300],
+                initiative_title=(str(p.get("initiative_title", "")).strip() or None),
                 tasks=tasks,
             )
         )
@@ -103,14 +185,29 @@ def _parse_mining_json(raw: str) -> tuple[list[ProposedProject], list[ProposedTa
         for t in (data.get("standalone_tasks") or [])
         if t.get("title")
     ]
-    return projects, standalone
+    ideas = [
+        ProposedIdea(
+            title=str(i.get("title", ""))[:200],
+            detail=str(i.get("detail", ""))[:500],
+            source_quote=str(i.get("source_quote", ""))[:300],
+        )
+        for i in (data.get("ideas") or [])
+        if i.get("title")
+    ]
+    return MiningResult(
+        initiatives=initiatives,
+        projects=projects,
+        standalone_tasks=standalone,
+        ideas=ideas,
+        engine="anthropic",
+    )
 
 
 def mine_projects(transcript: str, model: str | None = None) -> MiningResult:
     """Propose projects and tasks from a transcript. LLM-first, rule fallback."""
     transcript = (transcript or "").strip()
     if not transcript:
-        return MiningResult(projects=[], standalone_tasks=[], engine="rule_based")
+        return MiningResult(initiatives=[], projects=[], standalone_tasks=[], ideas=[], engine="rule_based")
 
     api_key = _api_key()
     if api_key:
@@ -122,8 +219,7 @@ def mine_projects(transcript: str, model: str | None = None) -> MiningResult:
                 _MINING_PROMPT.format(transcript=transcript[:12000]),
                 model=model,
             )
-            projects, standalone = _parse_mining_json(raw)
-            return MiningResult(projects=projects, standalone_tasks=standalone, engine="anthropic")
+            return _parse_mining_json(raw)
         except Exception:
             pass  # fall through to rule-based
 
@@ -163,4 +259,89 @@ def _rule_based_mine(transcript: str) -> MiningResult:
         if t.title not in seen:
             seen.add(t.title)
             unique.append(t)
-    return MiningResult(projects=[], standalone_tasks=unique[:10], engine="rule_based")
+    return MiningResult(
+        initiatives=[], projects=[], standalone_tasks=unique[:10], ideas=[], engine="rule_based"
+    )
+
+
+def create_confirmed(
+    result: MiningResult,
+    user_id: str,
+    selected_titles: set[str] | None = None,
+) -> dict[str, list[str]]:
+    """Create Vision Execution entities from user-confirmed proposals.
+
+    Respects the hierarchy: initiatives first, projects linked to them,
+    ideas captured, tasks under their projects. Only creates items whose
+    title is in selected_titles (or all if None).
+    Returns {"initiative_ids": [...], "project_ids": [...], "task_ids": [...], "idea_ids": [...]}.
+    Uses the existing VE service layer — no parallel structures.
+    """
+    from local_ai.vision_execution import models as M
+    from local_ai.vision_execution import service as ve_service
+
+    def _id(obj: Any) -> str | None:
+        return obj.get("id") if isinstance(obj, dict) else getattr(obj, "id", None)
+
+    def _wanted(title: str) -> bool:
+        return selected_titles is None or title in selected_titles
+
+    initiative_ids: list[str] = []
+    project_ids: list[str] = []
+    task_ids: list[str] = []
+    idea_ids: list[str] = []
+
+    # Initiatives first (projects link to them).
+    initiative_id_by_title: dict[str, str] = {}
+    for i in result.initiatives:
+        if not _wanted(i.title):
+            continue
+        created = ve_service.create_initiative(M.InitiativeCreate(**i.to_initiative_create()), user_id)
+        iid = _id(created)
+        if iid:
+            initiative_ids.append(iid)
+            initiative_id_by_title[i.title] = iid
+
+    # Projects (linked to their initiative when the miner placed one).
+    project_id_by_title: dict[str, str] = {}
+    for p in result.projects:
+        if not _wanted(p.title):
+            continue
+        iid = initiative_id_by_title.get(p.initiative_title or "")
+        created = ve_service.create_project(M.ProjectCreate(**p.to_project_create(iid)), user_id)
+        pid = _id(created)
+        if pid:
+            project_ids.append(pid)
+            project_id_by_title[p.title] = pid
+        for t in p.tasks:
+            if not _wanted(t.title):
+                continue
+            tc = ve_service.create_task(M.TaskCreate(**t.to_task_create(project_id=pid)), user_id)
+            tid = _id(tc)
+            if tid:
+                task_ids.append(tid)
+
+    # Ideas (captured, not actioned).
+    for idea in result.ideas:
+        if not _wanted(idea.title):
+            continue
+        created = ve_service.create_idea(M.IdeaCreate(**idea.to_idea_create()), user_id)
+        iid = _id(created)
+        if iid:
+            idea_ids.append(iid)
+
+    # Standalone tasks (no project).
+    for t in result.standalone_tasks:
+        if not _wanted(t.title):
+            continue
+        tc = ve_service.create_task(M.TaskCreate(**t.to_task_create()), user_id)
+        tid = _id(tc)
+        if tid:
+            task_ids.append(tid)
+
+    return {
+        "initiative_ids": initiative_ids,
+        "project_ids": project_ids,
+        "task_ids": task_ids,
+        "idea_ids": idea_ids,
+    }

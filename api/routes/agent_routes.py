@@ -158,8 +158,10 @@ def mine_projects(body: MineBody):
     """Read a transcript like a chief of staff: propose projects and tasks.
 
     Returns proposed projects (with nested tasks) and standalone tasks, each
-    with source quotes. Nothing is created — the user reviews and confirms.
-    Uses the Anthropic engine when configured, rule-based fallback otherwise.
+    with source quotes. Nothing is created — the user reviews and confirms
+    via POST /agents/mined-projects/confirm, which creates real Vision
+    Execution entities. Uses the Anthropic engine when configured,
+    rule-based fallback otherwise.
     """
     from local_ai.agent_intake import project_miner
     from dataclasses import asdict
@@ -167,6 +169,80 @@ def mine_projects(body: MineBody):
     result = project_miner.mine_projects(body.transcript)
     return {
         "engine": result.engine,
+        "initiatives": [asdict(i) for i in result.initiatives],
         "projects": [asdict(p) for p in result.projects],
         "standalone_tasks": [asdict(t) for t in result.standalone_tasks],
+        "ideas": [asdict(i) for i in result.ideas],
     }
+
+
+class ConfirmMinedBody(BaseModel):
+    """User-confirmed subset of mined proposals to create as VE entities."""
+
+    initiatives: list[dict] = []
+    projects: list[dict] = []
+    standalone_tasks: list[dict] = []
+    ideas: list[dict] = []
+    selected_titles: list[str] | None = None  # None = create all
+    user_id: str = ""
+
+
+@router.post("/mined-projects/confirm", status_code=201)
+def confirm_mined_projects(body: ConfirmMinedBody):
+    """Create Vision Execution entities from confirmed mined proposals.
+
+    Respects the VE hierarchy (initiatives → projects → tasks, plus ideas).
+    Plugs into the existing VE service layer — no parallel structures.
+    """
+    from local_ai.agent_intake import project_miner
+
+    if not body.user_id.strip():
+        raise HTTPException(status_code=422, detail="user_id is required")
+
+    def _task(d: dict) -> project_miner.ProposedTask:
+        return project_miner.ProposedTask(
+            title=str(d.get("title", "")),
+            detail=str(d.get("detail", "")),
+            source_quote=str(d.get("source_quote", "")),
+        )
+
+    result = project_miner.MiningResult(
+        initiatives=[
+            project_miner.ProposedInitiative(
+                title=str(i.get("title", "")),
+                brief=str(i.get("brief", "")),
+                source_quote=str(i.get("source_quote", "")),
+                project_titles=[str(t) for t in (i.get("project_titles") or [])],
+            )
+            for i in body.initiatives
+            if i.get("title")
+        ],
+        projects=[
+            project_miner.ProposedProject(
+                title=str(p.get("title", "")),
+                goal=str(p.get("goal", "")),
+                status_hint=str(p.get("status_hint", "")),
+                source_quote=str(p.get("source_quote", "")),
+                initiative_title=(str(p.get("initiative_title", "")).strip() or None),
+                tasks=[_task(t) for t in (p.get("tasks") or []) if t.get("title")],
+            )
+            for p in body.projects
+            if p.get("title")
+        ],
+        standalone_tasks=[_task(t) for t in body.standalone_tasks if t.get("title")],
+        ideas=[
+            project_miner.ProposedIdea(
+                title=str(i.get("title", "")),
+                detail=str(i.get("detail", "")),
+                source_quote=str(i.get("source_quote", "")),
+            )
+            for i in body.ideas
+            if i.get("title")
+        ],
+        engine="api",
+    )
+    selected = set(body.selected_titles) if body.selected_titles is not None else None
+    try:
+        return project_miner.create_confirmed(result, body.user_id.strip(), selected)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)[:300])

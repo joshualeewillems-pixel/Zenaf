@@ -23,14 +23,18 @@ three; interview and import are designed for but not built yet.
 
 1. **Describe** — natural language. "I have a GPT that helps me write cold
    emails." Lowest friction, the default.
-2. **Paste instructions** — the agent's system prompt / custom instructions.
+2. **Share link** — paste a ChatGPT / Claude shared conversation URL. The
+   system fetches the transcript, parses it, and sorts it. No auth needed;
+   the link is already public. (`local_ai/agent_intake/share_link.py`;
+   `POST /agents/connect/share-link`.)
+3. **Paste instructions** — the agent's system prompt / custom instructions.
    Highest signal per unit of effort; this is the agent telling us what it is.
-3. **Paste examples** — 2–3 example interactions showing what it actually does.
+4. **Paste examples** — 2–3 example interactions showing what it actually does.
    Grounds the description in behavior.
-4. **Guided interview** *(future)* — Zenaf asks 3–5 questions for users who
+5. **Guided interview** *(future)* — Zenaf asks 3–5 questions for users who
    don't know where to start. ("What do you use it for? What does it do that
    surprises you?")
-5. **Import** *(future)* — API / OAuth / file import when platforms allow it.
+6. **Import** *(future)* — API / OAuth / file import when platforms allow it.
    The adapter pattern from presence ingestion (`SourceAdapter`) is the model.
 
 All text is redacted at capture, per the existing redaction contract. Nothing

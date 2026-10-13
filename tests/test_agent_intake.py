@@ -312,3 +312,67 @@ def test_multi_frame_weights():
     # weights survive the round trip
     restored = SortResult.from_dict(result.to_dict())
     assert restored.strand_weights == result.strand_weights
+
+
+# ---------------------------------------------------------------------------
+# Share-link intake
+# ---------------------------------------------------------------------------
+
+def test_share_link_detect_chatgpt():
+    from local_ai.agent_intake.share_link import detect_source
+    src = detect_source("https://chatgpt.com/share/abc123-def456")
+    assert src is not None and src.key == "chatgpt"
+    src = detect_source("https://chatgpt.com/share/e/abc123")
+    assert src is not None and src.key == "chatgpt"
+
+
+def test_share_link_detect_claude():
+    from local_ai.agent_intake.share_link import detect_source
+    src = detect_source("https://claude.ai/share/abc123-def456")
+    assert src is not None and src.key == "claude"
+
+
+def test_share_link_rejects_unknown():
+    from local_ai.agent_intake.share_link import detect_source, fetch_shared_conversation
+    assert detect_source("https://example.com/foo") is None
+    with pytest.raises(ValueError):
+        fetch_shared_conversation("https://example.com/foo")
+
+
+def test_share_link_parse_next_data():
+    from local_ai.agent_intake.share_link import _parse_chatgpt
+    html = '''
+    <html><head><title>My GPT Chat</title></head><body>
+    <script id="__NEXT_DATA__" type="application/json">
+    {"props": {"pageProps": {"messages": [
+        {"role": "user", "text": "Write me a cold email"},
+        {"role": "assistant", "text": "Here is a cold email template..."}
+    ]}}}
+    </script></body></html>
+    '''
+    conv = _parse_chatgpt("https://chatgpt.com/share/x", html)
+    assert conv.source == "chatgpt"
+    assert not conv.needs_browser
+    roles = [m.role for m in conv.messages]
+    assert "user" in roles and "assistant" in roles
+
+
+def test_share_link_redacts_pii():
+    from local_ai.agent_intake.share_link import _parse_chatgpt
+    html = '''
+    <html><body>
+    <script id="__NEXT_DATA__" type="application/json">
+    {"messages": [{"role": "user", "text": "Contact me at jane@example.com please"}]}
+    </script></body></html>
+    '''
+    conv = _parse_chatgpt("https://chatgpt.com/share/x", html)
+    assert conv.messages
+    assert "jane@example.com" not in conv.messages[0].text
+    assert "[EMAIL]" in conv.messages[0].text
+
+
+def test_share_link_needs_browser_when_empty():
+    from local_ai.agent_intake.share_link import _parse_chatgpt
+    html = '<html><head></head><body><div id="root"></div><script src="/app.js"></script></body></html>'
+    conv = _parse_chatgpt("https://chatgpt.com/share/x", html)
+    assert conv.needs_browser

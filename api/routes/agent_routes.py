@@ -35,6 +35,21 @@ class ConnectBody(BaseModel):
         return v
 
 
+class ShareLinkBody(BaseModel):
+    """Connect via a shared conversation URL (ChatGPT/Claude share link)."""
+
+    url: str
+    name: str | None = None
+
+    @field_validator("url")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("url is required")
+        return v
+
+
 class ConfirmBody(BaseModel):
     """Review-gate decision: accept as sorted, or correct the placement."""
 
@@ -67,6 +82,25 @@ def connect_agent(body: ConnectBody):
             description=body.description,
             instructions=body.instructions,
             examples=body.examples,
+            store=_store(),
+        )
+    except AgentIntakeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return agent.to_dict()
+
+
+@router.post("/connect/share-link", status_code=201)
+def connect_via_share_link(body: ShareLinkBody):
+    """Connect from a ChatGPT/Claude shared conversation URL.
+
+    Accepts the link, fetches and parses the transcript, then runs the
+    standard connect pipeline. 422 if the URL is unsupported or the page
+    needs JavaScript rendering (caller should paste the text instead).
+    """
+    try:
+        agent = _pipeline().connect_via_share_link(
+            url=body.url,
+            name=body.name,
             store=_store(),
         )
     except AgentIntakeError as exc:

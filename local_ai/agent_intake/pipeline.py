@@ -18,6 +18,7 @@ from local_ai.presence_ingest.redact import redact_text
 from local_ai.strands import strand_keys
 
 from .schema import KINDS, ConnectedAgent, SortResult
+from .share_link import SharedConversation, detect_source, fetch_shared_conversation
 from .sorter import sort
 from .store import AgentStore
 
@@ -74,6 +75,43 @@ def connect_agent(
     )
     (store or AgentStore()).save(agent)
     return agent
+
+
+def connect_via_share_link(
+    url: str,
+    name: str | None = None,
+    store: AgentStore | None = None,
+) -> ConnectedAgent:
+    """Connect an agent from a shared conversation URL.
+
+    Accepts a ChatGPT/Claude (/etc.) share link, fetches and parses it, then
+    runs the standard connect pipeline with the transcript as examples.
+    Raises AgentIntakeError for unsupported URLs; the caller should surface
+    SharedConversation.needs_browser to the user when the page needs JS.
+    """
+    url = (url or "").strip()
+    src = detect_source(url)
+    if src is None:
+        raise AgentIntakeError(f"Unsupported share URL: {url[:80]}")
+    conv = fetch_shared_conversation(url)
+    if conv.needs_browser:
+        raise AgentIntakeError(
+            "browser_required: this share page needs JavaScript rendering — "
+            "open it in a browser and paste the visible conversation text instead"
+        )
+    examples = conv.as_examples()
+    description = (
+        f"Shared {conv.source} conversation"
+        + (f": {conv.title}" if conv.title else "")
+        + f" ({len(conv.messages)} messages)."
+    )
+    return connect_agent(
+        name=name or conv.title or f"{conv.source} shared chat",
+        platform=f"{conv.source}_share",
+        description=description,
+        examples=examples,
+        store=store,
+    )
 
 
 def _validate_corrections(corrections: dict[str, Any]) -> dict[str, Any]:

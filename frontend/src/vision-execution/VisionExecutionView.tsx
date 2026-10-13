@@ -20,7 +20,6 @@ import { canonicalCoreProfileId, coreProfileInfluencePickLabel } from './canonic
 import { TaskSoilDevAppend } from './dev/TaskSoilDevAppend'
 import type { VisionMapEntityBundle } from '../vision-map/blockersFromVe'
 import { VE_EVALUATE_ACTION_INTENTS, visionExecutionEvaluateRouting } from './veRunRoutingContext'
-import { useDomain } from '../domain/DomainContext'
 import { ProjectsViewModeToggle, ProjectsTimelineView } from './timeline'
 import type { ProjectsViewMode } from './timeline'
 import {
@@ -410,12 +409,6 @@ function meetingExtractionRoutingContext(
 }
 
 /** Merge API list with seed by id; seed entries override or append. */
-function mergeById<T extends { id: string }>(apiList: T[], seedList: T[]): T[] {
-  const byId = new Map<string, T>()
-  seedList.forEach((s) => byId.set(s.id, s))
-  apiList.forEach((a) => byId.set(a.id, a))
-  return Array.from(byId.values())
-}
 
 /** Renders "Created from" / "Source excerpt" when notes/description contain meeting-extraction traceability. */
 function TraceabilityMeta({ notesOrDescription }: { notesOrDescription: string | null | undefined }) {
@@ -5502,7 +5495,6 @@ export function VisionExecutionView({
   radarScrollBucketRequest?: VeRadarBucketId | null
   onRadarScrollBucketConsumed?: () => void
 } = {}) {
-  const domain = useDomain()
   const [tab, setTab] = useState<TabId>('ideas')
   const [error, setError] = useState<string | null>(null)
 
@@ -6175,14 +6167,14 @@ export function VisionExecutionView({
     setError(null)
     try {
       const data = await apiGet<Asset[]>('/assets')
-      setAssets(mergeById(Array.isArray(data) ? data : [], domain.assets))
+      setAssets(Array.isArray(data) ? data : [])
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load')
-      setAssets(domain.assets)
+      setAssets([])
     } finally {
       setLoading(false)
     }
-  }, [domain])
+  }, [])
 
   const fetchRadar = useCallback(async () => {
     setRadarLoading(true)

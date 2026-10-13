@@ -159,6 +159,7 @@ import { CouncilTranscript } from './council/CouncilTranscript'
 import { CouncilTranscriptWithResonance } from './council/CouncilTranscriptWithResonance'
 import { ResonanceSlider } from './components/ResonanceSlider'
 import { ContentFrontDoor } from './content'
+import AgentIntakeView from './agent-intake/AgentIntakeView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
 import { DomainProvider } from './domain/DomainContext'
 import { AuthGate } from './auth/AuthGate'
@@ -459,6 +460,7 @@ function LeaveVisionSurfacesFocusClear({
     | 'content'
     | 'vision_map'
     | 'vision_execution'
+    | 'agent_intake'
     | 'settings'
 }) {
   const ctx = useVisionExecutionFocusOptional()
@@ -488,6 +490,7 @@ type MainViewForResonance =
   | 'content'
   | 'vision_map'
   | 'vision_execution'
+  | 'agent_intake'
   | 'settings'
 
 /** Map agent/run label → integrated-response resonance row (when transcript has no seat headers). */
@@ -632,6 +635,7 @@ function UniversalContextStrip({
     | 'content'
     | 'vision_map'
     | 'vision_execution'
+    | 'agent_intake'
     | 'settings'
   currentTopic: { label: string; modeLabel: string | null; summary: string; fullPath: string }
   currentFocusHasResult: boolean
@@ -4885,6 +4889,7 @@ function App() {
     | 'content'
     | 'vision_map'
     | 'vision_execution'
+    | 'agent_intake'
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('living_tree')
   const [navOpen, setNavOpen] = useState(false)
@@ -5793,6 +5798,7 @@ function App() {
                     { view: 'perspectives', label: 'Foundation' },
                     { view: 'vision_map', label: 'Vision map' },
                     { view: 'vision_execution', label: 'Vision (tables)' },
+                    { view: 'agent_intake', label: 'Connect' },
                     { view: 'workspace', label: 'Workspace Organizer' },
                     { view: 'content', label: 'Content' },
                     { view: 'settings', label: 'Settings' },
@@ -6007,6 +6013,10 @@ function App() {
         ) : mainView === 'content' ? (
           <div className="flex-1 flex flex-col min-h-0">
             <ContentFrontDoor apiBase={API_BASE} />
+          </div>
+        ) : mainView === 'agent_intake' ? (
+          <div className="flex-1 flex flex-col min-h-0">
+            <AgentIntakeView />
           </div>
         ) : mainView === 'settings' ? (
           <SettingsView

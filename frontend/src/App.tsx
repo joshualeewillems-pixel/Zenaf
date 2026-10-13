@@ -4897,6 +4897,11 @@ function App() {
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('living_tree')
   const [navOpen, setNavOpen] = useState(false)
+  // Mobile: the conversation panel starts collapsed so the view's content owns
+  // the screen; expand on demand. Desktop (lg+) always shows it.
+  const [chatPanelCollapsed, setChatPanelCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023.98px)').matches,
+  )
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
   /** Avoid new object identity on every VisionExecutionView `bundleForFocus` refresh when ids are unchanged. */
   const stableVeSelectionForExecutionView = useMemo(
@@ -5661,8 +5666,8 @@ function App() {
       focusBridgeActive={mainView === 'vision_execution' || mainView === 'vision_map'}
     />
     <LeaveVisionSurfacesFocusClear mainView={mainView} />
-    <div className="h-dvh min-h-0 overflow-hidden bg-stone-900 text-stone-100 flex flex-col">
-      <header className="shrink-0 border-b border-stone-700 px-3 py-3 lg:px-6 lg:py-4 flex items-center justify-between gap-2 bg-stone-900 z-20">
+    <div className="h-dvh min-h-0 overflow-hidden bg-stone-900 text-stone-100 flex flex-col pb-[env(safe-area-inset-bottom,0px)]">
+      <header className="shrink-0 border-b border-stone-700 px-3 pb-3 lg:px-6 lg:pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] lg:pt-[calc(1rem+env(safe-area-inset-top,0px))] flex items-center justify-between gap-2 bg-stone-900 z-20">
         <div className="flex items-center gap-3 min-w-0">
           <ProfileAvatarControl user={currentUser} onUserUpdated={setCurrentUser} />
           <div className="flex items-center gap-4 min-w-0">
@@ -6862,6 +6867,30 @@ function App() {
               : 'border-t lg:border-t-0 lg:border-l border-stone-700 rounded-t-lg lg:rounded-t-none lg:rounded-l-lg'
           }`}
         >
+          <button
+            type="button"
+            onClick={() => setChatPanelCollapsed((v) => !v)}
+            aria-expanded={!chatPanelCollapsed}
+            aria-label={chatPanelCollapsed ? 'Show conversation panel' : 'Hide conversation panel'}
+            className="lg:hidden flex items-center justify-between w-full px-4 min-h-[48px] text-sm font-semibold text-stone-200 shrink-0"
+          >
+            <span>Conversation</span>
+            <svg
+              viewBox="0 0 24 24"
+              className={`h-5 w-5 transition-transform ${chatPanelCollapsed ? '' : 'rotate-180'}`}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              aria-hidden
+            >
+              <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <div
+            className={`${
+              chatPanelCollapsed ? 'hidden' : 'flex'
+            } lg:flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden`}
+          >
           {error && (mainView !== 'workspace' || workoutActive) && (
             <div
               className="shrink-0 p-3 border-b border-red-800/50 bg-red-900/25 text-red-200 text-xs"
@@ -7785,6 +7814,7 @@ function App() {
             </div>
           ) : null}
           <ZenafPresence brandCoreProfileId={brandCoreProfileId} onOpen={() => setMainView('perspectives')} />
+          </div>
         </aside>
         )}
       </div>

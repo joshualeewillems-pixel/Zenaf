@@ -126,35 +126,70 @@ def connect_via_share_link(
     url: str,
     name: str | None = None,
     store: AgentStore | None = None,
-) -> ConnectedAgent:
+    render_store: "RenderJobStore | None" = None,
+) -> tuple[ConnectedAgent | None, "RenderJob | None"]:
     """Connect an agent from a shared conversation URL.
 
     Accepts a ChatGPT/Claude (/etc.) share link, fetches and parses it, then
     runs the standard connect pipeline with the transcript as examples.
-    Raises AgentIntakeError for unsupported URLs; the caller should surface
-    SharedConversation.needs_browser to the user when the page needs JS.
+    Raises AgentIntakeError for unsupported URLs.
+
+    When the page needs JavaScript rendering, this no longer errors out —
+    it creates a render job for a registered browser and returns
+    (None, job). The caller resumes via `resume_from_render` when the job
+    completes.
     """
+    from .render_jobs import RenderJob, RenderJobStore
+
     url = (url or "").strip()
     src = detect_source(url)
     if src is None:
         raise AgentIntakeError(f"Unsupported share URL: {url[:80]}")
     conv = fetch_shared_conversation(url)
     if conv.needs_browser:
-        raise AgentIntakeError(
-            "browser_required: this share page needs JavaScript rendering — "
-            "open it in a browser and paste the visible conversation text instead"
-        )
+        rs = render_store or RenderJobStore()
+        job = rs.create(url)
+        return None, job
     examples = conv.as_examples()
     description = (
         f"Shared {conv.source} conversation"
         + (f": {conv.title}" if conv.title else "")
         + f" ({len(conv.messages)} messages)."
     )
-    return connect_agent(
+    agent = connect_agent(
         name=name or conv.title or f"{conv.source} shared chat",
         platform=f"{conv.source}_share",
         description=description,
         examples=examples,
+        store=store,
+    )
+    return agent, None
+
+
+def resume_from_render(
+    job_id: str,
+    name: str | None = None,
+    store: AgentStore | None = None,
+    render_store: "RenderJobStore | None" = None,
+) -> ConnectedAgent:
+    """Resume the intake pipeline after a render job completes.
+
+    Takes the extracted transcript from the completed job and runs the
+    standard pipeline via connect_via_extracted_text.
+    """
+    from .render_jobs import RenderJobStore
+
+    rs = render_store or RenderJobStore()
+    job = rs.get(job_id)
+    if job is None:
+        raise AgentIntakeError(f"unknown render job: {job_id}")
+    if job.status != "completed" or not job.transcript:
+        raise AgentIntakeError(f"render job {job_id} is {job.status}, not completed")
+    return connect_via_extracted_text(
+        url=job.url,
+        transcript=job.transcript,
+        title=job.title,
+        name=name,
         store=store,
     )
 

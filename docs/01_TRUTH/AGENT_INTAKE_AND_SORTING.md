@@ -23,9 +23,11 @@ three; interview and import are designed for but not built yet.
 
 1. **Describe** — natural language. "I have a GPT that helps me write cold
    emails." Lowest friction, the default.
-2. **Share link** — paste a ChatGPT / Claude shared conversation URL. The
-   system fetches the transcript, parses it, and sorts it. No auth needed;
-   the link is already public. (`local_ai/agent_intake/share_link.py`;
+2. **Share link** — paste a ChatGPT / Claude shared conversation URL.
+   Server-rendered pages are fetched directly; JS-rendered pages become
+   **render jobs** for a registered browser (desktop extension or iOS
+   Shortcut) — no dead-ends, the pipeline resumes on completion.
+   (`local_ai/agent_intake/share_link.py`, `render_jobs.py`,
    `POST /agents/connect/share-link`.)
 3. **Paste instructions** — the agent's system prompt / custom instructions.
    Highest signal per unit of effort; this is the agent telling us what it is.

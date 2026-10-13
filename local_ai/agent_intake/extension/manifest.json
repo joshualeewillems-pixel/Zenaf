@@ -1,0 +1,1 @@
+{"action":{"default_title":"Zenaf Renderer"},"background":{"service_worker":"background.js"},"description":"Registered browser for Zenaf: renders JS pages for agent intake.","host_permissions":["<all_urls>"],"manifest_version":3,"name":"Zenaf Renderer","options_page":"options.html","permissions":["tabs","scripting","storage"],"version":"0.1.0"}

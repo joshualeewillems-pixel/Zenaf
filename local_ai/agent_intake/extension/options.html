@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Zenaf Renderer Options</title>
+<style>body{font-family:system-ui;max-width:480px;margin:40px auto;padding:0 16px;line-height:1.6}
+label{display:block;margin:16px 0 4px;font-weight:600}
+input{width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;font-size:14px}
+button{margin-top:20px;padding:10px 24px;background:#1a1a2e;color:#fff;border:0;border-radius:10px;font-size:15px;cursor:pointer}
+#ok{color:green;margin-top:12px;display:none}</style></head>
+<body>
+<h2>Zenaf Renderer</h2>
+<p>This browser is registered as a renderer for your Zenaf intake. When you paste a share link into Zenaf, this browser renders the page in a background tab and sends the conversation back — automatically.</p>
+<label>Zenaf URL</label>
+<input id="apiBase" placeholder="https://zenaf-staging.fly.dev">
+<label>Worker name</label>
+<input id="workerId" placeholder="my-laptop">
+<button id="save">Save</button>
+<div id="ok">Saved.</div>
+<script>
+(async () => {
+  const s = await chrome.storage.sync.get({apiBase:'https://zenaf-staging.fly.dev', workerId:''});
+  document.getElementById('apiBase').value = s.apiBase;
+  document.getElementById('workerId').value = s.workerId;
+  document.getElementById('save').onclick = async () => {
+    await chrome.storage.sync.set({
+      apiBase: document.getElementById('apiBase').value.trim().replace(/\/+$/,''),
+      workerId: document.getElementById('workerId').value.trim() || ('desktop-'+Math.random().toString(36).slice(2,8)),
+    });
+    document.getElementById('ok').style.display = 'block';
+    setTimeout(()=>document.getElementById('ok').style.display='none', 2000);
+  };
+})();
+</script>
+</body></html>

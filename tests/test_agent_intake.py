@@ -531,3 +531,62 @@ def test_split_transcript():
     chunks = _split_transcript("USER: one\n\nASSISTANT: two\n\nUSER: three")
     assert len(chunks) == 3
     assert chunks[0].startswith("USER:")
+
+
+# ---------------------------------------------------------------------------
+# Render jobs — registered browsers instead of browser_required dead-ends
+# ---------------------------------------------------------------------------
+
+def test_render_job_lifecycle(tmp_path):
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+    rs = RenderJobStore(db_path=str(tmp_path / "rj.db"))
+    job = rs.create("https://chatgpt.com/share/abc", agent_id="a1")
+    assert job.status == "pending"
+
+    claimed = rs.next_pending("worker-1")
+    assert claimed and claimed.id == job.id
+    assert claimed.status == "claimed"
+    assert claimed.claimed_by == "worker-1"
+
+    # second worker gets nothing while it's claimed
+    assert rs.next_pending("worker-2") is None
+
+    done = rs.complete(job.id, "USER: hello\n\nASSISTANT: hi", title="Test chat")
+    assert done.status == "completed"
+    assert done.transcript.startswith("USER:")
+
+    assert rs.pending_count() == 0
+
+
+def test_share_link_queues_render_job_instead_of_error(tmp_path, monkeypatch):
+    from local_ai.agent_intake import pipeline as P
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+    from local_ai.agent_intake.share_link import SharedConversation
+
+    monkeypatch.setattr(
+        P, "fetch_shared_conversation",
+        lambda url: SharedConversation(source="chatgpt", url=url, title="T",
+                                       messages=[], needs_browser=True),
+    )
+    rs = RenderJobStore(db_path=str(tmp_path / "rj2.db"))
+    agent, job = P.connect_via_share_link("https://chatgpt.com/share/abc", render_store=rs)
+    assert agent is None
+    assert job is not None and job.status == "pending"
+    assert job.url == "https://chatgpt.com/share/abc"
+
+
+def test_resume_from_render(tmp_path, monkeypatch):
+    from local_ai.agent_intake import pipeline as P
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+    from local_ai.agent_intake.store import AgentStore
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    rs = RenderJobStore(db_path=str(tmp_path / "rj3.db"))
+    store = AgentStore(db_path=str(tmp_path / "t.db"))
+    job = rs.create("https://chatgpt.com/share/abc")
+    rs.complete(job.id, "USER: help me write\n\nASSISTANT: sure", title="Writing")
+
+    agent = P.resume_from_render(job.id, store=store, render_store=rs)
+    assert agent.status == "pending_review"
+    assert agent.source_platform == "chatgpt_share"
+    assert len(agent.examples) >= 1

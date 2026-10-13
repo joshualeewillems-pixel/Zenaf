@@ -76,6 +76,15 @@ try:
 except Exception as e:
     print(f"Ingest routes not loaded: {e}")
 
+# Agent Intake & Sorting ("The Sorting"): connect external AI agents, sort
+# them into strand agents as skills/talents/projects, review before anything
+# trains.
+try:
+    from api.routes.agent_routes import router as agent_router
+    app.include_router(agent_router)
+except Exception as e:
+    print(f"Agent routes not loaded: {e}")
+
 # Identity license + consent scopes + takeout: the ownership layer. Every
 # doppelganger's data is the owner's property; scopes gate every use.
 try:

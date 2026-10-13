@@ -1,0 +1,296 @@
+"""Tests for Agent Intake & Sorting ("The Sorting") v1.
+
+Covers: rule-based sorter accuracy on labeled fixtures, pipeline redaction
+at capture, the review queue, and confirm-with-corrections.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from local_ai.agent_intake import pipeline
+from local_ai.agent_intake.pipeline import AgentIntakeError, confirm_agent, connect_agent
+from local_ai.agent_intake.schema import ConnectedAgent, SortResult
+from local_ai.agent_intake.sorter import sort
+from local_ai.agent_intake.store import AgentStore
+
+
+# ---------------------------------------------------------------------------
+# Sorter fixtures: (name, description, instructions, examples, want_strand, want_kind)
+# ---------------------------------------------------------------------------
+
+FIXTURES = [
+    (
+        "Cold Email Writer",
+        "A GPT that helps me write cold emails. It follows a process: research "
+        "the prospect, draft three subject lines, then write the body using my "
+        "template. The steps are always the same.",
+        None,
+        [],
+        "word",
+        "skill",
+    ),
+    (
+        "Spreadsheet Analyst",
+        "Helps me analyze sales data every week. It calculates metrics, builds "
+        "charts, and forecasts trends for my dashboard, following a template.",
+        None,
+        [],
+        "number",
+        "skill",
+    ),
+    (
+        "Logo Muse",
+        "It just gets my visual taste. I describe a vibe and it naturally "
+        "proposes logo directions with a strong sense of color and typography.",
+        None,
+        [],
+        "image",
+        "talent",
+    ),
+    (
+        "Mix Assistant",
+        "Helps me with mixing and mastering my podcast episodes. Workflow: "
+        "balance levels, cut silences, then master the track from my checklist.",
+        None,
+        [],
+        "sound",
+        "skill",
+    ),
+    (
+        "Sourdough Coach",
+        "My bread-baking helper. It walks me through each bake: feed the "
+        "starter, mix and shape the dough, then bake, following my recipe "
+        "template with steps for timing.",
+        None,
+        [],
+        "body",
+        "skill",
+    ),
+    (
+        "Hiring Gut-Check",
+        "It has a great sense of people. I paste interview notes and it "
+        "naturally spots what I missed — its intuition for team fit surprises me.",
+        None,
+        [],
+        "people",
+        "talent",
+    ),
+    (
+        "Morning Planner",
+        "Helps me plan my day. The process: review my goals, prioritize three "
+        "tasks, then time-block my calendar for focus.",
+        None,
+        [],
+        "self",
+        "skill",
+    ),
+    (
+        "Novel Engine",
+        "A Claude Project I'm working on for my novel. It helps me develop "
+        "chapters and track the story arc across drafts.",
+        None,
+        [],
+        "word",  # story/draft markers lean Word; kind is what matters here
+        "project",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "name,description,instructions,examples,want_strand,want_kind", FIXTURES
+)
+def test_sorter_fixture(name, description, instructions, examples, want_strand, want_kind):
+    result = sort(name, description, instructions, examples)
+    assert isinstance(result, SortResult)
+    assert result.primary_strand == want_strand, (
+        f"{name}: got {result.primary_strand}, claims="
+        f"{[(c.strand, c.score) for c in result.claims]}"
+    )
+    assert result.kind == want_kind, f"{name}: got kind {result.kind}"
+    # All seven strands make a claim, sorted by score desc.
+    assert len(result.claims) == 7
+    scores = [c.score for c in result.claims]
+    assert scores == sorted(scores, reverse=True)
+    assert all(0.0 <= s <= 1.0 for s in scores)
+    assert all(c.reasoning for c in result.claims)
+    assert result.kind_reasoning
+
+
+def test_sorter_is_deterministic():
+    name, description = "Cold Email Writer", FIXTURES[0][1]
+    first = sort(name, description).to_dict()
+    second = sort(name, description).to_dict()
+    assert first == second
+
+
+def test_sorter_low_confidence_probes():
+    result = sort("Helper", "It helps with stuff.")
+    assert result.confidence < 0.35
+    assert result.needs_probing is True
+    assert result.kind == "undecided"
+
+
+def test_sorter_uses_instructions_and_examples():
+    # Bare description is vague; instructions carry the signal.
+    vague = sort("Assistant", "Does things for me.")
+    assert vague.needs_probing is True
+    grounded = sort(
+        "Assistant",
+        "Does things for me.",
+        instructions="You are a music composition helper. Write melodies, "
+        "suggest chord progressions, and help with songwriting.",
+        examples=["User: write me a chorus\nAssistant: here's a melody..."],
+    )
+    assert grounded.primary_strand == "sound"
+    assert grounded.needs_probing is False
+
+
+# ---------------------------------------------------------------------------
+# Pipeline: redaction at capture, review queue, confirm
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def store(tmp_path: Path) -> AgentStore:
+    s = AgentStore(db_path=tmp_path / "agents.db")
+    yield s
+    s.close()
+
+
+@pytest.fixture()
+def corrections_log(tmp_path: Path) -> Path:
+    return tmp_path / "corrections.jsonl"
+
+
+def test_pipeline_redacts_pii_at_capture(store: AgentStore):
+    agent = connect_agent(
+        name="Outreach Bot",
+        platform="chatgpt",
+        description="Writes cold emails for me. Contact me at josh@example.com "
+        "or 555-123-4567 for follow-ups.",
+        instructions="My phone is 555-987-6543. Always sign as Josh.",
+        examples=["Email josh@example.com the draft"],
+        store=store,
+    )
+    assert isinstance(agent, ConnectedAgent)
+    assert agent.status == "pending_review"
+    assert agent.sort is not None
+    for text in [agent.description, agent.instructions or "", *agent.examples]:
+        assert "josh@example.com" not in text
+        assert "555-123-4567" not in text
+        assert "555-987-6543" not in text
+    assert "[EMAIL]" in agent.description
+    assert "[PHONE]" in agent.description
+    # Stored copy is redacted too.
+    stored = store.get(agent.id)
+    assert stored is not None
+    assert "josh@example.com" not in stored.description
+
+
+def test_review_queue_lists_pending(store: AgentStore):
+    assert store.list_pending() == []
+    a1 = connect_agent("A1", "chatgpt", "Helps me write essays.", store=store)
+    a2 = connect_agent("A2", "claude", "Analyzes my data.", store=store)
+    pending = store.list_pending()
+    assert {a.id for a in pending} == {a1.id, a2.id}
+    assert len(store.list_all()) == 2
+
+
+def test_confirm_accept_activates(store: AgentStore, corrections_log: Path):
+    agent = connect_agent("A1", "chatgpt", "Helps me write essays.", store=store)
+    updated = confirm_agent(
+        agent.id, accepted=True, store=store, corrections_log=corrections_log
+    )
+    assert updated.status == "active"
+    assert store.get(agent.id).status == "active"
+    assert store.list_pending() == []
+    # No correction logged on a clean accept.
+    assert not corrections_log.exists()
+
+
+def test_confirm_with_corrections_applies_and_logs(
+    store: AgentStore, corrections_log: Path
+):
+    agent = connect_agent(
+        "Mediator Bot",
+        "chatgpt",
+        "Helps me write difficult emails to my team.",
+        store=store,
+    )
+    original_strand = agent.sort.primary_strand
+    updated = confirm_agent(
+        agent.id,
+        accepted=True,
+        corrections={"primary_strand": "people", "kind": "talent"},
+        store=store,
+        corrections_log=corrections_log,
+    )
+    assert updated.status == "active"
+    assert updated.sort.primary_strand == "people"
+    assert updated.sort.kind == "talent"
+    assert updated.sort.needs_probing is False
+    # Original claims preserved; correction recorded separately.
+    assert len(updated.sort.claims) == 7
+    lines = corrections_log.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["agent_id"] == agent.id
+    assert entry["correction"] == {"primary_strand": "people", "kind": "talent"}
+    assert entry["original"]["primary_strand"] == original_strand
+    assert "ts" in entry
+
+
+def test_confirm_reject_archives(store: AgentStore, corrections_log: Path):
+    agent = connect_agent("A1", "chatgpt", "Helps me write essays.", store=store)
+    updated = confirm_agent(
+        agent.id, accepted=False, store=store, corrections_log=corrections_log
+    )
+    assert updated.status == "archived"
+    assert store.list_pending() == []
+
+
+def test_confirm_unknown_agent_raises(store: AgentStore, corrections_log: Path):
+    with pytest.raises(AgentIntakeError):
+        confirm_agent(
+            "nope", accepted=True, store=store, corrections_log=corrections_log
+        )
+
+
+def test_confirm_invalid_correction_raises(store: AgentStore, corrections_log: Path):
+    agent = connect_agent("A1", "chatgpt", "Helps me write essays.", store=store)
+    with pytest.raises(AgentIntakeError):
+        confirm_agent(
+            agent.id,
+            accepted=True,
+            corrections={"primary_strand": "moon"},
+            store=store,
+            corrections_log=corrections_log,
+        )
+
+
+def test_connect_requires_name_and_description(store: AgentStore):
+    with pytest.raises(AgentIntakeError):
+        connect_agent("", "chatgpt", "Helps me write.", store=store)
+    with pytest.raises(AgentIntakeError):
+        connect_agent("Bot", "chatgpt", "  ", store=store)
+
+
+def test_schema_round_trip():
+    result = sort("Cold Email Writer", FIXTURES[0][1])
+    agent = ConnectedAgent(
+        id="abc",
+        name="Cold Email Writer",
+        source_platform="chatgpt",
+        description="redacted",
+        instructions=None,
+        examples=[],
+        sort=result,
+        status="pending_review",
+        created_at="2026-10-12T00:00:00+00:00",
+    )
+    restored = ConnectedAgent.from_dict(agent.to_dict())
+    assert restored == agent
+    assert restored.sort.primary_strand == "word"

@@ -49,7 +49,13 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     # Dev SPA is bound to 127.0.0.1 only (see frontend/vite.config.ts) so cookies align with API_BASE.
-    allow_origins=["http://127.0.0.1:5173"],
+    # ChatGPT/Claude share pages: the Zenaf bookmarklet POSTs extracted
+    # transcripts from these origins (no credentials; share-text endpoint only).
+    allow_origins=[
+        "http://127.0.0.1:5173",
+        "https://chatgpt.com",
+        "https://claude.ai",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -157,8 +157,7 @@ class ShareTextBody(BaseModel):
 
 
 @router.post("/connect/share-text", status_code=201)
-def connect_share_text(body: ShareTextBody):
-    """Connect an agent from bookmarklet-extracted share-page text.
+def connect_share_text(body: ShareTextBody):    """Connect an agent from bookmarklet-extracted share-page text.
 
     The Zenaf bookmarklet runs inside the rendered page in the user's own
     browser, extracts the conversation, and POSTs it here — no copy/paste.
@@ -302,3 +301,13 @@ def confirm_mined_projects(body: ConfirmMinedBody):
         return project_miner.create_confirmed(result, body.user_id.strip(), selected)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)[:300])
+
+
+@router.get("/bookmarklet/install", include_in_schema=False)
+def bookmarklet_install():
+    """Serve the bookmarklet install page (HTML)."""
+    from fastapi.responses import HTMLResponse
+    from pathlib import Path
+
+    page = Path(__file__).resolve().parent.parent.parent / "local_ai" / "agent_intake" / "install_page.html"
+    return HTMLResponse(content=page.read_text(encoding="utf-8"))

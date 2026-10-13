@@ -146,7 +146,7 @@ export function TranscriptSorter({ apiBase }: { apiBase: string }) {
           {transcriptError}
         </div>
       )}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Call title (optional)</label>

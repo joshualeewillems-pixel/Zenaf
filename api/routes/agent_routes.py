@@ -312,3 +312,19 @@ def bookmarklet_install():
 
     page = Path(__file__).resolve().parent.parent.parent / "local_ai" / "agent_intake" / "install_page.html"
     return HTMLResponse(content=page.read_text(encoding="utf-8"))
+
+
+@router.get("/bookmarklet/code", include_in_schema=False)
+def bookmarklet_code():
+    """Serve the raw bookmarklet JavaScript (for desktop install)."""
+    from fastapi.responses import PlainTextResponse
+    from pathlib import Path
+    import re
+    import urllib.parse
+
+    src = Path(__file__).resolve().parent.parent.parent / "local_ai" / "agent_intake" / "bookmarklet.js"
+    js = src.read_text(encoding="utf-8")
+    js = re.sub(r"/\*.*?\*/", "", js, flags=re.S)
+    js = re.sub(r"\s+", " ", js).strip()
+    bm = "javascript:" + urllib.parse.quote(js, safe="():;,.!?*~@$&+=[]")
+    return PlainTextResponse(content=bm)

@@ -3248,6 +3248,9 @@ def _resolve_personality_blend_context(council_user_id: str | None):
     strand's effective weight is 0 — the seats then render the pure
     aspirational default, byte-identical to pre-blend behavior.
     Never raises: blend failures must not break council runs.
+
+    Kept for backward compatibility; new code should use
+    _resolve_council_personality, which also handles the base/mirror modes.
     """
     if not council_user_id:
         return None
@@ -3264,25 +3267,96 @@ def _resolve_personality_blend_context(council_user_id: str | None):
         return None
 
 
+def _resolve_council_personality(council_user_id: str | None, mode_override: str | None = None):
+    """Resolve the CouncilPersonality for one council run. Never raises.
+
+    Mode precedence: explicit per-run override > user's stored default >
+    system default ("blend"). With no user id the mode still resolves (from
+    the override or the system default) but carries no profile data, so
+    seats render the pure aspirational default.
+    """
+    try:
+        from local_ai.personality.blend import (
+            CouncilPersonality,
+            normalize_council_mode,
+            resolve_council_personality,
+        )
+        from local_ai.personality.store import PersonalityStore
+
+        if not council_user_id:
+            return CouncilPersonality(mode=normalize_council_mode(mode_override))
+        store = PersonalityStore(user_id=council_user_id)
+        try:
+            return resolve_council_personality(store, mode_override)
+        finally:
+            store.close()
+    except Exception:
+        from local_ai.personality.blend import CouncilPersonality, normalize_council_mode
+
+        return CouncilPersonality(mode=normalize_council_mode(mode_override))
+
+
+def _council_personality_notice(personality) -> str | None:
+    """Human-readable mirror-fallback notice for one run's personality."""
+    try:
+        empty = list(personality.mirror_empty_strands)
+    except Exception:
+        return None
+    if not empty:
+        return None
+    try:
+        from local_ai.personality.blend import mirror_notice_text
+
+        return mirror_notice_text(empty)
+    except Exception:
+        return None
+
+
+def _resolve_seat_strand(defn: dict) -> str:
+    """Strand key for a seat definition, with fallbacks.
+
+    Client-supplied definitions (e.g. from the GUI) may omit `strand`; fall
+    back to matching `perspective_agent_id`/`id` against the built-in
+    persona definitions. Returns "" when the seat has no strand (synthesis
+    seats, custom non-strand seats) — those pass through untouched.
+    """
+    direct = (defn.get("strand") or "").strip().lower()
+    if direct:
+        return direct
+    for key in ("perspective_agent_id", "id"):
+        cand = (defn.get(key) or "").strip().lower()
+        if cand and cand in BUILT_IN_PERSONA_DEFINITIONS:
+            strand = (BUILT_IN_PERSONA_DEFINITIONS[cand].get("strand") or "").strip().lower()
+            if strand:
+                return strand
+    return ""
+
+
 def _build_weighted_council_persona_block(
     defn: dict,
     *,
     blend_ctx=None,
+    personality=None,
     council_clarify_only: bool = False,
 ) -> str:
-    """Seat persona block with the Phase 4 personality blend applied.
+    """Seat persona block with the council personality mode applied.
 
-    The base block is built exactly as before (aspirational default);
-    `apply_personality_blend` appends the labeled user-side section when
-    this strand's effective weight is > 0, else returns the base unchanged.
+    `personality` is a CouncilPersonality (base/mirror/blend). When omitted,
+    `blend_ctx` (a Phase 4 BlendContext) is honored for backward
+    compatibility. The base block is built exactly as before (aspirational
+    default); the personality layer then applies the run's mode.
     The built-in definitions are only ever read, never written.
     """
     base = _build_council_persona_block(defn, council_clarify_only=council_clarify_only)
-    if blend_ctx is None:
-        return base
-    from local_ai.personality.blend import apply_personality_blend
+    from local_ai.personality.blend import CouncilPersonality, apply_council_personality
 
-    return apply_personality_blend(base, defn, blend_ctx)
+    strand_key = _resolve_seat_strand(defn)
+    if personality is None:
+        if blend_ctx is None:
+            return base
+        # Backward-compatible: raw BlendContext behaves as blend mode.
+        personality = CouncilPersonality(mode="blend", blend_ctx=blend_ctx)
+    return apply_council_personality(base, defn, personality, strand_key=strand_key or None)
 
 
 def _assemble_council_seat_prompt(
@@ -3749,6 +3823,7 @@ def run_council(
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
     pending_ve_elicitation_dict: dict[str, Any] | None = None,
+    council_personality_mode: str | None = None,
 ) -> str | tuple[str, CouncilRunArtifact, dict[str, Any]]:
     """
     Council mode: at least one seat is always required (perspective_definitions, built-in role keys in included_roles,
@@ -3780,7 +3855,9 @@ def run_council(
         council_user_id
     )
     # Phase 4 personality blend: resolved once per run; None = pure aspirational seats.
-    _personality_blend_ctx = _resolve_personality_blend_context(council_user_id)
+    _council_personality = _resolve_council_personality(
+        council_user_id, council_personality_mode
+    )
     provider = get_council_provider_for_principal(
         p_council,
         force_provider=provider_override_id,
@@ -3930,7 +4007,7 @@ def run_council(
                 shared_for_seat = shared_for_seat.rstrip() + overlay_suffix
             perspective_shared_constraints.append(shared_for_seat)
             persona_block = _build_weighted_council_persona_block(
-                defn, blend_ctx=_personality_blend_ctx, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only
             )
             prompt = _assemble_council_seat_prompt(
                 primary_context_block=primary_block,
@@ -3976,7 +4053,7 @@ def run_council(
                     "seat_kind": "user_defined",
                     "raw_perspective_definition": defn,
                     "normalized_persona_block": _build_weighted_council_persona_block(
-                        defn, blend_ctx=_personality_blend_ctx, council_clarify_only=clarify_only
+                        defn, personality=_council_personality, council_clarify_only=clarify_only
                     ),
                     "prompt_decomposition": {
                         "primary_context": primary_block,
@@ -4026,7 +4103,7 @@ def run_council(
             role_key = COUNCIL_ROLE_KEYS[i]
             defn = _built_in_persona_dict(role_key)
             persona_block = _build_weighted_council_persona_block(
-                defn, blend_ctx=_personality_blend_ctx, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only
             )
             decisions_block = _format_decision_context_block(role_name, limit=5) or ""
             prompt = _assemble_council_seat_prompt(
@@ -4072,7 +4149,7 @@ def run_council(
                     "seat_kind": "built_in",
                     "raw_perspective_definition": None,
                     "normalized_persona_block": _build_weighted_council_persona_block(
-                        defn, blend_ctx=_personality_blend_ctx, council_clarify_only=clarify_only
+                        defn, personality=_council_personality, council_clarify_only=clarify_only
                     ),
                     "prompt_decomposition": {
                         "primary_context": primary_block,
@@ -4192,6 +4269,9 @@ def run_council(
             "brand_profile_loaded": _brand_pf_meta.get("brand_profile_loaded"),
             "brand_profile_display_name": _brand_pf_meta.get("brand_profile_display_name"),
             "brand_profile_path": _brand_pf_meta.get("brand_profile_path"),
+            "council_personality_mode": _council_personality.mode,
+            "mirror_empty_strands": list(_council_personality.mirror_empty_strands),
+            "mirror_notice": _council_personality_notice(_council_personality),
             **conversational_partner_meta,
         },
         "prompt_stack": {
@@ -4376,6 +4456,7 @@ def run_council_stream(
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
     pending_ve_elicitation_dict: dict[str, Any] | None = None,
+    council_personality_mode: str | None = None,
 ):
     """
     Same as run_council but yields each role/synthesis chunk as it completes, for streaming UI.
@@ -4413,7 +4494,9 @@ def run_council_stream(
         council_user_id
     )
     # Phase 4 personality blend: resolved once per run; None = pure aspirational seats.
-    _personality_blend_ctx = _resolve_personality_blend_context(council_user_id)
+    _council_personality = _resolve_council_personality(
+        council_user_id, council_personality_mode
+    )
     perf_mark("run_council_stream_before_get_council_provider_for_principal")
     provider = get_council_provider_for_principal(
         p_council,
@@ -4617,7 +4700,7 @@ def run_council_stream(
                 defn, role_limit=role_limit, clarify_only=clarify_only
             )
             persona_block = _build_weighted_council_persona_block(
-                defn, blend_ctx=_personality_blend_ctx, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only
             )
             prompt = _assemble_council_seat_prompt(
                 primary_context_block=primary_block,
@@ -4686,7 +4769,7 @@ def run_council_stream(
                 role_key = COUNCIL_ROLE_KEYS[i]
                 defn = _built_in_persona_dict(role_key)
                 persona_block = _build_weighted_council_persona_block(
-                defn, blend_ctx=_personality_blend_ctx, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only
             )
                 decisions_block = _format_decision_context_block(role_name, limit=5) or ""
                 prompt = _assemble_council_seat_prompt(
@@ -4939,6 +5022,9 @@ def run_council_stream(
 
     done_meta: Dict[str, Any] = {
         **_stream_brand_pf,
+        "council_personality_mode": _council_personality.mode,
+        "mirror_empty_strands": list(_council_personality.mirror_empty_strands),
+        "mirror_notice": _council_personality_notice(_council_personality),
         "integrity_envelope_seat": _seat_env_dict,
         "integrity_envelope_synthesis": stream_integrity_done.get("integrity_envelope_synthesis"),
         "synthesis_integrity_state": stream_integrity_done.get("synthesis_integrity_state"),

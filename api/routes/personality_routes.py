@@ -34,7 +34,15 @@ class ProposeBody(BaseModel):
 
     strand_key: str | None = Field(default=None, description="None = profile-global (voice)")
     ops: list[CandidateOp] = Field(min_length=1)
-    source: str = ""
+    source: str = Field(
+        min_length=1,
+        description=(
+            "Where this insight came from — required, so the user sees it when asked "
+            'to approve. Canonical values: "distillation", "council_interaction", '
+            '"correction", "manual"; namespaced forms allowed, e.g. '
+            '"seed:signal:<signal_id>".'
+        ),
+    )
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     rationale: str = ""
 
@@ -239,6 +247,45 @@ def set_seat_weights(body: WeightsBody, current_user: dict = Depends(get_current
     try:
         try:
             return {"overrides": store.set_weight_overrides(body.weights)}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        store.close()
+
+
+class CouncilModeBody(BaseModel):
+    council_mode: str = Field(description='One of "base", "mirror", "blend"')
+
+
+@router.get("/council-mode")
+def get_council_mode(current_user: dict = Depends(get_current_user)):
+    """The user's default council personality mode (which seat version to use).
+
+    Read needs session auth only. System default is "blend".
+    """
+    uid = _uid(current_user)
+    store = _store(uid)
+    try:
+        return {"council_mode": store.get_council_mode()}
+    finally:
+        store.close()
+
+
+@router.put("/council-mode")
+def set_council_mode(body: CouncilModeBody, current_user: dict = Depends(get_current_user)):
+    """Set the user's default council personality mode.
+
+    Which version of a council seat to use is the user's decision, per
+    purpose: "base" (pure aspirational), "mirror" (their trained version),
+    or "blend" (weighted). A per-run `council_personality_mode` overrides
+    this default. Gated on train:self like other personality writes.
+    """
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    store = _store(uid)
+    try:
+        try:
+            return {"council_mode": store.set_council_mode(body.council_mode)}
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
     finally:

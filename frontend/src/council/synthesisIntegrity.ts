@@ -132,6 +132,12 @@ export type CouncilStreamSsePayload = {
   integrity_warning?: string | null
   integrity_envelope?: unknown
   integrity_envelope_synthesis?: unknown
+  /** Council personality mode used for this run (base | mirror | blend). */
+  council_personality_mode?: string | null
+  /** Mirror mode: strand keys whose seats fell back to aspirational. */
+  mirror_empty_strands?: string[] | null
+  /** Human-readable mirror-fallback notice (null when every seat had mirror content). */
+  mirror_notice?: string | null
 }
 
 const REVIEW_SYNTHESIS_MAX = 8000

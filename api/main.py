@@ -272,6 +272,10 @@ class RunParams(BaseModel):
     force_full_council: bool | None = None
     # Optional narrower question shown to council seats only; full `question` still drives synthesis and packets.
     seat_question: str | None = None
+    # Council personality mode: which version of each seat to use — "base" (pure aspirational),
+    # "mirror" (user's published PersonalityProfile only), or "blend" (weighted, default).
+    # When omitted, the user's saved default (/personality/council-mode) applies.
+    council_personality_mode: str | None = None
 
 
 class RunRoutingContext(BaseModel):
@@ -357,6 +361,12 @@ class RunResponse(BaseModel):
     council_native_attachment_trace: dict | None = None
     # Council wash-for-externalization v0 (deterministic redaction trace)
     council_wash_trace: dict | None = None
+    # Council personality mode for this run: which seat version was used (base|mirror|blend)
+    council_personality_mode: str | None = None
+    # Mirror mode: strand keys whose seats fell back to aspirational (no published content)
+    mirror_empty_strands: list[str] | None = None
+    # Human-readable mirror-fallback notice (None when every seat had mirror content)
+    mirror_notice: str | None = None
     # Lane A: direct Vision Execution action (integration ran first; early return skips council LLM)
     direct_ve_action: dict | None = None
 
@@ -1040,6 +1050,8 @@ def _run_council(
     """Call run_council(question, context=..., included_roles=...). question required."""
     if not params or not (params.question or "").strip():
         raise ValueError("council requires params.question")
+    # Reset per-run personality reporting; every path below sets it explicitly.
+    setattr(_run_council, "_last_council_personality", None)
     question = params.question.strip()
     seat_question = (params.seat_question or "").strip() or None
     if request is not None:
@@ -1143,7 +1155,8 @@ def _run_council(
         setattr(_run_council, "_last_teacher_meta", None)
         from local_ai.zenaf_tools import run_council
 
-        return run_council(
+        _council_mode = getattr(params, "council_personality_mode", None)
+        _res = run_council(
             question,
             context=native_ctx,
             included_roles=included,
@@ -1166,7 +1179,26 @@ def _run_council(
             pending_integration_dict=pending_integration_dict,
             last_integration_commit_dict=last_integration_commit_dict,
             pending_ve_elicitation_dict=pending_ve_elicitation_dict,
+            council_personality_mode=_council_mode,
+            return_artifact=True,
         )
+        # run_council returns (text, artifact, run_debug) with return_artifact=True;
+        # error paths may still return a bare string.
+        if isinstance(_res, tuple):
+            _text, _art, _dbg = _res[0], _res[1] if len(_res) > 1 else None, _res[2] if len(_res) > 2 else {}
+            _rm = _dbg.get("run_meta") if isinstance(_dbg, dict) else {}
+            setattr(
+                _run_council,
+                "_last_council_personality",
+                {
+                    "council_personality_mode": (_rm or {}).get("council_personality_mode"),
+                    "mirror_empty_strands": (_rm or {}).get("mirror_empty_strands") or [],
+                    "mirror_notice": (_rm or {}).get("mirror_notice"),
+                },
+            )
+            return _text
+        setattr(_run_council, "_last_council_personality", None)
+        return _res
 
     packed = run_council_with_teacher(
         question=question,
@@ -1191,6 +1223,7 @@ def _run_council(
         pending_integration_dict=pending_integration_dict,
         last_integration_commit_dict=last_integration_commit_dict,
         pending_ve_elicitation_dict=pending_ve_elicitation_dict,
+        council_personality_mode=getattr(params, "council_personality_mode", None),
     )
     rid = St.append_council_teacher_run(
         {
@@ -1249,8 +1282,24 @@ def _run_council(
         if isinstance(_nat_meta, dict)
         else None,
         "council_wash_trace": wash_trace,
+        "council_personality_mode": _nat_meta.get("council_personality_mode")
+        if isinstance(_nat_meta, dict)
+        else None,
+        "mirror_empty_strands": _nat_meta.get("mirror_empty_strands")
+        if isinstance(_nat_meta, dict)
+        else [],
+        "mirror_notice": _nat_meta.get("mirror_notice") if isinstance(_nat_meta, dict) else None,
     }
     setattr(_run_council, "_last_teacher_meta", _meta)
+    setattr(
+        _run_council,
+        "_last_council_personality",
+        {
+            "council_personality_mode": _meta["council_personality_mode"],
+            "mirror_empty_strands": _meta["mirror_empty_strands"],
+            "mirror_notice": _meta["mirror_notice"],
+        },
+    )
     return str(packed.get("selected_text") or "")
 
 
@@ -1482,6 +1531,7 @@ def _council_stream_gen(
             pending_integration_dict=_stream_pending,
             last_integration_commit_dict=_stream_last_commit,
             pending_ve_elicitation_dict=_stream_ve_elicitation,
+            council_personality_mode=getattr(params, "council_personality_mode", None),
         )
         perf_mark(
             "_council_stream_gen_after_run_council_with_teacher",
@@ -1551,6 +1601,9 @@ def _council_stream_gen(
                 "pending_ve_elicitation",
                 "last_integration_commit",
                 "integration_commit",
+                "council_personality_mode",
+                "mirror_empty_strands",
+                "mirror_notice",
             ):
                 if _k in _snm:
                     meta[_k] = _snm[_k]
@@ -1604,6 +1657,7 @@ def _council_stream_gen(
         pending_integration_dict=_stream_pending,
         last_integration_commit_dict=_stream_last_commit,
         pending_ve_elicitation_dict=_stream_ve_elicitation,
+        council_personality_mode=getattr(params, "council_personality_mode", None),
     ):
         perf_mark(
             "_council_stream_gen_run_council_stream_tuple_received",
@@ -1793,7 +1847,8 @@ def run(body: RunRequest, http_request: Request):
                 if isinstance(result, str) and result.strip().startswith("Error:"):
                     return R(ok=False, error=result.strip())
                 tmeta = getattr(_run_council, "_last_teacher_meta", None) or {}
-                return R(ok=True, result=result, **tmeta)
+                pmeta = getattr(_run_council, "_last_council_personality", None) or {}
+                return R(ok=True, result=result, **tmeta, **pmeta)
             except ValueError as e:
                 raise HTTPException(status_code=400, detail=str(e))
             except Exception as e:

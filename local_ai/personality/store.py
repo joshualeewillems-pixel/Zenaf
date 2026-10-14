@@ -29,6 +29,7 @@ from local_ai.strands import strand_keys
 
 from .schema import (
     CandidateStatus,
+    ContextualFingerprint,
     DomainEntry,
     ExampleFragment,
     PersonalityProfile,
@@ -171,6 +172,8 @@ def _coerce(head: str, rest: str, value: Any) -> Any:
         return RedLine(**value).model_dump() if isinstance(value, dict) else value
     if head == "examples":
         return ExampleFragment(**value).model_dump() if isinstance(value, dict) else value
+    if head == "contextual_fingerprints":
+        return ContextualFingerprint(**value).model_dump() if isinstance(value, dict) else value
     return value
 
 

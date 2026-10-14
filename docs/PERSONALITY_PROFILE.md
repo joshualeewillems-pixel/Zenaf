@@ -1,6 +1,6 @@
 # Personality Profile — Design Note
 
-**Status:** Implemented (Phase 1 — the user-defined side; see `local_ai/personality/`)  
+**Status:** Implemented (Phase 1 — the user-defined side; see `local_ai/personality/`). Context-conditioned decisions implemented (see `local_ai/personality/context.py`): every decision record carries a coarse six-dimension envelope (stakes / reversibility / time_pressure / information / social_field / resource_climate, each defaulting to unknown); the decision fingerprint is context-conditional where evidence exists; council seats weight past decision evidence by context similarity and say plainly when nothing similar was observed. Context conditions the strands — it is not a strand. Internal states are deliberately excluded.  
 **Scope:** Formalize Zenaf’s implicit personality layer into a structured, versioned cognitive profile that can be deployed as a “seat at the table” in councils and workspaces.  
 **Goal:** Distill a user’s cognitive style into an interpretable, governable, portable, and marketable profile — without uncontrolled self-training, hidden memory blobs, or raw-data exposure.
 

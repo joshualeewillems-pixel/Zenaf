@@ -40,9 +40,15 @@ already-rendered base block (a string), so they cannot mutate the defns.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from local_ai.strands import strand_keys
+
+from local_ai.personality.context import (
+    DecisionContext,
+    context_similarity,
+    parse_decision_context,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from local_ai.personality.schema import PersonalityProfile
@@ -53,6 +59,11 @@ _STRAND_KEYS: tuple[str, ...] = strand_keys()
 #: Below this evidence depth the user side stays fully out — the seat
 #: renders exactly as the pure aspirational default (byte-identical).
 MIN_EVIDENCE = 0.10
+
+#: A past decision counts as "similar context" at or above this similarity.
+#: Below it (with a known current context), the seat says plainly that it
+#: has never seen the user decide under these conditions.
+CONTEXT_SIMILARITY_THRESHOLD = 0.5
 
 _FINGERPRINT_FIELDS = (
     "risk_bias",
@@ -183,6 +194,7 @@ def render_user_section(
     strand_key: str,
     weight: float,
     version_count: int,
+    decision_context: "DecisionContext | None" = None,
 ) -> str:
     """Render section (B): how this user actually wields the faculty."""
 
@@ -197,7 +209,7 @@ def render_user_section(
         "person. Where the two differ, that delta is signal, not noise.",
         "",
     ]
-    lines.extend(_profile_content_lines(profile, strand_key))
+    lines.extend(_profile_content_lines(profile, strand_key, decision_context))
 
     lines.extend(
         [
@@ -216,6 +228,7 @@ def apply_personality_blend(
     defn: dict,
     ctx: BlendContext | None,
     strand_key: str | None = None,
+    decision_context: "DecisionContext | None" = None,
 ) -> str:
     """Blend the user profile into an already-rendered seat block.
 
@@ -227,6 +240,9 @@ def apply_personality_blend(
 
     `strand_key` overrides the strand read from `defn` (the wiring layer
     resolves it, including fallbacks for client-supplied definitions).
+    `decision_context` conditions the user section on the current decision's
+    envelope (similarity-ranked past decisions; honest-extrapolation note
+    when nothing similar was observed).
 
     Never mutates `defn` or the built-in definitions.
     """
@@ -245,7 +261,7 @@ def apply_personality_blend(
         f"{_faculty_label(key)} faculty below, and (B) how this user actually "
         f"wields it (user-side weight {weight:.2f})."
     )
-    user_section = render_user_section(ctx.profile, key, weight, ctx.version_count)
+    user_section = render_user_section(ctx.profile, key, weight, ctx.version_count, decision_context)
     return f"{framing}\n\n{base_block}\n\n{user_section}".strip()
 
 
@@ -282,6 +298,8 @@ class CouncilPersonality:
 
     `mirror_empty_strands` accumulates the strand keys whose seats fell back
     to the aspirational default in mirror mode (no published content).
+    `decision_context` is the current decision's coarse envelope (None when
+    unknown) — seats weight past decision evidence by similarity to it.
     """
 
     mode: str = DEFAULT_COUNCIL_PERSONALITY_MODE
@@ -289,17 +307,23 @@ class CouncilPersonality:
     mirror_profile: "PersonalityProfile | None" = None
     version_count: int = 0
     mirror_empty_strands: list[str] = field(default_factory=list)
+    decision_context: "DecisionContext | None" = None
 
 
 def resolve_council_personality(
     store: "PersonalityStore",
     mode_override: str | None = None,
+    decision_context: Any | None = None,
 ) -> CouncilPersonality:
     """Build the CouncilPersonality for one council run. Never raises.
 
     Mode precedence: explicit per-run override > user's stored default >
     system default ("blend"). Failures degrade to the requested mode with
     no profile data (seats render aspirational) — a council run never breaks.
+
+    `decision_context` is the current decision's envelope as a dict (or a
+    DecisionContext). It is normalized; an all-unknown envelope is stored
+    as None (no usable context).
     """
     try:
         stored = store.get_council_mode()
@@ -307,6 +331,11 @@ def resolve_council_personality(
         stored = DEFAULT_COUNCIL_PERSONALITY_MODE
     mode = normalize_council_mode(mode_override or stored)
     out = CouncilPersonality(mode=mode)
+    try:
+        parsed = parse_decision_context(decision_context)
+        out.decision_context = None if parsed.is_empty() else parsed
+    except Exception:
+        out.decision_context = None
     if mode == "base":
         return out
     try:
@@ -331,10 +360,13 @@ def mirror_strand_has_content(profile: "PersonalityProfile", strand_key: str) ->
 
     Global voice alone does not count: the mirror is a per-faculty claim,
     so a strand with only voice published still falls back (and is
-    reported) until that faculty itself has trained content.
+    reported) until that faculty itself has trained content. Contextual
+    fingerprints count — they are per-faculty observations.
     """
     try:
-        return strand_evidence_depth(profile, strand_key, include_voice=False) > 0.0
+        if strand_evidence_depth(profile, strand_key, include_voice=False) > 0.0:
+            return True
+        return bool(getattr(profile.strands[strand_key], "contextual_fingerprints", None))
     except Exception:
         return False
 
@@ -348,8 +380,84 @@ def _seat_display_name(strand_key: str) -> str:
         return strand_key
 
 
-def _profile_content_lines(profile: "PersonalityProfile", strand_key: str) -> list[str]:
-    """The user's observed patterns for one strand, as prompt lines."""
+def _ranked_contextual_entries(sp, decision_context: "DecisionContext | None") -> list[tuple[float, Any]]:
+    """Contextual fingerprint entries ranked by similarity to the envelope.
+
+    Returns (similarity, entry) pairs, best first. With no usable current
+    envelope every entry scores 0.0 and keeps publication order.
+    """
+    entries = list(getattr(sp, "contextual_fingerprints", None) or [])
+    if decision_context is None or decision_context.is_empty():
+        return [(0.0, e) for e in entries]
+    ranked = [(context_similarity(decision_context, e.context), e) for e in entries]
+    ranked.sort(key=lambda t: t[0], reverse=True)
+    return ranked
+
+
+def _extrapolation_notice(decision_context: "DecisionContext") -> str:
+    return (
+        "Context note: no observed decisions under these conditions "
+        f"({decision_context.summarize()}) — the patterns below come from other "
+        "contexts or general tendencies. Treat them as rough guidance; the "
+        "aspirational standard above is the safer guide here."
+    )
+
+
+def _contextual_fingerprint_lines(sp, decision_context: "DecisionContext | None") -> list[str]:
+    """Context-conditioned fingerprint lines for one strand.
+
+    With a known current envelope: the most similar observed envelopes
+    surface with their envelope labeled; when nothing observed reaches
+    CONTEXT_SIMILARITY_THRESHOLD, an honest-extrapolation note leads.
+    Without a current envelope: the trained envelopes are named compactly
+    so the breadth of observed contexts stays visible.
+    """
+    ranked = _ranked_contextual_entries(sp, decision_context)
+    if not ranked:
+        return []
+    if decision_context is None or decision_context.is_empty():
+        bits = []
+        for _, entry in ranked[:4]:
+            n = entry.decision_count or 0
+            bits.append(f"{entry.context.summarize()}" + (f" ({n})" if n else ""))
+        return [f"Decisions observed under: {'; '.join(bits)}"] if bits else []
+    lines: list[str] = []
+    shown = 0
+    for sim, entry in ranked:
+        if sim <= 0.0 or shown >= 3:
+            break
+        fbits = [
+            f"{name}={getattr(entry.fingerprint, name)}"
+            for name in _FINGERPRINT_FIELDS
+            if (getattr(entry.fingerprint, name, "") or "").strip()
+        ]
+        if not fbits:
+            continue
+        n = entry.decision_count or 0
+        n_note = f"{n} decisions" if n else "observed"
+        lines.append(
+            f"Under {entry.context.summarize()} ({n_note}, {sim:.0%} context match): "
+            + "; ".join(fbits)
+        )
+        shown += 1
+    if ranked[0][0] < CONTEXT_SIMILARITY_THRESHOLD:
+        lines.insert(0, _extrapolation_notice(decision_context))
+    return lines
+
+
+def _profile_content_lines(
+    profile: "PersonalityProfile",
+    strand_key: str,
+    decision_context: "DecisionContext | None" = None,
+) -> list[str]:
+    """The user's observed patterns for one strand, as prompt lines.
+
+    When `decision_context` is known, context-conditioned fingerprint
+    entries are ranked by similarity to the current envelope and the most
+    similar surface with their envelope labeled; when nothing observed is
+    similar enough, an honest-extrapolation note leads instead of a
+    confident projection.
+    """
     sp = profile.strands[strand_key]
     lines: list[str] = []
 
@@ -366,6 +474,7 @@ def _profile_content_lines(profile: "PersonalityProfile", strand_key: str) -> li
         lines.append(f"Reasoning patterns: {'; '.join(rbits)}")
     if fp_bits:
         lines.append(f"Decision fingerprint: {'; '.join(fp_bits)}")
+    lines.extend(_contextual_fingerprint_lines(sp, decision_context))
     if sp.heuristics:
         lines.append("Heuristics they live by:")
         lines.extend(_bullets(sp.heuristics))
@@ -400,6 +509,7 @@ def render_mirror_block(
     profile: "PersonalityProfile",
     strand_key: str,
     version_count: int,
+    decision_context: "DecisionContext | None" = None,
 ) -> str | None:
     """Render a mirror-mode seat block from the published profile only.
 
@@ -418,7 +528,7 @@ def render_mirror_block(
         "actually reason, decide, and sound in this faculty.",
         "",
     ]
-    lines.extend(_profile_content_lines(profile, strand_key))
+    lines.extend(_profile_content_lines(profile, strand_key, decision_context))
     lines.extend(
         [
             "",
@@ -474,13 +584,18 @@ def apply_council_personality(
                 if key not in personality.mirror_empty_strands:
                     personality.mirror_empty_strands.append(key)
                 return base_block
-            mirror = render_mirror_block(profile, key, personality.version_count)
+            mirror = render_mirror_block(
+                profile, key, personality.version_count, personality.decision_context
+            )
             if mirror is None:
                 if key not in personality.mirror_empty_strands:
                     personality.mirror_empty_strands.append(key)
                 return base_block
             return mirror
         # blend (default)
-        return apply_personality_blend(base_block, defn, personality.blend_ctx, strand_key=key)
+        return apply_personality_blend(
+            base_block, defn, personality.blend_ctx,
+            strand_key=key, decision_context=personality.decision_context,
+        )
     except Exception:
         return base_block

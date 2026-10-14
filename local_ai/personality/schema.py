@@ -26,6 +26,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from local_ai.strands import strand_keys
 
+from .context import DecisionContext
+
 CandidateStatus = Literal["proposed", "accepted", "rejected", "published"]
 CandidateOpKind = Literal["add", "set"]
 
@@ -71,6 +73,23 @@ class DomainEntry(BaseModel):
     stance: str = ""  # e.g. "lead", "defer", "strong views"
 
 
+class ContextualFingerprint(BaseModel):
+    """How the user decides under ONE specific context envelope.
+
+    A PARTIAL DecisionFingerprint — only fields with observed evidence are
+    filled. The global fingerprint on the strand stays the fallback for
+    contexts with no observations. Proposed from context-tagged decision
+    signals (see seed.seed_contextual_fingerprints), never inferred
+    silently; published only through the normal propose -> review -> publish
+    pipeline. Context conditions the strands; it is not a strand itself.
+    """
+
+    context: DecisionContext = Field(default_factory=DecisionContext)
+    fingerprint: DecisionFingerprint = Field(default_factory=DecisionFingerprint)
+    evidence: str = ""  # human-readable provenance, e.g. "2 decision signals (sig_a, sig_b)"
+    decision_count: int = Field(default=0, ge=0)
+
+
 class RedLine(BaseModel):
     """A non-negotiable constraint / never-do rule."""
 
@@ -94,6 +113,9 @@ class StrandProfile(BaseModel):
 
     reasoning: ReasoningProfile = Field(default_factory=ReasoningProfile)
     fingerprint: DecisionFingerprint = Field(default_factory=DecisionFingerprint)
+    # Context-conditional fingerprints: per-envelope observations. The global
+    # `fingerprint` above stays the fallback where no envelope matches.
+    contextual_fingerprints: list[ContextualFingerprint] = Field(default_factory=list)
     heuristics: list[str] = Field(default_factory=list)
     domain_map: list[DomainEntry] = Field(default_factory=list)
     red_lines: list[RedLine] = Field(default_factory=list)
@@ -157,6 +179,8 @@ class CandidateOp(BaseModel):
             "fingerprint.decision_style",
             "fingerprint.conflict_style",
             "fingerprint.failure_tolerance",
+            # context-conditional fingerprint entries (add-only list)
+            "contextual_fingerprints",
         }
         if v not in allowed:
             raise ValueError(f"unknown candidate field {v!r}")
@@ -173,6 +197,7 @@ class CandidateOp(BaseModel):
             "domain_map",
             "red_lines",
             "examples",
+            "contextual_fingerprints",
         }
         if v == "add" and field not in list_fields:
             raise ValueError(f"op 'add' needs a list field, got {field!r}")

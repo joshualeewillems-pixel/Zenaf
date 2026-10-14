@@ -3267,13 +3267,36 @@ def _resolve_personality_blend_context(council_user_id: str | None):
         return None
 
 
-def _resolve_council_personality(council_user_id: str | None, mode_override: str | None = None):
+def _resolve_decision_context(explicit: dict | None, question: str | None):
+    """The current decision's envelope for one council run. Never raises.
+
+    Precedence: explicit per-run parameter > conservative derivation from
+    the question text (metadata, never a form field) > None. An
+    all-unknown envelope normalizes to None (no usable context).
+    """
+    try:
+        from local_ai.personality.context import derive_decision_context, parse_decision_context
+
+        ctx = parse_decision_context(explicit) if explicit else derive_decision_context(question)
+        return None if ctx.is_empty() else ctx
+    except Exception:
+        return None
+
+
+def _resolve_council_personality(
+    council_user_id: str | None,
+    mode_override: str | None = None,
+    decision_context=None,
+):
     """Resolve the CouncilPersonality for one council run. Never raises.
 
     Mode precedence: explicit per-run override > user's stored default >
     system default ("blend"). With no user id the mode still resolves (from
     the override or the system default) but carries no profile data, so
     seats render the pure aspirational default.
+
+    `decision_context` is the current decision's envelope (a dict or
+    DecisionContext); all-unknown normalizes to None.
     """
     try:
         from local_ai.personality.blend import (
@@ -3284,10 +3307,18 @@ def _resolve_council_personality(council_user_id: str | None, mode_override: str
         from local_ai.personality.store import PersonalityStore
 
         if not council_user_id:
-            return CouncilPersonality(mode=normalize_council_mode(mode_override))
+            personality = CouncilPersonality(mode=normalize_council_mode(mode_override))
+            try:
+                from local_ai.personality.context import parse_decision_context
+
+                parsed = parse_decision_context(decision_context)
+                personality.decision_context = None if parsed.is_empty() else parsed
+            except Exception:
+                pass
+            return personality
         store = PersonalityStore(user_id=council_user_id)
         try:
-            return resolve_council_personality(store, mode_override)
+            return resolve_council_personality(store, mode_override, decision_context)
         finally:
             store.close()
     except Exception:
@@ -3308,6 +3339,15 @@ def _council_personality_notice(personality) -> str | None:
         from local_ai.personality.blend import mirror_notice_text
 
         return mirror_notice_text(empty)
+    except Exception:
+        return None
+
+
+def _decision_context_meta(personality) -> dict | None:
+    """The run's decision envelope for run_meta/debug. None when unknown."""
+    try:
+        ctx = getattr(personality, "decision_context", None)
+        return ctx.model_dump() if ctx is not None else None
     except Exception:
         return None
 
@@ -3824,6 +3864,7 @@ def run_council(
     last_integration_commit_dict: dict[str, Any] | None = None,
     pending_ve_elicitation_dict: dict[str, Any] | None = None,
     council_personality_mode: str | None = None,
+    decision_context: dict | None = None,
 ) -> str | tuple[str, CouncilRunArtifact, dict[str, Any]]:
     """
     Council mode: at least one seat is always required (perspective_definitions, built-in role keys in included_roles,
@@ -3855,8 +3896,10 @@ def run_council(
         council_user_id
     )
     # Phase 4 personality blend: resolved once per run; None = pure aspirational seats.
+    # Decision context conditions the user side on the current decision's envelope.
+    _decision_context = _resolve_decision_context(decision_context, question)
     _council_personality = _resolve_council_personality(
-        council_user_id, council_personality_mode
+        council_user_id, council_personality_mode, _decision_context
     )
     provider = get_council_provider_for_principal(
         p_council,
@@ -4272,6 +4315,7 @@ def run_council(
             "council_personality_mode": _council_personality.mode,
             "mirror_empty_strands": list(_council_personality.mirror_empty_strands),
             "mirror_notice": _council_personality_notice(_council_personality),
+            "decision_context": _decision_context_meta(_council_personality),
             **conversational_partner_meta,
         },
         "prompt_stack": {
@@ -4457,6 +4501,7 @@ def run_council_stream(
     last_integration_commit_dict: dict[str, Any] | None = None,
     pending_ve_elicitation_dict: dict[str, Any] | None = None,
     council_personality_mode: str | None = None,
+    decision_context: dict | None = None,
 ):
     """
     Same as run_council but yields each role/synthesis chunk as it completes, for streaming UI.
@@ -4494,8 +4539,11 @@ def run_council_stream(
         council_user_id
     )
     # Phase 4 personality blend: resolved once per run; None = pure aspirational seats.
+    # Decision context conditions the user side on the current decision's envelope.
     _council_personality = _resolve_council_personality(
-        council_user_id, council_personality_mode
+        council_user_id,
+        council_personality_mode,
+        _resolve_decision_context(decision_context, question),
     )
     perf_mark("run_council_stream_before_get_council_provider_for_principal")
     provider = get_council_provider_for_principal(
@@ -5025,6 +5073,7 @@ def run_council_stream(
         "council_personality_mode": _council_personality.mode,
         "mirror_empty_strands": list(_council_personality.mirror_empty_strands),
         "mirror_notice": _council_personality_notice(_council_personality),
+        "decision_context": _decision_context_meta(_council_personality),
         "integrity_envelope_seat": _seat_env_dict,
         "integrity_envelope_synthesis": stream_integrity_done.get("integrity_envelope_synthesis"),
         "synthesis_integrity_state": stream_integrity_done.get("synthesis_integrity_state"),

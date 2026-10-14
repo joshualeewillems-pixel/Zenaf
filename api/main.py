@@ -276,6 +276,12 @@ class RunParams(BaseModel):
     # "mirror" (user's published PersonalityProfile only), or "blend" (weighted, default).
     # When omitted, the user's saved default (/personality/council-mode) applies.
     council_personality_mode: str | None = None
+    # Council decision context: the current decision's coarse envelope, e.g.
+    # {"stakes": "significant", "time_pressure": "urgent"}. Seats weight past
+    # decision evidence by similarity to it. When omitted, the system derives
+    # a conservative envelope from the question (metadata, never a form
+    # field); unknown dimensions stay unknown.
+    decision_context: dict | None = None
 
 
 class RunRoutingContext(BaseModel):
@@ -1180,6 +1186,7 @@ def _run_council(
             last_integration_commit_dict=last_integration_commit_dict,
             pending_ve_elicitation_dict=pending_ve_elicitation_dict,
             council_personality_mode=_council_mode,
+            decision_context=getattr(params, "decision_context", None),
             return_artifact=True,
         )
         # run_council returns (text, artifact, run_debug) with return_artifact=True;

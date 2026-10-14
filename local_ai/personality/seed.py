@@ -141,3 +141,108 @@ def seed_from_signals(personality_store, signals_store, user_id: str, limit: int
     for cand in made:
         personality_store.propose(cand)
     return made
+
+
+# ---------------------------------------------------------------------------
+# Context-conditional fingerprint seeding (decision signals -> candidates)
+# ---------------------------------------------------------------------------
+
+#: Cue words mapping free-text decision observations to fingerprint fields.
+#: Conservative: a field is filled only when a cue sentence matches; the
+#: value is always a quoted observation ("Observed: ..."), never a scalar
+#: claim. Unmatched sentences are skipped, not forced into a field.
+_FINGERPRINT_FIELD_CUES: dict[str, tuple[str, ...]] = {
+    "risk_bias": ("risk", "bet ", "gamble", "downside", "play it safe", "reversible", "all-in"),
+    "exploration_vs_exploitation": ("explore", "exploit", "try something new", "stick with", "experiment"),
+    "time_horizon": ("long term", "long-term", "short term", "short-term", "quarter", "decade", "years out"),
+    "evidence_preference": ("data", "evidence", "proof", "gut ", "intuition", "signal", "felt right"),
+    "decision_style": ("decide", "decision", "chose to", "went with", "made the call"),
+    "conflict_style": ("disagree", "push back", "consensus", "defer to", "overruled"),
+    "failure_tolerance": ("fail", "mistake", "blew up", "recover", "wrong call"),
+}
+
+
+def _fingerprint_field_hits(text: str) -> dict[str, str]:
+    """Map cue sentences to fingerprint fields. Field -> quoted sentence."""
+    out: dict[str, str] = {}
+    for field, cues in _FINGERPRINT_FIELD_CUES.items():
+        hits = _cue_sentences(text, cues)
+        if hits:
+            out[field] = f"Observed: {hits[0][:280]}"
+    return out
+
+
+def seed_contextual_fingerprints(
+    personality_store, signals_store, user_id: str, limit: int = 200
+) -> list[ProfileCandidate]:
+    """Propose context-conditional fingerprint candidates from decision signals.
+
+    Groups APPROVED decision-layer signals by (strand, context envelope
+    signature); each group with fingerprint-relevant observations becomes
+    ONE proposed candidate adding a ContextualFingerprint entry to that
+    strand. Never publishes. Skips groups already seeded (tracked via the
+    candidate `source` marker, which names the exact signal ids).
+    """
+    from local_ai.personality.context import get_signal_context
+
+    existing_sources = {
+        c.source for c in personality_store.list_candidates() if c.source.startswith("seed:ctx:")
+    }
+    signals = signals_store.list_signals(status="approved")
+    now = datetime.now(timezone.utc)
+
+    groups: dict[tuple[str | None, str], list] = {}
+    for sig in signals[:limit]:
+        if getattr(sig, "layer", "") != "decision":
+            continue
+        ctx = get_signal_context(sig)
+        if ctx.is_empty():
+            continue
+        text = f"{sig.summary}\n{sig.payload_redacted or ''}"
+        strand_key, conf, how = _map_zone_to_strand(sig.zone, text)
+        if strand_key is None:
+            continue
+        groups.setdefault((strand_key, ctx.signature()), []).append((sig, ctx, conf, how))
+
+    made: list[ProfileCandidate] = []
+    for (strand_key, signature), items in groups.items():
+        sig_ids = sorted(s.signal_id for s, _, _, _ in items)
+        marker = f"seed:ctx:{'+'.join(sig_ids)}"
+        if marker in existing_sources:
+            continue
+        ctx = items[0][1]
+        how = items[0][3]
+        blob = "\n".join(f"{s.summary}\n{s.payload_redacted or ''}" for s, _, _, _ in items)
+        field_hits = _fingerprint_field_hits(blob)
+        if not field_hits:
+            continue
+        made.append(
+            ProfileCandidate(
+                candidate_id=f"pc_ctx_{uuid.uuid4().hex[:12]}",
+                user_id=user_id,
+                strand_key=strand_key,
+                ops=[
+                    CandidateOp(
+                        op="add",
+                        field="contextual_fingerprints",
+                        value={
+                            "context": ctx.model_dump(),
+                            "fingerprint": field_hits,
+                            "evidence": f"{len(items)} decision signal(s): {', '.join(sig_ids)}",
+                            "decision_count": len(items),
+                        },
+                    )
+                ],
+                source=marker,
+                confidence=0.30,
+                rationale=(
+                    f"Seeded from {len(items)} approved decision signal(s) under envelope "
+                    f"{signature}. {how}. Quoted observations only; human review required."
+                ),
+                created_at=now,
+            )
+        )
+
+    for cand in made:
+        personality_store.propose(cand)
+    return made

@@ -7,6 +7,7 @@ the ONLY path by which a profile version comes into existence.
 """
 from .blend import (
     MIN_EVIDENCE,
+    CONTEXT_SIMILARITY_THRESHOLD,
     BlendContext,
     apply_personality_blend,
     default_weight_for_strand,
@@ -14,7 +15,19 @@ from .blend import (
     resolve_weights,
     strand_evidence_depth,
 )
+from .context import (
+    CONTEXT_REF_KEY,
+    DIMENSIONS,
+    LEVELS,
+    DecisionContext,
+    context_similarity,
+    derive_decision_context,
+    get_signal_context,
+    parse_decision_context,
+    set_signal_context,
+)
 from .schema import (
+    ContextualFingerprint,
     DecisionFingerprint,
     DomainEntry,
     ExampleFragment,
@@ -24,12 +37,18 @@ from .schema import (
     StrandProfile,
     VoiceProfile,
 )
-from .seed import seed_from_signals
+from .seed import seed_contextual_fingerprints, seed_from_signals
 from .store import PersonalityStore
 
 __all__ = [
     "MIN_EVIDENCE",
+    "CONTEXT_SIMILARITY_THRESHOLD",
+    "DIMENSIONS",
+    "LEVELS",
+    "CONTEXT_REF_KEY",
     "BlendContext",
+    "ContextualFingerprint",
+    "DecisionContext",
     "DecisionFingerprint",
     "DomainEntry",
     "ExampleFragment",
@@ -40,9 +59,15 @@ __all__ = [
     "StrandProfile",
     "VoiceProfile",
     "apply_personality_blend",
+    "context_similarity",
     "default_weight_for_strand",
+    "derive_decision_context",
+    "get_signal_context",
+    "parse_decision_context",
     "resolve_blend_context",
     "resolve_weights",
+    "seed_contextual_fingerprints",
     "seed_from_signals",
+    "set_signal_context",
     "strand_evidence_depth",
 ]

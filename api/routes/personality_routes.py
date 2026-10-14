@@ -307,3 +307,79 @@ def get_builtin_personas(current_user: dict = Depends(get_current_user)):
             key: dict(defn) for key, defn in BUILT_IN_PERSONA_DEFINITIONS.items()
         }
     }
+
+
+@router.get("/context-dimensions")
+def get_context_dimensions(current_user: dict = Depends(get_current_user)):
+    """The canonical decision-context envelope: six dimensions, levels each.
+
+    Context conditions the seven strands; it is not a strand itself.
+    Every dimension defaults to "unknown" — honest gaps stay visible.
+    Internal states (tired, grieving, stressed) are deliberately excluded.
+    """
+    from local_ai.personality.context import DIMENSIONS, LEVELS
+
+    return {
+        "dimensions": {dim: ["unknown", *LEVELS[dim]] for dim in DIMENSIONS},
+        "unknown_default": True,
+        "note": (
+            "Attach to decision-type signals via context_ref['decision_context'], "
+            "or pass as 'decision_context' on council runs."
+        ),
+    }
+
+
+@router.post("/seed/contextual")
+def seed_contextual_fingerprints(current_user: dict = Depends(get_current_user)):
+    """Propose context-conditional fingerprint candidates from decision signals.
+
+    Groups approved decision-layer signals carrying a decision_context
+    envelope by (strand, envelope) and proposes one candidate per group.
+    Never publishes. Scoped to import sessions re-anchored under the
+    user's active license.
+    """
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    from local_ai.identity.service import get_license
+    from local_ai.personality.seed import seed_contextual_fingerprints as _seed_ctx
+    from local_ai.presence_ingest.store import PresenceStore
+
+    lic = get_license()
+    if lic is None or lic.status != "active":
+        raise HTTPException(status_code=403, detail="An active identity license is required.")
+    signals_store = PresenceStore()
+    sessions = {s.session_id: s for s in signals_store.list_sessions()}
+
+    class _ScopedSignals:
+        def list_signals(self, status: str = "approved"):
+            out = []
+            for sig in signals_store.list_signals(status=status):
+                sess = sessions.get(sig.session_id)
+                prov = (sess.provenance if sess else {}) or {}
+                if prov.get("license_id") == lic.license_id:
+                    out.append(sig)
+            return out
+
+    store = _store(uid)
+    try:
+        made = _seed_ctx(store, _ScopedSignals(), uid)
+    finally:
+        store.close()
+    return {"proposed": len(made), "candidate_ids": [c.candidate_id for c in made]}
+
+
+class DeriveContextBody(BaseModel):
+    """Derive a coarse decision envelope from free text (explicit cues only)."""
+
+    text: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/context/derive")
+def derive_context(body: DeriveContextBody, current_user: dict = Depends(get_current_user)):
+    """Derive a decision envelope from text. Conservative: unknown unless
+    explicitly cued. Derived metadata — always overridable by an explicit
+    context; never a form field."""
+    from local_ai.personality.context import derive_decision_context
+
+    ctx = derive_decision_context(body.text)
+    return {"decision_context": ctx.model_dump(), "is_empty": ctx.is_empty()}

@@ -5919,8 +5919,8 @@ function App() {
             <LivingTreeView onNavigate={(view) => setMainView(view)} />
           </div>
         ) : mainView === 'perspectives' ? (
-          <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden bg-surface/20">
-            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 flex flex-col lg:flex-row lg:min-h-0 lg:overflow-hidden bg-surface/20">
+            <div className="flex-1 flex flex-col lg:min-h-0 lg:overflow-hidden min-w-0">
               <div className="shrink-0 border-b border-[color:var(--color-border)] px-4 py-3 bg-surface/40">
                 <p className="text-[10px] font-medium text-warm-white/50 uppercase tracking-wide">Foundation</p>
                 <h1 className="text-lg font-semibold text-warm-white mt-0.5">Actors</h1>
@@ -5952,12 +5952,12 @@ function App() {
                 />
               </div>
             </div>
-            <aside className="w-full lg:w-[380px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-[color:var(--color-border)] bg-surface/40 min-h-0 max-h-[50vh] lg:max-h-none flex flex-col">
+            <aside className="w-full lg:w-[380px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-[color:var(--color-border)] bg-surface/40 lg:min-h-0 lg:max-h-none flex flex-col">
               <div className="shrink-0 p-4 border-b border-stone-700">
                 <h2 className="text-base font-semibold text-stone-100">Foundation</h2>
                 <p className="text-stone-400 text-xs mt-1">Detail, training, and actor editor.</p>
               </div>
-              <div className="flex-1 basis-0 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-4 overscroll-contain">
+              <div className="lg:flex-1 lg:basis-0 lg:min-h-0 lg:overflow-y-auto overflow-x-hidden p-3 space-y-4 lg:overscroll-contain">
                 {foundationActorUi === 'create_actor' ? (
                   <AgentCreatorForm
                     onSubmit={(agent) => {
@@ -6079,7 +6079,7 @@ function App() {
           </div>
         ) : mainView === 'agent_intake' ? (
           <div className="flex-1 flex flex-col min-h-0">
-            <AgentIntakeView />
+            <AgentIntakeView onOpenSettings={() => setMainView('settings')} />
           </div>
         ) : mainView === 'review' ? (
           <div className="flex-1 flex flex-col min-h-0">
@@ -6918,7 +6918,7 @@ function App() {
             Hidden on the Living Tree home view so the tree owns the screen. */}
         {mainView !== 'living_tree' && (
         <aside
-          className={`w-full lg:w-[380px] lg:shrink-0 lg:sticky lg:top-0 flex flex-col min-h-0 h-auto lg:h-[calc(100vh-8rem)] max-h-[55vh] lg:max-h-[calc(100vh-4.5rem)] bg-stone-800/60 overflow-x-hidden shadow-lg ${
+          className={`w-full lg:w-[380px] lg:shrink-0 lg:sticky lg:top-0 flex flex-col min-h-0 h-auto lg:h-[calc(100vh-8rem)] max-h-[78vh] lg:max-h-[calc(100vh-4.5rem)] bg-stone-800/60 overflow-x-hidden shadow-lg ${
             mainView === 'vision_map'
               ? 'order-first border-t lg:border-t-0 lg:border-r border-stone-700 rounded-t-lg lg:rounded-t-none lg:rounded-r-lg'
               : 'border-t lg:border-t-0 lg:border-l border-stone-700 rounded-t-lg lg:rounded-t-none lg:rounded-l-lg'

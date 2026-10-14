@@ -1,9 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 
-type Msg = { role: 'user' | 'muse'; text: string }
+type Msg = { role: 'user' | 'muse'; text: string; action?: 'open-identity-settings' }
 
-export default function AgentIntakeView() {
+type Props = {
+  /** Navigate to Settings (used to deep-link the consent banner to Settings → Identity). */
+  onOpenSettings?: () => void
+}
+
+export default function AgentIntakeView({ onOpenSettings }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([
     {
       role: 'muse',
@@ -38,7 +43,14 @@ export default function AgentIntakeView() {
       }
       const data = await r.json()
       if (r.status === 403) {
-        setMsgs((m) => [...m, { role: 'muse', text: data.detail || 'Intake needs your permission first — check Settings → Identity.' }])
+        setMsgs((m) => [
+          ...m,
+          {
+            role: 'muse',
+            text: data.detail || "Intake needs your 'train:self' consent scope. Grant it in Settings → Identity.",
+            action: 'open-identity-settings' as const,
+          },
+        ])
         return
       }
       setMsgs((m) => [...m, { role: 'muse', text: data.reply || 'Hmm, that didn\u2019t come through. Try again?' }])
@@ -62,6 +74,15 @@ export default function AgentIntakeView() {
               }`}
             >
               {m.role === 'user' && m.text.length > 300 ? m.text.slice(0, 300) + '\u2026' : m.text}
+              {m.action === 'open-identity-settings' && onOpenSettings ? (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="mt-2 block min-h-[44px] px-4 rounded-xl bg-yellow-600/80 text-stone-950 text-sm font-semibold"
+                >
+                  Open Settings → Identity
+                </button>
+              ) : null}
             </div>
           </div>
         ))}

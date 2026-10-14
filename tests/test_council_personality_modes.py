@@ -432,21 +432,19 @@ def test_council_mode_routes(tmp_path, monkeypatch):
     # GET: read needs session auth only; default blend.
     assert pr.get_council_mode(user) == {"council_mode": "blend"}
 
-    # PUT without train:self -> 403.
+    # PUT needs session auth only (display preference, not training):
+    # it works even when train:self is denied.
     def deny(scope, **kwargs):
         raise ScopeDenied(scope)
 
     monkeypatch.setattr("local_ai.identity.scopes.require_scope", deny)
-    with pytest.raises(HTTPException) as ei:
-        pr.set_council_mode(pr.CouncilModeBody(council_mode="mirror"), user)
-    assert ei.value.status_code == 403
-
-    # PUT with scope: round-trips and validates.
-    monkeypatch.setattr("local_ai.identity.scopes.require_scope", lambda scope, **kw: None)
     assert pr.set_council_mode(pr.CouncilModeBody(council_mode="mirror"), user) == {
         "council_mode": "mirror"
     }
     assert pr.get_council_mode(user) == {"council_mode": "mirror"}
+
+    # PUT validates the mode value.
+    monkeypatch.setattr("local_ai.identity.scopes.require_scope", lambda scope, **kw: None)
     with pytest.raises(HTTPException) as ei2:
         pr.set_council_mode(pr.CouncilModeBody(council_mode="bogus"), user)
     assert ei2.value.status_code == 422

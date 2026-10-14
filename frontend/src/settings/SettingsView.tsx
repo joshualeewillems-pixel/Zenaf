@@ -1,5 +1,6 @@
 import type { CurrentUser } from '../auth/session'
 import { AccountSection } from './sections/AccountSection'
+import { IdentitySection } from './sections/IdentitySection'
 import { ModelConnectionsSection } from './sections/ModelConnectionsSection'
 import { NotificationsSection } from './sections/NotificationsSection'
 import { PrivacySection } from './sections/PrivacySection'
@@ -20,6 +21,7 @@ export function SettingsView({ user, onLogout, onUserUpdated }: Props) {
         <p className="text-sm text-slate-400 mt-1">Account, model connections, and notification preferences.</p>
       </div>
       <AccountSection user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
+      <IdentitySection />
       <PermissionsSection />
       <PrivacySection />
       <CouncilIntegrityReviewSection />

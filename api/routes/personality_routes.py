@@ -278,10 +278,13 @@ def set_council_mode(body: CouncilModeBody, current_user: dict = Depends(get_cur
     Which version of a council seat to use is the user's decision, per
     purpose: "base" (pure aspirational), "mirror" (their trained version),
     or "blend" (weighted). A per-run `council_personality_mode` overrides
-    this default. Gated on train:self like other personality writes.
+    this default.
+
+    This is a display preference, not training: session auth is enough.
+    (Unlike profile publishes, choosing which seat version to *view* never
+    trains anything, so it is not gated on the train:self consent scope.)
     """
     uid = _uid(current_user)
-    _require_train_self(uid)
     store = _store(uid)
     try:
         try:

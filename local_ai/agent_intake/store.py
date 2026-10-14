@@ -47,6 +47,25 @@ CREATE INDEX IF NOT EXISTS idx_agents_status ON connected_agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_user ON connected_agents(user_id, status);
 """
 
+_SCHEMA_CLAIMS = """
+CREATE TABLE IF NOT EXISTS review_claims (
+    claim_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    claim_type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    evidence TEXT NOT NULL DEFAULT '',
+    inference TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    user_note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    user_id TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_claims_agent ON review_claims(agent_id);
+CREATE INDEX IF NOT EXISTS idx_claims_user ON review_claims(user_id, agent_id);
+"""
+
 
 def _json_loads(raw: str | None, default: Any) -> Any:
     if not raw:
@@ -116,6 +135,7 @@ class AgentStore:
                 # which raised "no such column: user_id" and aborted the migration).
                 self._conn.execute("ALTER TABLE connected_agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
             self._conn.executescript(_SCHEMA_INDEXES)
+            self._conn.executescript(_SCHEMA_CLAIMS)
             _backfill_single_owner(self._conn)
             self._conn.commit()
 
@@ -192,5 +212,69 @@ class AgentStore:
             q += f" AND {clause}"
         with self._lock:
             cur = self._conn.execute(q, (status, agent_id, *params))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    # -- Review claims ----------------------------------------------------
+
+    def save_claims(self, agent_id: str, claims: list) -> None:
+        """Persist review claims for an agent (insert or replace)."""
+        from datetime import datetime, timezone
+
+        owner = self.user_id or ""
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            for c in claims:
+                self._conn.execute(
+                    "INSERT OR REPLACE INTO review_claims "
+                    "(claim_id, agent_id, claim_type, title, evidence, inference, "
+                    " detail, status, user_note, created_at, updated_at, user_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    " COALESCE((SELECT created_at FROM review_claims WHERE claim_id = ?), ?),"
+                    " ?, ?)",
+                    (
+                        c.id, agent_id, c.claim_type, c.title, c.evidence,
+                        c.inference, c.detail, c.status, c.user_note,
+                        c.id, now, now, owner,
+                    ),
+                )
+            self._conn.commit()
+
+    def get_claims(self, agent_id: str) -> list:
+        """Return the agent's review claims, oldest first."""
+        from .review_claims import ReviewClaim
+
+        clause, params = self._owner_clause()
+        q = "SELECT * FROM review_claims WHERE agent_id = ?"
+        if clause:
+            q += f" AND {clause}"
+        q += " ORDER BY created_at ASC"
+        with self._lock:
+            rows = self._conn.execute(q, (agent_id, *params)).fetchall()
+        return [
+            ReviewClaim(
+                id=r["claim_id"],
+                claim_type=r["claim_type"],
+                title=r["title"],
+                evidence=r["evidence"],
+                inference=r["inference"],
+                detail=r["detail"],
+                status=r["status"],
+                user_note=r["user_note"],
+            )
+            for r in rows
+        ]
+
+    def update_claim(self, claim_id: str, status: str, user_note: str = "") -> bool:
+        """Set a claim's review status and the user's note."""
+        from datetime import datetime, timezone
+
+        clause, params = self._owner_clause()
+        q = "UPDATE review_claims SET status = ?, user_note = ?, updated_at = ? WHERE claim_id = ?"
+        if clause:
+            q += f" AND {clause}"
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            cur = self._conn.execute(q, (status, user_note, now, claim_id, *params))
             self._conn.commit()
             return cur.rowcount > 0

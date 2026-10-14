@@ -258,6 +258,79 @@ def list_agents(current_user: dict = Depends(get_current_user)):
     return [a.to_dict() for a in _store(_uid(current_user)).list_all()]
 
 
+class ConfirmMinedBody(BaseModel):
+    """User-confirmed subset of mined proposals to create as VE entities."""
+
+    initiatives: list[dict] = []
+    projects: list[dict] = []
+    standalone_tasks: list[dict] = []
+    ideas: list[dict] = []
+    selected_titles: list[str] | None = None  # None = create all
+    user_id: str = ""
+
+
+@router.post("/mined-projects/confirm", status_code=201)
+def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(get_current_user)):
+    """Create Vision Execution entities from confirmed mined proposals.
+
+    Respects the VE hierarchy (initiatives → projects → tasks, plus ideas).
+    Plugs into the existing VE service layer — no parallel structures.
+    """
+    from local_ai.agent_intake import project_miner
+
+    uid = _uid(current_user)  # authoritative: never trust the client-supplied user_id
+
+    def _task(d: dict) -> project_miner.ProposedTask:
+        return project_miner.ProposedTask(
+            title=str(d.get("title", "")),
+            detail=str(d.get("detail", "")),
+            source_quote=str(d.get("source_quote", "")),
+        )
+
+    result = project_miner.MiningResult(
+        initiatives=[
+            project_miner.ProposedInitiative(
+                title=str(i.get("title", "")),
+                brief=str(i.get("brief", "")),
+                source_quote=str(i.get("source_quote", "")),
+                project_titles=[str(t) for t in (i.get("project_titles") or [])],
+            )
+            for i in body.initiatives
+            if i.get("title")
+        ],
+        projects=[
+            project_miner.ProposedProject(
+                title=str(p.get("title", "")),
+                goal=str(p.get("goal", "")),
+                status_hint=str(p.get("status_hint", "")),
+                source_quote=str(p.get("source_quote", "")),
+                initiative_title=(str(p.get("initiative_title", "")).strip() or None),
+                tasks=[_task(t) for t in (p.get("tasks") or []) if t.get("title")],
+            )
+            for p in body.projects
+            if p.get("title")
+        ],
+        standalone_tasks=[_task(t) for t in body.standalone_tasks if t.get("title")],
+        ideas=[
+            project_miner.ProposedIdea(
+                title=str(i.get("title", "")),
+                detail=str(i.get("detail", "")),
+                source_quote=str(i.get("source_quote", "")),
+            )
+            for i in body.ideas
+            if i.get("title")
+        ],
+        engine="api",
+    )
+    selected = set(body.selected_titles) if body.selected_titles is not None else None
+    try:
+        return project_miner.create_confirmed(result, uid, selected)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)[:300])
+
+
+
+
 @router.post("/{agent_id}/confirm")
 def confirm_agent(agent_id: str, body: ConfirmBody, current_user: dict = Depends(get_current_user)):
     """Accept the sort, correct it, or archive the agent.
@@ -362,6 +435,7 @@ class MineBody(BaseModel):
     """Mine a transcript for proposed projects and tasks."""
 
     transcript: str
+    agent_id: str | None = None  # when set, mined claims are stored for review
 
     @field_validator("transcript")
     @classmethod
@@ -381,13 +455,24 @@ def mine_projects(body: MineBody, current_user: dict = Depends(get_current_user)
     via POST /agents/mined-projects/confirm, which creates real Vision
     Execution entities. Uses the Anthropic engine when configured,
     rule-based fallback otherwise.
+
+    When body.agent_id is set, the mined proposals are also stored as review
+    claims so each can be accepted/corrected/explained individually.
     """
     from local_ai.agent_intake import project_miner
+    from local_ai.agent_intake import review_claims
     from dataclasses import asdict
 
     uid = _uid(current_user)
     _require_train_self(uid)
     result = project_miner.mine_projects(body.transcript, user_id=uid)
+    if body.agent_id:
+        store = _store(uid)
+        agent = store.get(body.agent_id)
+        if agent is None:
+            raise HTTPException(status_code=404, detail=f"unknown agent: {body.agent_id}")
+        claims = review_claims.build_mined_claims(result)
+        store.save_claims(agent.id, claims)
     return {
         "engine": result.engine,
         "initiatives": [asdict(i) for i in result.initiatives],
@@ -397,75 +482,116 @@ def mine_projects(body: MineBody, current_user: dict = Depends(get_current_user)
     }
 
 
-class ConfirmMinedBody(BaseModel):
-    """User-confirmed subset of mined proposals to create as VE entities."""
+class ClaimNoteBody(BaseModel):
+    """User's correction or explanation for a single claim."""
 
-    initiatives: list[dict] = []
-    projects: list[dict] = []
-    standalone_tasks: list[dict] = []
-    ideas: list[dict] = []
-    selected_titles: list[str] | None = None  # None = create all
-    user_id: str = ""
+    note: str = ""
+
+    @field_validator("note")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("note is required")
+        return v
 
 
-@router.post("/mined-projects/confirm", status_code=201)
-def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(get_current_user)):
-    """Create Vision Execution entities from confirmed mined proposals.
+def _get_claim(store, agent_id: str, claim_id: str):
+    """Fetch an agent and one of its claims, or raise 404."""
+    from local_ai.agent_intake import review_claims
 
-    Respects the VE hierarchy (initiatives → projects → tasks, plus ideas).
-    Plugs into the existing VE service layer — no parallel structures.
+    agent = store.get(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
+    for c in store.get_claims(agent_id):
+        if c.id == claim_id:
+            return agent, c
+    # Claim not built yet — build strand/kind claims on demand.
+    claims = review_claims.build_strand_claims(agent)
+    kind_claim = review_claims.build_kind_claim(agent)
+    if kind_claim:
+        claims.append(kind_claim)
+    for c in claims:
+        if c.id == claim_id:
+            store.save_claims(agent.id, claims)
+            return agent, c
+    raise HTTPException(status_code=404, detail=f"unknown claim: {claim_id}")
+
+
+@router.get("/{agent_id}/claims")
+def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
+    """Per-inference review cards for an agent.
+
+    Each claim carries verbatim evidence, a plain-language inference, and a
+    pending/accepted/corrected/explained status. Strand and kind claims are
+    built on demand from the sort result; mined claims appear after
+    POST /agents/mine-projects with agent_id.
     """
-    from local_ai.agent_intake import project_miner
+    from local_ai.agent_intake import review_claims
 
-    uid = _uid(current_user)  # authoritative: never trust the client-supplied user_id
+    store = _store(_uid(current_user))
+    agent = store.get(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
+    claims = store.get_claims(agent_id)
+    if not claims:
+        claims = review_claims.build_strand_claims(agent)
+        kind_claim = review_claims.build_kind_claim(agent)
+        if kind_claim:
+            claims.append(kind_claim)
+        if claims:
+            store.save_claims(agent.id, claims)
+    return [c.to_dict() for c in claims]
 
-    def _task(d: dict) -> project_miner.ProposedTask:
-        return project_miner.ProposedTask(
-            title=str(d.get("title", "")),
-            detail=str(d.get("detail", "")),
-            source_quote=str(d.get("source_quote", "")),
-        )
 
-    result = project_miner.MiningResult(
-        initiatives=[
-            project_miner.ProposedInitiative(
-                title=str(i.get("title", "")),
-                brief=str(i.get("brief", "")),
-                source_quote=str(i.get("source_quote", "")),
-                project_titles=[str(t) for t in (i.get("project_titles") or [])],
-            )
-            for i in body.initiatives
-            if i.get("title")
-        ],
-        projects=[
-            project_miner.ProposedProject(
-                title=str(p.get("title", "")),
-                goal=str(p.get("goal", "")),
-                status_hint=str(p.get("status_hint", "")),
-                source_quote=str(p.get("source_quote", "")),
-                initiative_title=(str(p.get("initiative_title", "")).strip() or None),
-                tasks=[_task(t) for t in (p.get("tasks") or []) if t.get("title")],
-            )
-            for p in body.projects
-            if p.get("title")
-        ],
-        standalone_tasks=[_task(t) for t in body.standalone_tasks if t.get("title")],
-        ideas=[
-            project_miner.ProposedIdea(
-                title=str(i.get("title", "")),
-                detail=str(i.get("detail", "")),
-                source_quote=str(i.get("source_quote", "")),
-            )
-            for i in body.ideas
-            if i.get("title")
-        ],
-        engine="api",
+@router.post("/{agent_id}/claims/{claim_id}/accept", status_code=200)
+def accept_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_current_user)):
+    """Accept one inference — confirms it as training signal."""
+    from local_ai.agent_intake import pipeline as _pipeline_mod
+
+    store = _store(_uid(current_user))
+    agent, claim = _get_claim(store, agent_id, claim_id)
+    store.update_claim(claim.id, "accepted")
+    _pipeline_mod.log_claim_feedback(
+        agent.id, claim.id, claim.claim_type, "accepted",
+        evidence=claim.evidence, inference=claim.inference,
     )
-    selected = set(body.selected_titles) if body.selected_titles is not None else None
-    try:
-        return project_miner.create_confirmed(result, uid, selected)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)[:300])
+    claim.status = "accepted"
+    return claim.to_dict()
+
+
+@router.post("/{agent_id}/claims/{claim_id}/correct", status_code=200)
+def correct_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_user: dict = Depends(get_current_user)):
+    """Correct one inference — the correction is ideals-guidance training signal."""
+    from local_ai.agent_intake import pipeline as _pipeline_mod
+
+    store = _store(_uid(current_user))
+    agent, claim = _get_claim(store, agent_id, claim_id)
+    store.update_claim(claim.id, "corrected", body.note)
+    _pipeline_mod.log_claim_feedback(
+        agent.id, claim.id, claim.claim_type, "corrected", note=body.note,
+        evidence=claim.evidence, inference=claim.inference,
+    )
+    claim.status = "corrected"
+    claim.user_note = body.note
+    return claim.to_dict()
+
+
+@router.post("/{agent_id}/claims/{claim_id}/explain", status_code=200)
+def explain_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_user: dict = Depends(get_current_user)):
+    """Explain *why* — the user's reasoning is stored as ideals-guidance signal."""
+    from local_ai.agent_intake import pipeline as _pipeline_mod
+
+    store = _store(_uid(current_user))
+    agent, claim = _get_claim(store, agent_id, claim_id)
+    store.update_claim(claim.id, "explained", body.note)
+    _pipeline_mod.log_claim_feedback(
+        agent.id, claim.id, claim.claim_type, "explained", note=body.note,
+        evidence=claim.evidence, inference=claim.inference,
+    )
+    claim.status = "explained"
+    claim.user_note = body.note
+    return claim.to_dict()
 
 
 @router.get("/bookmarklet/install", include_in_schema=False)

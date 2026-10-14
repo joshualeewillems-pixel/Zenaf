@@ -291,3 +291,35 @@ def confirm_agent(
 
     store.save(agent)
     return agent
+
+
+def log_claim_feedback(
+    agent_id: str,
+    claim_id: str,
+    claim_type: str,
+    action: str,
+    note: str = "",
+    evidence: str = "",
+    inference: str = "",
+    corrections_log: Path | str | None = None,
+) -> None:
+    """Log a per-claim review decision as an ideals-guidance training signal.
+
+    action is one of "accepted" | "corrected" | "explained". The user's note
+    (correction or explanation of *why*) is the training signal, linked to the
+    original evidence quote and the system's inference.
+    """
+    path = Path(corrections_log) if corrections_log else DEFAULT_CORRECTIONS_LOG
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "agent_id": agent_id,
+        "claim_id": claim_id,
+        "claim_type": claim_type,
+        "ts": _now_iso(),
+        "action": action,
+        "evidence": evidence,
+        "inference": inference,
+        "user_note": note,
+    }
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
+import ClaimCard, { Claim } from './ClaimCard'
 
 const STRANDS = [
   { key: 'word', name: 'Storyteller' },
@@ -57,6 +58,8 @@ export default function ReviewView() {
   const [mining, setMining] = useState(false)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+  const [claims, setClaims] = useState<Claim[]>([])
+  const [claimsLoading, setClaimsLoading] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -82,12 +85,28 @@ export default function ReviewView() {
       setSelected(null)
       setCorrecting(false)
       setMined(null)
+      setClaims([])
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Confirm failed')
     } finally {
       setBusy(false)
     }
+  }
+
+  async function loadClaims(agentId: string) {
+    setClaimsLoading(true)
+    try {
+      setClaims(await api(`/agents/${agentId}/claims`))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load claims')
+    } finally {
+      setClaimsLoading(false)
+    }
+  }
+
+  function onClaimResolved(updated: Claim) {
+    setClaims((cs) => cs.map((c) => (c.id === updated.id ? updated : c)))
   }
 
   async function mine(a: Agent) {
@@ -97,7 +116,7 @@ export default function ReviewView() {
       const transcript = (a.examples || []).join('\n\n') || a.description
       const data = await api('/agents/mine-projects', {
         method: 'POST',
-        body: JSON.stringify({ transcript }),
+        body: JSON.stringify({ transcript, agent_id: a.id }),
       })
       setMined(data)
       const all: string[] = [
@@ -107,6 +126,8 @@ export default function ReviewView() {
         ...(data.ideas || []).map((x: any) => 'd:' + x.title),
       ]
       setChecked(new Set(all))
+      // Refresh claims so the mined proposals appear as review cards.
+      await loadClaims(a.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Mining failed')
     } finally {
@@ -115,20 +136,39 @@ export default function ReviewView() {
   }
 
   async function createSelected() {
-    if (!mined) return
     setBusy(true)
     try {
-      const pick = (arr: any[], prefix: string) => arr.filter((x: any) => checked.has(prefix + x.title))
-      await api('/agents/mined-projects/confirm', {
-        method: 'POST',
-        body: JSON.stringify({
-          initiatives: pick(mined.initiatives, 'i:'),
-          projects: pick(mined.projects, 'p:'),
-          standalone_tasks: pick(mined.standalone_tasks, 't:'),
-          ideas: pick(mined.ideas, 'd:'),
-          selected_titles: null,
-        }),
-      })
+      // Primary path: create from accepted claim cards.
+      const minedClaims = claims.filter((c) =>
+        ['initiative', 'project', 'task', 'idea'].includes(c.claim_type) && c.status === 'accepted'
+      )
+      if (minedClaims.length > 0 && mined) {
+        const byType = (t: string) => minedClaims.filter((c) => c.claim_type === t).map((c) => c.title)
+        const find = (arr: any[], title: string) => arr.find((x: any) => x.title === title)
+        await api('/agents/mined-projects/confirm', {
+          method: 'POST',
+          body: JSON.stringify({
+            initiatives: byType('initiative').map((t) => find(mined.initiatives, t)).filter(Boolean),
+            projects: byType('project').map((t) => find(mined.projects, t)).filter(Boolean),
+            standalone_tasks: byType('task').map((t) => find(mined.standalone_tasks, t)).filter(Boolean),
+            ideas: byType('idea').map((t) => find(mined.ideas, t)).filter(Boolean),
+            selected_titles: null,
+          }),
+        })
+      } else if (mined) {
+        // Secondary fast path: the checkbox bulk selection.
+        const pick = (arr: any[], prefix: string) => arr.filter((x: any) => checked.has(prefix + x.title))
+        await api('/agents/mined-projects/confirm', {
+          method: 'POST',
+          body: JSON.stringify({
+            initiatives: pick(mined.initiatives, 'i:'),
+            projects: pick(mined.projects, 'p:'),
+            standalone_tasks: pick(mined.standalone_tasks, 't:'),
+            ideas: pick(mined.ideas, 'd:'),
+            selected_titles: null,
+          }),
+        })
+      }
       setMined(null)
       setError('')
     } catch (e) {
@@ -149,36 +189,30 @@ export default function ReviewView() {
 
   if (selected) {
     const a = selected
-    const weights = a.sort?.strand_weights || {}
-    const sorted = Object.entries(weights).sort((x, y) => y[1] - x[1])
+    const strandClaims = claims.filter((c) => c.claim_type === 'strand' || c.claim_type === 'kind')
+    const minedClaims = claims.filter((c) => ['initiative', 'project', 'task', 'idea'].includes(c.claim_type))
+    const acceptedMined = minedClaims.filter((c) => c.status === 'accepted')
     return (
       <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-4 max-w-2xl mx-auto w-full">
-        <button onClick={() => { setSelected(null); setCorrecting(false); setMined(null) }} className="self-start text-stone-400 text-[15px] min-h-[44px] mb-2">‹ Back</button>
+        <button onClick={() => { setSelected(null); setCorrecting(false); setMined(null); setClaims([]) }} className="self-start text-stone-400 text-[15px] min-h-[44px] mb-2">‹ Back</button>
         <h2 className="text-xl font-bold text-stone-100">{a.name}</h2>
         <p className="text-stone-500 text-sm mb-4">{a.source_platform} · {new Date(a.created_at).toLocaleDateString()}</p>
 
-        <h3 className="text-stone-200 font-semibold text-[15px] mb-2">Strands</h3>
-        <div className="space-y-1.5 mb-5">
-          {sorted.length === 0 && <p className="text-stone-500 text-sm">No sort yet.</p>}
-          {sorted.map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2">
-              <span className="text-stone-300 text-sm w-28">{strandName(k)}</span>
-              <div className="flex-1 h-2 rounded bg-stone-800 overflow-hidden">
-                <div className="h-full bg-yellow-500/80 rounded" style={{ width: `${Math.round(v * 100)}%` }} />
-              </div>
-              <span className="text-stone-500 text-xs w-8 text-right">{v.toFixed(1)}</span>
-            </div>
-          ))}
-        </div>
-
-        {a.sort?.kind && <p className="text-stone-400 text-sm mb-4">Kind: <b className="text-stone-200">{a.sort.kind}</b></p>}
-        <p className="text-stone-400 text-sm mb-6 whitespace-pre-wrap">{a.description}</p>
+        <h3 className="text-stone-200 font-semibold text-[15px] mb-2">What's being assimilated</h3>
+        <p className="text-stone-500 text-sm mb-3">Each card is one thing I'd take from this conversation. Say what you think — your answers train the sorter.</p>
+        {claimsLoading && <p className="text-stone-500 text-sm mb-3">Reading the conversation…</p>}
+        {!claimsLoading && strandClaims.length === 0 && (
+          <p className="text-stone-500 text-sm mb-4">No strand placements yet.</p>
+        )}
+        {strandClaims.map((c) => (
+          <ClaimCard key={c.id} agentId={a.id} claim={c} onResolved={onClaimResolved} />
+        ))}
 
         {error && <p className="text-red-300 text-sm mb-3">{error}</p>}
 
         {!correcting ? (
-          <div className="flex flex-wrap gap-2 mb-6">
-            <button onClick={() => confirm(a.id, true)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40">Accept</button>
+          <div className="flex flex-wrap gap-2 mb-6 mt-2">
+            <button onClick={() => confirm(a.id, true)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40">Accept all</button>
             <button onClick={() => setCorrecting(true)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40">Correct</button>
             <button onClick={() => confirm(a.id, false)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-stone-800 text-stone-400 text-[15px] disabled:opacity-40">Archive</button>
           </div>
@@ -214,7 +248,18 @@ export default function ReviewView() {
         )}
 
         <h3 className="text-stone-200 font-semibold text-[15px] mb-2">Projects</h3>
-        {!mined ? (
+        {minedClaims.length > 0 ? (
+          <div className="mb-4">
+            {minedClaims.map((c) => (
+              <ClaimCard key={c.id} agentId={a.id} claim={c} onResolved={onClaimResolved} />
+            ))}
+            {acceptedMined.length > 0 && (
+              <button onClick={createSelected} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40 mt-1">
+                Create {acceptedMined.length} accepted
+              </button>
+            )}
+          </div>
+        ) : !mined ? (
           <button onClick={() => mine(a)} disabled={mining} className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40 self-start">
             {mining ? 'Reading…' : 'Mine projects from this conversation'}
           </button>
@@ -264,7 +309,7 @@ export default function ReviewView() {
         {agents.map((a) => (
           <button
             key={a.id}
-            onClick={() => setSelected(a)}
+            onClick={() => { setSelected(a); setClaims([]); loadClaims(a.id) }}
             className="w-full text-left rounded-2xl border border-stone-700 bg-stone-800/60 p-4 min-h-[44px]"
           >
             <span className="block text-stone-100 font-semibold text-[15px]">{a.name}</span>

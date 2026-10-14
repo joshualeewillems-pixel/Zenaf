@@ -286,3 +286,41 @@ export async function saveUserPermissionsSettings(payload: {
     permissions: normalizeUserPermissionFlags(body.permissions),
   }
 }
+
+export interface IdentityScopesResponse {
+  active: string[]
+  known_scopes: Record<string, string>
+}
+
+export async function fetchIdentityScopes(): Promise<IdentityScopesResponse> {
+  const res = await fetch('/identity/scopes', { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to load identity scopes')
+  const body = (await res.json()) as Partial<IdentityScopesResponse>
+  return {
+    active: Array.isArray(body.active) ? body.active.map(String) : [],
+    known_scopes:
+      body.known_scopes && typeof body.known_scopes === 'object'
+        ? (body.known_scopes as Record<string, string>)
+        : {},
+  }
+}
+
+export async function changeIdentityScope(
+  scope: string,
+  action: 'grant' | 'revoke',
+  note = '',
+): Promise<string[]> {
+  const res = await fetch('/identity/scopes', {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope, action, note }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail = (body as { detail?: unknown }).detail
+    throw new Error(typeof detail === 'string' ? detail : `Failed to ${action} scope`)
+  }
+  const active = (body as { active?: unknown }).active
+  return Array.isArray(active) ? active.map(String) : []
+}

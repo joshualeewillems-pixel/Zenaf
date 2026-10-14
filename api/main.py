@@ -570,6 +570,34 @@ def _log_council_routing_trace(mode: str, request: RunRequest, exec_meta: dict) 
             )
 
 
+def _preflight_ollama_reachable(provider_used: str | None) -> None:
+    """Fail fast if the resolved provider is Ollama but it is unreachable.
+
+    Raises HTTPException(502) with an actionable message. Called from
+    /run/stream BEFORE the SSE stream starts: a dead Ollama mid-stream kills
+    the response opaquely (mobile clients surface it as "Load failed").
+    Non-Ollama providers are not probed here.
+    """
+    if (provider_used or "").strip().lower() != "ollama":
+        return
+    from api.routes.settings_routes import _ollama_tags_url
+
+    import requests as _requests
+
+    try:
+        _resp = _requests.get(_ollama_tags_url(None), timeout=3)
+        _resp.raise_for_status()
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Ollama (local) is unreachable from the server. "
+                "Ollama only works when Zenaf runs on the same machine as Ollama — "
+                "on hosted Zenaf, set Voiced by to 'Auto (policy)' or another provider."
+            ),
+        )
+
+
 def _begin_run_routing(request: RunRequest, *, execution_principal, apply_overrides: bool = True):
     """
     Apply optional ``routing_context`` via ``apply_seam_routing`` (shared with Vision Execution).
@@ -2137,6 +2165,15 @@ def run_stream(body: RunRequest, http_request: Request):
                 "privacy_block_reason": exec_meta.get("privacy_block_reason"),
             },
         )
+    # Pre-flight: if the resolved provider is Ollama, verify it is reachable
+    # BEFORE the SSE stream starts. A dead Ollama mid-stream kills the
+    # response opaquely (mobile clients surface it as "Load failed"); failing
+    # here returns a clean, actionable 502 instead.
+    try:
+        _preflight_ollama_reachable(exec_meta.get("provider_used"))
+    except HTTPException:
+        _end_run_routing(rt_token)
+        raise
     headers: dict[str, str] = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     if exec_meta.get("model_used"):
         headers["X-Zenaf-Model-Used"] = str(exec_meta["model_used"])

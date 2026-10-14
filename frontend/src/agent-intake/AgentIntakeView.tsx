@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 
-type Msg = { role: 'user' | 'muse'; text: string; action?: 'open-identity-settings' }
+type Msg = { role: 'user' | 'muse'; text: string; action?: 'open-identity-settings' | 'open-review' }
 
 type Props = {
   /** Navigate to Settings (used to deep-link the consent banner to Settings → Identity). */
   onOpenSettings?: () => void
+  /** Navigate to the review queue (shown after an intake completes or a link is queued). */
+  onOpenReview?: () => void
 }
 
-export default function AgentIntakeView({ onOpenSettings }: Props) {
+export default function AgentIntakeView({ onOpenSettings, onOpenReview }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([
     {
       role: 'muse',
@@ -53,7 +55,11 @@ export default function AgentIntakeView({ onOpenSettings }: Props) {
         ])
         return
       }
-      setMsgs((m) => [...m, { role: 'muse', text: data.reply || 'Hmm, that didn\u2019t come through. Try again?' }])
+      const replyMsg: Msg = { role: 'muse', text: data.reply || 'Hmm, that didn\u2019t come through. Try again?' }
+      if ((data.agent || data.render_job_id) && onOpenReview) {
+        replyMsg.action = 'open-review'
+      }
+      setMsgs((m) => [...m, replyMsg])
     } catch {
       setMsgs((m) => [...m, { role: 'muse', text: 'I couldn\u2019t reach the server. Check your connection and try again.' }])
     } finally {
@@ -81,6 +87,15 @@ export default function AgentIntakeView({ onOpenSettings }: Props) {
                   className="mt-2 block min-h-[44px] px-4 rounded-xl bg-yellow-600/80 text-stone-950 text-sm font-semibold"
                 >
                   Open Settings → Identity
+                </button>
+              ) : null}
+              {m.action === 'open-review' && onOpenReview ? (
+                <button
+                  type="button"
+                  onClick={onOpenReview}
+                  className="mt-2 block min-h-[44px] px-4 rounded-xl bg-yellow-500/90 text-stone-950 text-sm font-semibold"
+                >
+                  Open review queue
                 </button>
               ) : null}
             </div>

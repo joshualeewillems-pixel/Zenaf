@@ -167,6 +167,7 @@ import { ResonanceSlider } from './components/ResonanceSlider'
 import { ContentFrontDoor } from './content'
 import AgentIntakeView from './agent-intake/AgentIntakeView'
 import ReviewView from './agent-intake/ReviewView'
+import { fetchPendingReviewCount } from './agent-intake/reviewQueue'
 import SignalReviewView from './presence-review/SignalReviewView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
 import { DomainProvider } from './domain/DomainContext'
@@ -4949,6 +4950,15 @@ function App() {
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('living_tree')
   const [navOpen, setNavOpen] = useState(false)
+  // Review-queue alert: number of connected agents awaiting review. Fetched
+  // when the nav opens (and refreshed on view change) so the badge stays fresh.
+  const [reviewCount, setReviewCount] = useState<number | null>(null)
+  useEffect(() => {
+    if (!navOpen) return
+    let cancelled = false
+    fetchPendingReviewCount(API_BASE).then((n) => { if (!cancelled) setReviewCount(n) })
+    return () => { cancelled = true }
+  }, [navOpen, mainView])
   // Mobile: the conversation panel starts collapsed so the view's content owns
   // the screen; expand on demand. Desktop (lg+) always shows it.
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(
@@ -5880,7 +5890,14 @@ function App() {
                       mainView === item.view ? 'text-yellow-500/90 bg-stone-800/60' : 'text-stone-200'
                     }`}
                   >
-                    {item.label}
+                    <span className="inline-flex items-center gap-2">
+                      {item.label}
+                      {item.view === 'review' && reviewCount != null && reviewCount > 0 && (
+                        <span className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-yellow-500/90 text-stone-950 text-xs font-bold">
+                          {reviewCount}
+                        </span>
+                      )}
+                    </span>
                   </button>
                 ))}
                 <div className="border-t border-stone-800 mt-1.5 pt-1.5">
@@ -6079,7 +6096,10 @@ function App() {
           </div>
         ) : mainView === 'agent_intake' ? (
           <div className="flex-1 flex flex-col min-h-0">
-            <AgentIntakeView onOpenSettings={() => setMainView('settings')} />
+            <AgentIntakeView
+              onOpenSettings={() => setMainView('settings')}
+              onOpenReview={() => setMainView('review')}
+            />
           </div>
         ) : mainView === 'review' ? (
           <div className="flex-1 flex flex-col min-h-0">

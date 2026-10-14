@@ -426,7 +426,7 @@ def test_service_full_flow(tmp_path, monkeypatch):
             {candidates[0].signal_id: True, candidates[1].signal_id: False},
             store=store,
         )
-        assert result == {"approved": 1, "rejected": 1}
+        assert result == {"approved": 1, "rejected": 1, "contexts_updated": 0}
         assert len(store.list_signals(status="approved")) == 1
 
         delete_session(session.session_id, store=store, upload_root=uploads)

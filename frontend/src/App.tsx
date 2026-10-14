@@ -167,6 +167,7 @@ import { ResonanceSlider } from './components/ResonanceSlider'
 import { ContentFrontDoor } from './content'
 import AgentIntakeView from './agent-intake/AgentIntakeView'
 import ReviewView from './agent-intake/ReviewView'
+import SignalReviewView from './presence-review/SignalReviewView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
 import { DomainProvider } from './domain/DomainContext'
 import { AuthGate } from './auth/AuthGate'
@@ -469,6 +470,7 @@ function LeaveVisionSurfacesFocusClear({
     | 'vision_execution'
     | 'agent_intake'
     | 'review'
+    | 'signal_review'
     | 'settings'
 }) {
   const ctx = useVisionExecutionFocusOptional()
@@ -645,6 +647,7 @@ function UniversalContextStrip({
     | 'vision_execution'
     | 'agent_intake'
     | 'review'
+    | 'signal_review'
     | 'settings'
   currentTopic: { label: string; modeLabel: string | null; summary: string; fullPath: string }
   currentFocusHasResult: boolean
@@ -4942,6 +4945,7 @@ function App() {
     | 'vision_execution'
     | 'agent_intake'
     | 'review'
+    | 'signal_review'
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('living_tree')
   const [navOpen, setNavOpen] = useState(false)
@@ -5857,6 +5861,7 @@ function App() {
                     { view: 'vision_execution', label: 'Vision (tables)' },
                     { view: 'agent_intake', label: 'Connect' },
                     { view: 'review', label: 'Review' },
+                    { view: 'signal_review', label: 'Signal review' },
                     { view: 'workspace', label: 'Workspace Organizer' },
                     { view: 'content', label: 'Content' },
                     { view: 'settings', label: 'Settings' },
@@ -6079,6 +6084,10 @@ function App() {
         ) : mainView === 'review' ? (
           <div className="flex-1 flex flex-col min-h-0">
             <ReviewView />
+          </div>
+        ) : mainView === 'signal_review' ? (
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+            <SignalReviewView />
           </div>
         ) : mainView === 'settings' ? (
           <SettingsView

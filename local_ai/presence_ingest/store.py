@@ -368,6 +368,39 @@ class PresenceStore:
             self._conn.commit()
             return cur.rowcount
 
+    def update_signal_context(self, signal_id: str, context: dict) -> bool:
+        """Set the decision envelope on a PENDING signal's context_ref.
+
+        Returns True when a pending row was updated. Approved/rejected rows
+        are NEVER touched — review history is immutable. The context dict is
+        normalized defensively (unrecognized values become "unknown").
+        """
+        from local_ai.personality.context import (
+            CONTEXT_REF_KEY,
+            parse_decision_context,
+        )
+
+        envelope = parse_decision_context(context).model_dump()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT context_ref FROM training_signals "
+                "WHERE signal_id = ? AND status = 'pending'",
+                (signal_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            ref = _json_loads(row["context_ref"], {})
+            if not isinstance(ref, dict):
+                ref = {}
+            ref[CONTEXT_REF_KEY] = envelope
+            self._conn.execute(
+                "UPDATE training_signals SET context_ref = ? "
+                "WHERE signal_id = ? AND status = 'pending'",
+                (json.dumps(ref), signal_id),
+            )
+            self._conn.commit()
+            return True
+
     def list_signals(
         self, zone: str | None = None, status: str = "approved"
     ) -> list[TrainingSignal]:

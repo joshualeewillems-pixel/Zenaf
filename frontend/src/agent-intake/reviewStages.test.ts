@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   allClaimsResolved,
   canFinishReview,
+  insightGroups,
   miningStateOf,
   miningStatusLabel,
   openClaimsCount,
@@ -100,5 +101,87 @@ describe('reviewedList', () => {
       created_at: `2026-10-${String(i + 1).padStart(2, '0')}`,
     }))
     expect(reviewedList(many)).toHaveLength(10)
+  })
+})
+
+describe('insight groups', () => {
+  const insight = (n: number, status = 'pending') => ({
+    id: `insight:${n}`,
+    claim_type: 'stance',
+    status,
+  })
+  const alt = (n: number, m: number, status = 'pending') => ({
+    id: `insight:${n}:alt:${m}`,
+    claim_type: 'alternative',
+    status,
+  })
+
+  it('groups alternatives under their interpretation by id prefix', () => {
+    const claims = [insight(0), alt(0, 1), alt(0, 0), insight(1), alt(1, 0)]
+    const groups = insightGroups(claims)
+    expect(groups).toHaveLength(2)
+    expect(groups[0].insight.id).toBe('insight:0')
+    expect(groups[0].alternatives.map((a) => a.id)).toEqual(['insight:0:alt:0', 'insight:0:alt:1'])
+    expect(groups[1].alternatives.map((a) => a.id)).toEqual(['insight:1:alt:0'])
+  })
+
+  it('ignores insight claims of other types and orphaned alternatives', () => {
+    const claims = [
+      insight(0),
+      { id: 'insight:9:alt:0', claim_type: 'alternative', status: 'pending' },
+      { id: 'strand:self', claim_type: 'strand', status: 'pending' },
+    ]
+    const groups = insightGroups(claims)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].alternatives).toEqual([])
+  })
+
+  it('returns empty for no insights', () => {
+    expect(insightGroups([])).toEqual([])
+    expect(insightGroups([{ id: 'strand:self', claim_type: 'strand', status: 'pending' }])).toEqual([])
+  })
+})
+
+describe('alternatives never block finishing', () => {
+  const alt = (m: number, status = 'pending') => ({
+    id: `insight:0:alt:${m}`,
+    claim_type: 'alternative',
+    status,
+  })
+
+  it('pending alternatives do not block the finish gate', () => {
+    const claims = [
+      { id: 'insight:0', claim_type: 'stance', status: 'accepted' },
+      alt(0),
+      alt(1),
+    ]
+    expect(allClaimsResolved(claims)).toBe(true)
+    expect(canFinishReview(claims, 'mined')).toBe(true)
+  })
+
+  it('unresolved primary claims still block', () => {
+    const claims = [
+      { id: 'insight:0', claim_type: 'stance', status: 'pending' },
+      alt(0, 'accepted'),
+    ]
+    expect(allClaimsResolved(claims)).toBe(false)
+    expect(canFinishReview(claims, 'mined')).toBe(false)
+  })
+
+  it('rejected and unresolved count as handled', () => {
+    const claims = [
+      { id: 'insight:0', claim_type: 'stance', status: 'rejected' },
+      { id: 'insight:1', claim_type: 'value_inference', status: 'unresolved' },
+    ]
+    expect(allClaimsResolved(claims)).toBe(true)
+  })
+
+  it('whatsLeft does not count alternatives', () => {
+    const claims = [
+      { id: 'insight:0', claim_type: 'stance', status: 'accepted' },
+      alt(0),
+    ]
+    expect(whatsLeft(claims, 'mined')).toEqual([])
+    expect(openClaimsCount(claims)).toBe(0)
   })
 })

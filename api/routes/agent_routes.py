@@ -337,14 +337,25 @@ def confirm_agent(agent_id: str, body: ConfirmBody, current_user: dict = Depends
 
     Corrections ("no, this is a People talent") are logged as
     ideals-guidance training signals for the v2 sorter.
+
+    Alternatives the user never verdict stay "pending" until now: filing
+    marks them "unresolved" — an explicit left-open, never a silent
+    approval of an interpretation the user didn't confirm.
     """
     try:
         uid = _uid(current_user)
+        store = _store(uid)
+        agent = store.get(agent_id)
+        if agent is None:
+            raise AgentIntakeError(f"unknown agent: {agent_id}")
+        for c in store.get_claims(agent_id):
+            if c.claim_type == "alternative" and c.status == "pending":
+                store.update_claim(c.id, "unresolved")
         agent = _pipeline().confirm_agent(
             agent_id,
             accepted=body.accepted,
             corrections=body.corrections or None,
-            store=_store(uid),
+            store=store,
         )
     except AgentIntakeError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -614,6 +625,97 @@ def explain_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     claim.status = "explained"
     claim.user_note = body.note
     return claim.to_dict()
+
+
+@router.post("/{agent_id}/claims/{claim_id}/reject", status_code=200)
+def reject_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_current_user)):
+    """Reject one inference — the system got it wrong.
+
+    Logged as negative training signal: a rejected inference teaches the
+    miner what not to claim.
+    """
+    from local_ai.agent_intake import pipeline as _pipeline_mod
+
+    store = _store(_uid(current_user))
+    agent, claim = _get_claim(store, agent_id, claim_id)
+    store.update_claim(claim.id, "rejected")
+    _pipeline_mod.log_claim_feedback(
+        agent.id, claim.id, claim.claim_type, "rejected",
+        evidence=claim.evidence, inference=claim.inference,
+    )
+    claim.status = "rejected"
+    return claim.to_dict()
+
+
+@router.post("/{agent_id}/claims/{claim_id}/unresolve", status_code=200)
+def unresolve_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_current_user)):
+    """Leave one inference unresolved — an explicit "not deciding", first-class.
+
+    Not everything needs a verdict. Unresolved is recorded (not a silent
+    skip) but carries no positive or negative training weight.
+    """
+    from local_ai.agent_intake import pipeline as _pipeline_mod
+
+    store = _store(_uid(current_user))
+    agent, claim = _get_claim(store, agent_id, claim_id)
+    store.update_claim(claim.id, "unresolved")
+    _pipeline_mod.log_claim_feedback(
+        agent.id, claim.id, claim.claim_type, "unresolved",
+        evidence=claim.evidence, inference=claim.inference,
+    )
+    claim.status = "unresolved"
+    return claim.to_dict()
+
+
+# Claim types rebuilt by insight regeneration. Mined project claims
+# (initiative/project/task/idea) belong to the project-mining step and are
+# left untouched.
+_REGENERATED_CLAIM_TYPES = (
+    "strand", "kind",
+    "value_inference", "decision_pattern", "stance", "preference",
+    "alternative",
+)
+
+
+@router.post("/{agent_id}/claims/regenerate", status_code=200)
+def regenerate_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
+    """Re-read the conversation for atomic insights.
+
+    Rebuilds strand/kind/insight claims from the stored transcript without
+    re-ingesting. Existing resolutions are preserved by claim ID; mined
+    project claims are untouched. Powers the "Re-read for insights" button.
+    """
+    from local_ai.agent_intake import insight_miner, review_claims
+
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    store = _store(uid)
+    agent = store.get(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
+
+    # Preserve the user's existing verdicts by stable claim ID.
+    existing = {c.id: c for c in store.get_claims(agent_id)}
+
+    claims = review_claims.build_strand_claims(agent)
+    kind_claim = review_claims.build_kind_claim(agent)
+    if kind_claim:
+        claims.append(kind_claim)
+    insights, engine = insight_miner.mine_insights(agent.examples, user_id=uid)
+    claims.extend(review_claims.build_insight_claims(insights))
+
+    for c in claims:
+        old = existing.get(c.id)
+        if old is not None and old.status != "pending":
+            c.status = old.status
+            c.user_note = old.user_note
+
+    # Remove stale regenerated-type rows (a re-read may yield fewer
+    # insights), then save the fresh set. Mined claims survive.
+    store.delete_claim_types(agent_id, _REGENERATED_CLAIM_TYPES)
+    if claims:
+        store.save_claims(agent.id, claims)
+    return {"claims": [c.to_dict() for c in claims], "engine": engine}
 
 
 @router.get("/bookmarklet/install", include_in_schema=False)

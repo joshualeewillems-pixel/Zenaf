@@ -24,9 +24,26 @@ from typing import Any
 from .schema import ConnectedAgent
 
 # Claim types
-CLAIM_TYPES = ("strand", "kind", "initiative", "project", "task", "idea")
-# Claim statuses
-CLAIM_STATUSES = ("pending", "accepted", "corrected", "explained")
+CLAIM_TYPES = (
+    "strand",
+    "kind",
+    "initiative",
+    "project",
+    "task",
+    "idea",
+    # Atomic insight claims (one moment -> one interpretation + alternatives).
+    "value_inference",
+    "decision_pattern",
+    "stance",
+    "preference",
+    "alternative",
+)
+# Claim statuses. "rejected" = the user judged the inference wrong.
+# "unresolved" = the user actively left it open — first-class, not a verdict,
+# and never a silent approval.
+CLAIM_STATUSES = ("pending", "accepted", "corrected", "explained", "rejected", "unresolved")
+# Scope labels for insight claims: how broad the claim is.
+SCOPES = ("moment", "subject", "pattern")
 
 # Only strands scoring at or above this get their own claim card.
 _CLAIM_SCORE_THRESHOLD = 0.25
@@ -44,6 +61,9 @@ class ReviewClaim:
     detail: str = ""  # extra context (goal, status hint, etc.)
     status: str = "pending"  # one of CLAIM_STATUSES
     user_note: str = ""  # correction or explanation text from the user
+    question: str = ""  # confirm question in the user's voice ("Does that sound right to you?")
+    scope: str = "moment"  # one of SCOPES — how broad the claim is
+    turn_ref: str = ""  # e.g. "Turn 5" — where the evidence comes from
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,10 +75,14 @@ class ReviewClaim:
             "detail": self.detail,
             "status": self.status,
             "user_note": self.user_note,
+            "question": self.question,
+            "scope": self.scope,
+            "turn_ref": self.turn_ref,
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ReviewClaim":
+        scope = str(d.get("scope", "") or "").strip().lower()
         return cls(
             id=str(d.get("id", "")),
             claim_type=str(d.get("claim_type", "")),
@@ -68,6 +92,9 @@ class ReviewClaim:
             detail=str(d.get("detail", "")),
             status=str(d.get("status", "pending")),
             user_note=str(d.get("user_note", "")),
+            question=str(d.get("question", "") or ""),
+            scope=scope if scope in SCOPES else "moment",
+            turn_ref=str(d.get("turn_ref", "") or ""),
         )
 
 
@@ -272,6 +299,71 @@ def build_mined_claims(mining_result: Any) -> list[ReviewClaim]:
                     evidence=quote,
                     inference=inference.strip(),
                     detail=detail.strip(),
+                )
+            )
+    return claims
+
+
+# ---------------------------------------------------------------------------
+# Atomic insight claims: one moment -> one interpretation + alternatives.
+# ---------------------------------------------------------------------------
+
+_INSIGHT_TITLES = {
+    "value_inference": "Value read",
+    "decision_pattern": "Decision pattern",
+    "stance": "Stance",
+    "preference": "Preference",
+}
+
+
+def build_insight_claims(insights: list) -> list[ReviewClaim]:
+    """One claim per mined insight, plus one "alternative" claim per genuine
+    alternative reading.
+
+    Alternatives are separate claims (id "insight:{n}:alt:{m}") so each is
+    individually respondable — confirming the interpretation never silently
+    approves the others. Scope rides on each claim: the interpretive jump
+    from moment to pattern is exposed, not smuggled.
+    """
+    claims: list[ReviewClaim] = []
+    for n, ins in enumerate(insights):
+        turn_label = f"Turn {ins.turn}" if getattr(ins, "turn", None) else ""
+        ctype = getattr(ins, "claim_type", "") or "value_inference"
+        if ctype not in _INSIGHT_TITLES:
+            ctype = "value_inference"
+        scope = getattr(ins, "interpretation_scope", "") or "moment"
+        if scope not in SCOPES:
+            scope = "moment"
+        claims.append(
+            ReviewClaim(
+                id=f"insight:{n}",
+                claim_type=ctype,
+                title=_INSIGHT_TITLES[ctype],
+                evidence=getattr(ins, "evidence", "") or "",
+                inference=getattr(ins, "interpretation", "") or "",
+                detail=turn_label,
+                question=getattr(ins, "interpretation_question", "")
+                or "Does that sound right to you?",
+                scope=scope,
+                turn_ref=turn_label,
+            )
+        )
+        for m, alt in enumerate(getattr(ins, "alternatives", None) or []):
+            alt_scope = getattr(alt, "scope", "") or "moment"
+            if alt_scope not in SCOPES:
+                alt_scope = "moment"
+            claims.append(
+                ReviewClaim(
+                    id=f"insight:{n}:alt:{m}",
+                    claim_type="alternative",
+                    title="Alternative reading",
+                    # Parent shows the quote; repeating it per alternative is noise.
+                    evidence="",
+                    inference=getattr(alt, "text", "") or "",
+                    detail=turn_label,
+                    question=getattr(alt, "question", "") or "Could it be this instead?",
+                    scope=alt_scope,
+                    turn_ref=turn_label,
                 )
             )
     return claims

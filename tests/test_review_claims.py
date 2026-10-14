@@ -193,3 +193,95 @@ class TestClaimStore:
         s2 = AgentStore(db_path=db, user_id="u2")
         assert s2.get_claims("a1") == []
         s2.close()
+
+
+class TestInsightClaimStore:
+    def test_new_fields_roundtrip(self, tmp_path):
+        from local_ai.agent_intake.store import AgentStore
+
+        store = AgentStore(db_path=tmp_path / "t.db", user_id="u1")
+        claims = [
+            ReviewClaim(id="insight:0", claim_type="stance", title="Stance",
+                        evidence="q", inference="i",
+                        question="Does that sound right to you?",
+                        scope="subject", turn_ref="Turn 3"),
+            ReviewClaim(id="insight:0:alt:0", claim_type="alternative", title="Alternative reading",
+                        evidence="", inference="alt",
+                        question="Could it be this instead?",
+                        scope="moment", turn_ref="Turn 3"),
+        ]
+        store.save_claims("a1", claims)
+        got = {c.id: c for c in store.get_claims("a1")}
+        assert got["insight:0"].question == "Does that sound right to you?"
+        assert got["insight:0"].scope == "subject"
+        assert got["insight:0"].turn_ref == "Turn 3"
+        assert got["insight:0:alt:0"].question == "Could it be this instead?"
+        assert got["insight:0:alt:0"].scope == "moment"
+        store.close()
+
+    def test_migration_adds_columns_to_old_table(self, tmp_path):
+        import sqlite3
+
+        from local_ai.agent_intake.store import AgentStore
+
+        db = tmp_path / "old.db"
+        # Simulate a pre-migration review_claims table (no question/scope/turn_ref).
+        conn = sqlite3.connect(str(db))
+        conn.execute(
+            "CREATE TABLE review_claims (claim_id TEXT PRIMARY KEY, agent_id TEXT NOT NULL,"
+            " claim_type TEXT NOT NULL, title TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '',"
+            " inference TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '',"
+            " status TEXT NOT NULL DEFAULT 'pending', user_note TEXT NOT NULL DEFAULT '',"
+            " created_at TEXT NOT NULL, updated_at TEXT NOT NULL, user_id TEXT NOT NULL DEFAULT '')"
+        )
+        conn.execute(
+            "INSERT INTO review_claims VALUES ('c1','a1','strand','t','e','i','',"
+            " 'accepted','note','2026-01-01','2026-01-01','u1')"
+        )
+        conn.commit()
+        conn.close()
+
+        store = AgentStore(db_path=db, user_id="u1")
+        got = store.get_claims("a1")
+        assert len(got) == 1
+        # Old row reads back with safe defaults; nothing breaks.
+        assert got[0].question == ""
+        assert got[0].scope == "moment"
+        assert got[0].turn_ref == ""
+        assert got[0].status == "accepted"
+        # And new-field writes work on the migrated table.
+        store.save_claims("a1", [
+            ReviewClaim(id="insight:0", claim_type="stance", title="Stance",
+                        evidence="e", inference="i", question="q?", scope="pattern"),
+        ])
+        got2 = {c.id: c for c in store.get_claims("a1")}
+        assert got2["insight:0"].scope == "pattern"
+        store.close()
+
+    def test_delete_claim_types_keeps_mined(self, tmp_path):
+        from local_ai.agent_intake.store import AgentStore
+
+        store = AgentStore(db_path=tmp_path / "t.db", user_id="u1")
+        store.save_claims("a1", [
+            ReviewClaim(id="strand:self", claim_type="strand", title="t", evidence="", inference=""),
+            ReviewClaim(id="insight:0", claim_type="stance", title="t", evidence="", inference=""),
+            ReviewClaim(id="insight:0:alt:0", claim_type="alternative", title="t", evidence="", inference=""),
+            ReviewClaim(id="project:0", claim_type="project", title="t", evidence="", inference=""),
+        ])
+        n = store.delete_claim_types("a1", ("strand", "stance", "alternative"))
+        assert n == 3
+        remaining = [c.id for c in store.get_claims("a1")]
+        assert remaining == ["project:0"]
+        store.close()
+
+    def test_new_statuses_roundtrip(self, tmp_path):
+        from local_ai.agent_intake.store import AgentStore
+
+        store = AgentStore(db_path=tmp_path / "t.db", user_id="u1")
+        store.save_claims("a1", [
+            ReviewClaim(id="c1", claim_type="stance", title="t", evidence="", inference=""),
+        ])
+        assert store.update_claim("c1", "rejected")
+        assert store.update_claim("c1", "unresolved")
+        assert store.get_claims("a1")[0].status == "unresolved"
+        store.close()

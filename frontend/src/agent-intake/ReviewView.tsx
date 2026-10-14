@@ -6,6 +6,7 @@ import {
   MiningState,
   PLACEMENT_CLAIM_TYPES,
   canFinishReview,
+  insightGroups,
   miningStateOf,
   miningStatusLabel,
   reviewedList,
@@ -70,6 +71,7 @@ export default function ReviewView() {
   const [acceptingPlacements, setAcceptingPlacements] = useState(false)
   const [claims, setClaims] = useState<Claim[]>([])
   const [claimsLoading, setClaimsLoading] = useState(false)
+  const [regenerating, setRegenerating] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -131,6 +133,22 @@ export default function ReviewView() {
 
   function onClaimResolved(updated: Claim) {
     setClaims((cs) => cs.map((c) => (c.id === updated.id ? updated : c)))
+  }
+
+  /** Re-read the conversation for atomic insights — rebuilds strand/kind/
+      insight claims from the stored transcript, keeping your existing
+      verdicts. Mined project claims are untouched. */
+  async function regenerateInsights(a: Agent) {
+    setRegenerating(true)
+    setError('')
+    try {
+      const data = await api(`/agents/${a.id}/claims/regenerate`, { method: 'POST' })
+      if (Array.isArray(data.claims)) setClaims(data.claims)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Re-read failed')
+    } finally {
+      setRegenerating(false)
+    }
   }
 
   /** Accept every open strand/kind placement at once — resolves claims, does NOT file the agent. */
@@ -237,6 +255,7 @@ export default function ReviewView() {
     const isPending = a.status === 'pending_review'
     const strandClaims = claims.filter((c) => PLACEMENT_CLAIM_TYPES.includes(c.claim_type))
     const minedClaims = claims.filter((c) => MINED_CLAIM_TYPES.includes(c.claim_type))
+    const groups = insightGroups(claims)
     const pendingPlacements = strandClaims.filter((c) => c.status === 'pending')
     const acceptedMined = minedClaims.filter((c) => c.status === 'accepted')
     const miningStage: MiningState = miningStateOf(a.mining_state, claims)
@@ -270,6 +289,35 @@ export default function ReviewView() {
             {acceptingPlacements ? 'Accepting…' : `Accept all ${pendingPlacements.length} placements`}
           </button>
         )}
+
+        <div className="flex items-baseline justify-between mb-2">
+          <h3 className="text-stone-200 font-semibold text-[15px]">Insights</h3>
+          <button
+            onClick={() => regenerateInsights(a)}
+            disabled={regenerating || claimsLoading}
+            className="min-h-[44px] px-3 rounded-xl text-stone-400 text-sm underline underline-offset-4 disabled:opacity-40"
+          >
+            {regenerating ? 'Re-reading…' : 'Re-read for insights'}
+          </button>
+        </div>
+        <p className="text-stone-500 text-sm mb-3">
+          One specific moment, one claim about what it suggests — each with other ways to read it.
+        </p>
+        {claimsLoading && <p className="text-stone-500 text-sm mb-3">Reading the conversation…</p>}
+        {!claimsLoading && groups.length === 0 && (
+          <p className="text-stone-500 text-sm mb-4">
+            No specific insights found — the conversation may not have had contestable moments.
+          </p>
+        )}
+        {groups.map((g) => (
+          <ClaimCard
+            key={g.insight.id}
+            agentId={a.id}
+            claim={g.insight}
+            alternatives={g.alternatives}
+            onResolved={onClaimResolved}
+          />
+        ))}
 
         {error && <p className="text-red-300 text-sm mb-3">{error}</p>}
 

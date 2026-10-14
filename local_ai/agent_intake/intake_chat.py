@@ -81,13 +81,15 @@ def handle_message(
             logger.exception("intake share-link failed for %s", urls[0][:80])
             return {"reply": "I couldn't read that link — something went wrong on my end. Paste the conversation text instead and I'll connect it.", "agent": None}
         if agent is None:
+            # A render job was queued; the registered reader picks it up within minutes.
             return {
                 "reply": (
-                    "I can't open that page from here — it needs a browser to render. "
-                    "Easiest path: open the link, select all, copy, and paste the text right here. "
-                    "I'll sort it and pull out your projects."
+                    "On it — I'm having my reader open that page now. It'll land in your "
+                    "review queue in a few minutes, sorted into your strands with projects "
+                    "pulled out. Or paste the text here if you'd rather skip the wait."
                 ),
                 "agent": None,
+                "render_job_id": job.id if job else None,
             }
         return _intake_done(agent, urls[0], user_id=user_id)
 

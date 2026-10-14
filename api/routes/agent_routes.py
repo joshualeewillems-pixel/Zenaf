@@ -267,6 +267,7 @@ class ConfirmMinedBody(BaseModel):
     ideas: list[dict] = []
     selected_titles: list[str] | None = None  # None = create all
     user_id: str = ""
+    agent_id: str | None = None  # when set, resolve items from the agent's stored mined_payload server-side
 
 
 @router.post("/mined-projects/confirm", status_code=201)
@@ -275,10 +276,52 @@ def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(
 
     Respects the VE hierarchy (initiatives → projects → tasks, plus ideas).
     Plugs into the existing VE service layer — no parallel structures.
+
+    When agent_id is set, items are resolved from the agent's stored
+    mined_payload server-side (robust against client title mismatches or
+    stale payloads). Direct arrays remain supported for backward compat.
+    Returns 422 if nothing resolves — a silent 201 with zero entities
+    created is a bug, not a success.
     """
     from local_ai.agent_intake import project_miner
 
     uid = _uid(current_user)  # authoritative: never trust the client-supplied user_id
+
+    initiatives = list(body.initiatives)
+    projects = list(body.projects)
+    standalone_tasks = list(body.standalone_tasks)
+    ideas = list(body.ideas)
+
+    # Server-side resolution: if the client sent empty arrays but named an
+    # agent, pull the proposals from the agent's stored mined_payload and
+    # match by title. This is the robust path — the server controls both
+    # the payload and the claim titles.
+    if body.agent_id and not (initiatives or projects or standalone_tasks or ideas):
+        store = _store(uid)
+        agent = store.get(body.agent_id)
+        if agent is None:
+            raise HTTPException(status_code=404, detail=f"unknown agent: {body.agent_id}")
+        payload = agent.mined_payload or {}
+        wanted = set(body.selected_titles) if body.selected_titles is not None else None
+
+        def _pick(items: list[dict]) -> list[dict]:
+            out = []
+            for d in items or []:
+                t = str(d.get("title", "") or "")
+                if t and (wanted is None or t in wanted):
+                    out.append(d)
+            return out
+
+        initiatives = _pick(payload.get("initiatives"))
+        projects = _pick(payload.get("projects"))
+        standalone_tasks = _pick(payload.get("standalone_tasks"))
+        ideas = _pick(payload.get("ideas"))
+
+    if not (initiatives or projects or standalone_tasks or ideas):
+        raise HTTPException(
+            status_code=422,
+            detail="Nothing to create — no proposals matched. Try mining again.",
+        )
 
     def _task(d: dict) -> project_miner.ProposedTask:
         return project_miner.ProposedTask(
@@ -295,7 +338,7 @@ def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(
                 source_quote=str(i.get("source_quote", "")),
                 project_titles=[str(t) for t in (i.get("project_titles") or [])],
             )
-            for i in body.initiatives
+            for i in initiatives
             if i.get("title")
         ],
         projects=[
@@ -307,17 +350,17 @@ def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(
                 initiative_title=(str(p.get("initiative_title", "")).strip() or None),
                 tasks=[_task(t) for t in (p.get("tasks") or []) if t.get("title")],
             )
-            for p in body.projects
+            for p in projects
             if p.get("title")
         ],
-        standalone_tasks=[_task(t) for t in body.standalone_tasks if t.get("title")],
+        standalone_tasks=[_task(t) for t in standalone_tasks if t.get("title")],
         ideas=[
             project_miner.ProposedIdea(
                 title=str(i.get("title", "")),
                 detail=str(i.get("detail", "")),
                 source_quote=str(i.get("source_quote", "")),
             )
-            for i in body.ideas
+            for i in ideas
             if i.get("title")
         ],
         engine="api",

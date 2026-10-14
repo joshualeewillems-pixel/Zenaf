@@ -90,15 +90,32 @@ class TestBuildStrandClaims:
         agent = _agent(sort=_sort())
         claims = build_strand_claims(agent)
         ids = [c.id for c in claims]
-        assert "strand:self" in ids
-        assert "strand:word" in ids
-        assert "strand:body" not in ids  # 0.1 < 0.25
+        assert any(i.startswith("strand:self:") for i in ids)
+        assert any(i.startswith("strand:word:") for i in ids)
+        assert not any(i.startswith("strand:body:") for i in ids)  # 0.1 < 0.25
+
+    def test_atomic_not_blanket(self):
+        """Each strand claim anchors to ONE passage with named trigger words —
+        no whole-conversation blanket summaries."""
+        agent = _agent(sort=_sort())
+        claims = {c.id: c for c in build_strand_claims(agent)}
+        self_claims = [c for i, c in claims.items() if i.startswith("strand:self:")]
+        assert len(self_claims) >= 1
+        for c in self_claims:
+            # Evidence is verbatim from the transcript.
+            assert any(c.evidence in ex for ex in agent.examples)
+            # Inference names the strand AND the specific trigger words.
+            assert "Guide" in c.inference or "self" in c.inference.lower()
+            assert c.scope == "moment"
 
     def test_evidence_is_verbatim(self):
         agent = _agent(sort=_sort())
-        claims = {c.id: c for c in build_strand_claims(agent)}
-        # The self claim's evidence must be one of the actual examples.
-        assert any(claims["strand:self"].evidence in ex for ex in agent.examples)
+        claims = build_strand_claims(agent)
+        self_claims = [c for c in claims if c.id.startswith("strand:self:")]
+        assert self_claims
+        # Each claim's evidence must be one of the actual examples.
+        for c in self_claims:
+            assert any(c.evidence in ex for ex in agent.examples)
 
     def test_no_sort_no_claims(self):
         assert build_strand_claims(_agent()) == []

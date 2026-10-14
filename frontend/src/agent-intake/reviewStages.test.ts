@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   allClaimsResolved,
   canFinishReview,
+  defaultCardExpanded,
   insightGroups,
   miningStateOf,
   miningStatusLabel,
@@ -183,5 +184,17 @@ describe('alternatives never block finishing', () => {
     ]
     expect(whatsLeft(claims, 'mined')).toEqual([])
     expect(openClaimsCount(claims)).toBe(0)
+  })
+})
+
+describe('defaultCardExpanded', () => {
+  it('pending cards start open (action needed)', () => {
+    expect(defaultCardExpanded('pending')).toBe(true)
+  })
+
+  it('resolved cards start collapsed (save vertical space)', () => {
+    for (const s of ['accepted', 'corrected', 'explained', 'rejected', 'unresolved']) {
+      expect(defaultCardExpanded(s)).toBe(false)
+    }
   })
 })

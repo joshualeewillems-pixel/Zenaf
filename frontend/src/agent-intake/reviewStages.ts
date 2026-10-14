@@ -105,3 +105,9 @@ export function reviewedList<T extends ReviewedAgent>(agents: T[], limit = 10): 
     .sort((x, y) => y.created_at.localeCompare(x.created_at))
     .slice(0, limit)
 }
+
+/** Accordion default: pending cards start open (action needed); resolved
+ *  cards start collapsed to save vertical space. */
+export function defaultCardExpanded(status: string): boolean {
+  return status === 'pending'
+}

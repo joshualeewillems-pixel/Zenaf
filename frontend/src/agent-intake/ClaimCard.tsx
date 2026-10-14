@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { apiBase } from '../apiBase'
+import { defaultCardExpanded } from './reviewStages'
 
 export type Claim = {
   id: string
@@ -175,15 +176,9 @@ function ClaimBody({
             : claim.status === 'unresolved'
               ? 'Left unresolved'
               : ''
-  const scopeLabel = SCOPE_LABEL[claim.scope] || SCOPE_LABEL.moment
 
   return (
     <div>
-      {/* 4. Scope — how broad the claim is, labeled explicitly */}
-      <span className="inline-block text-xs font-medium text-stone-400 bg-stone-700/60 rounded-full px-2.5 py-1 mb-2">
-        {scopeLabel}
-      </span>
-
       {/* 1. Evidence — verbatim quote + turn ref */}
       {claim.evidence && (
         <blockquote className="border-l-2 border-yellow-500/60 pl-3 mb-3">
@@ -254,27 +249,56 @@ function ClaimBody({
 }
 
 export default function ClaimCard({ agentId, claim, alternatives, onResolved }: Props) {
+  // Accordion: pending cards start open (action needed); resolved cards start
+  // collapsed to save vertical space. Header always shows claim + scope.
+  const [expanded, setExpanded] = useState(() => defaultCardExpanded(claim.status))
+  const scopeLabel = SCOPE_LABEL[claim.scope] || SCOPE_LABEL.moment
+
   return (
-    <div className="rounded-2xl border border-stone-700 bg-stone-800/60 p-4 mb-3">
-      <p className="text-stone-500 text-xs uppercase tracking-wide mb-2">
-        {TYPE_LABEL[claim.claim_type] || claim.claim_type} · {claim.title}
-      </p>
+    <div className="rounded-2xl border border-stone-700 bg-stone-800/60 mb-3 overflow-hidden">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className="w-full text-left p-4 min-h-[44px] flex items-start gap-2"
+      >
+        <span className="flex-1 min-w-0">
+          <span className="block text-stone-500 text-xs uppercase tracking-wide mb-1">
+            {TYPE_LABEL[claim.claim_type] || claim.claim_type} · {claim.title}
+          </span>
+          <span className="block text-stone-200 text-[15px] leading-snug">{claim.inference}</span>
+          <span className="inline-block text-xs font-medium text-stone-400 bg-stone-700/60 rounded-full px-2.5 py-1 mt-2">
+            {scopeLabel}
+          </span>
+          {claim.status !== 'pending' && (
+            <span className="inline-block text-xs font-medium text-yellow-500/90 ml-2">
+              ✓ {claim.status === 'accepted' ? 'Confirmed' : claim.status === 'corrected' ? 'Qualified' : claim.status === 'explained' ? 'Explained' : claim.status === 'rejected' ? 'Rejected' : 'Left unresolved'}
+            </span>
+          )}
+        </span>
+        <span className="text-stone-500 text-lg leading-none mt-1 shrink-0" aria-hidden>
+          {expanded ? '▾' : '▸'}
+        </span>
+      </button>
 
-      <ClaimBody agentId={agentId} claim={claim} onResolved={onResolved} />
+      {expanded && (
+        <div className="px-4 pb-4">
+          <ClaimBody agentId={agentId} claim={claim} onResolved={onResolved} />
 
-      {/* 3. Alternatives — shown explicitly, each individually respondable.
-          Confirming the interpretation never touches these. */}
-      {alternatives && alternatives.length > 0 && (
-        <div className="mt-4 pt-3 border-t border-stone-700/60">
-          <p className="text-stone-400 text-sm font-medium mb-2">Other ways to read it</p>
-          {alternatives.map((alt) => (
-            <div key={alt.id} className="rounded-xl bg-stone-900/60 p-3 mb-2">
-              <p className="text-stone-500 text-xs uppercase tracking-wide mb-1.5">
-                {TYPE_LABEL[alt.claim_type] || alt.claim_type}
-              </p>
-              <ClaimBody agentId={agentId} claim={alt} onResolved={onResolved} compact />
+          {/* 3. Alternatives — shown explicitly, each individually respondable.
+              Confirming the interpretation never touches these. */}
+          {alternatives && alternatives.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-stone-700/60">
+              <p className="text-stone-400 text-sm font-medium mb-2">Other ways to read it</p>
+              {alternatives.map((alt) => (
+                <div key={alt.id} className="rounded-xl bg-stone-900/60 p-3 mb-2">
+                  <p className="text-stone-500 text-xs uppercase tracking-wide mb-1.5">
+                    {TYPE_LABEL[alt.claim_type] || alt.claim_type}
+                  </p>
+                  <ClaimBody agentId={agentId} claim={alt} onResolved={onResolved} compact />
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>

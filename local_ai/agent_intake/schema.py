@@ -13,9 +13,11 @@ from typing import Any, Literal
 
 AgentKind = Literal["skill", "talent", "project", "undecided"]
 AgentStatus = Literal["pending_review", "active", "archived"]
+MiningState = Literal["pending", "mined", "skipped"]
 
 KINDS: tuple[str, ...] = ("skill", "talent", "project", "undecided")
 STATUSES: tuple[str, ...] = ("pending_review", "active", "archived")
+MINING_STATES: tuple[str, ...] = ("pending", "mined", "skipped")
 
 
 @dataclass
@@ -97,6 +99,13 @@ class ConnectedAgent:
     status: AgentStatus
     created_at: str  # ISO-8601
     user_id: str = ""  # owner; "" = pre-multi-user row, claimed on migration
+    # Project-mining stage of the review flow. "pending" until the user mines
+    # projects from the conversation or explicitly skips mining; the staged
+    # review gate won't finalize the agent while this is "pending".
+    mining_state: MiningState = "pending"
+    # Last mining result payload (initiatives/projects/tasks/ideas as dicts),
+    # so accepted mined claims can be created as entities after a reload.
+    mined_payload: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -110,6 +119,8 @@ class ConnectedAgent:
             "status": self.status,
             "created_at": self.created_at,
             "user_id": self.user_id,
+            "mining_state": self.mining_state,
+            "mined_payload": self.mined_payload,
         }
 
     @classmethod
@@ -125,4 +136,6 @@ class ConnectedAgent:
             sort=SortResult.from_dict(sort_raw) if sort_raw else None,
             status=d.get("status", "pending_review"),
             created_at=str(d.get("created_at", "")),
+            mining_state=d.get("mining_state", "pending"),
+            mined_payload=d.get("mined_payload"),
         )

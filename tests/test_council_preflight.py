@@ -775,3 +775,39 @@ def test_format_ve_focus_block_prefix_description_emits_single_brief_line():
     assert block
     assert "Expanded description:" not in block
     assert "Launch with booking" in block
+
+
+def test_taste_compass_wired_into_seat_blocks_for_taste_strands():
+    from local_ai.zenaf_tools import _built_in_persona_dict, _build_council_persona_block
+
+    for key in ("seer", "songwriter", "storyteller", "mediator"):
+        defn = _built_in_persona_dict(key)
+        assert isinstance(defn.get("tasteCompass"), dict), f"{key} missing tasteCompass"
+        assert defn["tasteCompass"].get("shaped_by_user") is False
+        block = _build_council_persona_block(defn, council_clarify_only=False)
+        assert "Taste compass (user-shaped taste layer" in block, key
+        assert "craft core above stays universal" in block, key
+
+
+def test_taste_compass_absent_for_universal_strands():
+    from local_ai.zenaf_tools import _built_in_persona_dict, _build_council_persona_block
+
+    for key in ("guide", "patternist", "maker"):
+        defn = _built_in_persona_dict(key)
+        assert "tasteCompass" not in defn, f"{key} should not have a taste channel"
+        block = _build_council_persona_block(defn, council_clarify_only=False)
+        assert "Taste compass" not in block, key
+
+
+def test_taste_compass_accepts_plain_string_and_marks_craft_separation():
+    from local_ai.zenaf_tools import _build_council_persona_block
+
+    block = _build_council_persona_block(
+        {
+            "name": "Tester",
+            "purpose": "Test purpose",
+            "tasteCompass": "Loves minor keys and long sentences.",
+        }
+    )
+    assert "Taste compass (user-shaped taste layer" in block
+    assert "Loves minor keys and long sentences." in block

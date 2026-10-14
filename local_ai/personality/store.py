@@ -38,6 +38,16 @@ from .schema import (
     StrandProfile,
     VoiceProfile,
 )
+from .temporal import (
+    ANNUAL_SNAPSHOT_DAYS,
+    SNAPSHOT_TRIGGER_ANNUAL,
+    SNAPSHOT_TRIGGER_MANUAL,
+    SNAPSHOT_TRIGGER_VOLUME,
+    SNAPSHOT_TRIGGERS,
+    VOLUME_TRIGGER_VERSIONS,
+    ProfileSnapshot,
+    snapshot_auto_label,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = REPO_ROOT / "data" / "personality"
@@ -82,6 +92,23 @@ CREATE TABLE IF NOT EXISTS personality_settings (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, key)
 );
+-- Phase 5: immutable profile snapshots (temporal archives / eras).
+-- Insert-only: the store exposes NO update or delete path for this table.
+-- era_name is unique per user when set (NULLs are distinct in SQLite).
+CREATE TABLE IF NOT EXISTS profile_snapshots (
+    snapshot_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    trigger TEXT NOT NULL,
+    era_name TEXT,
+    auto_label TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    profile_json TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_snapshots_user ON profile_snapshots(user_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_snapshots_user_era ON profile_snapshots(user_id, era_name);
 """
 
 _VALID_STATUSES: tuple[str, ...] = ("proposed", "accepted", "rejected", "published")
@@ -480,3 +507,191 @@ class PersonalityStore:
             )
             self._conn.commit()
         return v
+
+    # -- profile snapshots (Phase 5: temporal archives / eras) --------------
+    # Insert-only: there is deliberately NO update or delete method for
+    # snapshots. A snapshot is a named, immutable archive of one published
+    # profile version — the addressable unit era rental will one day serve.
+
+    def _snapshot_owner(self) -> str:
+        return self.user_id or ""
+
+    @staticmethod
+    def _row_to_snapshot(row: sqlite3.Row) -> ProfileSnapshot:
+        return ProfileSnapshot(
+            snapshot_id=row["snapshot_id"],
+            user_id=row["user_id"],
+            profile_id=row["profile_id"],
+            version=row["version"],
+            trigger=row["trigger"],
+            era_name=row["era_name"],
+            auto_label=row["auto_label"],
+            note=row["note"],
+            created_at=datetime.fromisoformat(row["created_at"]),
+            profile_json=row["profile_json"],
+        )
+
+    def create_snapshot(
+        self,
+        *,
+        trigger: str,
+        era_name: str | None = None,
+        note: str = "",
+    ) -> ProfileSnapshot:
+        """Archive the CURRENT published profile version as an immutable snapshot.
+
+        Always creates a new row (use `ensure_snapshot` for the idempotent
+        auto-triggers). Raises ValueError if there is no published profile
+        yet, on an unknown trigger, or on a duplicate era_name for this user.
+        """
+        if trigger not in SNAPSHOT_TRIGGERS:
+            raise ValueError(
+                f"unknown snapshot trigger {trigger!r} (expected one of {list(SNAPSHOT_TRIGGERS)})"
+            )
+        era = (era_name or "").strip() or None
+        if era is not None and len(era) > 120:
+            raise ValueError("era_name must be 120 characters or fewer")
+        with self._lock:
+            current = self._latest_locked()
+            if current is None:
+                raise ValueError("no published profile version to snapshot yet")
+            created = datetime.now(timezone.utc)
+            snap = ProfileSnapshot(
+                snapshot_id=f"ps_{uuid.uuid4().hex[:12]}",
+                user_id=self._snapshot_owner(),
+                profile_id=current.profile_id,
+                version=current.version,
+                trigger=trigger,  # type: ignore[arg-type]
+                era_name=era,
+                auto_label=snapshot_auto_label(current.version, trigger, created),
+                note=note or "",
+                created_at=created,
+                profile_json=current.model_dump_json(),
+            )
+            try:
+                self._conn.execute(
+                    "INSERT INTO profile_snapshots "
+                    "(snapshot_id, user_id, profile_id, version, trigger, era_name,"
+                    " auto_label, note, created_at, profile_json)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        snap.snapshot_id,
+                        snap.user_id,
+                        snap.profile_id,
+                        snap.version,
+                        snap.trigger,
+                        snap.era_name,
+                        snap.auto_label,
+                        snap.note,
+                        snap.created_at.isoformat(),
+                        snap.profile_json,
+                    ),
+                )
+                self._conn.commit()
+            except sqlite3.IntegrityError:
+                raise ValueError(f"era name {era!r} is already used for this user")
+            return snap
+
+    def ensure_snapshot(
+        self, trigger: str, *, era_name: str | None = None, note: str = ""
+    ) -> tuple[ProfileSnapshot, bool]:
+        """Idempotent snapshot for the automatic triggers (volume / annual).
+
+        If a snapshot with this trigger already archives the current
+        profile version, returns it with created=False instead of
+        duplicating. Manual snapshots always go through create_snapshot.
+        """
+        if trigger not in (SNAPSHOT_TRIGGER_VOLUME, SNAPSHOT_TRIGGER_ANNUAL):
+            raise ValueError(
+                f"ensure_snapshot is for auto triggers; got {trigger!r} "
+                "(use create_snapshot for manual snapshots)"
+            )
+        with self._lock:
+            current = self._latest_locked()
+            owner = self._snapshot_owner()
+            if current is not None:
+                row = self._conn.execute(
+                    "SELECT * FROM profile_snapshots WHERE user_id = ? AND trigger = ?"
+                    " AND version = ? ORDER BY created_at DESC LIMIT 1",
+                    (owner, trigger, current.version),
+                ).fetchone()
+                if row is not None:
+                    return self._row_to_snapshot(row), False
+        snap = self.create_snapshot(trigger=trigger, era_name=era_name, note=note)
+        return snap, True
+
+    def list_snapshots(self) -> list[dict[str, Any]]:
+        """Snapshot metadata (no full payloads), newest last."""
+        owner = self._snapshot_owner()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT snapshot_id, profile_id, version, trigger, era_name,"
+                " auto_label, note, created_at FROM profile_snapshots"
+                " WHERE user_id = ? ORDER BY created_at ASC",
+                (owner,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_snapshot(self, snapshot_id: str) -> ProfileSnapshot | None:
+        """Fetch a snapshot by id, or None."""
+        owner = self._snapshot_owner()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM profile_snapshots WHERE user_id = ? AND snapshot_id = ?",
+                (owner, snapshot_id),
+            ).fetchone()
+        return self._row_to_snapshot(row) if row is not None else None
+
+    def get_snapshot_by_era(self, era_name: str) -> ProfileSnapshot | None:
+        """Fetch a snapshot by its user-given era name, or None."""
+        era = (era_name or "").strip()
+        if not era:
+            return None
+        owner = self._snapshot_owner()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM profile_snapshots WHERE user_id = ? AND era_name = ?",
+                (owner, era),
+            ).fetchone()
+        return self._row_to_snapshot(row) if row is not None else None
+
+    def _last_snapshot_locked(self, trigger: str | None = None) -> dict[str, Any] | None:
+        owner = self._snapshot_owner()
+        q = "SELECT * FROM profile_snapshots WHERE user_id = ?"
+        args: list[Any] = [owner]
+        if trigger:
+            q += " AND trigger = ?"
+            args.append(trigger)
+        q += " ORDER BY created_at DESC LIMIT 1"
+        row = self._conn.execute(q, args).fetchone()
+        return dict(row) if row is not None else None
+
+    # -- snapshot triggers -------------------------------------------------
+
+    def check_volume_trigger(self) -> bool:
+        """True when training volume since the last volume snapshot is due
+        for archiving: >= VOLUME_TRIGGER_VERSIONS newly published profile
+        versions. A scheduler calls this via run_temporal_maintenance()."""
+        with self._lock:
+            last = self._last_snapshot_locked(SNAPSHOT_TRIGGER_VOLUME)
+            q = "SELECT COUNT(*) AS n FROM profile_versions WHERE user_id = ?"
+            args: list[Any] = [self._snapshot_owner()]
+            if last is not None:
+                q += " AND created_at > ?"
+                args.append(last["created_at"])
+            n = int(self._conn.execute(q, args).fetchone()["n"])
+        return n >= VOLUME_TRIGGER_VERSIONS
+
+    def annual_snapshot_due(self) -> bool:
+        """True when no annual snapshot exists within ANNUAL_SNAPSHOT_DAYS.
+
+        The annual policy: one snapshot per year, marking the year's era
+        boundary. A scheduler calls this via run_temporal_maintenance().
+        """
+        with self._lock:
+            last = self._last_snapshot_locked(SNAPSHOT_TRIGGER_ANNUAL)
+        if last is None:
+            return True
+        last_at = datetime.fromisoformat(last["created_at"])
+        age_days = (datetime.now(timezone.utc) - last_at).total_seconds() / 86400.0
+        return age_days >= ANNUAL_SNAPSHOT_DAYS

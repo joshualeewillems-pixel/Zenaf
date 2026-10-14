@@ -46,6 +46,22 @@ from .schema import (
 )
 from .seed import seed_contextual_fingerprints, seed_from_signals
 from .store import PersonalityStore
+from .temporal import (
+    ANNUAL_SNAPSHOT_DAYS,
+    CORROBORATION_WEIGHT,
+    SIGNAL_HALF_LIFE_DAYS,
+    SNAPSHOT_TRIGGER_ANNUAL,
+    SNAPSHOT_TRIGGER_MANUAL,
+    SNAPSHOT_TRIGGER_VOLUME,
+    SNAPSHOT_TRIGGERS,
+    VOLUME_TRIGGER_VERSIONS,
+    ProfileSnapshot,
+    find_parallels,
+    rank_signals_by_relevance,
+    run_temporal_maintenance,
+    signal_relevance,
+    snapshot_auto_label,
+)
 
 __all__ = [
     "MIN_EVIDENCE",
@@ -53,6 +69,14 @@ __all__ = [
     "DIMENSIONS",
     "LEVELS",
     "CONTEXT_REF_KEY",
+    "ANNUAL_SNAPSHOT_DAYS",
+    "CORROBORATION_WEIGHT",
+    "SIGNAL_HALF_LIFE_DAYS",
+    "SNAPSHOT_TRIGGER_ANNUAL",
+    "SNAPSHOT_TRIGGER_MANUAL",
+    "SNAPSHOT_TRIGGER_VOLUME",
+    "SNAPSHOT_TRIGGERS",
+    "VOLUME_TRIGGER_VERSIONS",
     "BlendContext",
     "ContextualFingerprint",
     "StrandDepth",
@@ -63,6 +87,7 @@ __all__ = [
     "PersonalityProfile",
     "PersonalityStore",
     "ProfileCandidate",
+    "ProfileSnapshot",
     "RedLine",
     "StrandProfile",
     "VoiceProfile",
@@ -74,12 +99,17 @@ __all__ = [
     "map_signal_to_strand",
     "default_weight_for_strand",
     "derive_decision_context",
+    "find_parallels",
     "get_signal_context",
     "parse_decision_context",
+    "rank_signals_by_relevance",
     "resolve_blend_context",
     "resolve_weights",
+    "run_temporal_maintenance",
     "seed_contextual_fingerprints",
     "seed_from_signals",
     "set_signal_context",
+    "signal_relevance",
+    "snapshot_auto_label",
     "strand_evidence_depth",
 ]

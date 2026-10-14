@@ -151,16 +151,28 @@ def review(
     approvals: dict[str, bool],
     *,
     store: PresenceStore | None = None,
+    contexts: dict[str, dict] | None = None,
 ) -> dict[str, int]:
     """Apply the user's approve/reject decisions to pending candidates.
 
-    Returns {"approved": n, "rejected": m}. Only pending signals are affected;
-    already-reviewed signals are left untouched.
+    `contexts` optionally carries per-signal decision-envelope corrections
+    (signal_id -> envelope dict). Corrections are applied to pending signals
+    BEFORE the approve/reject decision, so approval keeps meaning "this
+    signal and its context are correct". Approved/rejected rows are never
+    touched by corrections.
+
+    Returns {"approved": n, "rejected": m, "contexts_updated": k}. Only
+    pending signals are affected; already-reviewed signals are left
+    untouched.
     """
     store = store or PresenceStore()
     session = store.get_session(session_id)
     if session is None:
         raise PresenceIngestError(f"Unknown import session: {session_id}")
+    contexts_updated = 0
+    for sid, envelope in (contexts or {}).items():
+        if isinstance(envelope, dict) and store.update_signal_context(sid, envelope):
+            contexts_updated += 1
     approved_ids = [sid for sid, ok in approvals.items() if ok]
     rejected_ids = [sid for sid, ok in approvals.items() if not ok]
     approved = store.review_signals(approved_ids, approve=True)
@@ -169,7 +181,7 @@ def review(
     counts["approved"] = store.count_signals(session_id, status="approved")
     counts["rejected"] = store.count_signals(session_id, status="rejected")
     store.update_session(session_id, status="reviewed", counts=counts)
-    return {"approved": approved, "rejected": rejected}
+    return {"approved": approved, "rejected": rejected, "contexts_updated": contexts_updated}
 
 
 def delete_session(

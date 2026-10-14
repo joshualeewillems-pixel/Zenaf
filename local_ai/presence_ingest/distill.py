@@ -25,6 +25,13 @@ from .schema import (
     TrainingSignal,
 )
 
+from local_ai.personality.context import (
+    DIMENSIONS,
+    LEVELS,
+    parse_decision_context,
+    set_signal_context,
+)
+
 CompleteFn = Callable[[str], str]
 
 _BATCH_SIZE = 40  # max events per LLM prompt
@@ -139,6 +146,27 @@ def _contribution_section(claims: list[ContributionClaim] | None) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _context_prompt_section() -> str:
+    """Prompt section for decision-context capture, generated from the
+    canonical LEVELS so the prompt can never drift from the schema."""
+    if not DIMENSIONS:
+        return ""
+    dim_lines = "\n".join(
+        f'  - "{dim}": ' + " | ".join(f'"{lv}"' for lv in LEVELS[dim])
+        for dim in DIMENSIONS
+    )
+    return f"""
+For "decision"-layer signals only, also include:
+- "decision_context": an object describing the SITUATION the decision was made in — one key per dimension below. Use ONLY the levels shown; use "unknown" (or omit the key) for anything the excerpts do not clearly show:
+{dim_lines}
+
+Rules for decision_context:
+- Conservative extraction: "unknown" unless the excerpts clearly evidence the dimension. Do not infer beyond what is shown.
+- Describe the situation, never the person: never infer internal states (tired, stressed, excited, grieving). Those are excluded by design.
+- Omit the whole "decision_context" object for non-decision layers.
+"""
+
+
 def _build_prompt(
     batch: list[PresenceEvent],
     zone_hint: str,
@@ -156,13 +184,14 @@ def _build_prompt(
         lines.append("")
     transcript = "\n".join(lines)
     contribution_section = _contribution_section(claims)
+    context_section = _context_prompt_section()
     return f"""You are distilling training signal for a personal AI doppelganger from the user's own digital history. The excerpts below are already redacted (PII replaced with tokens like [EMAIL]); do not attempt to recover it.
 {contribution_section}
 Extract up to {_MAX_SIGNALS_PER_BATCH} candidate training signals. Focus on:
 (a) decisions the user made or leaned toward,
 (b) values/beliefs revealed — what they praised, rejected, or pushed back on,
 (c) communication and decision-making style observations.
-
+{context_section}
 For each signal return an object with:
 - "layer": one of "decision" | "behavior" | "guidance"
 - "zone": a short specialization label (e.g. "strategy", "creative", "relationships", "career", or "{zone_hint}")
@@ -208,12 +237,20 @@ def _coerce_extraction(item: dict) -> dict | None:
         return None
     zone = str(item.get("zone", "")).strip() or "general"
     detail = str(item.get("detail", "")).strip()
+    # Decision-context envelope: conservative parse — anything unrecognized
+    # becomes "unknown" (never guesses). Only meaningful for decision layer.
+    decision_context = (
+        parse_decision_context(item.get("decision_context"))
+        if layer == "decision"
+        else None
+    )
     return {
         "layer": layer,
         "valence": valence,
         "summary": summary[:500],
         "detail": detail[:2000],
         "zone": zone[:64],
+        "decision_context": decision_context,
     }
 
 
@@ -266,22 +303,25 @@ def distill_events(
             coerced = _coerce_extraction(item)
             if coerced is None:
                 continue
-            candidates.append(
-                TrainingSignal(
-                    signal_id=f"sig-{uuid4().hex[:12]}",
-                    ts_ms=now_ms,
-                    layer=coerced["layer"],  # type: ignore[typeddict-item]
-                    zone=coerced["zone"],
-                    actor=actor,
-                    summary=coerced["summary"],
-                    context_ref=dict(context_ref),
-                    payload_redacted=coerced["detail"],
-                    valence=coerced["valence"],  # type: ignore[typeddict-item]
-                    correction_diff=None,
-                    provenance=dict(provenance),
-                    supersedes=None,
-                    status="pending",
-                    session_id=session_id,
-                )
+            signal = TrainingSignal(
+                signal_id=f"sig-{uuid4().hex[:12]}",
+                ts_ms=now_ms,
+                layer=coerced["layer"],  # type: ignore[typeddict-item]
+                zone=coerced["zone"],
+                actor=actor,
+                summary=coerced["summary"],
+                context_ref=dict(context_ref),
+                payload_redacted=coerced["detail"],
+                valence=coerced["valence"],  # type: ignore[typeddict-item]
+                correction_diff=None,
+                provenance=dict(provenance),
+                supersedes=None,
+                status="pending",
+                session_id=session_id,
             )
+            # Attach the distilled decision envelope (all-unknown when the
+            # model supplied nothing usable — honest, never guessed).
+            if coerced["decision_context"] is not None:
+                set_signal_context(signal, coerced["decision_context"])
+            candidates.append(signal)
     return candidates

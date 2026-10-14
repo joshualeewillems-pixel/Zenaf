@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from local_ai.identity import LicenseRequired, ScopeDenied
 from local_ai.presence_ingest.schema import (
@@ -30,6 +30,15 @@ MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 class ReviewBody(BaseModel):
     approvals: dict[str, bool] = {}
+    contexts: dict[str, dict] = Field(
+        default_factory=dict,
+        description=(
+            "Per-signal decision-context corrections (signal_id -> envelope "
+            "dict). Applied to pending signals before the approve/reject "
+            "decision, so approval means 'this signal and its context are "
+            "correct'. Approved/rejected rows are never touched."
+        ),
+    )
 
 
 class ContributionClaimBody(BaseModel):
@@ -164,11 +173,15 @@ def list_candidates(session_id: str):
 
 @router.post("/sessions/{session_id}/review")
 def review_candidates(session_id: str, body: ReviewBody):
-    """Apply approve/reject decisions. Only pending signals are affected."""
+    """Apply approve/reject decisions (with optional context corrections).
+
+    Only pending signals are affected. Context corrections are applied
+    first, so approving a signal means its context is correct too.
+    """
     from local_ai.presence_ingest.service import PresenceIngestError
 
     try:
-        result = _service().review(session_id, body.approvals)
+        result = _service().review(session_id, body.approvals, contexts=body.contexts)
     except PresenceIngestError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     return {"session_id": session_id, **result}

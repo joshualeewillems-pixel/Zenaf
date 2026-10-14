@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 
-import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
 from api.routes.auth_routes import get_current_user
@@ -40,6 +39,14 @@ async def transcribe_audio(
 
     filename = file.filename or "audio.webm"
     content_type = file.content_type or "application/octet-stream"
+
+    try:
+        import httpx
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail="Transcription requires the 'httpx' package, which is not installed.",
+        ) from e
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:

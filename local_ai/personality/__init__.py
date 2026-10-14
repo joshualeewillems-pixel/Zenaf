@@ -5,6 +5,15 @@ are never touched here. This package holds the user's version — structured,
 versioned, human-readable — plus the propose/review/publish pipeline that is
 the ONLY path by which a profile version comes into existence.
 """
+from .blend import (
+    MIN_EVIDENCE,
+    BlendContext,
+    apply_personality_blend,
+    default_weight_for_strand,
+    resolve_blend_context,
+    resolve_weights,
+    strand_evidence_depth,
+)
 from .schema import (
     DecisionFingerprint,
     DomainEntry,
@@ -19,6 +28,8 @@ from .seed import seed_from_signals
 from .store import PersonalityStore
 
 __all__ = [
+    "MIN_EVIDENCE",
+    "BlendContext",
     "DecisionFingerprint",
     "DomainEntry",
     "ExampleFragment",
@@ -28,5 +39,10 @@ __all__ = [
     "RedLine",
     "StrandProfile",
     "VoiceProfile",
+    "apply_personality_blend",
+    "default_weight_for_strand",
+    "resolve_blend_context",
+    "resolve_weights",
     "seed_from_signals",
+    "strand_evidence_depth",
 ]

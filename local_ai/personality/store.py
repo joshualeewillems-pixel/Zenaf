@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS profile_candidates (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_candidates_user ON profile_candidates(user_id, status);
+CREATE TABLE IF NOT EXISTS seat_weights (
+    user_id TEXT NOT NULL DEFAULT '',
+    strand_key TEXT NOT NULL,
+    weight REAL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, strand_key)
+);
 """
 
 _VALID_STATUSES: tuple[str, ...] = ("proposed", "accepted", "rejected", "published")
@@ -379,3 +386,52 @@ class PersonalityStore:
             q += f" WHERE {clause}"
         with self._lock:
             return int(self._conn.execute(q, params).fetchone()["n"])
+
+    # -- seat weights (Phase 4: per-strand user-side blend weight) ----------
+
+    def _weight_owner(self) -> str:
+        """Owner key for the seat_weights table ('' = unscoped single-user)."""
+        return self.user_id or ""
+
+    def get_weight_overrides(self) -> dict[str, float | None]:
+        """Manual per-strand weight overrides. Missing key = auto (None)."""
+        owner = self._weight_owner()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT strand_key, weight FROM seat_weights WHERE user_id = ?",
+                (owner,),
+            ).fetchall()
+        return {r["strand_key"]: (None if r["weight"] is None else float(r["weight"])) for r in rows}
+
+    def set_weight_overrides(self, mapping: dict[str, float | None]) -> dict[str, float | None]:
+        """Set per-strand weight overrides. None clears back to auto.
+
+        Validates strand keys against the 7 canonical strands and weights
+        against [0.0, 1.0]. Returns the full override map afterwards.
+        """
+        from local_ai.strands import strand_keys
+
+        valid = set(strand_keys())
+        owner = self._weight_owner()
+        with self._lock:
+            for key, weight in mapping.items():
+                if key not in valid:
+                    raise ValueError(f"unknown strand_key: {key!r} (expected one of {sorted(valid)})")
+                if weight is None:
+                    self._conn.execute(
+                        "DELETE FROM seat_weights WHERE user_id = ? AND strand_key = ?",
+                        (owner, key),
+                    )
+                else:
+                    w = float(weight)
+                    if not (0.0 <= w <= 1.0):
+                        raise ValueError(f"weight for {key!r} must be in [0.0, 1.0]; got {weight!r}")
+                    self._conn.execute(
+                        "INSERT INTO seat_weights (user_id, strand_key, weight, updated_at)"
+                        " VALUES (?, ?, ?, ?)"
+                        " ON CONFLICT(user_id, strand_key) DO UPDATE SET weight = excluded.weight,"
+                        " updated_at = excluded.updated_at",
+                        (owner, key, w, _iso_now()),
+                    )
+            self._conn.commit()
+        return self.get_weight_overrides()

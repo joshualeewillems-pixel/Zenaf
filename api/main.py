@@ -116,6 +116,14 @@ except Exception as e:
     print(f"Personality temporal routes not loaded: {e}")
     _router_load_errors.append(f"personality-temporal: {e}")
 
+# Phase 5: temporal modeling — snapshots & era addressing (separate router so
+# the personality routes file stays untouched).
+try:
+    from api.routes.personality_temporal_routes import router as personality_temporal_router
+    app.include_router(personality_temporal_router)
+except Exception as e:
+    print(f"Personality temporal routes not loaded: {e}")
+
 # Identity license + consent scopes + takeout: the ownership layer. Every
 # doppelganger's data is the owner's property; scopes gate every use.
 try:

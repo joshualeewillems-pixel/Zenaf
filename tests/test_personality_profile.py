@@ -249,6 +249,7 @@ def test_write_routes_require_train_self(monkeypatch):
     body = pr.ProposeBody(
         strand_key="self",
         ops=[CandidateOp(op="add", field="heuristics", value="x")],
+        source="manual",
     )
     with pytest.raises(HTTPException) as ei2:
         pr.propose_candidate(body, user)

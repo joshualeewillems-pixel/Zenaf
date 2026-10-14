@@ -74,6 +74,13 @@ CREATE TABLE IF NOT EXISTS seat_weights (
     updated_at TEXT NOT NULL,
     PRIMARY KEY (user_id, strand_key)
 );
+CREATE TABLE IF NOT EXISTS personality_settings (
+    user_id TEXT NOT NULL DEFAULT '',
+    key TEXT NOT NULL,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
 """
 
 _VALID_STATUSES: tuple[str, ...] = ("proposed", "accepted", "rejected", "published")
@@ -435,3 +442,38 @@ class PersonalityStore:
                     )
             self._conn.commit()
         return self.get_weight_overrides()
+
+    # -- council personality mode (user-chosen seat version) -----------------
+
+    _COUNCIL_MODE_KEY = "council_mode"
+    _COUNCIL_MODES = ("base", "mirror", "blend")
+
+    def get_council_mode(self) -> str:
+        """The user's default council personality mode. System default: blend."""
+        owner = self._weight_owner()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM personality_settings WHERE user_id = ? AND key = ?",
+                (owner, self._COUNCIL_MODE_KEY),
+            ).fetchone()
+        v = (row["value"] if row else "").strip().lower()
+        return v if v in self._COUNCIL_MODES else "blend"
+
+    def set_council_mode(self, mode: str) -> str:
+        """Set the user's default council personality mode. Validates input."""
+        v = (mode or "").strip().lower()
+        if v not in self._COUNCIL_MODES:
+            raise ValueError(
+                f"unknown council mode {mode!r} (expected one of {list(self._COUNCIL_MODES)})"
+            )
+        owner = self._weight_owner()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO personality_settings (user_id, key, value, updated_at)"
+                " VALUES (?, ?, ?, ?)"
+                " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value,"
+                " updated_at = excluded.updated_at",
+                (owner, self._COUNCIL_MODE_KEY, v, _iso_now()),
+            )
+            self._conn.commit()
+        return v

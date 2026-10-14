@@ -234,6 +234,7 @@ def run_council_with_teacher(
     pending_integration_dict: dict[str, Any] | None = None,
     last_integration_commit_dict: dict[str, Any] | None = None,
     pending_ve_elicitation_dict: dict[str, Any] | None = None,
+    council_personality_mode: str | None = None,
 ) -> dict[str, Any]:
     from local_ai.zenaf_tools import run_council
     from local_ai.conversation_trunk import (
@@ -332,6 +333,7 @@ def run_council_with_teacher(
         pending_integration_dict=pending_integration_dict,
         last_integration_commit_dict=last_integration_commit_dict,
         pending_ve_elicitation_dict=pending_ve_elicitation_dict,
+        council_personality_mode=council_personality_mode,
     )
     native_debug: dict[str, Any] = {}
     if isinstance(native_res, tuple):
@@ -379,6 +381,7 @@ def run_council_with_teacher(
                     pending_integration_dict=pending_integration_dict,
                     last_integration_commit_dict=last_integration_commit_dict,
                     pending_ve_elicitation_dict=pending_ve_elicitation_dict,
+                    council_personality_mode=council_personality_mode,
                 )
                 if isinstance(t_res, tuple):
                     if len(t_res) >= 3:

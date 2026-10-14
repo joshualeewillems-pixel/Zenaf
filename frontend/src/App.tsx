@@ -155,6 +155,12 @@ import {
   isKnownMandateId,
 } from './mandateSeatAccent'
 import { CouncilMandatePicker, CouncilPerspectivePicker } from './council/CouncilSeatPickers'
+import { CouncilPersonalityModeSelector } from './council/CouncilPersonalityModeSelector'
+import {
+  fetchCouncilPersonalityMode,
+  saveCouncilPersonalityMode,
+  type CouncilPersonalityMode,
+} from './council/councilPersonalityMode'
 import { CouncilTranscript } from './council/CouncilTranscript'
 import { CouncilTranscriptWithResonance } from './council/CouncilTranscriptWithResonance'
 import { ResonanceSlider } from './components/ResonanceSlider'
@@ -2110,6 +2116,10 @@ function App() {
   const [nestedStackGuidePromptId, setNestedStackGuidePromptId] = useState<string | null>(null)
   const [seenStackGuidePromptIds, setSeenStackGuidePromptIds] = useState<string[]>([])
   const [councilAdvancedOptions, setCouncilAdvancedOptions] = useState(false)
+  // Council personality mode: which version of each seat to use (user's choice, per purpose).
+  const [councilPersonalityMode, setCouncilPersonalityMode] =
+    useState<CouncilPersonalityMode>('blend')
+  const [mirrorNotice, setMirrorNotice] = useState<string | null>(null)
   useEffect(() => {
     const t = setTimeout(() => setIntakeQueueSearchDebounced(intakeQueueSearch), 300)
     return () => clearTimeout(t)
@@ -2773,6 +2783,7 @@ function App() {
     setWorkspaceTraceOutcomeBanner(null)
     setResult(null)
     setStreamingCouncilText('')
+    setMirrorNotice(null)
     setStreamingCouncilRunLabel('Council')
     setCouncilSynthesisIntegrity(null)
     setCouncilIntegrityWarning(null)
@@ -3031,6 +3042,7 @@ function App() {
           included_agents?: string[]
           perspective_definitions?: Record<string, unknown>[]
           force_full_council?: boolean
+          council_personality_mode?: string
         }
         context?: {
           folder_path?: string
@@ -3052,6 +3064,7 @@ function App() {
         params: {
           question: q,
           ...(includeCouncilSynthesis ? { include_synthesis: true } : {}),
+          council_personality_mode: councilPersonalityMode,
         },
         routing_context: buildWorkspaceRunRoutingContext(WORKSPACE_ACTION_INTENTS.council, true),
         context: {
@@ -3102,6 +3115,7 @@ function App() {
             const def: Record<string, unknown> = {
               id: slot.id,
               perspective_agent_id: a.id,
+              strand: a.strand,
               name: displayName,
               role: a.role,
               purpose: a.purpose,
@@ -3317,6 +3331,13 @@ function App() {
               integrationCommitFromDone = payload.integration_commit as IntegrationCommitPayload
             } else {
               integrationCommitFromDone = null
+            }
+            // Mirror mode: surface the fallback notice when some seats had no
+            // published mirror content (machine-readable strands + human text).
+            if (typeof payload.mirror_notice === 'string' && payload.mirror_notice.trim()) {
+              setMirrorNotice(payload.mirror_notice)
+            } else {
+              setMirrorNotice(null)
             }
             const committedThisStream =
               integrationCommitFromDone?.status === 'committed'
@@ -4197,6 +4218,33 @@ function App() {
       cancelled = true
     }
   }, [currentUser])
+
+  // Council personality mode: the user's saved default (their choice of seat version).
+  useEffect(() => {
+    if (!currentUser) {
+      setCouncilPersonalityMode('blend')
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const mode = await fetchCouncilPersonalityMode()
+      if (!cancelled) setCouncilPersonalityMode(mode)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [currentUser])
+
+  const handleCouncilPersonalityModeChange = useCallback(
+    (mode: CouncilPersonalityMode) => {
+      const prev = councilPersonalityMode
+      setCouncilPersonalityMode(mode)
+      void saveCouncilPersonalityMode(mode).then((ok) => {
+        if (!ok) setCouncilPersonalityMode(prev) // revert: the default didn't persist
+      })
+    },
+    [councilPersonalityMode],
+  )
 
   const councilAgentList = useMemo(() => {
     const base = perspectiveAgents.length > 0 ? perspectiveAgents : BUILT_IN_PERSPECTIVES
@@ -7596,6 +7644,19 @@ function App() {
                 >
                   {councilTransformLoading ? 'Working…' : loading ? 'Running…' : 'Ask council'}
                 </button>
+                <CouncilPersonalityModeSelector
+                  value={councilPersonalityMode}
+                  onChange={handleCouncilPersonalityModeChange}
+                  disabled={agentRunDisabled}
+                />
+                {mirrorNotice ? (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-[11px] text-amber-200/90 leading-snug"
+                  >
+                    {mirrorNotice}
+                  </p>
+                ) : null}
                 {lastMode === 'council' ? (
                   <div className="space-y-1">
                     <button

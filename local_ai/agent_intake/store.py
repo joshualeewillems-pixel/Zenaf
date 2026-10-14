@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS review_claims (
     detail TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending',
     user_note TEXT NOT NULL DEFAULT '',
+    question TEXT NOT NULL DEFAULT '',
+    scope TEXT NOT NULL DEFAULT 'moment',
+    turn_ref TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     user_id TEXT NOT NULL DEFAULT ''
@@ -146,6 +149,19 @@ class AgentStore:
                     self._conn.execute(ddl)
             self._conn.executescript(_SCHEMA_INDEXES)
             self._conn.executescript(_SCHEMA_CLAIMS)
+            # review_claims migrations: question / scope / turn_ref for the
+            # five-part insight cards. Same best-effort pattern as above.
+            claim_cols = [
+                r["name"]
+                for r in self._conn.execute("PRAGMA table_info(review_claims)").fetchall()
+            ]
+            for col, ddl in (
+                ("question", "ALTER TABLE review_claims ADD COLUMN question TEXT NOT NULL DEFAULT ''"),
+                ("scope", "ALTER TABLE review_claims ADD COLUMN scope TEXT NOT NULL DEFAULT 'moment'"),
+                ("turn_ref", "ALTER TABLE review_claims ADD COLUMN turn_ref TEXT NOT NULL DEFAULT ''"),
+            ):
+                if claim_cols and col not in claim_cols:
+                    self._conn.execute(ddl)
             _backfill_single_owner(self._conn)
             self._conn.commit()
 
@@ -268,17 +284,42 @@ class AgentStore:
                 self._conn.execute(
                     "INSERT OR REPLACE INTO review_claims "
                     "(claim_id, agent_id, claim_type, title, evidence, inference, "
-                    " detail, status, user_note, created_at, updated_at, user_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    " detail, status, user_note, question, scope, turn_ref, "
+                    " created_at, updated_at, user_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
                     " COALESCE((SELECT created_at FROM review_claims WHERE claim_id = ?), ?),"
                     " ?, ?)",
                     (
                         c.id, agent_id, c.claim_type, c.title, c.evidence,
                         c.inference, c.detail, c.status, c.user_note,
+                        c.question, c.scope, c.turn_ref,
                         c.id, now, now, owner,
                     ),
                 )
             self._conn.commit()
+
+    def delete_claim_types(self, agent_id: str, types: tuple[str, ...]) -> int:
+        """Delete an agent's claims of the given claim types.
+
+        Used by insight regeneration: stale insight/strand/kind/alternative
+        rows are removed before the fresh set is saved, so a re-read can't
+        leave orphaned claims behind. Mined project claims are untouched.
+        """
+        if not types:
+            return 0
+        clause, params = self._owner_clause()
+        q = (
+            "DELETE FROM review_claims WHERE agent_id = ? AND claim_type IN "
+            f"({', '.join('?' * len(types))})"
+        )
+        args: list = [agent_id, *types]
+        if clause:
+            q += f" AND {clause}"
+            args.extend(params)
+        with self._lock:
+            cur = self._conn.execute(q, args)
+            self._conn.commit()
+            return cur.rowcount
 
     def get_claims(self, agent_id: str) -> list:
         """Return the agent's review claims, oldest first."""
@@ -301,6 +342,9 @@ class AgentStore:
                 detail=r["detail"],
                 status=r["status"],
                 user_note=r["user_note"],
+                question=r["question"] if "question" in r.keys() else "",
+                scope=r["scope"] if "scope" in r.keys() else "moment",
+                turn_ref=r["turn_ref"] if "turn_ref" in r.keys() else "",
             )
             for r in rows
         ]

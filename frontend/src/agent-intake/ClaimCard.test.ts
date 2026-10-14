@@ -14,6 +14,9 @@ const claim: Claim = {
   detail: 'Sorter score 0.9',
   status: 'pending',
   user_note: '',
+  question: '',
+  scope: 'moment',
+  turn_ref: '',
 }
 
 describe('ClaimCard data contract', () => {

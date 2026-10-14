@@ -15,6 +15,15 @@ export type MiningState = 'pending' | 'mined' | 'skipped'
 
 export const MINED_CLAIM_TYPES = ['initiative', 'project', 'task', 'idea']
 export const PLACEMENT_CLAIM_TYPES = ['strand', 'kind']
+export const INSIGHT_CLAIM_TYPES = ['value_inference', 'decision_pattern', 'stance', 'preference']
+export const ALTERNATIVE_CLAIM_TYPE = 'alternative'
+
+/** Claims that gate finishing the review. Alternatives never block: pending
+ *  ones are marked "unresolved" at file time — an explicit left-open, never
+ *  a silent approval of an interpretation the user didn't confirm. */
+export function primaryClaims(claims: StageClaim[]): StageClaim[] {
+  return claims.filter((c) => c.claim_type !== ALTERNATIVE_CLAIM_TYPE)
+}
 
 /**
  * Effective mining state. The backend persists mining_state on the agent;
@@ -30,11 +39,12 @@ export function miningStateOf(
 }
 
 export function openClaimsCount(claims: StageClaim[]): number {
-  return claims.filter((c) => c.status === 'pending').length
+  return primaryClaims(claims).filter((c) => c.status === 'pending').length
 }
 
 export function allClaimsResolved(claims: StageClaim[]): boolean {
-  return claims.length > 0 && claims.every((c) => c.status !== 'pending')
+  const primary = primaryClaims(claims)
+  return primary.length > 0 && primary.every((c) => c.status !== 'pending')
 }
 
 export function canFinishReview(claims: StageClaim[], mining: MiningState): boolean {
@@ -47,10 +57,11 @@ export function canFinishReview(claims: StageClaim[], mining: MiningState): bool
  */
 export function whatsLeft(claims: StageClaim[], mining: MiningState): string[] {
   const left: string[] = []
-  if (claims.length === 0) {
+  const primary = primaryClaims(claims)
+  if (primary.length === 0) {
     left.push('claims still loading')
   } else {
-    const n = openClaimsCount(claims)
+    const n = primary.filter((c) => c.status === 'pending').length
     if (n > 0) left.push(`${n} claim${n === 1 ? '' : 's'} still open`)
   }
   if (mining === 'pending') left.push('project mining not done — mine or skip')
@@ -59,6 +70,26 @@ export function whatsLeft(claims: StageClaim[], mining: MiningState): string[] {
 
 export function miningStatusLabel(mining: MiningState): string {
   return mining === 'mined' ? 'projects mined' : mining === 'skipped' ? 'mining skipped' : 'not mined yet'
+}
+
+/** One insight (interpretation) with its individually-respondable alternatives. */
+export type InsightGroup<T extends StageClaim = StageClaim> = {
+  insight: T
+  alternatives: T[]
+}
+
+/** Group atomic insight claims with their alternatives by id prefix
+ *  ("insight:3" -> "insight:3:alt:0"). Alternatives render nested under
+ *  their interpretation — never collapsed away, each with its own verdict. */
+export function insightGroups<T extends StageClaim>(claims: T[]): InsightGroup<T>[] {
+  const insights = claims.filter((c) => INSIGHT_CLAIM_TYPES.includes(c.claim_type))
+  return insights.map((insight) => {
+    const prefix = `${insight.id}:alt:`
+    const alternatives = claims
+      .filter((c) => c.claim_type === ALTERNATIVE_CLAIM_TYPE && c.id.startsWith(prefix))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    return { insight, alternatives }
+  })
 }
 
 export type ReviewedAgent = {

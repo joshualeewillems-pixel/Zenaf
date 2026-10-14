@@ -91,6 +91,14 @@ try:
 except Exception as e:
     print(f"Agent routes not loaded: {e}")
 
+# PersonalityProfile (Phase 1): the user-defined side of each strand.
+# Propose -> review -> publish; the aspirational defaults are never touched.
+try:
+    from api.routes.personality_routes import router as personality_router
+    app.include_router(personality_router)
+except Exception as e:
+    print(f"Personality routes not loaded: {e}")
+
 # Identity license + consent scopes + takeout: the ownership layer. Every
 # doppelganger's data is the owner's property; scopes gate every use.
 try:

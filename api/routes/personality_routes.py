@@ -1,0 +1,181 @@
+"""PersonalityProfile API (Phase 1: the user-defined side).
+
+Pipeline: POST /personality/candidates -> GET /personality/candidates ->
+POST /personality/publish (or reject). Nothing becomes a profile version
+without an explicit publish — propose() never writes versions.
+
+Writes (propose/publish/reject/seed) need the user's explicit train:self
+consent scope (default-deny). Reads need session auth only.
+
+The aspirational defaults (BUILT_IN_PERSONA_DEFINITIONS) are never read,
+written, or referenced here.
+"""
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from api.routes.auth_routes import get_current_user
+from local_ai.personality.schema import (
+    CandidateOp,
+    CandidateStatus,
+    PersonalityProfile,
+    ProfileCandidate,
+)
+
+router = APIRouter(prefix="/personality", tags=["personality"])
+
+
+class ProposeBody(BaseModel):
+    """Propose a candidate profile diff (inert until published)."""
+
+    strand_key: str | None = Field(default=None, description="None = profile-global (voice)")
+    ops: list[CandidateOp] = Field(min_length=1)
+    source: str = ""
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    rationale: str = ""
+
+
+class IdsBody(BaseModel):
+    candidate_ids: list[str] = Field(min_length=1)
+
+
+class PublishBody(BaseModel):
+    candidate_ids: list[str] = Field(min_length=1)
+    source_summary: str = ""
+
+
+def _store(user_id: str | None):
+    from local_ai.personality.store import PersonalityStore
+
+    return PersonalityStore(user_id=user_id)
+
+
+def _uid(current_user: dict) -> str:
+    return current_user["id"]
+
+
+def _require_train_self(user_id: str) -> None:
+    """Profile writes need the user's explicit train:self consent (default-deny)."""
+    from local_ai.identity import ScopeDenied
+    from local_ai.identity.scopes import require_scope
+
+    try:
+        require_scope("train:self", user_id=user_id)
+    except ScopeDenied:
+        raise HTTPException(
+            status_code=403,
+            detail="Personality profile writes need your 'train:self' consent scope. Grant it in Settings → Identity.",
+        )
+
+
+@router.post("/candidates", status_code=201, response_model=ProfileCandidate)
+def propose_candidate(body: ProposeBody, current_user: dict = Depends(get_current_user)):
+    """Queue a candidate diff for review. Creates no profile version."""
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    try:
+        cand = ProfileCandidate(
+            candidate_id=f"pc_{uuid.uuid4().hex[:12]}",
+            user_id=uid,
+            strand_key=body.strand_key,
+            ops=body.ops,
+            source=body.source,
+            confidence=body.confidence,
+            rationale=body.rationale,
+            created_at=datetime.now(timezone.utc),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _store(uid).propose(cand)
+
+
+@router.get("/candidates", response_model=list[ProfileCandidate])
+def list_candidates(
+    status: CandidateStatus | None = None,
+    current_user: dict = Depends(get_current_user),
+):
+    uid = _uid(current_user)
+    return _store(uid).list_candidates(status=status)
+
+
+@router.post("/candidates/reject")
+def reject_candidates(body: IdsBody, current_user: dict = Depends(get_current_user)):
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    n = _store(uid).reject(body.candidate_ids)
+    return {"rejected": n}
+
+
+@router.post("/publish", response_model=PersonalityProfile)
+def publish_profile(body: PublishBody, current_user: dict = Depends(get_current_user)):
+    """Publish accepted candidates as a NEW immutable profile version.
+
+    This is the ONLY path that creates profile versions.
+    """
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    try:
+        profile = _store(uid).publish(
+            body.candidate_ids,
+            approved_by="user",
+            source_summary=body.source_summary,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return profile
+
+
+@router.get("/profile", response_model=PersonalityProfile | None)
+def get_current_profile(current_user: dict = Depends(get_current_user)):
+    uid = _uid(current_user)
+    return _store(uid).get_current()
+
+
+@router.get("/versions")
+def list_versions(current_user: dict = Depends(get_current_user)):
+    uid = _uid(current_user)
+    return _store(uid).list_versions()
+
+
+@router.get("/versions/{version}", response_model=PersonalityProfile | None)
+def get_version(version: int, current_user: dict = Depends(get_current_user)):
+    uid = _uid(current_user)
+    return _store(uid).get_version(version)
+
+
+@router.post("/seed")
+def seed_from_approved_signals(current_user: dict = Depends(get_current_user)):
+    """Propose candidates from approved training signals. Never publishes.
+
+    Scoped to import sessions re-anchored under the user's active license.
+    """
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    from local_ai.identity.service import get_license
+    from local_ai.personality.seed import seed_from_signals
+    from local_ai.presence_ingest.store import PresenceStore
+
+    lic = get_license()
+    if lic is None or lic.status != "active":
+        raise HTTPException(status_code=403, detail="An active identity license is required.")
+    signals_store = PresenceStore()
+
+    # Scope to this license's sessions (default-deny: unknown sessions skipped).
+    sessions = {s.session_id: s for s in signals_store.list_sessions()}
+
+    class _ScopedSignals:
+        def list_signals(self, status: str = "approved"):
+            out = []
+            for sig in signals_store.list_signals(status=status):
+                sess = sessions.get(sig.session_id)
+                prov = (sess.provenance if sess else {}) or {}
+                if prov.get("license_id") == lic.license_id:
+                    out.append(sig)
+            return out
+
+    made = seed_from_signals(_store(uid), _ScopedSignals(), uid)
+    return {"proposed": len(made), "candidate_ids": [c.candidate_id for c in made]}

@@ -179,3 +179,84 @@ def seed_from_approved_signals(current_user: dict = Depends(get_current_user)):
 
     made = seed_from_signals(_store(uid), _ScopedSignals(), uid)
     return {"proposed": len(made), "candidate_ids": [c.candidate_id for c in made]}
+
+
+class WeightsBody(BaseModel):
+    """Per-strand user-side blend weights. null = auto (evidence-scaled)."""
+
+    weights: dict[str, float | None] = Field(
+        description="strand_key -> weight in [0.0, 1.0], or null to clear back to auto"
+    )
+
+
+@router.get("/weights")
+def get_seat_weights(current_user: dict = Depends(get_current_user)):
+    """Per-strand blend weights: configured override, effective weight, evidence depth.
+
+    Reads need session auth only. With no published profile every strand
+    reports effective 0.0 (pure aspirational seats).
+    """
+    from local_ai.personality.blend import default_weight_for_strand, strand_evidence_depth
+    from local_ai.strands import strand_keys
+
+    uid = _uid(current_user)
+    store = _store(uid)
+    try:
+        overrides = store.get_weight_overrides()
+        profile = store.get_current()
+        out: dict[str, dict] = {}
+        for key in strand_keys():
+            ov = overrides.get(key)
+            if profile is None:
+                depth, effective = 0.0, 0.0
+            else:
+                depth = round(strand_evidence_depth(profile, key), 4)
+                effective = (
+                    default_weight_for_strand(profile, key)
+                    if ov is None
+                    else max(0.0, min(1.0, float(ov)))
+                )
+            out[key] = {"configured": ov, "effective": effective, "evidence_depth": depth}
+        return {
+            "weights": out,
+            "profile_version": profile.version if profile else None,
+            "version_count": store.version_count(),
+        }
+    finally:
+        store.close()
+
+
+@router.put("/weights")
+def set_seat_weights(body: WeightsBody, current_user: dict = Depends(get_current_user)):
+    """Set per-strand user-side blend weight overrides (null = back to auto).
+
+    Gated on train:self like other personality writes — these weights shape
+    how much of the user's trained self appears in council seats.
+    """
+    uid = _uid(current_user)
+    _require_train_self(uid)
+    store = _store(uid)
+    try:
+        try:
+            return {"overrides": store.set_weight_overrides(body.weights)}
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        store.close()
+
+
+@router.get("/builtin-personas")
+def get_builtin_personas(current_user: dict = Depends(get_current_user)):
+    """The aspirational default persona definitions (single source of truth).
+
+    Read-only. The frontend generates its built-in actor content from these
+    at build time (see scripts/codegen_builtin_personas.py) instead of
+    carrying a hand-maintained copy. Never mutated by training.
+    """
+    from local_ai.zenaf_tools import BUILT_IN_PERSONA_DEFINITIONS
+
+    return {
+        "personas": {
+            key: dict(defn) for key, defn in BUILT_IN_PERSONA_DEFINITIONS.items()
+        }
+    }

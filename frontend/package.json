@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "python3 ../scripts/codegen_builtin_personas.py",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",

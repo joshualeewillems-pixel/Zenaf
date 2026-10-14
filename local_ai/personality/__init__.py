@@ -15,6 +15,13 @@ from .blend import (
     resolve_weights,
     strand_evidence_depth,
 )
+from .depth import (
+    StrandDepth,
+    band_for_score,
+    compute_strand_depth,
+    compute_training_depth,
+    map_signal_to_strand,
+)
 from .context import (
     CONTEXT_REF_KEY,
     DIMENSIONS,
@@ -48,6 +55,7 @@ __all__ = [
     "CONTEXT_REF_KEY",
     "BlendContext",
     "ContextualFingerprint",
+    "StrandDepth",
     "DecisionContext",
     "DecisionFingerprint",
     "DomainEntry",
@@ -59,7 +67,11 @@ __all__ = [
     "StrandProfile",
     "VoiceProfile",
     "apply_personality_blend",
+    "band_for_score",
+    "compute_strand_depth",
+    "compute_training_depth",
     "context_similarity",
+    "map_signal_to_strand",
     "default_weight_for_strand",
     "derive_decision_context",
     "get_signal_context",

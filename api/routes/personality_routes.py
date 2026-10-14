@@ -383,3 +383,76 @@ def derive_context(body: DeriveContextBody, current_user: dict = Depends(get_cur
 
     ctx = derive_decision_context(body.text)
     return {"decision_context": ctx.model_dump(), "is_empty": ctx.is_empty()}
+
+
+def _user_approved_signals() -> list:
+    """Approved training signals re-anchored under the user's active license.
+
+    Same scoping as the seed endpoints (default-deny: unknown sessions are
+    skipped). Read-only difference: no active license yields [] — honest
+    zeros, not a 403 — because this feeds a read, and the user's own
+    published profile still counts toward depth without a license.
+    """
+    from local_ai.identity.service import get_license
+    from local_ai.presence_ingest.store import PresenceStore
+
+    lic = get_license()
+    if lic is None or lic.status != "active":
+        return []
+    signals_store = PresenceStore()
+    sessions = {s.session_id: s for s in signals_store.list_sessions()}
+    out = []
+    for sig in signals_store.list_signals(status="approved"):
+        sess = sessions.get(sig.session_id)
+        prov = (sess.provenance if sess else {}) or {}
+        if prov.get("license_id") == lic.license_id:
+            out.append(sig)
+    return out
+
+
+@router.get("/training-depth")
+def get_training_depth(current_user: dict = Depends(get_current_user)):
+    """Per-strand visible training depth — the trust metric for future rentals.
+
+    For each of the seven strands: a 0..100 score plus the evidence behind
+    it (approved-signal count, published versions touching the strand,
+    distinct decision contexts observed, last-evidence timestamp, and the
+    four formula components). Zero evidence renders as zero — "not yet
+    trained" — never a placeholder. Reads need session auth only.
+
+    Read-only: computes from live stores and mutates nothing. See
+    local_ai/personality/depth.py for the documented formula; per-zone
+    rollups attach there when the zone taxonomy formalizes.
+    """
+    from local_ai.personality.depth import compute_training_depth
+
+    uid = _uid(current_user)
+    store = _store(uid)
+    try:
+        profile = store.get_current()
+        versions: list = []
+        for meta in store.list_versions():
+            v = store.get_version(meta["version"])
+            if v is not None:
+                versions.append((meta["version"], v))
+        depths = compute_training_depth(
+            signals=_user_approved_signals(),
+            profile=profile,
+            versions=versions,
+        )
+        strands = {k: d.to_dict() for k, d in depths.items()}
+        voice_published = bool(
+            profile is not None
+            and (
+                (profile.voice.description or "").strip() or profile.voice.tags
+            )
+        )
+        return {
+            "strands": strands,
+            "voice_published": voice_published,
+            "profile_version": profile.version if profile else None,
+            "version_count": store.version_count(),
+            "computed_at": datetime.now(timezone.utc).isoformat(),
+        }
+    finally:
+        store.close()

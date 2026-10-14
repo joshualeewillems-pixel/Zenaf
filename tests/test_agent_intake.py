@@ -694,3 +694,48 @@ def test_intake_chat_routes_paste_to_pipeline(tmp_path, monkeypatch):
     assert out["agent"] is not None
     assert out["agent"]["user_id"] == "user-a"
     assert "review" in out["reply"].lower()
+
+
+def test_store_migrates_pre_multiuser_table(tmp_path):
+    """Regression (2026-10-14): staging's agents.db predated the user_id column.
+
+    The old __init__ ran CREATE INDEX idx_agents_user (on user_id) BEFORE the
+    ALTER TABLE that adds the column, so the migration itself raised
+    "no such column: user_id" and every intake op failed on old databases.
+    """
+    import sqlite3
+
+    db = tmp_path / "agents.db"
+    c = sqlite3.connect(str(db))
+    c.execute(
+        """CREATE TABLE connected_agents (
+            agent_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            source_platform TEXT NOT NULL,
+            description TEXT NOT NULL,
+            instructions TEXT,
+            examples TEXT NOT NULL DEFAULT '[]',
+            sort_result TEXT,
+            status TEXT NOT NULL DEFAULT 'pending_review',
+            created_at TEXT NOT NULL)"""
+    )
+    c.execute(
+        "INSERT INTO connected_agents (agent_id, name, source_platform, description, created_at)"
+        " VALUES ('a1', 'old', 'chatgpt_share', 'legacy row', '2026-01-01')"
+    )
+    c.commit()
+    c.close()
+
+    s = AgentStore(db_path=db, user_id="u1")
+    try:
+        cols = [r["name"] for r in s._conn.execute("PRAGMA table_info(connected_agents)").fetchall()]
+        assert "user_id" in cols
+        # The store is fully usable: save + per-user lookup work.
+        agent = s.save(ConnectedAgent(id="a2", name="new", source_platform="pasted",
+                                      description="d", instructions=None, examples=[],
+                                      sort=None, status="pending_review",
+                                      created_at="2026-10-14", user_id="u1"))
+        assert agent.user_id == "u1"
+        assert s.get("a2") is not None
+    finally:
+        s.close()

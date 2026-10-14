@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = REPO_ROOT / "data" / "agent_intake"
 DEFAULT_DB_PATH = DATA_DIR / "agents.db"
 
-_SCHEMA = """
+_SCHEMA_TABLE = """
 CREATE TABLE IF NOT EXISTS connected_agents (
     agent_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS connected_agents (
     created_at TEXT NOT NULL,
     user_id TEXT NOT NULL DEFAULT ''
 );
+"""
+
+_SCHEMA_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_agents_status ON connected_agents(status);
 CREATE INDEX IF NOT EXISTS idx_agents_user ON connected_agents(user_id, status);
 """
@@ -106,10 +109,13 @@ class AgentStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(connected_agents)").fetchall()]
-            self._conn.executescript(_SCHEMA)
+            self._conn.execute(_SCHEMA_TABLE)
             if cols and "user_id" not in cols:
-                # Pre-multi-user table: column added by ALTER, then claim orphans.
+                # Pre-multi-user table: add the column BEFORE any index that
+                # references it (the old code created idx_agents_user first,
+                # which raised "no such column: user_id" and aborted the migration).
                 self._conn.execute("ALTER TABLE connected_agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
+            self._conn.executescript(_SCHEMA_INDEXES)
             _backfill_single_owner(self._conn)
             self._conn.commit()
 

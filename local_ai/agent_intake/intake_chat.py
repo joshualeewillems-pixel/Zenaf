@@ -8,8 +8,11 @@ warm conversational reply.
 
 from __future__ import annotations
 
+import logging
 import os
 import re
+
+logger = logging.getLogger(__name__)
 
 SHARE_URL_RE = re.compile(r"https?://[^\s)>\"]+")
 CONVERSATION_MARKERS = ("USER:", "ASSISTANT:", "Human:", "Assistant:", "ChatGPT", "Muse:")
@@ -74,7 +77,9 @@ def handle_message(
         try:
             agent, job = pipeline.connect_via_share_link(urls[0], store=_store(user_id))
         except Exception as exc:
-            return {"reply": f"I couldn't read that link ({exc}). Paste the conversation text instead and I'll connect it.", "agent": None}
+            # Never leak raw internals (e.g. sqlite errors) to the user; log them.
+            logger.exception("intake share-link failed for %s", urls[0][:80])
+            return {"reply": "I couldn't read that link — something went wrong on my end. Paste the conversation text instead and I'll connect it.", "agent": None}
         if agent is None:
             return {
                 "reply": (
@@ -92,8 +97,9 @@ def handle_message(
             agent = pipeline.connect_via_extracted_text(
                 url="pasted-conversation", transcript=msg, store=_store(user_id)
             )
-        except Exception as exc:
-            return {"reply": f"That didn't go through ({exc}). Try pasting again?", "agent": None}
+        except Exception:
+            logger.exception("intake pasted-text failed")
+            return {"reply": "That didn't go through — something went wrong on my end. Try pasting again?", "agent": None}
         mined = _mine(msg, user_id)
         return _intake_done(agent, "pasted-conversation", mined=mined, user_id=user_id)
 

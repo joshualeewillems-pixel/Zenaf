@@ -1,6 +1,6 @@
 # Personality Profile — Design Note
 
-**Status:** Design  
+**Status:** Implemented (Phase 1 — the user-defined side; see `local_ai/personality/`)  
 **Scope:** Formalize Zenaf’s implicit personality layer into a structured, versioned cognitive profile that can be deployed as a “seat at the table” in councils and workspaces.  
 **Goal:** Distill a user’s cognitive style into an interpretable, governable, portable, and marketable profile — without uncontrolled self-training, hidden memory blobs, or raw-data exposure.
 

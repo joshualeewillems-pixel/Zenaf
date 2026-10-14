@@ -33,10 +33,10 @@ describe('ClaimCard data contract', () => {
   })
 
   it('claim ids are namespaced by type', () => {
-    const ids = ['strand:self', 'kind', 'initiative:0', 'project:1', 'task:0', 'idea:2']
+    const ids = ['strand:self:0', 'kind', 'initiative:0', 'project:1', 'task:0', 'idea:2', 'insight:0', 'insight:0:alt:1']
     for (const id of ids) {
       const [type] = id.split(':')
-      expect(['strand', 'kind', 'initiative', 'project', 'task', 'idea']).toContain(type)
+      expect(['strand', 'kind', 'initiative', 'project', 'task', 'idea', 'insight']).toContain(type)
     }
   })
 

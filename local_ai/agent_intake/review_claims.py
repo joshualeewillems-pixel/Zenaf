@@ -216,8 +216,53 @@ def _kind_inference(kind: str, kind_reasoning: str) -> str:
 # Claim builders.
 # ---------------------------------------------------------------------------
 
+def _matched_markers(chunk: str, markers: tuple[str, ...]) -> list[str]:
+    """Markers from the strand's set that actually appear in this chunk."""
+    low = chunk.lower()
+    seen: list[str] = []
+    for m in markers:
+        ml = m.lower()
+        if ml and ml in low and ml not in seen:
+            seen.append(ml)
+    return seen
+
+
+def _trim_quote(text: str, limit: int = 400) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    space = cut.rfind(" ")
+    if space > limit - 100:
+        cut = cut[:space]
+    return cut.rstrip() + "…"
+
+
+def _atomic_strand_inference(strand_key: str, matched: list[str]) -> str:
+    """One specific, falsifiable placement claim for a single passage.
+
+    Names the strand, the passage's own words, and the reason — so the user
+    can say "no, that's wrong" about something specific, not blanket-approve
+    a whole-conversation summary.
+    """
+    name = _STRAND_NAME.get(strand_key, strand_key)
+    if not matched:
+        return f"This passage was routed to {name}."
+    words = ", ".join(f"'{w}'" for w in matched[:5])
+    return f"This passage routes to {name} because it uses {words}."
+
+
+# Max atomic placement claims per strand — enough to show the pattern,
+# not so many it floods the review.
+_MAX_ATOMIC_PER_STRAND = 3
+
+
 def build_strand_claims(agent: ConnectedAgent) -> list[ReviewClaim]:
-    """One claim card per strand the sorter placed above threshold."""
+    """Atomic strand placement claims: one specific passage -> one routing.
+
+    Each claim anchors a strand placement to a verbatim passage and names
+    the specific words that triggered it — granular and falsifiable, like
+    the insight cards. No whole-conversation blanket summaries.
+    """
     from .sorter import _STRAND_MARKERS
 
     if not agent.sort:
@@ -227,19 +272,44 @@ def build_strand_claims(agent: ConnectedAgent) -> list[ReviewClaim]:
         if c.score < _CLAIM_SCORE_THRESHOLD:
             continue
         markers = _STRAND_MARKERS.get(c.strand, ())
-        evidence = find_evidence_chunk(agent.examples, markers)
-        inference = humanize_strand_inference(c.strand, c.reasoning, c.score)
         name = _STRAND_NAME.get(c.strand, c.strand)
-        claims.append(
-            ReviewClaim(
-                id=f"strand:{c.strand}",
-                claim_type="strand",
-                title=f"{name} strand",
-                evidence=evidence,
-                inference=inference,
-                detail=f"Sorter score {c.score:.1f}",
+        # Score every example chunk; keep the top few with actual hits.
+        scored = []
+        for ex in agent.examples or []:
+            matched = _matched_markers(ex, markers)
+            if matched:
+                scored.append((len(matched), ex, matched))
+        scored.sort(key=lambda t: -t[0])
+        # Fall back to the single best chunk if nothing matched verbatim —
+        # the sorter placed it above threshold, so keep the placement visible
+        # but honest about the thin evidence.
+        if not scored:
+            best = find_evidence_chunk(agent.examples, markers)
+            if best:
+                claims.append(
+                    ReviewClaim(
+                        id=f"strand:{c.strand}",
+                        claim_type="strand",
+                        title=f"{name} strand",
+                        evidence=_trim_quote(best),
+                        inference=f"Routed to {name} (sorter score {c.score:.1f}), but no single passage carries the signal strongly — confirm or qualify.",
+                        detail=f"Sorter score {c.score:.1f}",
+                        scope="moment",
+                    )
+                )
+            continue
+        for i, (_, ex, matched) in enumerate(scored[:_MAX_ATOMIC_PER_STRAND]):
+            claims.append(
+                ReviewClaim(
+                    id=f"strand:{c.strand}:{i}",
+                    claim_type="strand",
+                    title=f"{name} strand",
+                    evidence=_trim_quote(ex),
+                    inference=_atomic_strand_inference(c.strand, matched),
+                    detail=f"Sorter score {c.score:.1f}",
+                    scope="moment",
+                )
             )
-        )
     return claims
 
 

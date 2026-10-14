@@ -93,6 +93,7 @@ export default function ReviewView() {
     setSelected(a)
     setClaims([])
     setMinedPayload(a.mined_payload || null)
+    setCreatedSummary('')
     setError('')
     loadClaims(a.id)
   }
@@ -200,27 +201,50 @@ export default function ReviewView() {
     }
   }
 
-  /** Create Vision Execution entities from the accepted mined claim cards. */
-  async function createAccepted(accepted: Claim[], payload: Mined) {
+  /** Create Vision Execution entities from the accepted mined claim cards.
+      Sends agent_id so the server resolves from the stored mined_payload —
+      robust against stale client data. Returns created counts for feedback. */
+  async function createAccepted(
+    agentId: string,
+    accepted: Claim[],
+    payload: Mined,
+  ): Promise<{ initiative_ids: string[]; project_ids: string[]; task_ids: string[]; idea_ids: string[] }> {
     const byType = (t: string) => accepted.filter((c) => c.claim_type === t).map((c) => c.title)
     const find = (arr: any[], title: string) => arr.find((x: any) => x.title === title)
-    await api('/agents/mined-projects/confirm', {
+    return api('/agents/mined-projects/confirm', {
       method: 'POST',
       body: JSON.stringify({
+        agent_id: agentId,
         initiatives: byType('initiative').map((t) => find(payload.initiatives, t)).filter(Boolean),
         projects: byType('project').map((t) => find(payload.projects, t)).filter(Boolean),
         standalone_tasks: byType('task').map((t) => find(payload.standalone_tasks, t)).filter(Boolean),
         ideas: byType('idea').map((t) => find(payload.ideas, t)).filter(Boolean),
-        selected_titles: null,
+        selected_titles: byType('initiative')
+          .concat(byType('project'), byType('task'), byType('idea')),
       }),
     })
   }
 
+  const [createdSummary, setCreatedSummary] = useState('')
+
   async function createSelected(a: Agent, accepted: Claim[]) {
     if (!minedPayload || accepted.length === 0) return
     setBusy(true)
+    setCreatedSummary('')
     try {
-      await createAccepted(accepted, minedPayload)
+      const out = await createAccepted(a.id, accepted, minedPayload)
+      const n = (out.initiative_ids?.length || 0) + (out.project_ids?.length || 0) +
+        (out.task_ids?.length || 0) + (out.idea_ids?.length || 0)
+      if (n === 0) {
+        setError('Nothing was created — the proposals may not have matched. Try mining again.')
+      } else {
+        const parts: string[] = []
+        if (out.initiative_ids?.length) parts.push(`${out.initiative_ids.length} initiative${out.initiative_ids.length === 1 ? '' : 's'}`)
+        if (out.project_ids?.length) parts.push(`${out.project_ids.length} project${out.project_ids.length === 1 ? '' : 's'}`)
+        if (out.task_ids?.length) parts.push(`${out.task_ids.length} task${out.task_ids.length === 1 ? '' : 's'}`)
+        if (out.idea_ids?.length) parts.push(`${out.idea_ids.length} idea${out.idea_ids.length === 1 ? '' : 's'}`)
+        setCreatedSummary(`Created ${parts.join(', ')} — they should now appear in your Vision map.`)
+      }
       setError('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed')
@@ -235,7 +259,7 @@ export default function ReviewView() {
     setError('')
     try {
       if (accepted.length > 0 && minedPayload) {
-        await createAccepted(accepted, minedPayload)
+        await createAccepted(a.id, accepted, minedPayload)
       }
       await api(`/agents/${a.id}/confirm`, {
         method: 'POST',
@@ -286,7 +310,7 @@ export default function ReviewView() {
             disabled={acceptingPlacements || busy}
             className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40 self-start mb-6"
           >
-            {acceptingPlacements ? 'Accepting…' : `Accept all ${pendingPlacements.length} placements`}
+            {acceptingPlacements ? 'Confirming…' : `Confirm all ${pendingPlacements.length} placements`}
           </button>
         )}
 
@@ -350,8 +374,11 @@ export default function ReviewView() {
             ))}
             {acceptedMined.length > 0 && minedPayload && (
               <button onClick={() => createSelected(a, acceptedMined)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40 mt-1">
-                Create {acceptedMined.length} accepted
+                Create {acceptedMined.length} confirmed
               </button>
+            )}
+            {createdSummary && (
+              <p className="text-green-300/90 text-sm mt-2">{createdSummary}</p>
             )}
           </div>
         )}

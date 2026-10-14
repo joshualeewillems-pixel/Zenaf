@@ -739,3 +739,98 @@ def test_store_migrates_pre_multiuser_table(tmp_path):
         assert s.get("a2") is not None
     finally:
         s.close()
+
+
+def _make_agent(agent_id="a1", **kw):
+    d = dict(id=agent_id, name="n", source_platform="chatgpt_share",
+             description="d", instructions=None, examples=[],
+             sort=None, status="pending_review", created_at="2026-10-14")
+    d.update(kw)
+    return ConnectedAgent(**d)
+
+
+def test_store_migrates_mining_columns_on_old_table(tmp_path):
+    """Old agents.db tables gain mining_state/mined_payload without data loss."""
+    import sqlite3
+
+    db = tmp_path / "agents.db"
+    c = sqlite3.connect(str(db))
+    c.execute(
+        """CREATE TABLE connected_agents (
+            agent_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            source_platform TEXT NOT NULL,
+            description TEXT NOT NULL,
+            instructions TEXT,
+            examples TEXT NOT NULL DEFAULT '[]',
+            sort_result TEXT,
+            status TEXT NOT NULL DEFAULT 'pending_review',
+            created_at TEXT NOT NULL,
+            user_id TEXT NOT NULL DEFAULT '')"""
+    )
+    c.execute(
+        "INSERT INTO connected_agents (agent_id, name, source_platform, description, created_at)"
+        " VALUES ('a1', 'old', 'chatgpt_share', 'legacy row', '2026-01-01')"
+    )
+    c.commit()
+    c.close()
+
+    s = AgentStore(db_path=db)
+    try:
+        cols = [r["name"] for r in s._conn.execute("PRAGMA table_info(connected_agents)").fetchall()]
+        assert "mining_state" in cols
+        assert "mined_payload" in cols
+        # Legacy row reads back with the staged-review default.
+        a = s.get("a1")
+        assert a is not None
+        assert a.mining_state == "pending"
+        assert a.mined_payload is None
+        d = a.to_dict()
+        assert d["mining_state"] == "pending"
+    finally:
+        s.close()
+
+
+def test_set_mining_state_round_trip(tmp_path):
+    s = AgentStore(db_path=tmp_path / "agents.db")
+    try:
+        s.save(_make_agent())
+        assert s.get("a1").mining_state == "pending"
+
+        payload = {"engine": "rule", "initiatives": [], "projects": [{"title": "P1"}],
+                   "standalone_tasks": [], "ideas": []}
+        assert s.set_mining_state("a1", "mined", payload=payload) is True
+        a = s.get("a1")
+        assert a.mining_state == "mined"
+        assert a.mined_payload == payload
+
+        assert s.set_mining_state("a1", "skipped") is True
+        a = s.get("a1")
+        assert a.mining_state == "skipped"
+        assert a.mined_payload is None
+
+        assert s.set_mining_state("nope", "mined") is False
+    finally:
+        s.close()
+
+
+def test_mining_state_respects_owner(tmp_path):
+    s1 = AgentStore(db_path=tmp_path / "agents.db", user_id="u1")
+    s2 = AgentStore(db_path=tmp_path / "agents.db", user_id="u2")
+    try:
+        s1.save(_make_agent(user_id="u1"))
+        assert s2.set_mining_state("a1", "mined") is False
+        assert s1.get("a1").mining_state == "pending"
+    finally:
+        s1.close()
+        s2.close()
+
+
+def test_agent_to_dict_carries_mining_fields():
+    a = _make_agent(mining_state="mined", mined_payload={"projects": []})
+    d = a.to_dict()
+    assert d["mining_state"] == "mined"
+    assert d["mined_payload"] == {"projects": []}
+    back = ConnectedAgent.from_dict(d)
+    assert back.mining_state == "mined"
+    assert back.mined_payload == {"projects": []}

@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS connected_agents (
     sort_result TEXT,
     status TEXT NOT NULL DEFAULT 'pending_review',
     created_at TEXT NOT NULL,
-    user_id TEXT NOT NULL DEFAULT ''
+    user_id TEXT NOT NULL DEFAULT '',
+    mining_state TEXT NOT NULL DEFAULT 'pending',
+    mined_payload TEXT
 );
 """
 
@@ -89,6 +91,8 @@ def _agent_from_row(row: sqlite3.Row) -> ConnectedAgent:
         status=row["status"],
         created_at=row["created_at"],
         user_id=row["user_id"] if "user_id" in row.keys() else "",
+        mining_state=row["mining_state"] if "mining_state" in row.keys() else "pending",
+        mined_payload=_json_loads(row["mined_payload"], None) if "mined_payload" in row.keys() else None,
     )
 
 
@@ -129,11 +133,17 @@ class AgentStore:
         with self._lock:
             cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(connected_agents)").fetchall()]
             self._conn.execute(_SCHEMA_TABLE)
-            if cols and "user_id" not in cols:
-                # Pre-multi-user table: add the column BEFORE any index that
-                # references it (the old code created idx_agents_user first,
-                # which raised "no such column: user_id" and aborted the migration).
-                self._conn.execute("ALTER TABLE connected_agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
+            # Migrations for pre-existing tables: add each missing column
+            # BEFORE any index that references it (the old user_id migration
+            # created idx_agents_user first, which raised "no such column:
+            # user_id" and aborted the migration — see test).
+            for col, ddl in (
+                ("user_id", "ALTER TABLE connected_agents ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"),
+                ("mining_state", "ALTER TABLE connected_agents ADD COLUMN mining_state TEXT NOT NULL DEFAULT 'pending'"),
+                ("mined_payload", "ALTER TABLE connected_agents ADD COLUMN mined_payload TEXT"),
+            ):
+                if cols and col not in cols:
+                    self._conn.execute(ddl)
             self._conn.executescript(_SCHEMA_INDEXES)
             self._conn.executescript(_SCHEMA_CLAIMS)
             _backfill_single_owner(self._conn)
@@ -156,8 +166,9 @@ class AgentStore:
             self._conn.execute(
                 "INSERT OR REPLACE INTO connected_agents "
                 "(agent_id, name, source_platform, description, instructions, "
-                " examples, sort_result, status, created_at, user_id) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " examples, sort_result, status, created_at, user_id, "
+                " mining_state, mined_payload) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     agent.id,
                     agent.name,
@@ -169,6 +180,8 @@ class AgentStore:
                     agent.status,
                     agent.created_at,
                     owner,
+                    agent.mining_state or "pending",
+                    json.dumps(agent.mined_payload) if agent.mined_payload else None,
                 ),
             )
             self._conn.commit()
@@ -212,6 +225,33 @@ class AgentStore:
             q += f" AND {clause}"
         with self._lock:
             cur = self._conn.execute(q, (status, agent_id, *params))
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    def set_mining_state(
+        self, agent_id: str, state: str, payload: dict | None = None
+    ) -> bool:
+        """Record the project-mining stage of the review flow.
+
+        state is one of "pending" | "mined" | "skipped". When state is
+        "mined", payload carries the raw mining result (initiatives /
+        projects / tasks / ideas) so accepted mined claims can be created
+        as entities even after the client reloads.
+        """
+        clause, params = self._owner_clause()
+        q = "UPDATE connected_agents SET mining_state = ?, mined_payload = ? WHERE agent_id = ?"
+        if clause:
+            q += f" AND {clause}"
+        with self._lock:
+            cur = self._conn.execute(
+                q,
+                (
+                    state,
+                    json.dumps(payload) if payload else None,
+                    agent_id,
+                    *params,
+                ),
+            )
             self._conn.commit()
             return cur.rowcount > 0
 

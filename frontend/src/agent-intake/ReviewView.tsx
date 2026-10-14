@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
 import ClaimCard, { Claim } from './ClaimCard'
+import {
+  MINED_CLAIM_TYPES,
+  MiningState,
+  PLACEMENT_CLAIM_TYPES,
+  canFinishReview,
+  miningStateOf,
+  miningStatusLabel,
+  reviewedList,
+  whatsLeft,
+} from './reviewStages'
 
 const STRANDS = [
   { key: 'word', name: 'Storyteller' },
@@ -11,7 +21,6 @@ const STRANDS = [
   { key: 'people', name: 'Mediator' },
   { key: 'self', name: 'Guide' },
 ]
-const KINDS = ['skill', 'talent', 'project', 'undecided']
 
 type Agent = {
   id: string
@@ -21,10 +30,13 @@ type Agent = {
   examples: string[]
   status: string
   created_at: string
+  mining_state?: string | null
+  mined_payload?: Mined | null
   sort: { primary_strand: string; strand_weights: Record<string, number>; kind: string } | null
 }
 
 type Mined = {
+  engine?: string
   initiatives: any[]
   projects: any[]
   standalone_tasks: any[]
@@ -48,16 +60,14 @@ async function api(path: string, opts: RequestInit = {}) {
 
 export default function ReviewView() {
   const [agents, setAgents] = useState<Agent[]>([])
+  const [reviewed, setReviewed] = useState<Agent[]>([])
   const [selected, setSelected] = useState<Agent | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [correcting, setCorrecting] = useState(false)
-  const [newStrand, setNewStrand] = useState('')
-  const [newKind, setNewKind] = useState('')
-  const [mined, setMined] = useState<Mined | null>(null)
-  const [mining, setMining] = useState(false)
-  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [minedPayload, setMinedPayload] = useState<Mined | null>(null)
+  const [miningBusy, setMiningBusy] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [acceptingPlacements, setAcceptingPlacements] = useState(false)
   const [claims, setClaims] = useState<Claim[]>([])
   const [claimsLoading, setClaimsLoading] = useState(false)
 
@@ -65,7 +75,9 @@ export default function ReviewView() {
     setLoading(true)
     setError('')
     try {
-      setAgents(await api('/agents/pending'))
+      const [pending, all] = await Promise.all([api('/agents/pending'), api('/agents')])
+      setAgents(pending)
+      setReviewed(reviewedList(all))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the review queue')
     } finally {
@@ -75,17 +87,29 @@ export default function ReviewView() {
 
   useEffect(() => { load() }, [])
 
-  async function confirm(agentId: string, accepted: boolean, corrections?: Record<string, string>) {
+  function select(a: Agent) {
+    setSelected(a)
+    setClaims([])
+    setMinedPayload(a.mined_payload || null)
+    setError('')
+    loadClaims(a.id)
+  }
+
+  function deselect() {
+    setSelected(null)
+    setMinedPayload(null)
+    setClaims([])
+    setError('')
+  }
+
+  async function confirmAgent(agentId: string, accepted: boolean) {
     setBusy(true)
     try {
       await api(`/agents/${agentId}/confirm`, {
         method: 'POST',
-        body: JSON.stringify({ accepted, corrections: corrections || {} }),
+        body: JSON.stringify({ accepted }),
       })
-      setSelected(null)
-      setCorrecting(false)
-      setMined(null)
-      setClaims([])
+      deselect()
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Confirm failed')
@@ -109,67 +133,76 @@ export default function ReviewView() {
     setClaims((cs) => cs.map((c) => (c.id === updated.id ? updated : c)))
   }
 
+  /** Accept every open strand/kind placement at once — resolves claims, does NOT file the agent. */
+  async function acceptAllPlacements(a: Agent, pending: Claim[]) {
+    setAcceptingPlacements(true)
+    setError('')
+    try {
+      const updated: Claim[] = await Promise.all(
+        pending.map((c) => api(`/agents/${a.id}/claims/${c.id}/accept`, { method: 'POST' })),
+      )
+      const byId = new Map(updated.map((u) => [u.id, u]))
+      setClaims((cs) => cs.map((c) => byId.get(c.id) || c))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Accept failed')
+    } finally {
+      setAcceptingPlacements(false)
+    }
+  }
+
   async function mine(a: Agent) {
-    setMining(true)
+    setMiningBusy(true)
     setError('')
     try {
       const transcript = (a.examples || []).join('\n\n') || a.description
-      const data = await api('/agents/mine-projects', {
+      const data: Mined = await api('/agents/mine-projects', {
         method: 'POST',
         body: JSON.stringify({ transcript, agent_id: a.id }),
       })
-      setMined(data)
-      const all: string[] = [
-        ...(data.initiatives || []).map((x: any) => 'i:' + x.title),
-        ...(data.projects || []).map((x: any) => 'p:' + x.title),
-        ...(data.standalone_tasks || []).map((x: any) => 't:' + x.title),
-        ...(data.ideas || []).map((x: any) => 'd:' + x.title),
-      ]
-      setChecked(new Set(all))
-      // Refresh claims so the mined proposals appear as review cards.
+      setMinedPayload(data)
+      setSelected({ ...a, mining_state: 'mined', mined_payload: data })
       await loadClaims(a.id)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Mining failed')
     } finally {
-      setMining(false)
+      setMiningBusy(false)
     }
   }
 
-  async function createSelected() {
+  async function skipMining(a: Agent) {
+    setBusy(true)
+    setError('')
+    try {
+      const updated: Agent = await api(`/agents/${a.id}/skip-mining`, { method: 'POST' })
+      setSelected(updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Skip failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  /** Create Vision Execution entities from the accepted mined claim cards. */
+  async function createAccepted(accepted: Claim[], payload: Mined) {
+    const byType = (t: string) => accepted.filter((c) => c.claim_type === t).map((c) => c.title)
+    const find = (arr: any[], title: string) => arr.find((x: any) => x.title === title)
+    await api('/agents/mined-projects/confirm', {
+      method: 'POST',
+      body: JSON.stringify({
+        initiatives: byType('initiative').map((t) => find(payload.initiatives, t)).filter(Boolean),
+        projects: byType('project').map((t) => find(payload.projects, t)).filter(Boolean),
+        standalone_tasks: byType('task').map((t) => find(payload.standalone_tasks, t)).filter(Boolean),
+        ideas: byType('idea').map((t) => find(payload.ideas, t)).filter(Boolean),
+        selected_titles: null,
+      }),
+    })
+  }
+
+  async function createSelected(a: Agent, accepted: Claim[]) {
+    if (!minedPayload || accepted.length === 0) return
     setBusy(true)
     try {
-      // Primary path: create from accepted claim cards.
-      const minedClaims = claims.filter((c) =>
-        ['initiative', 'project', 'task', 'idea'].includes(c.claim_type) && c.status === 'accepted'
-      )
-      if (minedClaims.length > 0 && mined) {
-        const byType = (t: string) => minedClaims.filter((c) => c.claim_type === t).map((c) => c.title)
-        const find = (arr: any[], title: string) => arr.find((x: any) => x.title === title)
-        await api('/agents/mined-projects/confirm', {
-          method: 'POST',
-          body: JSON.stringify({
-            initiatives: byType('initiative').map((t) => find(mined.initiatives, t)).filter(Boolean),
-            projects: byType('project').map((t) => find(mined.projects, t)).filter(Boolean),
-            standalone_tasks: byType('task').map((t) => find(mined.standalone_tasks, t)).filter(Boolean),
-            ideas: byType('idea').map((t) => find(mined.ideas, t)).filter(Boolean),
-            selected_titles: null,
-          }),
-        })
-      } else if (mined) {
-        // Secondary fast path: the checkbox bulk selection.
-        const pick = (arr: any[], prefix: string) => arr.filter((x: any) => checked.has(prefix + x.title))
-        await api('/agents/mined-projects/confirm', {
-          method: 'POST',
-          body: JSON.stringify({
-            initiatives: pick(mined.initiatives, 'i:'),
-            projects: pick(mined.projects, 'p:'),
-            standalone_tasks: pick(mined.standalone_tasks, 't:'),
-            ideas: pick(mined.ideas, 'd:'),
-            selected_titles: null,
-          }),
-        })
-      }
-      setMined(null)
+      await createAccepted(accepted, minedPayload)
       setError('')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Create failed')
@@ -178,25 +211,46 @@ export default function ReviewView() {
     }
   }
 
-  function toggle(key: string) {
-    setChecked((c) => {
-      const n = new Set(c)
-      if (n.has(key)) n.delete(key)
-      else n.add(key)
-      return n
-    })
+  /** Final step: create accepted projects first (nothing lost), then file the agent. */
+  async function finishReview(a: Agent, accepted: Claim[]) {
+    setBusy(true)
+    setError('')
+    try {
+      if (accepted.length > 0 && minedPayload) {
+        await createAccepted(accepted, minedPayload)
+      }
+      await api(`/agents/${a.id}/confirm`, {
+        method: 'POST',
+        body: JSON.stringify({ accepted: true }),
+      })
+      deselect()
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Finish failed')
+    } finally {
+      setBusy(false)
+    }
   }
 
   if (selected) {
     const a = selected
-    const strandClaims = claims.filter((c) => c.claim_type === 'strand' || c.claim_type === 'kind')
-    const minedClaims = claims.filter((c) => ['initiative', 'project', 'task', 'idea'].includes(c.claim_type))
+    const isPending = a.status === 'pending_review'
+    const strandClaims = claims.filter((c) => PLACEMENT_CLAIM_TYPES.includes(c.claim_type))
+    const minedClaims = claims.filter((c) => MINED_CLAIM_TYPES.includes(c.claim_type))
+    const pendingPlacements = strandClaims.filter((c) => c.status === 'pending')
     const acceptedMined = minedClaims.filter((c) => c.status === 'accepted')
+    const miningStage: MiningState = miningStateOf(a.mining_state, claims)
+    const finishable = canFinishReview(claims, miningStage)
+    const left = whatsLeft(claims, miningStage)
+
     return (
       <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-4 max-w-2xl mx-auto w-full">
-        <button onClick={() => { setSelected(null); setCorrecting(false); setMined(null); setClaims([]) }} className="self-start text-stone-400 text-[15px] min-h-[44px] mb-2">‹ Back</button>
+        <button onClick={deselect} className="self-start text-stone-400 text-[15px] min-h-[44px] mb-2">‹ Back</button>
         <h2 className="text-xl font-bold text-stone-100">{a.name}</h2>
-        <p className="text-stone-500 text-sm mb-4">{a.source_platform} · {new Date(a.created_at).toLocaleDateString()}</p>
+        <p className="text-stone-500 text-sm mb-4">
+          {a.source_platform} · {new Date(a.created_at).toLocaleDateString()}
+          {!isPending && ' · filed'}
+        </p>
 
         <h3 className="text-stone-200 font-semibold text-[15px] mb-2">What's being assimilated</h3>
         <p className="text-stone-500 text-sm mb-3">Each card is one thing I'd take from this conversation. Say what you think — your answers train the sorter.</p>
@@ -207,114 +261,117 @@ export default function ReviewView() {
         {strandClaims.map((c) => (
           <ClaimCard key={c.id} agentId={a.id} claim={c} onResolved={onClaimResolved} />
         ))}
+        {isPending && pendingPlacements.length > 0 && (
+          <button
+            onClick={() => acceptAllPlacements(a, pendingPlacements)}
+            disabled={acceptingPlacements || busy}
+            className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40 self-start mb-6"
+          >
+            {acceptingPlacements ? 'Accepting…' : `Accept all ${pendingPlacements.length} placements`}
+          </button>
+        )}
 
         {error && <p className="text-red-300 text-sm mb-3">{error}</p>}
 
-        {!correcting ? (
-          <div className="flex flex-wrap gap-2 mb-6 mt-2">
-            <button onClick={() => confirm(a.id, true)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40">Accept all</button>
-            <button onClick={() => setCorrecting(true)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40">Correct</button>
-            <button onClick={() => confirm(a.id, false)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-stone-800 text-stone-400 text-[15px] disabled:opacity-40">Archive</button>
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-stone-700 bg-stone-800/60 p-4 mb-6">
-            <p className="text-stone-300 text-sm mb-3">Your correction becomes training signal for the sorter.</p>
-            <label className="block text-stone-400 text-sm mb-1">Primary strand</label>
-            <select value={newStrand} onChange={(e) => setNewStrand(e.target.value)} className="w-full min-h-[44px] mb-3 px-3 rounded-xl bg-stone-900 text-stone-100 text-[15px] border border-stone-700">
-              <option value="">— keep —</option>
-              {STRANDS.map((s) => <option key={s.key} value={s.key}>{s.name}</option>)}
-            </select>
-            <label className="block text-stone-400 text-sm mb-1">Kind</label>
-            <select value={newKind} onChange={(e) => setNewKind(e.target.value)} className="w-full min-h-[44px] mb-4 px-3 rounded-xl bg-stone-900 text-stone-100 text-[15px] border border-stone-700">
-              <option value="">— keep —</option>
-              {KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-            </select>
-            <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  const c: Record<string, string> = {}
-                  if (newStrand) c.primary_strand = newStrand
-                  if (newKind) c.kind = newKind
-                  confirm(a.id, false, c)
-                }}
-                disabled={busy || (!newStrand && !newKind)}
-                className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40"
-              >
-                Submit correction
+        <h3 className="text-stone-200 font-semibold text-[15px] mb-2">Projects</h3>
+        {miningStage === 'pending' && (
+          <div className="mb-6">
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => mine(a)} disabled={miningBusy} className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40">
+                {miningBusy ? 'Reading…' : 'Mine projects from this conversation'}
               </button>
-              <button onClick={() => setCorrecting(false)} className="min-h-[44px] px-4 rounded-xl text-stone-400 text-[15px]">Cancel</button>
+              <button onClick={() => skipMining(a)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-stone-800 text-stone-400 text-[15px] disabled:opacity-40">
+                Skip mining
+              </button>
             </div>
+            <p className="text-stone-500 text-sm mt-2">Nothing to mine here? Skip it — the choice is yours either way.</p>
           </div>
         )}
-
-        <h3 className="text-stone-200 font-semibold text-[15px] mb-2">Projects</h3>
-        {minedClaims.length > 0 ? (
-          <div className="mb-4">
+        {miningStage === 'skipped' && minedClaims.length === 0 && (
+          <div className="mb-6">
+            <p className="text-stone-500 text-sm mb-2">Project mining skipped.</p>
+            <button onClick={() => mine(a)} disabled={miningBusy} className="min-h-[44px] px-4 rounded-xl text-stone-300 text-[15px] underline underline-offset-4 disabled:opacity-40">
+              {miningBusy ? 'Reading…' : 'Mine anyway'}
+            </button>
+          </div>
+        )}
+        {minedClaims.length > 0 && (
+          <div className="mb-6">
             {minedClaims.map((c) => (
               <ClaimCard key={c.id} agentId={a.id} claim={c} onResolved={onClaimResolved} />
             ))}
-            {acceptedMined.length > 0 && (
-              <button onClick={createSelected} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40 mt-1">
+            {acceptedMined.length > 0 && minedPayload && (
+              <button onClick={() => createSelected(a, acceptedMined)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40 mt-1">
                 Create {acceptedMined.length} accepted
               </button>
             )}
           </div>
-        ) : !mined ? (
-          <button onClick={() => mine(a)} disabled={mining} className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40 self-start">
-            {mining ? 'Reading…' : 'Mine projects from this conversation'}
-          </button>
-        ) : (
-          <div className="mb-6">
-            {(['initiatives', 'projects', 'standalone_tasks', 'ideas'] as const).map((section) => {
-              const items = mined[section] || []
-              if (!items.length) return null
-              const prefix = { initiatives: 'i:', projects: 'p:', standalone_tasks: 't:', ideas: 'd:' }[section]
-              const label = { initiatives: 'Initiatives', projects: 'Projects', standalone_tasks: 'Tasks', ideas: 'Ideas' }[section]
-              return (
-                <div key={section} className="mb-3">
-                  <p className="text-stone-500 text-xs uppercase tracking-wide mb-1">{label}</p>
-                  {items.map((x: any) => {
-                    const key = prefix + x.title
-                    return (
-                      <label key={key} className="flex items-start gap-3 py-2 min-h-[44px] cursor-pointer">
-                        <input type="checkbox" checked={checked.has(key)} onChange={() => toggle(key)} className="mt-1 w-5 h-5 accent-yellow-500" />
-                        <span>
-                          <span className="block text-stone-200 text-[15px]">{x.title}</span>
-                          {x.description && <span className="block text-stone-500 text-sm">{x.description}</span>}
-                        </span>
-                      </label>
-                    )
-                  })}
-                </div>
-              )
-            })}
-            <button onClick={createSelected} disabled={busy || checked.size === 0} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40 mt-2">
-              Create {checked.size} selected
+        )}
+
+        {isPending && (
+          <div className="mt-2 mb-6">
+            <button
+              onClick={() => finishReview(a, acceptedMined)}
+              disabled={!finishable || busy}
+              className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40"
+            >
+              Done — file it
             </button>
+            {!finishable && left.length > 0 && (
+              <p className="text-stone-500 text-sm mt-2">Still to do: {left.join(' · ')}</p>
+            )}
+            {finishable && (
+              <p className="text-stone-500 text-sm mt-2">Everything's resolved — filing moves it out of the queue. Accepted projects are created first.</p>
+            )}
+            <div className="mt-3">
+              <button onClick={() => confirmAgent(a.id, false)} disabled={busy} className="min-h-[44px] px-4 rounded-xl text-stone-500 text-[15px] disabled:opacity-40">
+                Archive
+              </button>
+            </div>
           </div>
         )}
       </div>
     )
   }
 
+  const queueLabel =
+    agents.length === 0 ? 'Nothing waiting for review.' : `${agents.length} conversation${agents.length === 1 ? '' : 's'} to review.`
+
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-4 max-w-2xl mx-auto w-full">
       <h2 className="text-xl font-bold text-stone-100 mb-1">Review queue</h2>
-      <p className="text-stone-400 text-sm mb-4">
-        {agents.length === 0 ? 'Nothing waiting.' : `${agents.length} conversation${agents.length === 1 ? '' : 's'} to review.`} Nothing trains until you accept it.
-      </p>
+      <p className="text-stone-400 text-sm mb-4">{queueLabel} Nothing trains until you accept it.</p>
       {loading && <p className="text-stone-500 text-sm">Loading…</p>}
       {error && <p className="text-red-300 text-sm mb-3">{error}</p>}
-      <div className="space-y-2">
+      <div className="space-y-2 mb-8">
         {agents.map((a) => (
           <button
             key={a.id}
-            onClick={() => { setSelected(a); setClaims([]); loadClaims(a.id) }}
+            onClick={() => select(a)}
             className="w-full text-left rounded-2xl border border-stone-700 bg-stone-800/60 p-4 min-h-[44px]"
           >
             <span className="block text-stone-100 font-semibold text-[15px]">{a.name}</span>
             <span className="block text-stone-500 text-sm mt-0.5">
               {a.sort ? strandName(a.sort.primary_strand) : 'unsorted'} · {new Date(a.created_at).toLocaleDateString()}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <h2 className="text-xl font-bold text-stone-100 mb-1">Reviewed</h2>
+      <p className="text-stone-400 text-sm mb-4">
+        {reviewed.length === 0 ? 'Nothing reviewed yet.' : 'Filed agents — you can still mine projects from them.'}
+      </p>
+      <div className="space-y-2">
+        {reviewed.map((a) => (
+          <button
+            key={a.id}
+            onClick={() => select(a)}
+            className="w-full text-left rounded-2xl border border-stone-800 bg-stone-900/60 p-4 min-h-[44px]"
+          >
+            <span className="block text-stone-200 font-semibold text-[15px]">{a.name}</span>
+            <span className="block text-stone-500 text-sm mt-0.5">
+              {new Date(a.created_at).toLocaleDateString()} · {miningStatusLabel((a.mining_state as MiningState) || 'pending')}
             </span>
           </button>
         ))}

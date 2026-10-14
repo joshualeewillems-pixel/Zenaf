@@ -466,6 +466,13 @@ def mine_projects(body: MineBody, current_user: dict = Depends(get_current_user)
     uid = _uid(current_user)
     _require_train_self(uid)
     result = project_miner.mine_projects(body.transcript, user_id=uid)
+    mined = {
+        "engine": result.engine,
+        "initiatives": [asdict(i) for i in result.initiatives],
+        "projects": [asdict(p) for p in result.projects],
+        "standalone_tasks": [asdict(t) for t in result.standalone_tasks],
+        "ideas": [asdict(i) for i in result.ideas],
+    }
     if body.agent_id:
         store = _store(uid)
         agent = store.get(body.agent_id)
@@ -473,13 +480,28 @@ def mine_projects(body: MineBody, current_user: dict = Depends(get_current_user)
             raise HTTPException(status_code=404, detail=f"unknown agent: {body.agent_id}")
         claims = review_claims.build_mined_claims(result)
         store.save_claims(agent.id, claims)
-    return {
-        "engine": result.engine,
-        "initiatives": [asdict(i) for i in result.initiatives],
-        "projects": [asdict(p) for p in result.projects],
-        "standalone_tasks": [asdict(t) for t in result.standalone_tasks],
-        "ideas": [asdict(i) for i in result.ideas],
-    }
+        # Persist the mining stage and payload on the agent: the staged
+        # review gate reads mining_state, and the payload lets the client
+        # create accepted claims as entities after a reload.
+        store.set_mining_state(agent.id, "mined", payload=mined)
+    return mined
+
+
+@router.post("/{agent_id}/skip-mining", status_code=200)
+def skip_mining(agent_id: str, current_user: dict = Depends(get_current_user)):
+    """The user explicitly skips project mining for this agent.
+
+    Records mining_state="skipped" so the staged review gate can finalize
+    the agent without mining. Mining can still be run later — POST
+    /agents/mine-projects with agent_id overwrites the skip.
+    """
+    store = _store(_uid(current_user))
+    agent = store.get(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
+    store.set_mining_state(agent.id, "skipped")
+    agent.mining_state = "skipped"
+    return agent.to_dict()
 
 
 class ClaimNoteBody(BaseModel):

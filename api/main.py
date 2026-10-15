@@ -185,20 +185,20 @@ def debug_signals_recent(key: str = "", limit: int = 20):
         store = PresenceStore()
         with store._lock:
             rows = store._conn.execute(
-                "SELECT id, zone, signal_type, summary, source, created_at "
-                "FROM training_signals ORDER BY created_at DESC LIMIT ?",
+                "SELECT signal_id, zone, layer, valence, summary, ts_ms "
+                "FROM training_signals ORDER BY ts_ms DESC LIMIT ?",
                 (min(limit, 50),),
             ).fetchall()
         return {
             "count": len(rows),
             "signals": [
                 {
-                    "id": r["id"],
+                    "signal_id": r["signal_id"],
                     "zone": r["zone"],
-                    "type": r["signal_type"],
+                    "layer": r["layer"],
+                    "valence": r["valence"],
                     "summary": (r["summary"] or "")[:200],
-                    "source": r["source"],
-                    "created_at": r["created_at"],
+                    "ts_ms": r["ts_ms"],
                 }
                 for r in rows
             ],

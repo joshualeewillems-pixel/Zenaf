@@ -18,6 +18,11 @@ from local_ai.strands import STRANDS
 
 from .schema import SortResult, StrandClaim
 
+# Sorter prompt budget: intake historically kept ~20 example turns, so the
+# LLM sorter reads at most this many. Moment-level review reads the full
+# stored example list separately.
+_PROMPT_EXAMPLE_LIMIT = 20
+
 _CLAIM_PROMPT = """You are the intake council for Zenaf, a system of seven trainable AI agents, each embodying a faculty of human intelligence. A user has connected an external AI agent and described it below. Your job: read the material the way each of the seven agents would, and decide how strongly this agent's material would train each of them.
 
 The seven strands:
@@ -83,7 +88,10 @@ def sort_with_llm(
         name=name or "(unnamed)",
         description=description or "(none)",
         instructions=instructions or "(none)",
-        examples="\n---\n".join(examples or []) or "(none)",
+        # Prompt budget: the sorter reads the first _PROMPT_EXAMPLE_LIMIT
+        # turns (the pre-moment-cards behavior). The full example list stays
+        # on the agent for moment-level review cards.
+        examples="\n---\n".join((examples or [])[:_PROMPT_EXAMPLE_LIMIT]) or "(none)",
     )
     raw = llm_keys.generate(prompt, api_key=api_key, user_id=user_id, operation="sort")
 

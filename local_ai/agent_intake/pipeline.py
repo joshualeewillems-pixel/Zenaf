@@ -24,6 +24,13 @@ from .store import AgentStore
 
 DEFAULT_CORRECTIONS_LOG = Path.home() / ".zenaf" / "agent_intake_corrections.jsonl"
 
+# Max transcript turns kept as examples. Moment-level review cards need the
+# whole conversation — every turn is a potential training moment. The sorter
+# itself only reads the first _SORT_EXAMPLE_LIMIT (LLM prompt budget); the
+# full set stays on the agent so review cards can anchor to any moment.
+_MAX_EXAMPLE_TURNS = 200
+_SORT_EXAMPLE_LIMIT = 20
+
 
 def _store_user_id(store) -> str | None:
     return getattr(store, "user_id", None)
@@ -118,13 +125,18 @@ def connect_via_extracted_text(
 
 
 def _split_transcript(transcript: str) -> list[str]:
-    """Best-effort split of bookmarklet text into per-message examples."""
+    """Best-effort split of bookmarklet/render-job text into per-message turns.
+
+    Keeps up to _MAX_EXAMPLE_TURNS turns so moment-level review cards can
+    anchor to any moment of a long conversation (previously capped at 20,
+    which silently dropped most of a long chat).
+    """
     import re
 
     parts = re.split(r"\n(?=(?:USER|ASSISTANT|HUMAN|AI)\s*:)", transcript, flags=re.I)
     chunks = [p.strip() for p in parts if p.strip()]
-    # Cap: keep it to ~20 messages of reasonable length.
-    return [c[:2000] for c in chunks[:20]] if len(chunks) > 1 else [transcript[:8000]]
+    # Cap: keep it to per-message turns of reasonable length.
+    return [c[:2000] for c in chunks[:_MAX_EXAMPLE_TURNS]] if len(chunks) > 1 else [transcript[:8000]]
 
 
 def connect_via_share_link(

@@ -92,6 +92,22 @@ export function insightGroups<T extends StageClaim>(claims: T[]): InsightGroup<T
   })
 }
 
+/** Group moment-level strand placement cards with their alternative readings.
+ *
+ *  Same id-prefix scheme as insightGroups: a parent "…:strand:self:m3" nests
+ *  "…:strand:self:m3:alt:0". The ":alt:" separator keeps "m3" from matching
+ *  "m30". */
+export function strandGroups<T extends StageClaim>(claims: T[]): InsightGroup<T>[] {
+  const parents = claims.filter((c) => c.claim_type === 'strand')
+  return parents.map((parent) => {
+    const prefix = `${parent.id}:alt:`
+    const alternatives = claims
+      .filter((c) => c.claim_type === ALTERNATIVE_CLAIM_TYPE && c.id.startsWith(prefix))
+      .sort((a, b) => a.id.localeCompare(b.id))
+    return { insight: parent, alternatives }
+  })
+}
+
 export type ReviewedAgent = {
   id: string
   status: string

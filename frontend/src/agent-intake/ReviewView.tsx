@@ -10,6 +10,7 @@ import {
   miningStateOf,
   miningStatusLabel,
   reviewedList,
+  strandGroups,
   whatsLeft,
 } from './reviewStages'
 
@@ -278,8 +279,10 @@ export default function ReviewView() {
     const a = selected
     const isPending = a.status === 'pending_review'
     const strandClaims = claims.filter((c) => PLACEMENT_CLAIM_TYPES.includes(c.claim_type))
+    const kindClaim = claims.find((c) => c.claim_type === 'kind')
     const minedClaims = claims.filter((c) => MINED_CLAIM_TYPES.includes(c.claim_type))
     const groups = insightGroups(claims)
+    const placementGroups = strandGroups(claims)
     const pendingPlacements = strandClaims.filter((c) => c.status === 'pending')
     const acceptedMined = minedClaims.filter((c) => c.status === 'accepted')
     const miningStage: MiningState = miningStateOf(a.mining_state, claims)
@@ -301,9 +304,18 @@ export default function ReviewView() {
         {!claimsLoading && strandClaims.length === 0 && (
           <p className="text-stone-500 text-sm mb-4">No strand placements yet.</p>
         )}
-        {strandClaims.map((c) => (
-          <ClaimCard key={c.id} agentId={a.id} claim={c} onResolved={onClaimResolved} />
+        {placementGroups.map((g) => (
+          <ClaimCard
+            key={g.insight.id}
+            agentId={a.id}
+            claim={g.insight}
+            alternatives={g.alternatives}
+            onResolved={onClaimResolved}
+          />
         ))}
+        {kindClaim && (
+          <ClaimCard key={kindClaim.id} agentId={a.id} claim={kindClaim} onResolved={onClaimResolved} />
+        )}
         {isPending && pendingPlacements.length > 0 && (
           <button
             onClick={() => acceptAllPlacements(a, pendingPlacements)}

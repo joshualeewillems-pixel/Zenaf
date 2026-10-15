@@ -406,12 +406,9 @@ def _build_from_llm_moments(agent: ConnectedAgent) -> list[ReviewClaim]:
     moments with genuine one-sentence inferences. This converts those
     MomentClaims into ReviewClaims for the review UI.
     """
-    from local_ai.strands import STRANDS
-
-    strand_names = {s.key: s.name for s in STRANDS}
     claims: list[ReviewClaim] = []
     for i, m in enumerate(agent.sort.moments):
-        name = strand_names.get(m.strand, m.strand)
+        name = _STRAND_NAME.get(m.strand, m.strand)
         claims.append(
             ReviewClaim(
                 id=f"{agent.id}:strand:{m.strand}:llm:{i}",

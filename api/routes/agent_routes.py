@@ -698,51 +698,6 @@ def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
     return [c.to_dict() for c in claims]
 
 
-@router.get("/debug/claim-fields/{agent_id}")
-def debug_claim_fields(
-    agent_id: str,
-    request: Request,
-    _worker: bool = Depends(_require_worker_key),
-):
-    """Temporary diagnostic: report claim field presence/length without content.
-
-    Returns per-claim field lengths (not values) to diagnose blank-card
-    rendering without exposing conversation text. Remove after diagnosis.
-    """
-    from local_ai.agent_intake.store import AgentStore
-
-    # Unscoped store (user_id=None) can locate the agent regardless of owner.
-    store = AgentStore(user_id=None)
-    agent = store.get(agent_id)
-    if agent is None:
-        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
-
-    claims = store.get_claims(agent_id)
-    result = []
-    for c in claims:
-        d = c.to_dict()
-        result.append(
-            {
-                "id": d.get("id"),
-                "claim_type": d.get("claim_type"),
-                "status": d.get("status"),
-                "field_lengths": {
-                    k: len(str(v or ""))
-                    for k, v in d.items()
-                    if k not in ("id", "claim_type", "status")
-                },
-            }
-        )
-    return {
-        "agent_id": agent_id,
-        "agent_name": agent.name,
-        "num_examples": len(agent.examples or []),
-        "example_lengths": [len(e or "") for e in (agent.examples or [])][:5],
-        "num_claims": len(claims),
-        "claims": result,
-    }
-
-
 @router.post("/{agent_id}/claims/{claim_id}/accept", status_code=200)
 def accept_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_current_user)):
     """Accept one inference — confirms it as training signal."""

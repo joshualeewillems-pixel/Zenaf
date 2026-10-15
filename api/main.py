@@ -171,6 +171,41 @@ except Exception as e:
     print(f"Studio routes not loaded: {e}")
     _router_load_errors.append(f"studio: {e}")
 
+# TEMPORARY DEBUG ENDPOINT — remove after verifying signal creation.
+# Lists recent training signals. Requires ?key= param.
+_DEBUG_KEY = "NKAOr77LaZx-gEIhAH0GgasnhqoT9ZVZs4_70wj0G_Y"
+
+@app.get("/debug/signals-recent")
+def debug_signals_recent(key: str = "", limit: int = 20):
+    """Temporary: list recent training signals for debugging."""
+    if key != _DEBUG_KEY:
+        return {"error": "unauthorized"}
+    try:
+        from local_ai.presence_ingest.store import PresenceStore
+        store = PresenceStore()
+        with store._lock:
+            rows = store._conn.execute(
+                "SELECT id, zone, signal_type, summary, source, created_at "
+                "FROM candidate_signals ORDER BY created_at DESC LIMIT ?",
+                (min(limit, 50),),
+            ).fetchall()
+        return {
+            "count": len(rows),
+            "signals": [
+                {
+                    "id": r["id"],
+                    "zone": r["zone"],
+                    "type": r["signal_type"],
+                    "summary": (r["summary"] or "")[:200],
+                    "source": r["source"],
+                    "created_at": r["created_at"],
+                }
+                for r in rows
+            ],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 try:
     from api.routes.transcribe_routes import router as transcribe_router
     app.include_router(transcribe_router)

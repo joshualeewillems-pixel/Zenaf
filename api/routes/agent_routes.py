@@ -547,6 +547,13 @@ class IntakeChatBody(BaseModel):
     history: list[dict] = []
 
 
+class ReviewChatBody(BaseModel):
+    """One message to the Zenaf review bot."""
+
+    message: str
+    history: list[dict] = []
+
+
 @router.post("/intake/chat", status_code=200)
 def intake_chat(body: IntakeChatBody, current_user: dict = Depends(get_current_user)):
     """Chat with Muse to connect a conversation.
@@ -560,6 +567,26 @@ def intake_chat(body: IntakeChatBody, current_user: dict = Depends(get_current_u
     uid = _uid(current_user)
     _require_train_self(uid)
     return ichat.handle_message(body.message, body.history, user_id=uid)
+
+
+@router.post("/{agent_id}/review-chat", status_code=200)
+def review_chat(agent_id: str, body: ReviewChatBody, current_user: dict = Depends(get_current_user)):
+    """Chat with Zenaf about an imported conversation.
+
+    Zenaf has read the full transcript and the flagged training moments.
+    It's humble, curious, and helps the user discover what should be trained.
+    When the user confirms a placement, a TrainingSignal is created.
+    """
+    from local_ai.agent_intake import review_chat as rchat
+
+    uid = _uid(current_user)
+    store = _store(uid)
+    agent = store.get(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
+    
+    result = rchat.handle_message(agent, body.message, body.history, user_id=uid)
+    return result
 
 
 class MineBody(BaseModel):

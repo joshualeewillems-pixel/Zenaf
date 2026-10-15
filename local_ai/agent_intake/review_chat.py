@@ -143,7 +143,9 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
 """
     
     try:
-        api_key = llm_keys._api_key(user_id)
+        from . import llm_keys as _lk
+        # Resolve API key the same way sorter_llm does
+        api_key = _lk.resolve_key(_lk.resolve_intake_provider(), user_id, operation="review_chat")
         if not api_key:
             # Fallback: simple rule-based response
             return {

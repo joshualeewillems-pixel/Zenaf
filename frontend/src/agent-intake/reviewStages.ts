@@ -98,7 +98,7 @@ export function insightGroups<T extends StageClaim>(claims: T[]): InsightGroup<T
  *  "…:strand:self:m3:alt:0". The ":alt:" separator keeps "m3" from matching
  *  "m30". */
 export function strandGroups<T extends StageClaim>(claims: T[]): InsightGroup<T>[] {
-  const parents = claims.filter((c) => c.claim_type === 'strand')
+  const parents = claims.filter((c) => c.claim_type === 'strand' || c.claim_type === 'strand_placement')
   return parents.map((parent) => {
     const prefix = `${parent.id}:alt:`
     const alternatives = claims

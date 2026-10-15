@@ -95,12 +95,34 @@ def handle_message(
     message: str,
     history: list[dict],
     user_id: str | None = None,
+    pending_proposal: dict | None = None,
+    is_confirmation: bool = False,
 ) -> dict:
     """Process one chat turn with the Zenaf review bot.
     
-    Returns {"reply": str, "signal_created": dict | None, "done": bool}
+    Returns {"reply": str, "signal_created": dict | None, "pending_proposal": dict | None, "done": bool}
+    
+    If is_confirmation is True, the message is a response to a pending filing proposal
+    (from the distinct confirmation UI). "yes" files it; anything else returns to conversation.
     """
     from . import llm_keys
+    
+    # Handle explicit confirmation via the distinct UI
+    if is_confirmation and pending_proposal:
+        msg_lower = message.lower().strip()
+        # Yes = file it. Anything else = not confirmed, continue conversation.
+        if re.match(r'^\s*(yes|yeah|yep|y|sure|ok|okay|do it|file it)\s*[.!]?\s*$', msg_lower):
+            signal = _create_signal_from_proposal(agent, pending_proposal, user_id)
+            if signal:
+                return {
+                    "reply": f"Filed in {pending_proposal['strand_name']}. What would you like to explore next?",
+                    "signal_created": signal,
+                    "pending_proposal": None,
+                    "done": False,
+                }
+        # Not a yes — clear the proposal and continue the conversation normally
+        # (the user's message becomes the new conversation turn)
+        pending_proposal = None
     
     # Get the agent's moments (LLM-identified or rule-based fallback)
     moments = []
@@ -132,7 +154,7 @@ def handle_message(
     if is_opening:
         # Return the scripted opening (no LLM call needed)
         reply = _build_opening(agent, moments)
-        return {"reply": reply, "signal_created": None, "done": False}
+        return {"reply": reply, "signal_created": None, "pending_proposal": None, "done": False}
     
     # Build the prompt for the LLM
     prompt = f"""{_ZENAF_SYSTEM}
@@ -159,6 +181,7 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
             return {
                 "reply": "I don't have API access right now, but I'm here to discuss. What moment stands out to you?",
                 "signal_created": None,
+                "pending_proposal": None,
                 "done": False,
             }
         
@@ -168,116 +191,87 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
         # Remove common LLM artifacts
         reply = re.sub(r'^["\']|["\']$', '', reply)
         
-        # Check if user is confirming a placement — if so, create the signal
-        signal_created = _detect_and_create_signal(agent, message, history, user_id)
-        if signal_created:
-            reply += f"\n\n✓ Filed in {signal_created['strand_name']}."
+        # Detect if the LLM proposed a filing — extract as pending_proposal for the distinct UI
+        new_proposal = _extract_proposal_from_reply(reply, agent, moments)
         
-        return {"reply": reply, "signal_created": signal_created, "done": False}
+        return {"reply": reply, "signal_created": None, "pending_proposal": new_proposal, "done": False}
         
     except Exception as e:
         return {
             "reply": f"I'm having trouble thinking right now ({e}). What would you like to discuss about this conversation?",
             "signal_created": None,
+            "pending_proposal": None,
             "done": False,
         }
 
-def _detect_and_create_signal(agent, message: str, history: list[dict], user_id: str | None) -> dict | None:
-    """Detect if the user is confirming a strand placement, and create the signal."""
-    msg_lower = message.lower().strip()
+def _extract_proposal_from_reply(reply: str, agent, moments: list) -> dict | None:
+    """Extract a filing proposal from the LLM's reply.
     
-    # Only file on EXPLICIT, UNAMBIGUOUS confirmation.
-    # A "yes" at the start of a long explanation ("Yes though, morality...") is NOT
-    # a confirmation to file — it's agreement with the bot's understanding.
-    # Require either: (1) short message with confirmation word, OR (2) explicit filing language.
-    
-    msg_len = len(msg_lower)
-    
-    # Explicit filing phrases — these are unambiguous regardless of length
-    explicit_file_phrases = [
-        r'\bfile it\b', r'\bfile that\b', r'\bsounds right\b', 
-        r'\bgo ahead\b', r'\bdo it\b',
-    ]
-    has_explicit = any(re.search(p, msg_lower) for p in explicit_file_phrases)
-    
-    # Simple confirmations — only valid if the message is SHORT (not a long explanation)
-    simple_confirms = [
-        r'^\s*yes\s*[.!]?\s*$', r'^\s*yeah\s*[.!]?\s*$', r'^\s*yep\s*[.!]?\s*$',
-        r'^\s*exactly\s*[.!]?\s*$', r'^\s*perfect\s*[.!]?\s*$', 
-        r'^\s*agreed\s*[.!]?\s*$', r'^\s*correct\s*[.!]?\s*$',
-    ]
-    is_simple_confirm = any(re.search(p, msg_lower) for p in simple_confirms)
-    
-    # "that captures it" / "that's right" — valid if message is under 50 chars
-    capture_patterns = [
-        r'\bthat (does |do )?captures? it\b', r"\bthat'?s right\b", r'\bnailed it\b',
-    ]
-    is_capture = any(re.search(p, msg_lower) for p in capture_patterns) and msg_len < 50
-    
-    is_confirm = has_explicit or is_simple_confirm or is_capture
-    if not is_confirm:
+    Looks for: "Here's what I'd add to Mediator: [synopsis]. Does that sound right?"
+    Returns {"strand": "people", "strand_name": "Mediator", "synopsis": "...", "quote": "..."} or None.
+    """
+    # Match "Here's what I'd add to [Strand]:" 
+    m = re.search(r"Here's what I'd add to (\w+):", reply, re.IGNORECASE)
+    if not m:
         return None
     
+    strand_name = m.group(1)
+    # Map strand name to key
     strand_map = {
         'storyteller': 'word', 'patternist': 'number', 'seer': 'image',
         'songwriter': 'sound', 'maker': 'body', 'mediator': 'people', 'guide': 'self',
-        'word': 'word', 'number': 'number', 'image': 'image', 'sound': 'sound',
-        'body': 'body', 'people': 'people', 'self': 'self',
     }
+    strand_key = strand_map.get(strand_name.lower())
+    if not strand_key:
+        return None
     
-    strand_key = None
-    for name, key in strand_map.items():
-        if name in msg_lower:
-            strand_key = key
+    # Extract synopsis: text after the colon, up to "Does that sound right?" or end of sentence
+    after_colon = reply[m.end():].strip()
+    # Take up to the question mark or "Does that"
+    syn_match = re.split(r'\.\s*Does that|\?\s*', after_colon, maxsplit=1)
+    synopsis = syn_match[0].strip().strip('"').strip()
+    # Remove trailing period if present (we'll add our own formatting)
+    if synopsis.endswith('.'):
+        synopsis = synopsis[:-1]
+    
+    if not synopsis or len(synopsis) < 10:
+        return None
+    
+    # Find a relevant quote from moments for this strand (best effort)
+    quote = ""
+    for mom in moments:
+        if getattr(mom, 'strand', '').lower() == strand_key:
+            quote = getattr(mom, 'quote', '')[:500]
             break
     
-    if not strand_key:
-        for h in reversed(history[-5:]):
-            if h.get('role') == 'zenaf':
-                content = h.get('content', '').lower()
-                for name, key in strand_map.items():
-                    if name in content:
-                        strand_key = key
-                        break
-                if strand_key:
-                    break
-    
-    if not strand_key:
-        return None
-    
-    moments = []
-    if agent.sort and getattr(agent.sort, 'moments', None):
-        moments = [m for m in agent.sort.moments if m.strand == strand_key]
-    
-    if not moments:
-        return None
-    
-    moment = moments[0]
-    
+    return {
+        "strand": strand_key,
+        "strand_name": strand_name,
+        "synopsis": synopsis,
+        "quote": quote,
+    }
+
+def _create_signal_from_proposal(agent, proposal: dict, user_id: str | None) -> dict | None:
+    """Create a TrainingSignal from an explicitly confirmed proposal."""
     try:
-        from local_ai.presence_ingest.schema import TrainingSignal
         from local_ai.presence_ingest.store import PresenceStore
+        from local_ai.presence_ingest.models import TrainingSignal
+        import time as _time
         
         signal = TrainingSignal(
-            signal_id=f"chat:{agent.id}:{strand_key}:{int(time.time()*1000)}",
-            ts_ms=int(time.time() * 1000),
-            layer="behavior",
-            zone=strand_key,
+            id=f"review-chat-{agent.id}-{proposal['strand']}-{int(_time.time())}",
             actor=user_id or "",
-            summary=moment.inference,
-            context_ref={"source": "review_chat"},
-            payload_redacted=moment.quote,
-            valence="endorsed",
-            correction_diff=None,
-            provenance={"source": "review_chat", "agent_id": agent.id, "strand": strand_key},
-            supersedes=None,
-            status="approved",
-            session_id="",
+            zone=proposal['strand'],
+            signal_type="endorsed",
+            kind="behavior",
+            payload_redacted=proposal.get('quote', '')[:1000],
+            summary=proposal['synopsis'][:500],
+            correction_diff="",
+            source="review-chat-confirmation",
+            created_at=_time.time(),
         )
         PresenceStore().save_candidate_signals([signal])
-        
-        strand_name = _STRAND_NAMES.get(strand_key, strand_key)
-        return {"strand": strand_key, "strand_name": strand_name, "signal_id": signal.signal_id}
+        return {"strand": proposal['strand'], "strand_name": proposal['strand_name']}
     except Exception:
         return None
 

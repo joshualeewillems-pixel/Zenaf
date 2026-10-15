@@ -255,23 +255,26 @@ def _create_signal_from_proposal(agent, proposal: dict, user_id: str | None) -> 
     """Create a TrainingSignal from an explicitly confirmed proposal."""
     try:
         from local_ai.presence_ingest.store import PresenceStore
-        from local_ai.presence_ingest.models import TrainingSignal
+        from local_ai.presence_ingest.schema import TrainingSignal
         import time as _time
         
         signal = TrainingSignal(
-            id=f"review-chat-{agent.id}-{proposal['strand']}-{int(_time.time())}",
-            actor=user_id or "",
+            signal_id=f"review-chat-{agent.id}-{proposal['strand']}-{int(_time.time())}",
+            ts_ms=int(_time.time() * 1000),
+            layer="behavior",
             zone=proposal['strand'],
-            signal_type="endorsed",
-            kind="behavior",
-            payload_redacted=proposal.get('quote', '')[:1000],
+            actor=user_id or "",
             summary=proposal['synopsis'][:500],
+            payload_redacted=proposal.get('quote', '')[:1000],
+            valence="endorsed",
             correction_diff="",
-            source="review-chat-confirmation",
-            created_at=_time.time(),
+            provenance={"source": "review-chat-confirmation"},
+            session_id=f"review-chat-{agent.id}",
         )
         PresenceStore().save_candidate_signals([signal])
         return {"strand": proposal['strand'], "strand_name": proposal['strand_name']}
-    except Exception:
+    except Exception as e:
+        # Log the error instead of silently swallowing it
+        print(f"Failed to create signal from proposal: {e}")
         return None
 

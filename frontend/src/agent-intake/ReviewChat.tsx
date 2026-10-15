@@ -11,10 +11,19 @@ type Props = {
   agentName: string
 }
 
+type Proposal = {
+  strand: string
+  strand_name: string
+  synopsis: string
+  quote: string
+}
+
 export default function ReviewChat({ agentId, agentName }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  const [pendingProposal, setPendingProposal] = useState<Proposal | null>(null)
+  const [confirmInput, setConfirmInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -66,6 +75,9 @@ export default function ReviewChat({ agentId, agentName }: Props) {
       })
       const data = await r.json()
       setMessages(prev => [...prev, { role: 'zenaf', content: data.reply }])
+      if (data.pending_proposal) {
+        setPendingProposal(data.pending_proposal)
+      }
     } catch (e) {
       setMessages(prev => [...prev, {
         role: 'zenaf',
@@ -73,6 +85,52 @@ export default function ReviewChat({ agentId, agentName }: Props) {
       }])
     } finally {
       setLoading(false)
+    }
+  }
+
+  const sendConfirmation = async () => {
+    const text = confirmInput.trim()
+    if (!text || loading || !pendingProposal) return
+
+    const history = messages.map(m => ({ role: m.role, content: m.content }))
+    const proposal = pendingProposal
+    setMessages(prev => [...prev, { role: 'user', content: text }])
+    setConfirmInput('')
+    setLoading(true)
+
+    try {
+      const r = await fetch(`${apiBase()}/agents/${agentId}/review-chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          history,
+          pending_proposal: proposal,
+          is_confirmation: true,
+        }),
+      })
+      const data = await r.json()
+      setMessages(prev => [...prev, { role: 'zenaf', content: data.reply }])
+      // Clear the proposal — either it was filed, or the user said no/change
+      setPendingProposal(null)
+      if (data.pending_proposal) {
+        setPendingProposal(data.pending_proposal)
+      }
+    } catch (e) {
+      setMessages(prev => [...prev, {
+        role: 'zenaf',
+        content: "I didn't quite catch that. Could you say it differently?",
+      }])
+      setPendingProposal(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleConfirmKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendConfirmation()
     }
   }
 
@@ -115,6 +173,35 @@ export default function ReviewChat({ agentId, agentName }: Props) {
         )}
         <div ref={messagesEndRef} />
       </div>
+      {pendingProposal && (
+        <div className="mb-3 rounded-xl border-2 border-amber-500/60 bg-amber-950/30 p-3">
+          <div className="text-xs font-semibold text-amber-400 mb-1 uppercase tracking-wide">
+            Confirm filing → {pendingProposal.strand_name}
+          </div>
+          <div className="text-sm text-amber-100/90 mb-2 leading-snug">
+            “{pendingProposal.synopsis}”
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={confirmInput}
+              onChange={(e) => setConfirmInput(e.target.value)}
+              onKeyDown={handleConfirmKey}
+              placeholder="Type yes to file, or tell me what to change…"
+              className="flex-1 min-h-[44px] rounded-xl bg-amber-950/50 border border-amber-500/50 text-amber-50 px-4 text-[15px] placeholder:text-amber-200/40 focus:outline-none focus:border-amber-400"
+              disabled={loading}
+              autoFocus
+            />
+            <button
+              onClick={sendConfirmation}
+              disabled={loading || !confirmInput.trim()}
+              className="min-h-[44px] px-5 rounded-xl bg-amber-600 text-amber-50 font-semibold text-[15px] disabled:opacity-40"
+            >
+              Reply
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex gap-2">
         <input
           type="text"

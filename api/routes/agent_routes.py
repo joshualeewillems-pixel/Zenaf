@@ -552,6 +552,8 @@ class ReviewChatBody(BaseModel):
 
     message: str
     history: list[dict] = []
+    pending_proposal: dict | None = None
+    is_confirmation: bool = False
 
 
 @router.post("/intake/chat", status_code=200)
@@ -601,7 +603,14 @@ def review_chat(agent_id: str, body: ReviewChatBody, current_user: dict = Depend
         except Exception:
             pass  # fallback to no-moments mode
     
-    result = rchat.handle_message(agent, body.message, body.history, user_id=uid)
+    result = rchat.handle_message(
+        agent, 
+        body.message, 
+        body.history, 
+        user_id=uid,
+        pending_proposal=body.pending_proposal,
+        is_confirmation=body.is_confirmation,
+    )
     return result
 
 

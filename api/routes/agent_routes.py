@@ -585,6 +585,22 @@ def review_chat(agent_id: str, body: ReviewChatBody, current_user: dict = Depend
     if agent is None:
         raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
     
+    # Backfill LLM moments if the agent was sorted before the feature
+    if agent.sort and not getattr(agent.sort, 'moments', None):
+        try:
+            from local_ai.agent_intake import sorter_llm
+            result, _engine = sorter_llm.sort_primary(
+                agent.name,
+                agent.description,
+                agent.instructions,
+                agent.examples,
+                user_id=uid,
+            )
+            agent.sort = result
+            store.save(agent)
+        except Exception:
+            pass  # fallback to no-moments mode
+    
     result = rchat.handle_message(agent, body.message, body.history, user_id=uid)
     return result
 

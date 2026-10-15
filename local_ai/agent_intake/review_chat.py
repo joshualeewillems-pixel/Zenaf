@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 from local_ai.strands import STRANDS
 
-# Bot persona: humble, curious, explains reasoning.
+# Bot persona: humble, curious, explains reasoning. Explicit about what it's adding.
 _ZENAF_SYSTEM = """You are Zenaf, a curious assistant helping the user review their imported AI conversation for training material.
 
 You have read their full conversation and identified moments that might be valuable training signals for their seven strand agents (Word/Storyteller, Number/Patternist, Image/Seer, Sound/Songwriter, Body/Maker, People/Mediator, Self/Guide).
@@ -33,7 +34,13 @@ Your job:
 - Be humble and curious. You are proposing, not declaring.
 - Explain your reasoning simply: "This feels like Mediator to me because..."
 - Ask genuine questions: "What was going on when you said that?" "Why that phrasing?"
-- When the user confirms a placement, acknowledge it warmly.
+- BEFORE filing anything, be explicit and confident about what you're proposing:
+  "Here's what I'd add to Mediator: [specific synopsis of the training signal].
+  Does that sound right? Is there more to it? Any further differentiations
+  before I file it?"
+- Your main goal is to be as correct as possible before making any changes.
+  Don't rush to file — the conversation IS the value.
+- When the user confirms a placement, acknowledge it warmly and file it.
 - If the conversation reveals a NEW insight (different strand, different angle), note it: "Wait — that's actually a Self insight too. Want me to capture that?"
 - Never be a therapist. Focus on: "what should this train?"
 
@@ -157,7 +164,12 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
         # Remove common LLM artifacts
         reply = re.sub(r'^["\']|["\']$', '', reply)
         
-        return {"reply": reply, "signal_created": None, "done": False}
+        # Check if user is confirming a placement — if so, create the signal
+        signal_created = _detect_and_create_signal(agent, message, history, user_id)
+        if signal_created:
+            reply += f"\n\n✓ Filed in {signal_created['strand_name']}."
+        
+        return {"reply": reply, "signal_created": signal_created, "done": False}
         
     except Exception as e:
         return {
@@ -165,3 +177,79 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
             "signal_created": None,
             "done": False,
         }
+
+def _detect_and_create_signal(agent, message: str, history: list[dict], user_id: str | None) -> dict | None:
+    """Detect if the user is confirming a strand placement, and create the signal."""
+    msg_lower = message.lower().strip()
+    
+    confirm_patterns = [
+        r'\byes\b', r'\bfile it\b', r'\bsounds right\b', r'\bdo it\b',
+        r'\bthat works\b', r'\bagree\b', r'\bgo ahead\b',
+    ]
+    is_confirm = any(re.search(p, msg_lower) for p in confirm_patterns)
+    if not is_confirm:
+        return None
+    
+    strand_map = {
+        'storyteller': 'word', 'patternist': 'number', 'seer': 'image',
+        'songwriter': 'sound', 'maker': 'body', 'mediator': 'people', 'guide': 'self',
+        'word': 'word', 'number': 'number', 'image': 'image', 'sound': 'sound',
+        'body': 'body', 'people': 'people', 'self': 'self',
+    }
+    
+    strand_key = None
+    for name, key in strand_map.items():
+        if name in msg_lower:
+            strand_key = key
+            break
+    
+    if not strand_key:
+        for h in reversed(history[-5:]):
+            if h.get('role') == 'zenaf':
+                content = h.get('content', '').lower()
+                for name, key in strand_map.items():
+                    if name in content:
+                        strand_key = key
+                        break
+                if strand_key:
+                    break
+    
+    if not strand_key:
+        return None
+    
+    moments = []
+    if agent.sort and getattr(agent.sort, 'moments', None):
+        moments = [m for m in agent.sort.moments if m.strand == strand_key]
+    
+    if not moments:
+        return None
+    
+    moment = moments[0]
+    
+    try:
+        from local_ai.presence_ingest.schema import TrainingSignal
+        from local_ai.presence_ingest.store import PresenceStore
+        
+        signal = TrainingSignal(
+            signal_id=f"chat:{agent.id}:{strand_key}:{int(time.time()*1000)}",
+            ts_ms=int(time.time() * 1000),
+            layer="behavior",
+            zone=strand_key,
+            actor=user_id or "",
+            summary=moment.inference,
+            context_ref={"source": "review_chat"},
+            payload_redacted=moment.quote,
+            valence="endorsed",
+            correction_diff=None,
+            provenance={"source": "review_chat", "agent_id": agent.id, "strand": strand_key},
+            supersedes=None,
+            status="approved",
+            session_id="",
+        )
+        PresenceStore().save_candidate_signals([signal])
+        
+        strand_name = _STRAND_NAMES.get(strand_key, strand_key)
+        return {"strand": strand_key, "strand_name": strand_name, "signal_id": signal.signal_id}
+    except Exception:
+        return None
+

@@ -40,7 +40,7 @@ Your job:
   before I file it?"
 - Your main goal is to be as correct as possible before making any changes.
   Don't rush to file — the conversation IS the value.
-- When the user confirms a placement, acknowledge it warmly and file it.
+- When the user confirms a placement, acknowledge it warmly. Do NOT say "Filed in X" or "I'm filing this" — the system handles the actual filing automatically and will confirm it separately.
 - If the conversation reveals a NEW insight (different strand, different angle), note it: "Wait — that's actually a Self insight too. Want me to capture that?"
 - Philosophy is welcome when it reveals something trainable — but always gravitate toward practicality. If the conversation drifts into abstraction, connect it back: "That's a rich idea — how would you want that to show up in practice? What should it train?"
 - Never be a therapist. Focus on: "what should this train?"
@@ -188,6 +188,8 @@ def _detect_and_create_signal(agent, message: str, history: list[dict], user_id:
     confirm_patterns = [
         r'\byes\b', r'\bfile it\b', r'\bsounds right\b', r'\bdo it\b',
         r'\bthat works\b', r'\bagree\b', r'\bgo ahead\b',
+        r'\bthat (does |do )?captures? it\b', r'\bthat.s right\b', r'\bexactly\b',
+        r'\bperfect\b', r'\bnailed it\b',
     ]
     is_confirm = any(re.search(p, msg_lower) for p in confirm_patterns)
     if not is_confirm:

@@ -682,12 +682,25 @@ def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
     claims appear after POST /agents/mine-projects with agent_id.
     """
     from local_ai.agent_intake import review_claims
+    from local_ai.agent_intake.store import AgentStore
 
     store = _store(_uid(current_user))
     agent = store.get(agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
     claims = store.get_claims(agent_id)
+    if not claims:
+        # Fallback: check unscoped store (render jobs may have saved under
+        # a different user scope). If found there, use those claims.
+        try:
+            unscoped = AgentStore(user_id=None)
+            unscoped_claims = unscoped.get_claims(agent_id)
+            if unscoped_claims:
+                claims = unscoped_claims
+                # Migrate to user's scope for future requests
+                store.save_claims(agent.id, claims)
+        except Exception:
+            pass
     if not claims:
         claims = review_claims.build_strand_claims(agent)
         kind_claim = review_claims.build_kind_claim(agent)

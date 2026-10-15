@@ -311,17 +311,13 @@ export default function ReviewView() {
           <p className="text-stone-500 text-sm mb-4">No strand placements yet.</p>
         )}
         {placementGroups.map((g) => (
-          <div key={g.insight.id}>
-            <div className="bg-blue-900/50 border border-blue-600 rounded p-1 mb-1 text-xs text-blue-200">
-              MAP DEBUG: id={g.insight.id || '(no id)'} title="{g.insight.title || '(no title)'}" type={g.insight.claim_type || '(no type)'}
-            </div>
-            <ClaimCard
-              agentId={a.id}
-              claim={g.insight}
-              alternatives={g.alternatives}
-              onResolved={onClaimResolved}
-            />
-          </div>
+          <ClaimCard
+            key={g.insight.id}
+            agentId={a.id}
+            claim={g.insight}
+            alternatives={g.alternatives}
+            onResolved={onClaimResolved}
+          />
         ))}
         {kindClaim && (
           <ClaimCard key={kindClaim.id} agentId={a.id} claim={kindClaim} onResolved={onClaimResolved} />

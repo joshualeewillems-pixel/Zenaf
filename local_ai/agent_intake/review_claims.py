@@ -67,7 +67,10 @@ class ReviewClaim:
 
     id: str  # stable per agent, namespaced by agent id:
     # "{agent_id}:strand:{strand}:m{turn}", "{agent_id}:kind",
-    # "{agent_id}:strand:{strand}:m{turn}:alt:0", "initiative:0", ...
+    # "{agent_id}:strand:{strand}:m{turn}:alt:0", "{agent_id}:initiative:{i}",
+    # "{agent_id}:insight:{n}". The review_claims table keys rows by
+    # claim_id alone, so a bare id would silently overwrite another agent's
+    # cards and verdicts.
     claim_type: str  # one of CLAIM_TYPES
     title: str  # short human label
     evidence: str  # verbatim quote from the transcript ("" if none found — never invented)
@@ -480,9 +483,9 @@ def build_kind_claim(agent: ConnectedAgent) -> ReviewClaim | None:
     """A claim card for the skill/talent/project placement."""
     if not agent.sort or not agent.sort.kind or agent.sort.kind == "undecided":
         return None
+    # Namespaced by agent id — review_claims keys rows by claim_id alone,
+    # so a bare "kind" would overwrite another agent's kind card.
     return ReviewClaim(
-        # Namespaced by agent id — review_claims keys rows by claim_id alone,
-        # so a bare "kind" would overwrite another agent's kind card.
         id=f"{agent.id}:kind",
         claim_type="kind",
         title=f"Kind: {agent.sort.kind}",
@@ -491,11 +494,14 @@ def build_kind_claim(agent: ConnectedAgent) -> ReviewClaim | None:
     )
 
 
-def build_mined_claims(mining_result: Any) -> list[ReviewClaim]:
+def build_mined_claims(mining_result: Any, agent_id: str) -> list[ReviewClaim]:
     """One claim card per mined initiative/project/task/idea.
 
     Evidence comes from the miner's source_quote (verbatim anchor).
     Inference is the proposal in plain language.
+
+    Ids are namespaced by agent_id ("{agent_id}:initiative:{i}") because the
+    review_claims table keys rows by claim_id alone.
     """
     claims: list[ReviewClaim] = []
     sections = [
@@ -528,7 +534,7 @@ def build_mined_claims(mining_result: Any) -> list[ReviewClaim]:
                 detail = detail_text
             claims.append(
                 ReviewClaim(
-                    id=f"{ctype}:{i}",
+                    id=f"{agent_id}:{ctype}:{i}",
                     claim_type=ctype,
                     title=title,
                     evidence=quote,
@@ -551,14 +557,17 @@ _INSIGHT_TITLES = {
 }
 
 
-def build_insight_claims(insights: list) -> list[ReviewClaim]:
+def build_insight_claims(insights: list, agent_id: str) -> list[ReviewClaim]:
     """One claim per mined insight, plus one "alternative" claim per genuine
     alternative reading.
 
-    Alternatives are separate claims (id "insight:{n}:alt:{m}") so each is
-    individually respondable — confirming the interpretation never silently
-    approves the others. Scope rides on each claim: the interpretive jump
-    from moment to pattern is exposed, not smuggled.
+    Alternatives are separate claims (id "{agent_id}:insight:{n}:alt:{m}") so
+    each is individually respondable — confirming the interpretation never
+    silently approves the others. Scope rides on each claim: the interpretive
+    jump from moment to pattern is exposed, not smuggled.
+
+    Ids are namespaced by agent_id because the review_claims table keys rows
+    by claim_id alone.
     """
     claims: list[ReviewClaim] = []
     for n, ins in enumerate(insights):
@@ -571,7 +580,7 @@ def build_insight_claims(insights: list) -> list[ReviewClaim]:
             scope = "moment"
         claims.append(
             ReviewClaim(
-                id=f"insight:{n}",
+                id=f"{agent_id}:insight:{n}",
                 claim_type=ctype,
                 title=_INSIGHT_TITLES[ctype],
                 evidence=getattr(ins, "evidence", "") or "",
@@ -589,7 +598,7 @@ def build_insight_claims(insights: list) -> list[ReviewClaim]:
                 alt_scope = "moment"
             claims.append(
                 ReviewClaim(
-                    id=f"insight:{n}:alt:{m}",
+                    id=f"{agent_id}:insight:{n}:alt:{m}",
                     claim_type="alternative",
                     title="Alternative reading",
                     # Parent shows the quote; repeating it per alternative is noise.

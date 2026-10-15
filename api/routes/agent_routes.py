@@ -9,7 +9,7 @@ stored or returned.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
 from api.routes.auth_routes import get_current_user
@@ -155,8 +155,38 @@ def connect_via_share_link(body: ShareLinkBody, current_user: dict = Depends(get
 # ---------------------------------------------------------------------------
 
 
+def _require_worker_key(request: Request):
+    """Shared-secret auth for the render-job worker endpoints.
+
+    Single-worker design: the only real worker is the scheduled reader on
+    this VM. The secret lives in the ZENAF_RENDER_WORKER_KEY env var (a Fly
+    secret on staging). Unset -> fail closed with 503, never open.
+
+    Scope is honest, not fine-grained: any key holder can claim, complete,
+    or fail any pending job. That's acceptable for one trusted worker and
+    no multi-tenant renderer fleet.
+    """
+    import hmac
+    import os
+
+    expected = os.environ.get("ZENAF_RENDER_WORKER_KEY", "")
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="render worker not configured (ZENAF_RENDER_WORKER_KEY unset)",
+        )
+    provided = request.headers.get("X-Worker-Key", "")
+    if not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=403, detail="invalid worker key")
+    return True
+
+
 @router.get("/render-jobs/next")
-def render_job_next(worker_id: str = ""):
+def render_job_next(
+    request: Request,
+    worker_id: str = "",
+    _worker: bool = Depends(_require_worker_key),
+):
     """A registered renderer polls here to claim its next job.
 
     Returns {"job": {...} | None}. Claiming is atomic — one job per worker.
@@ -193,11 +223,22 @@ class RenderCompleteBody(BaseModel):
 
 
 @router.post("/render-jobs/{job_id}/complete", status_code=201)
-def render_job_complete(job_id: str, body: RenderCompleteBody):
+def render_job_complete(
+    job_id: str,
+    body: RenderCompleteBody,
+    request: Request,
+    _worker: bool = Depends(_require_worker_key),
+):
     """A renderer submits the extracted transcript; the intake pipeline resumes.
 
     Returns the connected agent (with sort + mined projects) in one call.
+
+    Idempotent: a repeat POST for an already-completed job replays the stored
+    result (agent + mined payload) instead of re-running the pipeline — the
+    old behavior created a duplicate agent on every retry.
     """
+    import json
+
     from local_ai.agent_intake import project_miner
 
     rs = _render_store()
@@ -205,6 +246,28 @@ def render_job_complete(job_id: str, body: RenderCompleteBody):
     if existing is None:
         raise HTTPException(status_code=404, detail="unknown render job")
     owner = existing.user_id or ""
+
+    if existing.status == "completed":
+        if not existing.result_agent_id:
+            raise HTTPException(
+                status_code=409,
+                detail="job already completed (legacy row); cannot recover agent",
+            )
+        agent = _store(owner or None).get(existing.result_agent_id)
+        if agent is None:
+            raise HTTPException(
+                status_code=409,
+                detail="job already completed but its agent is gone",
+            )
+        try:
+            mined = json.loads(existing.result_mined or "")
+        except (TypeError, ValueError):
+            mined = None
+        if not isinstance(mined, dict):
+            mined = {"engine": "none", "initiatives": [], "projects": [],
+                     "standalone_tasks": [], "ideas": []}
+        return {"agent": agent.to_dict(), "mined": mined, "replayed": True}
+
     job = rs.complete(job_id, body.transcript, body.title, user_id=owner or None)
     if job is None:
         raise HTTPException(status_code=404, detail="unknown render job")
@@ -229,17 +292,31 @@ def render_job_complete(job_id: str, body: RenderCompleteBody):
         }
     except Exception:
         pass
+    rs.set_result(job_id, agent.id, json.dumps(mined))
     return {"agent": agent.to_dict(), "mined": mined}
 
 
 @router.post("/render-jobs/{job_id}/fail", status_code=200)
-def render_job_fail(job_id: str, body: dict | None = None):
-    """A renderer reports it could not extract the page."""
+def render_job_fail(
+    job_id: str,
+    request: Request,
+    body: dict | None = None,
+    _worker: bool = Depends(_require_worker_key),
+):
+    """A renderer reports it could not extract the page.
+
+    A completed job can never be failed (409). Re-failing an already-failed
+    job is idempotent — returns the job unchanged.
+    """
     error = str((body or {}).get("error", "renderer failed"))[:500]
     rs = _render_store()
     existing = rs.get(job_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="unknown render job")
+    if existing.status == "completed":
+        raise HTTPException(status_code=409, detail="job already completed; cannot fail it")
+    if existing.status == "failed":
+        return existing.to_dict()
     job = rs.fail(job_id, error, user_id=existing.user_id or None)
     if job is None:
         raise HTTPException(status_code=404, detail="unknown render job")
@@ -532,7 +609,7 @@ def mine_projects(body: MineBody, current_user: dict = Depends(get_current_user)
         agent = store.get(body.agent_id)
         if agent is None:
             raise HTTPException(status_code=404, detail=f"unknown agent: {body.agent_id}")
-        claims = review_claims.build_mined_claims(result)
+        claims = review_claims.build_mined_claims(result, agent.id)
         store.save_claims(agent.id, claims)
         # Persist the mining stage and payload on the agent: the staged
         # review gate reads mining_state, and the payload lets the client
@@ -746,7 +823,7 @@ def regenerate_claims(agent_id: str, current_user: dict = Depends(get_current_us
     if kind_claim:
         claims.append(kind_claim)
     insights, engine = insight_miner.mine_insights(agent.examples, user_id=uid)
-    claims.extend(review_claims.build_insight_claims(insights))
+    claims.extend(review_claims.build_insight_claims(insights, agent.id))
 
     for c in claims:
         old = existing.get(c.id)

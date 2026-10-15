@@ -37,6 +37,11 @@ class RenderJob:
     error: str | None = None
     agent_id: str | None = None  # intake agent waiting on this job
     user_id: str = ""  # owner; jobs are per-user so renderers can't cross-claim
+    # Idempotent /complete: the agent + mined payload produced by the first
+    # successful completion, so a repeat POST can return them instead of
+    # re-running the pipeline (which created duplicate agents).
+    result_agent_id: str | None = None
+    result_mined: str | None = None  # JSON of the mined dict from /complete
 
     def to_dict(self) -> dict:
         return {
@@ -90,6 +95,10 @@ class RenderJobStore:
             cols = [r["name"] for r in c.execute("PRAGMA table_info(render_jobs)").fetchall()]
             if cols and "user_id" not in cols:
                 c.execute("ALTER TABLE render_jobs ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
+            if cols and "result_agent_id" not in cols:
+                c.execute("ALTER TABLE render_jobs ADD COLUMN result_agent_id TEXT")
+            if cols and "result_mined" not in cols:
+                c.execute("ALTER TABLE render_jobs ADD COLUMN result_mined TEXT")
 
     def create(self, url: str, agent_id: str | None = None, user_id: str | None = None) -> RenderJob:
         job = RenderJob(
@@ -127,6 +136,8 @@ class RenderJobStore:
             error=row["error"],
             agent_id=row["agent_id"],
             user_id=row["user_id"] if "user_id" in row.keys() else "",
+            result_agent_id=row["result_agent_id"] if "result_agent_id" in row.keys() else None,
+            result_mined=row["result_mined"] if "result_mined" in row.keys() else None,
         )
 
     def _expire_stale(self, c: sqlite3.Connection) -> None:
@@ -167,24 +178,58 @@ class RenderJobStore:
             return job
 
     def complete(self, job_id: str, transcript: str, title: str | None = None, user_id: str | None = None) -> RenderJob | None:
+        """Mark a job completed with its transcript.
+
+        Idempotent: completing an already-completed job returns the job
+        unchanged — the route layer replays the stored result instead of
+        re-running the intake pipeline (which created duplicate agents).
+        """
         transcript = (transcript or "").strip()
         if not transcript:
             return self.fail(job_id, "empty transcript", user_id=user_id)
         with self._connect() as c:
             cur = c.execute(
                 "UPDATE render_jobs SET status = 'completed', transcript = ?, title = ?"
-                " WHERE id = ?" + (" AND user_id = ?" if user_id else ""),
+                " WHERE id = ? AND status != 'completed'"
+                + (" AND user_id = ?" if user_id else ""),
                 (transcript, (title or "").strip() or None, job_id, *([user_id] if user_id else [])),
             )
             if cur.rowcount == 0:
+                # Either unknown, owned by someone else, or already completed.
+                row = c.execute("SELECT * FROM render_jobs WHERE id = ?", (job_id,)).fetchone()
+                if row is None:
+                    return None
+                job = self._row_to_job(row)
+                if job.status == "completed" and (not user_id or job.user_id == user_id):
+                    return job
                 return None
             row = c.execute("SELECT * FROM render_jobs WHERE id = ?", (job_id,)).fetchone()
         return self._row_to_job(row) if row else None
 
+    def set_result(self, job_id: str, agent_id: str, mined_json: str) -> None:
+        """Record the agent + mined payload produced by a completed job.
+
+        Lets a repeat /complete replay the stored result instead of
+        re-running the pipeline.
+        """
+        with self._connect() as c:
+            c.execute(
+                "UPDATE render_jobs SET result_agent_id = ?, result_mined = ? WHERE id = ?",
+                (agent_id, mined_json, job_id),
+            )
+
     def fail(self, job_id: str, error: str, user_id: str | None = None) -> RenderJob | None:
+        """Mark a job failed.
+
+        Guarded transition: only non-terminal jobs can be failed. A completed
+        job can never be failed; re-failing an already-failed job is a no-op
+        returning the job unchanged (original error preserved).
+        """
         with self._connect() as c:
             cur = c.execute(
-                "UPDATE render_jobs SET status = 'failed', error = ? WHERE id = ?" + (" AND user_id = ?" if user_id else ""),
+                "UPDATE render_jobs SET status = 'failed', error = ?"
+                " WHERE id = ? AND status NOT IN ('completed', 'failed')"
+                + (" AND user_id = ?" if user_id else ""),
                 (error[:500], job_id, *([user_id] if user_id else [])),
             )
             if cur.rowcount == 0:

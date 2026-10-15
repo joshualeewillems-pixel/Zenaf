@@ -834,3 +834,139 @@ def test_agent_to_dict_carries_mining_fields():
     back = ConnectedAgent.from_dict(d)
     assert back.mining_state == "mined"
     assert back.mined_payload == {"projects": []}
+
+
+# ---------------------------------------------------------------------------
+# Render-job fixes: idempotent /complete, guarded /fail, worker auth
+# ---------------------------------------------------------------------------
+
+def test_complete_is_idempotent_at_store_level(tmp_path):
+    """Completing an already-completed job returns it unchanged — no new
+    pipeline run, no duplicate agent downstream."""
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+
+    rs = RenderJobStore(db_path=str(tmp_path / "rj_idem.db"))
+    job = rs.create("https://chatgpt.com/share/abc")
+    first = rs.complete(job.id, "USER: hello\n\nASSISTANT: hi", title="T")
+    assert first.status == "completed"
+
+    second = rs.complete(job.id, "USER: hello\n\nASSISTANT: hi", title="T")
+    assert second is not None
+    assert second.status == "completed"
+    assert second.transcript == first.transcript
+
+
+def test_set_result_records_agent_and_mined(tmp_path):
+    """The first completion records its agent + mined payload so a repeat
+    POST can replay them."""
+    import json
+
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+
+    rs = RenderJobStore(db_path=str(tmp_path / "rj_res.db"))
+    job = rs.create("https://chatgpt.com/share/abc")
+    rs.complete(job.id, "USER: x", title="T")
+    mined = {"engine": "none", "initiatives": [], "projects": [], "standalone_tasks": [], "ideas": []}
+    rs.set_result(job.id, "agent-123", json.dumps(mined))
+
+    got = rs.get(job.id)
+    assert got.result_agent_id == "agent-123"
+    assert json.loads(got.result_mined) == mined
+
+
+def test_fail_cannot_touch_completed_job(tmp_path):
+    """Failing a completed job is refused at the store level."""
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+
+    rs = RenderJobStore(db_path=str(tmp_path / "rj_fail.db"))
+    job = rs.create("https://chatgpt.com/share/abc")
+    rs.complete(job.id, "USER: hello", title="T")
+    assert rs.fail(job.id, "too late") is None
+    assert rs.get(job.id).status == "completed"
+
+
+def test_refail_is_idempotent(tmp_path):
+    """Re-failing an already-failed job is a no-op: the store refuses the
+    transition and the original error is preserved (the route layer returns
+    the existing job for a repeat /fail)."""
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+
+    rs = RenderJobStore(db_path=str(tmp_path / "rj_refail.db"))
+    job = rs.create("https://chatgpt.com/share/abc")
+    first = rs.fail(job.id, "blocked")
+    assert first.status == "failed"
+    assert rs.fail(job.id, "blocked again") is None
+    assert rs.get(job.id).error == "blocked"  # original error preserved
+
+
+def test_render_job_schema_migrates_old_db(tmp_path):
+    """Pre-fix render_jobs tables gain result_agent_id/result_mined."""
+    import sqlite3
+
+    from local_ai.agent_intake.render_jobs import RenderJobStore
+
+    db = tmp_path / "rj_old.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute(
+        "CREATE TABLE render_jobs (id TEXT PRIMARY KEY, url TEXT NOT NULL,"
+        " status TEXT NOT NULL DEFAULT 'pending', created_at REAL NOT NULL,"
+        " claimed_at REAL, claimed_by TEXT, transcript TEXT, title TEXT,"
+        " error TEXT, agent_id TEXT, user_id TEXT NOT NULL DEFAULT '')"
+    )
+    conn.execute("INSERT INTO render_jobs (id, url, status, created_at) VALUES ('j1','u','pending',1.0)")
+    conn.commit()
+    conn.close()
+
+    rs = RenderJobStore(db_path=str(db))
+    rs.set_result("j1", "a9", "{}")
+    assert rs.get("j1").result_agent_id == "a9"
+
+
+def _fake_request(headers: dict):
+    class R:
+        pass
+    r = R()
+    r.headers = headers
+    return r
+
+
+def test_worker_key_fail_closed_when_unset(monkeypatch):
+    """No ZENAF_RENDER_WORKER_KEY -> 503, never open."""
+    import os
+
+    from fastapi import HTTPException
+
+    from api.routes.agent_routes import _require_worker_key
+
+    monkeypatch.delenv("ZENAF_RENDER_WORKER_KEY", raising=False)
+    assert "ZENAF_RENDER_WORKER_KEY" not in os.environ
+    try:
+        _require_worker_key(_fake_request({"X-Worker-Key": "anything"}))
+        assert False, "should have raised"
+    except HTTPException as e:
+        assert e.status_code == 503
+
+
+def test_worker_key_rejects_wrong_key(monkeypatch):
+    from fastapi import HTTPException
+
+    from api.routes.agent_routes import _require_worker_key
+
+    monkeypatch.setenv("ZENAF_RENDER_WORKER_KEY", "correct-horse")
+    try:
+        _require_worker_key(_fake_request({"X-Worker-Key": "wrong"}))
+        assert False, "should have raised"
+    except HTTPException as e:
+        assert e.status_code == 403
+    try:
+        _require_worker_key(_fake_request({}))
+        assert False, "should have raised"
+    except HTTPException as e:
+        assert e.status_code == 403
+
+
+def test_worker_key_accepts_correct_key(monkeypatch):
+    from api.routes.agent_routes import _require_worker_key
+
+    monkeypatch.setenv("ZENAF_RENDER_WORKER_KEY", "correct-horse")
+    assert _require_worker_key(_fake_request({"X-Worker-Key": "correct-horse"})) is True

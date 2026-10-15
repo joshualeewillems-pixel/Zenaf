@@ -710,6 +710,26 @@ def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
             if inf.startswith('This passage routes to') or inf.startswith('This passage was routed to'):
                 needs_rebuild = True
                 break
+    # Backfill LLM moments for agents sorted before the feature.
+    # If the agent has no moments, re-run the sorter to generate them.
+    if agent.sort and not getattr(agent.sort, 'moments', None):
+        try:
+            from local_ai.agent_intake import sorter_llm
+            result, _engine = sorter_llm.sort_primary(
+                agent.name,
+                agent.description,
+                agent.instructions,
+                agent.examples,
+                user_id=_uid(current_user),
+            )
+            agent.sort = result
+            store.save(agent)
+            # Clear old claims so they rebuild with LLM moments
+            store.delete_claim_types(agent.id, ("strand", "alternative", "kind"))
+            needs_rebuild = True
+        except Exception:
+            # If LLM fails, fall back to rule-based (existing behavior)
+            pass
     if not claims or needs_rebuild:
         claims = review_claims.build_strand_claims(agent)
         kind_claim = review_claims.build_kind_claim(agent)

@@ -671,6 +671,50 @@ def _get_claim(store, agent_id: str, claim_id: str):
     raise HTTPException(status_code=404, detail=f"unknown claim: {claim_id}")
 
 
+@router.post("/backfill-moments")
+def backfill_moments(current_user: dict = Depends(get_current_user)):
+    """TEMPORARY: Re-run LLM sorter to generate moments for existing agents.
+
+    For agents sorted before the LLM moment feature, re-runs the sorter
+    to populate SortResult.moments, then clears cached claims so they
+    rebuild with the new LLM-based inferences.
+    """
+    from local_ai.agent_intake import sorter_llm
+    from local_ai.agent_intake.store import AgentStore
+
+    store = _store(_uid(current_user))
+    agents = store.list_all()
+    results = []
+    for agent in agents:
+        # Skip if already has moments
+        if agent.sort and getattr(agent.sort, 'moments', None):
+            results.append({"id": agent.id, "name": agent.name, "status": "skipped (has moments)"})
+            continue
+        try:
+            # Re-run LLM sorter
+            result, _engine = sorter_llm.sort_primary(
+                agent.name,
+                agent.description,
+                agent.instructions,
+                agent.examples,
+                user_id=_uid(current_user),
+            )
+            agent.sort = result
+            store.save(agent)
+            # Clear cached strand claims so they rebuild with LLM moments.
+            # Mined claims are untouched.
+            store.delete_claim_types(agent.id, ("strand", "alternative", "kind"))
+            results.append({
+                "id": agent.id,
+                "name": agent.name,
+                "status": "ok",
+                "moments": len(result.moments),
+            })
+        except Exception as e:
+            results.append({"id": agent.id, "name": agent.name, "status": f"error: {e}"})
+    return {"results": results}
+
+
 @router.get("/{agent_id}/claims")
 def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
     """Per-inference review cards for an agent.

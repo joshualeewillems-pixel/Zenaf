@@ -599,9 +599,10 @@ def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
     """Per-inference review cards for an agent.
 
     Each claim carries verbatim evidence, a plain-language inference, and a
-    pending/accepted/corrected/explained status. Strand and kind claims are
-    built on demand from the sort result; mined claims appear after
-    POST /agents/mine-projects with agent_id.
+    pending/accepted/corrected/explained status. Strand cards are moment-level
+    (one per qualifying transcript moment per strand, capped); kind and
+    strand claims are built on demand from the stored transcript. Mined
+    claims appear after POST /agents/mine-projects with agent_id.
     """
     from local_ai.agent_intake import review_claims
 

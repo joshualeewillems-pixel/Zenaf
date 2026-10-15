@@ -8,6 +8,7 @@ import {
   miningStatusLabel,
   openClaimsCount,
   reviewedList,
+  strandGroups,
   whatsLeft,
 } from './reviewStages'
 
@@ -140,6 +141,50 @@ describe('insight groups', () => {
   it('returns empty for no insights', () => {
     expect(insightGroups([])).toEqual([])
     expect(insightGroups([{ id: 'strand:self', claim_type: 'strand', status: 'pending' }])).toEqual([])
+  })
+})
+
+describe('strand groups', () => {
+  const placement = (turn: number, strand = 'self') => ({
+    id: `a1:strand:${strand}:m${turn}`,
+    claim_type: 'strand',
+    status: 'pending',
+  })
+  const alt = (turn: number, strand = 'self') => ({
+    id: `a1:strand:${strand}:m${turn}:alt:0`,
+    claim_type: 'alternative',
+    status: 'pending',
+  })
+
+  it('nests each moment card with its alternative reading', () => {
+    const claims = [placement(3), alt(3), placement(5)]
+    const groups = strandGroups(claims)
+    expect(groups).toHaveLength(2)
+    expect(groups[0].insight.id).toBe('a1:strand:self:m3')
+    expect(groups[0].alternatives.map((a) => a.id)).toEqual(['a1:strand:self:m3:alt:0'])
+    expect(groups[1].alternatives).toEqual([])
+  })
+
+  it('does not confuse m3 with m30', () => {
+    const claims = [placement(3), { id: 'a1:strand:self:m30:alt:0', claim_type: 'alternative', status: 'pending' }]
+    const groups = strandGroups(claims)
+    expect(groups[0].alternatives).toEqual([])
+  })
+
+  it('ignores insight parents and orphaned alternatives', () => {
+    const claims = [
+      placement(3),
+      { id: 'insight:0', claim_type: 'stance', status: 'pending' },
+      { id: 'a1:strand:self:m9:alt:0', claim_type: 'alternative', status: 'pending' },
+    ]
+    const groups = strandGroups(claims)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].alternatives).toEqual([])
+  })
+
+  it('returns empty for no placements', () => {
+    expect(strandGroups([])).toEqual([])
+    expect(strandGroups([{ id: 'insight:0', claim_type: 'stance', status: 'pending' }])).toEqual([])
   })
 })
 

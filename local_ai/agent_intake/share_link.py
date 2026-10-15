@@ -41,8 +41,13 @@ class SharedConversation:
     messages: list[SharedMessage] = field(default_factory=list)
     needs_browser: bool = False  # True when fetch requires JS rendering
 
-    def as_examples(self, max_messages: int = 6) -> list[str]:
-        """Flatten to example strings for the agent-intake sorter."""
+    def as_examples(self, max_messages: int = 200) -> list[str]:
+        """Flatten to example strings for the agent-intake sorter.
+
+        Keeps the full conversation (up to max_messages turns) so
+        moment-level review cards can anchor to any moment. The sorter
+        itself only reads the first ~20 for its prompt budget.
+        """
         out: list[str] = []
         for m in self.messages[:max_messages]:
             out.append(f"{m.role}: {m.text[:2000]}")

@@ -10,14 +10,26 @@ projects, every assimilated claim becomes its own conversational card:
 2. **Inference** — what the system thinks the moment reveals, in plain human
    language ("it seemed like you may prefer…"). No strand-keyword salad.
 3. **The ask** — "Is that right? Would you like to say more about why?"
-4. **Actions** — Accept (→ training signal), Correct (→ ideals-guidance),
-   Explain (free text about *why* → ideals-guidance, linked to the evidence).
+4. **Actions** — Confirm (→ training signal), Qualify or Explain (→
+   ideals-guidance, linked to the evidence), Reject (→ negative signal),
+   Leave unresolved (explicit, first-class, never a silent approval).
 
-Claim types: "strand" (per-strand placement), "kind" (skill/talent/project),
-"initiative" | "project" | "task" | "idea" (mined proposals).
+Claim types: "strand" (per-moment strand placement), "kind"
+(skill/talent/project), "alternative" (a nested alternative reading of a
+placement or insight), "initiative" | "project" | "task" | "idea" (mined
+proposals), plus the atomic insight types.
+
+Moment-level placements: a long conversation holds many distinct training
+moments. The transcript is segmented into moments (speaker turns; trivially
+short adjacent turns merge into the next), each moment is scored on every
+strand with the sorter's marker machinery, and every (moment, strand) at or
+above threshold gets its own card — its own quote, inference, and verdict.
+No whole-conversation blanket summaries, and no dilution: one strong moment
+in a long conversation surfaces on its own.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -53,7 +65,9 @@ _CLAIM_SCORE_THRESHOLD = 0.25
 class ReviewClaim:
     """One assimilated inference awaiting the user's review."""
 
-    id: str  # stable: "strand:self", "kind", "initiative:0", "project:1", ...
+    id: str  # stable per agent, namespaced by agent id:
+    # "{agent_id}:strand:{strand}:m{turn}", "{agent_id}:kind",
+    # "{agent_id}:strand:{strand}:m{turn}:alt:0", "initiative:0", ...
     claim_type: str  # one of CLAIM_TYPES
     title: str  # short human label
     evidence: str  # verbatim quote from the transcript ("" if none found — never invented)
@@ -216,17 +230,6 @@ def _kind_inference(kind: str, kind_reasoning: str) -> str:
 # Claim builders.
 # ---------------------------------------------------------------------------
 
-def _matched_markers(chunk: str, markers: tuple[str, ...]) -> list[str]:
-    """Markers from the strand's set that actually appear in this chunk."""
-    low = chunk.lower()
-    seen: list[str] = []
-    for m in markers:
-        ml = m.lower()
-        if ml and ml in low and ml not in seen:
-            seen.append(ml)
-    return seen
-
-
 def _trim_quote(text: str, limit: int = 400) -> str:
     if len(text) <= limit:
         return text
@@ -251,65 +254,225 @@ def _atomic_strand_inference(strand_key: str, matched: list[str]) -> str:
     return f"This passage routes to {name} because it uses {words}."
 
 
-# Max atomic placement claims per strand — enough to show the pattern,
-# not so many it floods the review.
-_MAX_ATOMIC_PER_STRAND = 3
+# Max moment-level placement cards per strand — enough to cover a long
+# conversation's distinct training moments, not so many it floods the
+# review. Strongest moments first; the constant is the cap's single knob.
+_MAX_MOMENT_CARDS_PER_STRAND = 8
+
+
+# ---------------------------------------------------------------------------
+# Moment segmentation: the transcript -> traceable speaker turns.
+# ---------------------------------------------------------------------------
+
+# Speaker-label line starts, e.g. "USER:", "assistant:". Matches both the
+# bookmarklet's uppercase labels and share_link's lowercase "user:"/"assistant:".
+_LABEL_RE = re.compile(r"(?m)^[ \t]*(USER|ASSISTANT|HUMAN|AI)[ \t]*:", re.I)
+
+# Turns whose body (label stripped) is shorter than this merge into the next
+# same-speaker turn — a lone "yes" is not a training moment, but its words
+# stay verbatim in the merged quote.
+_SHORT_TURN_CHARS = 60
+
+
+@dataclass
+class Moment:
+    """One traceable unit of a conversation: a speaker turn (or a few merged
+    trivially-short ones), numbered by transcript position."""
+
+    turn: int  # 1-based number of the moment's first turn
+    last_turn: int  # 1-based number of the moment's last turn (>= turn)
+    speaker: str  # "user" | "assistant" | "unknown"
+    text: str  # verbatim text, speaker labels preserved
+
+    @property
+    def turn_ref(self) -> str:
+        base = (
+            f"Turn {self.turn}"
+            if self.turn == self.last_turn
+            else f"Turns {self.turn}-{self.last_turn}"
+        )
+        who = {"user": "You", "assistant": "Assistant"}.get(self.speaker, "")
+        return f"{base} · {who}" if who else base
+
+
+def _strip_labels(text: str) -> str:
+    return _LABEL_RE.sub("", text).strip()
+
+
+def _merge_short_turns(moments: list[Moment]) -> list[Moment]:
+    """Fold trivially short turns into the following same-speaker turn.
+
+    Verbatim text is preserved; the merged moment spans both turn numbers so
+    the quote stays traceable. Turn numbers of later moments are unchanged.
+    """
+    out: list[Moment] = []
+    i = 0
+    while i < len(moments):
+        m = moments[i]
+        nxt = moments[i + 1] if i + 1 < len(moments) else None
+        if (
+            nxt is not None
+            and nxt.speaker == m.speaker
+            and len(_strip_labels(m.text)) < _SHORT_TURN_CHARS
+        ):
+            out.append(
+                Moment(
+                    turn=m.turn,
+                    last_turn=nxt.last_turn,
+                    speaker=m.speaker,
+                    text=(m.text.rstrip() + "\n" + nxt.text).strip(),
+                )
+            )
+            i += 2
+        else:
+            out.append(m)
+            i += 1
+    return out
+
+
+def segment_moments(examples: list[str] | None) -> list[Moment]:
+    """Split stored examples into numbered speaker-turn moments.
+
+    Each example is usually one labeled turn already; examples that contain
+    several label lines (or none) are split (or kept whole) so every moment
+    is one speaker's contiguous passage with a stable turn number.
+    """
+    raw: list[tuple[str, str]] = []
+    for ex in examples or []:
+        ex = (ex or "").strip()
+        if not ex:
+            continue
+        matches = list(_LABEL_RE.finditer(ex))
+        if not matches:
+            raw.append(("unknown", ex))
+            continue
+        head = ex[: matches[0].start()].strip()
+        if head:
+            raw.append(("unknown", head))
+        for i, m in enumerate(matches):
+            start = m.start()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(ex)
+            seg = ex[start:end].strip()
+            if not seg:
+                continue
+            label = m.group(1).lower()
+            speaker = "user" if label in ("user", "human") else "assistant"
+            raw.append((speaker, seg))
+    moments = [
+        Moment(turn=i + 1, last_turn=i + 1, speaker=s, text=t)
+        for i, (s, t) in enumerate(raw)
+    ]
+    return _merge_short_turns(moments)
 
 
 def build_strand_claims(agent: ConnectedAgent) -> list[ReviewClaim]:
-    """Atomic strand placement claims: one specific passage -> one routing.
+    """Moment-level strand placement claims: one training moment -> one routing.
 
-    Each claim anchors a strand placement to a verbatim passage and names
-    the specific words that triggered it — granular and falsifiable, like
-    the insight cards. No whole-conversation blanket summaries.
+    Every moment of the transcript is scored on every strand with the
+    sorter's marker machinery; every (moment, strand) at or above
+    _CLAIM_SCORE_THRESHOLD gets its own card — its own verbatim quote,
+    inference, and verdict. No whole-conversation blanket summaries, and no
+    dilution: one strong moment in a long conversation surfaces on its own.
+
+    Cap: _MAX_MOMENT_CARDS_PER_STRAND strongest moments per strand.
+    The top strand of a moment that also qualifies elsewhere gets a nested
+    alternative reading naming the runner-up strand — individually
+    respondable, so confirming the placement never approves the alternative.
+
+    Claim ids are namespaced by agent id: the review_claims table keys rows
+    by claim_id alone, so un-namespaced ids (e.g. "strand:self:m3") would
+    silently overwrite another agent's cards and verdicts.
     """
-    from .sorter import _STRAND_MARKERS
+    from .sorter import (
+        _SCORE_SATURATION,
+        _STRAND_RES,
+        _matched_markers as _regex_matched_markers,
+    )
+    from local_ai.strands import strand_keys
 
     if not agent.sort:
         return []
+    moments = segment_moments(agent.examples)
+    if not moments:
+        return []
+
+    strand_order = {k: i for i, k in enumerate(strand_keys())}
+
+    # Score every moment on every strand; keep qualifiers sorted best-first.
+    per_moment: list[tuple[Moment, list[tuple[str, float, list[str]]]]] = []
+    for m in moments:
+        # The sorter's marker regexes are case-sensitive; the sorter itself
+        # scores lowercased text, so do the same. The evidence quote keeps
+        # the original casing.
+        low = m.text.lower()
+        scored: list[tuple[str, float, list[str]]] = []
+        for strand in strand_keys():
+            matched = _regex_matched_markers(_STRAND_RES[strand], low)
+            score = min(1.0, len(matched) / _SCORE_SATURATION)
+            if score >= _CLAIM_SCORE_THRESHOLD:
+                scored.append((strand, score, matched))
+        scored.sort(key=lambda t: (-t[1], strand_order.get(t[0], 99)))
+        if scored:
+            per_moment.append((m, scored))
+
+    # Per-strand cap: strongest moments first (ties: earliest turn).
+    kept: set[tuple[int, str]] = set()
+    for strand in strand_keys():
+        ranked = sorted(
+            (
+                (m, score, words)
+                for m, scored in per_moment
+                for (s, score, words) in scored
+                if s == strand
+            ),
+            key=lambda t: (-t[1], t[0].turn),
+        )
+        for m, _score, _words in ranked[:_MAX_MOMENT_CARDS_PER_STRAND]:
+            kept.add((m.turn, strand))
+
+    # Emit chronologically so the review reads like the conversation.
     claims: list[ReviewClaim] = []
-    for c in agent.sort.claims:
-        if c.score < _CLAIM_SCORE_THRESHOLD:
-            continue
-        markers = _STRAND_MARKERS.get(c.strand, ())
-        name = _STRAND_NAME.get(c.strand, c.strand)
-        # Score every example chunk; keep the top few with actual hits.
-        scored = []
-        for ex in agent.examples or []:
-            matched = _matched_markers(ex, markers)
-            if matched:
-                scored.append((len(matched), ex, matched))
-        scored.sort(key=lambda t: -t[0])
-        # Fall back to the single best chunk if nothing matched verbatim —
-        # the sorter placed it above threshold, so keep the placement visible
-        # but honest about the thin evidence.
-        if not scored:
-            best = find_evidence_chunk(agent.examples, markers)
-            if best:
-                claims.append(
-                    ReviewClaim(
-                        id=f"strand:{c.strand}",
-                        claim_type="strand",
-                        title=f"{name} strand",
-                        evidence=_trim_quote(best),
-                        inference=f"Routed to {name} (sorter score {c.score:.1f}), but no single passage carries the signal strongly — confirm or qualify.",
-                        detail=f"Sorter score {c.score:.1f}",
-                        scope="moment",
-                    )
-                )
-            continue
-        for i, (_, ex, matched) in enumerate(scored[:_MAX_ATOMIC_PER_STRAND]):
+    for m, scored in per_moment:
+        for rank, (strand, score, words) in enumerate(scored):
+            if (m.turn, strand) not in kept:
+                continue
+            name = _STRAND_NAME.get(strand, strand)
             claims.append(
                 ReviewClaim(
-                    id=f"strand:{c.strand}:{i}",
+                    id=f"{agent.id}:strand:{strand}:m{m.turn}",
                     claim_type="strand",
                     title=f"{name} strand",
-                    evidence=_trim_quote(ex),
-                    inference=_atomic_strand_inference(c.strand, matched),
-                    detail=f"Sorter score {c.score:.1f}",
+                    evidence=_trim_quote(m.text),
+                    inference=_atomic_strand_inference(strand, words),
+                    detail=f"Moment score {score:.1f}",
+                    question="Does that placement sound right? Want to say more about why?",
                     scope="moment",
+                    turn_ref=m.turn_ref,
                 )
             )
+            # Alternative reading: the runner-up strand, only when it genuinely
+            # qualified on this moment too. Individually respondable.
+            if rank == 0 and len(scored) > 1:
+                alt_strand, _alt_score, alt_words = scored[1]
+                alt_name = _STRAND_NAME.get(alt_strand, alt_strand)
+                alt_word_list = ", ".join(f"'{w}'" for w in alt_words[:5])
+                claims.append(
+                    ReviewClaim(
+                        id=f"{agent.id}:strand:{strand}:m{m.turn}:alt:0",
+                        claim_type="alternative",
+                        title="Alternative reading",
+                        evidence="",
+                        inference=(
+                            f"This could also be {alt_name} material instead — "
+                            f"it uses {alt_word_list}."
+                            if alt_word_list
+                            else f"This could also read as {alt_name} material."
+                        ),
+                        question="Could it be this instead?",
+                        scope="moment",
+                        turn_ref=m.turn_ref,
+                    )
+                )
     return claims
 
 
@@ -318,7 +481,9 @@ def build_kind_claim(agent: ConnectedAgent) -> ReviewClaim | None:
     if not agent.sort or not agent.sort.kind or agent.sort.kind == "undecided":
         return None
     return ReviewClaim(
-        id="kind",
+        # Namespaced by agent id — review_claims keys rows by claim_id alone,
+        # so a bare "kind" would overwrite another agent's kind card.
+        id=f"{agent.id}:kind",
         claim_type="kind",
         title=f"Kind: {agent.sort.kind}",
         evidence="",

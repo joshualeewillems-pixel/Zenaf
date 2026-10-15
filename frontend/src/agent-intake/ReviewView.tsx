@@ -393,43 +393,7 @@ export default function ReviewView() {
 
         {error && <p className="text-red-300 text-sm mb-3">{error}</p>}
 
-        <h3 className="text-stone-200 font-semibold text-[15px] mb-2">Projects</h3>
-        {miningStage === 'pending' && (
-          <div className="mb-6">
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => mine(a)} disabled={miningBusy} className="min-h-[44px] px-5 rounded-xl bg-stone-700 text-stone-100 font-semibold text-[15px] disabled:opacity-40">
-                {miningBusy ? 'Reading…' : 'Mine projects from this conversation'}
-              </button>
-              <button onClick={() => skipMining(a)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-stone-800 text-stone-400 text-[15px] disabled:opacity-40">
-                Skip mining
-              </button>
-            </div>
-            <p className="text-stone-500 text-sm mt-2">Nothing to mine here? Skip it — the choice is yours either way.</p>
-          </div>
-        )}
-        {miningStage === 'skipped' && minedClaims.length === 0 && (
-          <div className="mb-6">
-            <p className="text-stone-500 text-sm mb-2">Project mining skipped.</p>
-            <button onClick={() => mine(a)} disabled={miningBusy} className="min-h-[44px] px-4 rounded-xl text-stone-300 text-[15px] underline underline-offset-4 disabled:opacity-40">
-              {miningBusy ? 'Reading…' : 'Mine anyway'}
-            </button>
-          </div>
-        )}
-        {minedClaims.length > 0 && (
-          <div className="mb-6">
-            {minedClaims.map((c) => (
-              <ClaimCard key={c.id} agentId={a.id} claim={c} onResolved={onClaimResolved} />
-            ))}
-            {acceptedMined.length > 0 && minedPayload && (
-              <button onClick={() => createSelected(a, acceptedMined)} disabled={busy} className="min-h-[44px] px-5 rounded-xl bg-yellow-500/90 text-stone-900 font-semibold text-[15px] disabled:opacity-40 mt-1">
-                Create {acceptedMined.length} confirmed
-              </button>
-            )}
-            {createdSummary && (
-              <p className="text-green-300/90 text-sm mt-2">{createdSummary}</p>
-            )}
-          </div>
-        )}
+        {/* Project mining cards removed — use "Pull tasks & stuff" above for conversational mining */}
 
         {isPending && (
           <div className="mt-2 mb-6">

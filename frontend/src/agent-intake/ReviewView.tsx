@@ -300,12 +300,6 @@ export default function ReviewView() {
 
         <h3 className="text-stone-200 font-semibold text-[15px] mb-2">What's being assimilated</h3>
         <p className="text-stone-500 text-sm mb-3">Each card is one thing I'd take from this conversation. Say what you think — your answers train the sorter.</p>
-        {/* TEMP DEBUG: show what the frontend actually has */}
-        <div className="bg-yellow-900/50 border border-yellow-600 rounded p-2 mb-3 text-xs text-yellow-200">
-          <div>claims: {claims.length} | strandClaims: {strandClaims.length} | groups: {placementGroups.length}</div>
-          <div>first claim: {claims[0] ? `"${claims[0].title || '(no title)'}" [${claims[0].claim_type || '(no type)'}]` : '(none)'}</div>
-          <div>first group insight: {placementGroups[0] ? `"${placementGroups[0].insight.title || '(no title)'}"` : '(none)'}</div>
-        </div>
         {claimsLoading && <p className="text-stone-500 text-sm mb-3">Reading the conversation…</p>}
         {!claimsLoading && strandClaims.length === 0 && (
           <p className="text-stone-500 text-sm mb-4">No strand placements yet.</p>

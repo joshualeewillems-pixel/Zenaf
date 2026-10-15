@@ -186,13 +186,35 @@ def _detect_and_create_signal(agent, message: str, history: list[dict], user_id:
     """Detect if the user is confirming a strand placement, and create the signal."""
     msg_lower = message.lower().strip()
     
-    confirm_patterns = [
-        r'\byes\b', r'\bfile it\b', r'\bsounds right\b', r'\bdo it\b',
-        r'\bthat works\b', r'\bagree\b', r'\bgo ahead\b',
-        r'\bthat (does |do )?captures? it\b', r'\bthat.s right\b', r'\bexactly\b',
-        r'\bperfect\b', r'\bnailed it\b',
+    # Only file on EXPLICIT, UNAMBIGUOUS confirmation.
+    # A "yes" at the start of a long explanation ("Yes though, morality...") is NOT
+    # a confirmation to file — it's agreement with the bot's understanding.
+    # Require either: (1) short message with confirmation word, OR (2) explicit filing language.
+    
+    msg_len = len(msg_lower)
+    
+    # Explicit filing phrases — these are unambiguous regardless of length
+    explicit_file_phrases = [
+        r'\bfile it\b', r'\bfile that\b', r'\bsounds right\b', 
+        r'\bgo ahead\b', r'\bdo it\b',
     ]
-    is_confirm = any(re.search(p, msg_lower) for p in confirm_patterns)
+    has_explicit = any(re.search(p, msg_lower) for p in explicit_file_phrases)
+    
+    # Simple confirmations — only valid if the message is SHORT (not a long explanation)
+    simple_confirms = [
+        r'^\s*yes\s*[.!]?\s*$', r'^\s*yeah\s*[.!]?\s*$', r'^\s*yep\s*[.!]?\s*$',
+        r'^\s*exactly\s*[.!]?\s*$', r'^\s*perfect\s*[.!]?\s*$', 
+        r'^\s*agreed\s*[.!]?\s*$', r'^\s*correct\s*[.!]?\s*$',
+    ]
+    is_simple_confirm = any(re.search(p, msg_lower) for p in simple_confirms)
+    
+    # "that captures it" / "that's right" — valid if message is under 50 chars
+    capture_patterns = [
+        r'\bthat (does |do )?captures? it\b', r"\bthat'?s right\b", r'\bnailed it\b',
+    ]
+    is_capture = any(re.search(p, msg_lower) for p in capture_patterns) and msg_len < 50
+    
+    is_confirm = has_explicit or is_simple_confirm or is_capture
     if not is_confirm:
         return None
     

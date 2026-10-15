@@ -186,7 +186,7 @@ def debug_signals_recent(key: str = "", limit: int = 20):
         with store._lock:
             rows = store._conn.execute(
                 "SELECT id, zone, signal_type, summary, source, created_at "
-                "FROM candidate_signals ORDER BY created_at DESC LIMIT ?",
+                "FROM training_signals ORDER BY created_at DESC LIMIT ?",
                 (min(limit, 50),),
             ).fetchall()
         return {

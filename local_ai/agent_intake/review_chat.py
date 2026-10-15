@@ -32,18 +32,22 @@ You have read their full conversation and identified moments that might be valua
 
 Your job:
 - Be humble and curious. You are proposing, not declaring.
+- Use plain, accessible language by default (~11th grade reading level). No academic jargon, no philosophical terminology unless the user introduces it first. Say "how people treat each other" not "relational ethics." Say "knowing yourself" not "epistemic foundation."
+- Match the user's register: if they speak simply, stay simple. If they go deep and use precise terms, follow them there. Always start accessible and adjust up, never start academic and talk down.
 - Explain your reasoning simply: "This feels like Mediator to me because..."
 - Ask genuine questions: "What was going on when you said that?" "Why that phrasing?"
 - BEFORE filing anything, be explicit and confident about what you're proposing.
   Present it naturally in conversation, then include a structured tag on its own line:
   [PROPOSAL strand=Mediator]Your specific synopsis of the training signal here[/PROPOSAL]
-  Then ask: "Does that sound right? Is there more to it? Any further differentiations before I file it?"
+  Then explain: "Type 'yes' in the amber box to file this, or keep chatting here to refine it."
   The strand must be one of: Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide.
+  Make sure the user understands: the amber box is for filing, normal chat is for discussion.
 - Your main goal is to be as correct as possible before making any changes.
   Don't rush to file — the conversation IS the value.
 - If the synopsis changes AT ALL after the user confirmed it (new detail, refined wording, added context), you MUST present the updated version and ask for confirmation again. Never file an updated version without explicit approval.
 - When the user confirms a placement, acknowledge it warmly. NEVER claim the filing happened — do not say "filed", "that's filed", "I've filed it", "done", or any variation suggesting the action is complete. The system handles the actual filing and will confirm it separately. Just say something like "Wonderful" or "Got it" and continue the conversation.
 - If the conversation reveals a NEW insight (different strand, different angle), note it: "Wait — that's actually a Self insight too. Want me to capture that?"
+- Propose ONE signal at a time. If multiple strands are relevant, file the first one, then propose the second separately. Never try to hold multiple proposals simultaneously.
 - Philosophy is welcome when it reveals something trainable — but always gravitate toward practicality. If the conversation drifts into abstraction, connect it back: "That's a rich idea — how would you want that to show up in practice? What should it train?"
 - Never be a therapist. Focus on: "what should this train?"
 
@@ -125,6 +129,18 @@ def handle_message(
         # (the user's message becomes the new conversation turn)
         pending_proposal = None
     
+    # If there's a pending proposal but user replied in normal chat (not amber box),
+    # redirect "yes" responses to the amber box instead of treating as conversation.
+    if pending_proposal and not is_confirmation:
+        msg_lower = message.lower().strip()
+        if re.match(r'^\s*(yes|yeah|yep|y|sure|ok|okay|exactly|perfect|agreed|sounds good)\s*[.!]?\s*$', msg_lower):
+            return {
+                "reply": "To file that, type 'yes' in the amber box above — that's what actually saves it. Or keep chatting here if you want to refine it first.",
+                "signal_created": None,
+                "pending_proposal": pending_proposal,
+                "done": False,
+            }
+    
     # Get the agent's moments (LLM-identified or rule-based fallback)
     moments = []
     if agent.sort and getattr(agent.sort, 'moments', None):
@@ -199,6 +215,16 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
             reply = re.sub(r"\[PROPOSAL\s+strand=\w+\].*?\[/PROPOSAL\]", "", reply, flags=re.IGNORECASE | re.DOTALL).strip()
             # Clean up any double newlines left behind
             reply = re.sub(r"\n{3,}", "\n\n", reply)
+        
+        # Safety net: strip any hallucinated filing claims from the LLM.
+        # Only the backend (after a real DB write) may confirm a filing.
+        # This catches "Filed in X", "that's filed", "I've filed it", etc.
+        reply = re.sub(
+            r"\s*(✓\s*)?(Filed in \w+\.?|that's filed\.?|I've filed it\.?|it's filed\.?|done\.? filed\.?)",
+            "",
+            reply,
+            flags=re.IGNORECASE,
+        ).strip()
         
         return {"reply": reply, "signal_created": None, "pending_proposal": new_proposal, "done": False}
         

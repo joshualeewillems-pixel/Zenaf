@@ -138,14 +138,14 @@ class TestBuildStrandClaims:
         ids = [c.id for c in claims]
         assert any(i.startswith("a1:strand:self:") for i in ids)
         assert any(i.startswith("a1:strand:word:") for i in ids)
-        assert not any(":strand:body:" in i for i in ids)
+        assert not any(i.startswith("a1:strand:body:") for i in ids)  # 0.1 < 0.25
 
     def test_atomic_not_blanket(self):
         """Each strand claim anchors to ONE moment with named trigger words —
         no whole-conversation blanket summaries."""
         agent = _agent(sort=_sort())
         claims = {c.id: c for c in build_strand_claims(agent)}
-        self_claims = [c for i, c in claims.items() if ":strand:self:" in i]
+        self_claims = [c for i, c in claims.items() if i.startswith("a1:strand:self:")]
         assert len(self_claims) >= 1
         for c in self_claims:
             # Evidence is verbatim from the transcript.
@@ -158,7 +158,7 @@ class TestBuildStrandClaims:
     def test_evidence_is_verbatim(self):
         agent = _agent(sort=_sort())
         claims = build_strand_claims(agent)
-        self_claims = [c for c in claims if ":strand:self:" in c.id and c.claim_type == "strand"]
+        self_claims = [c for c in claims if c.id.startswith("a1:strand:self:")]
         assert self_claims
         # Each claim's evidence must be one of the actual examples.
         for c in self_claims:
@@ -238,7 +238,7 @@ class TestBuildKindClaim:
         agent = _agent(sort=_sort())
         c = build_kind_claim(agent)
         assert c is not None
-        assert c.id == f"{agent.id}:kind"
+        assert c.id == "a1:kind"
         assert "project" in c.title
 
     def test_no_claim_when_undecided(self):
@@ -261,18 +261,18 @@ class TestBuildMinedClaims:
         )
 
     def test_all_sections_become_claims(self):
-        claims = build_mined_claims(self._mining())
+        claims = build_mined_claims(self._mining(), "a1")
         types = [c.claim_type for c in claims]
         assert types == ["initiative", "project", "task", "idea"]
 
     def test_evidence_is_source_quote_verbatim(self):
-        claims = build_mined_claims(self._mining())
+        claims = build_mined_claims(self._mining(), "a1")
         assert claims[0].evidence == "USER: I want to write a book"
         assert claims[1].evidence == "USER: starting chapter one"
 
     def test_ids_are_stable(self):
-        claims = build_mined_claims(self._mining())
-        assert [c.id for c in claims] == ["initiative:0", "project:0", "task:0", "idea:0"]
+        claims = build_mined_claims(self._mining(), "a1")
+        assert [c.id for c in claims] == ["a1:initiative:0", "a1:project:0", "a1:task:0", "a1:idea:0"]
 
 
 class TestClaimStore:
@@ -406,4 +406,76 @@ class TestInsightClaimStore:
         assert store.update_claim("c1", "rejected")
         assert store.update_claim("c1", "unresolved")
         assert store.get_claims("a1")[0].status == "unresolved"
+        store.close()
+
+
+class TestCrossAgentClaimIsolation:
+    """Regression: review_claims keys rows by claim_id alone, so claim ids
+    MUST be namespaced by agent id. Ingesting agent B must never overwrite
+    agent A's cards or Joshua's verdicts on them."""
+
+    def _agent_b(self):
+        return _agent(
+            id="b2",
+            name="Second chat",
+            examples=[
+                "USER: I've been thinking a lot about my purpose and values again.",
+                "USER: I want to write another essay about explanation.",
+            ],
+        )
+
+    def test_strand_claim_ids_namespaced(self):
+        a, b = _agent(sort=_sort()), self._agent_b()
+        b.sort = _sort()
+        ids_a = {c.id for c in build_strand_claims(a)}
+        ids_b = {c.id for c in build_strand_claims(b)}
+        assert ids_a, "expected strand claims"
+        assert ids_b, "expected strand claims"
+        assert not (ids_a & ids_b), f"claim ids collide across agents: {ids_a & ids_b}"
+        assert all(i.startswith("a1:") for i in ids_a)
+        assert all(i.startswith("b2:") for i in ids_b)
+
+    def test_kind_claim_ids_namespaced(self):
+        a, b = _agent(sort=_sort()), self._agent_b()
+        b.sort = _sort()
+        assert build_kind_claim(a).id == "a1:kind"
+        assert build_kind_claim(b).id == "b2:kind"
+
+    def test_mined_and_insight_claim_ids_namespaced(self):
+        from local_ai.agent_intake.review_claims import build_insight_claims
+
+        mined = build_mined_claims(TestBuildMinedClaims()._mining(), "a1")
+        assert all(c.id.startswith("a1:") for c in mined)
+        insights = build_insight_claims([], "a1")
+        assert insights == []
+
+    def test_saving_agent_b_does_not_clobber_agent_a(self, tmp_path):
+        """End to end: build + save claims for two agents, verdict agent A's
+        card, then save agent B's claims — A's card and verdict survive."""
+        from local_ai.agent_intake.store import AgentStore
+
+        store = AgentStore(db_path=tmp_path / "iso.db", user_id="u1")
+        a, b = _agent(sort=_sort()), self._agent_b()
+        b.sort = _sort()
+
+        claims_a = build_strand_claims(a)
+        kind_a = build_kind_claim(a)
+        if kind_a:
+            claims_a.append(kind_a)
+        store.save_claims(a.id, claims_a)
+        first_id = claims_a[0].id
+        assert store.update_claim(first_id, "accepted")
+
+        claims_b = build_strand_claims(b)
+        kind_b = build_kind_claim(b)
+        if kind_b:
+            claims_b.append(kind_b)
+        store.save_claims(b.id, claims_b)
+
+        got_a = {c.id: c for c in store.get_claims(a.id)}
+        got_b = {c.id: c for c in store.get_claims(b.id)}
+        assert len(got_a) == len(claims_a)
+        assert len(got_b) == len(claims_b)
+        assert got_a[first_id].status == "accepted", "A's verdict was clobbered by B's save"
+        assert all(c.status == "pending" for c in got_b.values())
         store.close()

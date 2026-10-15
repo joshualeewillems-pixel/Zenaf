@@ -217,13 +217,13 @@ class TestBuildInsightClaims:
         ]
 
     def test_id_scheme_and_linkage(self):
-        claims = build_insight_claims(self._mined())
-        assert [c.id for c in claims] == ["insight:0", "insight:0:alt:0"]
+        claims = build_insight_claims(self._mined(), "a1")
+        assert [c.id for c in claims] == ["a1:insight:0", "a1:insight:0:alt:0"]
         assert claims[0].claim_type == "stance"
         assert claims[1].claim_type == "alternative"
 
     def test_five_parts_present(self):
-        claims = build_insight_claims(self._mined())
+        claims = build_insight_claims(self._mined(), "a1")
         main, alt = claims
         # 1. Evidence
         assert main.evidence == "I'm allergic to reification."
@@ -241,12 +241,12 @@ class TestBuildInsightClaims:
 
     def test_alternatives_do_not_repeat_evidence(self):
         # The parent card shows the quote; per-alternative repetition is noise.
-        claims = build_insight_claims(self._mined())
+        claims = build_insight_claims(self._mined(), "a1")
         assert claims[1].evidence == ""
 
     def test_all_pending_initially(self):
-        claims = build_insight_claims(self._mined())
+        claims = build_insight_claims(self._mined(), "a1")
         assert all(c.status == "pending" for c in claims)
 
     def test_empty_in_empty_out(self):
-        assert build_insight_claims([]) == []
+        assert build_insight_claims([], "a1") == []

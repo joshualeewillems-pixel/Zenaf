@@ -79,7 +79,7 @@ export type InsightGroup<T extends StageClaim = StageClaim> = {
 }
 
 /** Group atomic insight claims with their alternatives by id prefix
- *  ("insight:3" -> "insight:3:alt:0"). Alternatives render nested under
+ *  ("{agent_id}:insight:3" -> "{agent_id}:insight:3:alt:0"). Alternatives render nested under
  *  their interpretation — never collapsed away, each with its own verdict. */
 export function insightGroups<T extends StageClaim>(claims: T[]): InsightGroup<T>[] {
   const insights = claims.filter((c) => INSIGHT_CLAIM_TYPES.includes(c.claim_type))

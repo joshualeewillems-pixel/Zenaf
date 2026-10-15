@@ -45,6 +45,7 @@ Your job:
 - If the synopsis changes AT ALL after the user confirmed it (new detail, refined wording, added context), you MUST present the updated version and ask for confirmation again. Never file an updated version without explicit approval.
 - When the user confirms a placement, acknowledge it warmly. NEVER claim the filing happened — do not say "filed", "that's filed", "I've filed it", "done", or any variation suggesting the action is complete. The system handles the actual filing and will confirm it separately. Just say something like "Wonderful" or "Got it" and continue the conversation.
 - If the conversation reveals a NEW insight (different strand, different angle), note it: "Wait — that's actually a Self insight too. Want me to capture that?"
+- Propose ONE signal at a time. If multiple strands are relevant, file the first one, then propose the second separately. Never try to hold multiple proposals simultaneously.
 - Philosophy is welcome when it reveals something trainable — but always gravitate toward practicality. If the conversation drifts into abstraction, connect it back: "That's a rich idea — how would you want that to show up in practice? What should it train?"
 - Never be a therapist. Focus on: "what should this train?"
 
@@ -212,6 +213,16 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
             reply = re.sub(r"\[PROPOSAL\s+strand=\w+\].*?\[/PROPOSAL\]", "", reply, flags=re.IGNORECASE | re.DOTALL).strip()
             # Clean up any double newlines left behind
             reply = re.sub(r"\n{3,}", "\n\n", reply)
+        
+        # Safety net: strip any hallucinated filing claims from the LLM.
+        # Only the backend (after a real DB write) may confirm a filing.
+        # This catches "Filed in X", "that's filed", "I've filed it", etc.
+        reply = re.sub(
+            r"\s*(✓\s*)?(Filed in \w+\.?|that's filed\.?|I've filed it\.?|it's filed\.?|done\.? filed\.?)",
+            "",
+            reply,
+            flags=re.IGNORECASE,
+        ).strip()
         
         return {"reply": reply, "signal_created": None, "pending_proposal": new_proposal, "done": False}
         

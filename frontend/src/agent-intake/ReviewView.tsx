@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
 import ClaimCard, { Claim } from './ClaimCard'
+import ReviewChat from './ReviewChat'
 import {
   MINED_CLAIM_TYPES,
   MiningState,
@@ -73,6 +74,7 @@ export default function ReviewView() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [claimsLoading, setClaimsLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
+  const [reviewTab, setReviewTab] = useState<'chat' | 'cards'>('chat')
 
   async function load() {
     setLoading(true)
@@ -298,13 +300,43 @@ export default function ReviewView() {
           {!isPending && ' · filed'}
         </p>
 
-        <h3 className="text-stone-200 font-semibold text-[15px] mb-2">What's being assimilated</h3>
-        <p className="text-stone-500 text-sm mb-3">Each card is one thing I'd take from this conversation. Say what you think — your answers train the sorter.</p>
-        {claimsLoading && <p className="text-stone-500 text-sm mb-3">Reading the conversation…</p>}
-        {!claimsLoading && strandClaims.length === 0 && (
+        {/* Tab switcher: Chat (primary) vs Cards (overview) */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setReviewTab('chat')}
+            className={`min-h-[44px] px-4 rounded-xl font-semibold text-[15px] ${
+              reviewTab === 'chat'
+                ? 'bg-stone-700 text-stone-100'
+                : 'bg-stone-800/60 text-stone-400 border border-stone-700'
+            }`}
+          >
+            Chat with Zenaf
+          </button>
+          <button
+            onClick={() => setReviewTab('cards')}
+            className={`min-h-[44px] px-4 rounded-xl font-semibold text-[15px] ${
+              reviewTab === 'cards'
+                ? 'bg-stone-700 text-stone-100'
+                : 'bg-stone-800/60 text-stone-400 border border-stone-700'
+            }`}
+          >
+            Cards
+          </button>
+        </div>
+
+        {reviewTab === 'chat' ? (
+          <ReviewChat agentId={a.id} agentName={a.name} />
+        ) : (
+          <>
+            <h3 className="text-stone-200 font-semibold text-[15px] mb-2">What's being assimilated</h3>
+            <p className="text-stone-500 text-sm mb-3">Each card is one thing I'd take from this conversation. Say what you think — your answers train the sorter.</p>
+          </>
+        )}
+        {reviewTab === 'cards' && claimsLoading && <p className="text-stone-500 text-sm mb-3">Reading the conversation…</p>}
+        {reviewTab === 'cards' && !claimsLoading && strandClaims.length === 0 && (
           <p className="text-stone-500 text-sm mb-4">No strand placements yet.</p>
         )}
-        {placementGroups.map((g) => (
+        {reviewTab === 'cards' && placementGroups.map((g) => (
           <div key={g.insight.id}>
             <ClaimCard
               agentId={a.id}
@@ -314,10 +346,10 @@ export default function ReviewView() {
             />
           </div>
         ))}
-        {kindClaim && (
+        {reviewTab === 'cards' && kindClaim && (
           <ClaimCard key={kindClaim.id} agentId={a.id} claim={kindClaim} onResolved={onClaimResolved} />
         )}
-        {isPending && pendingPlacements.length > 0 && (
+        {reviewTab === 'cards' && isPending && pendingPlacements.length > 0 && (
           <button
             onClick={() => acceptAllPlacements(a, pendingPlacements)}
             disabled={acceptingPlacements || busy}

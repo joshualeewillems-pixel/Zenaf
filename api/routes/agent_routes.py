@@ -554,6 +554,7 @@ class ReviewChatBody(BaseModel):
     history: list[dict] = []
     pending_proposal: dict | None = None
     is_confirmation: bool = False
+    quick_file_indices: list[int] | None = None
 
 
 @router.post("/intake/chat", status_code=200)
@@ -610,6 +611,7 @@ def review_chat(agent_id: str, body: ReviewChatBody, current_user: dict = Depend
         user_id=uid,
         pending_proposal=body.pending_proposal,
         is_confirmation=body.is_confirmation,
+        quick_file_indices=body.quick_file_indices,
     )
     return result
 

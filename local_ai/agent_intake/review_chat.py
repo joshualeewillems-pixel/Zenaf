@@ -66,6 +66,38 @@ _STRAND_NAMES = {
 }
 
 
+def _build_moments_overview(moments: list) -> list[dict]:
+    """Build structured overview of moments for checkbox UI.
+    
+    Returns [{strand, strand_name, moments: [{idx, label, quote, inference}]}]
+    """
+    by_strand: dict[str, list] = {}
+    for idx, m in enumerate(moments):
+        by_strand.setdefault(m.strand, []).append((idx, m))
+    
+    overview = []
+    for strand_key, items in sorted(by_strand.items(), key=lambda x: -len(x[1])):
+        strand_moments = []
+        for idx, m in items:
+            # Brief label from inference (first ~100 chars)
+            label = m.inference[:100]
+            if len(m.inference) > 100:
+                # Cut at word boundary
+                label = label.rsplit(' ', 1)[0] + "…"
+            strand_moments.append({
+                "idx": idx,
+                "label": label,
+                "quote": m.quote[:300],
+                "inference": m.inference,
+            })
+        overview.append({
+            "strand": strand_key,
+            "strand_name": _STRAND_NAMES.get(strand_key, strand_key),
+            "moments": strand_moments,
+        })
+    return overview
+
+
 def _build_opening(agent, moments: list) -> str:
     """Generate the opening paragraph: key findings, user chooses."""
     # Group moments by strand
@@ -91,7 +123,7 @@ def _build_opening(agent, moments: list) -> str:
     parts.append(f"I flagged {len(moments)} moments that might be training material: ")
     parts.append(", ".join(strand_summaries))
     parts.append(". ")
-    parts.append("Which one do you want to dig into first? Or I can start with the one I'm most curious about.")
+    parts.append("I've listed them below — check the ones that look like quick wins to file them, or tap 'Discuss in depth' on any to talk it through with me first.")
     
     return "".join(parts)
 
@@ -103,15 +135,59 @@ def handle_message(
     user_id: str | None = None,
     pending_proposal: dict | None = None,
     is_confirmation: bool = False,
+    quick_file_indices: list[int] | None = None,
 ) -> dict:
     """Process one chat turn with the Zenaf review bot.
     
-    Returns {"reply": str, "signal_created": dict | None, "pending_proposal": dict | None, "done": bool}
+    Returns {"reply": str, "signal_created": dict | None, "pending_proposal": dict | None, 
+             "moments_overview": list | None, "quick_filed": list | None, "done": bool}
     
     If is_confirmation is True, the message is a response to a pending filing proposal
     (from the distinct confirmation UI). "yes" files it; anything else returns to conversation.
+    If quick_file_indices is provided, creates signals for those moment indices directly.
     """
     from . import llm_keys
+    
+    # Get the agent's moments (needed for quick-file and overview)
+    moments = []
+    if agent.sort and getattr(agent.sort, 'moments', None):
+        moments = agent.sort.moments
+    
+    # Handle quick-file: user selected moments from the overview checkboxes
+    if quick_file_indices:
+        filed = []
+        for idx in quick_file_indices:
+            if 0 <= idx < len(moments):
+                m = moments[idx]
+                proposal = {
+                    "strand": m.strand,
+                    "strand_name": _STRAND_NAMES.get(m.strand, m.strand),
+                    "synopsis": m.inference[:500],
+                    "quote": m.quote[:1000],
+                }
+                signal = _create_signal_from_proposal(agent, proposal, user_id)
+                if signal:
+                    filed.append({"idx": idx, "strand_name": proposal["strand_name"]})
+        # Return updated overview (with filed ones marked)
+        overview = _build_moments_overview(moments)
+        filed_indices = {f["idx"] for f in filed}
+        for group in overview:
+            for mom in group["moments"]:
+                if mom["idx"] in filed_indices:
+                    mom["filed"] = True
+        reply = f"Filed {len(filed)} moment{'s' if len(filed) != 1 else ''}."
+        if filed:
+            strands = sorted(set(f["strand_name"] for f in filed))
+            reply += f" ({', '.join(strands)})"
+        reply += " Want to discuss any of the remaining ones in depth?"
+        return {
+            "reply": reply,
+            "signal_created": None,
+            "pending_proposal": None,
+            "moments_overview": overview,
+            "quick_filed": filed,
+            "done": False,
+        }
     
     # Handle explicit confirmation via the distinct UI
     if is_confirmation and pending_proposal:
@@ -151,11 +227,6 @@ def handle_message(
             # This will go through the normal LLM flow below, but we add a hint
             message = message + " [USER WANTS TO FILE: formulate a specific proposal with [PROPOSAL] tag based on what we just discussed]"
     
-    # Get the agent's moments (LLM-identified or rule-based fallback)
-    moments = []
-    if agent.sort and getattr(agent.sort, 'moments', None):
-        moments = agent.sort.moments
-    
     # Build context for the LLM
     # Include: transcript summary, flagged moments, conversation history
     examples_text = "\n---\n".join(agent.examples[:10]) if agent.examples else "(no examples)"
@@ -181,7 +252,14 @@ def handle_message(
     if is_opening:
         # Return the scripted opening (no LLM call needed)
         reply = _build_opening(agent, moments)
-        return {"reply": reply, "signal_created": None, "pending_proposal": None, "done": False}
+        overview = _build_moments_overview(moments) if moments else None
+        return {
+            "reply": reply, 
+            "signal_created": None, 
+            "pending_proposal": None, 
+            "moments_overview": overview,
+            "done": False,
+        }
     
     # Build the prompt for the LLM
     prompt = f"""{_ZENAF_SYSTEM}

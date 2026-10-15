@@ -278,7 +278,7 @@ export function MapChatShell({
       developmentalSnapshotForPrompt: devSnapshotRef.current,
     })
     const u = assessNodeFlowAndChannels(selected, { bundle: entityBundle, councilRuns: [] })
-    if (u.interpretation.stance === 'clarify_first' && u.interpretation.chatPrefill.trim()) {
+    if (u.interpretation?.stance === 'clarify_first' && u.interpretation.chatPrefill.trim()) {
       councilInteractRef.current({
         type: 'suggest_council_prefill',
         text: u.interpretation.chatPrefill,

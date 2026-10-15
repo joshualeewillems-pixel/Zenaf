@@ -671,6 +671,84 @@ def _get_claim(store, agent_id: str, claim_id: str):
     raise HTTPException(status_code=404, detail=f"unknown claim: {claim_id}")
 
 
+def _claim_to_signal(agent, claim, action: str, user_id: str, note: str = ""):
+    """Create a TrainingSignal from a reviewed intake claim.
+
+    The bridge from intake review to personality training:
+    - accepted → valence=endorsed, layer=behavior
+    - rejected → valence=rejected, layer=behavior
+    - corrected/explained → valence=corrected, layer=guidance (user's note is the signal)
+
+    The signal is saved with status=approved (user already verdict it),
+    so seed_from_signals will pick it up for profile candidates.
+    """
+    from local_ai.presence_ingest.schema import TrainingSignal
+    from local_ai.presence_ingest.store import PresenceStore
+    import time
+    import uuid
+
+    # Extract strand from claim ID (format: {agent_id}:strand:{strand}:...)
+    # or from title (format: "{Name} strand").
+    strand = ""
+    if claim.claim_type == "strand":
+        parts = claim.id.split(":")
+        # ID format: {agent_id}:strand:{strand}:...
+        # agent_id is hex (no colons), so strand is parts[2]
+        if len(parts) >= 3 and parts[1] == "strand":
+            strand = parts[2]
+        if not strand and claim.title:
+            # Title format: "Mediator strand" → "mediator"
+            # Map back via _STRAND_NAME
+            from local_ai.agent_intake.review_claims import _STRAND_NAME
+            title_lower = claim.title.lower().replace(" strand", "")
+            for key, name in _STRAND_NAME.items():
+                if name.lower() == title_lower:
+                    strand = key
+                    break
+
+    # Map action to valence and layer
+    if action == "accepted":
+        valence = "endorsed"
+        layer = "behavior"
+    elif action == "rejected":
+        valence = "rejected"
+        layer = "behavior"
+    elif action in ("corrected", "explained"):
+        valence = "corrected"
+        layer = "guidance"
+    else:
+        valence = "observed"
+        layer = "behavior"
+
+    signal = TrainingSignal(
+        signal_id=f"intake:{claim.id}:{action}",
+        ts_ms=int(time.time() * 1000),
+        layer=layer,  # type: ignore
+        zone=strand or "self",  # default to self if strand unknown
+        actor=user_id,
+        summary=claim.inference or claim.title,
+        context_ref={},
+        payload_redacted=claim.evidence or "",
+        valence=valence,  # type: ignore
+        correction_diff=note if note else None,
+        provenance={
+            "source": "agent_intake",
+            "agent_id": agent.id,
+            "agent_name": agent.name,
+            "claim_id": claim.id,
+            "claim_type": claim.claim_type,
+            "action": action,
+        },
+        supersedes=None,
+        status="approved",  # user already reviewed it
+        session_id="",
+    )
+
+    store = PresenceStore()
+    store.save_candidate_signals([signal])
+    return signal
+
+
 @router.get("/{agent_id}/claims")
 def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
     """Per-inference review cards for an agent.
@@ -725,13 +803,19 @@ def accept_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     """Accept one inference — confirms it as training signal."""
     from local_ai.agent_intake import pipeline as _pipeline_mod
 
-    store = _store(_uid(current_user))
+    uid = _uid(current_user)
+    store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "accepted")
     _pipeline_mod.log_claim_feedback(
         agent.id, claim.id, claim.claim_type, "accepted",
         evidence=claim.evidence, inference=claim.inference,
     )
+    # Bridge to personality: create TrainingSignal
+    try:
+        _claim_to_signal(agent, claim, "accepted", uid)
+    except Exception:
+        pass  # signal creation is best-effort; claim verdict is primary
     claim.status = "accepted"
     return claim.to_dict()
 
@@ -741,13 +825,18 @@ def correct_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     """Correct one inference — the correction is ideals-guidance training signal."""
     from local_ai.agent_intake import pipeline as _pipeline_mod
 
-    store = _store(_uid(current_user))
+    uid = _uid(current_user)
+    store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "corrected", body.note)
     _pipeline_mod.log_claim_feedback(
         agent.id, claim.id, claim.claim_type, "corrected", note=body.note,
         evidence=claim.evidence, inference=claim.inference,
     )
+    try:
+        _claim_to_signal(agent, claim, "corrected", uid, note=body.note)
+    except Exception:
+        pass
     claim.status = "corrected"
     claim.user_note = body.note
     return claim.to_dict()
@@ -758,13 +847,18 @@ def explain_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     """Explain *why* — the user's reasoning is stored as ideals-guidance signal."""
     from local_ai.agent_intake import pipeline as _pipeline_mod
 
-    store = _store(_uid(current_user))
+    uid = _uid(current_user)
+    store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "explained", body.note)
     _pipeline_mod.log_claim_feedback(
         agent.id, claim.id, claim.claim_type, "explained", note=body.note,
         evidence=claim.evidence, inference=claim.inference,
     )
+    try:
+        _claim_to_signal(agent, claim, "explained", uid, note=body.note)
+    except Exception:
+        pass
     claim.status = "explained"
     claim.user_note = body.note
     return claim.to_dict()
@@ -779,13 +873,18 @@ def reject_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     """
     from local_ai.agent_intake import pipeline as _pipeline_mod
 
-    store = _store(_uid(current_user))
+    uid = _uid(current_user)
+    store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "rejected")
     _pipeline_mod.log_claim_feedback(
         agent.id, claim.id, claim.claim_type, "rejected",
         evidence=claim.evidence, inference=claim.inference,
     )
+    try:
+        _claim_to_signal(agent, claim, "rejected", uid)
+    except Exception:
+        pass
     claim.status = "rejected"
     return claim.to_dict()
 

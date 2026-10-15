@@ -34,14 +34,15 @@ Your job:
 - Be humble and curious. You are proposing, not declaring.
 - Explain your reasoning simply: "This feels like Mediator to me because..."
 - Ask genuine questions: "What was going on when you said that?" "Why that phrasing?"
-- BEFORE filing anything, be explicit and confident about what you're proposing:
-  "Here's what I'd add to Mediator: [specific synopsis of the training signal].
-  Does that sound right? Is there more to it? Any further differentiations
-  before I file it?"
+- BEFORE filing anything, be explicit and confident about what you're proposing.
+  Present it naturally in conversation, then include a structured tag on its own line:
+  [PROPOSAL strand=Mediator]Your specific synopsis of the training signal here[/PROPOSAL]
+  Then ask: "Does that sound right? Is there more to it? Any further differentiations before I file it?"
+  The strand must be one of: Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide.
 - Your main goal is to be as correct as possible before making any changes.
   Don't rush to file — the conversation IS the value.
 - If the synopsis changes AT ALL after the user confirmed it (new detail, refined wording, added context), you MUST present the updated version and ask for confirmation again. Never file an updated version without explicit approval.
-- When the user confirms a placement, acknowledge it warmly. Do NOT say "Filed in X" or "I'm filing this" — the system handles the actual filing automatically and will confirm it separately.
+- When the user confirms a placement, acknowledge it warmly. NEVER claim the filing happened — do not say "filed", "that's filed", "I've filed it", "done", or any variation suggesting the action is complete. The system handles the actual filing and will confirm it separately. Just say something like "Wonderful" or "Got it" and continue the conversation.
 - If the conversation reveals a NEW insight (different strand, different angle), note it: "Wait — that's actually a Self insight too. Want me to capture that?"
 - Philosophy is welcome when it reveals something trainable — but always gravitate toward practicality. If the conversation drifts into abstraction, connect it back: "That's a rich idea — how would you want that to show up in practice? What should it train?"
 - Never be a therapist. Focus on: "what should this train?"
@@ -193,6 +194,11 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
         
         # Detect if the LLM proposed a filing — extract as pending_proposal for the distinct UI
         new_proposal = _extract_proposal_from_reply(reply, agent, moments)
+        # Strip the structured tag from the user-visible reply
+        if new_proposal:
+            reply = re.sub(r"\[PROPOSAL\s+strand=\w+\].*?\[/PROPOSAL\]", "", reply, flags=re.IGNORECASE | re.DOTALL).strip()
+            # Clean up any double newlines left behind
+            reply = re.sub(r"\n{3,}", "\n\n", reply)
         
         return {"reply": reply, "signal_created": None, "pending_proposal": new_proposal, "done": False}
         
@@ -207,34 +213,25 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
 def _extract_proposal_from_reply(reply: str, agent, moments: list) -> dict | None:
     """Extract a filing proposal from the LLM's reply.
     
-    Looks for: "Here's what I'd add to Mediator: [synopsis]. Does that sound right?"
+    Looks for structured tag: [PROPOSAL strand=Mediator]synopsis here[/PROPOSAL]
     Returns {"strand": "people", "strand_name": "Mediator", "synopsis": "...", "quote": "..."} or None.
+    Also strips the tag from the reply before returning it to the user.
     """
-    # Match "Here's what I'd add to [Strand]:" 
-    m = re.search(r"Here's what I'd add to (\w+):", reply, re.IGNORECASE)
+    # Match structured proposal tag
+    m = re.search(r"\[PROPOSAL\s+strand=(\w+)\](.*?)\[/PROPOSAL\]", reply, re.IGNORECASE | re.DOTALL)
     if not m:
         return None
     
     strand_name = m.group(1)
+    synopsis = m.group(2).strip()
+    
     # Map strand name to key
     strand_map = {
         'storyteller': 'word', 'patternist': 'number', 'seer': 'image',
         'songwriter': 'sound', 'maker': 'body', 'mediator': 'people', 'guide': 'self',
     }
     strand_key = strand_map.get(strand_name.lower())
-    if not strand_key:
-        return None
-    
-    # Extract synopsis: text after the colon, up to "Does that sound right?" or end of sentence
-    after_colon = reply[m.end():].strip()
-    # Take up to the question mark or "Does that"
-    syn_match = re.split(r'\.\s*Does that|\?\s*', after_colon, maxsplit=1)
-    synopsis = syn_match[0].strip().strip('"').strip()
-    # Remove trailing period if present (we'll add our own formatting)
-    if synopsis.endswith('.'):
-        synopsis = synopsis[:-1]
-    
-    if not synopsis or len(synopsis) < 10:
+    if not strand_key or not synopsis or len(synopsis) < 10:
         return None
     
     # Find a relevant quote from moments for this strand (best effort)

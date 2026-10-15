@@ -91,6 +91,15 @@ export default function ReviewChat({ agentId, agentName }: Props) {
   const sendConfirmation = async () => {
     const text = confirmInput.trim()
     if (!text || loading || !pendingProposal) return
+    await doConfirm(text)
+  }
+
+  const confirmWithText = async (text: string) => {
+    if (loading || !pendingProposal) return
+    await doConfirm(text)
+  }
+
+  const doConfirm = async (text: string) => {
 
     const history = messages.map(m => ({ role: m.role, content: m.content }))
     const proposal = pendingProposal
@@ -181,23 +190,31 @@ export default function ReviewChat({ agentId, agentName }: Props) {
           <div className="text-sm text-amber-100/90 mb-2 leading-snug">
             “{pendingProposal.synopsis}”
           </div>
+          <div className="flex gap-2 mb-2">
+            <button
+              onClick={() => confirmWithText('yes')}
+              disabled={loading}
+              className="flex-1 min-h-[44px] rounded-xl bg-amber-500 text-amber-950 font-bold text-[15px] disabled:opacity-40 hover:bg-amber-400"
+            >
+              ✓ File it
+            </button>
+          </div>
           <div className="flex gap-2">
             <input
               type="text"
               value={confirmInput}
               onChange={(e) => setConfirmInput(e.target.value)}
               onKeyDown={handleConfirmKey}
-              placeholder="Type yes to file, or tell me what to change…"
+              placeholder="Or type what to change…"
               className="flex-1 min-h-[44px] rounded-xl bg-amber-950/50 border border-amber-500/50 text-amber-50 px-4 text-[15px] placeholder:text-amber-200/40 focus:outline-none focus:border-amber-400"
               disabled={loading}
-              autoFocus
             />
             <button
               onClick={sendConfirmation}
               disabled={loading || !confirmInput.trim()}
-              className="min-h-[44px] px-5 rounded-xl bg-amber-600 text-amber-50 font-semibold text-[15px] disabled:opacity-40"
+              className="min-h-[44px] px-5 rounded-xl bg-amber-700 text-amber-50 font-semibold text-[15px] disabled:opacity-40"
             >
-              Reply
+              Send
             </button>
           </div>
         </div>

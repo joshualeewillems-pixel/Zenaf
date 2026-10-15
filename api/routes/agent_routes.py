@@ -616,6 +616,32 @@ def review_chat(agent_id: str, body: ReviewChatBody, current_user: dict = Depend
     return result
 
 
+@router.post("/{agent_id}/mining-chat", status_code=200)
+def mining_chat(agent_id: str, body: ReviewChatBody, current_user: dict = Depends(get_current_user)):
+    """Chat with Zenaf to pull practical items from a conversation.
+
+    Initiatives, projects, tasks, assets, and people — proposed one by one
+    in conversation. When the user confirms, the real entity is created.
+    """
+    from local_ai.agent_intake import mining_chat as mchat
+
+    uid = _uid(current_user)
+    store = _store(uid)
+    agent = store.get(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_id}")
+
+    result = mchat.handle_message(
+        agent,
+        body.message,
+        body.history,
+        user_id=uid,
+        pending_proposal=body.pending_proposal,
+        is_confirmation=body.is_confirmation,
+    )
+    return result
+
+
 class MineBody(BaseModel):
     """Mine a transcript for proposed projects and tasks."""
 

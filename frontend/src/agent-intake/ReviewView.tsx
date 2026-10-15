@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
 import ClaimCard, { Claim } from './ClaimCard'
 import ReviewChat from './ReviewChat'
+import MiningChat from './MiningChat'
 import {
   MINED_CLAIM_TYPES,
   MiningState,
@@ -74,7 +75,7 @@ export default function ReviewView() {
   const [claims, setClaims] = useState<Claim[]>([])
   const [claimsLoading, setClaimsLoading] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
-  const [reviewTab, setReviewTab] = useState<'chat' | 'cards'>('chat')
+  const [reviewTab, setReviewTab] = useState<'chat' | 'cards' | 'mining'>('chat')
 
   async function load() {
     setLoading(true)
@@ -300,32 +301,34 @@ export default function ReviewView() {
           {!isPending && ' · filed'}
         </p>
 
-        {/* Tab switcher: Chat (primary) vs Cards (overview) */}
+        {/* Two modes: strand training vs practical extraction */}
         <div className="flex gap-2 mb-4">
           <button
             onClick={() => setReviewTab('chat')}
-            className={`min-h-[44px] px-4 rounded-xl font-semibold text-[15px] ${
+            className={`flex-1 min-h-[44px] px-4 rounded-xl font-semibold text-[15px] ${
               reviewTab === 'chat'
                 ? 'bg-stone-700 text-stone-100'
                 : 'bg-stone-800/60 text-stone-400 border border-stone-700'
             }`}
           >
-            Chat with Zenaf
+            Work on strands
           </button>
           <button
-            onClick={() => setReviewTab('cards')}
-            className={`min-h-[44px] px-4 rounded-xl font-semibold text-[15px] ${
-              reviewTab === 'cards'
-                ? 'bg-stone-700 text-stone-100'
+            onClick={() => setReviewTab('mining')}
+            className={`flex-1 min-h-[44px] px-4 rounded-xl font-semibold text-[15px] ${
+              reviewTab === 'mining'
+                ? 'bg-amber-700 text-amber-50'
                 : 'bg-stone-800/60 text-stone-400 border border-stone-700'
             }`}
           >
-            Cards
+            Pull tasks & stuff
           </button>
         </div>
 
         {reviewTab === 'chat' ? (
           <ReviewChat agentId={a.id} agentName={a.name} />
+        ) : reviewTab === 'mining' ? (
+          <MiningChat agentId={a.id} agentName={a.name} />
         ) : (
           <>
             <h3 className="text-stone-200 font-semibold text-[15px] mb-2">What's being assimilated</h3>

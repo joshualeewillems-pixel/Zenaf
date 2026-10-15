@@ -234,6 +234,26 @@ def _kind_inference(kind: str, kind_reasoning: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _trim_quote(text: str, limit: int = 400) -> str:
+    # Strip metadata header (Title/URL/Date lines) that the render job
+    # prepends — the evidence should be conversation content, not metadata.
+    lines = (text or "").split("\n")
+    # Skip leading Title:/URL:/Date: lines, CONVERSATION SUMMARY header,
+    # and blank lines within the header block.
+    i = 0
+    while i < len(lines):
+        s = lines[i].strip()
+        if s.startswith("Title:") or s.startswith("URL:") or s.startswith("Date:"):
+            i += 1
+            continue
+        if s.startswith("CONVERSATION SUMMARY"):
+            i += 1
+            continue
+        if not s and i < 5:
+            # Blank line within the header block
+            i += 1
+            continue
+        break
+    text = "\n".join(lines[i:]).strip()
     if len(text) <= limit:
         return text
     cut = text[:limit]

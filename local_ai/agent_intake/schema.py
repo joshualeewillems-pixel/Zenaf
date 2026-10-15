@@ -41,6 +41,30 @@ class StrandClaim:
 
 
 @dataclass
+class MomentClaim:
+    """One specific training moment identified by the LLM sorter.
+
+    A verbatim quote from the material, the strand it trains, and a
+    genuine one-sentence inference explaining what the passage reveals.
+    """
+
+    strand: str  # StrandKey from local_ai.strands
+    quote: str  # verbatim passage from the material (1-3 sentences)
+    inference: str  # what it reveals and why it matters for the strand
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"strand": self.strand, "quote": self.quote, "inference": self.inference}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "MomentClaim":
+        return cls(
+            strand=str(d.get("strand", "")),
+            quote=str(d.get("quote", "")),
+            inference=str(d.get("inference", "")),
+        )
+
+
+@dataclass
 class SortResult:
     """The sorter's verdict on where a connected agent belongs.
 
@@ -58,6 +82,7 @@ class SortResult:
     linked_projects: list[str] = field(default_factory=list)
     confidence: float = 0.0  # 0.0–1.0; low confidence triggers probing
     needs_probing: bool = False
+    moments: list[MomentClaim] = field(default_factory=list)  # LLM-identified training moments
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +94,7 @@ class SortResult:
             "linked_projects": list(self.linked_projects),
             "confidence": self.confidence,
             "needs_probing": self.needs_probing,
+            "moments": [m.to_dict() for m in self.moments],
         }
 
     @classmethod
@@ -82,6 +108,7 @@ class SortResult:
             linked_projects=list(d.get("linked_projects") or []),
             confidence=float(d.get("confidence", 0.0)),
             needs_probing=bool(d.get("needs_probing", False)),
+            moments=[MomentClaim.from_dict(m) for m in (d.get("moments") or [])],
         )
 
 

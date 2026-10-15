@@ -16,7 +16,7 @@ import re
 
 from local_ai.strands import STRANDS
 
-from .schema import SortResult, StrandClaim
+from .schema import MomentClaim, SortResult, StrandClaim
 
 # Sorter prompt budget: intake historically kept ~20 example turns, so the
 # LLM sorter reads at most this many. Moment-level review reads the full
@@ -42,6 +42,13 @@ Then classify the agent's kind:
 - "project": goal-directed work — "we're working on Y", named endeavors
 - "undecided": genuinely ambiguous
 
+Then identify specific TRAINING MOMENTS — individual passages that show the user's behavior in a way that would train a strand. For each moment:
+- Quote the specific passage (1-3 sentences, verbatim from the material)
+- Name which strand it trains (one of: word, number, image, sound, body, people, self)
+- Write a one-sentence inference explaining WHAT the passage reveals about the user and WHY it matters for that strand. Be specific and falsifiable — not "uses the word X" but "you do Y, which shows Z."
+
+Aim for 10-30 moments covering the distinct behaviors in the material. Skip generic filler. Each moment should be a genuine, reviewable training signal.
+
 Respond with ONLY valid JSON in this exact shape:
 {{
   "claims": [
@@ -49,7 +56,11 @@ Respond with ONLY valid JSON in this exact shape:
     ... (all seven strands)
   ],
   "kind": "<skill|talent|project|undecided>",
-  "kind_reasoning": "..."
+  "kind_reasoning": "...",
+  "moments": [
+    {{"strand": "<strand_key>", "quote": "...", "inference": "..."}},
+    ... (10-30 moments)
+  ]
 }}
 
 Strand keys must be exactly: word, number, image, sound, body, people, self."""
@@ -142,6 +153,24 @@ def sort_with_llm(
     top, second = claims[0].score, claims[1].score if len(claims) > 1 else 0.0
     confidence = round((top - second) / top, 3) if top > 0 else 0.0
 
+    # Parse LLM-identified training moments.
+    moments: list[MomentClaim] = []
+    for item in data.get("moments") or []:
+        key = str(item.get("strand", "")).strip().lower()
+        if key not in valid_keys:
+            continue
+        quote = str(item.get("quote", "")).strip()
+        inference = str(item.get("inference", "")).strip()
+        if not quote or not inference:
+            continue
+        moments.append(
+            MomentClaim(
+                strand=key,
+                quote=quote[:500],
+                inference=inference[:500],
+            )
+        )
+
     return SortResult(
         primary_strand=primary,
         claims=claims,
@@ -151,6 +180,7 @@ def sort_with_llm(
         linked_projects=[],
         confidence=confidence,
         needs_probing=confidence < 0.35,
+        moments=moments,
     )
 
 

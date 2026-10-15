@@ -399,24 +399,56 @@ def segment_moments(examples: list[str] | None) -> list[Moment]:
     return _merge_short_turns(moments)
 
 
+def _build_from_llm_moments(agent: ConnectedAgent) -> list[ReviewClaim]:
+    """Build ReviewClaims from LLM-identified moments.
+
+    The sorter (sorter_llm.py) asks the LLM to identify specific training
+    moments with genuine one-sentence inferences. This converts those
+    MomentClaims into ReviewClaims for the review UI.
+    """
+    from local_ai.strands import STRANDS
+
+    strand_names = {s.key: s.name for s in STRANDS}
+    claims: list[ReviewClaim] = []
+    for i, m in enumerate(agent.sort.moments):
+        name = strand_names.get(m.strand, m.strand)
+        claims.append(
+            ReviewClaim(
+                id=f"{agent.id}:strand:{m.strand}:llm:{i}",
+                claim_type="strand",
+                title=f"{name} strand",
+                evidence=_trim_quote(m.quote),
+                inference=m.inference,
+                detail="LLM-identified training moment",
+                question="Does that placement sound right? Want to say more about why?",
+                scope="moment",
+                turn_ref="",
+            )
+        )
+    return claims
+
+
 def build_strand_claims(agent: ConnectedAgent) -> list[ReviewClaim]:
     """Moment-level strand placement claims: one training moment -> one routing.
 
-    Every moment of the transcript is scored on every strand with the
-    sorter's marker machinery; every (moment, strand) at or above
-    _CLAIM_SCORE_THRESHOLD gets its own card — its own verbatim quote,
-    inference, and verdict. No whole-conversation blanket summaries, and no
-    dilution: one strong moment in a long conversation surfaces on its own.
+    Prefers LLM-identified moments from the sorter (genuine context-aware
+    inferences). Falls back to rule-based keyword matching when the sorter
+    didn't produce moments (offline mode or older agents).
 
-    Cap: _MAX_MOMENT_CARDS_PER_STRAND strongest moments per strand.
-    The top strand of a moment that also qualifies elsewhere gets a nested
-    alternative reading naming the runner-up strand — individually
-    respondable, so confirming the placement never approves the alternative.
+    Every moment gets its own card — its own verbatim quote, inference,
+    and verdict. No whole-conversation blanket summaries, and no dilution:
+    one strong moment in a long conversation surfaces on its own.
 
     Claim ids are namespaced by agent id: the review_claims table keys rows
     by claim_id alone, so un-namespaced ids (e.g. "strand:self:m3") would
     silently overwrite another agent's cards and verdicts.
     """
+    # Prefer LLM moments when available — they have genuine inferences,
+    # not keyword templates.
+    if agent.sort and getattr(agent.sort, 'moments', None):
+        return _build_from_llm_moments(agent)
+
+    # Fallback: rule-based keyword matching (offline or legacy).
     from .sorter import (
         _SCORE_SATURATION,
         _STRAND_RES,

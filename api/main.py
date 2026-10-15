@@ -206,6 +206,39 @@ def debug_signals_recent(key: str = "", limit: int = 20):
     except Exception as e:
         return {"error": str(e)}
 
+
+@app.post("/debug/signals-import")
+def debug_signals_import(body: dict):
+    """Temporary: bulk import training signals. Body: {key, signals: [{zone, summary, quote}]}"""
+    if body.get("key") != _DEBUG_KEY:
+        return {"error": "unauthorized"}
+    try:
+        from local_ai.presence_ingest.store import PresenceStore
+        from local_ai.presence_ingest.schema import TrainingSignal
+        import time as _time
+        
+        signals_in = body.get("signals", [])
+        created = []
+        store = PresenceStore()
+        for s in signals_in:
+            sig = TrainingSignal(
+                signal_id=f"retrofit-{s['zone']}-{int(_time.time() * 1000)}-{len(created)}",
+                ts_ms=int(_time.time() * 1000),
+                layer="behavior",
+                zone=s["zone"],
+                actor=body.get("actor", ""),
+                summary=s["summary"][:500],
+                payload_redacted=s.get("quote", "")[:1000],
+                valence="endorsed",
+                provenance={"source": "retrofit-manual", "approved_by": "joshua"},
+                session_id="retrofit-2026-10-15",
+            )
+            created.append(sig)
+        count = store.save_candidate_signals(created)
+        return {"imported": count, "ids": [s.signal_id for s in created]}
+    except Exception as e:
+        return {"error": str(e)}
+
 try:
     from api.routes.transcribe_routes import router as transcribe_router
     app.include_router(transcribe_router)

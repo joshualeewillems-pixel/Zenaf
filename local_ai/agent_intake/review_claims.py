@@ -246,15 +246,26 @@ def _trim_quote(text: str, limit: int = 400) -> str:
 def _atomic_strand_inference(strand_key: str, matched: list[str]) -> str:
     """One specific, falsifiable placement claim for a single passage.
 
-    Names the strand, the passage's own words, and the reason — so the user
-    can say "no, that's wrong" about something specific, not blanket-approve
-    a whole-conversation summary.
+    Explains what the passage does and why that belongs to the strand —
+    so the user can say "no, that's wrong" about something specific, not
+    blanket-approve a whole-conversation summary.
     """
     name = _STRAND_NAME.get(strand_key, strand_key)
     if not matched:
-        return f"This passage was routed to {name}."
-    words = ", ".join(f"'{w}'" for w in matched[:5])
-    return f"This passage routes to {name} because it uses {words}."
+        return f"Routed to {name}."
+    words = ", ".join(f"'{w}'" for w in matched[:3])
+    # Name the behavior the words indicate, not just the keywords.
+    behaviors = {
+        "word": f"you shape language with {words}",
+        "number": f"you quantify or structure with {words}",
+        "image": f"you think visually with {words}",
+        "sound": f"you attend to rhythm or tone with {words}",
+        "body": f"you make or act physically with {words}",
+        "people": f"you attend to others with {words}",
+        "self": f"you direct yourself with {words}",
+    }
+    behavior = behaviors.get(strand_key, f"you use {words}")
+    return f"Here {behavior} — that's {name}'s territory."
 
 
 # Max moment-level placement cards per strand — enough to cover a long

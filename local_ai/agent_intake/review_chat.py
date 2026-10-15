@@ -37,8 +37,9 @@ Your job:
 - BEFORE filing anything, be explicit and confident about what you're proposing.
   Present it naturally in conversation, then include a structured tag on its own line:
   [PROPOSAL strand=Mediator]Your specific synopsis of the training signal here[/PROPOSAL]
-  Then ask: "Does that sound right? Is there more to it? Any further differentiations before I file it?"
+  Then explain: "Type 'yes' in the amber box to file this, or keep chatting here to refine it."
   The strand must be one of: Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide.
+  Make sure the user understands: the amber box is for filing, normal chat is for discussion.
 - Your main goal is to be as correct as possible before making any changes.
   Don't rush to file — the conversation IS the value.
 - If the synopsis changes AT ALL after the user confirmed it (new detail, refined wording, added context), you MUST present the updated version and ask for confirmation again. Never file an updated version without explicit approval.
@@ -124,6 +125,18 @@ def handle_message(
         # Not a yes — clear the proposal and continue the conversation normally
         # (the user's message becomes the new conversation turn)
         pending_proposal = None
+    
+    # If there's a pending proposal but user replied in normal chat (not amber box),
+    # redirect "yes" responses to the amber box instead of treating as conversation.
+    if pending_proposal and not is_confirmation:
+        msg_lower = message.lower().strip()
+        if re.match(r'^\s*(yes|yeah|yep|y|sure|ok|okay|exactly|perfect|agreed|sounds good)\s*[.!]?\s*$', msg_lower):
+            return {
+                "reply": "To file that, type 'yes' in the amber box above — that's what actually saves it. Or keep chatting here if you want to refine it first.",
+                "signal_created": None,
+                "pending_proposal": pending_proposal,
+                "done": False,
+            }
     
     # Get the agent's moments (LLM-identified or rule-based fallback)
     moments = []

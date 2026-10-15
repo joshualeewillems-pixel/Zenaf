@@ -255,7 +255,7 @@ export default function ClaimCard({ agentId, claim, alternatives, onResolved }: 
   const scopeLabel = SCOPE_LABEL[claim.scope] || SCOPE_LABEL.moment
 
   return (
-    <div className="rounded-2xl border border-stone-700 bg-stone-800/60 mb-3 overflow-hidden" style={{backgroundColor: '#7f1d1d'}} data-debug-claim-id={claim.id}>
+    <div className="rounded-2xl border border-stone-700 bg-stone-800/60 mb-3 overflow-hidden">
       <button
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}

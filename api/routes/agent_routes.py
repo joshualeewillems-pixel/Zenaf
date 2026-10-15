@@ -701,7 +701,16 @@ def list_claims(agent_id: str, current_user: dict = Depends(get_current_user)):
                 store.save_claims(agent.id, claims)
         except Exception:
             pass
-    if not claims:
+    # Rebuild if cached claims use the old lazy inference wording.
+    # The new wording explains the behavior, not just keywords.
+    needs_rebuild = False
+    if claims:
+        for c in claims:
+            inf = getattr(c, 'inference', '') or ''
+            if inf.startswith('This passage routes to') or inf.startswith('This passage was routed to'):
+                needs_rebuild = True
+                break
+    if not claims or needs_rebuild:
         claims = review_claims.build_strand_claims(agent)
         kind_claim = review_claims.build_kind_claim(agent)
         if kind_claim:

@@ -305,13 +305,14 @@ export default function ReviewView() {
           <p className="text-stone-500 text-sm mb-4">No strand placements yet.</p>
         )}
         {placementGroups.map((g) => (
-          <ClaimCard
-            key={g.insight.id}
-            agentId={a.id}
-            claim={g.insight}
-            alternatives={g.alternatives}
-            onResolved={onClaimResolved}
-          />
+          <div key={g.insight.id}>
+            <ClaimCard
+              agentId={a.id}
+              claim={g.insight}
+              alternatives={g.alternatives}
+              onResolved={onClaimResolved}
+            />
+          </div>
         ))}
         {kindClaim && (
           <ClaimCard key={kindClaim.id} agentId={a.id} claim={kindClaim} onResolved={onClaimResolved} />

@@ -80,10 +80,19 @@ export default function ReviewChat({ agentId, agentName }: Props) {
   const send = async () => {
     const text = input.trim()
     if (!text || loading) return
+    await doSend(text)
+    setInput('')
+  }
 
+  const fileThis = async () => {
+    // User tapped "File this" — trigger proposal formulation from current conversation
+    if (loading || pendingProposal) return
+    await doSend("add this")
+  }
+
+  const doSend = async (text: string) => {
     const history = messages.map(m => ({ role: m.role, content: m.content }))
     setMessages(prev => [...prev, { role: 'user', content: text }])
-    setInput('')
     setLoading(true)
 
     try {
@@ -350,6 +359,14 @@ export default function ReviewChat({ agentId, agentName }: Props) {
           className="flex-1 min-h-[44px] rounded-xl bg-stone-800 border border-stone-700 text-stone-200 px-4 text-[15px] placeholder:text-stone-500 focus:outline-none focus:border-stone-500"
           disabled={loading}
         />
+        <button
+          onClick={fileThis}
+          disabled={loading || !!pendingProposal}
+          title="File what we've been discussing"
+          className="min-h-[44px] px-4 rounded-xl bg-stone-800 border border-amber-500/40 text-amber-400 font-semibold text-[14px] disabled:opacity-40 hover:bg-stone-700 whitespace-nowrap"
+        >
+          File this
+        </button>
         <button
           onClick={send}
           disabled={loading || !input.trim()}

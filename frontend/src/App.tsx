@@ -114,6 +114,7 @@ import { enrichScopedDigressionLabel } from './council/enrichScopedDigressionLab
 import { postCouncilInsightRecognition } from './vision-execution/recognitionDecisions'
 import { BrandStructuredProfilePanel, CreateCoreProfileForm } from './vision-execution/coreProfilePanels'
 import { AspirationsFoundationPanel } from './foundation/AspirationsFoundationPanel'
+import VoiceConsole from './foundation/VoiceConsole'
 import {
   VisionExecutionGraphDataProvider,
   VisionExecutionProfileGraphDataProvider,
@@ -4982,6 +4983,8 @@ function App() {
   const [perspectivesLinksLoading, setPerspectivesLinksLoading] = useState(false)
   const [perspectivesPageError, setPerspectivesPageError] = useState<string | null>(null)
   const [foundationSelectedActorId, setFoundationSelectedActorId] = useState<string | null>('storyteller')
+  /** Foundation aside sub-view: the council voice console vs. actor detail. */
+  const [foundationPanel, setFoundationPanel] = useState<'voices' | 'detail'>('voices')
   const [foundationActorUi, setFoundationActorUi] = useState<'browse' | 'create_actor' | 'edit_actor'>('browse')
   const [foundationEditAgent, setFoundationEditAgent] = useState<PerspectiveAgent | null>(null)
   /** Foundation "Train AI" enters shared council shell with a Zenaf preset. */
@@ -5950,10 +5953,36 @@ function App() {
             </div>
             <aside className="w-full lg:w-[380px] lg:shrink-0 border-t lg:border-t-0 lg:border-l border-[color:var(--color-border)] bg-surface/40 lg:min-h-0 lg:max-h-none flex flex-col">
               <div className="shrink-0 p-4 border-b border-stone-700">
-                <h2 className="text-base font-semibold text-stone-100">Foundation</h2>
-                <p className="text-stone-400 text-xs mt-1">Detail, training, and actor editor.</p>
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-stone-100">Foundation</h2>
+                  <div className="flex gap-1 bg-stone-900/60 rounded-full p-1">
+                    {(['voices', 'detail'] as const).map((p) => (
+                      <button
+                        key={p}
+                        onClick={() => setFoundationPanel(p)}
+                        aria-pressed={foundationPanel === p}
+                        className={`min-h-[36px] px-3 rounded-full text-xs font-medium ${
+                          foundationPanel === p
+                            ? 'bg-stone-700 text-stone-100'
+                            : 'text-stone-500'
+                        }`}
+                      >
+                        {p === 'voices' ? 'Voices' : 'Detail'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-stone-400 text-xs mt-1">
+                  {foundationPanel === 'voices'
+                    ? 'Talk to your council voices directly.'
+                    : 'Detail, training, and actor editor.'}
+                </p>
               </div>
               <div className="lg:flex-1 lg:basis-0 lg:min-h-0 lg:overflow-y-auto overflow-x-hidden p-3 space-y-4 lg:overscroll-contain">
+                {foundationPanel === 'voices' ? (
+                  <VoiceConsole />
+                ) : (
+                <>
                 {foundationActorUi === 'create_actor' ? (
                   <AgentCreatorForm
                     onSubmit={(agent) => {
@@ -6065,6 +6094,8 @@ function App() {
                   />
                 ) : (
                   <p className="text-stone-500 text-sm">Select an actor from Foundation.</p>
+                )}
+                </>
                 )}
               </div>
             </aside>

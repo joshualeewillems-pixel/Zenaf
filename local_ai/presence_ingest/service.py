@@ -110,6 +110,7 @@ def run_distill(
     session_id: str,
     *,
     complete_fn: CompleteFn | None = None,
+    model_id: str | None = None,
     zone_hint: str = "general",
     actor: str = "user",
     store: PresenceStore | None = None,
@@ -120,6 +121,12 @@ def run_distill(
     of candidates. Raises PresenceIngestError if the session is unknown;
     ScopeDenied if the scope is not granted; DistillError (from distill) if
     the LLM is unreachable.
+
+    `model_id` names the LLM behind an injected complete_fn, in the form
+    "{model} via {provider}"; recorded in each signal's provenance as
+    `distillation_model`. Omitted when unknown. When neither complete_fn
+    nor model_id is given, the default Ollama path resolves its model from
+    local_ai.config.
     """
     from local_ai.identity.scopes import require_scope
 
@@ -134,6 +141,7 @@ def run_distill(
     candidates = distill_events(
         events,
         complete_fn=complete_fn,
+        model_id=model_id,
         zone_hint=zone_hint,
         actor=actor,
         session_id=session_id,

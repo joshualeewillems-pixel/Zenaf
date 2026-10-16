@@ -3125,6 +3125,19 @@ def _build_council_persona_block(defn: dict, *, council_clarify_only: bool = Fal
     elif isinstance(taste_compass, str):
         tc_str = taste_compass.strip()
 
+    # Philosophical orientation folds into taste: for seats with a tasteCompass
+    # (Seer/Songwriter/Storyteller/Mediator), the user's mission/worldview/values
+    # shape what the seat treats as meaningful. Guide/Patternist/Maker have no
+    # taste channel and are untouched.
+    phil_orientation = ""
+    if taste_compass:
+        try:
+            from local_ai.context.operator_context import load_philosophical_orientation
+
+            phil_orientation = (load_philosophical_orientation() or "").strip()
+        except Exception:
+            phil_orientation = ""
+
     constraints = defn.get("constraints")
     _seat_agent = str(defn.get("perspective_agent_id") or defn.get("id") or "").strip().lower()
     clarify_maker = bool(council_clarify_only and _seat_agent == "maker")
@@ -3212,6 +3225,12 @@ def _build_council_persona_block(defn: dict, *, council_clarify_only: bool = Fal
         lines.append(
             "Taste compass (user-shaped taste layer — orients this seat's sense of what is good; "
             f"the craft core above stays universal): {tc_str}"
+        )
+    if phil_orientation:
+        lines.append(
+            "Philosophical orientation (the user's mission, worldview, and values — "
+            "part of the taste layer; shapes what this seat treats as meaningful): "
+            f"{phil_orientation}"
         )
     if c_str:
         lines.append(f"Constraints: {c_str}")

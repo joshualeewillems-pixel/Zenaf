@@ -4,8 +4,10 @@ Optional operator brief for council alignment (file-based, not workspace transla
 - Operator priority: short, concrete preference block for fast council (what we optimize for,
   tradeoffs, constraints). Used in council packet only; label "Operator priorities:".
   Source: ``operator_brand_brief.md`` next to this module unless disabled (see env below).
-- Philosophical orientation: mission/worldview/values; not injected in default fast council.
-  Reserved for synthesis, governance, or general assistant when explicitly needed.
+- Philosophical orientation: mission/worldview/values. Folded into the taste layer:
+  injected alongside tasteCompass for the four taste-relative council seats
+  (Seer, Songwriter, Storyteller, Mediator). Guide/Patternist/Maker have no taste
+  channel and never receive it.
 
 Environment:
 
@@ -92,8 +94,10 @@ def load_operator_priority() -> str:
 
 def load_philosophical_orientation() -> str:
     """
-    Mission / worldview / values block. Not used in default fast council or synthesis.
-    Reserved for governance, synthesis, or general assistant when explicitly needed.
+    Mission / worldview / values block. Folded into the taste layer: injected alongside
+    tasteCompass for the four taste-relative council seats (Seer, Songwriter, Storyteller,
+    Mediator) via the persona prompt builder in zenaf_tools.py. Guide/Patternist/Maker
+    have no taste channel and never receive it.
     Sections tried: ## Philosophical orientation, ## Mission & worldview, ## Distilled.
     Cached. Returns empty string if disabled via env, file missing, or no section found.
     """

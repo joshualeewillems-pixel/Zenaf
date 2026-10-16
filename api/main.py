@@ -133,14 +133,6 @@ except Exception as e:
     print(f"Identity routes not loaded: {e}")
     _router_load_errors.append(f"identity: {e}")
 
-# Intake: clinic email/fax → classification, PHI redaction → queue.
-try:
-    from api.routes.intake_routes import router as intake_router
-    app.include_router(intake_router)
-except Exception as e:
-    print(f"Intake routes not loaded: {e}")
-    _router_load_errors.append(f"intake: {e}")
-
 # Transcript sorter: paste transcript → topics / candidate tasks/decisions (no storage).
 try:
     from api.routes.transcript_routes import router as transcript_router
@@ -198,7 +190,6 @@ EXPECTED_ROUTER_PREFIXES = (
     "/agents",
     "/personality",
     "/identity",
-    "/intake",
     "/transcripts",
     "/auth",
     "/settings",
@@ -347,18 +338,13 @@ def _on_startup() -> None:
             print(f"  ok learning persist: {st}")
     except Exception as e:
         print(f"  learning persistence init skipped or failed: {e}")
-    # Load intake queue and judgment from persistent mirror so restarts preserve state
+    # Log the vision-execution DB path at startup for diagnostics.
     try:
-        from local_ai.intake import mirror
         from local_ai.vision_execution.storage import resolved_vision_execution_db_path
 
         print(f"  sqlite vision_execution: {resolved_vision_execution_db_path()}")
-        print(f"  sqlite intake_mirror: {mirror.MIRROR_DB_PATH.resolve()}")
-        if mirror.load_into_memory():
-            print("  ok intake: loaded queue and judgments from mirror")
-        # else: no mirror DB yet (first run or no poll yet)
     except Exception as e:
-        print(f"  intake mirror load skipped or failed: {e}")
+        print(f"  vision_execution db path check skipped or failed: {e}")
 
 
 @app.exception_handler(Exception)
@@ -2274,7 +2260,6 @@ _SPA_INDEX = _STATIC_DIR / "index.html"
 _SPA_EXCLUDED_PREFIXES = (
     "/run",
     "/auth",
-    "/intake",
     "/transcripts",
     "/settings",
     "/studio",

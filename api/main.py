@@ -99,6 +99,116 @@ try:
     app.include_router(transcribe_router)
 except Exception as e:
     print(f"Transcribe routes not loaded: {e}")
+    _router_load_errors.append(f"transcribe: {e}")
+
+try:
+    from api.routes.journal_routes import router as journal_router
+    app.include_router(journal_router)
+except Exception as e:
+    print(f"Journal routes not loaded: {e}")
+    _router_load_errors.append(f"journal: {e}")
+
+try:
+    from api.routes.council_twigs_routes import router as council_twigs_router
+    app.include_router(council_twigs_router)
+except Exception as e:
+    print(f"Council twigs routes not loaded: {e}")
+    _router_load_errors.append(f"council_twigs: {e}")
+
+
+# --- Router registration check (owed follow-up to PR #34) ---
+# A broken import inside any router module used to be swallowed by the
+# try/except blocks above, silently killing the whole router (the dangling
+# soil_api import took down vision-execution with only a printed line).
+# This check screams instead: every expected router prefix must be mounted.
+
+EXPECTED_ROUTER_PREFIXES = (
+    "/vision-execution",
+    "/ingest",
+    "/agents",
+    "/personality",
+    "/identity",
+    "/transcripts",
+    "/auth",
+    "/settings",
+    "/studio",
+    "/api",  # transcribe_routes mounts at /api
+)
+
+
+def _iter_mounted_paths(routes, _base_prefix=""):
+    """
+    Yield effective route paths, descending into Starlette's nested
+    ``_IncludedRouter`` entries (modern FastAPI/Starlette no longer flattens
+    included routers into ``app.routes``).
+    """
+    for route in routes:
+        path = getattr(route, "path", None)
+        if path:
+            yield _base_prefix + path
+            continue
+        original = getattr(route, "original_router", None)
+        if original is None:
+            continue
+        include_prefix = getattr(getattr(route, "include_context", None), "prefix", "") or ""
+        yield from _iter_mounted_paths(
+            getattr(original, "routes", []), _base_prefix + include_prefix
+        )
+
+
+def _nested_router_prefixes(routes):
+    """
+    Prefixes evidenced by nested router objects themselves (their own
+    ``prefix`` or the include-time ``prefix``), independent of how inner
+    paths are baked. Belt-and-suspenders alongside path matching.
+    """
+    prefixes = set()
+    for route in routes:
+        original = getattr(route, "original_router", None)
+        if original is None:
+            continue
+        router_prefix = getattr(original, "prefix", "") or ""
+        if router_prefix:
+            prefixes.add(router_prefix)
+        include_prefix = getattr(getattr(route, "include_context", None), "prefix", "") or ""
+        if include_prefix:
+            prefixes.add(include_prefix)
+    return prefixes
+
+
+def assert_routers_registered(fastapi_app=None) -> None:
+    """
+    Raise RuntimeError if any expected router prefix is not mounted.
+
+    Pass an explicit app to check a synthetic/test app; defaults to this
+    module's ``app``. Fails LOUDLY on purpose — a router that failed to
+    import must never again pass silently.
+    """
+    target = fastapi_app if fastapi_app is not None else app
+    mounted_paths = list(_iter_mounted_paths(target.routes))
+    nested_prefixes = _nested_router_prefixes(target.routes)
+    missing = [
+        prefix
+        for prefix in EXPECTED_ROUTER_PREFIXES
+        if prefix not in nested_prefixes
+        and not any(p == prefix or p.startswith(prefix + "/") for p in mounted_paths)
+    ]
+    if missing:
+        details = (
+            "; ".join(_router_load_errors) if _router_load_errors else "no import errors recorded"
+        )
+        raise RuntimeError(
+            "Zenaf API startup check FAILED: expected router(s) not mounted: "
+            + ", ".join(missing)
+            + f". Router load errors: {details}. "
+            "A router module almost certainly failed to import (see the 'not loaded' "
+            "lines above); fix the import instead of silencing this check."
+        )
+
+
+# The check itself runs in _on_startup below (the server refuses to start
+# with a crippled router set), and assert_routers_registered() is directly
+# callable for tests without booting the server.
 
 
 # --- Startup dependency check ---

@@ -5980,7 +5980,18 @@ function App() {
               </div>
               <div className="lg:flex-1 lg:basis-0 lg:min-h-0 lg:overflow-y-auto overflow-x-hidden p-3 space-y-4 lg:overscroll-contain">
                 {foundationPanel === 'voices' ? (
-                  <VoiceConsole />
+                  <>
+                    <VoiceConsole />
+                    <div className="rounded-xl border border-stone-700 bg-stone-900/40 p-3">
+                      <div className="text-xs font-semibold text-stone-400 uppercase tracking-wide mb-1">
+                        Review what the voices have learned
+                      </div>
+                      <p className="text-xs text-stone-500 mb-3">
+                        What your conversations have established — edit anything the voices got wrong.
+                      </p>
+                      <AspirationsFoundationPanel apiGet={veApiGet} apiPatch={veApiPatch} apiPost={veApiPost} />
+                    </div>
+                  </>
                 ) : (
                 <>
                 {foundationActorUi === 'create_actor' ? (

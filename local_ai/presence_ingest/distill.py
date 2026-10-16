@@ -74,6 +74,19 @@ def _default_complete(prompt: str, *, timeout: float = 180.0) -> str:
     return text
 
 
+def _resolve_default_model_id() -> str | None:
+    """Model id for the built-in Ollama completion path, resolved lazily
+    from config like _default_complete does. Never raises: on any config
+    failure the provenance key is simply omitted."""
+    try:
+        from local_ai.config import OLLAMA_MODEL
+
+        model = str(OLLAMA_MODEL or "").strip()
+        return f"{model} via ollama" if model else None
+    except Exception:
+        return None
+
+
 def _batch_key(event: PresenceEvent) -> str:
     ctx = event.context or {}
     return str(
@@ -262,6 +275,7 @@ def distill_events(
     actor: str = "user",
     session_id: str = "",
     claims: list[ContributionClaim] | None = None,
+    model_id: str | None = None,
 ) -> list[TrainingSignal]:
     """Distill events into candidate TrainingSignals (status=pending).
 
@@ -269,12 +283,23 @@ def distill_events(
     extraction prompt scoped to the user's contribution, and the resulting
     signals are tagged with the claim id and role.
 
+    `model_id` names the LLM that ran this distillation, in the form
+    "{model} via {provider}" (e.g. "claude-opus-4-5 via anthropic"). It is
+    recorded in each signal's provenance as `distillation_model` — core
+    provenance for the future rental marketplace ("trained on X, running
+    on Y"). When omitted and the default (Ollama) completion path is used,
+    the model is resolved from local_ai.config. When an injected
+    complete_fn is used without a model_id, the key is left out rather
+    than guessed.
+
     Raises DistillError if the LLM is unreachable. Never fabricates signals:
     a batch whose extractions fail to parse simply yields no candidates.
     """
     if not events:
         return []
     complete = complete_fn or _default_complete
+    if model_id is None and complete_fn is None:
+        model_id = _resolve_default_model_id()
     now_ms = int(time.time() * 1000)
     candidates: list[TrainingSignal] = []
     for batch in _group_batches(events):
@@ -294,6 +319,8 @@ def distill_events(
             "distilled_at_ms": now_ms,
             "zone_hint": zone_hint,
         }
+        if model_id is not None:
+            provenance["distillation_model"] = model_id
         if batch_claims:
             # First match wins for tagging; the prompt lists all matches.
             primary = batch_claims[0]

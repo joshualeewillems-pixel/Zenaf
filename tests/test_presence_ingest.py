@@ -14,7 +14,11 @@ from local_ai.presence_ingest.adapters.chatgpt import ChatGPTAdapter
 from local_ai.presence_ingest.adapters.claude import ClaudeAdapter
 from local_ai.presence_ingest.adapters.registry import detect_source, get_adapter
 from local_ai.presence_ingest.adapters.x_archive import XArchiveAdapter
-from local_ai.presence_ingest.distill import DistillError, distill_events
+from local_ai.presence_ingest.distill import (
+    DistillError,
+    _resolve_default_model_id,
+    distill_events,
+)
 from local_ai.presence_ingest.schema import PresenceEvent
 from local_ai.presence_ingest.service import (
     delete_session,
@@ -317,6 +321,53 @@ def test_distill_garbage_llm_output_yields_nothing():
         )
     ]
     assert distill_events(events, complete_fn=lambda p: "not json at all") == []
+
+
+def _one_event():
+    return [
+        PresenceEvent(
+            event_id="e1",
+            source="chatgpt",
+            actor="user",
+            kind="message",
+            text="I decided to take the startup offer.",
+        )
+    ]
+
+
+def test_distill_model_id_recorded_in_provenance():
+    signals = distill_events(
+        _one_event(),
+        complete_fn=_stub_complete_factory(),
+        session_id="imp-test",
+        model_id="claude-opus-4-5 via anthropic",
+    )
+    assert signals
+    for s in signals:
+        assert s.provenance["distillation_model"] == "claude-opus-4-5 via anthropic"
+
+
+def test_distill_model_id_omitted_when_unknown():
+    # An injected complete_fn without a model_id leaves the key out rather
+    # than guessing.
+    signals = distill_events(
+        _one_event(),
+        complete_fn=_stub_complete_factory(),
+        session_id="imp-test",
+    )
+    assert signals
+    for s in signals:
+        assert "distillation_model" not in s.provenance
+
+
+def test_resolve_default_model_id_from_config():
+    # The built-in Ollama path resolves its model authoritatively from
+    # config — this is what lands in provenance when no complete_fn or
+    # model_id is supplied.
+    from local_ai.config import OLLAMA_MODEL
+
+    assert _resolve_default_model_id() == f"{OLLAMA_MODEL} via ollama"
+
 
 
 # ---------------------------------------------------------------- store

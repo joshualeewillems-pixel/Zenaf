@@ -194,6 +194,14 @@ except Exception as e:
     print(f"Council twigs routes not loaded: {e}")
     _router_load_errors.append(f"council_twigs: {e}")
 
+# Council archetype naming unlocks — depth milestones for renaming seats.
+try:
+    from api.routes.council_archetype_routes import router as council_archetype_router
+    app.include_router(council_archetype_router)
+except Exception as e:
+    print(f"Council archetype routes not loaded: {e}")
+    _router_load_errors.append(f"council-archetypes: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

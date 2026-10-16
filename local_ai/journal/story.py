@@ -128,15 +128,22 @@ def select_cast(
 def _build_story_prompt(
     entry_text: str,
     cast: list[tuple[str, float]],
+    user_id: str | None = None,
 ) -> str:
-    """Build the Meta LLM prompt that renders the entry as a scene."""
+    """Build the Meta LLM prompt that renders the entry as a scene.
+
+    Character names honor user-renamed seats (naming unlock milestones)
+    when user_id is given; stock names otherwise.
+    """
+    from local_ai.council.naming import get_display_name
+
     characters: list[str] = []
     for archetype_id, similarity in cast:
         arch = get_archetype(archetype_id)
         if arch is None:
             continue
         characters.append(
-            f"**{arch.display_name}**: {arch.prompt_frame}"
+            f"**{get_display_name(user_id, archetype_id)}**: {arch.prompt_frame}"
         )
     cast_block = "\n\n".join(characters)
 
@@ -161,15 +168,17 @@ def render_archetype_story(
     api_key: str | None = None,
     model: str | None = None,
     timeout: int = 120,
+    user_id: str | None = None,
 ) -> str:
     """Render a journal entry as an archetype story via the Meta LLM.
 
     `cast` is a list of (archetype_id, similarity) from `select_cast`.
+    `user_id` lets character names honor user-renamed seats.
     Raises RuntimeError if the Meta API key is not configured or the call fails.
     """
     if not cast:
         raise ValueError("Cannot render a story with an empty cast.")
     from local_ai.providers import meta as _meta
 
-    prompt = _build_story_prompt(entry_text, cast)
+    prompt = _build_story_prompt(entry_text, cast, user_id=user_id)
     return _meta.generate(api_key, prompt, model=model, timeout=timeout).strip()

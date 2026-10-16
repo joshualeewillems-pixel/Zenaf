@@ -39,6 +39,28 @@ WEIGHT_FLOOR = 0.05
 #: Epsilon for weight-sum validation.
 _SUM_EPSILON = 1e-6
 
+#: Canonical voice color per archetype id — used everywhere the voice appears:
+#: landing demo chips, Foundation voice console, chat accents, Living Tree
+#: branches, journal story cast. Distinct from strand colors (strands.py).
+#: The user-weave accent marks visitor/user words woven into a voice's reply.
+VOICE_COLORS: dict[str, str] = {
+    "mentor": "#c9a86a",      # deep gold — the long view
+    "champion": "#c96a5a",    # ember red — courage, action
+    "guardian": "#7ba889",    # warm green — care, protection
+    "maverick": "#9a7bc9",    # electric violet — pattern-breaking
+    "ambassador": "#7aa3b8",  # sky blue — the public face
+    "conductor": "#8a8a93",   # neutral slate — synthesis
+    "skeptic": "#6b6b76",     # ash gray — the uncomfortable question
+}
+
+#: Accent for user/visitor words woven into a voice's reply ([[u]] spans).
+USER_WEAVE_COLOR = "#e8a33d"  # bright amber — "your words"
+
+
+def voice_color(archetype_id: str) -> str:
+    """Canonical hex color for an archetype voice. Falls back to slate."""
+    return VOICE_COLORS.get((archetype_id or "").strip().lower(), "#8a8a93")
+
 
 @dataclass
 class CouncilArchetype:

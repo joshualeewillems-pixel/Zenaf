@@ -51,6 +51,10 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "https://chatgpt.com",
         "https://claude.ai",
+        # Landing-page demo: the anonymous council demo on zenaf.ai calls
+        # /demo/* (no credentials; rate-limited anonymous endpoints only).
+        "https://zenaf.ai",
+        "https://www.zenaf.ai",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -208,6 +212,14 @@ try:
 except Exception as e:
     print(f"Council routes not loaded: {e}")
     _router_load_errors.append(f"council: {e}")
+
+# Anonymous landing-page demo — the 7 base voices, no auth.
+try:
+    from api.routes.demo_routes import router as demo_router
+    app.include_router(demo_router)
+except Exception as e:
+    print(f"Demo routes not loaded: {e}")
+    _router_load_errors.append(f"demo: {e}")
 
 
 # --- Router registration check (owed follow-up to PR #34) ---

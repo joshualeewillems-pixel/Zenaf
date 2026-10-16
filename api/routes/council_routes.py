@@ -51,6 +51,15 @@ class ArchetypeStatus(BaseModel):
     prompt_frame: str
     twigs: list[TwigStatus] = Field(default_factory=list)
     is_skeptic: bool = False
+    # Seat avatar: the user's custom avatar URL, or None for the ???
+    # placeholder silhouette. Unlocks at 10 depth points (naming at 25).
+    # The comic-strip renderer uses this same field: avatar_url present ->
+    # draw the character with it; None -> amorphous cloud placeholder.
+    # (The ??? silhouette in the UI and the cloud in comics are the same
+    # concept at different fidelities: an undiscovered face.)
+    avatar_url: str | None = None
+    avatar_unlocked: bool = False
+    avatar_signals_to_unlock: int = 0
 
 
 class ArchetypeStatusResponse(BaseModel):
@@ -131,6 +140,14 @@ def get_archetype_status(current_user: dict = Depends(get_current_user)):
     skeptic_weights = compute_skeptic_weights(user_id)
     twigs_by_parent = _twigs_by_parent(user_id)
 
+    # Avatar unlock state comes from the naming-milestone depth model
+    # (avatar at 10 depth points, naming at 25). Computed once here so the
+    # tree panel and the naming status endpoint agree.
+    from local_ai.council.naming import rename_status as _naming_status
+
+    naming = _naming_status(user_id)
+    naming_by_id = {a["id"]: a for a in naming.get("archetypes", [])}
+
     out: list[ArchetypeStatus] = []
     for arch in STOCK_ARCHETYPES:
         is_skeptic = arch.id == "skeptic"
@@ -157,6 +174,13 @@ def get_archetype_status(current_user: dict = Depends(get_current_user)):
                 prompt_frame=arch.prompt_frame,
                 twigs=twigs_by_parent.get(arch.id, []),
                 is_skeptic=is_skeptic,
+                avatar_url=(naming_by_id.get(arch.id) or {}).get("avatar_url"),
+                avatar_unlocked=bool(
+                    (naming_by_id.get(arch.id) or {}).get("avatar_unlocked", False)
+                ),
+                avatar_signals_to_unlock=int(
+                    (naming_by_id.get(arch.id) or {}).get("avatar_signals_to_unlock", 0)
+                ),
             )
         )
     return ArchetypeStatusResponse(

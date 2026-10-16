@@ -563,6 +563,78 @@ class PersonalityStore:
             self._conn.commit()
         return v
 
+    # -- council archetype avatars (seat avatar unlocks) -------------------
+
+    _ARCHETYPE_AVATAR_PREFIX = "archetype_avatar_"
+    _ARCHETYPE_AVATAR_MAX_LEN = 2048
+
+    def _archetype_avatar_key(self, archetype_id: str) -> str:
+        from local_ai.council.archetypes import get_archetype
+
+        arch = get_archetype(archetype_id)
+        if arch is None:
+            raise ValueError(f"unknown archetype {archetype_id!r}")
+        return self._ARCHETYPE_AVATAR_PREFIX + arch.id
+
+    def get_archetype_avatar(self, archetype_id: str) -> str | None:
+        """The user's custom avatar URL for a council archetype seat.
+
+        Returns None when the seat still uses the default ??? placeholder.
+        Raises ValueError for unknown archetype ids.
+        """
+        key = self._archetype_avatar_key(archetype_id)
+        owner = self._weight_owner()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM personality_settings WHERE user_id = ? AND key = ?",
+                (owner, key),
+            ).fetchone()
+        v = (row["value"] if row else "").strip()
+        return v or None
+
+    def set_archetype_avatar(self, archetype_id: str, avatar_url: str) -> str:
+        """Set a custom avatar URL for a council archetype seat.
+
+        Validates the archetype id and the URL (non-empty, max 2048 chars,
+        must look like a URL or absolute path). Returns the stored URL.
+        Unlock gating happens at the API layer.
+        """
+        key = self._archetype_avatar_key(archetype_id)
+        v = (avatar_url or "").strip()
+        if not v:
+            raise ValueError("avatar URL is empty")
+        if len(v) > self._ARCHETYPE_AVATAR_MAX_LEN:
+            raise ValueError(
+                f"avatar URL is {len(v)} chars (max {self._ARCHETYPE_AVATAR_MAX_LEN})"
+            )
+        if not (
+            v.startswith(("http://", "https://", "data:image/", "/"))
+            or v.startswith("blob:")
+        ):
+            raise ValueError("avatar URL must be an http(s), data:, blob:, or /path URL")
+        owner = self._weight_owner()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO personality_settings (user_id, key, value, updated_at)"
+                " VALUES (?, ?, ?, ?)"
+                " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value,"
+                " updated_at = excluded.updated_at",
+                (owner, key, v, _iso_now()),
+            )
+            self._conn.commit()
+        return v
+
+    def clear_archetype_avatar(self, archetype_id: str) -> None:
+        """Remove a custom avatar, restoring the ??? placeholder."""
+        key = self._archetype_avatar_key(archetype_id)
+        owner = self._weight_owner()
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM personality_settings WHERE user_id = ? AND key = ?",
+                (owner, key),
+            )
+            self._conn.commit()
+
     # -- profile snapshots (Phase 5: temporal archives / eras) --------------
     # Insert-only: there is deliberately NO update or delete method for
     # snapshots. A snapshot is a named, immutable archive of one published

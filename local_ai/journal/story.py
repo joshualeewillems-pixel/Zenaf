@@ -6,6 +6,17 @@ and render the entry as a short metaphorical story — a scene where the active
 archetypes appear as characters in dialogue.
 
 Like Inside Out meets journaling: your inner council dramatized.
+
+Comic-strip contract (for the future renderer):
+    Each cast member carries an `avatar_url` (None when the seat's avatar is
+    still locked — the ??? state). The comic renderer MUST honor this field:
+      - avatar_url present -> draw the character using that image.
+      - avatar_url None    -> draw an amorphous cloud shape: undefined,
+        mysterious, the visual equivalent of the ??? silhouette placeholder
+        in the UI. The ??? silhouette (UI) and the amorphous cloud (comics)
+        are the same concept at different fidelities — an undiscovered face.
+    Never invent a face for a locked seat. The cloud IS the character until
+    the user unlocks the avatar milestone (10 depth points per seat).
 """
 
 from __future__ import annotations
@@ -123,6 +134,36 @@ def select_cast(
     if not cast and ranked:
         cast = [ranked[0]]
     return cast
+
+
+def build_cast(
+    cast: list[tuple[str, float]],
+    user_id: str | None = None,
+) -> list[dict]:
+    """Enrich a cast with display names and avatar URLs for rendering.
+
+    Returns a list of dicts: {id, name, similarity, avatar_url}. The
+    avatar_url is the seat's unlocked custom avatar, or None when locked
+    (??? state). Comic-strip and future visual renderers MUST use this
+    field per the module docstring contract: avatar when present,
+    amorphous cloud when None. Never raises.
+    """
+    from local_ai.council.naming import get_avatar_url, get_display_name
+
+    out: list[dict] = []
+    for archetype_id, similarity in cast:
+        arch = get_archetype(archetype_id)
+        if arch is None:
+            continue
+        out.append(
+            {
+                "id": arch.id,
+                "name": get_display_name(user_id, archetype_id),
+                "similarity": round(similarity, 3),
+                "avatar_url": get_avatar_url(user_id, archetype_id),
+            }
+        )
+    return out
 
 
 def _build_story_prompt(

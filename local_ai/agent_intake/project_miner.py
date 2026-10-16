@@ -283,6 +283,24 @@ def _rule_based_mine(transcript: str) -> MiningResult:
     )
 
 
+def _infer_entity_strands(user_id: str, entity_type: str, entity_id: str, text: str) -> None:
+    """Light inference hook: suggest strand weights for a freshly mined entity.
+
+    Uses the rule-based strand scorer (no LLM call). Stored with
+    source="inferred" — the user confirms or corrects. Never raises:
+    inference must never break entity creation.
+    """
+    try:
+        from local_ai.entity_strands import set_entity_strands, suggest_weights
+        from local_ai.journal.story import analyze_entry_strands
+
+        weights = suggest_weights(analyze_entry_strands(text))
+        if weights:
+            set_entity_strands(user_id, entity_type, entity_id, weights, source="inferred")
+    except Exception:
+        pass
+
+
 def create_confirmed(
     result: MiningResult,
     user_id: str,
@@ -332,6 +350,10 @@ def create_confirmed(
         if pid:
             project_ids.append(pid)
             project_id_by_title[p.title] = pid
+            _infer_entity_strands(
+                user_id, "project", pid,
+                f"{p.title} {p.goal} {p.source_quote}",
+            )
         for t in p.tasks:
             if not _wanted(t.title):
                 continue
@@ -339,6 +361,10 @@ def create_confirmed(
             tid = _id(tc)
             if tid:
                 task_ids.append(tid)
+                _infer_entity_strands(
+                    user_id, "task", tid,
+                    f"{t.title} {t.detail} {t.source_quote}",
+                )
 
     # Ideas (captured, not actioned).
     for idea in result.ideas:
@@ -357,6 +383,10 @@ def create_confirmed(
         tid = _id(tc)
         if tid:
             task_ids.append(tid)
+            _infer_entity_strands(
+                user_id, "task", tid,
+                f"{t.title} {t.detail} {t.source_quote}",
+            )
 
     return {
         "initiative_ids": initiative_ids,

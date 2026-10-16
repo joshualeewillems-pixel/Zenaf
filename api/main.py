@@ -180,6 +180,13 @@ except Exception as e:
     print(f"Journal routes not loaded: {e}")
     _router_load_errors.append(f"journal: {e}")
 
+try:
+    from api.routes.entity_strand_routes import router as entity_strand_router
+    app.include_router(entity_strand_router)
+except Exception as e:
+    print(f"Entity strand routes not loaded: {e}")
+    _router_load_errors.append(f"entity_strands: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

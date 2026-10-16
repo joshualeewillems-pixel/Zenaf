@@ -3929,6 +3929,16 @@ def run_council(
         perspective_definitions = list(perspective_definitions)[:COUNCIL_MAX_SEATS]
     if included_roles:
         included_roles = list(included_roles)[:COUNCIL_MAX_SEATS]
+    # Sub-personality twigs: nudge parent archetype seats when the run's topic
+    # matches an approved twig's domain. No-op unless seats name archetypes.
+    try:
+        from local_ai.council.twigs import apply_twig_overrides
+
+        perspective_definitions = apply_twig_overrides(
+            perspective_definitions, council_user_id, question, context
+        )
+    except Exception:
+        pass
     try:
         from local_ai.llm.resolver import get_council_provider_for_principal
     except Exception as e:
@@ -4677,6 +4687,17 @@ def run_council_stream(
         perspective_definitions = list(perspective_definitions)[:COUNCIL_MAX_SEATS]
     if included_roles:
         included_roles = list(included_roles)[:COUNCIL_MAX_SEATS]
+
+    # Sub-personality twigs: nudge parent archetype seats when the run's topic
+    # matches an approved twig's domain. No-op unless seats name archetypes.
+    try:
+        from local_ai.council.twigs import apply_twig_overrides
+
+        perspective_definitions = apply_twig_overrides(
+            perspective_definitions, council_user_id, question, context
+        )
+    except Exception:
+        pass
 
     out_lines: List[str] = []
     seat_judgments: List[SeatJudgment] = []

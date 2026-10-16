@@ -13,13 +13,13 @@ Usage (repo root, API stopped recommended):
   python scripts/reset_vision_execution.py --mode graph --user-email owner@local.zenaf --dry-run
   python scripts/reset_vision_execution.py --mode workspace --user-email owner@local.zenaf --apply --confirm RESET
 
-Phil (local dev emails are phil@local.zenaf / phil@local.atria — not phil@zenaf):
-  python scripts/reset_vision_execution.py --mode workspace --user-email phil@local.zenaf --apply --confirm RESET --reseed doc
+Local dev (default: owner@local.zenaf):
+  python scripts/reset_vision_execution.py --mode workspace --user-email owner@local.zenaf --apply --confirm RESET --reseed doc
 
 After reset, reseed (pick one), with optional --user-email on each seed script:
-  python scripts/seed_vision_execution_from_repo_docs.py --user-email phil@local.zenaf
-  python scripts/seed_vision_execution_active_now.py --user-email phil@local.zenaf
-  python scripts/seed_vision_execution.py --user-email phil@local.zenaf
+  python scripts/seed_vision_execution_from_repo_docs.py --user-email owner@local.zenaf
+  python scripts/seed_vision_execution_active_now.py --user-email owner@local.zenaf
+  python scripts/seed_vision_execution.py --user-email owner@local.zenaf
 
 Or pass --reseed doc|active|demo with --apply: the seed runs as the same account you reset,
 unless you override with --reseed-user-email EMAIL.

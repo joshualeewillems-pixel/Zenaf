@@ -43,7 +43,7 @@ def main() -> None:
     ap.add_argument(
         "--user-email",
         default="owner@local.zenaf",
-        help="Account to seed (default: owner@local.zenaf). Examples: phil@local.zenaf, phil@local.atria",
+        help="Account to seed (default: owner@local.zenaf). Examples: owner@local.zenaf",
     )
     args = ap.parse_args()
     email = (args.user_email or "").strip()

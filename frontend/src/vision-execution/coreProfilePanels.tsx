@@ -172,7 +172,7 @@ export function CreateCoreProfileForm({
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Phil · Zenaf build"
+            placeholder="e.g. Your Name · Zenaf build"
             className="w-full px-3 py-2 rounded-lg bg-canvas border border-[color:var(--color-border-strong)] text-[color:var(--map-ink-primary)] placeholder:text-[color:var(--map-muted-ink)] text-sm"
           />
         </TranscribableFieldRegion>

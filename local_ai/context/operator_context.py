@@ -3,10 +3,9 @@ Optional operator brief for council alignment (file-based, not workspace transla
 
 - Operator priority: short, concrete preference block for fast council (what we optimize for,
   tradeoffs, constraints). Used in council packet only; label "Operator priorities:".
-  Source: ``phil_brand_brief.md`` next to this module unless disabled (see env below).
+  Source: ``operator_brand_brief.md`` next to this module unless disabled (see env below).
 - Philosophical orientation: mission/worldview/values; not injected in default fast council.
   Reserved for synthesis, governance, or general assistant when explicitly needed.
-- load_phil_context() remains as a backward-compatible wrapper returning operator priority.
 
 Environment:
 
@@ -23,7 +22,7 @@ MAX_OPERATOR_PRIORITY_WORDS = 120
 # Philosophical orientation: longer, for optional use outside fast council.
 MAX_PHILOSOPHICAL_WORDS = 300
 
-_BRIEF_NAME = "phil_brand_brief.md"
+_BRIEF_NAME = "operator_brand_brief.md"
 _cache_priority: str | None = None
 _cache_philosophy: str | None = None
 
@@ -95,7 +94,7 @@ def load_philosophical_orientation() -> str:
     """
     Mission / worldview / values block. Not used in default fast council or synthesis.
     Reserved for governance, synthesis, or general assistant when explicitly needed.
-    Sections tried: ## Philosophical orientation, ## Mission & worldview, ## Phil Context, ## Distilled.
+    Sections tried: ## Philosophical orientation, ## Mission & worldview, ## Distilled.
     Cached. Returns empty string if disabled via env, file missing, or no section found.
     """
     if not _operator_brief_loading_enabled():
@@ -106,16 +105,16 @@ def load_philosophical_orientation() -> str:
     raw = _read_brief()
     block = _extract_section(
         raw,
-        ("## Philosophical orientation", "## Mission & worldview", "## Phil Context", "## Distilled"),
+        ("## Philosophical orientation", "## Mission & worldview", "## Distilled"),
         MAX_PHILOSOPHICAL_WORDS,
     ).strip()
     _cache_philosophy = block
     return _cache_philosophy
 
 
-def load_phil_context() -> str:
+def load_operator_context() -> str:
     """
-    Backward-compatible wrapper: returns operator priority only.
-    Call load_operator_priority() or load_philosophical_orientation() explicitly for clarity.
+    Returns the operator priority block. This is the primary entry point;
+    call load_operator_priority() or load_philosophical_orientation() explicitly for clarity.
     """
     return load_operator_priority()

@@ -40,6 +40,7 @@ export default function ReviewChat({ agentId, agentName }: Props) {
   const [confirmInput, setConfirmInput] = useState('')
   const [momentsOverview, setMomentsOverview] = useState<StrandGroup[] | null>(null)
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set())
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -180,8 +181,8 @@ export default function ReviewChat({ agentId, agentName }: Props) {
     })
   }
 
-  const quickFile = async () => {
-    if (selectedIndices.size === 0 || loading) return
+  const doQuickFile = async (indices: number[]) => {
+    if (indices.length === 0 || loading) return
     setLoading(true)
     try {
       const history = messages.map(m => ({ role: m.role, content: m.content }))
@@ -191,7 +192,7 @@ export default function ReviewChat({ agentId, agentName }: Props) {
         body: JSON.stringify({
           message: '',
           history,
-          quick_file_indices: Array.from(selectedIndices),
+          quick_file_indices: indices,
         }),
       })
       const data = await r.json()
@@ -199,7 +200,12 @@ export default function ReviewChat({ agentId, agentName }: Props) {
       if (data.moments_overview) {
         setMomentsOverview(data.moments_overview)
       }
-      setSelectedIndices(new Set())
+      setSelectedIndices(prev => {
+        const next = new Set(prev)
+        indices.forEach(i => next.delete(i))
+        return next
+      })
+      setExpandedIdx(null)
     } catch (e) {
       setMessages(prev => [...prev, {
         role: 'zenaf',
@@ -210,15 +216,14 @@ export default function ReviewChat({ agentId, agentName }: Props) {
     }
   }
 
-  const discussMoment = (idx: number, label: string) => {
-    // Start a conversational deep-dive on this moment
-    const text = `Let's talk about this one: "${label}"`
-    setInput(text)
-    // Focus the input
-    setTimeout(() => {
-      const el = document.querySelector('input[placeholder^="Talk with Zenaf"]') as HTMLInputElement
-      if (el) el.focus()
-    }, 100)
+  const quickFile = () => doQuickFile(Array.from(selectedIndices))
+
+  const discussMoment = (m: MomentItem) => {
+    // Start a conversational deep-dive directly — no input-copying step.
+    // Uses the full inference (not the truncated label) so the deep-dive
+    // has the complete context the user just read.
+    setExpandedIdx(null)
+    doSend(`Let's talk about this one: "${m.inference}"`)
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
@@ -263,42 +268,75 @@ export default function ReviewChat({ agentId, agentName }: Props) {
       {momentsOverview && momentsOverview.length > 0 && (
         <div className="mb-3 rounded-xl border border-stone-700 bg-stone-900/50 p-3 max-h-[40vh] overflow-y-auto">
           <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">
-            Flagged moments — check quick wins, or tap to discuss
+            Flagged moments — tap one to read it fully, then file or discuss
           </div>
           {momentsOverview.map((group) => (
             <div key={group.strand} className="mb-3">
               <div className="text-sm font-semibold text-stone-300 mb-1">
                 {group.strand_name} ({group.moments.length})
               </div>
-              {group.moments.map((m) => (
-                <div
-                  key={m.idx}
-                  className={`flex items-start gap-2 py-1.5 px-2 rounded-lg text-[14px] ${
-                    m.filed ? 'opacity-40' : 'hover:bg-stone-800/50'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedIndices.has(m.idx) || !!m.filed}
-                    disabled={!!m.filed || loading}
-                    onChange={() => toggleSelect(m.idx)}
-                    className="mt-1 min-w-[18px] min-h-[18px] accent-amber-500"
-                  />
-                  <div className="flex-1">
-                    <div className={m.filed ? 'line-through text-stone-500' : 'text-stone-200'}>
-                      {m.filed ? '✓ ' : ''}{m.label}
-                    </div>
-                    {!m.filed && (
+              {group.moments.map((m) => {
+                const expanded = expandedIdx === m.idx
+                return (
+                  <div
+                    key={m.idx}
+                    className={`py-1.5 px-2 rounded-lg text-[14px] ${
+                      m.filed ? 'opacity-40' : 'hover:bg-stone-800/50'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedIndices.has(m.idx) || !!m.filed}
+                        disabled={!!m.filed || loading}
+                        onChange={() => toggleSelect(m.idx)}
+                        className="mt-1 min-w-[18px] min-h-[18px] accent-amber-500"
+                        aria-label={`Select moment ${m.idx + 1}`}
+                      />
                       <button
-                        onClick={() => discussMoment(m.idx, m.label)}
-                        className="text-xs text-amber-400/80 hover:text-amber-300 mt-0.5"
+                        onClick={() => setExpandedIdx(expanded ? null : m.idx)}
+                        className="flex-1 text-left min-h-[44px]"
+                        aria-expanded={expanded}
                       >
-                        Discuss in depth →
+                        <div className={m.filed ? 'line-through text-stone-500' : 'text-stone-200'}>
+                          {m.filed ? '✓ ' : ''}{expanded ? m.inference : m.label}
+                        </div>
+                        {!m.filed && (
+                          <div className="text-xs text-stone-500 mt-0.5">
+                            {expanded ? '▾ Show less' : '▸ Read full'}
+                          </div>
+                        )}
                       </button>
+                    </div>
+                    {expanded && !m.filed && (
+                      <div className="mt-2 ml-8 pl-3 border-l-2 border-stone-700">
+                        <div className="text-xs text-stone-500 uppercase tracking-wide mb-1">
+                          Said in the conversation
+                        </div>
+                        <div className="text-[13px] text-stone-400 italic mb-2 leading-snug">
+                          “{m.quote}”
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => doQuickFile([m.idx])}
+                            disabled={loading}
+                            className="min-h-[44px] px-3 rounded-lg bg-amber-600/90 text-amber-50 text-[13px] font-semibold disabled:opacity-40"
+                          >
+                            ✓ Quick file
+                          </button>
+                          <button
+                            onClick={() => discussMoment(m)}
+                            disabled={loading}
+                            className="min-h-[44px] px-3 rounded-lg border border-amber-500/50 text-amber-400 text-[13px] disabled:opacity-40"
+                          >
+                            Discuss in depth →
+                          </button>
+                        </div>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           ))}
           {selectedIndices.size > 0 && (

@@ -4339,6 +4339,7 @@ function App() {
     const auto = { value: 'auto', label: 'Auto (policy)' }
     const staticOrder: { value: string; label: string }[] = [
       auto,
+      { value: 'meta', label: 'Meta (Muse)' },
       { value: 'ollama', label: 'Ollama (local)' },
       { value: 'openai', label: 'OpenAI' },
       { value: 'anthropic', label: 'Anthropic' },
@@ -7856,32 +7857,47 @@ function App() {
 
                           <div className="space-y-1.5">
                             <p className="text-[11px] uppercase tracking-wide text-stone-400">Voiced by</p>
-                            <div className="flex flex-wrap gap-1.5">
-                              {councilLlmSelectOptions.map((o) => {
-                                const selectedProvider = (councilSeatLlmById[slot.id] ?? 'ollama') === o.value
+                            <div className="flex items-center gap-2">
+                              {(() => {
+                                const currentValue = councilSeatLlmById[slot.id] ?? 'meta';
+                                const rowById = new Map((llmProviderRows ?? []).map((p) => [p.id, p]));
+                                const currentRow = rowById.get(currentValue);
+                                const isReady = currentValue === 'auto' || currentValue === 'ollama' || (currentRow && currentRow.available);
                                 return (
-                                  <button
-                                    key={o.value}
-                                    type="button"
-                                    onClick={() => {
-                                      setCouncilSeatLlmById((prev) => ({ ...prev, [slot.id]: o.value }))
-                                      if (currentUser) {
-                                        void saveCouncilSeatLlm(slot.id, o.value)
-                                          .then((map) => setCouncilSeatLlmById(map))
-                                          .catch(() => {})
-                                      }
-                                    }}
-                                    className={`px-2.5 py-1 rounded-full text-[11px] border transition-colors ${
-                                      selectedProvider
-                                        ? 'border-yellow-700/65 bg-yellow-900/30 text-yellow-200'
-                                        : 'border-stone-600 bg-stone-900 text-stone-300 hover:text-stone-200'
-                                    }`}
-                                    title={o.label}
-                                  >
-                                    {o.label}
-                                  </button>
-                                )
-                              })}
+                                  <>
+                                    <span
+                                      className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${isReady ? 'bg-emerald-400' : 'bg-red-400'}`}
+                                      title={isReady ? 'Provider ready' : 'Provider not configured'}
+                                    />
+                                    <select
+                                      value={currentValue}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        setCouncilSeatLlmById((prev) => ({ ...prev, [slot.id]: v }));
+                                        if (currentUser) {
+                                          void saveCouncilSeatLlm(slot.id, v)
+                                            .then((map) => setCouncilSeatLlmById(map))
+                                            .catch(() => {});
+                                        }
+                                      }}
+                                      className="flex-1 min-w-0 bg-stone-900 border border-stone-600 rounded-lg px-3 py-2 text-sm text-stone-200 min-h-[44px]"
+                                    >
+                                      {councilLlmSelectOptions.map((o) => (
+                                        <option key={o.value} value={o.value}>
+                                          {o.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMainView('settings')}
+                                      className="shrink-0 text-xs text-stone-400 underline underline-offset-2 hover:text-stone-200 px-2 py-2 min-h-[44px]"
+                                    >
+                                      Settings
+                                    </button>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>

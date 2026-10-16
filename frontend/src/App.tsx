@@ -5733,7 +5733,7 @@ function App() {
         <div className="flex items-center gap-3 min-w-0">
           <ProfileAvatarControl user={currentUser} onUserUpdated={setCurrentUser} />
           <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-base lg:text-xl font-semibold truncate">Zenaf · Local-first workflow cockpit</h1>
+            <h1 className="text-base lg:text-xl font-semibold truncate">Zenaf</h1>
             <span className="text-xs text-stone-400 shrink-0 hidden sm:inline">{currentUser.email}</span>
           </div>
         </div>
@@ -5804,15 +5804,6 @@ function App() {
           {/* Supporting: Workspace + Content */}
           <button
             type="button"
-            onClick={() => setMainView('workspace')}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium transition-colors ${
-              mainView === 'workspace' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
-            }`}
-          >
-            Workspace Organizer
-          </button>
-          <button
-            type="button"
             onClick={() => setMainView('content')}
             className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium transition-colors ${
               mainView === 'content' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
@@ -5871,8 +5862,6 @@ function App() {
                     { view: 'vision_execution', label: 'Vision (tables)' },
                     { view: 'agent_intake', label: 'Connect' },
                     { view: 'review', label: 'Review' },
-                    { view: 'signal_review', label: 'Signal review' },
-                    { view: 'workspace', label: 'Workspace Organizer' },
                     { view: 'content', label: 'Content' },
                     { view: 'settings', label: 'Settings' },
                   ] as Array<{ view: MainView; label: string }>
@@ -6091,8 +6080,16 @@ function App() {
             </aside>
           </div>
         ) : mainView === 'content' ? (
-          <div className="flex-1 flex flex-col min-h-0">
-            <ContentFrontDoor apiBase={API_BASE} />
+          <div className="flex-1 flex flex-col min-h-0 items-center justify-center px-6 text-center">
+            <div className="max-w-md">
+              <div className="text-4xl mb-4">📝</div>
+              <h2 className="text-xl font-semibold text-stone-200 mb-2">Content — coming soon</h2>
+              <p className="text-stone-400 text-[15px] leading-relaxed">
+                This is where your journal will live — a place for reflections that feed
+                back into your training, and maybe into something more.
+                We're thinking it through.
+              </p>
+            </div>
           </div>
         ) : mainView === 'agent_intake' ? (
           <div className="flex-1 flex flex-col min-h-0">

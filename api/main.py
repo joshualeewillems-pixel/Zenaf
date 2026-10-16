@@ -187,6 +187,13 @@ except Exception as e:
     print(f"Entity strand routes not loaded: {e}")
     _router_load_errors.append(f"entity_strands: {e}")
 
+try:
+    from api.routes.council_twigs_routes import router as council_twigs_router
+    app.include_router(council_twigs_router)
+except Exception as e:
+    print(f"Council twigs routes not loaded: {e}")
+    _router_load_errors.append(f"council_twigs: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

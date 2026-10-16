@@ -1,6 +1,9 @@
 # Operator brand brief
 
-Short operator-priority block is used in council (label: "Operator priorities:"). Philosophical orientation is reserved for optional use outside fast council.
+Short operator-priority block is used in council (label: "Operator priorities:").
+Philosophical orientation flows into the taste layer — it is injected alongside
+tasteCompass for the four taste-relative council seats (Seer, Songwriter, Storyteller,
+Mediator), shaping what those seats treat as meaningful.
 
 Customize the sections below to reflect your own priorities, tradeoffs, and worldview. Lines starting with ## are section markers read by `operator_context.py`.
 

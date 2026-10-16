@@ -1808,7 +1808,7 @@ FOLDER_ADVISOR_SYSTEM = """You are a folder categorization assistant. You sugges
 
 # Role keys for include/exclude (must match frontend). Zenaf = synthesis step.
 COUNCIL_ROLE_KEYS = ("seer", "guide", "songwriter", "storyteller", "patternist", "maker", "mediator")
-COUNCIL_SEAT_DISPLAY_NAMES = ("Seer", "Guide", "Songwriter", "Storyteller", "Patternist", "Maker", "Mediator")
+COUNCIL_SEAT_DISPLAY_NAMES = ("Eye", "Compass", "Ear", "Voice", "Logic", "Hands", "Heart")
 
 COUNCIL_ERR_NO_ACTIVE_SEAT = (
     "At least one council seat is required. Pass perspective_definitions, included_roles with built-in role keys "
@@ -1819,7 +1819,7 @@ COUNCIL_ERR_NO_ACTIVE_SEAT = (
 BUILT_IN_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     "seer": {
         "id": "seer",
-        "name": "Seer",
+        "name": "Eye",
         "strand": "image",
         "role": "Vision / taste",
         "purpose": (
@@ -1859,7 +1859,7 @@ BUILT_IN_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "guide": {
         "id": "guide",
-        "name": "Guide",
+        "name": "Compass",
         "strand": "self",
         "role": "Direction / judgment",
         "purpose": (
@@ -1894,7 +1894,7 @@ BUILT_IN_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "songwriter": {
         "id": "songwriter",
-        "name": "Songwriter",
+        "name": "Ear",
         "strand": "sound",
         "role": "Ear / rhythm",
         "purpose": (
@@ -1932,7 +1932,7 @@ BUILT_IN_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "storyteller": {
         "id": "storyteller",
-        "name": "Storyteller",
+        "name": "Voice",
         "strand": "word",
         "role": "Voice / narrative",
         "purpose": (
@@ -1971,7 +1971,7 @@ BUILT_IN_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "patternist": {
         "id": "patternist",
-        "name": "Patternist",
+        "name": "Logic",
         "strand": "number",
         "role": "Evidence / patterns",
         "purpose": (
@@ -2004,7 +2004,7 @@ BUILT_IN_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "maker": {
         "id": "maker",
-        "name": "Maker",
+        "name": "Hands",
         "strand": "body",
         "role": "Craft / execution",
         "purpose": (
@@ -2037,7 +2037,7 @@ BUILT_IN_PERSONA_DEFINITIONS: Dict[str, Dict[str, Any]] = {
     },
     "mediator": {
         "id": "mediator",
-        "name": "Mediator",
+        "name": "Heart",
         "strand": "people",
         "role": "People / trust",
         "purpose": (
@@ -3049,9 +3049,9 @@ _MAX_PERSONA_CONTEXT_CHARS = 4000
 
 
 def _council_seat_is_storyteller(defn: dict) -> bool:
-    """True for the Storyteller council seat (built-in or custom def with matching id/name).
+    """True for the Voice council seat (built-in or custom def with matching id/name).
 
-    The legacy "brand" id/name still matches: the Storyteller inherits the old Brand
+    The legacy "brand" id/name still matches: the Voice inherits the old Brand
     seat's narrative DNA, including the brand-profile context injection.
     """
     pid = str(defn.get("perspective_agent_id") or defn.get("id") or "").strip().lower()

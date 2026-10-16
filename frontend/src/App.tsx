@@ -995,7 +995,7 @@ const MODES = [
   { id: 'recommend', label: 'Recommend', description: 'Suggested child folders' },
   { id: 'assess', label: 'Assess Uncertainty', description: 'Plan strength and weak suggestions' },
   { id: 'simulate', label: 'Simulate', description: 'Preview folder plan' },
-  { id: 'council', label: 'Council', description: 'Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide, Skeptic, Zenaf, …' },
+  { id: 'council', label: 'Council', description: 'Voice, Logic, Eye, Ear, Hands, Heart, Compass, Skeptic, Zenaf, …' },
   { id: 'web_research', label: 'Web Research', description: 'Lightweight web lookup' },
   { id: 'next_step', label: 'Next Step', description: 'One concrete action' },
 ] as const
@@ -5921,7 +5921,7 @@ function App() {
                 <p className="text-[10px] font-medium text-warm-white/50 uppercase tracking-wide">Foundation</p>
                 <h1 className="text-lg font-semibold text-warm-white mt-0.5">Actors</h1>
                 <p className="text-[11px] text-warm-white/50 mt-1 max-w-3xl leading-relaxed">
-                  System archetypes are read-only. <span className="text-warm-white/65">Your Storyteller is your core voice</span>
+                  System archetypes are read-only. <span className="text-warm-white/65">Your Voice is your core voice</span>
                   ; other actors are lenses and collaborators, not alternate yous.
                 </p>
                 {perspectivesPageError && <p className="text-flare text-xs mt-2">{perspectivesPageError}</p>}
@@ -6002,7 +6002,7 @@ function App() {
                     (() => {
                       const storytellerActor = perspectiveAgents.find((a) => a.id === 'storyteller')
                       if (!storytellerActor) {
-                        return <p className="text-stone-500 text-sm">Storyteller actor missing.</p>
+                        return <p className="text-stone-500 text-sm">Voice actor missing.</p>
                       }
                       return (
                         <>
@@ -6010,7 +6010,7 @@ function App() {
                             key={brandCoreProfileId}
                             profileId={brandCoreProfileId}
                             brandActor={storytellerActor}
-                            displayName={foundationCoreProfileCardTitle.trim() || storytellerActor.name || 'Storyteller'}
+                            displayName={foundationCoreProfileCardTitle.trim() || storytellerActor.name || 'Voice'}
                             apiGet={veApiGet}
                             onTrainWithZenaf={() => {
                               handleEnterFoundationTrainingMode()

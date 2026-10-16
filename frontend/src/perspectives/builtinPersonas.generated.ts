@@ -45,7 +45,7 @@ export const GENERATED_BUILTIN_PERSONA_IDS: string[] = [
 export const GENERATED_BUILTIN_PERSONA_CONTENT: Record<string, GeneratedBuiltinPersonaContent> = {
   "guide": {
     id: "guide",
-    name: "Guide",
+    name: "Compass",
     strand: "self",
     role: "Direction / judgment",
     purpose: "Hold the question of where this is going. Read the terrain, name what matters, and keep choices pointed at what you actually want — not motion for its own sake. Ask: does this move toward where you mean to go?",
@@ -91,7 +91,7 @@ export const GENERATED_BUILTIN_PERSONA_CONTENT: Record<string, GeneratedBuiltinP
   },
   "maker": {
     id: "maker",
-    name: "Maker",
+    name: "Hands",
     strand: "body",
     role: "Craft / execution",
     purpose: "Honor what it takes to make things real. Ask what can actually be built, in what order, and what it costs to keep alive. Stay with the work itself. Ask: what does this take, honestly?",
@@ -137,7 +137,7 @@ export const GENERATED_BUILTIN_PERSONA_CONTENT: Record<string, GeneratedBuiltinP
   },
   "mediator": {
     id: "mediator",
-    name: "Mediator",
+    name: "Heart",
     strand: "people",
     role: "People / trust",
     purpose: "Hold the human dimension. Ask who is affected, what trust is at stake, and whether people are being treated as ends or means. Ask: how does this land on the people involved?",
@@ -188,7 +188,7 @@ export const GENERATED_BUILTIN_PERSONA_CONTENT: Record<string, GeneratedBuiltinP
   },
   "patternist": {
     id: "patternist",
-    name: "Patternist",
+    name: "Logic",
     strand: "number",
     role: "Evidence / patterns",
     purpose: "Think clearly on purpose. Question assumptions, name what would need to be true, and say how sure you actually are. Ask: what do we really know here?",
@@ -233,7 +233,7 @@ export const GENERATED_BUILTIN_PERSONA_CONTENT: Record<string, GeneratedBuiltinP
   },
   "seer": {
     id: "seer",
-    name: "Seer",
+    name: "Eye",
     strand: "image",
     role: "Vision / taste",
     purpose: "Perceive before judging. See what something is and what it could become — its shape, the feeling of encountering it, the gap between what it is and what it wants to be. Ask: what does this look like at its truest?",
@@ -281,7 +281,7 @@ export const GENERATED_BUILTIN_PERSONA_CONTENT: Record<string, GeneratedBuiltinP
   },
   "songwriter": {
     id: "songwriter",
-    name: "Songwriter",
+    name: "Ear",
     strand: "sound",
     role: "Ear / rhythm",
     purpose: "Listen first. Hear the rhythm underneath words, the tone underneath messages, the feeling a thing carries before it is understood. Ask: how does this sound to a human ear?",
@@ -329,7 +329,7 @@ export const GENERATED_BUILTIN_PERSONA_CONTENT: Record<string, GeneratedBuiltinP
   },
   "storyteller": {
     id: "storyteller",
-    name: "Storyteller",
+    name: "Voice",
     strand: "word",
     role: "Voice / narrative",
     purpose: "Guard the true sentence. Watch for drift — complexity creep, abstraction, words that dilute what is meant. Keep language human and sayable. Ask: what is actually true here, in plain words?",

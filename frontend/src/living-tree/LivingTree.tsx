@@ -42,17 +42,17 @@ type TreeDatum = {
 }
 
 const NARRATIVES: Record<StrandKey, string> = {
-  word: 'Your voice, unborrowed. Feed the Storyteller your writing — drafts, messages, the sentences you rewrote three times — and it learns how you actually sound. Right now it is a blank page.',
+  word: 'Your voice, unborrowed. Feed the Voice your writing — drafts, messages, the sentences you rewrote three times — and it learns how you actually sound. Right now it is a blank page.',
   number:
-    'Your pattern-reader. The Patternist will learn how you weigh evidence and tradeoffs — but it has not seen your data yet.',
+    'Your pattern-reader. The Logic will learn how you weigh evidence and tradeoffs — but it has not seen your data yet.',
   image:
-    'Your eye. The Seer will learn your visual taste — what you keep, what you cut — once you show it work you love.',
+    'Your eye. The Eye will learn your visual taste — what you keep, what you cut — once you show it work you love.',
   sound:
-    'Your ear. The Songwriter learns rhythm, cadence, and tone by listening to what you make and what moves you. Still silent.',
-  body: 'Your hands. The Maker will learn how you build — your order of operations, what “done” means to you. No sawdust yet.',
+    'Your ear. The Ear learns rhythm, cadence, and tone by listening to what you make and what moves you. Still silent.',
+  body: 'Your hands. The Hands will learn how you build — your order of operations, what “done” means to you. No sawdust yet.',
   people:
-    'Your way with people. The Mediator learns who you listen to, how you hold a room, what fairness costs you. No conversations yet.',
-  self: 'Your compass. The Guide learns direction and leverage from the calls you have actually made. None logged yet.',
+    'Your way with people. The Heart learns who you listen to, how you hold a room, what fairness costs you. No conversations yet.',
+  self: 'Your compass. Compass learns direction and leverage from the calls you have actually made. None logged yet.',
 }
 
 /** Roots: the 7 agents, ordered to follow the braid. Honest seed — 0%, no children. */
@@ -67,36 +67,36 @@ const DEVELOPMENTS: Record<StrandKey, { name: string; narrative: string }> = {
   word: {
     name: 'Expression',
     narrative:
-      'The Storyteller grown up: saying what is true, well — in work that stands on its own. Still a seed; it grows as you feed the roots below.',
+      'The Voice grown up: saying what is true, well — in work that stands on its own. Still a seed; it grows as you feed the roots below.',
   },
   number: {
     name: 'Clarity',
     narrative:
-      'The Patternist grown up: seeing through complexity to the few things that matter. Sharpens with every tradeoff you log.',
+      'The Logic grown up: seeing through complexity to the few things that matter. Sharpens with every tradeoff you log.',
   },
   image: {
     name: 'Vision',
     narrative:
-      'The Seer grown up: perceiving what is coming, not just what is there. Opens as your eye trains.',
+      'The Eye grown up: perceiving what is coming, not just what is there. Opens as your eye trains.',
   },
   sound: {
     name: 'Resonance',
     narrative:
-      'The Songwriter grown up: timing, cadence, moving people. Grows every time you make something that lands.',
+      'The Ear grown up: timing, cadence, moving people. Grows every time you make something that lands.',
   },
   body: {
     name: 'Craft',
-    narrative: 'The Maker grown up: embodied skill, the hands that know. Built rep by rep.',
+    narrative: 'The Hands grown up: embodied skill, the hands that know. Built rep by rep.',
   },
   people: {
     name: 'Trust',
     narrative:
-      'The Mediator grown up: the relationships you have actually built — the rooms that trust you. Grows with every hard conversation held well.',
+      'The Heart grown up: the relationships you have actually built — the rooms that trust you. Grows with every hard conversation held well.',
   },
   self: {
     name: 'Wisdom',
     narrative:
-      'The Guide grown up: integrated self-knowledge, the compass you can hand to someone else. Deepens with every owned decision.',
+      'Compass grown up: integrated self-knowledge, the compass you can hand to someone else. Deepens with every owned decision.',
   },
 }
 const UP: TreeDatum[] = BRAID_ORDER.map((key) => {

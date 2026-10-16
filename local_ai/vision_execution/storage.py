@@ -2745,7 +2745,7 @@ def append_resonance_rating(
 
 def _is_challenge_accountability_seat(seat_id: str) -> bool:
     s = (seat_id or "").strip().lower()
-    # "governance" kept for historical judgments; the Mediator inherits that seat's DNA.
+    # "governance" kept for historical judgments; the Heart inherits that seat's DNA.
     return s in ("governance", "mediator") or s == "skeptic" or "skeptic" in s
 
 

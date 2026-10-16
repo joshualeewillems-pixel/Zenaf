@@ -37,7 +37,7 @@ STRANDS: tuple[Strand, ...] = (
     Strand(
         key="word",
         faculty="Word",
-        agent_name="Storyteller",
+        agent_name="Voice",
         color="#c98f6a",
         gardner="linguistic",
         tagline="Language, rhetoric, writing, voice — how things get said.",
@@ -45,7 +45,7 @@ STRANDS: tuple[Strand, ...] = (
     Strand(
         key="number",
         faculty="Number",
-        agent_name="Patternist",
+        agent_name="Logic",
         color="#7aa3b8",
         gardner="logical-mathematical",
         tagline="Analysis, systems, evidence — how patterns get read.",
@@ -53,7 +53,7 @@ STRANDS: tuple[Strand, ...] = (
     Strand(
         key="image",
         faculty="Image",
-        agent_name="Seer",
+        agent_name="Eye",
         color="#c9a86a",
         gardner="spatial",
         tagline="Visual taste, design, spatial thinking — how things get seen.",
@@ -61,7 +61,7 @@ STRANDS: tuple[Strand, ...] = (
     Strand(
         key="sound",
         faculty="Sound",
-        agent_name="Songwriter",
+        agent_name="Ear",
         color="#b983a8",
         gardner="musical",
         tagline="Music, rhythm, listening — how things get heard.",
@@ -69,7 +69,7 @@ STRANDS: tuple[Strand, ...] = (
     Strand(
         key="body",
         faculty="Body",
-        agent_name="Maker",
+        agent_name="Hands",
         color="#9db87a",
         gardner="bodily-kinesthetic",
         tagline="Craft, making, doing — how things get built.",
@@ -77,7 +77,7 @@ STRANDS: tuple[Strand, ...] = (
     Strand(
         key="people",
         faculty="People",
-        agent_name="Mediator",
+        agent_name="Heart",
         color="#a88fc9",
         gardner="interpersonal",
         tagline="Leadership, teaching, care — how people get held.",
@@ -85,7 +85,7 @@ STRANDS: tuple[Strand, ...] = (
     Strand(
         key="self",
         faculty="Self",
-        agent_name="Guide",
+        agent_name="Compass",
         color="#7ba889",
         gardner="intrapersonal",
         tagline="Judgment, values, direction — how choices get made.",
@@ -106,7 +106,7 @@ def strand(key: str) -> Strand:
 
 
 def strand_for_agent(agent_name: str) -> Strand:
-    """Return the Strand for a warm agent name (e.g. "Storyteller")."""
+    """Return the Strand for a warm agent name (e.g. "Voice")."""
     return _BY_AGENT[agent_name.strip().lower()]
 
 

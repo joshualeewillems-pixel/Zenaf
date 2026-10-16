@@ -202,6 +202,13 @@ except Exception as e:
     print(f"Council archetype routes not loaded: {e}")
     _router_load_errors.append(f"council-archetypes: {e}")
 
+try:
+    from api.routes.council_routes import router as council_router
+    app.include_router(council_router)
+except Exception as e:
+    print(f"Council routes not loaded: {e}")
+    _router_load_errors.append(f"council: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

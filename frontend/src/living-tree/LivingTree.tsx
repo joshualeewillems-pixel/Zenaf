@@ -1,7 +1,14 @@
 /**
  * Living Tree — the home view. A functional family tree: the user at the
- * center of a braided trunk, trainable agents branching below as roots,
- * their markets opening above once there is training worth renting.
+ * center of a braided trunk, the 7 strands rooting below, and the 7 council
+ * archetypes branching above.
+ *
+ * Branches are archetypes, not marketplace listings: Mentor, Champion,
+ * Guardian, Maverick, Ambassador, Conductor, and the Skeptic. Each branch's
+ * thickness is that archetype's training depth. Tapping a branch opens its
+ * character panel — strand blend, twigs, recent stories — with marketplace
+ * rental info one section deeper. Commerce lives in the panel, never on the
+ * tree itself.
  *
  * Ported from the vanilla-JS/SVG prototype (treev3): golden-ratio layout
  * (each level shrinks length/width/spread by φ), leaf-count-weighted angular
@@ -10,9 +17,8 @@
  * nesting with +N buds, and solid-background label pills in a top SVG layer
  * so branch lines never cross text.
  *
- * Honest seed state: the 7 agents at 0% trained, no children, no markets,
- * no rentals, no dollar amounts. Training begins via "Upload source
- * materials".
+ * Honest seed state: the 7 archetypes at 0 depth, no twigs, no rentals, no
+ * dollar amounts. Training begins via "Upload source materials".
  *
  * Rendering robustness: node positions live in React state (not a mutated
  * ref), and the initial state is the fully laid-out tree — so the SVG has
@@ -22,6 +28,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BRAID_ORDER, STRANDS, strandColor, type StrandKey } from './strands'
+import {
+  STOCK_ARCHETYPE_FALLBACK,
+  dominantStrandKey,
+  fetchArchetypeStatus,
+  type ArchetypeStatus,
+} from './archetypes'
 
 const PHI = 1.618
 const CX = 200
@@ -39,6 +51,8 @@ type TreeDatum = {
   lastTended: string | null
   narrative: string
   kids?: TreeDatum[]
+  /** Set on archetype branch nodes — drives the character panel, blend bars, and Skeptic styling. */
+  archetype?: ArchetypeStatus
 }
 
 const NARRATIVES: Record<StrandKey, string> = {
@@ -61,48 +75,38 @@ const DOWN: TreeDatum[] = BRAID_ORDER.map((key) => {
   return { id: `agent-${key}`, strand: key, name: s.agentName, depth: 0, lastTended: null, narrative: NARRATIVES[key], kids: [] }
 })
 
-/** Development above the trunk: each strand grown into a human capacity.
-Honest seed — depth mirrors the root's training; they grow as you invest below. */
-const DEVELOPMENTS: Record<StrandKey, { name: string; narrative: string }> = {
-  word: {
-    name: 'Expression',
-    narrative:
-      'The Voice grown up: saying what is true, well — in work that stands on its own. Still a seed; it grows as you feed the roots below.',
-  },
-  number: {
-    name: 'Clarity',
-    narrative:
-      'The Logic grown up: seeing through complexity to the few things that matter. Sharpens with every tradeoff you log.',
-  },
-  image: {
-    name: 'Vision',
-    narrative:
-      'The Eye grown up: perceiving what is coming, not just what is there. Opens as your eye trains.',
-  },
-  sound: {
-    name: 'Resonance',
-    narrative:
-      'The Ear grown up: timing, cadence, moving people. Grows every time you make something that lands.',
-  },
-  body: {
-    name: 'Craft',
-    narrative: 'The Hands grown up: embodied skill, the hands that know. Built rep by rep.',
-  },
-  people: {
-    name: 'Trust',
-    narrative:
-      'The Heart grown up: the relationships you have actually built — the rooms that trust you. Grows with every hard conversation held well.',
-  },
-  self: {
-    name: 'Wisdom',
-    narrative:
-      'Compass grown up: integrated self-knowledge, the compass you can hand to someone else. Deepens with every owned decision.',
-  },
+/** Branches: the 7 council archetypes, built from live status (or the honest
+seed fallback). Branch thickness is the archetype's training depth — its
+weight vector applied to your per-strand depths. Twigs become bloomable
+children; proposed twigs show as buds awaiting review. */
+function buildArchetypeNodes(statuses: ArchetypeStatus[]): TreeDatum[] {
+  return statuses.map((a) => {
+    const domKey = dominantStrandKey(a)
+    const strand = (STRANDS.some((s) => s.key === domKey) ? domKey : null) as StrandKey | null
+    const kids: TreeDatum[] = (a.twigs ?? []).map((t) => ({
+      id: `twig-${a.id}-${t.twig_id}`,
+      strand,
+      name: t.display_name,
+      depth: 0,
+      lastTended: null,
+      narrative:
+        t.status === 'proposed'
+          ? `A proposed ${t.domain_label} specialization of ${a.display_name} — ${t.signal_count} signals clustered here. Review it to let it sprout.`
+          : `A ${t.domain_label} specialization of ${a.display_name} — a sub-personality that sprouted where your training clustered (${t.signal_count} signals).`,
+      kids: [],
+    }))
+    return {
+      id: `arch-${a.id}`,
+      strand,
+      name: a.display_name,
+      depth: a.depth,
+      lastTended: null,
+      narrative: a.prompt_frame,
+      kids,
+      archetype: a,
+    }
+  })
 }
-const UP: TreeDatum[] = BRAID_ORDER.map((key) => {
-  const d = DEVELOPMENTS[key]
-  return { id: `dev-${key}`, strand: key, name: d.name, depth: 0, lastTended: null, narrative: d.narrative, kids: [] }
-})
 
 const YOU: TreeDatum = {
   id: 'you',
@@ -110,7 +114,7 @@ const YOU: TreeDatum = {
   name: 'YOU',
   depth: null,
   lastTended: null,
-  narrative: 'Every decision you make trains the roots. Every rental grows the branches.',
+  narrative: 'Every decision you make trains the roots below. Every branch above is a voice on your council.',
   kids: [],
 }
 
@@ -175,7 +179,7 @@ function leafCount(n: TreeDatum, exp: Record<string, boolean>): number {
   return kids.reduce((s, k) => s + leafCount(k, exp), 0)
 }
 
-function layout(exp: Record<string, boolean>): Map<string, Placed> {
+function layout(exp: Record<string, boolean>, up: TreeDatum[]): Map<string, Placed> {
   const P = new Map<string, Placed>()
   const place = (
     n: TreeDatum,
@@ -224,10 +228,10 @@ function layout(exp: Record<string, boolean>): Map<string, Placed> {
     kids: [],
   })
   const spreadFor = (n: number) => Math.min(2.9, 1.9 + 0.18 * (n - 3))
-  const spU = spreadFor(UP.length)
+  const spU = spreadFor(up.length)
   const spD = spreadFor(DOWN.length)
-  UP.forEach((n, i) => {
-    const a = -Math.PI / 2 - spU / 2 + (spU * i) / Math.max(1, UP.length - 1)
+  up.forEach((n, i) => {
+    const a = -Math.PI / 2 - spU / 2 + (spU * i) / Math.max(1, up.length - 1)
     place(n, CX, TRUNK_TOP, a, 130, spU, 5, 1, 'up', 'you', n.strand)
   })
   DOWN.forEach((n, i) => {
@@ -253,9 +257,16 @@ function effectiveDepth(depth: number | null, lastTended: string | null): number
 
 /** Node radius: investment made visible. Growth is asymptotic — the node
 approaches its full size but never arrives, because the endeavor is infinite.
-Neglect shrinks it. YOU stays fixed. */
+Neglect shrinks it. YOU stays fixed. Archetype branches carry a 0..100 depth
+score (their weight vector applied to strand depths); strands use the raw
+unbounded scale with attention decay. */
 function nodeR(p: Placed): number {
   if (p.side === 'c') return 34
+  const arch = p.datum.archetype
+  if (arch) {
+    const d = Math.max(0, Math.min(100, arch.depth)) / 25
+    return 12 + 10 * (1 - Math.exp(-d))
+  }
   return 12 + 10 * (1 - Math.exp(-effectiveDepth(p.datum.depth, p.datum.lastTended)))
 }
 
@@ -309,8 +320,13 @@ function relax(P: Map<string, Placed>): Map<string, Placed> {
   return P
 }
 
-function strandCol(p: { side: string; strand: StrandKey | null }): string {
-  if (p.side === 'c' || !p.strand) return '#c9a86a'
+/** The Skeptic's hollow branch — the inverse voice, rendered in muted slate. */
+const SKEPTIC_COLOR = '#6b6480'
+
+function strandCol(p: { side: string; strand: StrandKey | null; datum?: TreeDatum }): string {
+  if (p.side === 'c') return '#c9a86a'
+  if (p.datum?.archetype?.is_skeptic) return SKEPTIC_COLOR
+  if (!p.strand) return '#c9a86a'
   return strandColor(p.strand)
 }
 
@@ -374,7 +390,7 @@ function ease(t: number): number {
 
 type LiveNode = Placed & { op: number }
 
-function findDatum(id: string): TreeDatum | null {
+function findDatum(id: string, up: TreeDatum[]): TreeDatum | null {
   if (id === YOU.id) return YOU
   const walk = (list: TreeDatum[]): TreeDatum | null => {
     for (const n of list) {
@@ -386,7 +402,35 @@ function findDatum(id: string): TreeDatum | null {
     }
     return null
   }
-  return walk(UP) ?? walk(DOWN)
+  return walk(up) ?? walk(DOWN)
+}
+
+/** Visual strand-blend bars for an archetype's character panel. */
+function StrandBlendBars({ weights }: { weights: Record<string, number> }) {
+  const entries = Object.entries(weights)
+    .filter(([, w]) => w >= 0.05)
+    .sort(([, a], [, b]) => b - a)
+  if (!entries.length) return null
+  return (
+    <div className="lblend">
+      <div className="lsect">Strand blend</div>
+      {entries.map(([key, w]) => {
+        const s = STRANDS.find((x) => x.key === key)
+        if (!s) return null
+        const pct = Math.round(w * 100)
+        return (
+          <div key={key} className="lstat">
+            <span className="ldot" style={{ background: s.color }} />
+            <span className="lname">{s.agentName}</span>
+            <div className="lbar">
+              <div className="lfill" style={{ width: `${pct}%`, background: s.color }} />
+            </div>
+            <span className="lpct">{pct}%</span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -407,9 +451,26 @@ export function LivingTreeView({
   const [view, setView] = useState<'tree' | 'menu'>('tree')
   const [menuItem, setMenuItem] = useState<string | null>(null)
 
+  // Archetype branches: live status from the backend, honest seed fallback
+  // while loading or when unreachable. The tree renders on first paint;
+  // depths animate in when the fetch resolves.
+  const [archetypes, setArchetypes] = useState<ArchetypeStatus[]>(STOCK_ARCHETYPE_FALLBACK)
+  useEffect(() => {
+    let cancelled = false
+    fetchArchetypeStatus().then((s) => {
+      if (!cancelled && s && s.length) setArchetypes(s)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const up = useMemo(() => buildArchetypeNodes(archetypes), [archetypes])
+
   const braid = useMemo(() => computeBraid(), [])
-  // Target positions, recomputed synchronously whenever expansion changes.
-  const target = useMemo(() => relax(layout(exp)), [exp])
+  // Target positions, recomputed synchronously whenever expansion or the
+  // archetype list changes.
+  const target = useMemo(() => relax(layout(exp, up)), [exp, up])
 
   // Displayed nodes live in state and are seeded with the fully laid-out
   // tree, so the SVG renders content on the very first paint. The effect
@@ -525,19 +586,24 @@ export function LivingTreeView({
             {m.id === 'stats' ? (
               <div className="lstats">
                 <p className="lnote">
-                  No rentals yet — training comes first. You set the price per zone when there is something worth
-                  renting.
+                  Council depth — each branch deepens as its strands are trained. No rentals yet — training comes
+                  first.
                 </p>
-                {STRANDS.map((s) => (
-                  <div key={s.key} className="lstat">
-                    <span className="ldot" style={{ background: s.color }} />
-                    <span className="lname">{s.agentName}</span>
-                    <span className="lpct">seed</span>
-                    <div className="lbar">
-                      <div className="lfill" style={{ width: '0%', background: s.color }} />
+                {archetypes.map((a) => {
+                  const domKey = dominantStrandKey(a)
+                  const s = STRANDS.find((x) => x.key === domKey)
+                  const col = a.is_skeptic ? SKEPTIC_COLOR : (s?.color ?? '#c9a86a')
+                  return (
+                    <div key={a.id} className="lstat">
+                      <span className="ldot" style={{ background: col }} />
+                      <span className="lname">{a.display_name}</span>
+                      <span className="lpct">{a.depth <= 0 ? 'seed' : `${a.depth}%`}</span>
+                      <div className="lbar">
+                        <div className="lfill" style={{ width: `${a.depth}%`, background: col }} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <p>{m.desc}</p>
@@ -566,16 +632,76 @@ export function LivingTreeView({
         </div>
       )
     }
-    const d = sel ? findDatum(sel) : null
-    if (!d) return <div className="lhint">Tap any node to read its story.</div>
+    const d = sel ? findDatum(sel, up) : null
+    if (!d) return <div className="lhint">Tap any branch to meet its character.</div>
     const live = nodeById.get(sel!)
     const col = live ? strandCol(live) : '#c9a86a'
-    const isDev = d.id.startsWith('dev-')
+    const arch = d.archetype
+    // Archetype branch panel: character, strand blend, twigs, marketplace.
+    if (arch) {
+      const isSeed = arch.depth <= 0
+      const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
+      return (
+        <div>
+          <h3>{arch.display_name}</h3>
+          <div className="ltag" style={{ color: col }}>
+            {arch.is_skeptic ? 'THE SKEPTIC · ' : ''}{tag}
+          </div>
+          <p>“{arch.prompt_frame}”</p>
+          <StrandBlendBars weights={arch.strand_weights} />
+          {arch.twigs.length > 0 ? (
+            <div className="ltwigs">
+              <div className="lsect">Sub-personalities</div>
+              {arch.twigs.map((t) => (
+                <div key={t.twig_id} className="ltwig">
+                  <span className="lname">{t.display_name}</span>
+                  <span className="ldomain">
+                    {t.domain_label}
+                    {t.status === 'proposed' ? ' · proposed' : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="lsub">
+              No sub-personalities yet — they sprout when your training clusters in a specific domain.
+            </p>
+          )}
+          <div className="lmarket">
+            <div className="lsect">Marketplace</div>
+            <div className="lstat">
+              <span className="lname">Viability</span>
+              <div className="lbar">
+                <div className="lfill" style={{ width: `${arch.depth}%`, background: col }} />
+              </div>
+              <span className="lpct">{arch.depth}%</span>
+            </div>
+            <p className="lnote">
+              {isSeed
+                ? 'Nothing to rent yet — training comes first. You set the price when there is something worth renting.'
+                : 'No rental price set yet — you set the price per archetype when there is training worth renting.'}
+            </p>
+          </div>
+          {isSeed && (
+            <button
+              type="button"
+              className="lcta"
+              onClick={() => {
+                setView('menu')
+                setMenuItem('upload')
+              }}
+            >
+              Upload source materials to begin training ›
+            </button>
+          )}
+        </div>
+      )
+    }
     const raw = Math.max(0, d.depth ?? 0)
     const eff = effectiveDepth(d.depth, d.lastTended)
     const fallow = raw > 0.3 && eff < raw * 0.4
     const tag =
-      d.id === 'you' ? 'THE SOURCE' : raw <= 0 ? 'SEED' : fallow ? 'FALLOW' : isDev ? 'BLOOMING' : 'DEEPENING'
+      d.id === 'you' ? 'THE SOURCE' : raw <= 0 ? 'SEED' : fallow ? 'FALLOW' : 'DEEPENING'
     return (
       <div>
         <h3>{d.name}</h3>
@@ -586,7 +712,7 @@ export function LivingTreeView({
         {fallow && (
           <p className="lsub">You used to tend this — it is waiting, not gone. Pick it back up and it returns faster than it first grew.</p>
         )}
-        {d.id !== 'you' && !isDev && (
+        {d.id !== 'you' && (
           <button
             type="button"
             className="lcta"
@@ -597,9 +723,6 @@ export function LivingTreeView({
           >
             Upload source materials to begin training ›
           </button>
-        )}
-        {isDev && (
-          <p className="lsub">Grows as you invest in its root below.</p>
         )}
       </div>
     )
@@ -647,6 +770,14 @@ export function LivingTreeView({
 .lstat .lpct{font-size:11px;color:rgba(245,240,232,.55);min-width:30px;text-align:right}
 .lstat .lbar{flex:1;height:6px;border-radius:3px;background:rgba(245,240,232,.1);overflow:hidden}
 .lstat .lfill{height:100%;border-radius:3px}
+.lsect{margin:12px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.1em;color:rgba(201,168,106,.85);text-transform:uppercase}
+.lblend{margin-top:2px}
+.ltwigs{margin-top:2px}
+.ltwig{display:flex;align-items:center;justify-content:space-between;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.2);border-radius:8px;padding:8px 10px;margin:5px 0;min-height:44px}
+.ltwig .lname{font-size:12.5px;font-weight:600;color:#f5f0e8}
+.ltwig .ldomain{font-size:11px;color:rgba(245,240,232,.55);font-style:italic}
+.lmarket{margin-top:4px;border-top:1px solid rgba(201,168,106,.2);padding-top:2px}
+.lnarr{max-height:340px;overflow-y:auto}
 .lfoot{margin:10px 6px 0;text-align:center;font-size:10.5px;color:rgba(245,240,232,.45);line-height:1.6}
       `}</style>
       <div className="lhead">
@@ -654,9 +785,9 @@ export function LivingTreeView({
           The <em>Living Tree</em>
         </h2>
         <p>
-          Seven strands braid through the trunk — word, number, image, sound, body, people, self. Your roots grow
-          below; their markets open above, once there is training worth renting. Tap a node to read its story; tap
-          yourself for options.
+          Seven strands braid through the trunk and root below. Your council branches above — Mentor, Champion,
+          Guardian, Maverick, Ambassador, Conductor, and the Skeptic. Tap a branch to meet its character; the
+          marketplace lives one tap deeper, inside each branch.
         </p>
         <div className="llegend" aria-hidden="true">
           {BRAID_ORDER.map((key) => {
@@ -693,6 +824,7 @@ export function LivingTreeView({
             const par = nodeById.get(p.par)
             if (!par) return []
             const col = strandCol(p)
+            const isSkeptic = p.datum.archetype?.is_skeptic
             let sx = par.x
             let sy = par.y
             if (p.depth === 1) {
@@ -703,7 +835,16 @@ export function LivingTreeView({
             const key = `${p.par}>${p.datum.id}`
             return [
               <path key={`${key}-u`} d={d} fill="none" stroke="#241d12" strokeWidth={p.w + 4} strokeLinecap="round" opacity={p.op * 0.9} />,
-              <path key={`${key}-m`} d={d} fill="none" stroke={col} strokeWidth={p.w} strokeLinecap="round" opacity={p.op} />,
+              <path
+                key={`${key}-m`}
+                d={d}
+                fill="none"
+                stroke={col}
+                strokeWidth={p.w}
+                strokeLinecap="round"
+                strokeDasharray={isSkeptic ? '7 5' : undefined}
+                opacity={p.op * (isSkeptic ? 0.75 : 1)}
+              />,
             ]
           })}
         </g>
@@ -713,6 +854,7 @@ export function LivingTreeView({
             const col = strandCol(p)
             const selected = sel === p.datum.id
             const isYou = p.side === 'c'
+            const isSkeptic = p.datum.archetype?.is_skeptic
             const collapsed = p.kids.length > 0 && !exp[p.datum.id]
             const faceR = nodeR(p)
             const initialsText = isYou ? initials ?? 'YOU' : p.datum.name.split(' ')[0].slice(0, 2).toUpperCase()
@@ -729,6 +871,8 @@ export function LivingTreeView({
                   r={faceR}
                   stroke={col}
                   strokeWidth={selected ? 3 : 1.8}
+                  strokeDasharray={isSkeptic ? '5 4' : undefined}
+                  fill={isSkeptic ? '#0b0a09' : undefined}
                   style={selected ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
                 />
                 <text className="nm" y={isYou ? 7 : 4} style={{ fontSize: isYou ? '15px' : '9px' }}>
@@ -793,7 +937,7 @@ export function LivingTreeView({
       <div className="lnarr">{renderPanel()}</div>
       <div className="lfoot">
         Training first, rent later —<br />
-        follow a color upward and you will see which root earned, once they start earning.
+        the tree is yours; the marketplace is a lens on it, one tap deep.
       </div>
     </div>
   )

@@ -9,6 +9,7 @@ import {
 } from '../api'
 
 const PROVIDERS = [
+  { id: 'meta', label: 'Meta (Muse)', needsKey: true },
   { id: 'ollama', label: 'Ollama (local)', needsKey: false },
   { id: 'openai', label: 'OpenAI', needsKey: true },
   { id: 'anthropic', label: 'Anthropic', needsKey: true },

@@ -21,6 +21,7 @@ _ACCOUNT_CLOUD_ENV_KEYS: dict[str, tuple[str, ...]] = {
     "anthropic": ("ANTHROPIC_API_KEY",),
     "google": ("GOOGLE_API_KEY", "GEMINI_API_KEY"),
     "xai": ("XAI_API_KEY",),
+    "openrouter": ("OPENROUTER_API_KEY",),
 }
 
 
@@ -56,6 +57,7 @@ def resolve_cloud_api_key(principal: ExecutionPrincipal, provider_id: str) -> tu
             "google": "ZENAF_SYSTEM_GOOGLE_API_KEY",
             "xai": "ZENAF_SYSTEM_XAI_API_KEY",
             "meta": "ZENAF_SYSTEM_META_API_KEY",
+            "openrouter": "ZENAF_SYSTEM_OPENROUTER_API_KEY",
         }
         en = env_names.get(pid)
         if not en:

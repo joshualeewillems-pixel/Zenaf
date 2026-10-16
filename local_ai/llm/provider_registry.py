@@ -18,9 +18,9 @@ if TYPE_CHECKING:
 TestStatus = Literal["never", "passed", "failed"]
 
 # Order matches product surface (Settings + execution).
-EXECUTION_PROVIDER_IDS: tuple[str, ...] = ("ollama", "openai", "anthropic", "google", "xai", "meta")
+EXECUTION_PROVIDER_IDS: tuple[str, ...] = ("ollama", "openai", "anthropic", "google", "xai", "meta", "openrouter")
 
-_CLOUD_KEY_PROVIDERS = frozenset({"openai", "anthropic", "google", "xai", "meta"})
+_CLOUD_KEY_PROVIDERS = frozenset({"openai", "anthropic", "google", "xai", "meta", "openrouter"})
 
 
 def normalize_provider_id(raw: str) -> str:
@@ -50,6 +50,10 @@ def default_model_hint(provider_id: str) -> str:
         from local_ai.providers import meta as pm
 
         return pm.DEFAULT_MODEL
+    if pid == "openrouter":
+        from local_ai.providers import openrouter as por
+
+        return por.DEFAULT_MODEL
     if pid == "ollama":
         return (_config.OLLAMA_MODEL or "llama3.2").strip() or "llama3.2"
     return ""
@@ -64,6 +68,7 @@ def display_name(provider_id: str) -> str:
         "google": "Google (Gemini)",
         "xai": "xAI",
         "meta": "Meta",
+        "openrouter": "OpenRouter",
     }.get(pid, pid)
 
 
@@ -192,6 +197,10 @@ def build_provider_status_rows_for_principal(
                 reasons.append("No API key (set GOOGLE_API_KEY or GEMINI_API_KEY on the server or save a key in Settings).")
             elif pid == "xai":
                 reasons.append("No API key (set XAI_API_KEY on the server or save a key in Settings).")
+            elif pid == "openrouter":
+                reasons.append(
+                    "No API key yet — use “Connect with OpenRouter” above (one click), or save a key in Advanced."
+                )
             elif needs_stored_api_key(pid):
                 reasons.append("No API key saved for this provider.")
         row = {

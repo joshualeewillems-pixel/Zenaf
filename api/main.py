@@ -11,10 +11,6 @@ _repo_root = Path(__file__).resolve().parent.parent
 if str(_repo_root) not in sys.path:
     sys.path.insert(0, str(_repo_root))
 
-from local_ai.env_legacy_aliases import apply_zenaf_env_legacy_aliases
-
-_ENV_LEGACY_ALIASES_APPLIED = apply_zenaf_env_legacy_aliases()
-
 # Hosted mode: import first so ZENAF_DB_DIR aliasing precedes any storage import,
 # and fail fast on misconfigured production before the app is built.
 from local_ai.hosted_config import is_prod as _is_prod
@@ -306,17 +302,6 @@ def _on_startup() -> None:
     # Router check (owed follow-up to PR #34): scream if any expected router
     # failed to mount. Raises RuntimeError -> the server will not start.
     assert_routers_registered()
-    if _ENV_LEGACY_ALIASES_APPLIED:
-        print(
-            "  env: legacy ATRIA_* / vendor aliases applied (source→dest): "
-            + ", ".join(f"{src}→{dest}" for dest, src in _ENV_LEGACY_ALIASES_APPLIED)
-        )
-    try:
-        from local_ai.legacy_atria_migration import run_all_legacy_atria_migrations
-
-        run_all_legacy_atria_migrations(_repo_root)
-    except Exception as e:
-        print(f"  legacy .atria migration skipped or failed: {e}")
     _check_startup_dependencies()
     try:
         from local_ai.vision_execution import storage as _vst

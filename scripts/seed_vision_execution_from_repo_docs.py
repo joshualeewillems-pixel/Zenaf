@@ -18,8 +18,8 @@ Fresh start: wipe another account’s graph or clear adjunct noise first, then r
   (or reset without --reseed, then run this file separately).
 
 Other dev users (same doc graph, their own user_id):
-  python scripts/seed_vision_execution_from_repo_docs.py --user-email phil@local.zenaf
-  python scripts/seed_vision_execution_from_repo_docs.py --user-email phil@local.atria
+  python scripts/seed_vision_execution_from_repo_docs.py --user-email owner@local.zenaf
+  python scripts/seed_vision_execution_from_repo_docs.py --user-email owner@local.zenaf
 """
 from __future__ import annotations
 
@@ -124,7 +124,7 @@ def main() -> None:
     ap.add_argument(
         "--user-email",
         default="owner@local.zenaf",
-        help="Account to seed (default: owner@local.zenaf). Examples: phil@local.zenaf, phil@local.atria",
+        help="Account to seed (default: owner@local.zenaf). Examples: owner@local.zenaf",
     )
     args = ap.parse_args()
     email = (args.user_email or "").strip()

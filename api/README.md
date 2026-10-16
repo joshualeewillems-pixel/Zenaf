@@ -54,12 +54,11 @@ uvicorn api.main:app --reload --host 127.0.0.1 --port 8010
 
 
 
-- **`ZENAF_SETTINGS_ENCRYPTION_KEY`** — Fernet key (URL-safe base64-encoded 32-byte key). Required to **store** LLM API keys via `PUT /settings/llm/credentials/{provider}`. If missing or invalid, those requests return **503** with a clear message (no plaintext storage). If you still have **`ATRIA_SETTINGS_ENCRYPTION_KEY`** (or other `ATRIA_*` vars) in `.env` from before the rename, the API copies them into the matching `ZENAF_*` name at startup when the `ZENAF_*` variable is unset (`local_ai/env_legacy_aliases.py`).
+- **`ZENAF_SETTINGS_ENCRYPTION_KEY`** — Fernet key (URL-safe base64-encoded 32-byte key). Required to **store** LLM API keys via `PUT /settings/llm/credentials/{provider}`. If missing or invalid, those requests return **503** with a clear message (no plaintext storage). All `ATRIA_*` legacy environment variable fallbacks were removed in the 2026-10-16 clean break.
 
-- **LLM keys after rename** — Saved keys are per `users.id`. On DB init / first connection per process, if `owner@local.zenaf` has no credential rows but `owner@local.atria` does, the stack is copied automatically. Same for `phil@local.atria` → `phil@local.zenaf`. Otherwise run `python scripts/port_user_llm_stack.py apply --from … --to … --confirm PORT`.
+- **LLM keys** — Saved keys are per `users.id`. To migrate keys between users, run `python scripts/port_user_llm_stack.py apply --from … --to … --confirm PORT`.
 
-- **`ZENAF_DISABLE_LEGACY_ATRIA_IMPORT`** — Set to `1` / `true` / `yes` / `on` to **stop** automatic imports from legacy Atria: no `~/.atria` or `.atria/workspace-identity` → `.zenaf` on API startup, and **no** LLM profile/credential mirror from `@local.atria` users into Zenaf accounts. Use when you want a clean break from old Atria-only state.
-- **`ZENAF_OPERATOR_BRIEF_ENABLED`** — When `0`, `false`, `no`, or `off` (case-insensitive), council **does not** load `local_ai/context/phil_brand_brief.md` for operator priorities (even if the file exists). When unset, loading is **enabled** (backward compatible). See `local_ai/context/phil_context.py`.
+- **`ZENAF_OPERATOR_BRIEF_ENABLED`** — When `0`, `false`, `no`, or `off` (case-insensitive), council **does not** load `local_ai/context/operator_brand_brief.md` for operator priorities (even if the file exists). When unset, loading is **enabled** (backward compatible). See `local_ai/context/operator_context.py`.
 
 
 
@@ -73,7 +72,7 @@ uvicorn api.main:app --reload --host 127.0.0.1 --port 8010
 
 - **POST /auth/login**, **POST /auth/logout**, **GET /auth/me**, **PATCH /auth/me** — Session cookie auth; PATCH updates `display_name` (min 1 char).
 
-- **Dev users** — On first Vision Execution DB init, **`owner@local.zenaf`** (admin) and **`phil@local.zenaf`** / display **Phil** (non-admin) are created if missing. Passwords: `ZENAF_BOOTSTRAP_PASSWORD` or fallback `local-dev-owner`; `ZENAF_PHIL_BOOTSTRAP_PASSWORD` or fallback `phil-local-dev`. **Changing `.env` later does not change existing password hashes.** If login fails, try `local-dev-owner` / `phil-local-dev`, or run `python scripts/set_dev_user_password.py --email owner@local.zenaf --password <new>` (API off). **Change bootstrap passwords before any shared or public deployment.**
+- **Dev users** — On first Vision Execution DB init, **`owner@local.zenaf`** (admin) is created if missing. Password: `ZENAF_BOOTSTRAP_PASSWORD` or fallback `local-dev-owner`. **Changing `.env` later does not change existing password hashes.** If login fails, try `local-dev-owner`, or run `python scripts/set_dev_user_password.py --email owner@local.zenaf --password <new>` (API off). **Change bootstrap passwords before any shared or public deployment.**
 
 - **POST /auth/admin/users** — Admin only (session cookie). JSON body: `email`, `password`, optional `display_name`, optional `is_admin`. Creates another login account.
 

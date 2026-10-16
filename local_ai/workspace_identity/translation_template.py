@@ -10,7 +10,7 @@ building the workspace packet — scan mechanics, buffers, and junk/cache filter
   domain, examplePhrases) are narrative “who we are”; this file is structural “what this workspace
   calls things.” Both inform extraction and council, but Brand lives in the perspectives layer;
   translation lives next to workspace identity snapshot.
-- **Operator / mission brief** — Optional ``phil_brand_brief.md`` (council “Operator priorities:”);
+- **Operator / mission brief** — Optional ``operator_brand_brief.md`` (council “Operator priorities:”);
   disable loading with ``ZENAF_OPERATOR_BRIEF_ENABLED=0``. Translation template is per-workspace
   surface grounding (domainHints / capsule), separate from that file.
 - **Developmental / traces** — ``AiActionTrace``, workspace council intents, and

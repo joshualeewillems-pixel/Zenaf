@@ -39,15 +39,15 @@ def test_pending_value_then_confirm_assigns_owner(ve_conn) -> None:
     uid = "u-pend-1"
     ini = ve_storage.create_initiative(M.InitiativeCreate(title="P", brief="b"), uid)
     iid = str(ini["id"])
-    ve_storage.create_person(M.PersonCreate(name="Phil Tester", role=""))
+    ve_storage.create_person(M.PersonCreate(name="Test Person", role=""))
     ctx: dict = {
         "council_preflight": {"ve_focus": {"entity_type": "initiative", "entity_id": iid}},
         "pending_ve_elicitation": _pending_initiative_owner(iid, phase="awaiting_value"),
     }
-    r1 = evaluate_direct_ve_action(question="Phil Tester", context=ctx, user_id=uid)
+    r1 = evaluate_direct_ve_action(question="Test Person", context=ctx, user_id=uid)
     assert r1["status"] == "handled"
     assert r1.get("pending_ve_elicitation", {}).get("phase") == "awaiting_confirm"
-    assert r1.get("pending_ve_elicitation", {}).get("proposed_person_name") == "Phil Tester"
+    assert r1.get("pending_ve_elicitation", {}).get("proposed_person_name") == "Test Person"
 
     ctx["pending_ve_elicitation"] = r1["pending_ve_elicitation"]
     r2 = evaluate_direct_ve_action(question="yes", context=ctx, user_id=uid)
@@ -55,8 +55,8 @@ def test_pending_value_then_confirm_assigns_owner(ve_conn) -> None:
     assert r2.get("pending_ve_elicitation") is None
     row = ve_storage.get_initiative(iid, uid)
     people = ve_storage.list_persons()
-    phil = next(p for p in people if p.get("name") == "Phil Tester")
-    assert row and row.get("owner_id") == phil["id"]
+    test_person = next(p for p in people if p.get("name") == "Test Person")
+    assert row and row.get("owner_id") == test_person["id"]
 
 
 def _pending_initiative_brief(iid: str, *, phase: str, value: str | None = None) -> dict:

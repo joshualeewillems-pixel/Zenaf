@@ -126,7 +126,7 @@ def test_readme_txt_allowed_in_mirror_surfaces(tmp_path: Path) -> None:
 
 
 def test_copy_of_prefix_folder_skips_hints(tmp_path: Path) -> None:
-    d = tmp_path / "Copy of Phil Caylor Press Release Oct 2025"
+    d = tmp_path / "Copy of Test Press Release Oct 2025"
     d.mkdir()
     (d / "x.txt").write_text("x", encoding="utf-8")
     good = tmp_path / "CodeModule"

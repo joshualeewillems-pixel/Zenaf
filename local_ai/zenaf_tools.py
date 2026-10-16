@@ -2965,7 +2965,7 @@ def build_council_decision_packet(
         parts.append(f"Constraints:\n{key_constraints.strip()}")
     if not omit_operator_priorities:
         try:
-            from context.phil_context import load_operator_priority
+            from context.operator_context import load_operator_priority
             priority = load_operator_priority()
             if priority and priority.strip():
                 parts.append(f"Operator priorities:\n{_truncate(priority, MAX_OPERATOR_PRIORITY_CHARS)}")
@@ -3008,7 +3008,7 @@ def build_council_secondary_packet(
         parts.append(f"Constraints:\n{key_constraints.strip()}")
     if not omit_operator_priorities:
         try:
-            from context.phil_context import load_operator_priority
+            from context.operator_context import load_operator_priority
 
             priority = load_operator_priority()
             if priority and priority.strip():

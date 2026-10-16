@@ -15,7 +15,6 @@ from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from . import models as M
-from local_ai.env_legacy_aliases import is_legacy_atria_import_disabled
 from local_ai.hosted_config import is_prod as _is_prod
 from local_ai.activity import (
     ActivityEntityType,
@@ -31,11 +30,6 @@ _SCHEMA_PATH = _PKG_DIR / "schema.sql"
 _DEFAULT_OWNER_EMAIL = "owner@local.zenaf"
 _DEFAULT_OWNER_DISPLAY_NAME = "Local Owner"
 _DEFAULT_OWNER_PASSWORD_FALLBACK = "local-dev-owner"
-_PHIL_DEV_EMAIL = "phil@local.zenaf"
-_PHIL_DISPLAY_NAME = "Phil"
-_PHIL_PASSWORD_FALLBACK = "phil-local-dev"
-_OWNER_ATRIA_EMAIL = "owner@local.atria"
-_PHIL_ATRIA_EMAIL = "phil@local.atria"
 _SESSION_TTL_DAYS = 30
 
 # One SQLite connection per thread: FastAPI runs sync route handlers on a thread pool; a single
@@ -805,95 +799,6 @@ def _copy_user_llm_stack(conn: sqlite3.Connection, source_user_id: str, dest_use
         )
 
 
-def _sync_owner_llm_from_atria_to_zenaf(conn: sqlite3.Connection) -> None:
-    """
-    If owner@local.zenaf has no saved provider keys but owner@local.atria does, copy profile + ciphertext rows.
-    Safe: only runs when Zenaf owner credential count is zero.
-    """
-    if is_legacy_atria_import_disabled():
-        return
-    atria = conn.execute("SELECT id FROM users WHERE email = ?", (_OWNER_ATRIA_EMAIL,)).fetchone()
-    zenaf = conn.execute("SELECT id FROM users WHERE email = ?", (_DEFAULT_OWNER_EMAIL,)).fetchone()
-    if not atria or not zenaf:
-        return
-    aid, zid = str(atria[0]), str(zenaf[0])
-    if aid == zid:
-        return
-    if _llm_credential_row_count(conn, zid) > 0:
-        return
-    if _llm_credential_row_count(conn, aid) == 0:
-        return
-    _copy_user_llm_stack(conn, aid, zid)
-    _logger.info(
-        "[vision_execution] Mirrored LLM profile + credentials %s → %s (Zenaf owner had no saved keys).",
-        _OWNER_ATRIA_EMAIL,
-        _DEFAULT_OWNER_EMAIL,
-    )
-
-
-def _sync_phil_llm_from_atria_to_zenaf(conn: sqlite3.Connection) -> None:
-    """If phil@local.zenaf has no keys but phil@local.atria does, copy stack (before owner fallback)."""
-    if is_legacy_atria_import_disabled():
-        return
-    atria = conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_ATRIA_EMAIL,)).fetchone()
-    zenaf = conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_DEV_EMAIL,)).fetchone()
-    if not atria or not zenaf:
-        return
-    aid, zid = str(atria[0]), str(zenaf[0])
-    if aid == zid:
-        return
-    if _llm_credential_row_count(conn, zid) > 0:
-        return
-    if _llm_credential_row_count(conn, aid) == 0:
-        return
-    _copy_user_llm_stack(conn, aid, zid)
-    _logger.info(
-        "[vision_execution] Mirrored LLM profile + credentials %s → %s (Zenaf Phil had no saved keys).",
-        _PHIL_ATRIA_EMAIL,
-        _PHIL_DEV_EMAIL,
-    )
-
-
-def _sync_phil_llm_from_owner_if_phil_has_no_credentials(conn: sqlite3.Connection, owner_id: str) -> None:
-    """
-    If phil@local.zenaf exists and has no rows in user_llm_provider_credentials, mirror owner's
-    LLM profile + keys so the dev second account can run the same providers as the main account.
-    """
-    row = conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_DEV_EMAIL,)).fetchone()
-    if not row:
-        return
-    phil_id = row[0]
-    if _llm_credential_row_count(conn, str(phil_id)) > 0:
-        return
-    _copy_user_llm_stack(conn, owner_id, phil_id)
-    _logger.info(
-        "[vision_execution] Mirrored LLM profile and provider credentials from owner to %s (Phil had no stored keys).",
-        _PHIL_DEV_EMAIL,
-    )
-
-
-def _ensure_dev_user_phil(conn: sqlite3.Connection) -> None:
-    """Second local dev account for multi-user / isolation checks (idempotent)."""
-    if _is_prod():
-        # No dev fixture accounts in production.
-        return
-    if conn.execute("SELECT id FROM users WHERE email = ?", (_PHIL_DEV_EMAIL,)).fetchone():
-        return
-    pwd = os.environ.get("ZENAF_PHIL_BOOTSTRAP_PASSWORD", "").strip()
-    if not pwd:
-        _logger.warning(
-            "ZENAF_PHIL_BOOTSTRAP_PASSWORD is not set. Using DEV-ONLY fallback password for %s.",
-            _PHIL_DEV_EMAIL,
-        )
-        pwd = _PHIL_PASSWORD_FALLBACK
-    uid = M.new_id()
-    now = _now()
-    conn.execute(
-        "INSERT INTO users (id, email, password_hash, display_name, is_admin, created_at, updated_at) VALUES (?, ?, ?, ?, 0, ?, ?)",
-        (uid, _PHIL_DEV_EMAIL, _hash_password(pwd), _PHIL_DISPLAY_NAME, now, now),
-    )
-
-
 def _ensure_default_owner_and_backfill(conn: sqlite3.Connection) -> None:
     now = _now()
     owner = conn.execute(
@@ -930,10 +835,6 @@ def _ensure_default_owner_and_backfill(conn: sqlite3.Connection) -> None:
     conn.execute("UPDATE initiatives SET user_id = ? WHERE user_id IS NULL", (owner_id,))
     conn.execute("UPDATE projects SET user_id = ? WHERE user_id IS NULL", (owner_id,))
     conn.execute("UPDATE tasks SET user_id = ? WHERE user_id IS NULL", (owner_id,))
-    _sync_owner_llm_from_atria_to_zenaf(conn)
-    _ensure_dev_user_phil(conn)
-    _sync_phil_llm_from_atria_to_zenaf(conn)
-    _sync_phil_llm_from_owner_if_phil_has_no_credentials(conn, owner_id)
     conn.commit()
 
 

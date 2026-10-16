@@ -38,8 +38,8 @@ from local_ai.execution_policy.privacy_apply import ExecutionPolicyBlocked
 IMPLICIT_DEFAULT_SOURCES: list[dict[str, Any]] = [
     {
         "id": "resolver_general",
-        "summary": "Non-council LLM: policy provider override → Ollama model override → profile default_provider (else ollama) → cloud key or block.",
-        "ollama_selected_when": "default_provider is ollama or unset; or routed Ollama model override is set.",
+        "summary": "Non-council LLM: policy provider override → Ollama model override → profile default_provider (else meta) → cloud key or block.",
+        "ollama_selected_when": "default_provider is explicitly ollama; or routed Ollama model override is set.",
         "openai_suggested_when": "profile default_provider is openai (or other cloud) with resolvable API key.",
         "fallback_when": "Cloud selected but no key → BlockedLLMAdapter message (no silent cloud).",
         "code_refs": ["local_ai/llm/resolver.py:get_llm_adapter_for_principal"],
@@ -67,7 +67,7 @@ IMPLICIT_DEFAULT_SOURCES: list[dict[str, Any]] = [
     },
     {
         "id": "providers_init",
-        "summary": "Legacy get_default_provider(): policy override else OllamaProvider() without principal.",
+        "summary": "Legacy get_default_provider(): policy override else MetaProvider() without principal.",
         "code_refs": ["local_ai/providers/__init__.py:get_default_provider"],
     },
 ]
@@ -113,7 +113,7 @@ def _implicit_council_baseline(principal: ExecutionPrincipal) -> dict[str, Any]:
 
 def _implicit_general_baseline(principal: ExecutionPrincipal) -> dict[str, Any]:
     prof = _profile_for_principal(principal)
-    dp = (prof.get("default_provider") or "ollama").strip().lower()
+    dp = (prof.get("default_provider") or "meta").strip().lower()
     dm = prof.get("default_model")
     return {
         "effective_default_provider": dp,

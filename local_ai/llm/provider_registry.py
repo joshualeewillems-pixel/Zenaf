@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 TestStatus = Literal["never", "passed", "failed"]
 
 # Order matches product surface (Settings + execution).
-EXECUTION_PROVIDER_IDS: tuple[str, ...] = ("ollama", "openai", "anthropic", "google", "xai")
+EXECUTION_PROVIDER_IDS: tuple[str, ...] = ("ollama", "openai", "anthropic", "google", "xai", "meta")
 
 _CLOUD_KEY_PROVIDERS = frozenset({"openai", "anthropic", "google", "xai", "meta"})
 
@@ -134,7 +134,7 @@ def is_provider_configured(user_id: str | None, provider_id: str, profile: dict[
 def effective_default_model_for_profile(profile: dict[str, Any], provider_id: str) -> str:
     """Default model hint for a provider given stored profile (no execution identity)."""
     pid = normalize_provider_id(provider_id)
-    dp = (profile.get("default_provider") or "ollama").strip().lower()
+    dp = (profile.get("default_provider") or "meta").strip().lower()
     dm = (profile.get("default_model") or "").strip()
     om = (profile.get("ollama_model") or "").strip()
     if pid == "ollama":

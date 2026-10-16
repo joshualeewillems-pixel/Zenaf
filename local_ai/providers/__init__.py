@@ -5,7 +5,7 @@ Prefer ``local_ai.llm.resolver.get_llm_adapter_for_principal`` for execution. Th
 retains ``get_default_provider`` for narrow legacy/testing use only.
 """
 
-from .ollama import OllamaProvider
+from .meta import MetaProvider
 
 from local_ai.execution_policy.run_context import get_policy_provider_override
 
@@ -13,14 +13,14 @@ from local_ai.execution_policy.run_context import get_policy_provider_override
 
 
 def get_default_provider():
-    """Return the active model provider (Ollama by default).
+    """Return the active model provider (Meta by default).
 
     When execution policy sets a per-request override (e.g. OpenAI), that instance is returned.
     """
     policy = get_policy_provider_override()
     if policy is not None:
         return policy
-    return OllamaProvider()
+    return MetaProvider()
 
 
 def get_council_provider():

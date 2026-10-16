@@ -508,6 +508,61 @@ class PersonalityStore:
             self._conn.commit()
         return v
 
+    # -- council archetype custom names (naming unlock milestones) ----------
+
+    _ARCHETYPE_NAME_PREFIX = "archetype_name_"
+    _ARCHETYPE_NAME_MAX_LEN = 60
+
+    def _archetype_name_key(self, archetype_id: str) -> str:
+        from local_ai.council.archetypes import get_archetype
+
+        arch = get_archetype(archetype_id)
+        if arch is None:
+            raise ValueError(f"unknown archetype {archetype_id!r}")
+        return self._ARCHETYPE_NAME_PREFIX + arch.id
+
+    def get_archetype_name(self, archetype_id: str) -> str | None:
+        """The user's custom display name for a council archetype seat.
+
+        Returns None when the seat still uses its stock name. Raises
+        ValueError for unknown archetype ids.
+        """
+        key = self._archetype_name_key(archetype_id)
+        owner = self._weight_owner()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT value FROM personality_settings WHERE user_id = ? AND key = ?",
+                (owner, key),
+            ).fetchone()
+        v = (row["value"] if row else "").strip()
+        return v or None
+
+    def set_archetype_name(self, archetype_id: str, name: str) -> str:
+        """Set a custom display name for a council archetype seat.
+
+        Validates the archetype id and the name (non-empty, max 60 chars).
+        Returns the stored name. Unlock gating happens at the API layer.
+        """
+        key = self._archetype_name_key(archetype_id)
+        v = (name or "").strip()
+        if not v:
+            raise ValueError("display name is empty")
+        if len(v) > self._ARCHETYPE_NAME_MAX_LEN:
+            raise ValueError(
+                f"display name is {len(v)} chars (max {self._ARCHETYPE_NAME_MAX_LEN})"
+            )
+        owner = self._weight_owner()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO personality_settings (user_id, key, value, updated_at)"
+                " VALUES (?, ?, ?, ?)"
+                " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value,"
+                " updated_at = excluded.updated_at",
+                (owner, key, v, _iso_now()),
+            )
+            self._conn.commit()
+        return v
+
     # -- profile snapshots (Phase 5: temporal archives / eras) --------------
     # Insert-only: there is deliberately NO update or delete method for
     # snapshots. A snapshot is a named, immutable archive of one published

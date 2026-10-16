@@ -3060,7 +3060,12 @@ def _council_seat_is_storyteller(defn: dict) -> bool:
     return str(defn.get("name") or "").strip().casefold() in ("storyteller", "brand")
 
 
-def _build_council_persona_block(defn: dict, *, council_clarify_only: bool = False) -> str:
+def _build_council_persona_block(
+    defn: dict,
+    *,
+    council_clarify_only: bool = False,
+    user_id: str | None = None,
+) -> str:
     """Seat persona — follows PRIMARY + Question in the council seat prompt (object-first assembly)."""
     name = (defn.get("name") or "Advisor").strip()
     role = (defn.get("role") or "").strip()
@@ -3221,6 +3226,21 @@ def _build_council_persona_block(defn: dict, *, council_clarify_only: bool = Fal
             _arch_name = defn.get("archetype_name")
             if not isinstance(_arch_name, str):
                 _arch_name = None
+            if _arch_name is None and user_id:
+                # User-renamed seat (naming unlock milestone): resolve the
+                # custom display name. Stock name when never renamed.
+                # Explicit defn["archetype_name"] (e.g. twig overrides) wins.
+                try:
+                    from local_ai.council.archetypes import get_archetype as _get_arch
+                    from local_ai.council.naming import get_display_name as _disp_name
+
+                    _arch = _get_arch(_arch_id)
+                    if _arch is not None:
+                        _custom = _disp_name(user_id, _arch.id)
+                        if _custom and _custom != _arch.display_name:
+                            _arch_name = _custom
+                except Exception:
+                    pass
             _arch_lines = build_archetype_prompt_lines(
                 _arch_id,
                 weights_override=_arch_weights,
@@ -3419,6 +3439,7 @@ def _build_weighted_council_persona_block(
     blend_ctx=None,
     personality=None,
     council_clarify_only: bool = False,
+    user_id: str | None = None,
 ) -> str:
     """Seat persona block with the council personality mode applied.
 
@@ -3428,7 +3449,9 @@ def _build_weighted_council_persona_block(
     default); the personality layer then applies the run's mode.
     The built-in definitions are only ever read, never written.
     """
-    base = _build_council_persona_block(defn, council_clarify_only=council_clarify_only)
+    base = _build_council_persona_block(
+        defn, council_clarify_only=council_clarify_only, user_id=user_id
+    )
     from local_ai.personality.blend import CouncilPersonality, apply_council_personality
 
     strand_key = _resolve_seat_strand(defn)
@@ -4101,7 +4124,8 @@ def run_council(
                 shared_for_seat = shared_for_seat.rstrip() + overlay_suffix
             perspective_shared_constraints.append(shared_for_seat)
             persona_block = _build_weighted_council_persona_block(
-                defn, personality=_council_personality, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only,
+                user_id=council_user_id,
             )
             prompt = _assemble_council_seat_prompt(
                 primary_context_block=primary_block,
@@ -4147,7 +4171,8 @@ def run_council(
                     "seat_kind": "user_defined",
                     "raw_perspective_definition": defn,
                     "normalized_persona_block": _build_weighted_council_persona_block(
-                        defn, personality=_council_personality, council_clarify_only=clarify_only
+                        defn, personality=_council_personality, council_clarify_only=clarify_only,
+                        user_id=council_user_id,
                     ),
                     "prompt_decomposition": {
                         "primary_context": primary_block,
@@ -4197,7 +4222,8 @@ def run_council(
             role_key = COUNCIL_ROLE_KEYS[i]
             defn = _built_in_persona_dict(role_key)
             persona_block = _build_weighted_council_persona_block(
-                defn, personality=_council_personality, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only,
+                user_id=council_user_id,
             )
             decisions_block = _format_decision_context_block(role_name, limit=5) or ""
             prompt = _assemble_council_seat_prompt(
@@ -4243,7 +4269,8 @@ def run_council(
                     "seat_kind": "built_in",
                     "raw_perspective_definition": None,
                     "normalized_persona_block": _build_weighted_council_persona_block(
-                        defn, personality=_council_personality, council_clarify_only=clarify_only
+                        defn, personality=_council_personality, council_clarify_only=clarify_only,
+                        user_id=council_user_id,
                     ),
                     "prompt_decomposition": {
                         "primary_context": primary_block,
@@ -4810,7 +4837,8 @@ def run_council_stream(
                 defn, role_limit=role_limit, clarify_only=clarify_only
             )
             persona_block = _build_weighted_council_persona_block(
-                defn, personality=_council_personality, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only,
+                user_id=council_user_id,
             )
             prompt = _assemble_council_seat_prompt(
                 primary_context_block=primary_block,
@@ -4879,7 +4907,8 @@ def run_council_stream(
                 role_key = COUNCIL_ROLE_KEYS[i]
                 defn = _built_in_persona_dict(role_key)
                 persona_block = _build_weighted_council_persona_block(
-                defn, personality=_council_personality, council_clarify_only=clarify_only
+                defn, personality=_council_personality, council_clarify_only=clarify_only,
+                user_id=council_user_id,
             )
                 decisions_block = _format_decision_context_block(role_name, limit=5) or ""
                 prompt = _assemble_council_seat_prompt(

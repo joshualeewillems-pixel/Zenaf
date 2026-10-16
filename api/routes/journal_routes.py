@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.routes.auth_routes import get_current_user
-from local_ai.council.archetypes import get_archetype
+from local_ai.council.naming import get_display_name
 from local_ai.journal.story import (
     analyze_entry_strands,
     detect_active_archetypes,
@@ -68,7 +68,7 @@ def post_journal_story(
         raise HTTPException(status_code=422, detail="No archetypes activated.")
 
     try:
-        story = render_archetype_story(text, cast)
+        story = render_archetype_story(text, cast, user_id=user_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
@@ -77,7 +77,7 @@ def post_journal_story(
         cast=[
             CastMember(
                 id=aid,
-                name=(get_archetype(aid).display_name if get_archetype(aid) else aid),
+                name=get_display_name(user_id, aid),
                 similarity=round(sim, 3),
             )
             for aid, sim in cast

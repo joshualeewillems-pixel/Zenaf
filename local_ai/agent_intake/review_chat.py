@@ -9,7 +9,7 @@ Flow:
    which moment to discuss first.
 2. Discussion: Zenaf asks curious questions, digs deeper, proposes strand
    placements with humble explanations.
-3. Confirmation: When user agrees ("yes, file in Mediator"), a TrainingSignal
+3. Confirmation: When user agrees ("yes, file in Heart"), a TrainingSignal
    is created via the intake→signal bridge.
 4. Spin-offs: New insights from the dialogue become their own signals.
 
@@ -28,19 +28,19 @@ from local_ai.strands import STRANDS
 # Bot persona: humble, curious, explains reasoning. Explicit about what it's adding.
 _ZENAF_SYSTEM = """You are Zenaf, a curious assistant helping the user review their imported AI conversation for training material.
 
-You have read their full conversation and identified moments that might be valuable training signals for their seven strand agents (Word/Storyteller, Number/Patternist, Image/Seer, Sound/Songwriter, Body/Maker, People/Mediator, Self/Guide).
+You have read their full conversation and identified moments that might be valuable training signals for their seven strand agents (Word/Voice, Number/Logic, Image/Eye, Sound/Ear, Body/Hands, People/Heart, Self/Compass).
 
 Your job:
 - Be humble and curious. You are proposing, not declaring.
 - Use plain, accessible language by default (~11th grade reading level). No academic jargon, no philosophical terminology unless the user introduces it first. Say "how people treat each other" not "relational ethics." Say "knowing yourself" not "epistemic foundation."
 - Match the user's register: if they speak simply, stay simple. If they go deep and use precise terms, follow them there. Always start accessible and adjust up, never start academic and talk down.
-- Explain your reasoning simply: "This feels like Mediator to me because..."
+- Explain your reasoning simply: "This feels like Heart to me because..."
 - Ask genuine questions: "What was going on when you said that?" "Why that phrasing?"
 - BEFORE filing anything, be explicit and confident about what you're proposing.
   Present it naturally in conversation, then include a structured tag on its own line:
-  [PROPOSAL strand=Mediator]Your specific synopsis of the training signal here[/PROPOSAL]
+  [PROPOSAL strand=Heart]Your specific synopsis of the training signal here[/PROPOSAL]
   Then explain: "Tap '✓ File it' in the amber box to save this, or keep chatting here to refine it."
-  The strand must be one of: Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide.
+  The strand must be one of: Voice, Logic, Eye, Ear, Hands, Heart, Guide.
   Make sure the user understands: the amber box is for filing, normal chat is for discussion.
 - If the user says "add this", "file this", "save this", or "capture this", formulate a proposal based on what you just discussed. Include the [PROPOSAL] tag so the amber box appears.
 - Your main goal is to be as correct as possible before making any changes.
@@ -56,13 +56,13 @@ Keep responses concise (2-4 sentences). Ask one question at a time.
 """
 
 _STRAND_NAMES = {
-    "word": "Storyteller",
-    "number": "Patternist", 
-    "image": "Seer",
-    "sound": "Songwriter",
-    "body": "Maker",
-    "people": "Mediator",
-    "self": "Guide",
+    "word": "Voice",
+    "number": "Logic", 
+    "image": "Eye",
+    "sound": "Ear",
+    "body": "Hands",
+    "people": "Heart",
+    "self": "Compass",
 }
 
 
@@ -327,8 +327,8 @@ Respond as Zenaf. Be humble, curious, concise (2-4 sentences). If the user is co
 def _extract_proposal_from_reply(reply: str, agent, moments: list) -> dict | None:
     """Extract a filing proposal from the LLM's reply.
     
-    Looks for structured tag: [PROPOSAL strand=Mediator]synopsis here[/PROPOSAL]
-    Returns {"strand": "people", "strand_name": "Mediator", "synopsis": "...", "quote": "..."} or None.
+    Looks for structured tag: [PROPOSAL strand=Heart]synopsis here[/PROPOSAL]
+    Returns {"strand": "people", "strand_name": "Heart", "synopsis": "...", "quote": "..."} or None.
     Also strips the tag from the reply before returning it to the user.
     """
     # Match structured proposal tag

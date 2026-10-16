@@ -168,13 +168,13 @@ _STRAND_PLAIN = {
 }
 
 _STRAND_NAME = {
-    "word": "Storyteller",
-    "number": "Patternist",
-    "image": "Seer",
-    "sound": "Songwriter",
-    "body": "Maker",
-    "people": "Mediator",
-    "self": "Guide",
+    "word": "Voice",
+    "number": "Logic",
+    "image": "Eye",
+    "sound": "Ear",
+    "body": "Hands",
+    "people": "Heart",
+    "self": "Compass",
 }
 
 

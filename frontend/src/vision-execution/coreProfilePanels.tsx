@@ -63,7 +63,7 @@ export function BrandStructuredProfilePanel({
 
   const previewSource = (profile?.core_definition ?? '').trim()
 
-  const title = displayName.trim() || brandActor.name || 'Storyteller'
+  const title = displayName.trim() || brandActor.name || 'Voice'
 
   if (loading) {
     return (

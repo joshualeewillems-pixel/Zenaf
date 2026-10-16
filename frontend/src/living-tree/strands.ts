@@ -32,7 +32,7 @@ export const STRANDS: Strand[] = [
   {
     key: 'word',
     faculty: 'Word',
-    agentName: 'Storyteller',
+    agentName: 'Voice',
     color: '#c98f6a',
     gardner: 'linguistic',
     tagline: 'Language, rhetoric, writing, voice — how things get said.',
@@ -40,7 +40,7 @@ export const STRANDS: Strand[] = [
   {
     key: 'number',
     faculty: 'Number',
-    agentName: 'Patternist',
+    agentName: 'Logic',
     color: '#7aa3b8',
     gardner: 'logical-mathematical',
     tagline: 'Analysis, systems, evidence — how patterns get read.',
@@ -48,7 +48,7 @@ export const STRANDS: Strand[] = [
   {
     key: 'image',
     faculty: 'Image',
-    agentName: 'Seer',
+    agentName: 'Eye',
     color: '#c9a86a',
     gardner: 'spatial',
     tagline: 'Visual taste, design, spatial thinking — how things get seen.',
@@ -56,7 +56,7 @@ export const STRANDS: Strand[] = [
   {
     key: 'sound',
     faculty: 'Sound',
-    agentName: 'Songwriter',
+    agentName: 'Ear',
     color: '#b983a8',
     gardner: 'musical',
     tagline: 'Music, rhythm, listening — how things get heard.',
@@ -64,7 +64,7 @@ export const STRANDS: Strand[] = [
   {
     key: 'body',
     faculty: 'Body',
-    agentName: 'Maker',
+    agentName: 'Hands',
     color: '#9db87a',
     gardner: 'bodily-kinesthetic',
     tagline: 'Craft, making, doing — how things get built.',
@@ -72,7 +72,7 @@ export const STRANDS: Strand[] = [
   {
     key: 'people',
     faculty: 'People',
-    agentName: 'Mediator',
+    agentName: 'Heart',
     color: '#a88fc9',
     gardner: 'interpersonal',
     tagline: 'Leadership, teaching, care — how people get held.',
@@ -80,7 +80,7 @@ export const STRANDS: Strand[] = [
   {
     key: 'self',
     faculty: 'Self',
-    agentName: 'Guide',
+    agentName: 'Compass',
     color: '#7ba889',
     gardner: 'intrapersonal',
     tagline: 'Judgment, values, direction — how choices get made.',
@@ -98,7 +98,7 @@ export function strandColor(key: StrandKey): string {
   return _BY_KEY[key].color
 }
 
-/** Strand lookup by warm agent name (e.g. "Storyteller"). */
+/** Strand lookup by warm agent name (e.g. "Voice"). */
 export function strandForAgentName(agentName: string): Strand | undefined {
   const n = agentName.trim().toLowerCase()
   return STRANDS.find((s) => s.agentName.toLowerCase() === n)

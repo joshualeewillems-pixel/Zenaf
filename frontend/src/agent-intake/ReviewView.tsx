@@ -17,13 +17,13 @@ import {
 } from './reviewStages'
 
 const STRANDS = [
-  { key: 'word', name: 'Storyteller' },
-  { key: 'number', name: 'Patternist' },
-  { key: 'image', name: 'Seer' },
-  { key: 'sound', name: 'Songwriter' },
-  { key: 'body', name: 'Maker' },
-  { key: 'people', name: 'Mediator' },
-  { key: 'self', name: 'Guide' },
+  { key: 'word', name: 'Voice' },
+  { key: 'number', name: 'Logic' },
+  { key: 'image', name: 'Eye' },
+  { key: 'sound', name: 'Ear' },
+  { key: 'body', name: 'Hands' },
+  { key: 'people', name: 'Heart' },
+  { key: 'self', name: 'Compass' },
 ]
 
 type Agent = {

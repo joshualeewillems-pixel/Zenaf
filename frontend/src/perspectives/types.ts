@@ -71,7 +71,7 @@ export type PerspectiveAgent = {
  * Built-in **actors** (voice / lens). Council **roles** (payload `mandate`) are separate — see `mandates.ts`.
  * Shown by default and fully editable.
  *
- * The 7 strand agents (Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide) replaced the
+ * The 7 strand agents (Voice, Logic, Eye, Ear, Hands, Heart, Compass) replaced the
  * old five council seats (strategist, operator, analyst, governance, brand). Legacy stored seats are
  * remapped on load — see `migrateLegacySeatIdsToStrandAgents`.
  */
@@ -174,7 +174,7 @@ const SKEPTIC_PERSPECTIVE: PerspectiveAgent = {
  * Built-in **actors** (voice / lens). Council **roles** (payload `mandate`) are separate — see `mandates.ts`.
  * Shown by default and fully editable.
  *
- * Content for the 7 strand agents (Storyteller, Patternist, Seer, Songwriter, Maker, Mediator, Guide)
+ * Content for the 7 strand agents (Voice, Logic, Eye, Ear, Hands, Heart, Compass)
  * plus the Zenaf synthesis seat is generated from the backend; only presentation metadata and the
  * frontend-only Skeptic live here.
  */
@@ -215,7 +215,7 @@ export function migrateLegacySeatIdsToStrandAgents(agents: PerspectiveAgent[]): 
     return {
       ...a,
       id: nextId,
-      // The old Brand seat carried the legacy 'brand' lane; the Storyteller is a system archetype.
+      // The old Brand seat carried the legacy 'brand' lane; the Voice is a system archetype.
       actor_kind: a.actor_kind === 'brand' ? 'archetype' : a.actor_kind,
       source_archetype_id:
         remappedSource && LEGACY_SEAT_ID_REMAP[remappedSource]
@@ -268,7 +268,7 @@ export function isUserDefined(agent: PerspectiveAgent): boolean {
 
 /**
  * Built-in actors shown as read-only “System” on Foundation (UI order).
- * The Storyteller is not listed here: it inherited the old Brand seat's hero
+ * The Voice is not listed here: it inherited the old Brand seat's hero
  * slot and renders under “Yours” as the core voice.
  */
 export const FOUNDATION_SYSTEM_ACTOR_ORDER = [
@@ -286,7 +286,7 @@ export function isFoundationSystemActor(agent: PerspectiveAgent): boolean {
   return (FOUNDATION_SYSTEM_ACTOR_ORDER as readonly string[]).includes(agent.id)
 }
 
-/** Archetype seats that can spawn a personal copy (excludes Zenaf synthesis and the Storyteller core voice). */
+/** Archetype seats that can spawn a personal copy (excludes Zenaf synthesis and the Voice core voice). */
 const MAKABLE_ARCHETYPE_IDS = new Set(['patternist', 'seer', 'songwriter', 'maker', 'mediator', 'guide', 'skeptic'])
 
 export function canMakeOwnFromFoundationSystemActor(agent: PerspectiveAgent): boolean {

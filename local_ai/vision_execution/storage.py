@@ -680,6 +680,32 @@ def _migrate_aspiration_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_strand_weightings_table(conn: sqlite3.Connection) -> None:
+    """Standalone strand_weightings table (CREATE IF NOT EXISTS for existing DBs).
+
+    Keyed by (user_id, entity_type, entity_id). Sparse by design: entities
+    without a row are treated as never-weighed (unknown) by
+    local_ai.entity_strands — no backfilling of defaults.
+    """
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS strand_weightings (
+          user_id TEXT NOT NULL,
+          entity_type TEXT NOT NULL CHECK (entity_type IN ('person','project','task','asset','job')),
+          entity_id TEXT NOT NULL,
+          weights_json TEXT NOT NULL DEFAULT '{}',
+          source TEXT NOT NULL DEFAULT '' CHECK (source IN ('','user_stated','inferred','mined')),
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, entity_type, entity_id)
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_strand_weightings_entity ON strand_weightings(entity_type, entity_id)"
+    )
+    conn.commit()
+
+
 def _ensure_user_id_column(conn: sqlite3.Connection, table: str) -> None:
     cur = conn.execute(f"PRAGMA table_info({table})")
     if not any(r[1] == "user_id" for r in cur.fetchall()):
@@ -859,6 +885,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_idea_notes_column(conn)
     _migrate_node_memory_tables(conn)
     _migrate_aspiration_tables(conn)
+    _migrate_strand_weightings_table(conn)
     _ensure_default_owner_and_backfill(conn)
     conn.commit()
 

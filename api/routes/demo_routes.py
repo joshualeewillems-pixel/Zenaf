@@ -22,9 +22,10 @@ from __future__ import annotations
 import time
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from api.routes.auth_routes import get_current_user
 from local_ai.council.archetypes import (
     STOCK_ARCHETYPES,
     build_archetype_prompt_lines,
@@ -63,6 +64,10 @@ _COLOR_WEAVE_INSTRUCTION = (
 # In-memory session + rate-limit stores (single-instance; see module docstring).
 _sessions: dict[str, dict] = {}
 _ip_hits: dict[str, list[float]] = {}
+#: Claim codes: code -> {"transcript": str, "created": float}. TTL 24h, single-use.
+_claims: dict[str, dict] = {}
+CLAIM_TTL_S = 86400
+_CLAIM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/l
 
 
 class DemoChatBody(BaseModel):
@@ -159,6 +164,92 @@ def demo_voices() -> list[DemoVoiceInfo]:
         )
         for a in STOCK_ARCHETYPES
     ]
+
+
+def _format_transcript_text(transcript: list[dict]) -> str:
+    """Demo transcript as plain training text. [[u]] markers are display-only."""
+    lines = []
+    for turn in transcript:
+        role = turn.get("role", "")
+        content = (turn.get("content") or "").replace(WEAVE_OPEN, "").replace(WEAVE_CLOSE, "")
+        speaker = "You" if role == "visitor" else get_archetype(role).display_name if get_archetype(role) else role
+        lines.append(f"{speaker}: {content.strip()}")
+    return "\n\n".join(lines).strip()
+
+
+def _new_claim_code() -> str:
+    import secrets
+
+    for _ in range(20):
+        code = "".join(secrets.choice(_CLAIM_ALPHABET) for _ in range(6))
+        if code not in _claims:
+            return code
+    raise HTTPException(status_code=503, detail="Could not issue a claim code. Try again.")
+
+
+class DemoSaveBody(BaseModel):
+    session_id: str = Field(min_length=1, max_length=64)
+
+
+class DemoSaveResponse(BaseModel):
+    claim_code: str
+    expires_in_hours: int = 24
+
+
+class DemoClaimBody(BaseModel):
+    claim_code: str = Field(min_length=6, max_length=12)
+
+
+class DemoClaimResponse(BaseModel):
+    transcript: str
+    title: str = "Landing demo conversation"
+
+
+@router.post("/save", response_model=DemoSaveResponse)
+def demo_save(body: DemoSaveBody) -> DemoSaveResponse:
+    """Freeze an anonymous demo transcript under a claim code.
+
+    No auth. The visitor gets a short code; entering it in their account
+    (Foundation tab) pulls the transcript into the intake pipeline —
+    "continue the conversation." Single-use, 24h TTL.
+    """
+    now = time.time()
+    expired = [c for c, v in _claims.items() if now - v["created"] > CLAIM_TTL_S]
+    for c in expired:
+        del _claims[c]
+
+    sess = _sessions.get((body.session_id or "").strip())
+    if not sess or not sess["transcript"]:
+        raise HTTPException(status_code=404, detail="Demo session not found or empty.")
+    text = _format_transcript_text(sess["transcript"])
+    if not text:
+        raise HTTPException(status_code=422, detail="Nothing to save yet — say something first.")
+
+    code = _new_claim_code()
+    _claims[code] = {"transcript": text, "created": now}
+    return DemoSaveResponse(claim_code=code)
+
+
+@router.post("/claim", response_model=DemoClaimResponse)
+def demo_claim(
+    body: DemoClaimBody,
+    current_user: dict = Depends(get_current_user),
+) -> DemoClaimResponse:
+    """Claim a demo transcript into the caller's account (auth required).
+
+    Returns the transcript text; the frontend then POSTs it to
+    /agents/connect/share-text — the same intake path as the bookmarklet.
+    Single-use: the claim code is consumed.
+    """
+    code = (body.claim_code or "").strip().upper()
+    entry = _claims.get(code)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Claim code not found or expired.")
+    if time.time() - entry["created"] > CLAIM_TTL_S:
+        del _claims[code]
+        raise HTTPException(status_code=404, detail="Claim code expired.")
+    del _claims[code]
+    return DemoClaimResponse(transcript=entry["transcript"])
 
 
 @router.post("/chat", response_model=DemoChatResponse)

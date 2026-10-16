@@ -221,6 +221,14 @@ except Exception as e:
     print(f"Demo routes not loaded: {e}")
     _router_load_errors.append(f"demo: {e}")
 
+# Per-voice chat — Foundation tab voice console (auth required).
+try:
+    from api.routes.voice_routes import router as voice_router
+    app.include_router(voice_router)
+except Exception as e:
+    print(f"Voice routes not loaded: {e}")
+    _router_load_errors.append(f"voice: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

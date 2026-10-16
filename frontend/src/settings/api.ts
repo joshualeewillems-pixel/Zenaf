@@ -85,6 +85,42 @@ export async function testLLM(provider: string, apiKey?: string, model?: string 
   return res.json()
 }
 
+/** "Sign in with OpenRouter" (OAuth PKCE) helpers. */
+export interface OpenRouterOAuthInitiateResult {
+  auth_url: string
+  code_verifier: string
+  code_challenge: string
+}
+
+export async function initiateOpenRouterOAuth(callbackUrl: string): Promise<OpenRouterOAuthInitiateResult> {
+  const res = await fetch(`${BASE}/llm/openrouter/oauth/initiate`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_url: callbackUrl }),
+  })
+  const body = (await res.json().catch(() => ({}))) as Partial<OpenRouterOAuthInitiateResult> & {
+    detail?: unknown
+  }
+  if (!res.ok || !body.auth_url || !body.code_verifier) {
+    throw new Error(typeof body.detail === 'string' ? body.detail : 'Could not start OpenRouter sign-in')
+  }
+  return body as OpenRouterOAuthInitiateResult
+}
+
+export async function exchangeOpenRouterOAuth(code: string, codeVerifier: string): Promise<void> {
+  const res = await fetch(`${BASE}/llm/openrouter/oauth/exchange`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, code_verifier: codeVerifier }),
+  })
+  if (!res.ok) {
+    const d = (await res.json().catch(() => ({}))) as { detail?: unknown }
+    throw new Error(typeof d.detail === 'string' ? d.detail : 'OpenRouter sign-in failed')
+  }
+}
+
 export async function updateProviderEnabled(provider: string, enabled: boolean): Promise<ProviderStatusRow[]> {
   const res = await fetch(`${BASE}/llm/providers/${encodeURIComponent(provider)}`, {
     method: 'PUT',

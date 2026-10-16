@@ -165,6 +165,13 @@ except Exception as e:
     _router_load_errors.append(f"settings: {e}")
 
 try:
+    from api.routes.openrouter_oauth_routes import router as openrouter_oauth_router
+    app.include_router(openrouter_oauth_router, prefix="/settings")
+except Exception as e:
+    print(f"OpenRouter OAuth routes not loaded: {e}")
+    _router_load_errors.append(f"openrouter_oauth: {e}")
+
+try:
     from api.routes.studio_routes import router as studio_router
     app.include_router(studio_router)
 except Exception as e:

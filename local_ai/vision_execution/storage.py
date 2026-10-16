@@ -1195,8 +1195,8 @@ def create_user_account(
 # --- User settings (LLM + notifications) ---
 _SETTINGS_KEY_ENV = "ZENAF_SETTINGS_ENCRYPTION_KEY"
 _SETTINGS_KEY_LOCAL_FILE = "settings_encryption.key"
-_LLM_PROVIDERS_WITH_KEY = frozenset({"openai", "anthropic", "google", "xai", "meta"})
-_LLM_DEFAULT_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "google", "xai", "meta"})
+_LLM_PROVIDERS_WITH_KEY = frozenset({"openai", "anthropic", "google", "xai", "meta", "openrouter"})
+_LLM_DEFAULT_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "google", "xai", "meta", "openrouter"})
 _settings_key_cache: str | None = None
 
 
@@ -1895,7 +1895,7 @@ def get_user_llm_profile(user_id: str) -> dict[str, Any]:
     }
 
 
-_LLM_EXECUTION_PROVIDER_IDS = frozenset({"ollama", "openai", "anthropic", "google", "xai", "meta"})
+_LLM_EXECUTION_PROVIDER_IDS = frozenset({"ollama", "openai", "anthropic", "google", "xai", "meta", "openrouter"})
 
 
 def set_llm_provider_enabled(user_id: str, provider: str, enabled: bool) -> dict[str, Any]:

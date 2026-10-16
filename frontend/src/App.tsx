@@ -4344,6 +4344,7 @@ function App() {
       { value: 'anthropic', label: 'Anthropic' },
       { value: 'google', label: 'Google (Gemini)' },
       { value: 'xai', label: 'xAI (Grok)' },
+      { value: 'openrouter', label: 'OpenRouter' },
     ]
     if (!currentUser || llmProviderRows.length === 0) return staticOrder
     const rowById = new Map(llmProviderRows.map((p) => [p.id, p]))

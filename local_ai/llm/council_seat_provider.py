@@ -58,6 +58,18 @@ class _XaiShim:
         return px.generate(self._key, prompt, model=self._model, timeout=timeout)
 
 
+class _OpenRouterShim:
+    def __init__(self, api_key: str, model: str | None):
+        self._key = api_key
+        self._model = model
+        self.model = model
+
+    def generate(self, prompt: str, *, timeout: int = 120) -> str:
+        from local_ai.providers import openrouter as por
+
+        return por.generate(self._key, prompt, model=self._model, timeout=timeout)
+
+
 def _normalize_seat_provider(raw: str | None) -> str | None:
     if raw is None:
         return None
@@ -188,6 +200,8 @@ def build_council_seat_provider(
         return _GoogleShim(key, model or None), None
     if want == "xai":
         return _XaiShim(key, model or None), None
+    if want == "openrouter":
+        return _OpenRouterShim(key, model or None), None
 
     return default_provider, _seat_fallback_note(
         requested_provider=want,

@@ -95,6 +95,10 @@ class _CloudLLMAdapter:
             from local_ai.providers import meta as p
 
             return p.generate(self._api_key, request.prompt, model=self._model, timeout=to)
+        if self._provider == "openrouter":
+            from local_ai.providers import openrouter as p
+
+            return p.generate(self._api_key, request.prompt, model=self._model, timeout=to)
         raise RuntimeError(f"Unknown provider {self._provider}")
 
 

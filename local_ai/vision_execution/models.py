@@ -86,6 +86,19 @@ class SettingsLLMProviderEnabledBody(BaseModel):
     enabled: bool = True
 
 
+class OpenRouterOAuthInitiateBody(BaseModel):
+    """Where OpenRouter should send the user back after sign-in (this app's URL)."""
+
+    callback_url: str = Field(..., min_length=8, max_length=2048)
+
+
+class OpenRouterOAuthExchangeBody(BaseModel):
+    """Authorization code from OpenRouter plus the PKCE verifier that started the flow."""
+
+    code: str = Field(..., min_length=1, max_length=2048)
+    code_verifier: str = Field(..., min_length=1, max_length=512)
+
+
 class SettingsCouncilSeatLLMBody(BaseModel):
     """Council seat LLM routing: ``auto`` = policy default for that run."""
 

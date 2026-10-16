@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  exchangeOpenRouterOAuth,
   fetchLLMSettings,
+  initiateOpenRouterOAuth,
   saveCredential,
   saveLLMProfile,
   testLLM,
@@ -14,7 +16,10 @@ const PROVIDERS = [
   { id: 'anthropic', label: 'Anthropic', needsKey: true },
   { id: 'google', label: 'Google (Gemini)', needsKey: true },
   { id: 'xai', label: 'xAI', needsKey: true },
+  { id: 'openrouter', label: 'OpenRouter', needsKey: true },
 ] as const
+
+const OPENROUTER_VERIFIER_KEY = 'zenaf.openrouter.oauth_verifier'
 
 export function ModelConnectionsSection() {
   const [data, setData] = useState<LLMSettingsResponse | null>(null)
@@ -41,11 +46,45 @@ export function ModelConnectionsSection() {
     ;(async () => {
       try {
         await reload()
+        // Consume a "Sign in with OpenRouter" callback (?code=) exactly once:
+        // only when this browser tab started the flow (verifier in sessionStorage).
+        const params = new URLSearchParams(window.location.search)
+        const code = params.get('code')
+        const verifier = sessionStorage.getItem(OPENROUTER_VERIFIER_KEY)
+        if (code && verifier) {
+          sessionStorage.removeItem(OPENROUTER_VERIFIER_KEY)
+          setBusy(true)
+          try {
+            await exchangeOpenRouterOAuth(code, verifier)
+            setMsg('Connected with OpenRouter — your key is saved and encrypted.')
+          } catch (e) {
+            setErr(e instanceof Error ? e.message : 'OpenRouter sign-in failed')
+          } finally {
+            window.history.replaceState({}, '', window.location.pathname)
+            await reload()
+            setBusy(false)
+          }
+        }
       } catch (e) {
         setLoadErr(e instanceof Error ? e.message : 'Load failed')
       }
     })()
   }, [reload])
+
+  const startOpenRouterOAuth = async () => {
+    setErr(null)
+    setMsg(null)
+    setBusy(true)
+    try {
+      const callbackUrl = window.location.origin + window.location.pathname
+      const r = await initiateOpenRouterOAuth(callbackUrl)
+      sessionStorage.setItem(OPENROUTER_VERIFIER_KEY, r.code_verifier)
+      window.location.href = r.auth_url
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Could not start OpenRouter sign-in')
+      setBusy(false)
+    }
+  }
 
   const saveProfile = async () => {
     setErr(null)
@@ -154,6 +193,31 @@ export function ModelConnectionsSection() {
         <span className="text-slate-200 font-medium">
           {data.active_summary.provider} / {data.active_summary.model}
         </span>
+      </div>
+
+      <div className="rounded-lg border border-amber-500/40 bg-amber-950/20 px-4 py-4 space-y-3">
+        <div>
+          <h3 className="text-slate-100 text-sm font-semibold">Connect your AI — one click</h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Sign in with OpenRouter and you're done — no API keys to copy or paste. OpenRouter gives you
+            200+ models (including free ones) through a single key minted in your own OpenRouter account.
+            The key is stored encrypted on this server, and inference costs go to your OpenRouter account,
+            not to us.
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={startOpenRouterOAuth}
+          className="w-full sm:w-auto px-6 min-h-[44px] rounded-lg bg-amber-500 text-slate-900 font-semibold text-base hover:bg-amber-400 disabled:opacity-50"
+        >
+          {data.credentials_present['openrouter'] ? '✓ Connected with OpenRouter' : 'Connect with OpenRouter'}
+        </button>
+        {data.credentials_present['openrouter'] && (
+          <p className="text-xs text-emerald-400">
+            Key stored. Reconnect any time to rotate it, or test the connection under Advanced below.
+          </p>
+        )}
       </div>
 
       <div className="rounded bg-slate-800/50 border border-slate-600 px-3 py-3 text-sm space-y-3">
@@ -295,62 +359,71 @@ export function ModelConnectionsSection() {
         </button>
       </div>
 
-      <div className="space-y-3 pt-2 border-t border-slate-700">
-        <h3 className="text-slate-300 text-sm font-medium">Provider keys</h3>
-        {PROVIDERS.filter((p) => p.needsKey).map((p) => (
-          <div key={p.id} className="flex flex-wrap items-end gap-2">
-            <div className="flex-1 min-w-[200px]">
-              <div className="text-xs text-slate-500 mb-1">
-                {p.label}{' '}
-                {data.credentials_present[p.id] ? (
-                  <span className="text-emerald-500">· key stored</span>
-                ) : (
-                  <span className="text-slate-600">· no key</span>
-                )}
+      <details className="pt-2 border-t border-slate-700">
+        <summary className="cursor-pointer text-slate-300 text-sm font-medium min-h-[44px] flex items-center">
+          Advanced: manual API keys
+        </summary>
+        <p className="text-[11px] text-slate-500 mt-1 mb-3">
+          Only if you prefer to paste keys yourself instead of one-click sign-in. Keys are encrypted and
+          stored on the server; inference costs go directly to your provider account, not to us. (Your
+          ChatGPT Plus / Claude Pro subscription does not include API access — API keys are separate.)
+        </p>
+        <div className="space-y-3">
+          {PROVIDERS.filter((p) => p.needsKey).map((p) => (
+            <div key={p.id} className="flex flex-wrap items-end gap-2">
+              <div className="flex-1 min-w-[200px]">
+                <div className="text-xs text-slate-500 mb-1">
+                  {p.label}{' '}
+                  {data.credentials_present[p.id] ? (
+                    <span className="text-emerald-500">· key stored</span>
+                  ) : (
+                    <span className="text-slate-600">· no key</span>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 text-sm"
+                  placeholder="API key — not shown after save"
+                  value={keyInputs[p.id] || ''}
+                  onChange={(e) => setKeyInputs((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                />
               </div>
-              <input
-                type="password"
-                autoComplete="off"
-                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-100 text-sm"
-                placeholder="API key — not shown after save"
-                value={keyInputs[p.id] || ''}
-                onChange={(e) => setKeyInputs((prev) => ({ ...prev, [p.id]: e.target.value }))}
-              />
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => saveKey(p.id)}
+                className="px-2 py-1.5 rounded text-xs bg-slate-600 text-slate-100 disabled:opacity-40"
+                title={
+                  data.encryption_configured
+                    ? 'Save encrypted key on the server'
+                    : 'Server reports encryption unavailable — click to try; check error message if save fails'
+                }
+              >
+                Save key
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => runTest(p.id)}
+                className="px-2 py-1.5 rounded text-xs border border-slate-600 text-slate-300"
+              >
+                Test
+              </button>
             </div>
+          ))}
+          <div className="flex items-end gap-2">
             <button
               type="button"
               disabled={busy}
-              onClick={() => saveKey(p.id)}
-              className="px-2 py-1.5 rounded text-xs bg-slate-600 text-slate-100 disabled:opacity-40"
-              title={
-                data.encryption_configured
-                  ? 'Save encrypted key on the server'
-                  : 'Server reports encryption unavailable — click to try; check error message if save fails'
-              }
-            >
-              Save key
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => runTest(p.id)}
+              onClick={() => runTest('ollama')}
               className="px-2 py-1.5 rounded text-xs border border-slate-600 text-slate-300"
             >
-              Test
+              Test Ollama
             </button>
           </div>
-        ))}
-        <div className="flex items-end gap-2">
-          <button
-            type="button"
-            disabled={busy}
-            onClick={() => runTest('ollama')}
-            className="px-2 py-1.5 rounded text-xs border border-slate-600 text-slate-300"
-          >
-            Test Ollama
-          </button>
         </div>
-      </div>
+      </details>
       {msg && <p className="text-emerald-400 text-sm">{msg}</p>}
       {err && <p className="text-red-400 text-sm">{err}</p>}
     </section>

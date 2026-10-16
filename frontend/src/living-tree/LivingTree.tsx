@@ -407,7 +407,7 @@ function findDatum(id: string, up: TreeDatum[]): TreeDatum | null {
 
 /** Visual strand-blend bars for an archetype's character panel. */
 function StrandBlendBars({ weights }: { weights: Record<string, number> }) {
-  const entries = Object.entries(weights)
+  const entries = Object.entries(weights ?? {})
     .filter(([, w]) => w >= 0.05)
     .sort(([, a], [, b]) => b - a)
   if (!entries.length) return null
@@ -649,10 +649,10 @@ export function LivingTreeView({
           </div>
           <p>“{arch.prompt_frame}”</p>
           <StrandBlendBars weights={arch.strand_weights} />
-          {arch.twigs.length > 0 ? (
+          {(arch.twigs ?? []).length > 0 ? (
             <div className="ltwigs">
               <div className="lsect">Sub-personalities</div>
-              {arch.twigs.map((t) => (
+              {(arch.twigs ?? []).map((t) => (
                 <div key={t.twig_id} className="ltwig">
                   <span className="lname">{t.display_name}</span>
                   <span className="ldomain">

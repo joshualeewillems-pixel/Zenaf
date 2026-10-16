@@ -137,7 +137,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
 export function dominantStrandKey(a: ArchetypeStatus): string | null {
   let best: string | null = null
   let bestW = -1
-  for (const [k, w] of Object.entries(a.strand_weights)) {
+  for (const [k, w] of Object.entries(a.strand_weights ?? {})) {
     if (w > bestW) {
       bestW = w
       best = k

@@ -2,8 +2,8 @@
 
 The intake (sorter, project miner, Muse chat) talks to *a* provider through
 the prompt→text contract — not hardcoded to Anthropic. Which provider runs
-is chosen by ZENAF_INTAKE_PROVIDER (default "anthropic"); "meta" selects
-the Meta Model API (Muse Spark).
+is chosen by ZENAF_INTAKE_PROVIDER (default "meta"); "anthropic" selects
+the Anthropic sorter engine.
 
 Billing rule: a user's own Settings key first, then the server env key.
 Every resolution is metered to ~/.zenaf/agent_intake_usage.jsonl so
@@ -21,8 +21,8 @@ _USAGE_LOG = Path.home() / ".zenaf" / "agent_intake_usage.jsonl"
 
 
 def resolve_intake_provider() -> str:
-    """Which provider the intake pipeline uses. Env-overridable, default anthropic."""
-    return (os.environ.get("ZENAF_INTAKE_PROVIDER") or "").strip().lower() or "anthropic"
+    """Which provider the intake pipeline uses. Env-overridable, default meta."""
+    return (os.environ.get("ZENAF_INTAKE_PROVIDER") or "").strip().lower() or "meta"
 
 
 def resolve_key(

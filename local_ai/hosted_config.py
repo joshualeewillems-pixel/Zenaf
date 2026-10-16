@@ -13,12 +13,12 @@ Environment variables:
     ZENAF_BOOTSTRAP_PASSWORD     REQUIRED in prod. Initial owner account password.
     ZENAF_DB_DIR                 Override the data directory (hosted volume).
     ZENAF_DATA_DIR               Test/hermetic override; wins over ZENAF_DB_DIR.
-    ZENAF_LLM_PROVIDER           Default LLM provider id (default: ollama).
+    ZENAF_LLM_PROVIDER           Default LLM provider id (default: meta).
                                  Honored by the provider resolver when the user
                                  profile has no explicit default. API keys come
                                  from the existing env names (OPENAI_API_KEY,
                                  ANTHROPIC_API_KEY, GOOGLE_API_KEY, XAI_API_KEY,
-                                 or the ZENAF_SYSTEM_* variants).
+                                 META_API_KEY, or the ZENAF_SYSTEM_* variants).
     PORT                         Listen port (default: 8010).
 
 This module is stdlib-only and has no imports from the rest of local_ai, so it
@@ -66,12 +66,12 @@ def data_dir() -> Path:
 
 
 def default_llm_provider() -> str:
-    """Configured default LLM provider id (default: ollama).
+    """Configured default LLM provider id (default: meta).
 
     Callers normalize via local_ai.llm.provider_registry.normalize_provider_id.
     This is a default only — an explicit per-user profile setting still wins.
     """
-    return (os.environ.get("ZENAF_LLM_PROVIDER") or "ollama").strip().lower() or "ollama"
+    return (os.environ.get("ZENAF_LLM_PROVIDER") or "meta").strip().lower() or "meta"
 
 
 def session_cookie_secure() -> bool:

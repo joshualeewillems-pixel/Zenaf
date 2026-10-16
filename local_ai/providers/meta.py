@@ -70,3 +70,28 @@ def generate(
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         raise RuntimeError(f"Unexpected Meta API response: {str(data)[:200]}")
+
+
+class MetaProvider:
+    """Meta Model API provider instance. Single method used by Zenaf: generate(prompt) -> response text."""
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        timeout: int | None = None,
+    ):
+        # None key means "read from env" (META_API_KEY, then MODEL_API_KEY) at generate time.
+        self._api_key_kwarg = api_key
+        self.model = model
+        self.timeout = timeout
+
+    def generate(self, prompt: str, *, timeout: int | None = None) -> str:
+        """Send prompt to the Meta Model API; return model response text. Raises on HTTP/API errors."""
+        key = ((self._api_key_kwarg or "").strip()) or None
+        return generate(
+            key or "",
+            prompt,
+            model=self.model,
+            timeout=timeout if timeout is not None else (self.timeout or 120),
+        )

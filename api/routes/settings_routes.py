@@ -20,8 +20,8 @@ from local_ai.vision_execution import storage as St
 
 router = APIRouter(tags=["settings"])
 
-_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "google", "xai"})
-_KEY_PROVIDERS = frozenset({"openai", "anthropic", "google", "xai"})
+_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "google", "xai", "meta"})
+_KEY_PROVIDERS = frozenset({"openai", "anthropic", "google", "xai", "meta"})
 
 
 def _ollama_tags_url(base_override: str | None) -> str:
@@ -208,6 +208,10 @@ def post_llm_test(body: M.SettingsLLMTestBody, current_user: dict = Depends(get_
             from local_ai.providers import google_genai as pg
 
             ok, err = pg.test_connection(key, model)
+        elif pv == "meta":
+            from local_ai.providers import meta as pm
+
+            ok, err = pm.test_connection(key, model)
         else:
             from local_ai.providers import xai as px
 

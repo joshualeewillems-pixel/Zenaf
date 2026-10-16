@@ -1195,8 +1195,8 @@ def create_user_account(
 # --- User settings (LLM + notifications) ---
 _SETTINGS_KEY_ENV = "ZENAF_SETTINGS_ENCRYPTION_KEY"
 _SETTINGS_KEY_LOCAL_FILE = "settings_encryption.key"
-_LLM_PROVIDERS_WITH_KEY = frozenset({"openai", "anthropic", "google", "xai"})
-_LLM_DEFAULT_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "google", "xai"})
+_LLM_PROVIDERS_WITH_KEY = frozenset({"openai", "anthropic", "google", "xai", "meta"})
+_LLM_DEFAULT_PROVIDERS = frozenset({"ollama", "openai", "anthropic", "google", "xai", "meta"})
 _settings_key_cache: str | None = None
 
 
@@ -1885,7 +1885,7 @@ def get_user_llm_profile(user_id: str) -> dict[str, Any]:
     conn.commit()
     return {
         "user_id": user_id,
-        "default_provider": "ollama",
+        "default_provider": "meta",
         "default_model": None,
         "ollama_base_url": None,
         "ollama_model": None,
@@ -1895,7 +1895,7 @@ def get_user_llm_profile(user_id: str) -> dict[str, Any]:
     }
 
 
-_LLM_EXECUTION_PROVIDER_IDS = frozenset({"ollama", "openai", "anthropic", "google", "xai"})
+_LLM_EXECUTION_PROVIDER_IDS = frozenset({"ollama", "openai", "anthropic", "google", "xai", "meta"})
 
 
 def set_llm_provider_enabled(user_id: str, provider: str, enabled: bool) -> dict[str, Any]:
@@ -2053,7 +2053,7 @@ def upsert_user_llm_profile(
     ollama_base_url: str | None,
     ollama_model: str | None,
 ) -> dict[str, Any]:
-    dp = (default_provider or "ollama").strip().lower()
+    dp = (default_provider or "meta").strip().lower()
     if dp not in _LLM_DEFAULT_PROVIDERS:
         raise ValueError(f"Invalid default_provider: {default_provider}")
     get_user_llm_profile(user_id)  # ensure row

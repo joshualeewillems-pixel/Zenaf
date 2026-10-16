@@ -408,6 +408,7 @@ def test_llm_sorter_parses_claims(monkeypatch):
         "kind": "talent",
         "kind_reasoning": "intuition and taste language",
     })
+    monkeypatch.setenv("ZENAF_INTAKE_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(
         "local_ai.providers.anthropic.generate", lambda *a, **k: fake_response
@@ -428,6 +429,7 @@ def test_llm_sorter_invalid_kind_defaults_undecided(monkeypatch):
         "kind": "superpower",
         "kind_reasoning": "x",
     })
+    monkeypatch.setenv("ZENAF_INTAKE_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(
         "local_ai.providers.anthropic.generate", lambda *a, **k: fake_response
@@ -462,6 +464,7 @@ def test_project_miner_parses_llm_json(monkeypatch):
             {"title": "A podcast on thresholds", "detail": "maybe someday", "source_quote": "podcast"},
         ],
     })
+    monkeypatch.setenv("ZENAF_INTAKE_PROVIDER", "anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr("local_ai.providers.anthropic.generate", lambda *a, **k: fake)
     result = pm.mine_projects("my novel ... please summarize the doc")

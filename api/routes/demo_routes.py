@@ -287,7 +287,9 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         from local_ai.providers import meta as _meta
 
         # api_key="" -> server env key (META_API_KEY); the platform pays.
-        reply = _meta.generate("", full_prompt, timeout=60).strip()
+        # reasoning_effort="low": demo replies are 2-4 sentences; low effort
+        # cuts both latency and cost (reasoning tokens bill as output).
+        reply = _meta.generate("", full_prompt, timeout=60, reasoning_effort="low").strip()
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     except Exception as exc:  # noqa: BLE001 — loud failure, honest 502

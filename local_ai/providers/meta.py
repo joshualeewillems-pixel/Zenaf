@@ -50,18 +50,29 @@ def generate(
     *,
     model: str | None = None,
     timeout: int = 120,
+    reasoning_effort: str | None = None,
 ) -> str:
+    """Send prompt to the Meta Model API; return the reply text.
+
+    reasoning_effort (minimal/low/medium/high/xhigh) controls how long Muse
+    Spark reasons before answering. Reasoning is always on and its tokens
+    bill as output — so short-reply surfaces (like the landing demo) should
+    pass "low" or "minimal" to cut both latency and cost. None = API default.
+    """
     key = _api_key(api_key)
     if not key:
         raise RuntimeError("Meta API key is not configured. Set META_API_KEY.")
+    body: dict = {
+        "model": _effective_model(model),
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+    }
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
     r = requests.post(
         f"{BASE}/chat/completions",
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-        json={
-            "model": _effective_model(model),
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-        },
+        json=body,
         timeout=timeout,
     )
     r.raise_for_status()
@@ -86,7 +97,13 @@ class MetaProvider:
         self.model = model
         self.timeout = timeout
 
-    def generate(self, prompt: str, *, timeout: int | None = None) -> str:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        timeout: int | None = None,
+        reasoning_effort: str | None = None,
+    ) -> str:
         """Send prompt to the Meta Model API; return model response text. Raises on HTTP/API errors."""
         key = ((self._api_key_kwarg or "").strip()) or None
         return generate(
@@ -94,4 +111,5 @@ class MetaProvider:
             prompt,
             model=self.model,
             timeout=timeout if timeout is not None else (self.timeout or 120),
+            reasoning_effort=reasoning_effort,
         )

@@ -3194,6 +3194,28 @@ def _build_council_persona_block(defn: dict, *, council_clarify_only: bool = Fal
         lines.append(f"Label (not a role-play identity): {role}")
     if purpose:
         lines.append(f"Core purpose: {purpose}")
+    # Council archetype weaving (additive): if the seat definition names an
+    # archetype, blend the strand persona blocks by the archetype's weight
+    # vector. Seats without an archetype are untouched.
+    _arch_id = (defn.get("archetype") or "").strip().lower()
+    if _arch_id:
+        try:
+            from local_ai.council.archetypes import build_archetype_prompt_lines
+
+            _arch_weights = defn.get("archetype_weights")
+            if not isinstance(_arch_weights, dict):
+                _arch_weights = None
+            _arch_name = defn.get("archetype_name")
+            if not isinstance(_arch_name, str):
+                _arch_name = None
+            _arch_lines = build_archetype_prompt_lines(
+                _arch_id,
+                weights_override=_arch_weights,
+                display_name_override=_arch_name,
+            )
+            lines.extend(_arch_lines)
+        except Exception:
+            pass
     if values_str:
         lines.append(f"Values: {values_str}")
     if av_str:

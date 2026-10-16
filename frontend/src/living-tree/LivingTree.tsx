@@ -405,6 +405,183 @@ function findDatum(id: string, up: TreeDatum[]): TreeDatum | null {
   return walk(up) ?? walk(DOWN)
 }
 
+/** The ??? placeholder: a gray silhouette for a seat whose face is undiscovered.
+    This is the UI expression of the same concept the comic-strip renderer
+    draws as an amorphous cloud — an undiscovered face, mysterious and
+    inviting, never broken-looking. */
+function AvatarPlaceholder({ size = 72 }: { size?: number }) {
+  return (
+    <div
+      className="lavatar-ph"
+      style={{ width: size, height: size }}
+      role="img"
+      aria-label="Undiscovered face"
+    >
+      <svg viewBox="0 0 72 72" width={size} height={size} aria-hidden="true">
+        <circle cx="36" cy="36" r="34" fill="rgba(245,240,232,0.06)" />
+        <circle cx="36" cy="28" r="11" fill="rgba(245,240,232,0.28)" />
+        <path
+          d="M14 62c3-12 12-19 22-19s19 7 22 19"
+          fill="rgba(245,240,232,0.28)"
+        />
+      </svg>
+      <span className="lavatar-qqq">???</span>
+    </div>
+  )
+}
+
+/** A seat's avatar: the unlocked custom image, or the ??? placeholder. */
+function SeatAvatar({
+  avatarUrl,
+  displayName,
+  size = 72,
+}: {
+  avatarUrl: string | null | undefined
+  displayName: string
+  size?: number
+}) {
+  if (avatarUrl) {
+    return (
+      <img
+        className="lavatar-img"
+        src={avatarUrl}
+        alt={`${displayName} avatar`}
+        style={{ width: size, height: size }}
+      />
+    )
+  }
+  return <AvatarPlaceholder size={size} />
+}
+
+/** Avatar unlock section for an archetype's character panel. */
+function AvatarSection({
+  arch,
+  onChanged,
+}: {
+  arch: ArchetypeStatus
+  onChanged: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [urlInput, setUrlInput] = useState('')
+  const [showUpload, setShowUpload] = useState(false)
+
+  const putAvatar = async (body: { avatar_url?: string; generate?: boolean }) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const res = await fetch(
+        `/council/archetypes/${encodeURIComponent(arch.id)}/avatar`,
+        {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      )
+      if (res.status === 501) {
+        setError('AI generation is not available yet — paste an image URL instead.')
+        return
+      }
+      if (!res.ok) {
+        const j = await res.json().catch(() => null)
+        const msg =
+          (j && (j.detail?.message || j.detail)) || `Could not set avatar (${res.status}).`
+        setError(typeof msg === 'string' ? msg : 'Could not set avatar.')
+        return
+      }
+      setShowUpload(false)
+      setUrlInput('')
+      onChanged()
+    } catch {
+      setError('Network error — try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="lavatar-sect">
+      <div className="lsect">Face</div>
+      <div className="lavatar-row">
+        <SeatAvatar avatarUrl={arch.avatar_url} displayName={arch.display_name} />
+        <div className="lavatar-meta">
+          {arch.avatar_url ? (
+            <p className="lnote">
+              This is {arch.display_name}'s face — the one you've earned the right to see.
+            </p>
+          ) : arch.avatar_unlocked ? (
+            <p className="lnote">
+              You've earned this seat's face. Give {arch.display_name} one — generate
+              or upload an image.
+            </p>
+          ) : (
+            <p className="lnote">
+              <strong>???</strong> — this seat's face is still undiscovered. Train it
+              ({arch.avatar_signals_to_unlock} more depth to go) and you'll earn the
+              right to see it.
+            </p>
+          )}
+          {error && <p className="lavatar-err">{error}</p>}
+        </div>
+      </div>
+      {arch.avatar_unlocked && !showUpload && (
+        <div className="lavatar-btns">
+          <button
+            type="button"
+            className="lcta"
+            disabled={busy}
+            onClick={() => putAvatar({ generate: true })}
+          >
+            {busy ? 'Working…' : arch.avatar_url ? 'Regenerate' : 'Generate face'}
+          </button>
+          <button
+            type="button"
+            className="lcta"
+            disabled={busy}
+            onClick={() => setShowUpload(true)}
+          >
+            {arch.avatar_url ? 'Change' : 'Upload image'}
+          </button>
+        </div>
+      )}
+      {arch.avatar_unlocked && showUpload && (
+        <div className="lavatar-upload">
+          <input
+            type="url"
+            className="lavatar-input"
+            placeholder="https://… image URL"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            aria-label="Avatar image URL"
+          />
+          <div className="lavatar-btns">
+            <button
+              type="button"
+              className="lcta"
+              disabled={busy || !urlInput.trim()}
+              onClick={() => putAvatar({ avatar_url: urlInput.trim() })}
+            >
+              {busy ? 'Saving…' : 'Set face'}
+            </button>
+            <button
+              type="button"
+              className="lback"
+              onClick={() => {
+                setShowUpload(false)
+                setUrlInput('')
+                setError(null)
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Visual strand-blend bars for an archetype's character panel. */
 function StrandBlendBars({ weights }: { weights: Record<string, number> }) {
   const entries = Object.entries(weights ?? {})
@@ -455,6 +632,11 @@ export function LivingTreeView({
   // while loading or when unreachable. The tree renders on first paint;
   // depths animate in when the fetch resolves.
   const [archetypes, setArchetypes] = useState<ArchetypeStatus[]>(STOCK_ARCHETYPE_FALLBACK)
+  const refreshArchetypes = () => {
+    fetchArchetypeStatus().then((s) => {
+      if (s && s.length) setArchetypes(s)
+    })
+  }
   useEffect(() => {
     let cancelled = false
     fetchArchetypeStatus().then((s) => {
@@ -648,6 +830,7 @@ export function LivingTreeView({
             {arch.is_skeptic ? 'THE SKEPTIC · ' : ''}{tag}
           </div>
           <p>“{arch.prompt_frame}”</p>
+          <AvatarSection arch={arch} onChanged={refreshArchetypes} />
           <StrandBlendBars weights={arch.strand_weights} />
           {(arch.twigs ?? []).length > 0 ? (
             <div className="ltwigs">
@@ -777,6 +960,19 @@ export function LivingTreeView({
 .ltwig .lname{font-size:12.5px;font-weight:600;color:#f5f0e8}
 .ltwig .ldomain{font-size:11px;color:rgba(245,240,232,.55);font-style:italic}
 .lmarket{margin-top:4px;border-top:1px solid rgba(201,168,106,.2);padding-top:2px}
+.lavatar-sect{margin-top:2px}
+.lavatar-row{display:flex;gap:12px;align-items:center;margin:6px 0}
+.lavatar-ph{position:relative;flex:none;border-radius:50%;overflow:hidden}
+.lavatar-qqq{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;letter-spacing:.08em;color:rgba(245,240,232,.75)}
+.lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,106,.5)}
+.lavatar-meta{flex:1;min-width:0}
+.lavatar-meta .lnote{margin:0}
+.lavatar-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+.lavatar-btns .lcta{margin-top:6px}
+.lavatar-upload{margin-top:8px}
+.lavatar-input{width:100%;background:#0b0b0f;border:1px solid rgba(242,240,234,.2);border-radius:10px;padding:10px 14px;color:#f5f0e8;font-size:13px;font-family:inherit;min-height:44px;box-sizing:border-box}
+.lavatar-input:focus{border-color:#e8c476;outline:none}
+.lavatar-err{font-style:normal;color:#e89a9a;font-size:11.5px;margin:6px 0 0}
 .lnarr{max-height:340px;overflow-y:auto}
 .lfoot{margin:10px 6px 0;text-align:center;font-size:10.5px;color:rgba(245,240,232,.45);line-height:1.6}
       `}</style>

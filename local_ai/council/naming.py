@@ -33,6 +33,11 @@ from local_ai.council.archetypes import (
 #: Depth points on one archetype required to unlock renaming that seat.
 RENAME_DEPTH_THRESHOLD = 25.0
 
+#: Depth points on one archetype required to unlock setting its avatar.
+#: Earlier than naming — the face comes before the name (visual
+#: individuation precedes verbal individuation).
+AVATAR_DEPTH_THRESHOLD = 10.0
+
 #: Custom-archetype milestone: per-archetype and total depth (tracked only).
 CUSTOM_ARCHETYPE_DEPTH_PER = 50.0
 CUSTOM_ARCHETYPE_TOTAL = 100.0
@@ -137,6 +142,31 @@ def get_display_name(user_id: str | None, archetype_id: str) -> str:
         return arch.display_name
 
 
+def get_avatar_url(user_id: str | None, archetype_id: str) -> str | None:
+    """The avatar URL for an archetype seat: user custom or None (??? placeholder).
+
+    Never raises — returns None on any failure.
+    """
+    arch = get_archetype(archetype_id)
+    if arch is None or not user_id:
+        return None
+    try:
+        from local_ai.personality.store import PersonalityStore
+
+        store = PersonalityStore(user_id=user_id)
+        try:
+            return store.get_archetype_avatar(arch.id)
+        finally:
+            store.close()
+    except Exception:
+        return None
+
+
+def avatar_unlocked_for_depth(depth: float) -> bool:
+    """Whether a depth score unlocks avatar customization for a seat."""
+    return depth >= AVATAR_DEPTH_THRESHOLD
+
+
 def rename_status(user_id: str | None) -> dict:
     """Naming unlock status for every archetype, plus milestone progress.
 
@@ -147,6 +177,7 @@ def rename_status(user_id: str | None) -> dict:
     for aid in stock_archetype_ids():
         d = depths.get(aid, 0.0)
         unlocked = d >= RENAME_DEPTH_THRESHOLD
+        av_unlocked = d >= AVATAR_DEPTH_THRESHOLD
         entries.append(
             {
                 "id": aid,
@@ -155,6 +186,13 @@ def rename_status(user_id: str | None) -> dict:
                 "rename_unlocked": unlocked,
                 "signals_to_unlock": (
                     0 if unlocked else max(0, math.ceil(RENAME_DEPTH_THRESHOLD - d))
+                ),
+                "avatar_url": get_avatar_url(user_id, aid),
+                "avatar_unlocked": av_unlocked,
+                "avatar_signals_to_unlock": (
+                    0
+                    if av_unlocked
+                    else max(0, math.ceil(AVATAR_DEPTH_THRESHOLD - d))
                 ),
             }
         )
@@ -176,4 +214,5 @@ def rename_status(user_id: str | None) -> dict:
             "required_total": CUSTOM_ARCHETYPE_TOTAL,
         },
         "rename_threshold": RENAME_DEPTH_THRESHOLD,
+        "avatar_threshold": AVATAR_DEPTH_THRESHOLD,
     }

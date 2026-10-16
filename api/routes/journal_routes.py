@@ -10,9 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.routes.auth_routes import get_current_user
-from local_ai.council.naming import get_display_name
 from local_ai.journal.story import (
     analyze_entry_strands,
+    build_cast,
     detect_active_archetypes,
     render_archetype_story,
     select_cast,
@@ -31,6 +31,9 @@ class CastMember(BaseModel):
     id: str
     name: str
     similarity: float
+    # Seat avatar URL, or None for the ??? placeholder. The comic-strip
+    # renderer uses this: avatar when present, amorphous cloud when None.
+    avatar_url: str | None = None
 
 
 class StoryResponse(BaseModel):
@@ -76,11 +79,12 @@ def post_journal_story(
         story=story,
         cast=[
             CastMember(
-                id=aid,
-                name=get_display_name(user_id, aid),
-                similarity=round(sim, 3),
+                id=m["id"],
+                name=m["name"],
+                similarity=m["similarity"],
+                avatar_url=m["avatar_url"],
             )
-            for aid, sim in cast
+            for m in build_cast(cast, user_id=user_id)
         ],
         strand_weights={k: round(v, 3) for k, v in strand_weights.items()},
     )

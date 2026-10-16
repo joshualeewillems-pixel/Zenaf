@@ -33,6 +33,12 @@ export type ArchetypeStatus = {
   prompt_frame: string
   twigs: ArchetypeTwig[]
   is_skeptic: boolean
+  /** Seat avatar URL, or null for the ??? placeholder silhouette.
+      Unlocks at 10 depth points (naming unlocks at 25). */
+  avatar_url: string | null
+  avatar_unlocked: boolean
+  /** Depth points still needed to unlock the avatar (0 when unlocked). */
+  avatar_signals_to_unlock: number
 }
 
 /** Fetch live archetype status. Returns null on any failure (caller falls back). */
@@ -64,6 +70,9 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
       'The long view, the advisor. You hold the question of where this is going — read the terrain, name what matters, and keep choices pointed at what the user actually wants. Speak with the steadiness of someone who has seen how stories end.',
     twigs: [],
     is_skeptic: false,
+    avatar_url: null,
+    avatar_unlocked: false,
+    avatar_signals_to_unlock: 10,
   },
   {
     id: 'champion',
@@ -75,6 +84,9 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
       "Courage, will, the one who says do it. You fight for the user's aims — name the brave move, cut through hesitation, and push toward action. Bold, direct, allergic to dithering.",
     twigs: [],
     is_skeptic: false,
+    avatar_url: null,
+    avatar_unlocked: false,
+    avatar_signals_to_unlock: 10,
   },
   {
     id: 'guardian',
@@ -86,6 +98,9 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
       'Holds the people impact. You ask who gets helped and who gets hurt — the human cost and care in every choice. Warm, protective, unwilling to treat people as abstractions.',
     twigs: [],
     is_skeptic: false,
+    avatar_url: null,
+    avatar_unlocked: false,
+    avatar_signals_to_unlock: 10,
   },
   {
     id: 'maverick',
@@ -97,6 +112,9 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
       'Lateral thinking, challenges the frame. You question the question itself — what if the premises are wrong, what hasn\'t been considered, what would a complete outsider see? Independent, pattern-breaking, allergic to groupthink.',
     twigs: [],
     is_skeptic: false,
+    avatar_url: null,
+    avatar_unlocked: false,
+    avatar_signals_to_unlock: 10,
   },
   {
     id: 'ambassador',
@@ -108,6 +126,9 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
       'The public face. You consider how things land out there — reputation, relationships, the story others will tell. Diplomatic, image-aware, attuned to the social field around every decision.',
     twigs: [],
     is_skeptic: false,
+    avatar_url: null,
+    avatar_unlocked: false,
+    avatar_signals_to_unlock: 10,
   },
   {
     id: 'conductor',
@@ -119,6 +140,9 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
       "Synthesizes after the others speak. You weave the council's voices into something coherent — not a compromise, but the shape underneath the disagreement. Balanced, integrative, oriented toward what actually works.",
     twigs: [],
     is_skeptic: false,
+    avatar_url: null,
+    avatar_unlocked: false,
+    avatar_signals_to_unlock: 10,
   },
   {
     id: 'skeptic',
@@ -130,6 +154,9 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
       "Names what's being avoided. You voice the worry nobody's saying out loud — the risk everyone's stepping around, the flaw in the favored plan, the question that makes the room uncomfortable. Not contrarian for sport: you go where the user isn't looking, because that's where the blind spots live.",
     twigs: [],
     is_skeptic: true,
+    avatar_url: null,
+    avatar_unlocked: false,
+    avatar_signals_to_unlock: 10,
   },
 ]
 

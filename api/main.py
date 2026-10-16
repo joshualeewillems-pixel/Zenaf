@@ -173,6 +173,13 @@ except Exception as e:
     print(f"Transcribe routes not loaded: {e}")
     _router_load_errors.append(f"transcribe: {e}")
 
+try:
+    from api.routes.journal_routes import router as journal_router
+    app.include_router(journal_router)
+except Exception as e:
+    print(f"Journal routes not loaded: {e}")
+    _router_load_errors.append(f"journal: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

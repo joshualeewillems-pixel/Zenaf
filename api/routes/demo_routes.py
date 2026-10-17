@@ -64,13 +64,42 @@ WEAVE_CLOSE = "[[/u]]"
 
 _COLOR_WEAVE_INSTRUCTION = (
     "As you reply, when you genuinely echo, quote, or build directly on the "
-    "visitor's own words or phrasing, wrap those exact words in [[u]]...[[/u]] "
-    "markers. Use this sparingly — only for real echoes of their language, a "
-    "few words at a time, when it sharpens the reply. Never wrap your own "
-    "words, and never invent markers around paraphrase. Example: they say "
+    "visitor's own words or phrasing, wrap those words in [[u]]...[[/u]] markers. "
+    "Adjust pronouns (my→your) and grammar lightly so the echo reads naturally "
+    "inside your own sentence — a copied 'my' that should be 'your' breaks the spell. "
+    "Use this sparingly — only for real echoes of their language, a few words at "
+    "a time, when it sharpens the reply. Never wrap the visitor's question itself "
+    "or a bare prompt ('what's your opinion?', 'final thoughts?', 'what's the "
+    "difference?') — only substantive phrases that carry meaning. Never wrap your "
+    "own words, and never invent markers around paraphrase. Example: they say "
     '"I\'m drowning in ideas" and you reply "When you\'re [[u]]drowning in '
     'ideas[[/u]], the brave move is to pick one."'
 )
+
+_WEAVE_CLOSE_RE = None  # compiled lazily below to keep module import light
+
+
+def _sanitize_weave(text: str) -> str:
+    """Normalize model-generated [[u]]...[[/u]] markers.
+
+    When weaving densely the model occasionally emits malformed closings
+    ([/u]], [/[/u]]). Normalize known variants to the canonical close, and
+    drop orphan opens so broken markup never reaches the visitor.
+    """
+    import re
+
+    global _WEAVE_CLOSE_RE
+    if _WEAVE_CLOSE_RE is None:
+        _WEAVE_CLOSE_RE = re.compile(r"\[/\[/u\]\]|\[/u\]\]|\[\[/u\]\]")
+    parts = text.split(WEAVE_OPEN)
+    out = [parts[0]]
+    for seg in parts[1:]:
+        m = _WEAVE_CLOSE_RE.search(seg)
+        if m:
+            out.append(WEAVE_OPEN + seg[: m.start()] + WEAVE_CLOSE + seg[m.end() :])
+        else:
+            out.append(seg)  # orphan open marker dropped, words kept
+    return "".join(out)
 
 # In-memory session + rate-limit stores (single-instance; see module docstring).
 #: session -> {"created": float, "transcript": [...], "exchanges": int, "memory": str}
@@ -375,7 +404,9 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         # api_key="" -> server env key (META_API_KEY); the platform pays.
         # reasoning_effort="low": demo replies are 2-4 sentences; low effort
         # cuts both latency and cost (reasoning tokens bill as output).
-        reply = _meta.generate("", full_prompt, timeout=60, reasoning_effort="low").strip()
+        reply = _sanitize_weave(
+            _meta.generate("", full_prompt, timeout=60, reasoning_effort="low").strip()
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     except Exception as exc:  # noqa: BLE001 — loud failure, honest 502
@@ -452,13 +483,16 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
         except Exception as exc:  # noqa: BLE001 — honest error event, then stop
             yield f"data: {_json.dumps({'type': 'error', 'detail': f'Demo voice unavailable: {exc}'})}\n\n"
             return
-        reply = "".join(chunks).strip()
+        # Sanitize the assembled reply: mid-stream chunks are raw, so the done
+        # event carries the corrected full text for the client to settle on.
+        reply = _sanitize_weave("".join(chunks).strip())
         transcript.append({"role": "visitor", "content": message})
         transcript.append({"role": voice_id, "content": reply})
         sess["exchanges"] += 1
         left = DEMO_EXCHANGE_CAP - sess["exchanges"]
         done = {
             "type": "done",
+            "reply": reply,
             "session_id": session_id,
             "voice": voice_id,
             "voice_color": voice_color(voice_id),

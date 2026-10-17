@@ -117,8 +117,17 @@ def generate_stream(
         stream=True,
     ) as r:
         r.raise_for_status()
-        for line in r.iter_lines(decode_unicode=True):
-            if not line or not line.startswith("data:"):
+        # Decode bytes as UTF-8 explicitly: iter_lines(decode_unicode=True) would
+        # use the response's declared encoding (Latin-1 fallback for text/*),
+        # mojibake-ing every em-dash and curly quote into â€”-style garbage.
+        for raw_line in r.iter_lines(decode_unicode=False):
+            if not raw_line:
+                continue
+            try:
+                line = raw_line.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            if not line.startswith("data:"):
                 continue
             data = line[5:].strip()
             if data == "[DONE]":

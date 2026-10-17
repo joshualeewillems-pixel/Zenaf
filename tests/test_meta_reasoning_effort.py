@@ -260,3 +260,12 @@ def test_speak_turn_params_modes():
         assert "Say something first" in str(exc.detail)
     else:
         raise AssertionError("expected 422")
+
+
+def test_demo_prompt_plain_language_rule():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt("mentor", [])
+    assert "11th grader" in prompt
+    assert "never stack clauses" in prompt
+    assert "What do you already know well enough to charge for next week?" in prompt

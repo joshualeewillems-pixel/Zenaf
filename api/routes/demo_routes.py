@@ -243,6 +243,14 @@ def _build_demo_prompt(
     prompt.append(_weave_instruction(exchanges_used))
     prompt.append("")
     prompt.append("Keep replies short (2-4 sentences) — this is a first taste, not a deep session.")
+    prompt.append(
+        "Speak plainly — an 11th grader should understand every sentence on first read. "
+        "Short sentences, direct questions, never stack clauses inside a question. "
+        'Awkward: "What can your constraints teach us about what you already know well '
+        'enough to charge for next week?" Plain: "What do you already know well enough '
+        'to charge for next week?" If the visitor speaks more richly, you may rise to '
+        "meet them — but start plain."
+    )
     if transcript:
         prompt.append("")
         prompt.append("Conversation so far:")

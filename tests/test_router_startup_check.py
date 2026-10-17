@@ -30,7 +30,7 @@ def _synthetic_app(prefixes) -> FastAPI:
 def test_real_app_has_all_expected_routers_mounted():
     from api.main import EXPECTED_ROUTER_PREFIXES, app, assert_routers_registered
 
-    assert len(EXPECTED_ROUTER_PREFIXES) == 11
+    assert len(EXPECTED_ROUTER_PREFIXES) == 12
     # Must not raise: every router the app expects is actually mounted.
     assert_routers_registered(app)
     assert_routers_registered()  # default-arg form checks the module app too

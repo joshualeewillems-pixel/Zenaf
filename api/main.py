@@ -238,6 +238,14 @@ except Exception as e:
     print(f"Provenance routes not loaded: {e}")
     _router_load_errors.append(f"provenance: {e}")
 
+# Minting pipeline — journal → story → prompt pack → import/mint.
+try:
+    from api.routes.pipeline_routes import router as pipeline_router
+    app.include_router(pipeline_router)
+except Exception as e:
+    print(f"Pipeline routes not loaded: {e}")
+    _router_load_errors.append(f"pipeline: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the
@@ -257,6 +265,7 @@ EXPECTED_ROUTER_PREFIXES = (
     "/studio",
     "/api",  # transcribe_routes mounts at /api
     "/provenance",
+    "/pipeline",
 )
 
 

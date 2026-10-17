@@ -270,6 +270,7 @@ def identify_upload(
     title: str = "",
     description: str = "",
     claim_creator: bool = False,
+    declared_parent_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """Fingerprint an imported image at ingestion. Three outcomes (spec §5):
 
@@ -279,11 +280,20 @@ def identify_upload(
                 as a derivation parent for confirmation.
     - none   -> register fresh as imported.
 
+    `declared_parent_ids` links the new artifact to declared parents
+    (e.g. the prompt pack it was rendered from), respecting each parent's
+    remix policy. Not applied on exact (dedup) — never reparent an
+    artifact that already exists.
+
     Also harvests C2PA/EXIF hints as free provenance.
     """
     data = _decode_image(image_base64)
     fp = fingerprint_image(data)
     hints = c2pa.harvest_hints(data)
+
+    for parent_id in declared_parent_ids or []:
+        if store.get_artifact(parent_id) is None:
+            raise KeyError(f"unknown declared parent: {parent_id}")
 
     exact = store.find_by_sha256(fp.sha256)
     if exact is not None:
@@ -321,6 +331,17 @@ def identify_upload(
     if near:
         result["suggested_parent"] = near
         result["suggested_distance"] = best_dist
+    # Declared parents (e.g. the prompt pack an import was rendered from):
+    # graft the new artifact onto them, respecting remix policy.
+    linked_parents = []
+    for parent_id in declared_parent_ids or []:
+        link = confirm_derivation_link(
+            store, child_id=artifact["artifact_id"],
+            parent_id=parent_id, user_id=user_id,
+        )
+        linked_parents.append({"parent_id": parent_id, "status": link["status"]})
+    if linked_parents:
+        result["linked_parents"] = linked_parents
     return result
 
 

@@ -91,6 +91,10 @@ class IngestBody(BaseModel):
     title: str = ""
     description: str = ""
     claim_creator: bool = False
+    declared_parent_ids: list[str] = Field(
+        default_factory=list,
+        description="Parents to graft onto (e.g. the prompt pack an import was rendered from)",
+    )
 
 
 class ConfirmLinkBody(BaseModel):
@@ -235,6 +239,7 @@ def ingest(body: IngestBody, user: dict = Depends(get_current_user)):
             title=body.title,
             description=body.description,
             claim_creator=body.claim_creator,
+            declared_parent_ids=body.declared_parent_ids,
         )
     except Exception as exc:
         raise _http(exc)

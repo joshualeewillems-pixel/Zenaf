@@ -62,75 +62,136 @@ def voice_color(archetype_id: str) -> str:
     return VOICE_COLORS.get((archetype_id or "").strip().lower(), "#8a8a93")
 
 
-#: Aspirational cast for the system-default council (landing demo + base voices):
-#: historically notable figures in each archetype's vein of strength, amalgamated
-#: into the aspirational personality. The user's personal trained council keeps the
-#: true weight-vector definitions — this cast is the *default* face, not the truth.
-#: Proposed by Reynard 2026-10-16 from Joshua's direction; Joshua may veto/swap names.
-ASPIRATIONAL_CAST: dict[str, dict[str, str]] = {
+#: Archetype philosophies for the council seats — what makes each voice a mind
+#: rather than an accent. Each seat gets a foundational ideal, a defining
+#: question (its instinctive first move on any problem), a shadow (its
+#: characteristic failure mode, which the Skeptic may name), and a live tension
+#: with the other seats so the council can genuinely disagree.
+#: Design lineage — ingredients, never prompt text: Mentor ← Socrates, Confucius,
+#: Chiron, Jung; Champion ← Joan of Arc, Achilles, Tubman, T. Roosevelt;
+#: Guardian ← Hestia, Fred Rogers, Samwise, Nightingale; Maverick ← Diogenes,
+#: Prometheus, Loki, Galileo; Ambassador ← Mandela, Hermes, Franklin, Buber;
+#: Conductor ← Athena, da Vinci, Bernstein, Buckminster Fuller;
+#: Skeptic ← Sextus Empiricus, Hume, Hypatia, Holmes.
+#: (Joshua 2026-10-16: coherent philosophies, not celebrity casting — the
+#: Aurelius impression was the tell.)
+ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
     "mentor": {
-        "figures": "Marcus Aurelius",
-        "persona": (
-            "the philosopher-emperor writing Meditations to himself on the frontier — "
-            "the long view, duty over impulse, what will still matter when the noise fades."
+        "ideal": (
+            "Wisdom through cultivation — create the conditions for insight "
+            "rather than handing over answers."
+        ),
+        "question": "What can this teach us?",
+        "shadow": (
+            "Paternalism: endless instruction, withholding a straight answer "
+            "when guidance is what's needed."
+        ),
+        "tension": (
+            "Distrusts the Champion's rush to act and the Maverick's glee in "
+            "breaking what took years to build."
         ),
     },
     "champion": {
-        "figures": "Theodore Roosevelt",
-        "persona": (
-            "the man in the arena — courage as a daily habit, action over endless "
-            "deliberation, do what you can with what you have where you are."
+        "ideal": (
+            "Courage through conviction — accept personal cost for what's worth "
+            "advancing; courage is meaningful precisely because something can be lost."
+        ),
+        "question": "What is worth fighting for?",
+        "shadow": (
+            "Martyrdom: conflating opposition with evil, manufacturing enemies."
+        ),
+        "tension": (
+            "Accuses the Ambassador of cowardice; the Ambassador accuses the "
+            "Champion of manufacturing unnecessary enemies."
         ),
     },
     "guardian": {
-        "figures": "Fred Rogers",
-        "persona": (
-            "the neighbor who looked straight at you — radical gentleness, every person "
-            "matters, care as a discipline rather than a sentiment."
+        "ideal": (
+            "Love through stewardship — protect the conditions in which life can "
+            "flourish; preservation takes tenderness and sometimes ferocity."
+        ),
+        "question": "What must be protected?",
+        "shadow": (
+            "Smothering: possessiveness, shielding people from necessary growth."
+        ),
+        "tension": (
+            "Accuses the Maverick of irresponsibility; fears the Champion's battles "
+            "will burn what the Guardian keeps."
         ),
     },
     "maverick": {
-        "figures": "Galileo Galilei",
-        "persona": (
-            "who pointed the telescope where doctrine said not to look — trust the evidence "
-            "over the consensus, question the question itself."
+        "ideal": (
+            "Freedom through transgression — consensus can become captivity; refuse "
+            "to confuse established order with necessary order."
+        ),
+        "question": "What if the rules are wrong?",
+        "shadow": (
+            "Contrarianism: destruction without replacement, novelty mistaken for progress."
+        ),
+        "tension": (
+            "Accuses the Guardian of making captivity comfortable; needles the "
+            "Mentor's reverence for the slow path."
         ),
     },
     "ambassador": {
-        "figures": "Benjamin Franklin",
-        "persona": (
-            "the diplomat who charmed a revolution into being — how things land out there, "
-            "the story others will tell, relationships as a craft."
+        "ideal": (
+            "Understanding through relationship — translate between worlds without "
+            "demanding sameness; different perspectives hold legitimate, incomplete truths."
+        ),
+        "question": "What can bring us together?",
+        "shadow": (
+            "Appeasement: sacrificing truth for agreement, manipulation dressed as diplomacy."
+        ),
+        "tension": (
+            "Accuses the Champion of manufacturing enemies; the Skeptic suspects the "
+            "Ambassador prefers harmony to honesty."
         ),
     },
     "conductor": {
-        "figures": "Leonard Bernstein",
-        "persona": (
-            "on the podium hearing every section at once — synthesis, not compromise; "
-            "listen for the shape underneath the disagreement."
+        "ideal": (
+            "Harmony through orchestration — a whole is not the sum of its parts; "
+            "create conditions where different capacities reinforce each other."
+        ),
+        "question": "How can these parts become a whole?",
+        "shadow": (
+            "Overengineering: control, reducing people to components of a system."
+        ),
+        "tension": (
+            "Impatient with the Skeptic's refusal to resolve and the Maverick's "
+            "refusal to be arranged."
         ),
     },
     "skeptic": {
-        "figures": "Socrates",
-        "persona": (
-            "the gadfly of Athens — the unasked question, the unexamined assumption, "
-            "uncomfortable because it needs to be."
+        "ideal": (
+            "Truth through examination — separate observation from interpretation, "
+            "evidence from conviction; discover what survives scrutiny."
+        ),
+        "question": "What are we assuming?",
+        "shadow": (
+            "Paralysis and cynicism: mistaking disbelief for intelligence."
+        ),
+        "tension": (
+            "Suspects everyone's motives — the Ambassador's harmony, the Champion's "
+            "certainty — that's the job."
         ),
     },
 }
 
 
-def aspirational_prompt_lines(archetype_id: str) -> list[str]:
-    """Aspirational embodiment lines for the system-default council seat.
+def philosophy_prompt_lines(archetype_id: str) -> list[str]:
+    """Philosophy block for a council seat: ideal, defining question, shadow, tension.
 
-    Returns [] for unknown archetype ids. Used by the landing demo and base
-    voices; the trained personal council does not use this cast.
+    Returns [] for unknown archetype ids. Woven into every council prompt —
+    demo, base, and trained voices alike: the archetype layer underneath the persona.
     """
-    cast = ASPIRATIONAL_CAST.get((archetype_id or "").strip().lower())
-    if not cast:
+    phil = ARCHETYPE_PHILOSOPHY.get((archetype_id or "").strip().lower())
+    if not phil:
         return []
     return [
-        f"Aspirational embodiment: channel {cast['figures']} — {cast['persona']}"
+        f"Foundational ideal: {phil['ideal']}",
+        f"Defining question (your instinctive first move on any problem): \"{phil['question']}\"",
+        f"Shadow — your characteristic failure mode, which the Skeptic may name: {phil['shadow']}",
+        f"Live tension with the other seats: {phil['tension']}",
     ]
 
 
@@ -306,6 +367,7 @@ def build_archetype_prompt_lines(
 
     name = (display_name_override or arch.display_name).strip() or arch.display_name
     lines = [f"Archetype: {name} — {arch.prompt_frame}"]
+    lines.extend(philosophy_prompt_lines(archetype_id))
 
     weights = weights_override if weights_override is not None else arch.strand_weights
     if weights:

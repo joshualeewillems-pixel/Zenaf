@@ -60,3 +60,91 @@ def test_missing_key_still_raises(monkeypatch):
         assert "not configured" in str(exc)
     else:
         raise AssertionError("expected RuntimeError")
+
+
+# --- streaming ---
+
+
+class _FakeStreamResponse:
+    """Minimal context-manager mock of a streaming requests response."""
+
+    def __init__(self, lines):
+        self._lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    def iter_lines(self, decode_unicode=True):
+        return iter(self._lines)
+
+
+def test_generate_stream_yields_chunks_until_done(monkeypatch):
+    lines = [
+        'data: {"choices": [{"delta": {"content": "hel"}}]}',
+        'data: {"choices": [{"delta": {"content": "lo"}}]}',
+        'data: {"choices": [{"delta": {}}]}',
+        "data: [DONE]",
+    ]
+    captured = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None, stream=False):
+        captured["json"] = json
+        captured["stream"] = stream
+        return _FakeStreamResponse(lines)
+
+    monkeypatch.setattr(meta.requests, "post", fake_post)
+    out = "".join(meta.generate_stream("k", "hi", reasoning_effort="low"))
+    assert out == "hello"
+    assert captured["json"]["stream"] is True
+    assert captured["json"]["reasoning_effort"] == "low"
+    assert captured["stream"] is True
+
+
+def test_generate_stream_missing_key_raises(monkeypatch):
+    monkeypatch.delenv("META_API_KEY", raising=False)
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    try:
+        list(meta.generate_stream("", "hi"))
+    except RuntimeError as exc:
+        assert "not configured" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+
+# --- aspirational cast + weave densification ---
+
+
+def test_aspirational_cast_covers_all_voices():
+    from local_ai.council import archetypes as arch
+
+    for vid in arch.stock_archetype_ids():
+        lines = arch.aspirational_prompt_lines(vid)
+        assert len(lines) == 1, vid
+        assert "Aspirational embodiment" in lines[0]
+    assert arch.aspirational_prompt_lines("nope") == []
+
+
+def test_weave_instruction_densifies_with_depth():
+    from api.routes import demo_routes as dr
+
+    early = dr._weave_instruction(0)
+    late = dr._weave_instruction(5)
+    assert "[[u]]" in early
+    assert "densify" in late
+    assert "densify" not in early
+
+
+def test_demo_prompt_includes_memory_and_cast():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt("mentor", [], memory="* wants direction", exchanges_used=4)
+    assert "Council memory" in prompt
+    assert "wants direction" in prompt
+    assert "Aspirational embodiment" in prompt
+    assert "densify" in prompt

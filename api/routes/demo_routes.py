@@ -5,6 +5,12 @@ words woven back in [[u]]...[[/u]] markers (rendered as colored spans), and
 after DEMO_EXCHANGE_CAP exchanges is invited to save the conversation —
 "start your council with it, or continue the conversation in your account."
 
+The council shares a rolling memory: after every exchange a background worker
+folds what was established (visitor's aims, open tensions, their exact phrases)
+into the session's memory, and every voice's prompt builds on it — perspectives
+accumulate toward a solution instead of restarting each turn. The weave
+instruction densifies as the conversation deepens.
+
 Guards (the demo is a cost center — Character.AI lesson):
 - Session cap: DEMO_EXCHANGE_CAP exchanges per anonymous session.
 - IP rate limit: DEMO_IP_MAX messages per DEMO_IP_WINDOW_S sliding window.
@@ -19,15 +25,18 @@ own copy only to sustain the conversation within the cap.
 
 from __future__ import annotations
 
+import threading
 import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.routes.auth_routes import get_current_user
 from local_ai.council.archetypes import (
     STOCK_ARCHETYPES,
+    aspirational_prompt_lines,
     build_archetype_prompt_lines,
     compute_skeptic_weights,
     get_archetype,
@@ -38,7 +47,9 @@ from local_ai.council.archetypes import (
 router = APIRouter(prefix="/demo", tags=["demo"])
 
 #: Exchanges (user+assistant pairs) per anonymous session before the save prompt.
-DEMO_EXCHANGE_CAP = 6
+#: Set from Joshua's 25c/visitor budget (2026-10-16): ~12 exchanges lands well
+#: under it at low reasoning effort, and feels like a real conversation.
+DEMO_EXCHANGE_CAP = 12
 #: Max chars per visitor message.
 DEMO_MSG_MAX = 2000
 #: Sliding-window IP rate limit.
@@ -62,6 +73,7 @@ _COLOR_WEAVE_INSTRUCTION = (
 )
 
 # In-memory session + rate-limit stores (single-instance; see module docstring).
+#: session -> {"created": float, "transcript": [...], "exchanges": int, "memory": str}
 _sessions: dict[str, dict] = {}
 _ip_hits: dict[str, list[float]] = {}
 #: Claim codes: code -> {"transcript": str, "created": float}. TTL 24h, single-use.
@@ -121,12 +133,32 @@ def _get_session(session_id: str | None) -> tuple[str, dict]:
     if session_id and session_id in _sessions:
         return session_id, _sessions[session_id]
     sid = uuid.uuid4().hex
-    sess = {"created": now, "transcript": [], "exchanges": 0}
+    sess = {"created": now, "transcript": [], "exchanges": 0, "memory": ""}
     _sessions[sid] = sess
     return sid, sess
 
 
-def _build_demo_prompt(voice_id: str, transcript: list[dict]) -> str:
+def _weave_instruction(exchanges_used: int) -> str:
+    """Weave instruction, densifying as the conversation deepens.
+
+    Early on the voice echoes sparingly; once the council has learned the
+    visitor's language, it should draw freely on their earlier words.
+    """
+    if exchanges_used >= 3:
+        return _COLOR_WEAVE_INSTRUCTION + (
+            " The conversation is deepening — draw freely on the visitor's earlier "
+            "words and the council memory below. Echo their phrasing wherever it "
+            "sharpens the reply; the weave should densify as you learn their language."
+        )
+    return _COLOR_WEAVE_INSTRUCTION
+
+
+def _build_demo_prompt(
+    voice_id: str,
+    transcript: list[dict],
+    memory: str = "",
+    exchanges_used: int = 0,
+) -> str:
     arch = get_archetype(voice_id)
     weights_override = None
     if arch is not None and arch.strand_weights is None:
@@ -138,18 +170,72 @@ def _build_demo_prompt(voice_id: str, transcript: list[dict]) -> str:
         "on the landing page. They have no account and no training data — you "
         "are the aspirational base voice, not their trained self.",
         "",
+        *aspirational_prompt_lines(voice_id),
         *lines,
         "",
-        _COLOR_WEAVE_INSTRUCTION,
-        "",
-        "Keep replies short (2-4 sentences) — this is a first taste, not a deep session.",
     ]
+    if memory:
+        prompt.append(
+            "Council memory — what the council has established so far. Build on this; "
+            "do not restart the conversation, and do not contradict what the council "
+            "has already learned unless the visitor corrects it:"
+        )
+        prompt.append(memory[:1200])
+        prompt.append("")
+    prompt.append(_weave_instruction(exchanges_used))
+    prompt.append("")
+    prompt.append("Keep replies short (2-4 sentences) — this is a first taste, not a deep session.")
     if transcript:
         prompt.append("")
         prompt.append("Conversation so far:")
         for turn in transcript[-10:]:
             prompt.append(f"{turn['role']}: {turn['content']}")
     return "\n".join(prompt)
+
+
+def _refresh_council_memory(session_id: str) -> None:
+    """Fold the latest exchange into the session's shared council memory.
+
+    Runs in a daemon thread after the reply is delivered — best-effort, never
+    raises into the request path. The memory is what lets each voice build on
+    the conversation's arc instead of only the last message.
+    """
+    try:
+        from local_ai.providers import meta as _meta
+
+        sess = _sessions.get(session_id)
+        if not sess or not sess["transcript"]:
+            return
+        recent = sess["transcript"][-4:]  # last two exchanges
+        convo_lines = []
+        for turn in recent:
+            role = turn["role"]
+            if role == "visitor":
+                speaker = "Visitor"
+            else:
+                arch = get_archetype(role)
+                speaker = arch.display_name if arch else role
+            convo_lines.append(f"{speaker}: {(turn['content'] or '')[:500]}")
+        prompt = (
+            "You are the council's shared memory keeper. Update the council's running "
+            "memory in exactly 3 short bullets: (1) what the visitor seems to want or "
+            "is circling around, (2) open tensions or unanswered questions, "
+            "(3) exact short phrases of the visitor's worth echoing back later.\n\n"
+            f"Previous memory:\n{(sess.get('memory') or '(none yet)')[:800]}\n\n"
+            f"Latest exchanges:\n" + "\n".join(convo_lines) + "\n\n"
+            "Updated memory (3 bullets, terse):"
+        )
+        mem = _meta.generate("", prompt, timeout=45, reasoning_effort="minimal").strip()
+        if mem:
+            sess["memory"] = mem[:1200]
+    except Exception:
+        pass  # memory is best-effort; the conversation must never break
+
+
+def _kick_memory_refresh(session_id: str) -> None:
+    """Refresh council memory off the request path."""
+    t = threading.Thread(target=_refresh_council_memory, args=(session_id,), daemon=True)
+    t.start()
 
 
 @router.get("/voices", response_model=list[DemoVoiceInfo])
@@ -280,7 +366,7 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         raise HTTPException(status_code=422, detail="Message is empty.")
 
     transcript = sess["transcript"]
-    system = _build_demo_prompt(voice_id, transcript)
+    system = _build_demo_prompt(voice_id, transcript, sess.get("memory", ""), sess["exchanges"])
     full_prompt = f"{system}\n\nVisitor: {message}\n{get_archetype(voice_id).display_name}:"
 
     try:
@@ -298,6 +384,7 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
     transcript.append({"role": "visitor", "content": message})
     transcript.append({"role": voice_id, "content": reply})
     sess["exchanges"] += 1
+    _kick_memory_refresh(session_id)
     left = DEMO_EXCHANGE_CAP - sess["exchanges"]
 
     return DemoChatResponse(
@@ -309,3 +396,77 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         exchanges_left=left,
         capped=left == 0,
     )
+
+
+@router.post("/stream")
+def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
+    """Streaming twin of /demo/chat: Server-Sent Events with token deltas.
+
+    Same body, same guards. Events:
+      data: {"type": "token", "text": "..."}   — reply chunks as they arrive
+      data: {"type": "done", "session_id": ..., "voice": ..., "voice_color": ...,
+             "exchanges_used": N, "exchanges_left": M, "capped": bool}
+    A capped session returns 403 JSON (same as /demo/chat), not SSE.
+    """
+    import json as _json
+
+    _check_ip_limit(_client_ip(request))
+
+    voice_id = (body.voice or "").strip().lower()
+    if voice_id not in stock_archetype_ids():
+        raise HTTPException(status_code=422, detail=f"Unknown voice: {body.voice!r}")
+
+    session_id, sess = _get_session(body.session_id)
+    if sess["exchanges"] >= DEMO_EXCHANGE_CAP:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "cap_reached",
+                "message": (
+                    "That's the demo — save this conversation to keep going: "
+                    "start your council with it, or continue the conversation "
+                    "in your account."
+                ),
+            },
+        )
+
+    message = body.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Message is empty.")
+
+    transcript = sess["transcript"]
+    system = _build_demo_prompt(voice_id, transcript, sess.get("memory", ""), sess["exchanges"])
+    full_prompt = f"{system}\n\nVisitor: {message}\n{get_archetype(voice_id).display_name}:"
+
+    def event_stream():
+        from local_ai.providers import meta as _meta
+
+        chunks: list[str] = []
+        try:
+            # api_key="" -> server env key; low effort keeps latency and cost down.
+            for chunk in _meta.generate_stream(
+                "", full_prompt, timeout=90, reasoning_effort="low"
+            ):
+                chunks.append(chunk)
+                yield f"data: {_json.dumps({'type': 'token', 'text': chunk})}\n\n"
+        except Exception as exc:  # noqa: BLE001 — honest error event, then stop
+            yield f"data: {_json.dumps({'type': 'error', 'detail': f'Demo voice unavailable: {exc}'})}\n\n"
+            return
+        reply = "".join(chunks).strip()
+        transcript.append({"role": "visitor", "content": message})
+        transcript.append({"role": voice_id, "content": reply})
+        sess["exchanges"] += 1
+        left = DEMO_EXCHANGE_CAP - sess["exchanges"]
+        done = {
+            "type": "done",
+            "session_id": session_id,
+            "voice": voice_id,
+            "voice_color": voice_color(voice_id),
+            "exchanges_used": sess["exchanges"],
+            "exchanges_left": left,
+            "capped": left == 0,
+        }
+        yield f"data: {_json.dumps(done)}\n\n"
+        _kick_memory_refresh(session_id)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")

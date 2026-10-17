@@ -6,7 +6,9 @@ Key from META_API_KEY (Meta's docs also name MODEL_API_KEY; we accept both).
 """
 from __future__ import annotations
 
+import json
 import os
+from typing import Iterator
 
 import requests
 
@@ -81,6 +83,52 @@ def generate(
         return data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         raise RuntimeError(f"Unexpected Meta API response: {str(data)[:200]}")
+
+
+def generate_stream(
+    api_key: str,
+    prompt: str,
+    *,
+    model: str | None = None,
+    timeout: int = 120,
+    reasoning_effort: str | None = None,
+) -> Iterator[str]:
+    """Yield reply text chunks (OpenAI-compatible SSE) from the Meta Model API.
+
+    Same contract as generate(), but streams. Raises RuntimeError if the key
+    is missing; raises on HTTP errors before yielding.
+    """
+    key = _api_key(api_key)
+    if not key:
+        raise RuntimeError("Meta API key is not configured. Set META_API_KEY.")
+    body: dict = {
+        "model": _effective_model(model),
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.7,
+        "stream": True,
+    }
+    if reasoning_effort:
+        body["reasoning_effort"] = reasoning_effort
+    with requests.post(
+        f"{BASE}/chat/completions",
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        json=body,
+        timeout=timeout,
+        stream=True,
+    ) as r:
+        r.raise_for_status()
+        for line in r.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if data == "[DONE]":
+                break
+            try:
+                chunk = json.loads(data)["choices"][0]["delta"].get("content")
+            except (ValueError, KeyError, IndexError, TypeError):
+                continue
+            if chunk:
+                yield chunk
 
 
 class MetaProvider:

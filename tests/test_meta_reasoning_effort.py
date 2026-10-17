@@ -81,7 +81,10 @@ class _FakeStreamResponse:
         pass
 
     def iter_lines(self, decode_unicode=True):
-        return iter(self._lines)
+        # Real requests yields bytes when decode_unicode=False; str otherwise.
+        if decode_unicode:
+            return iter(self._lines)
+        return iter(l.encode("utf-8") for l in self._lines)
 
 
 def test_generate_stream_yields_chunks_until_done(monkeypatch):
@@ -148,3 +151,43 @@ def test_demo_prompt_includes_memory_and_cast():
     assert "wants direction" in prompt
     assert "Aspirational embodiment" in prompt
     assert "densify" in prompt
+
+
+# --- weave sanitizer ---
+
+
+def test_sanitize_weave_fixes_malformed_closings():
+    from api.routes import demo_routes as dr
+
+    assert dr._sanitize_weave("to [[u]]show them[/[/u]] now") == "to [[u]]show them[[/u]] now"
+    assert dr._sanitize_weave("a [[u]]b[/u]] c") == "a [[u]]b[[/u]] c"
+    assert dr._sanitize_weave("keep [[u]]drowning in ideas[[/u]] ok") == "keep [[u]]drowning in ideas[[/u]] ok"
+
+
+def test_sanitize_weave_drops_orphan_open():
+    from api.routes import demo_routes as dr
+
+    assert dr._sanitize_weave("a [[u]]b with no close") == "a b with no close"
+
+
+def test_sanitize_weave_leaves_plain_text_alone():
+    from api.routes import demo_routes as dr
+
+    assert dr._sanitize_weave("no markers here") == "no markers here"
+
+
+def test_generate_stream_decodes_utf8_bytes(monkeypatch):
+    # Regression: decode_unicode=True mojibake'd em-dashes into â€”-style
+    # garbage because requests falls back to Latin-1 for text/* without a charset.
+    lines = [
+        'data: {"choices": [{"delta": {"content": "wait — "}}]}',
+        'data: {"choices": [{"delta": {"content": "don’t"}}]}',
+        "data: [DONE]",
+    ]
+
+    def fake_post(url, headers=None, json=None, timeout=None, stream=False):
+        return _FakeStreamResponse(lines)
+
+    monkeypatch.setattr(meta.requests, "post", fake_post)
+    out = "".join(meta.generate_stream("k", "hi"))
+    assert out == "wait — don’t", repr(out)

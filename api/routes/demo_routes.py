@@ -116,6 +116,10 @@ class DemoChatBody(BaseModel):
     # Empty message = "speak" turn: the tapped voice responds to the
     # conversation so far with no new visitor message.
     message: str = Field(default="", max_length=DEMO_MSG_MAX)
+    # Speak-turn mode: "respond" (voice answers the conversation) or
+    # "question" (voice asks the visitor one penetrating question). Ignored
+    # for normal typed messages.
+    mode: str = Field(default="respond", max_length=16)
 
 
 class DemoVoiceInfo(BaseModel):
@@ -189,11 +193,14 @@ def _build_demo_prompt(
     memory: str = "",
     exchanges_used: int = 0,
     speak: bool = False,
+    question_mode: bool = False,
 ) -> str:
     """System prompt for one demo turn.
 
     speak=True: the visitor tapped this voice with no new message — the voice
     responds to the conversation so far from its own perspective.
+    question_mode=True (with speak): instead of responding, the voice asks the
+    visitor one penetrating question from its perspective.
     """
     arch = get_archetype(voice_id)
     weights_override = None
@@ -210,11 +217,20 @@ def _build_demo_prompt(
         "",
     ]
     if speak:
-        prompt.append(
-            "The visitor has tapped you to speak — no new message. Respond to the "
-            "conversation so far from your perspective: advance it, challenge it, "
-            "or deepen it. Do not summarize what has been said."
-        )
+        if question_mode:
+            prompt.append(
+                "The visitor has tapped you to question them — no new message. Ask the "
+                "visitor ONE penetrating question from your perspective: the single "
+                "question that would most unlock this situation. Let your defining "
+                "question guide you and draw on the council memory. Output the question "
+                "plus at most one short sentence of context — no advice, no preamble."
+            )
+        else:
+            prompt.append(
+                "The visitor has tapped you to speak — no new message. Respond to the "
+                "conversation so far from your perspective: advance it, challenge it, "
+                "or deepen it. Do not summarize what has been said."
+            )
         prompt.append("")
     if memory:
         prompt.append(
@@ -278,6 +294,25 @@ def _kick_memory_refresh(session_id: str) -> None:
     """Refresh council memory off the request path."""
     t = threading.Thread(target=_refresh_council_memory, args=(session_id,), daemon=True)
     t.start()
+
+
+def _speak_turn_params(body: DemoChatBody, sess: dict) -> tuple[bool, bool]:
+    """(speak_mode, question_mode) for a demo turn.
+
+    speak_mode: empty message — the tapped voice addresses the conversation.
+    question_mode: speak turn where the voice asks the visitor one question.
+    Raises 422 if a speak turn arrives with no conversation yet.
+    """
+    message = body.message.strip()
+    speak_mode = not message
+    if speak_mode and not sess["transcript"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Say something first — then tap any voice to have them speak.",
+        )
+    mode = (body.mode or "respond").strip().lower()
+    question_mode = speak_mode and mode == "question"
+    return speak_mode, question_mode
 
 
 @router.get("/voices", response_model=list[DemoVoiceInfo])
@@ -404,16 +439,16 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         )
 
     message = body.message.strip()
-    speak_mode = not message
-    if speak_mode and not sess["transcript"]:
-        raise HTTPException(
-            status_code=422,
-            detail="Say something first — then tap any voice to have them speak.",
-        )
+    speak_mode, question_mode = _speak_turn_params(body, sess)
 
     transcript = sess["transcript"]
     system = _build_demo_prompt(
-        voice_id, transcript, sess.get("memory", ""), sess["exchanges"], speak=speak_mode
+        voice_id,
+        transcript,
+        sess.get("memory", ""),
+        sess["exchanges"],
+        speak=speak_mode,
+        question_mode=question_mode,
     )
     if speak_mode:
         full_prompt = f"{system}\n{get_archetype(voice_id).display_name}:"
@@ -485,16 +520,16 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
         )
 
     message = body.message.strip()
-    speak_mode = not message
-    if speak_mode and not sess["transcript"]:
-        raise HTTPException(
-            status_code=422,
-            detail="Say something first — then tap any voice to have them speak.",
-        )
+    speak_mode, question_mode = _speak_turn_params(body, sess)
 
     transcript = sess["transcript"]
     system = _build_demo_prompt(
-        voice_id, transcript, sess.get("memory", ""), sess["exchanges"], speak=speak_mode
+        voice_id,
+        transcript,
+        sess.get("memory", ""),
+        sess["exchanges"],
+        speak=speak_mode,
+        question_mode=question_mode,
     )
     if speak_mode:
         full_prompt = f"{system}\n{get_archetype(voice_id).display_name}:"

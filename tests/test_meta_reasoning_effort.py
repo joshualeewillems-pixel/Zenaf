@@ -221,3 +221,42 @@ def test_generate_stream_decodes_utf8_bytes(monkeypatch):
     monkeypatch.setattr(meta.requests, "post", fake_post)
     out = "".join(meta.generate_stream("k", "hi"))
     assert out == "wait — don’t", repr(out)
+
+
+def test_demo_prompt_question_mode():
+    from api.routes import demo_routes as dr
+
+    transcript = [{"role": "visitor", "content": "I want a raise"}]
+    q = dr._build_demo_prompt("skeptic", transcript, speak=True, question_mode=True)
+    assert "question them" in q
+    assert "ONE penetrating question" in q
+    assert "no advice" in q
+
+    r = dr._build_demo_prompt("skeptic", transcript, speak=True, question_mode=False)
+    assert "question them" not in r
+    assert "tapped you to speak" in r
+
+
+def test_speak_turn_params_modes():
+    from api.routes import demo_routes as dr
+
+    class Body:
+        def __init__(self, message, mode="respond"):
+            self.message = message
+            self.mode = mode
+
+    sess = {"transcript": [{"role": "visitor", "content": "hi"}]}
+    assert dr._speak_turn_params(Body("hello"), sess) == (False, False)
+    assert dr._speak_turn_params(Body(""), sess) == (True, False)
+    assert dr._speak_turn_params(Body("", "question"), sess) == (True, True)
+    # question mode ignored for typed messages
+    assert dr._speak_turn_params(Body("hello", "question"), sess) == (False, False)
+    # unknown mode falls back to respond
+    assert dr._speak_turn_params(Body("", "bogus"), sess) == (True, False)
+
+    try:
+        dr._speak_turn_params(Body(""), {"transcript": []})
+    except Exception as exc:
+        assert "Say something first" in str(exc.detail)
+    else:
+        raise AssertionError("expected 422")

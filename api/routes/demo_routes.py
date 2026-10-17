@@ -36,7 +36,6 @@ from pydantic import BaseModel, Field
 from api.routes.auth_routes import get_current_user
 from local_ai.council.archetypes import (
     STOCK_ARCHETYPES,
-    aspirational_prompt_lines,
     build_archetype_prompt_lines,
     compute_skeptic_weights,
     get_archetype,
@@ -114,7 +113,9 @@ _CLAIM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/l
 class DemoChatBody(BaseModel):
     session_id: str | None = Field(default=None, max_length=64)
     voice: str = Field(default="mentor", max_length=32)
-    message: str = Field(min_length=1, max_length=DEMO_MSG_MAX)
+    # Empty message = "speak" turn: the tapped voice responds to the
+    # conversation so far with no new visitor message.
+    message: str = Field(default="", max_length=DEMO_MSG_MAX)
 
 
 class DemoVoiceInfo(BaseModel):
@@ -187,7 +188,13 @@ def _build_demo_prompt(
     transcript: list[dict],
     memory: str = "",
     exchanges_used: int = 0,
+    speak: bool = False,
 ) -> str:
+    """System prompt for one demo turn.
+
+    speak=True: the visitor tapped this voice with no new message — the voice
+    responds to the conversation so far from its own perspective.
+    """
     arch = get_archetype(voice_id)
     weights_override = None
     if arch is not None and arch.strand_weights is None:
@@ -199,10 +206,16 @@ def _build_demo_prompt(
         "on the landing page. They have no account and no training data — you "
         "are the aspirational base voice, not their trained self.",
         "",
-        *aspirational_prompt_lines(voice_id),
         *lines,
         "",
     ]
+    if speak:
+        prompt.append(
+            "The visitor has tapped you to speak — no new message. Respond to the "
+            "conversation so far from your perspective: advance it, challenge it, "
+            "or deepen it. Do not summarize what has been said."
+        )
+        prompt.append("")
     if memory:
         prompt.append(
             "Council memory — what the council has established so far. Build on this; "
@@ -391,12 +404,21 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         )
 
     message = body.message.strip()
-    if not message:
-        raise HTTPException(status_code=422, detail="Message is empty.")
+    speak_mode = not message
+    if speak_mode and not sess["transcript"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Say something first — then tap any voice to have them speak.",
+        )
 
     transcript = sess["transcript"]
-    system = _build_demo_prompt(voice_id, transcript, sess.get("memory", ""), sess["exchanges"])
-    full_prompt = f"{system}\n\nVisitor: {message}\n{get_archetype(voice_id).display_name}:"
+    system = _build_demo_prompt(
+        voice_id, transcript, sess.get("memory", ""), sess["exchanges"], speak=speak_mode
+    )
+    if speak_mode:
+        full_prompt = f"{system}\n{get_archetype(voice_id).display_name}:"
+    else:
+        full_prompt = f"{system}\n\nVisitor: {message}\n{get_archetype(voice_id).display_name}:"
 
     try:
         from local_ai.providers import meta as _meta
@@ -412,7 +434,8 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
     except Exception as exc:  # noqa: BLE001 — loud failure, honest 502
         raise HTTPException(status_code=502, detail=f"Demo voice unavailable: {exc}")
 
-    transcript.append({"role": "visitor", "content": message})
+    if not speak_mode:
+        transcript.append({"role": "visitor", "content": message})
     transcript.append({"role": voice_id, "content": reply})
     sess["exchanges"] += 1
     _kick_memory_refresh(session_id)
@@ -462,12 +485,21 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
         )
 
     message = body.message.strip()
-    if not message:
-        raise HTTPException(status_code=422, detail="Message is empty.")
+    speak_mode = not message
+    if speak_mode and not sess["transcript"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Say something first — then tap any voice to have them speak.",
+        )
 
     transcript = sess["transcript"]
-    system = _build_demo_prompt(voice_id, transcript, sess.get("memory", ""), sess["exchanges"])
-    full_prompt = f"{system}\n\nVisitor: {message}\n{get_archetype(voice_id).display_name}:"
+    system = _build_demo_prompt(
+        voice_id, transcript, sess.get("memory", ""), sess["exchanges"], speak=speak_mode
+    )
+    if speak_mode:
+        full_prompt = f"{system}\n{get_archetype(voice_id).display_name}:"
+    else:
+        full_prompt = f"{system}\n\nVisitor: {message}\n{get_archetype(voice_id).display_name}:"
 
     def event_stream():
         from local_ai.providers import meta as _meta
@@ -486,7 +518,8 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
         # Sanitize the assembled reply: mid-stream chunks are raw, so the done
         # event carries the corrected full text for the client to settle on.
         reply = _sanitize_weave("".join(chunks).strip())
-        transcript.append({"role": "visitor", "content": message})
+        if not speak_mode:
+            transcript.append({"role": "visitor", "content": message})
         transcript.append({"role": voice_id, "content": reply})
         sess["exchanges"] += 1
         left = DEMO_EXCHANGE_CAP - sess["exchanges"]

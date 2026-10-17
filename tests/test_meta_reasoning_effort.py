@@ -123,14 +123,31 @@ def test_generate_stream_missing_key_raises(monkeypatch):
 # --- aspirational cast + weave densification ---
 
 
-def test_aspirational_cast_covers_all_voices():
+def test_philosophy_covers_all_voices():
     from local_ai.council import archetypes as arch
 
     for vid in arch.stock_archetype_ids():
-        lines = arch.aspirational_prompt_lines(vid)
-        assert len(lines) == 1, vid
-        assert "Aspirational embodiment" in lines[0]
-    assert arch.aspirational_prompt_lines("nope") == []
+        lines = arch.philosophy_prompt_lines(vid)
+        assert len(lines) == 4, vid
+        assert "Foundational ideal" in lines[0]
+        assert "Defining question" in lines[1]
+        assert "Shadow" in lines[2]
+        assert "tension" in lines[3]
+    assert arch.philosophy_prompt_lines("nope") == []
+    # No celebrity names leak into prompt text — ingredients, not casting.
+    for vid in arch.stock_archetype_ids():
+        text = "\n".join(arch.philosophy_prompt_lines(vid))
+        for name in ("Aurelius", "Roosevelt", "Galileo", "Franklin", "Bernstein", "Socrates", "Rogers"):
+            assert name not in text, (vid, name)
+
+
+def test_philosophy_woven_into_archetype_prompt():
+    from local_ai.council import archetypes as arch
+
+    lines = arch.build_archetype_prompt_lines("skeptic")
+    text = "\n".join(lines)
+    assert "What are we assuming?" in text
+    assert "Foundational ideal" in text
 
 
 def test_weave_instruction_densifies_with_depth():
@@ -143,14 +160,27 @@ def test_weave_instruction_densifies_with_depth():
     assert "densify" not in early
 
 
-def test_demo_prompt_includes_memory_and_cast():
+def test_demo_prompt_includes_memory_and_philosophy():
     from api.routes import demo_routes as dr
 
     prompt = dr._build_demo_prompt("mentor", [], memory="* wants direction", exchanges_used=4)
     assert "Council memory" in prompt
     assert "wants direction" in prompt
-    assert "Aspirational embodiment" in prompt
+    assert "What can this teach us?" in prompt
     assert "densify" in prompt
+    assert "Aurelius" not in prompt
+
+
+def test_demo_prompt_speak_mode_invites_voice():
+    from api.routes import demo_routes as dr
+
+    transcript = [{"role": "visitor", "content": "I want a raise"}]
+    prompt = dr._build_demo_prompt("maverick", transcript, speak=True)
+    assert "tapped you to speak" in prompt
+    assert "Do not summarize" in prompt
+
+    normal = dr._build_demo_prompt("maverick", transcript, speak=False)
+    assert "tapped you to speak" not in normal
 
 
 # --- weave sanitizer ---

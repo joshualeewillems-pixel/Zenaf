@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
+import JournalTab from './JournalTab'
 
 type Artifact = {
   artifact_id: string
@@ -110,7 +111,7 @@ function Tree({ node, depth }: { node: TreeNode; depth: number }) {
 }
 
 export default function ProvenanceView() {
-  const [tab, setTab] = useState<'ledger' | 'lineage'>('ledger')
+  const [tab, setTab] = useState<'ledger' | 'lineage' | 'journal'>('ledger')
   const [ledger, setLedger] = useState<{
     perspective_reach: number
     artifacts: Artifact[]
@@ -216,7 +217,7 @@ export default function ProvenanceView() {
           become downstream — reach accumulates on resonance, not views.
         </p>
         <div className="flex gap-1 bg-stone-900/60 rounded-full p-1 mt-3 w-fit">
-          {(['ledger', 'lineage'] as const).map((t) => (
+          {(['ledger', 'lineage', 'journal'] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -225,7 +226,7 @@ export default function ProvenanceView() {
                 tab === t ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
               }`}
             >
-              {t === 'ledger' ? 'Ledger' : 'Lineage'}
+              {t === 'ledger' ? 'Ledger' : t === 'lineage' ? 'Lineage' : 'Journal'}
             </button>
           ))}
         </div>
@@ -356,6 +357,8 @@ export default function ProvenanceView() {
             )}
           </>
         )}
+
+        {tab === 'journal' && <JournalTab />}
 
         {tab === 'lineage' && (
           <>

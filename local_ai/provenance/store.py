@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS provenance_artifacts (
     creator_declared INTEGER NOT NULL DEFAULT 0,
     reach_cached REAL NOT NULL DEFAULT 0,
     reach_updated_at TEXT,
-    c2pa_manifest BLOB
+    c2pa_manifest BLOB,
+    styled_by TEXT,
+    variation_of TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prov_art_sha ON provenance_artifacts(sha256);
 CREATE INDEX IF NOT EXISTS idx_prov_art_phash ON provenance_artifacts(phash);
@@ -133,6 +135,8 @@ def _row_to_artifact(row: sqlite3.Row) -> dict[str, Any]:
         "reach_cached": row["reach_cached"],
         "reach_updated_at": row["reach_updated_at"],
         "has_c2pa_manifest": row["c2pa_manifest"] is not None,
+        "styled_by": row["styled_by"] if "styled_by" in row.keys() else None,
+        "variation_of": row["variation_of"] if "variation_of" in row.keys() else None,
     }
 
 
@@ -148,6 +152,24 @@ class ProvenanceStore:
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
+            self._migrate()
+
+    def _migrate(self) -> None:
+        """Additive migrations for DBs created before a column existed.
+
+        (CREATE TABLE IF NOT EXISTS never alters an existing table, so new
+        columns need explicit ALTERs here. Keep this additive-only.)
+        """
+        cols = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(provenance_artifacts)")
+        }
+        for name in ("styled_by", "variation_of"):
+            if name not in cols:
+                self._conn.execute(
+                    f"ALTER TABLE provenance_artifacts ADD COLUMN {name} TEXT"
+                )
+        self._conn.commit()
 
     def close(self) -> None:
         with self._lock:
@@ -172,6 +194,8 @@ class ProvenanceStore:
         imported: bool = False,
         creator_declared: bool = False,
         c2pa_manifest: bytes | None = None,
+        styled_by: str | None = None,
+        variation_of: str | None = None,
     ) -> dict[str, Any]:
         if visibility not in VISIBILITIES:
             raise ValueError(f"bad visibility: {visibility}")
@@ -187,15 +211,15 @@ class ProvenanceStore:
                     title, description, archetype_cast, source_hash, modality,
                     phash, sha256, visibility, remix_policy, minted, imported,
                     disputed, creator_declared, reach_cached, reach_updated_at,
-                    c2pa_manifest
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    c2pa_manifest, styled_by, variation_of
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     artifact_id, creator_user_id, custodian_user_id, now,
                     title, description, json.dumps(archetype_cast or []),
                     source_hash, modality, phash, sha256, visibility,
                     remix_policy, 0, int(imported), 0, int(creator_declared),
-                    0.0, None, c2pa_manifest,
+                    0.0, None, c2pa_manifest, styled_by, variation_of,
                 ),
             )
             self._conn.commit()
@@ -214,7 +238,7 @@ class ProvenanceStore:
             "creator_user_id", "title", "description", "archetype_cast",
             "source_hash", "visibility", "remix_policy", "minted", "imported",
             "disputed", "creator_declared", "reach_cached", "reach_updated_at",
-            "c2pa_manifest",
+            "c2pa_manifest", "styled_by", "variation_of", "phash", "sha256",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if "visibility" in updates and updates["visibility"] not in VISIBILITIES:

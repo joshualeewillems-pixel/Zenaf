@@ -229,6 +229,15 @@ except Exception as e:
     print(f"Voice routes not loaded: {e}")
     _router_load_errors.append(f"voice: {e}")
 
+# Minting & provenance registry — artifacts, derivation DAG, engagement
+# events, reach scores, import fingerprinting, creatorship disputes.
+try:
+    from api.routes.provenance_routes import router as provenance_router
+    app.include_router(provenance_router)
+except Exception as e:
+    print(f"Provenance routes not loaded: {e}")
+    _router_load_errors.append(f"provenance: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the
@@ -247,6 +256,7 @@ EXPECTED_ROUTER_PREFIXES = (
     "/settings",
     "/studio",
     "/api",  # transcribe_routes mounts at /api
+    "/provenance",
 )
 
 

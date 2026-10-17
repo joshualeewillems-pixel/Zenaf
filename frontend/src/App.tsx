@@ -30,6 +30,7 @@ import {
 } from './perspectives'
 import { PerspectiveWorkoutPanel } from './perspectives/PerspectiveWorkoutPanel'
 import { LivingTreeView } from './living-tree/LivingTree'
+import ProvenanceView from './provenance/ProvenanceView'
 import {
   formatWorkoutContextBlock,
   countWorkoutRatingsInStorage,
@@ -473,6 +474,7 @@ function LeaveVisionSurfacesFocusClear({
     | 'agent_intake'
     | 'review'
     | 'signal_review'
+    | 'provenance'
     | 'settings'
 }) {
   const ctx = useVisionExecutionFocusOptional()
@@ -503,6 +505,7 @@ type MainViewForResonance =
   | 'vision_map'
   | 'vision_execution'
   | 'agent_intake'
+  | 'provenance'
   | 'settings'
 
 /** Map agent/run label → integrated-response resonance row (when transcript has no seat headers). */
@@ -650,6 +653,7 @@ function UniversalContextStrip({
     | 'agent_intake'
     | 'review'
     | 'signal_review'
+    | 'provenance'
     | 'settings'
   currentTopic: { label: string; modeLabel: string | null; summary: string; fullPath: string }
   currentFocusHasResult: boolean
@@ -4938,6 +4942,7 @@ function App() {
     | 'agent_intake'
     | 'review'
     | 'signal_review'
+    | 'provenance'
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('living_tree')
   const [navOpen, setNavOpen] = useState(false)
@@ -5794,7 +5799,7 @@ function App() {
             aria-hidden="true"
           />
 
-          {/* Supporting: Workspace + Content */}
+          {/* Supporting: Workspace + Content + Provenance */}
           <button
             type="button"
             onClick={() => setMainView('content')}
@@ -5803,6 +5808,15 @@ function App() {
             }`}
           >
             Content
+          </button>
+          <button
+            type="button"
+            onClick={() => setMainView('provenance')}
+            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium transition-colors ${
+              mainView === 'provenance' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
+            }`}
+          >
+            Provenance
           </button>
 
           <div
@@ -5856,6 +5870,7 @@ function App() {
                     { view: 'agent_intake', label: 'Connect' },
                     { view: 'review', label: 'Review' },
                     { view: 'content', label: 'Content' },
+                    { view: 'provenance', label: 'Provenance' },
                     { view: 'settings', label: 'Settings' },
                   ] as Array<{ view: MainView; label: string }>
                 ).map((item) => (
@@ -6137,6 +6152,10 @@ function App() {
         ) : mainView === 'signal_review' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
             <SignalReviewView />
+          </div>
+        ) : mainView === 'provenance' ? (
+          <div className="flex-1 flex flex-col min-h-0">
+            <ProvenanceView />
           </div>
         ) : mainView === 'settings' ? (
           <SettingsView

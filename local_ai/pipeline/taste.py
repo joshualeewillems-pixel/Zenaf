@@ -13,7 +13,10 @@ onboarding and the training loop are the same flow (spec §3).
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
+
+from local_ai.presence_ingest.schema import TrainingSignal
 
 from .store import PipelineStore
 
@@ -107,6 +110,39 @@ def build_proposal(
         "style": style,
         "tool": tool,
     }
+
+
+def taste_observation_signal(
+    *,
+    obs_id: str,
+    user_id: str,
+    question: str,
+    answer: str,
+    created_at_ms: int | None = None,
+) -> TrainingSignal:
+    """Build the canonical signal for one tasteCompass observation.
+
+    Preference elicitation is training data: a stated answer is an endorsed
+    ideals-guidance signal, owned by the user who gave it.
+    """
+    return TrainingSignal(
+        signal_id=f"taste:{obs_id}",
+        ts_ms=created_at_ms if created_at_ms is not None else int(time.time() * 1000),
+        layer="guidance",
+        zone="self",
+        actor=user_id,
+        summary=f"{question} -> {answer}".strip()[:500],
+        context_ref={},
+        payload_redacted="",
+        valence="endorsed",
+        correction_diff=None,
+        kind="taste_observation",
+        provenance={"source": "taste_compass", "question": question},
+        supersedes=None,
+        # The user's own stated preference is explicit approval.
+        status="approved",
+        session_id="",
+    )
 
 
 def _extract_terms(answer: str) -> list[str]:

@@ -8,7 +8,6 @@ Nothing trains until the user reviews and approves it.
 """
 from __future__ import annotations
 
-import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -227,23 +226,27 @@ def _validate_corrections(corrections: dict[str, Any]) -> dict[str, Any]:
     return cleaned
 
 
-def _append_correction_log(
+def _log_placement_correction(
     agent_id: str,
+    user_id: str,
     original: dict[str, Any],
-    corrections: dict[str, Any],
-    log_path: Path | None,
+    correction: dict[str, Any],
+    presence_store=None,
 ) -> None:
-    """Append the correction as an ideals-guidance signal (JSONL)."""
-    path = Path(log_path) if log_path else DEFAULT_CORRECTIONS_LOG
-    path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "agent_id": agent_id,
-        "ts": _now_iso(),
-        "original": original,
-        "correction": corrections,
-    }
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    """Record a sort-placement correction as a canonical training signal."""
+    from local_ai.agent_intake import signals as intake_signals
+    from local_ai.presence_ingest import migrate as _migrate
+    from local_ai.presence_ingest.store import PresenceStore
+
+    store = presence_store or PresenceStore()
+    _migrate.ensure_migrated(store)
+    signal = intake_signals.placement_correction_signal(
+        agent_id=agent_id,
+        user_id=user_id,
+        original=original,
+        correction=correction,
+    )
+    intake_signals.save_intake_signal(signal, store)
 
 
 def confirm_agent(
@@ -251,13 +254,15 @@ def confirm_agent(
     accepted: bool,
     corrections: dict[str, Any] | None = None,
     store: AgentStore | None = None,
-    corrections_log: Path | str | None = None,
+    user_id: str | None = None,
+    presence_store=None,
 ) -> ConnectedAgent:
     """Review-gate decision for a connected agent.
 
     - accepted=True, no corrections: status -> active.
     - corrections given: apply corrected primary_strand/kind, status ->
-      active, and log the correction as an ideals-guidance training signal.
+      active, and log the correction as an ideals-guidance training signal
+      in the canonical store.
     - accepted=False, no corrections: status -> archived (kept as audit).
     """
     store = store or AgentStore()
@@ -266,6 +271,7 @@ def confirm_agent(
         raise AgentIntakeError(f"unknown agent: {agent_id}")
 
     cleaned = _validate_corrections(corrections or {})
+    resolved_user = user_id or _store_user_id(store) or ""
 
     if cleaned:
         # Re-sort result with the user's corrected placement. Claims stay as
@@ -289,11 +295,12 @@ def confirm_agent(
             confidence=original.confidence if original else 0.0,
             needs_probing=False,
         )
-        _append_correction_log(
+        _log_placement_correction(
             agent.id,
+            resolved_user,
             {"primary_strand": original_primary, "kind": original_kind},
             cleaned,
-            Path(corrections_log) if corrections_log else None,
+            presence_store,
         )
         agent.status = "active"
     elif accepted:
@@ -313,25 +320,32 @@ def log_claim_feedback(
     note: str = "",
     evidence: str = "",
     inference: str = "",
-    corrections_log: Path | str | None = None,
+    claim_title: str = "",
+    user_id: str | None = None,
+    presence_store=None,
 ) -> None:
-    """Log a per-claim review decision as an ideals-guidance training signal.
+    """Log a per-claim review decision as a canonical training signal.
 
-    action is one of "accepted" | "corrected" | "explained". The user's note
-    (correction or explanation of *why*) is the training signal, linked to the
-    original evidence quote and the system's inference.
+    action is one of "accepted" | "corrected" | "explained" | "rejected" |
+    "unresolved". The user's note (correction or explanation of *why*) is
+    the training signal, linked to the original evidence quote and the
+    system's inference. "unresolved" is recorded with no training weight.
     """
-    path = Path(corrections_log) if corrections_log else DEFAULT_CORRECTIONS_LOG
-    path.parent.mkdir(parents=True, exist_ok=True)
-    entry = {
-        "agent_id": agent_id,
-        "claim_id": claim_id,
-        "claim_type": claim_type,
-        "ts": _now_iso(),
-        "action": action,
-        "evidence": evidence,
-        "inference": inference,
-        "user_note": note,
-    }
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+    from local_ai.agent_intake import signals as intake_signals
+    from local_ai.presence_ingest import migrate as _migrate
+    from local_ai.presence_ingest.store import PresenceStore
+
+    store = presence_store or PresenceStore()
+    _migrate.ensure_migrated(store)
+    signal = intake_signals.claim_feedback_signal(
+        agent_id=agent_id,
+        claim_id=claim_id,
+        claim_type=claim_type,
+        claim_title=claim_title,
+        action=action,
+        user_id=user_id or "",
+        evidence=evidence,
+        inference=inference,
+        note=note,
+    )
+    intake_signals.save_intake_signal(signal, store)

@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS training_signals (
     payload_redacted TEXT NOT NULL DEFAULT '',
     valence TEXT NOT NULL,
     correction_diff TEXT,
+    kind TEXT NOT NULL DEFAULT 'distilled',
     provenance TEXT NOT NULL DEFAULT '{}',
     supersedes TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
@@ -153,6 +154,7 @@ def _signal_from_row(row: sqlite3.Row) -> TrainingSignal:
         payload_redacted=row["payload_redacted"] or "",
         valence=row["valence"],
         correction_diff=row["correction_diff"],
+        kind=row["kind"] if "kind" in row.keys() and row["kind"] else "distilled",
         provenance=_json_loads(row["provenance"], {}),
         supersedes=row["supersedes"],
         status=row["status"],
@@ -197,6 +199,16 @@ class PresenceStore:
                 self._conn.execute(
                     "ALTER TABLE import_sessions "
                     "ADD COLUMN provenance TEXT NOT NULL DEFAULT '{}'"
+                )
+            # Migration guard: databases created before typed signal kinds.
+            sig_cols = {
+                r["name"]
+                for r in self._conn.execute("PRAGMA table_info(training_signals)")
+            }
+            if "kind" not in sig_cols:
+                self._conn.execute(
+                    "ALTER TABLE training_signals "
+                    "ADD COLUMN kind TEXT NOT NULL DEFAULT 'distilled'"
                 )
             self._conn.commit()
 
@@ -322,8 +334,8 @@ class PresenceStore:
                     "INSERT OR REPLACE INTO training_signals "
                     "(signal_id, session_id, ts_ms, layer, zone, actor, summary, "
                     " context_ref, payload_redacted, valence, correction_diff, "
-                    " provenance, supersedes, status) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " kind, provenance, supersedes, status) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         s.signal_id,
                         s.session_id,
@@ -336,6 +348,7 @@ class PresenceStore:
                         s.payload_redacted,
                         s.valence,
                         s.correction_diff,
+                        s.kind,
                         json.dumps(s.provenance),
                         s.supersedes,
                         s.status,
@@ -402,23 +415,74 @@ class PresenceStore:
             return True
 
     def list_signals(
-        self, zone: str | None = None, status: str = "approved"
+        self,
+        zone: str | None = None,
+        status: str = "approved",
+        kind: str | None = None,
     ) -> list[TrainingSignal]:
-        """Query signals, defaulting to approved ones (the training set)."""
+        """Query signals, defaulting to approved ones (the training set).
+
+        Pass kind to restrict to one typed channel (e.g. "taste_observation").
+        """
+        clauses = ["status = ?"]
+        params: list[Any] = [status]
+        if zone:
+            clauses.append("zone = ?")
+            params.append(zone)
+        if kind:
+            clauses.append("kind = ?")
+            params.append(kind)
         with self._lock:
-            if zone:
-                rows = self._conn.execute(
-                    "SELECT * FROM training_signals "
-                    "WHERE zone = ? AND status = ? ORDER BY ts_ms DESC",
-                    (zone, status),
-                ).fetchall()
-            else:
-                rows = self._conn.execute(
-                    "SELECT * FROM training_signals "
-                    "WHERE status = ? ORDER BY ts_ms DESC",
-                    (status,),
-                ).fetchall()
+            rows = self._conn.execute(
+                "SELECT * FROM training_signals WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY ts_ms DESC",
+                params,
+            ).fetchall()
         return [_signal_from_row(r) for r in rows]
+
+    def list_signals_by_kind(
+        self,
+        kind: str,
+        *,
+        actor: str | None = None,
+        status: str = "approved",
+        limit: int | None = None,
+    ) -> list[TrainingSignal]:
+        """All signals of one typed channel, newest first."""
+        clauses = ["kind = ?", "status = ?"]
+        params: list[Any] = [kind, status]
+        if actor is not None:
+            clauses.append("actor = ?")
+            params.append(actor)
+        sql = (
+            "SELECT * FROM training_signals WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY ts_ms DESC"
+        )
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(sql, params).fetchall()
+        return [_signal_from_row(r) for r in rows]
+
+    def count_signals_by_kind(
+        self, kind: str, *, actor: str | None = None, status: str = "approved"
+    ) -> int:
+        """Count signals of one typed channel."""
+        clauses = ["kind = ?", "status = ?"]
+        params: list[Any] = [kind, status]
+        if actor is not None:
+            clauses.append("actor = ?")
+            params.append(actor)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM training_signals WHERE "
+                + " AND ".join(clauses),
+                params,
+            ).fetchone()
+        return int(row["n"])
 
     def count_signals(self, session_id: str, status: str | None = None) -> int:
         with self._lock:

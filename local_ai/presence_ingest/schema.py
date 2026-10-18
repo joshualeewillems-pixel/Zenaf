@@ -21,6 +21,15 @@ SignalLayer = Literal["decision", "behavior", "guidance"]
 SignalValence = Literal["endorsed", "rejected", "corrected", "observed"]
 SignalStatus = Literal["pending", "approved", "rejected"]
 SessionStatus = Literal["uploaded", "parsed", "distilled", "reviewed", "deleted"]
+#: Typed signal kinds — which channel produced the signal. The canonical
+#: store holds every channel: distilled import signals plus the channels
+#: consolidated here (see local_ai/presence_ingest/migrate.py):
+#:   placement_correction — user corrected an intake sort placement
+#:   claim_feedback       — per-claim review verdict (accept/correct/...)
+#:   taste_observation    — tasteCompass preference observation
+SignalKind = Literal[
+    "distilled", "placement_correction", "claim_feedback", "taste_observation"
+]
 
 
 class PresenceEvent(BaseModel):
@@ -51,6 +60,10 @@ class TrainingSignal(BaseModel):
 
     valence: SignalValence
     correction_diff: str | None = None
+
+    #: Which channel produced this signal (see SignalKind). Lets one store
+    #: hold every training-data channel with typed, queryable kinds.
+    kind: SignalKind = "distilled"
 
     provenance: dict[str, Any] = Field(default_factory=dict)
     supersedes: str | None = None

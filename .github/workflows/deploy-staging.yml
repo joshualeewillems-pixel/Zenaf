@@ -39,7 +39,7 @@ jobs:
           fi
           echo "$EXISTING" | grep -q ZENAF_SECRET_KEY \
             || ARGS="$ARGS ZENAF_SECRET_KEY=$(openssl rand -hex 32)"
-          ARGS="$ARGS ZENAF_LLM_PROVIDER=anthropic"
+          ARGS="$ARGS ZENAF_LLM_PROVIDER=meta"
           if [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
             ARGS="$ARGS ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
           fi

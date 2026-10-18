@@ -365,6 +365,7 @@ def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(
     created is a bug, not a success.
     """
     from local_ai.agent_intake import project_miner
+    from local_ai.vision_execution import graduation as _graduation
 
     uid = _uid(current_user)  # authoritative: never trust the client-supplied user_id
 
@@ -440,6 +441,9 @@ def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(
                 title=str(i.get("title", "")),
                 detail=str(i.get("detail", "")),
                 source_quote=str(i.get("source_quote", "")),
+                desired_outcome=str(i.get("desired_outcome", "")),
+                suggested_level=(str(i.get("suggested_level", "")).strip().lower() or None),
+                target_level=(str(i.get("target_level", "")).strip().lower() or None),
             )
             for i in ideas
             if i.get("title")
@@ -449,6 +453,13 @@ def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(
     selected = set(body.selected_titles) if body.selected_titles is not None else None
     try:
         return project_miner.create_confirmed(result, uid, selected)
+    except _graduation.IdeaNotReadyError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "missing": exc.missing, "idea": exc.idea_title},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)[:300])
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)[:300])
 

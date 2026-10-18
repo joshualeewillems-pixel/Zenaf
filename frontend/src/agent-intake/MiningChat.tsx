@@ -24,6 +24,9 @@ export default function MiningChat({ agentId, agentName }: Props) {
   const [loading, setLoading] = useState(false)
   const [pendingProposal, setPendingProposal] = useState<Proposal | null>(null)
   const [confirmInput, setConfirmInput] = useState('')
+  // Idea graduation: the user picks the level an idea proposal files as.
+  // The miner may suggest; the user decides (review philosophy).
+  const [fileAs, setFileAs] = useState('idea')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -33,6 +36,11 @@ export default function MiningChat({ agentId, agentName }: Props) {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  // Reset the file-as picker whenever a new proposal arrives.
+  useEffect(() => {
+    setFileAs('idea')
+  }, [pendingProposal])
 
   // Opening: fetch Zenaf's introduction on mount
   useEffect(() => {
@@ -112,6 +120,8 @@ export default function MiningChat({ agentId, agentName }: Props) {
   const doConfirm = async (text: string) => {
     const history = messages.map(m => ({ role: m.role, content: m.content }))
     const proposal = pendingProposal
+      ? { ...pendingProposal, target_level: pendingProposal.type === 'idea' ? fileAs : undefined }
+      : null
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setConfirmInput('')
     setLoading(true)
@@ -193,6 +203,29 @@ export default function MiningChat({ agentId, agentName }: Props) {
           <div className="text-sm text-amber-100/90 mb-2 leading-snug">
             {pendingProposal.detail}
           </div>
+          {pendingProposal.type === 'idea' && (
+            <div className="mb-2">
+              <label className="block text-xs font-semibold text-amber-400 mb-1 uppercase tracking-wide">
+                File as
+              </label>
+              <select
+                value={fileAs}
+                onChange={(e) => setFileAs(e.target.value)}
+                disabled={loading}
+                className="w-full min-h-[44px] rounded-xl bg-amber-950/50 border border-amber-500/50 text-amber-50 px-4 text-[15px] focus:outline-none focus:border-amber-400"
+              >
+                <option value="idea">Idea — a thought, not yet work</option>
+                <option value="task">Task — small, doable</option>
+                <option value="project">Project — an endeavor with a goal</option>
+                <option value="initiative">Initiative — a big body of work</option>
+              </select>
+              {fileAs !== 'idea' && (
+                <p className="text-amber-200/70 text-[13px] mt-1 leading-snug">
+                  It graduates only if its practical fields are filled in — otherwise I'll tell you what's missing.
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex gap-2 mb-2">
             <button
               onClick={() => confirmWithText('yes')}

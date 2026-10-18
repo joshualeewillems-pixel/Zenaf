@@ -9,6 +9,7 @@ from typing import Any, Callable, TypeVar
 
 from fastapi import APIRouter, Body, HTTPException, Query, Depends
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -712,6 +713,45 @@ def delete_idea(idea_id: str, current_user: dict = Depends(get_current_user)):
     if not S.delete_idea(idea_id, current_user["id"]):
         raise HTTPException(status_code=404, detail="Idea not found")
     return {"ok": True}
+
+
+class PromoteIdeaBody(BaseModel):
+    """Graduate a confirmed idea into work. target_level: task | project | initiative."""
+    target_level: str
+
+
+@router.get("/ideas/{idea_id}/graduation")
+def idea_graduation_readiness(idea_id: str, current_user: dict = Depends(get_current_user)):
+    """Readiness check for idea graduation: is this still a thought experiment,
+    or has it become work in progress? Returns the missing practical fields."""
+    from local_ai.vision_execution import graduation as G
+
+    idea = S.get_idea(idea_id, current_user["id"])
+    if idea is None:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    ready, missing = G.graduation_readiness(idea)
+    return {"ready": ready, "missing": missing, "levels": list(G.GRADUATE_LEVELS)}
+
+
+@router.post("/ideas/{idea_id}/promote", status_code=201)
+def promote_idea(idea_id: str, body: PromoteIdeaBody, current_user: dict = Depends(get_current_user)):
+    """Graduate a confirmed idea into a task, project, or initiative (by scope).
+
+    422 with the missing practical fields when the idea isn't ready yet —
+    graduation is earned by filling fields in, not by asking.
+    """
+    from local_ai.vision_execution import graduation as G
+
+    try:
+        return S.promote_idea(idea_id, body.target_level, current_user["id"])
+    except G.IdeaNotReadyError as e:
+        raise HTTPException(status_code=422, detail={"message": str(e), "missing": e.missing})
+    except ValueError as e:
+        msg = str(e)
+        raise HTTPException(
+            status_code=404 if "not found" in msg.lower() else 400,
+            detail=msg,
+        )
 
 
 @router.post("/ideas/{idea_id}/evaluate")

@@ -64,6 +64,56 @@ def delete_idea(idea_id: str, user_id: str):
     return S.delete_idea(idea_id, user_id)
 
 
+def promote_idea(idea_id: str, target_level: str, user_id: str):
+    """Graduate a confirmed idea into a task, project, or initiative.
+
+    The graduation rule: an idea becomes work when its practical fields are
+    filled in (thought experiment -> work in progress). Raises
+    graduation.IdeaNotReadyError naming the missing fields when premature,
+    ValueError for unknown ideas/levels or already-graduated ideas.
+    The idea is marked "Graduated" with provenance; the new entity links
+    back to it (source_idea_id for initiatives, notes otherwise).
+    """
+    from . import graduation as G
+
+    idea = S.get_idea(idea_id, user_id)
+    if idea is None:
+        raise ValueError("Idea not found")
+    if (idea.get("status") or "") == "Graduated":
+        raise ValueError("Idea already graduated")
+    if target_level not in G.GRADUATE_LEVELS:
+        raise ValueError(
+            f"unknown target_level: {target_level!r} (expected one of {G.GRADUATE_LEVELS})"
+        )
+    G.assert_ready(idea, idea.get("title") or "")
+
+    entity_type, payload = G.build_graduated_payload(
+        idea, target_level, source_idea_id=idea_id
+    )
+    if entity_type == "task":
+        created = S.create_task(M.TaskCreate(**payload), user_id)
+    elif entity_type == "project":
+        created = S.create_project(M.ProjectCreate(**payload), user_id)
+    else:
+        created = S.create_initiative(M.InitiativeCreate(**payload), user_id)
+
+    created_id = created.get("id") if isinstance(created, dict) else getattr(created, "id", "")
+    provenance = (
+        f"Graduated to {entity_type}"
+        + (f" ({created_id})" if created_id else "")
+    )
+    existing_notes = (idea.get("notes") or "").strip()
+    updated = S.update_idea(
+        idea_id,
+        M.IdeaUpdate(
+            status="Graduated",
+            notes=(existing_notes + "\n\n" + provenance).strip(),
+        ),
+        user_id,
+    )
+    return {"idea": updated, "entity_type": entity_type, "entity": created}
+
+
 # Initiatives (with derived: weightedScore, approvalReady, returnOnTime)
 def list_initiatives(user_id: str):
     out = S.list_initiatives(user_id)

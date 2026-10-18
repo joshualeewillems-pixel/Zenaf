@@ -27,6 +27,7 @@ _PROPOSAL_TYPES = {
     "task": "Task",
     "asset": "Asset",
     "person": "Person",
+    "idea": "Idea",
 }
 
 _MINING_SYSTEM = """You are Zenaf, helping the user pull practical things out of a conversation they imported.
@@ -63,13 +64,19 @@ THE FIVE THINGS YOU PULL:
    Example: "Jim is really good with yardwork" → "Jim sounds handy. Is he someone you work
    with already, or should I note him as a potential contact? Want me to offer an invite?"
 
+6. IDEAS — early-stage thoughts, "I've been thinking about..." — real but not yet committed.
+   Propose these as type=idea. The amber box lets the user file it as an idea — or
+   graduate it on the spot to a task, project, or initiative when it's fleshed out
+   enough (clear description plus an intent or grounding detail). Don't graduate for
+   them; the user picks the level in the amber box.
+
 HOW TO PROPOSE:
 Present it naturally in conversation, then include a structured tag on its own line:
 [PROPOSAL type=project title="Design currency system"]Brief description of the goal and scope here[/PROPOSAL]
 [PROPOSAL type=asset title="Downtown clinic"]Meeting space, holds ~20, available weekends[/PROPOSAL]
 [PROPOSAL type=person title="Jim"]Good with yardwork, potential contact[/PROPOSAL]
 
-The type must be one of: initiative, project, task, asset, person.
+The type must be one of: initiative, project, task, asset, person, idea.
 The title should be short (a few words). The body is the detail.
 
 Then explain: "Tap '✓ File it' in the amber box to save this, or keep chatting here to refine it."
@@ -121,18 +128,66 @@ def _create_entity_from_proposal(
     proposal: dict[str, Any],
     user_id: str | None,
 ) -> dict[str, Any] | None:
-    """Create the actual Vision Execution entity. Returns the created record or None."""
+    """Create the actual Vision Execution entity. Returns the created record or None.
+
+    For idea proposals the user may choose a target_level (idea|task|project|
+    initiative) in the amber box. Graduating validates the idea's practical
+    fields first — raises IdeaNotReadyError naming what's missing (propagates
+    out; the broad except below deliberately re-raises it).
+    """
+    from local_ai.vision_execution import graduation as G
+
+    ptype = proposal["type"]
+    title = proposal["title"]
+    detail = proposal["detail"]
+    target_level = (proposal.get("target_level") or "").strip().lower() or None
+
+    # Validate graduation BEFORE the broad try/except so the readiness error
+    # propagates to the caller (it becomes a conversational reply, not a
+    # silent "couldn't save").
+    if ptype == "idea" and target_level in G.GRADUATE_LEVELS:
+        G.assert_ready(
+            {
+                "title": title,
+                "description": detail,
+                "desired_outcome": proposal.get("desired_outcome", ""),
+                "notes": proposal.get("source_quote", ""),
+            },
+            title,
+        )
+
     try:
         from local_ai.vision_execution import storage as ve_store
         from local_ai.vision_execution.models import (
             InitiativeCreate, ProjectCreate, TaskCreate, AssetCreate, PersonCreate,
+            IdeaCreate,
         )
 
-        ptype = proposal["type"]
-        title = proposal["title"]
-        detail = proposal["detail"]
+        if ptype == "idea" and target_level in G.GRADUATE_LEVELS:
+            idea_dict = {
+                "title": title,
+                "description": detail,
+                "desired_outcome": proposal.get("desired_outcome", ""),
+                "notes": proposal.get("source_quote", ""),
+            }
+            entity_type, payload = G.build_graduated_payload(idea_dict, target_level)
+            if entity_type == "task":
+                created = ve_store.create_task(TaskCreate(**payload), user_id=user_id)
+            elif entity_type == "project":
+                created = ve_store.create_project(ProjectCreate(**payload), user_id=user_id)
+            else:
+                created = ve_store.create_initiative(InitiativeCreate(**payload), user_id=user_id)
+            return {
+                "id": getattr(created, "id", None),
+                "type": entity_type,
+                "title": title,
+                "graduated_from": "idea",
+            }
 
-        if ptype == "initiative":
+        if ptype == "idea":
+            obj = IdeaCreate(title=title, description=detail, status="Captured")
+            created = ve_store.create_idea(obj, user_id=user_id)
+        elif ptype == "initiative":
             obj = InitiativeCreate(title=title, brief=detail, status="Draft")
             created = ve_store.create_initiative(obj, user_id=user_id)
         elif ptype == "project":
@@ -174,10 +229,25 @@ def handle_message(
     if is_confirmation and pending_proposal:
         msg_lower = message.lower().strip()
         if re.match(r'^\s*(yes|yeah|yep|y|sure|ok|okay|do it|file it)\s*[.!]?\s*$', msg_lower):
-            entity = _create_entity_from_proposal(pending_proposal, user_id)
-            if entity:
+            from local_ai.vision_execution import graduation as _G
+
+            try:
+                entity = _create_entity_from_proposal(pending_proposal, user_id)
+            except _G.IdeaNotReadyError as exc:
                 return {
-                    "reply": f"Filed as {pending_proposal['type_name']}: {pending_proposal['title']}. What should we pull next?",
+                    "reply": (
+                        f"Not quite ready to graduate — it's still a thought experiment. "
+                        f"To become work it needs: {', '.join(exc.missing)}. "
+                        f"Want to keep fleshing it out, or file it as an idea for now?"
+                    ),
+                    "entity_created": None,
+                    "pending_proposal": pending_proposal,
+                    "done": False,
+                }
+            if entity:
+                filed_as = entity.get("type", pending_proposal["type"])
+                return {
+                    "reply": f"Filed as {filed_as.capitalize()}: {pending_proposal['title']}. What should we pull next?",
                     "entity_created": entity,
                     "pending_proposal": None,
                     "done": False,

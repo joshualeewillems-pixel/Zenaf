@@ -86,6 +86,9 @@ class ProposedIdea:
     title: str
     detail: str = ""
     source_quote: str = ""
+    desired_outcome: str = ""  # intent — what the idea is trying to become
+    suggested_level: str | None = None  # miner's suggestion; the user decides at review
+    target_level: str | None = None  # user's verdict: idea|task|project|initiative (None = stays an idea)
 
     def to_idea_create(self) -> dict[str, Any]:
         """Map to a Vision Execution IdeaCreate payload.
@@ -93,13 +96,25 @@ class ProposedIdea:
         Field mapping follows the GUI labels:
         - "Title" -> title
         - "Expanded description" -> description
+        - "Intent / what this idea is trying to become" -> desired_outcome
         - source quote -> notes
         """
         return {
             "title": self.title,
             "description": self.detail,
+            "desired_outcome": self.desired_outcome,
             "notes": f"Mined from transcript: {self.source_quote}" if self.source_quote else "",
             "status": "Captured",
+        }
+
+    def to_readiness_dict(self) -> dict[str, Any]:
+        """Idea-shaped dict for the graduation readiness check."""
+        return {
+            "title": self.title,
+            "description": self.detail,
+            "desired_outcome": self.desired_outcome,
+            # The source quote is the proposal's grounding detail from the transcript.
+            "notes": self.source_quote,
         }
 
 
@@ -121,6 +136,9 @@ _MINING_PROMPT = """Read this conversation transcript like a chief of staff. Ide
 3. TASKS — concrete next actions the person asked for, was offered, or implied. For each: title, detail, source quote. Attach to a project when one fits; otherwise standalone.
 
 4. IDEAS — early-stage thoughts, "I've been thinking about..." — real but not yet committed to. Captured, not actioned.
+   For each idea include desired_outcome (the intent: what is this idea trying to become?).
+   When an idea already reads like work at a clear scope, you may add suggested_level
+   ("task", "project", or "initiative") — a suggestion only; the user decides at review.
 
 Transcript:
 {transcript}
@@ -139,11 +157,12 @@ Respond with ONLY valid JSON in this exact shape:
     {{"title": "...", "detail": "...", "source_quote": "..."}}
   ],
   "ideas": [
-    {{"title": "...", "detail": "...", "source_quote": "..."}}
+    {{"title": "...", "detail": "...", "source_quote": "...",
+      "desired_outcome": "...", "suggested_level": "task"}}
   ]
 }}
 
-Be conservative: only propose what the transcript evidences. Prefer fewer, sharper items over many vague ones. Not every transcript has initiatives — only propose one when multiple projects clearly share a unifying direction."""
+Be conservative: only propose what the transcript evidences. Prefer fewer, sharper items over many vague ones. Not every transcript has initiatives — only propose one when multiple projects clearly share a unifying direction. Omit suggested_level when the idea is genuinely just a thought, not work yet."""
 
 
 def _api_key(user_id: str | None = None) -> str | None:
@@ -208,6 +227,10 @@ def _parse_mining_json(raw: str) -> MiningResult:
             title=str(i.get("title", ""))[:200],
             detail=str(i.get("detail", ""))[:500],
             source_quote=str(i.get("source_quote", ""))[:300],
+            desired_outcome=str(i.get("desired_outcome", ""))[:300],
+            suggested_level=(
+                str(i.get("suggested_level", "")).strip().lower() or None
+            ),
         )
         for i in (data.get("ideas") or [])
         if i.get("title")
@@ -316,12 +339,25 @@ def create_confirmed(
     """
     from local_ai.vision_execution import models as M
     from local_ai.vision_execution import service as ve_service
+    from local_ai.vision_execution import graduation as G
 
     def _id(obj: Any) -> str | None:
         return obj.get("id") if isinstance(obj, dict) else getattr(obj, "id", None)
 
     def _wanted(title: str) -> bool:
         return selected_titles is None or title in selected_titles
+
+    def _validate_target_level(idea: ProposedIdea) -> str | None:
+        """Normalize and validate the user's chosen target level for an idea."""
+        level = (idea.target_level or "").strip().lower() or None
+        if level is None:
+            return None
+        if level not in G.TARGET_LEVELS:
+            raise ValueError(
+                f"unknown target_level {idea.target_level!r} for idea "
+                f"'{idea.title}' (expected one of {G.TARGET_LEVELS})"
+            )
+        return level
 
     initiative_ids: list[str] = []
     project_ids: list[str] = []
@@ -366,10 +402,53 @@ def create_confirmed(
                     f"{t.title} {t.detail} {t.source_quote}",
                 )
 
-    # Ideas (captured, not actioned).
-    for idea in result.ideas:
-        if not _wanted(idea.title):
-            continue
+    # Ideas: captured as ideas, or graduated to task/project/initiative when the
+    # user chose a target level at review. Graduation is validated up front
+    # (two passes) so a not-ready idea fails loudly before anything is created.
+    wanted_ideas = [idea for idea in result.ideas if _wanted(idea.title)]
+    graduation_plans: list[tuple[ProposedIdea, str]] = []
+    for idea in wanted_ideas:
+        level = _validate_target_level(idea)
+        if level in G.GRADUATE_LEVELS:
+            readiness = idea.to_readiness_dict()
+            ready, missing = G.graduation_readiness(readiness)
+            if not ready:
+                raise G.IdeaNotReadyError(missing, idea.title)
+            graduation_plans.append((idea, level))
+
+    for idea, level in graduation_plans:
+        entity_type, payload = G.build_graduated_payload(
+            idea.to_readiness_dict(), level
+        )
+        if entity_type == "task":
+            tc = ve_service.create_task(M.TaskCreate(**payload), user_id)
+            tid = _id(tc)
+            if tid:
+                task_ids.append(tid)
+                _infer_entity_strands(
+                    user_id, "task", tid,
+                    f"{idea.title} {idea.detail} {idea.source_quote}",
+                )
+        elif entity_type == "project":
+            pc = ve_service.create_project(M.ProjectCreate(**payload), user_id)
+            pid = _id(pc)
+            if pid:
+                project_ids.append(pid)
+                _infer_entity_strands(
+                    user_id, "project", pid,
+                    f"{idea.title} {idea.detail} {idea.source_quote}",
+                )
+        else:
+            ic = ve_service.create_initiative(M.InitiativeCreate(**payload), user_id)
+            iid = _id(ic)
+            if iid:
+                initiative_ids.append(iid)
+                initiative_id_by_title[idea.title] = iid
+
+    graduated_titles = {idea.title for idea, _ in graduation_plans}
+    for idea in wanted_ideas:
+        if idea.title in graduated_titles:
+            continue  # graduated above — the idea became the work itself
         created = ve_service.create_idea(M.IdeaCreate(**idea.to_idea_create()), user_id)
         iid = _id(created)
         if iid:

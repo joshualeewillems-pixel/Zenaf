@@ -29,7 +29,12 @@ import {
   InfluencesLinksSection,
 } from './perspectives'
 import { PerspectiveWorkoutPanel } from './perspectives/PerspectiveWorkoutPanel'
-import { LivingTreeView } from './living-tree/LivingTree'
+import {
+  LivingTreeView,
+  type NodeMenuItemId,
+  type NodeSheetContentProvider,
+  type TreeNodeRef,
+} from './living-tree/LivingTree'
 import ProvenanceView from './provenance/ProvenanceView'
 import {
   formatWorkoutContextBlock,
@@ -4932,6 +4937,52 @@ function App() {
     }
   }, [resolveCouncilInsightText, currentUser?.id, streamingCouncilRunLabel])
 
+  // Tree-as-organism (phase 1): the Living Tree's node sheets mount the real
+  // existing views — same props and data flow as their pages, rendered in
+  // place. Returning null shows the sheet's honest "still growing" state.
+  const renderTreeSheetContent: NodeSheetContentProvider = (
+    node: TreeNodeRef,
+    item: NodeMenuItemId,
+  ) => {
+    if (item === 'today') {
+      return (
+        <TodayView
+          key={node.kind === 'seat' ? `seat-${node.seatKey}` : 'you'}
+          mode={node.kind === 'seat' ? node.seatKey : null}
+        />
+      )
+    }
+    if (item === 'review') return <ReviewView />
+    if (node.kind !== 'you') return null
+    if (item === 'projects') {
+      return (
+        <VisionExecutionView
+          initialSelection={stableVeSelectionForExecutionView}
+          councilIdeaLabelsRef={councilIdeaLabelsRef}
+          councilVeEntityBundleRef={councilVeEntityBundleRef}
+          onCouncilIdeaLiveLabelsUpdated={bumpCouncilIdeaLiveLabelsSeq}
+          focusTabRequest={veFocusTabRequest}
+          onFocusTabRequestConsumed={consumeVeFocusTabRequest}
+          onVeSelectionChange={setVeSelection}
+          recognitionUserId={currentUser?.id ?? null}
+          councilServerWriteNonce={councilVeServerWriteNonce}
+          radarScrollBucketRequest={veRadarScrollBucket}
+          onRadarScrollBucketConsumed={clearVeRadarScrollBucket}
+        />
+      )
+    }
+    if (item === 'identity') {
+      return (
+        <SettingsView
+          user={currentUser}
+          onLogout={handleLogout}
+          onUserUpdated={setCurrentUser}
+        />
+      )
+    }
+    return null
+  }
+
   // Top-level view: Living Tree (default), Vision map, Workspace Organizer, Perspectives, Content, Vision → Execution
   type MainView =
     | 'today'
@@ -5949,7 +6000,10 @@ function App() {
           </div>
         ) : mainView === 'living_tree' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden">
-            <LivingTreeView onNavigate={(view) => setMainView(view)} />
+            <LivingTreeView
+              onNavigate={(view) => setMainView(view)}
+              renderSheetContent={renderTreeSheetContent}
+            />
           </div>
         ) : mainView === 'perspectives' ? (
           <div className="flex-1 flex flex-col min-h-0 lg:flex-row lg:overflow-hidden bg-surface/20">

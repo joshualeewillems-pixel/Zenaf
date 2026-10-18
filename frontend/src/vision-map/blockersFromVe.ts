@@ -1,4 +1,4 @@
-import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
+import type { Asset, Idea, Initiative, Person, Project, Task } from '../vision-execution/types'
 import type { MapEntityRef } from './ontology'
 
 export type VisionMapEntityBundle = {
@@ -6,6 +6,9 @@ export type VisionMapEntityBundle = {
   initiatives: Initiative[]
   projects: Project[]
   tasks: Task[]
+  /** Garden landmarks (people/assets) — rendered without growth glyphs. Optional for callers that don't fetch them. */
+  persons?: Person[]
+  assets?: Asset[]
 }
 
 function taskBlocked(t: Task): boolean {

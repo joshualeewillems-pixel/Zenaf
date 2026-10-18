@@ -22,12 +22,17 @@ type Proposal = {
 type ChecklistNode = {
   title: string
   children: ChecklistNode[]
+  person_id?: string | null
+  person_name?: string | null
+  asset_id?: string | null
+  asset_name?: string | null
 }
 
 /** Defensive copy of a proposed checklist from the backend. */
 function normalizeChecklist(raw: unknown): ChecklistNode[] {
   if (!Array.isArray(raw)) return []
   const out: ChecklistNode[] = []
+  const strOrNull = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null)
   for (const entry of raw) {
     if (typeof entry !== 'object' || entry === null) continue
     const e = entry as Record<string, unknown>
@@ -37,13 +42,26 @@ function normalizeChecklist(raw: unknown): ChecklistNode[] {
     if (Array.isArray(e.children)) {
       for (const centry of e.children) {
         if (typeof centry !== 'object' || centry === null) continue
-        const ctitle = typeof (centry as Record<string, unknown>).title === 'string'
-          ? ((centry as Record<string, unknown>).title as string).trim()
-          : ''
-        if (ctitle) children.push({ title: ctitle, children: [] })
+        const ce = centry as Record<string, unknown>
+        const ctitle = typeof ce.title === 'string' ? ce.title.trim() : ''
+        if (ctitle) children.push({
+          title: ctitle,
+          children: [],
+          person_id: strOrNull(ce.person_id),
+          person_name: strOrNull(ce.person_name),
+          asset_id: strOrNull(ce.asset_id),
+          asset_name: strOrNull(ce.asset_name),
+        })
       }
     }
-    out.push({ title, children })
+    out.push({
+      title,
+      children,
+      person_id: strOrNull(e.person_id),
+      person_name: strOrNull(e.person_name),
+      asset_id: strOrNull(e.asset_id),
+      asset_name: strOrNull(e.asset_name),
+    })
   }
   return out
 }
@@ -95,6 +113,24 @@ export default function MiningChat({ agentId, agentName }: Props) {
       return prev.map((n, i) =>
         i === path[0] ? { ...n, children: n.children.filter((_, j) => j !== path[1]) } : n
       )
+    })
+  }
+
+  /** Dismiss a suggested person/asset link on a checklist item (user verdict). */
+  const dismissChecklistLink = (path: number[], kind: 'person' | 'asset') => {
+    setChecklist(prev => {
+      const next = prev.map(n => ({ ...n, children: n.children.map(c => ({ ...c })) }))
+      const apply = (node: ChecklistNode): ChecklistNode =>
+        kind === 'person'
+          ? { ...node, person_id: null, person_name: null }
+          : { ...node, asset_id: null, asset_name: null }
+      if (path.length === 1) {
+        next[path[0]] = apply(next[path[0]])
+      } else if (path.length === 2) {
+        const parent = next[path[0]]
+        parent.children[path[1]] = apply(parent.children[path[1]])
+      }
+      return next
     })
   }
 
@@ -287,23 +323,73 @@ export default function MiningChat({ agentId, agentName }: Props) {
                       ×
                     </button>
                   </div>
+                  {(item.person_name || item.asset_name) && (
+                    <div className="flex gap-1 ml-7 mt-1 flex-wrap">
+                      {item.person_name && (
+                        <button
+                          onClick={() => dismissChecklistLink([i], 'person')}
+                          disabled={loading}
+                          title="Suggested link — tap to remove"
+                          className="text-[12px] px-2 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-200/90"
+                        >
+                          🔗 {item.person_name} ×
+                        </button>
+                      )}
+                      {item.asset_name && (
+                        <button
+                          onClick={() => dismissChecklistLink([i], 'asset')}
+                          disabled={loading}
+                          title="Suggested link — tap to remove"
+                          className="text-[12px] px-2 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-200/90"
+                        >
+                          🔗 {item.asset_name} ×
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {item.children.map((child, j) => (
-                    <div key={j} className="flex gap-1 items-center ml-7 mt-1">
-                      <span className="text-amber-400/40 text-sm shrink-0">☐</span>
-                      <input
-                        value={child.title}
-                        onChange={(e) => updateChecklistTitle([i, j], e.target.value)}
-                        disabled={loading}
-                        className="flex-1 min-h-[44px] rounded-lg bg-amber-950/40 border border-amber-500/30 text-amber-50 px-3 text-[14px] focus:outline-none focus:border-amber-400"
-                      />
-                      <button
-                        onClick={() => removeChecklistAt([i, j])}
-                        disabled={loading}
-                        aria-label="Remove sub-item"
-                        className="shrink-0 min-h-[44px] min-w-[44px] rounded-lg text-amber-400/60 text-lg hover:text-amber-200"
-                      >
-                        ×
-                      </button>
+                    <div key={j}>
+                      <div className="flex gap-1 items-center ml-7 mt-1">
+                        <span className="text-amber-400/40 text-sm shrink-0">☐</span>
+                        <input
+                          value={child.title}
+                          onChange={(e) => updateChecklistTitle([i, j], e.target.value)}
+                          disabled={loading}
+                          className="flex-1 min-h-[44px] rounded-lg bg-amber-950/40 border border-amber-500/30 text-amber-50 px-3 text-[14px] focus:outline-none focus:border-amber-400"
+                        />
+                        <button
+                          onClick={() => removeChecklistAt([i, j])}
+                          disabled={loading}
+                          aria-label="Remove sub-item"
+                          className="shrink-0 min-h-[44px] min-w-[44px] rounded-lg text-amber-400/60 text-lg hover:text-amber-200"
+                        >
+                          ×
+                        </button>
+                      </div>
+                      {(child.person_name || child.asset_name) && (
+                        <div className="flex gap-1 ml-14 mt-1 flex-wrap">
+                          {child.person_name && (
+                            <button
+                              onClick={() => dismissChecklistLink([i, j], 'person')}
+                              disabled={loading}
+                              title="Suggested link — tap to remove"
+                              className="text-[12px] px-2 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-200/90"
+                            >
+                              🔗 {child.person_name} ×
+                            </button>
+                          )}
+                          {child.asset_name && (
+                            <button
+                              onClick={() => dismissChecklistLink([i, j], 'asset')}
+                              disabled={loading}
+                              title="Suggested link — tap to remove"
+                              className="text-[12px] px-2 py-1 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-200/90"
+                            >
+                              🔗 {child.asset_name} ×
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

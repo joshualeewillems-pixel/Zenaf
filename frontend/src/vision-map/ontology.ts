@@ -3,7 +3,7 @@
  * ideas → seeds, initiatives → trees, projects → branches, tasks → flowers, outcomes → fruit.
  */
 
-export type MapEntityKind = 'seed' | 'tree' | 'branch' | 'flower' | 'fruit'
+export type MapEntityKind = 'seed' | 'tree' | 'branch' | 'flower' | 'fruit' | 'landmark'
 
 /** Stewardship / attention (simple tiered; projection-only). */
 export type WaterLevel = 'high' | 'medium' | 'low'
@@ -26,7 +26,7 @@ export type ConditionState = 'healthy' | 'blocked' | 'teacher-warned' | 'teacher
 /** Unified structural damage for map chrome (0 smooth → 3 critical). Set in graph finalize. */
 export type ConditionSeverity = 0 | 1 | 2 | 3
 
-export type VeEntityType = 'idea' | 'initiative' | 'project' | 'task' | 'outcome'
+export type VeEntityType = 'idea' | 'initiative' | 'project' | 'task' | 'outcome' | 'person' | 'asset'
 
 export type MapEntityRef = {
   veType: VeEntityType

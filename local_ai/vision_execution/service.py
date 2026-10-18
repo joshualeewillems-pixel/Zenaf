@@ -200,6 +200,7 @@ def _unfold_checklist(
     def _create(nodes: list[dict], parent_task_id: str | None) -> None:
         for node in nodes:
             title = (node.get("title") or "Untitled").strip() or "Untitled"
+            asset_id = node.get("asset_id")
             task = S.create_task(
                 M.TaskCreate(
                     title=title,
@@ -207,6 +208,8 @@ def _unfold_checklist(
                     project_id=project_id,
                     parent_task_id=parent_task_id,
                     status=_status(node),
+                    assignee_id=node.get("person_id"),
+                    required_asset_ids=[asset_id] if asset_id else [],
                     notes=(
                         f"Unfolded from checklist of idea '{provenance_title}'"
                         if provenance_title
@@ -263,7 +266,7 @@ def _as_str_list(v) -> list[str]:
 def create_checklist_items_batch(
     idea_id: str, items: list[dict], user_id: str
 ) -> list[dict]:
-    """Batch-create a nested checklist. Each item: {title, children?[], status?}.
+    """Batch-create a nested checklist. Each item: {title, children?[], status?, person_id?, asset_id?}.
 
     Returns the nested tree (as get_checklist_tree). Positions follow order.
     """
@@ -282,6 +285,7 @@ def create_checklist_items_batch(
             created = S.create_checklist_item(
                 user_id, idea_id, title,
                 parent_id=parent_id, position=start + offset, status=status,
+                person_id=node.get("person_id"), asset_id=node.get("asset_id"),
             )
             _create(node.get("children") or [], created["id"], 0)
 
@@ -303,8 +307,16 @@ def update_checklist_item(
     title: str | None = None,
     status: str | None = None,
     position: int | None = None,
+    person_id: str | None = None,
+    asset_id: str | None = None,
+    clear_person: bool = False,
+    clear_asset: bool = False,
 ) -> dict | None:
-    return S.update_checklist_item(item_id, user_id, title, status, position)
+    return S.update_checklist_item(
+        item_id, user_id, title, status, position,
+        person_id=person_id, asset_id=asset_id,
+        _clear_person=clear_person, _clear_asset=clear_asset,
+    )
 
 
 def delete_checklist_item(item_id: str, user_id: str) -> bool:

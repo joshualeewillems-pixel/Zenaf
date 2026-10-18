@@ -17,10 +17,14 @@ CREATE TABLE IF NOT EXISTS checklist_items (
   status TEXT NOT NULL DEFAULT 'open',
   position INTEGER NOT NULL DEFAULT 0,
   superseded INTEGER NOT NULL DEFAULT 0,
+  person_id TEXT,
+  asset_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (idea_id) REFERENCES ideas(id),
-  FOREIGN KEY (parent_id) REFERENCES checklist_items(id)
+  FOREIGN KEY (parent_id) REFERENCES checklist_items(id),
+  FOREIGN KEY (person_id) REFERENCES persons(id),
+  FOREIGN KEY (asset_id) REFERENCES assets(id)
 );
 
 CREATE TABLE IF NOT EXISTS checklist_item_dependencies (

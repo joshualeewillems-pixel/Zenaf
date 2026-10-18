@@ -485,3 +485,85 @@ def test_get_idea_includes_checklist_progress(ve_ctx):
 
     fetched = ve.get_idea(idea["id"], uid)
     assert fetched["checklist_progress"] == {"total": 1, "done": 1}
+
+
+# --- people + assets: checklist links, unfolding carry-over, mining suggestions --
+
+
+def _mk_person(name: str = "Jim"):
+    import local_ai.vision_execution.storage as ve_store
+    from local_ai.vision_execution import models as M
+
+    return ve_store.create_person(M.PersonCreate(name=name, role="Supplier"))
+
+
+def _mk_asset(name: str = "Clinic room"):
+    import local_ai.vision_execution.storage as ve_store
+    from local_ai.vision_execution import models as M
+
+    return ve_store.create_asset(M.AssetCreate(name=name, asset_type="room"))
+
+
+def test_checklist_item_links_person_and_asset(ve_ctx):
+    uid = ve_ctx["uid"]
+    idea = _mk_idea(uid, "Linked work")
+    jim = _mk_person("Jim")
+    room = _mk_asset("Clinic room")
+    item = ve.create_checklist_items_batch(
+        idea["id"],
+        [{"title": "Ask Jim about the clinic room", "person_id": jim["id"], "asset_id": room["id"]}],
+        uid,
+    )[0]
+    assert item["person_id"] == jim["id"]
+    assert item["asset_id"] == room["id"]
+
+
+def test_checklist_item_rejects_unknown_person(ve_ctx):
+    import pytest
+
+    uid = ve_ctx["uid"]
+    idea = _mk_idea(uid, "Bad link")
+    with pytest.raises(ValueError, match="person not found"):
+        ve.create_checklist_items_batch(
+            idea["id"], [{"title": "Ask Nobody", "person_id": "nope"}], uid
+        )
+
+
+def test_unfolding_carries_person_asset_links_to_tasks(ve_ctx):
+    uid = ve_ctx["uid"]
+    idea = _mk_idea(uid, "Carry-over")
+    jim = _mk_person("Jim")
+    room = _mk_asset("Clinic room")
+    ve.create_checklist_items_batch(
+        idea["id"],
+        [{"title": "Ask Jim to book the clinic room", "done": True,
+          "person_id": jim["id"], "asset_id": room["id"]}],
+        uid,
+    )
+    out = ve.promote_idea(idea["id"], "project", uid)
+    assert out["task_ids"], "expected unfolded tasks"
+    import local_ai.vision_execution.storage as ve_store
+
+    task = ve_store.get_task(out["task_ids"][0], uid)
+    assert task["assignee_id"] == jim["id"]
+    assert room["id"] in (task.get("required_asset_ids") or [])
+
+
+def test_mining_suggests_person_asset_links_by_keyword(ve_ctx):
+    from local_ai.agent_intake import mining_chat
+
+    jim = _mk_person("Jim")
+    room = _mk_asset("Clinic room")
+    hit = mining_chat._suggest_checklist_links("Ask Jim to book the clinic room")
+    assert hit.get("person_id") == jim["id"]
+    assert hit.get("asset_id") == room["id"]
+    miss = mining_chat._suggest_checklist_links("Buy more socks")
+    assert miss == {}
+
+
+def test_mining_suggestion_uses_word_boundaries(ve_ctx):
+    """'Al' must not match inside 'also' — v1 heuristic stays honest."""
+    from local_ai.agent_intake import mining_chat
+
+    _mk_person("Al")
+    assert mining_chat._suggest_checklist_links("also buy socks") == {}

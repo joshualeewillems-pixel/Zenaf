@@ -167,8 +167,60 @@ def _strip_proposal_tags(text: str) -> str:
     ).strip()
 
 
+def _suggest_checklist_links(title: str) -> dict[str, Any]:
+    """Light-touch person/asset tagging for a checklist item title.
+
+    Keyword matching (word-boundary, case-insensitive) against known persons
+    and assets. Informational only — the amber box shows the suggestion and the
+    user confirms (or dismisses) it. Not NER; v1 heuristic.
+    """
+    from local_ai.vision_execution import storage as ve_store
+
+    out: dict[str, Any] = {}
+    low = f" {title.lower()} "
+    try:
+        persons = ve_store.list_persons()
+    except Exception:
+        persons = []
+    try:
+        assets = ve_store.list_assets()
+    except Exception:
+        assets = []
+    for p in persons:
+        name = (p.get("name") or "").strip()
+        if len(name) >= 2 and re.search(r"\b" + re.escape(name.lower()) + r"\b", low):
+            out["person_id"] = p["id"]
+            out["person_name"] = name
+            break
+    for a in assets:
+        name = (a.get("name") or "").strip()
+        if len(name) >= 2 and re.search(r"\b" + re.escape(name.lower()) + r"\b", low):
+            out["asset_id"] = a["id"]
+            out["asset_name"] = name
+            break
+    return out
+
+
+def _enrich_proposal_checklist_links(proposal: dict[str, Any]) -> None:
+    """Attach suggested person/asset links to a proposal's checklist items (in place)."""
+    raw = proposal.get("checklist")
+    if not isinstance(raw, list):
+        return
+
+    def _enrich(nodes: list) -> None:
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            title = (node.get("title") or "").strip()
+            if title:
+                node.update(_suggest_checklist_links(title))
+            _enrich(node.get("children") or [])
+
+    _enrich(raw)
+
+
 def _normalize_checklist(raw: Any) -> list[dict[str, Any]]:
-    """Normalize a proposed checklist to [{title, children:[{title}]}]. Defensive."""
+    """Normalize a proposed checklist to [{title, children, person_id?, asset_id?}]. Defensive."""
     out: list[dict[str, Any]] = []
     if not isinstance(raw, list):
         return out
@@ -184,8 +236,18 @@ def _normalize_checklist(raw: Any) -> list[dict[str, Any]]:
                 continue
             ctitle = (centry.get("title") or "").strip()
             if ctitle:
-                children.append({"title": ctitle})
-        out.append({"title": title, "children": children})
+                child: dict[str, Any] = {"title": ctitle}
+                if centry.get("person_id"):
+                    child["person_id"] = centry["person_id"]
+                if centry.get("asset_id"):
+                    child["asset_id"] = centry["asset_id"]
+                children.append(child)
+        node: dict[str, Any] = {"title": title, "children": children}
+        if entry.get("person_id"):
+            node["person_id"] = entry["person_id"]
+        if entry.get("asset_id"):
+            node["asset_id"] = entry["asset_id"]
+        out.append(node)
     return out
 
 
@@ -364,6 +426,10 @@ Respond as Zenaf. {'Give a brief opening: what kinds of practical things you spo
     # Check for a proposal tag
     proposal = _parse_proposal_tag(reply_text)
     clean_reply = _strip_proposal_tags(reply_text)
+    if proposal and proposal.get("type") == "idea" and proposal.get("checklist"):
+        # Light-touch: tag person/asset mentions in proposed checklist items.
+        # Informational — the amber box shows them and the user confirms.
+        _enrich_proposal_checklist_links(proposal)
 
     # If LLM claimed to file without a tag, strip the hallucination
     if not proposal:

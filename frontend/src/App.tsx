@@ -169,6 +169,7 @@ import { ResonanceSlider } from './components/ResonanceSlider'
 import { ContentFrontDoor } from './content'
 import AgentIntakeView from './agent-intake/AgentIntakeView'
 import ReviewView from './agent-intake/ReviewView'
+import TodayView from './today/TodayView'
 import { fetchPendingReviewCount } from './agent-intake/reviewQueue'
 import SignalReviewView from './presence-review/SignalReviewView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
@@ -4933,6 +4934,7 @@ function App() {
 
   // Top-level view: Living Tree (default), Vision map, Workspace Organizer, Perspectives, Content, Vision → Execution
   type MainView =
+    | 'today'
     | 'living_tree'
     | 'workspace'
     | 'perspectives'
@@ -5739,6 +5741,18 @@ function App() {
           className="hidden lg:flex min-w-0 items-center gap-1 overflow-x-auto"
           aria-label="Primary"
         >
+          {/* Today: the morning briefing — the product's front door */}
+          <button
+            type="button"
+            onClick={() => setMainView('today')}
+            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
+              mainView === 'today'
+                ? 'bg-stone-700 text-stone-100 ring-1 ring-yellow-600/35'
+                : 'text-stone-200 hover:text-white border border-transparent hover:border-yellow-700/30 hover:bg-stone-800/80'
+            }`}
+          >
+            Today
+          </button>
           {/* Home: Living Tree */}
           <button
             type="button"
@@ -5863,6 +5877,7 @@ function App() {
               <div className="absolute right-0 top-full mt-1 w-60 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl z-30 py-1.5" role="menu">
                 {(
                   [
+                    { view: 'today', label: 'Today' },
                     { view: 'living_tree', label: 'Tree' },
                     { view: 'perspectives', label: 'Foundation' },
                     { view: 'vision_map', label: 'Vision map' },
@@ -5928,7 +5943,11 @@ function App() {
 
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 min-w-0">
         {/* Left: main content (changes by tab) */}
-        {mainView === 'living_tree' ? (
+        {mainView === 'today' ? (
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden">
+            <TodayView />
+          </div>
+        ) : mainView === 'living_tree' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-y-auto overflow-x-hidden">
             <LivingTreeView onNavigate={(view) => setMainView(view)} />
           </div>

@@ -1,6 +1,37 @@
 -- Vision Execution Engine — SQLite schema (Phase 1)
 -- Run automatically on first use via storage.init_db()
 
+-- Nested hierarchical checklists for ideas (idea graduation, 2026-10-18).
+-- Joshua's decision: instead of fixed "practical fields," each idea defines its
+-- own "practical" as a nested checklist, built conversationally ("what would
+-- make this real?"). An idea is ready to graduate when its checklist is
+-- non-empty and every item is done. On graduation the checklist unfolds into
+-- the work breakdown (top-level items -> tasks, nested -> subtasks) and is
+-- kept as provenance, marked superseded.
+CREATE TABLE IF NOT EXISTS checklist_items (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  idea_id TEXT NOT NULL,
+  parent_id TEXT,
+  title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open',
+  position INTEGER NOT NULL DEFAULT 0,
+  superseded INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (idea_id) REFERENCES ideas(id),
+  FOREIGN KEY (parent_id) REFERENCES checklist_items(id)
+);
+
+CREATE TABLE IF NOT EXISTS checklist_item_dependencies (
+  item_id TEXT NOT NULL,
+  depends_on_item_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (item_id, depends_on_item_id),
+  FOREIGN KEY (item_id) REFERENCES checklist_items(id),
+  FOREIGN KEY (depends_on_item_id) REFERENCES checklist_items(id)
+);
+
 CREATE TABLE IF NOT EXISTS core_profiles (
   id TEXT PRIMARY KEY,
   user_id TEXT,

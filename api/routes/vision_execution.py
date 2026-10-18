@@ -9,6 +9,7 @@ from typing import Any, Callable, TypeVar
 
 from fastapi import APIRouter, Body, HTTPException, Query, Depends
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -711,6 +712,152 @@ def update_idea(idea_id: str, body: M.IdeaUpdate, current_user: dict = Depends(g
 def delete_idea(idea_id: str, current_user: dict = Depends(get_current_user)):
     if not S.delete_idea(idea_id, current_user["id"]):
         raise HTTPException(status_code=404, detail="Idea not found")
+    return {"ok": True}
+
+
+class PromoteIdeaBody(BaseModel):
+    """Graduate a confirmed idea into work. target_level: task | project | initiative."""
+    target_level: str
+
+
+@router.get("/ideas/{idea_id}/graduation")
+def idea_graduation_readiness(idea_id: str, current_user: dict = Depends(get_current_user)):
+    """Advisory readiness hint for idea graduation: is the idea's checklist
+    worked through (non-empty, every item done)? The user decides — this
+    informs the choice, it doesn't gate it."""
+    idea = S.get_idea(idea_id, current_user["id"])
+    if idea is None:
+        raise HTTPException(status_code=404, detail="Idea not found")
+    try:
+        return S.idea_readiness(idea_id, current_user["id"])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/ideas/{idea_id}/promote", status_code=201)
+def promote_idea(idea_id: str, body: PromoteIdeaBody, current_user: dict = Depends(get_current_user)):
+    """Graduate a confirmed idea into a task, project, or initiative (by scope).
+
+    Explicit user verdict — readiness is advisory, not a gate. The idea's
+    checklist unfolds into the work breakdown (nested items -> subtasks,
+    dependencies carried over) and is kept as provenance, marked superseded.
+    """
+    try:
+        return S.promote_idea(idea_id, body.target_level, current_user["id"])
+    except ValueError as e:
+        msg = str(e)
+        raise HTTPException(
+            status_code=404 if "not found" in msg.lower() else 400,
+            detail=msg,
+        )
+
+
+class ChecklistItemIn(BaseModel):
+    """One proposed checklist item; children nest one level per entry."""
+
+    title: str
+    status: str = "open"
+    children: list["ChecklistItemIn"] = []
+
+
+ChecklistItemIn.model_rebuild()
+
+
+class ChecklistBatchBody(BaseModel):
+    """Batch-create a nested checklist for an idea (defined by conversation)."""
+
+    items: list[ChecklistItemIn]
+
+
+@router.post("/ideas/{idea_id}/checklist", status_code=201)
+def create_idea_checklist(
+    idea_id: str, body: ChecklistBatchBody, current_user: dict = Depends(get_current_user)
+):
+    """Define (or extend) an idea's checklist: what would make this real?
+
+    Accepts nested items; positions follow order. This is the conversational
+    alternative to forms — the checklist is proposed in dialogue and confirmed
+    here (or in the mining amber box)."""
+    try:
+        items = [it.model_dump() for it in body.items]
+        return S.create_checklist_items_batch(idea_id, items, current_user["id"])
+    except ValueError as e:
+        msg = str(e)
+        raise HTTPException(
+            status_code=404 if "not found" in msg.lower() else 400,
+            detail=msg,
+        )
+
+
+@router.get("/ideas/{idea_id}/checklist")
+def get_idea_checklist(idea_id: str, current_user: dict = Depends(get_current_user)):
+    """The idea's live checklist as a nested tree."""
+    try:
+        return S.get_checklist_tree(idea_id, current_user["id"])
+    except ValueError as e:
+        msg = str(e)
+        raise HTTPException(
+            status_code=404 if "not found" in msg.lower() else 400,
+            detail=msg,
+        )
+
+
+class ChecklistItemPatch(BaseModel):
+    title: str | None = None
+    status: str | None = None
+    position: int | None = None
+
+
+@router.patch("/checklist-items/{item_id}")
+def patch_checklist_item(
+    item_id: str, body: ChecklistItemPatch, current_user: dict = Depends(get_current_user)
+):
+    """Edit a checklist item: title, status (open|done), or position."""
+    try:
+        out = S.update_checklist_item(
+            item_id, current_user["id"], body.title, body.status, body.position
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    if out is None:
+        raise HTTPException(status_code=404, detail="Checklist item not found")
+    return out
+
+
+@router.delete("/checklist-items/{item_id}")
+def delete_checklist_item(item_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a checklist item and its descendants (cascade)."""
+    if not S.delete_checklist_item(item_id, current_user["id"]):
+        raise HTTPException(status_code=404, detail="Checklist item not found")
+    return {"ok": True}
+
+
+class ChecklistDependencyBody(BaseModel):
+    depends_on_id: str
+
+
+@router.post("/checklist-items/{item_id}/dependencies", status_code=201)
+def add_checklist_dependency(
+    item_id: str, body: ChecklistDependencyBody, current_user: dict = Depends(get_current_user)
+):
+    """Declare that this item depends on another (same idea's checklist).
+    Rejects self-dependencies and anything that would create a cycle."""
+    try:
+        return S.add_checklist_dependency(item_id, body.depends_on_id, current_user["id"])
+    except ValueError as e:
+        msg = str(e)
+        raise HTTPException(
+            status_code=404 if "not found" in msg.lower() else 400,
+            detail=msg,
+        )
+
+
+@router.delete("/checklist-items/{item_id}/dependencies/{depends_on_id}")
+def remove_checklist_dependency(
+    item_id: str, depends_on_id: str, current_user: dict = Depends(get_current_user)
+):
+    if not S.remove_checklist_dependency(item_id, depends_on_id, current_user["id"]):
+        raise HTTPException(status_code=404, detail="Dependency not found")
     return {"ok": True}
 
 

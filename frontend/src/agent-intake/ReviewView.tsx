@@ -207,11 +207,14 @@ export default function ReviewView() {
 
   /** Create Vision Execution entities from the accepted mined claim cards.
       Sends agent_id so the server resolves from the stored mined_payload —
-      robust against stale client data. Returns created counts for feedback. */
+      robust against stale client data. Returns created counts for feedback.
+      ideaLevels optionally maps an accepted idea title to its target level
+      (idea|task|project|initiative) — the user's graduation verdict. */
   async function createAccepted(
     agentId: string,
     accepted: Claim[],
     payload: Mined,
+    ideaLevels?: Record<string, string>,
   ): Promise<{ initiative_ids: string[]; project_ids: string[]; task_ids: string[]; idea_ids: string[] }> {
     const byType = (t: string) => accepted.filter((c) => c.claim_type === t).map((c) => c.title)
     const find = (arr: any[], title: string) => arr.find((x: any) => x.title === title)
@@ -222,7 +225,14 @@ export default function ReviewView() {
         initiatives: byType('initiative').map((t) => find(payload.initiatives, t)).filter(Boolean),
         projects: byType('project').map((t) => find(payload.projects, t)).filter(Boolean),
         standalone_tasks: byType('task').map((t) => find(payload.standalone_tasks, t)).filter(Boolean),
-        ideas: byType('idea').map((t) => find(payload.ideas, t)).filter(Boolean),
+        ideas: byType('idea')
+          .map((t) => {
+            const d = find(payload.ideas, t)
+            if (!d) return null
+            const level = ideaLevels?.[t]
+            return level ? { ...d, target_level: level } : d
+          })
+          .filter(Boolean),
         selected_titles: byType('initiative')
           .concat(byType('project'), byType('task'), byType('idea')),
       }),

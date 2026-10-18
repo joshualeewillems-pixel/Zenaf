@@ -124,6 +124,7 @@ export function TimelineGrid({
                       endPct={endPct}
                       status={row.barStatus}
                       label={row.kind === 'task' ? row.label : undefined}
+                      blockedBy={row.blockedBy}
                       onClick={onRowClick ? () => onRowClick(row) : undefined}
                       selected={selected}
                     />

@@ -64,7 +64,7 @@ export function TimelineTree({
             >
               <div className="flex-1 min-w-0 flex flex-col justify-center">
                 <div className="flex items-center gap-1">
-                  {(row.kind === 'initiative' || row.kind === 'project') && hasChildren && (
+                  {(row.kind === 'initiative' || row.kind === 'project' || row.kind === 'task') && hasChildren && (
                     <span
                       className="inline-block w-4 h-4 shrink-0 text-slate-400 select-none"
                       onClick={(e) => {
@@ -82,6 +82,15 @@ export function TimelineTree({
                 {row.summary && (
                   <p className="text-[11px] text-slate-500 truncate mt-0.5" title={row.summary}>
                     {row.summary}
+                  </p>
+                )}
+                {row.blockedBy && row.blockedBy.length > 0 && (
+                  <p
+                    className="text-[11px] text-amber-400/70 truncate mt-0.5"
+                    title={`Waits on: ${row.blockedBy.join(', ')}`}
+                  >
+                    ⏳ waits on {row.blockedBy.slice(0, 2).join(', ')}
+                    {row.blockedBy.length > 2 ? ` +${row.blockedBy.length - 2}` : ''}
                   </p>
                 )}
               </div>

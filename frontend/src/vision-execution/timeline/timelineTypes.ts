@@ -29,6 +29,10 @@ export interface TimelineRow {
   initiativeId?: string | null
   collapsed?: boolean
   childCount?: number
+  /** Subtask nesting: id of the parent task, if any (unfolded checklists nest here) */
+  parentTaskId?: string | null
+  /** Titles of tasks this row waits on, resolved from dependency_ids */
+  blockedBy?: string[]
 }
 
 export type TimelineZoom = 'week' | 'month'

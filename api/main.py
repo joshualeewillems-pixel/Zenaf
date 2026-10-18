@@ -255,6 +255,16 @@ except Exception as e:
     print(f"Follow-through routes not loaded: {e}")
     _router_load_errors.append(f"followthrough: {e}")
 
+# Today aggregate — the ranked morning briefing (deck, not list).
+# GET /today consumes the engine feed server-side and applies the ranking
+# policy. Session-stateless: interaction signals arrive on each request.
+try:
+    from api.routes.today_routes import router as today_router
+    app.include_router(today_router)
+except Exception as e:
+    print(f"Today routes not loaded: {e}")
+    _router_load_errors.append(f"today: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

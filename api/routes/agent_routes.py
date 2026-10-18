@@ -444,6 +444,7 @@ def confirm_mined_projects(body: ConfirmMinedBody, current_user: dict = Depends(
                 desired_outcome=str(i.get("desired_outcome", "")),
                 suggested_level=(str(i.get("suggested_level", "")).strip().lower() or None),
                 target_level=(str(i.get("target_level", "")).strip().lower() or None),
+                checklist=i.get("checklist") if isinstance(i.get("checklist"), list) else None,
             )
             for i in ideas
             if i.get("title")

@@ -89,6 +89,9 @@ class ProposedIdea:
     desired_outcome: str = ""  # intent — what the idea is trying to become
     suggested_level: str | None = None  # miner's suggestion; the user decides at review
     target_level: str | None = None  # user's verdict: idea|task|project|initiative (None = stays an idea)
+    # Proposed checklist ("what would make this real?"), defined by conversation.
+    # Each item: {"title": str, "done": bool, "children": [...]} (one nesting level per entry).
+    checklist: list[dict[str, Any]] | None = None
 
     def to_idea_create(self) -> dict[str, Any]:
         """Map to a Vision Execution IdeaCreate payload.
@@ -107,15 +110,24 @@ class ProposedIdea:
             "status": "Captured",
         }
 
-    def to_readiness_dict(self) -> dict[str, Any]:
-        """Idea-shaped dict for the graduation readiness check."""
-        return {
-            "title": self.title,
-            "description": self.detail,
-            "desired_outcome": self.desired_outcome,
-            # The source quote is the proposal's grounding detail from the transcript.
-            "notes": self.source_quote,
-        }
+    def to_checklist_items(self) -> list[dict[str, Any]]:
+        """Normalize the proposed checklist to [{title, done, children}]."""
+        out: list[dict[str, Any]] = []
+        for raw in self.checklist or []:
+            if not isinstance(raw, dict):
+                continue
+            title = (raw.get("title") or "").strip()
+            if not title:
+                continue
+            children = []
+            for craw in raw.get("children") or []:
+                if not isinstance(craw, dict):
+                    continue
+                ctitle = (craw.get("title") or "").strip()
+                if ctitle:
+                    children.append({"title": ctitle, "done": bool(craw.get("done", False)), "children": []})
+            out.append({"title": title, "done": bool(raw.get("done", False)), "children": children})
+        return out
 
 
 @dataclass
@@ -403,26 +415,49 @@ def create_confirmed(
                 )
 
     # Ideas: captured as ideas, or graduated to task/project/initiative when the
-    # user chose a target level at review. Graduation is validated up front
-    # (two passes) so a not-ready idea fails loudly before anything is created.
+    # user chose a target level at review. The batch path enforces the checklist
+    # readiness gate up front (two passes): a not-ready idea fails loudly
+    # before anything is created. (Explicit single-item commands — the mining
+    # amber box, POST /ideas/{id}/promote — bypass the gate; the user decides.)
     wanted_ideas = [idea for idea in result.ideas if _wanted(idea.title)]
-    graduation_plans: list[tuple[ProposedIdea, str]] = []
+    graduation_plans: list[tuple[ProposedIdea, str, list[dict]]] = []
     for idea in wanted_ideas:
         level = _validate_target_level(idea)
         if level in G.GRADUATE_LEVELS:
-            readiness = idea.to_readiness_dict()
-            ready, missing = G.graduation_readiness(readiness)
+            proposed = idea.to_checklist_items()
+            probe = [
+                {"title": p["title"],
+                 "status": "done" if p["done"] else "open",
+                 "superseded": False}
+                for p in proposed
+            ]
+            ready, missing, _stats = G.checklist_readiness(probe)
             if not ready:
                 raise G.IdeaNotReadyError(missing, idea.title)
-            graduation_plans.append((idea, level))
+            graduation_plans.append((idea, level, proposed))
 
-    for idea, level in graduation_plans:
-        entity_type, payload = G.build_graduated_payload(
-            idea.to_readiness_dict(), level
-        )
+    for idea, level, proposed in graduation_plans:
+        # Persist the idea (for checklist provenance), then graduate through
+        # the standard path: shell entity + checklist unfolding.
+        created_idea = ve_service.create_idea(M.IdeaCreate(**idea.to_idea_create()), user_id)
+        iid = _id(created_idea)
+        batch = [
+            {
+                "title": p["title"],
+                "status": "done" if p["done"] else "open",
+                "children": [
+                    {"title": c["title"], "status": "done" if c["done"] else "open"}
+                    for c in p["children"]
+                ],
+            }
+            for p in proposed
+        ]
+        if batch:
+            ve_service.create_checklist_items_batch(iid, batch, user_id)
+        out = ve_service.promote_idea(iid, level, user_id)
+        entity_type = out["entity_type"]
         if entity_type == "task":
-            tc = ve_service.create_task(M.TaskCreate(**payload), user_id)
-            tid = _id(tc)
+            tid = _id(out["entity"])
             if tid:
                 task_ids.append(tid)
                 _infer_entity_strands(
@@ -430,8 +465,7 @@ def create_confirmed(
                     f"{idea.title} {idea.detail} {idea.source_quote}",
                 )
         elif entity_type == "project":
-            pc = ve_service.create_project(M.ProjectCreate(**payload), user_id)
-            pid = _id(pc)
+            pid = _id(out["entity"])
             if pid:
                 project_ids.append(pid)
                 _infer_entity_strands(
@@ -439,13 +473,12 @@ def create_confirmed(
                     f"{idea.title} {idea.detail} {idea.source_quote}",
                 )
         else:
-            ic = ve_service.create_initiative(M.InitiativeCreate(**payload), user_id)
-            iid = _id(ic)
-            if iid:
-                initiative_ids.append(iid)
-                initiative_id_by_title[idea.title] = iid
+            niid = _id(out["entity"])
+            if niid:
+                initiative_ids.append(niid)
+                initiative_id_by_title[idea.title] = niid
 
-    graduated_titles = {idea.title for idea, _ in graduation_plans}
+    graduated_titles = {idea.title for idea, _, _ in graduation_plans}
     for idea in wanted_ideas:
         if idea.title in graduated_titles:
             continue  # graduated above — the idea became the work itself
@@ -453,6 +486,22 @@ def create_confirmed(
         iid = _id(created)
         if iid:
             idea_ids.append(iid)
+            # Keep the proposed checklist on the idea so it can be worked
+            # through conversationally and graduated later via promote.
+            proposed = idea.to_checklist_items()
+            if proposed:
+                batch = [
+                    {
+                        "title": p["title"],
+                        "status": "done" if p["done"] else "open",
+                        "children": [
+                            {"title": c["title"], "status": "done" if c["done"] else "open"}
+                            for c in p["children"]
+                        ],
+                    }
+                    for p in proposed
+                ]
+                ve_service.create_checklist_items_batch(iid, batch, user_id)
 
     # Standalone tasks (no project).
     for t in result.standalone_tasks:

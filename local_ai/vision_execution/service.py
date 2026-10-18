@@ -67,12 +67,12 @@ def delete_idea(idea_id: str, user_id: str):
 def promote_idea(idea_id: str, target_level: str, user_id: str):
     """Graduate a confirmed idea into a task, project, or initiative.
 
-    The graduation rule: an idea becomes work when its practical fields are
-    filled in (thought experiment -> work in progress). Raises
-    graduation.IdeaNotReadyError naming the missing fields when premature,
-    ValueError for unknown ideas/levels or already-graduated ideas.
-    The idea is marked "Graduated" with provenance; the new entity links
-    back to it (source_idea_id for initiatives, notes otherwise).
+    Explicit user verdict — readiness is advisory here (the user decides);
+    use idea_readiness() for the hint. The idea's checklist unfolds into the
+    work breakdown and is kept as provenance, marked superseded.
+    Raises ValueError for unknown ideas/levels or already-graduated ideas.
+    The idea is marked "Graduated"; the new entity links back to it
+    (source_idea_id for initiatives, notes otherwise).
     """
     from . import graduation as G
 
@@ -85,33 +85,255 @@ def promote_idea(idea_id: str, target_level: str, user_id: str):
         raise ValueError(
             f"unknown target_level: {target_level!r} (expected one of {G.GRADUATE_LEVELS})"
         )
-    G.assert_ready(idea, idea.get("title") or "")
+    items = S.list_checklist_items(idea_id, user_id)
+    return _do_graduate(idea, items, target_level, user_id)
 
+
+def _do_graduate(
+    idea: dict, items: list[dict], target_level: str, user_id: str
+) -> dict:
+    """Shared graduation core: shell entity + checklist unfolding.
+
+    `idea` is the idea dict (must have an "id" when persisted; proposals pass
+    a transient dict and are persisted first by the caller). `items` are the
+    idea's non-superseded checklist items (flat, with depends_on).
+    Returns {"idea": updated_idea_or_input, "entity_type": ..., "entity": ...,
+             "task_ids": [...]}.
+    """
+    from . import graduation as G
+
+    idea_id = idea.get("id")
     entity_type, payload = G.build_graduated_payload(
         idea, target_level, source_idea_id=idea_id
     )
     if entity_type == "task":
         created = S.create_task(M.TaskCreate(**payload), user_id)
+        root_task_id = _eid(created)
+        project_id = None
     elif entity_type == "project":
         created = S.create_project(M.ProjectCreate(**payload), user_id)
+        root_task_id = None
+        project_id = _eid(created)
     else:
         created = S.create_initiative(M.InitiativeCreate(**payload), user_id)
+        initiative_id = _eid(created)
+        # The breakdown needs a project home: one plan project under the
+        # initiative carries the unfolded checklist as tasks.
+        plan = S.create_project(
+            M.ProjectCreate(
+                title=f"{(idea.get('title') or 'Idea').strip()} — plan",
+                brief=(idea.get("description") or idea.get("summary") or "").strip(),
+                status="Draft",
+                initiative_id=initiative_id,
+                notes=f"Work breakdown unfolded from idea '{(idea.get('title') or '').strip()}'"
+                + (f" ({idea_id})" if idea_id else ""),
+            ),
+            user_id,
+        )
+        root_task_id = None
+        project_id = _eid(plan)
 
-    created_id = created.get("id") if isinstance(created, dict) else getattr(created, "id", "")
-    provenance = (
-        f"Graduated to {entity_type}"
-        + (f" ({created_id})" if created_id else "")
-    )
-    existing_notes = (idea.get("notes") or "").strip()
-    updated = S.update_idea(
-        idea_id,
-        M.IdeaUpdate(
-            status="Graduated",
-            notes=(existing_notes + "\n\n" + provenance).strip(),
-        ),
+    task_ids = _unfold_checklist(
+        items,
         user_id,
+        project_id=project_id,
+        root_parent_task_id=root_task_id,
+        provenance_title=(idea.get("title") or "").strip(),
     )
-    return {"idea": updated, "entity_type": entity_type, "entity": created}
+
+    created_id = _eid(created)
+    result: dict = {
+        "idea": idea,
+        "entity_type": entity_type,
+        "entity": created,
+        "task_ids": task_ids,
+    }
+
+    if idea_id:
+        # Keep the graduated checklist as provenance, then mark the idea.
+        S.mark_checklist_superseded(idea_id, user_id)
+        provenance = (
+            f"Graduated to {entity_type}"
+            + (f" ({created_id})" if created_id else "")
+            + (f" with {len(task_ids)} unfolded tasks" if task_ids else "")
+        )
+        existing_notes = (idea.get("notes") or "").strip()
+        updated = S.update_idea(
+            idea_id,
+            M.IdeaUpdate(
+                status="Graduated",
+                notes=(existing_notes + "\n\n" + provenance).strip(),
+            ),
+            user_id,
+        )
+        result["idea"] = updated
+    return result
+
+
+def _eid(obj) -> str:
+    return obj.get("id") if isinstance(obj, dict) else getattr(obj, "id", "")
+
+
+def _unfold_checklist(
+    items: list[dict],
+    user_id: str,
+    project_id: str | None,
+    root_parent_task_id: str | None,
+    provenance_title: str,
+) -> list[str]:
+    """Turn checklist items into tasks, preserving nesting and dependencies.
+
+    Top-level items become tasks (under project_id and/or root_parent_task_id);
+    nested items become subtasks via parent_task_id; checklist dependencies
+    carry over to task dependency_ids. Item status maps open->Todo, done->Done.
+    Returns the created task ids.
+    """
+    from . import graduation as G
+
+    tree = G.build_checklist_tree([it for it in items if not it.get("superseded")])
+    item_to_task: dict[str, str] = {}
+    created_ids: list[str] = []
+
+    def _status(item: dict) -> str:
+        return "Done" if (item.get("status") or "") == "done" else "Todo"
+
+    def _create(nodes: list[dict], parent_task_id: str | None) -> None:
+        for node in nodes:
+            title = (node.get("title") or "Untitled").strip() or "Untitled"
+            task = S.create_task(
+                M.TaskCreate(
+                    title=title,
+                    description="",
+                    project_id=project_id,
+                    parent_task_id=parent_task_id,
+                    status=_status(node),
+                    notes=(
+                        f"Unfolded from checklist of idea '{provenance_title}'"
+                        if provenance_title
+                        else "Unfolded from idea checklist"
+                    ),
+                ),
+                user_id,
+            )
+            tid = _eid(task)
+            item_to_task[node["id"]] = tid
+            created_ids.append(tid)
+            _create(node.get("children", []), tid)
+
+    _create(tree, root_parent_task_id)
+
+    # Second pass: dependencies (all tasks exist now, so ids resolve).
+    for node in _walk_tree(tree):
+        deps = node.get("depends_on") or []
+        target_ids = [item_to_task[d] for d in deps if d in item_to_task]
+        if not target_ids:
+            continue
+        tid = item_to_task[node["id"]]
+        before = S.get_task(tid, user_id) or {}
+        existing = _as_str_list(before.get("dependency_ids"))
+        merged = existing + [t for t in target_ids if t not in existing]
+        S.update_task(tid, M.TaskUpdate(dependency_ids=merged), user_id)
+
+    return created_ids
+
+
+def _walk_tree(nodes: list[dict]):
+    for node in nodes:
+        yield node
+        yield from _walk_tree(node.get("children", []))
+
+
+def _as_str_list(v) -> list[str]:
+    import json as _json
+
+    if not v:
+        return []
+    if isinstance(v, str):
+        try:
+            parsed = _json.loads(v)
+            return [str(x) for x in parsed] if isinstance(parsed, list) else []
+        except Exception:
+            return []
+    return [str(x) for x in v]
+
+
+# --- Idea checklists ---
+
+
+def create_checklist_items_batch(
+    idea_id: str, items: list[dict], user_id: str
+) -> list[dict]:
+    """Batch-create a nested checklist. Each item: {title, children?[], status?}.
+
+    Returns the nested tree (as get_checklist_tree). Positions follow order.
+    """
+    from . import graduation as G
+
+    idea = S.get_idea(idea_id, user_id)
+    if idea is None:
+        raise ValueError("Idea not found")
+
+    def _create(nodes: list[dict], parent_id: str | None, start: int) -> None:
+        for offset, node in enumerate(nodes):
+            title = (node.get("title") or "").strip()
+            if not title:
+                continue
+            status = (node.get("status") or "open").strip().lower()
+            created = S.create_checklist_item(
+                user_id, idea_id, title,
+                parent_id=parent_id, position=start + offset, status=status,
+            )
+            _create(node.get("children") or [], created["id"], 0)
+
+    _create(items, None, 0)
+    return get_checklist_tree(idea_id, user_id)
+
+
+def get_checklist_tree(idea_id: str, user_id: str) -> list[dict]:
+    """The idea's live checklist as a nested tree (non-superseded)."""
+    from . import graduation as G
+
+    items = S.list_checklist_items(idea_id, user_id)
+    return G.build_checklist_tree(items)
+
+
+def update_checklist_item(
+    item_id: str,
+    user_id: str,
+    title: str | None = None,
+    status: str | None = None,
+    position: int | None = None,
+) -> dict | None:
+    return S.update_checklist_item(item_id, user_id, title, status, position)
+
+
+def delete_checklist_item(item_id: str, user_id: str) -> bool:
+    return S.delete_checklist_item(item_id, user_id)
+
+
+def add_checklist_dependency(item_id: str, depends_on_id: str, user_id: str) -> dict:
+    return S.add_checklist_dependency(item_id, depends_on_id, user_id)
+
+
+def remove_checklist_dependency(item_id: str, depends_on_id: str, user_id: str) -> bool:
+    return S.remove_checklist_dependency(item_id, depends_on_id, user_id)
+
+
+def idea_readiness(idea_id: str, user_id: str) -> dict:
+    """Advisory readiness hint: is this idea's checklist worked through?"""
+    from . import graduation as G
+
+    idea = S.get_idea(idea_id, user_id)
+    if idea is None:
+        raise ValueError("Idea not found")
+    items = S.list_checklist_items(idea_id, user_id)
+    ready, missing, stats = G.checklist_readiness(items)
+    return {
+        "ready": ready,
+        "missing": missing,
+        "levels": list(G.GRADUATE_LEVELS),
+        **stats,
+    }
 
 
 # Initiatives (with derived: weightedScore, approvalReady, returnOnTime)

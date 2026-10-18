@@ -16,6 +16,36 @@ type Proposal = {
   type_name: string
   title: string
   detail: string
+  checklist?: ChecklistNode[]
+}
+
+type ChecklistNode = {
+  title: string
+  children: ChecklistNode[]
+}
+
+/** Defensive copy of a proposed checklist from the backend. */
+function normalizeChecklist(raw: unknown): ChecklistNode[] {
+  if (!Array.isArray(raw)) return []
+  const out: ChecklistNode[] = []
+  for (const entry of raw) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const e = entry as Record<string, unknown>
+    const title = typeof e.title === 'string' ? e.title.trim() : ''
+    if (!title) continue
+    const children: ChecklistNode[] = []
+    if (Array.isArray(e.children)) {
+      for (const centry of e.children) {
+        if (typeof centry !== 'object' || centry === null) continue
+        const ctitle = typeof (centry as Record<string, unknown>).title === 'string'
+          ? ((centry as Record<string, unknown>).title as string).trim()
+          : ''
+        if (ctitle) children.push({ title: ctitle, children: [] })
+      }
+    }
+    out.push({ title, children })
+  }
+  return out
 }
 
 export default function MiningChat({ agentId, agentName }: Props) {
@@ -27,6 +57,9 @@ export default function MiningChat({ agentId, agentName }: Props) {
   // Idea graduation: the user picks the level an idea proposal files as.
   // The miner may suggest; the user decides (review philosophy).
   const [fileAs, setFileAs] = useState('idea')
+  // The idea's proposed checklist ("what would make this real?"), confirmed
+  // or edited here — the conversational alternative to forms.
+  const [checklist, setChecklist] = useState<ChecklistNode[]>([])
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
@@ -37,10 +70,33 @@ export default function MiningChat({ agentId, agentName }: Props) {
     scrollToBottom()
   }, [messages])
 
-  // Reset the file-as picker whenever a new proposal arrives.
+  // Reset the file-as picker and checklist whenever a new proposal arrives.
   useEffect(() => {
     setFileAs('idea')
+    setChecklist(normalizeChecklist((pendingProposal as Proposal | null)?.checklist))
   }, [pendingProposal])
+
+  const updateChecklistTitle = (path: number[], title: string) => {
+    setChecklist(prev => {
+      const next = prev.map(n => ({ ...n, children: n.children.map(c => ({ ...c })) }))
+      if (path.length === 1) {
+        next[path[0]] = { ...next[path[0]], title }
+      } else if (path.length === 2) {
+        const parent = next[path[0]]
+        parent.children[path[1]] = { ...parent.children[path[1]], title }
+      }
+      return next
+    })
+  }
+
+  const removeChecklistAt = (path: number[]) => {
+    setChecklist(prev => {
+      if (path.length === 1) return prev.filter((_, i) => i !== path[0])
+      return prev.map((n, i) =>
+        i === path[0] ? { ...n, children: n.children.filter((_, j) => j !== path[1]) } : n
+      )
+    })
+  }
 
   // Opening: fetch Zenaf's introduction on mount
   useEffect(() => {
@@ -120,7 +176,11 @@ export default function MiningChat({ agentId, agentName }: Props) {
   const doConfirm = async (text: string) => {
     const history = messages.map(m => ({ role: m.role, content: m.content }))
     const proposal = pendingProposal
-      ? { ...pendingProposal, target_level: pendingProposal.type === 'idea' ? fileAs : undefined }
+      ? {
+          ...pendingProposal,
+          target_level: pendingProposal.type === 'idea' ? fileAs : undefined,
+          checklist: pendingProposal.type === 'idea' ? checklist : undefined,
+        }
       : null
     setMessages(prev => [...prev, { role: 'user', content: text }])
     setConfirmInput('')
@@ -203,6 +263,57 @@ export default function MiningChat({ agentId, agentName }: Props) {
           <div className="text-sm text-amber-100/90 mb-2 leading-snug">
             {pendingProposal.detail}
           </div>
+          {pendingProposal.type === 'idea' && checklist.length > 0 && (
+            <div className="mb-2">
+              <div className="text-xs font-semibold text-amber-400 mb-1 uppercase tracking-wide">
+                What would make it real
+              </div>
+              {checklist.map((item, i) => (
+                <div key={i} className="mb-1">
+                  <div className="flex gap-1 items-center">
+                    <span className="text-amber-400/60 text-sm shrink-0">☐</span>
+                    <input
+                      value={item.title}
+                      onChange={(e) => updateChecklistTitle([i], e.target.value)}
+                      disabled={loading}
+                      className="flex-1 min-h-[44px] rounded-lg bg-amber-950/50 border border-amber-500/40 text-amber-50 px-3 text-[14px] focus:outline-none focus:border-amber-400"
+                    />
+                    <button
+                      onClick={() => removeChecklistAt([i])}
+                      disabled={loading}
+                      aria-label="Remove item"
+                      className="shrink-0 min-h-[44px] min-w-[44px] rounded-lg text-amber-400/70 text-lg hover:text-amber-200"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {item.children.map((child, j) => (
+                    <div key={j} className="flex gap-1 items-center ml-7 mt-1">
+                      <span className="text-amber-400/40 text-sm shrink-0">☐</span>
+                      <input
+                        value={child.title}
+                        onChange={(e) => updateChecklistTitle([i, j], e.target.value)}
+                        disabled={loading}
+                        className="flex-1 min-h-[44px] rounded-lg bg-amber-950/40 border border-amber-500/30 text-amber-50 px-3 text-[14px] focus:outline-none focus:border-amber-400"
+                      />
+                      <button
+                        onClick={() => removeChecklistAt([i, j])}
+                        disabled={loading}
+                        aria-label="Remove sub-item"
+                        className="shrink-0 min-h-[44px] min-w-[44px] rounded-lg text-amber-400/60 text-lg hover:text-amber-200"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              <p className="text-amber-200/70 text-[13px] mt-1 leading-snug">
+                Confirm or edit the list — you'll check items off as you talk it through.
+                Graduating unfolds it into tasks.
+              </p>
+            </div>
+          )}
           {pendingProposal.type === 'idea' && (
             <div className="mb-2">
               <label className="block text-xs font-semibold text-amber-400 mb-1 uppercase tracking-wide">
@@ -221,7 +332,7 @@ export default function MiningChat({ agentId, agentName }: Props) {
               </select>
               {fileAs !== 'idea' && (
                 <p className="text-amber-200/70 text-[13px] mt-1 leading-snug">
-                  It graduates only if its practical fields are filled in — otherwise I'll tell you what's missing.
+                  Graduating now unfolds the checklist above into tasks — your call.
                 </p>
               )}
             </div>

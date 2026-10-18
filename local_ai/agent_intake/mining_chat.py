@@ -67,8 +67,14 @@ THE FIVE THINGS YOU PULL:
 6. IDEAS — early-stage thoughts, "I've been thinking about..." — real but not yet committed.
    Propose these as type=idea. The amber box lets the user file it as an idea — or
    graduate it on the spot to a task, project, or initiative when it's fleshed out
-   enough (clear description plus an intent or grounding detail). Don't graduate for
-   them; the user picks the level in the amber box.
+   enough. Don't graduate for them; the user picks the level in the amber box.
+   When you propose an idea, also propose what would make it REAL — a short
+   checklist, in the same tag via a checklist attribute:
+   [PROPOSAL type=idea title="Sock company" checklist="Name the brand | Check a domain > .com first | Find a supplier > Get 3 quotes"]Socks with philosophy quotes, sold online[/PROPOSAL]
+   Separate items with |. Nest one level with > ("Parent > child" groups children
+   under the parent). Keep it to 3-6 items, concrete and checkable — the user
+   confirms or edits the list in the amber box, then checks items off as you
+   talk through them. An idea graduates when its checklist is worked through.
 
 HOW TO PROPOSE:
 Present it naturally in conversation, then include a structured tag on its own line:
@@ -94,10 +100,46 @@ CRITICAL RULES:
 """
 
 
+def _parse_checklist_attr(text: str) -> list[dict[str, Any]]:
+    """Parse the checklist="..." attribute of a PROPOSAL tag.
+
+    Convention: items separated by |, one nesting level via >
+    ("Parent > child" groups children under the parent).
+    Defensive: anything unparseable is dropped, never fatal.
+    """
+    m = re.search(r'\bchecklist="([^"]*)"', text)
+    if not m:
+        return []
+    out: list[dict[str, Any]] = []
+    parents: dict[str, dict[str, Any]] = {}
+    for seg in m.group(1).split("|"):
+        seg = seg.strip()
+        if not seg:
+            continue
+        if ">" in seg:
+            parent_title, _, child_title = seg.partition(">")
+            parent_title = parent_title.strip()
+            child_title = child_title.strip()
+            if not parent_title or not child_title:
+                continue
+            parent = parents.get(parent_title)
+            if parent is None:
+                parent = {"title": parent_title, "children": []}
+                parents[parent_title] = parent
+                out.append(parent)
+            parent["children"].append({"title": child_title})
+        else:
+            if seg not in parents:
+                node = {"title": seg, "children": []}
+                parents[seg] = node
+                out.append(node)
+    return out
+
+
 def _parse_proposal_tag(text: str) -> dict[str, Any] | None:
     """Extract [PROPOSAL type=X title="Y"]body[/PROPOSAL] from LLM output."""
     m = re.search(
-        r'\[PROPOSAL\s+type=(\w+)\s+title="([^"]+)"\](.*?)\[/PROPOSAL\]',
+        r'\[PROPOSAL\s+type=(\w+)\s+title="([^"]+)"[^\]]*\](.*?)\[/PROPOSAL\]',
         text,
         re.DOTALL,
     )
@@ -111,17 +153,40 @@ def _parse_proposal_tag(text: str) -> dict[str, Any] | None:
         "type_name": _PROPOSAL_TYPES[ptype],
         "title": title,
         "detail": body,
+        "checklist": _parse_checklist_attr(m.group(0)),
     }
 
 
 def _strip_proposal_tags(text: str) -> str:
     """Remove [PROPOSAL] tags from text shown to user."""
     return re.sub(
-        r'\[PROPOSAL\s+type=\w+\s+title="[^"]*"\].*?\[/PROPOSAL\]',
+        r'\[PROPOSAL\s+type=\w+\s+title="[^"]*"[^\]]*\].*?\[/PROPOSAL\]',
         '',
         text,
         flags=re.DOTALL,
     ).strip()
+
+
+def _normalize_checklist(raw: Any) -> list[dict[str, Any]]:
+    """Normalize a proposed checklist to [{title, children:[{title}]}]. Defensive."""
+    out: list[dict[str, Any]] = []
+    if not isinstance(raw, list):
+        return out
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        title = (entry.get("title") or "").strip()
+        if not title:
+            continue
+        children = []
+        for centry in entry.get("children") or []:
+            if not isinstance(centry, dict):
+                continue
+            ctitle = (centry.get("title") or "").strip()
+            if ctitle:
+                children.append({"title": ctitle})
+        out.append({"title": title, "children": children})
+    return out
 
 
 def _create_entity_from_proposal(
@@ -131,77 +196,67 @@ def _create_entity_from_proposal(
     """Create the actual Vision Execution entity. Returns the created record or None.
 
     For idea proposals the user may choose a target_level (idea|task|project|
-    initiative) in the amber box. Graduating validates the idea's practical
-    fields first — raises IdeaNotReadyError naming what's missing (propagates
-    out; the broad except below deliberately re-raises it).
+    initiative) in the amber box — an explicit verdict, so readiness is
+    advisory, not a gate (see GET /ideas/{id}/graduation for the hint).
+    The idea is always persisted first (for checklist provenance); graduating
+    unfolds its checklist into the work breakdown via promote_idea.
     """
     from local_ai.vision_execution import graduation as G
+    from local_ai.vision_execution import service as ve_service
+    from local_ai.vision_execution.models import IdeaCreate
 
     ptype = proposal["type"]
     title = proposal["title"]
     detail = proposal["detail"]
     target_level = (proposal.get("target_level") or "").strip().lower() or None
 
-    # Validate graduation BEFORE the broad try/except so the readiness error
-    # propagates to the caller (it becomes a conversational reply, not a
-    # silent "couldn't save").
-    if ptype == "idea" and target_level in G.GRADUATE_LEVELS:
-        G.assert_ready(
-            {
-                "title": title,
-                "description": detail,
-                "desired_outcome": proposal.get("desired_outcome", ""),
-                "notes": proposal.get("source_quote", ""),
-            },
-            title,
-        )
-
     try:
         from local_ai.vision_execution import storage as ve_store
         from local_ai.vision_execution.models import (
             InitiativeCreate, ProjectCreate, TaskCreate, AssetCreate, PersonCreate,
-            IdeaCreate,
         )
 
-        if ptype == "idea" and target_level in G.GRADUATE_LEVELS:
-            idea_dict = {
-                "title": title,
-                "description": detail,
-                "desired_outcome": proposal.get("desired_outcome", ""),
-                "notes": proposal.get("source_quote", ""),
-            }
-            entity_type, payload = G.build_graduated_payload(idea_dict, target_level)
-            if entity_type == "task":
-                created = ve_store.create_task(TaskCreate(**payload), user_id=user_id)
-            elif entity_type == "project":
-                created = ve_store.create_project(ProjectCreate(**payload), user_id=user_id)
-            else:
-                created = ve_store.create_initiative(InitiativeCreate(**payload), user_id=user_id)
-            return {
-                "id": getattr(created, "id", None),
-                "type": entity_type,
-                "title": title,
-                "graduated_from": "idea",
-            }
-
         if ptype == "idea":
-            obj = IdeaCreate(title=title, description=detail, status="Captured")
-            created = ve_store.create_idea(obj, user_id=user_id)
-        elif ptype == "initiative":
+            obj = IdeaCreate(
+                title=title,
+                description=detail,
+                desired_outcome=proposal.get("desired_outcome", ""),
+                notes=proposal.get("source_quote", ""),
+                status="Captured",
+            )
+            created_idea = ve_store.create_idea(obj, user_id=user_id)
+            idea_id = created_idea.get("id") if isinstance(created_idea, dict) else None
+            checklist = _normalize_checklist(proposal.get("checklist"))
+            if idea_id and checklist:
+                ve_service.create_checklist_items_batch(idea_id, checklist, user_id)
+            if target_level in G.GRADUATE_LEVELS and idea_id:
+                # Explicit user verdict in the amber box: graduate now, unfolding
+                # whatever checklist exists (readiness is advisory here).
+                out = ve_service.promote_idea(idea_id, target_level, user_id)
+                return {
+                    "id": out["entity"].get("id") if isinstance(out["entity"], dict) else None,
+                    "type": out["entity_type"],
+                    "title": title,
+                    "graduated_from": "idea",
+                    "task_ids": out.get("task_ids", []),
+                }
+            return {"id": idea_id, "type": "idea", "title": title}
+
+        if ptype == "initiative":
             obj = InitiativeCreate(title=title, brief=detail, status="Draft")
-            created = ve_store.create_initiative(obj, user_id=user_id)
+            created = ve_service.create_initiative(obj, user_id=user_id)
         elif ptype == "project":
             obj = ProjectCreate(title=title, brief=detail, status="Draft")
-            created = ve_store.create_project(obj, user_id=user_id)
+            created = ve_service.create_project(obj, user_id=user_id)
         elif ptype == "task":
             obj = TaskCreate(title=title, description=detail, status="Todo")
-            created = ve_store.create_task(obj, user_id=user_id)
+            created = ve_service.create_task(obj, user_id=user_id)
         elif ptype == "asset":
             obj = AssetCreate(name=title, notes=detail, status="Active")
-            created = ve_store.create_asset(obj, user_id=user_id)
+            created = ve_service.create_asset(obj, user_id=user_id)
         elif ptype == "person":
             obj = PersonCreate(name=title, notes=detail)
-            created = ve_store.create_person(obj, user_id=user_id)
+            created = ve_service.create_person(obj, user_id=user_id)
         else:
             return None
 
@@ -229,25 +284,15 @@ def handle_message(
     if is_confirmation and pending_proposal:
         msg_lower = message.lower().strip()
         if re.match(r'^\s*(yes|yeah|yep|y|sure|ok|okay|do it|file it)\s*[.!]?\s*$', msg_lower):
-            from local_ai.vision_execution import graduation as _G
-
-            try:
-                entity = _create_entity_from_proposal(pending_proposal, user_id)
-            except _G.IdeaNotReadyError as exc:
-                return {
-                    "reply": (
-                        f"Not quite ready to graduate — it's still a thought experiment. "
-                        f"To become work it needs: {', '.join(exc.missing)}. "
-                        f"Want to keep fleshing it out, or file it as an idea for now?"
-                    ),
-                    "entity_created": None,
-                    "pending_proposal": pending_proposal,
-                    "done": False,
-                }
+            entity = _create_entity_from_proposal(pending_proposal, user_id)
             if entity:
                 filed_as = entity.get("type", pending_proposal["type"])
+                extra = ""
+                if entity.get("graduated_from") == "idea" and entity.get("task_ids"):
+                    n = len(entity["task_ids"])
+                    extra = f" Its checklist unfolded into {n} task{'s' if n != 1 else ''}."
                 return {
-                    "reply": f"Filed as {filed_as.capitalize()}: {pending_proposal['title']}. What should we pull next?",
+                    "reply": f"Filed as {filed_as.capitalize()}: {pending_proposal['title']}.{extra} What should we pull next?",
                     "entity_created": entity,
                     "pending_proposal": None,
                     "done": False,

@@ -57,6 +57,83 @@ function taskSpan(t: Task, projectStart: string | null, projectEnd: string | nul
   return { start: null, end: null }
 }
 
+interface TaskSubtreeCtx {
+  tasks: Task[]
+  baseDepth: number
+  projectId: string | null
+  initiativeId?: string | null
+  projSpan: { start: string | null; end: string | null }
+  collapsedIds: Set<string>
+}
+
+/**
+ * Push task rows honoring parent_task_id nesting (unfolded checklists land as
+ * subtasks) and dependency_ids (surfaced as blocked-by labels).
+ * Tasks without dates stay off the timeline only if nothing above them is
+ * dated either — dates remain optional, never forced.
+ */
+function pushTaskSubtree(rows: TimelineRow[], ctx: TaskSubtreeCtx) {
+  const { tasks, baseDepth, projectId, initiativeId, projSpan, collapsedIds } = ctx
+  const byId = new Map<string, Task>()
+  for (const t of tasks) byId.set(t.id, t)
+  const titleOf = (id: string) => byId.get(id)?.title ?? id
+  const childrenOf = new Map<string, Task[]>()
+  const roots: Task[] = []
+  for (const t of tasks) {
+    const pid = t.parent_task_id ?? null
+    if (pid && byId.has(pid) && pid !== t.id) {
+      const list = childrenOf.get(pid) || []
+      list.push(t)
+      childrenOf.set(pid, list)
+    } else {
+      roots.push(t)
+    }
+  }
+  const visited = new Set<string>()
+  const push = (
+    t: Task,
+    depth: number,
+    inheritedSpan: { start: string | null; end: string | null },
+  ) => {
+    if (visited.has(t.id)) return // cycle guard — never hang on bad data
+    visited.add(t.id)
+    const own = taskSpan(t, null, null)
+    const span =
+      own.start && own.end
+        ? own
+        : inheritedSpan.start && inheritedSpan.end
+          ? inheritedSpan
+          : projSpan
+    const children = childrenOf.get(t.id) || []
+    const isCollapsed = collapsedIds.has(t.id)
+    const blockedBy = (t.dependency_ids || [])
+      .map((id) => titleOf(id))
+      .filter((label, idx, arr) => label && arr.indexOf(label) === idx)
+    rows.push({
+      id: t.id,
+      kind: 'task',
+      label: t.title,
+      summary: truncateSummary(t.description || t.title, 56),
+      status: t.status,
+      barStatus: normalizeStatus(t.status, t.notes),
+      owner: t.assignee_id,
+      depth,
+      start: span.start,
+      end: span.end,
+      taskId: t.id,
+      projectId,
+      initiativeId,
+      parentTaskId: t.parent_task_id ?? null,
+      blockedBy: blockedBy.length > 0 ? blockedBy : undefined,
+      collapsed: children.length > 0 ? isCollapsed : undefined,
+      childCount: children.length > 0 ? children.length : undefined,
+    })
+    if (isCollapsed) return
+    for (const c of children) push(c, depth + 1, span)
+  }
+  for (const r of roots) push(r, baseDepth, { start: null, end: null })
+}
+
 export interface BuildTimelineRowsInput {
   initiatives: Initiative[]
   projects: Project[]
@@ -123,24 +200,14 @@ export function buildTimelineRows({
         childCount: projTasks.length,
       })
       if (projCollapsed) continue
-      for (const t of projTasks) {
-        const taskSpanResult = taskSpan(t, projSpan.start, projSpan.end)
-        rows.push({
-          id: t.id,
-          kind: 'task',
-          label: t.title,
-          summary: truncateSummary(t.description || t.title, 56),
-          status: t.status,
-          barStatus: normalizeStatus(t.status, t.notes),
-          owner: t.assignee_id,
-          depth: 2,
-          start: taskSpanResult.start,
-          end: taskSpanResult.end,
-          taskId: t.id,
-          projectId: p.id,
-          initiativeId: init.id,
-        })
-      }
+      pushTaskSubtree(rows, {
+        tasks: projTasks,
+        baseDepth: 2,
+        projectId: p.id,
+        initiativeId: init.id,
+        projSpan,
+        collapsedIds,
+      })
     }
   }
 
@@ -180,23 +247,13 @@ export function buildTimelineRows({
           childCount: projTasks.length,
         })
         if (!projCollapsed) {
-          for (const t of projTasks) {
-            const taskSpanResult = taskSpan(t, projSpan.start, projSpan.end)
-            rows.push({
-              id: t.id,
-              kind: 'task',
-              label: t.title,
-              summary: truncateSummary(t.description || t.title, 56),
-              status: t.status,
-              barStatus: normalizeStatus(t.status, t.notes),
-              owner: t.assignee_id,
-              depth: 2,
-              start: taskSpanResult.start,
-              end: taskSpanResult.end,
-              taskId: t.id,
-              projectId: p.id,
-            })
-          }
+          pushTaskSubtree(rows, {
+            tasks: projTasks,
+            baseDepth: 2,
+            projectId: p.id,
+            projSpan,
+            collapsedIds,
+          })
         }
       }
     }
@@ -216,23 +273,13 @@ export function buildTimelineRows({
       childCount: orphanTasks.length,
     })
     if (!collapsedIds.has('_orphan_tasks')) {
-      for (const t of orphanTasks) {
-        const taskSpanResult = taskSpan(t, null, null)
-        rows.push({
-          id: t.id,
-          kind: 'task',
-          label: t.title,
-          summary: truncateSummary(t.description || t.title, 56),
-          status: t.status,
-          barStatus: normalizeStatus(t.status, t.notes),
-          owner: t.assignee_id,
-          depth: 1,
-          start: taskSpanResult.start,
-          end: taskSpanResult.end,
-          taskId: t.id,
-          projectId: null,
-        })
-      }
+      pushTaskSubtree(rows, {
+        tasks: orphanTasks,
+        baseDepth: 1,
+        projectId: null,
+        projSpan: { start: null, end: null },
+        collapsedIds,
+      })
     }
   }
 

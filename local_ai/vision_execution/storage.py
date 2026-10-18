@@ -3582,6 +3582,274 @@ def delete_idea(idea_id: str, user_id: str) -> bool:
     return True
 
 
+# --- Idea checklists ---
+# Nested hierarchical checklists, defined by conversation: each idea's own
+# definition of "practical." On graduation the checklist unfolds into the
+# work breakdown and is kept as provenance, marked superseded.
+
+CHECKLIST_STATUSES = ("open", "done")
+
+
+def _checklist_row_to_dict(row) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "idea_id": row[1],
+        "parent_id": row[2],
+        "title": row[3],
+        "status": row[4],
+        "position": row[5],
+        "superseded": bool(row[6]),
+        "created_at": row[7],
+        "updated_at": row[8],
+    }
+
+
+_CHECKLIST_COLS = (
+    "id, idea_id, parent_id, title, status, position, superseded, created_at, updated_at"
+)
+
+
+def _get_checklist_item_any(item_id: str, user_id: str) -> dict[str, Any] | None:
+    """Fetch a checklist item only if its idea belongs to the user."""
+    conn = get_connection()
+    cur = conn.execute(
+        f"SELECT {_CHECKLIST_COLS} FROM checklist_items "
+        "WHERE id = ? AND user_id = ?",
+        (item_id, user_id),
+    )
+    row = cur.fetchone()
+    return _checklist_row_to_dict(row) if row else None
+
+
+def create_checklist_item(
+    user_id: str,
+    idea_id: str,
+    title: str,
+    parent_id: str | None = None,
+    position: int = 0,
+    status: str = "open",
+) -> dict[str, Any]:
+    if get_idea(idea_id, user_id) is None:
+        raise ValueError("Idea not found")
+    if status not in CHECKLIST_STATUSES:
+        raise ValueError(f"unknown checklist status: {status!r}")
+    if parent_id is not None:
+        parent = _get_checklist_item_any(parent_id, user_id)
+        if parent is None or parent["idea_id"] != idea_id:
+            raise ValueError("parent item not found on this idea")
+    conn = get_connection()
+    iid = M.new_id()
+    now = _now()
+    conn.execute(
+        "INSERT INTO checklist_items (id, user_id, idea_id, parent_id, title, status, "
+        "position, superseded, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        (iid, user_id, idea_id, parent_id, title, status, position, now, now),
+    )
+    conn.commit()
+    return _get_checklist_item_any(iid, user_id) or {}
+
+
+def list_checklist_items(
+    idea_id: str, user_id: str, include_superseded: bool = False
+) -> list[dict[str, Any]]:
+    if get_idea(idea_id, user_id) is None:
+        raise ValueError("Idea not found")
+    conn = get_connection()
+    q = (
+        f"SELECT {_CHECKLIST_COLS} FROM checklist_items "
+        "WHERE idea_id = ? AND user_id = ?"
+    )
+    if not include_superseded:
+        q += " AND superseded = 0"
+    q += " ORDER BY position ASC, created_at ASC"
+    cur = conn.execute(q, (idea_id, user_id))
+    items = [_checklist_row_to_dict(r) for r in cur.fetchall()]
+    # Attach dependency edges (item_id -> [depends_on ids]).
+    dep_cur = conn.execute(
+        "SELECT d.item_id, d.depends_on_item_id FROM checklist_item_dependencies d "
+        "JOIN checklist_items i ON i.id = d.item_id "
+        "WHERE i.idea_id = ? AND i.user_id = ?",
+        (idea_id, user_id),
+    )
+    deps: dict[str, list[str]] = {}
+    for item_id, depends_on in dep_cur.fetchall():
+        deps.setdefault(item_id, []).append(depends_on)
+    for it in items:
+        it["depends_on"] = deps.get(it["id"], [])
+    return items
+
+
+def get_checklist_item(item_id: str, user_id: str) -> dict[str, Any] | None:
+    it = _get_checklist_item_any(item_id, user_id)
+    if it is None:
+        return None
+    conn = get_connection()
+    cur = conn.execute(
+        "SELECT depends_on_item_id FROM checklist_item_dependencies WHERE item_id = ?",
+        (item_id,),
+    )
+    it["depends_on"] = [r[0] for r in cur.fetchall()]
+    return it
+
+
+def update_checklist_item(
+    item_id: str,
+    user_id: str,
+    title: str | None = None,
+    status: str | None = None,
+    position: int | None = None,
+) -> dict[str, Any] | None:
+    if _get_checklist_item_any(item_id, user_id) is None:
+        return None
+    if status is not None and status not in CHECKLIST_STATUSES:
+        raise ValueError(f"unknown checklist status: {status!r}")
+    updates: list[str] = []
+    args: list[Any] = []
+    if title is not None:
+        updates.append("title = ?")
+        args.append(title)
+    if status is not None:
+        updates.append("status = ?")
+        args.append(status)
+    if position is not None:
+        updates.append("position = ?")
+        args.append(position)
+    if not updates:
+        return get_checklist_item(item_id, user_id)
+    updates.append("updated_at = ?")
+    args.append(_now())
+    args.append(item_id)
+    args.append(user_id)
+    conn = get_connection()
+    conn.execute(
+        f"UPDATE checklist_items SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+        tuple(args),
+    )
+    conn.commit()
+    return get_checklist_item(item_id, user_id)
+
+
+def _checklist_descendant_ids(
+    conn, item_id: str, user_id: str
+) -> list[str]:
+    """All descendant ids (recursive) of a checklist item."""
+    seen: list[str] = []
+    stack = [item_id]
+    while stack:
+        cur_id = stack.pop()
+        cur = conn.execute(
+            "SELECT id FROM checklist_items WHERE parent_id = ? AND user_id = ?",
+            (cur_id, user_id),
+        )
+        for (child_id,) in cur.fetchall():
+            if child_id not in seen:
+                seen.append(child_id)
+                stack.append(child_id)
+    return seen
+
+
+def delete_checklist_item(item_id: str, user_id: str) -> bool:
+    """Delete an item and its descendants (cascade), plus their dependency edges."""
+    if _get_checklist_item_any(item_id, user_id) is None:
+        return False
+    conn = get_connection()
+    doomed = [item_id] + _checklist_descendant_ids(conn, item_id, user_id)
+    placeholders = ",".join("?" for _ in doomed)
+    conn.execute(
+        f"DELETE FROM checklist_item_dependencies WHERE item_id IN ({placeholders}) "
+        f"OR depends_on_item_id IN ({placeholders})",
+        tuple(doomed) + tuple(doomed),
+    )
+    conn.execute(
+        f"DELETE FROM checklist_items WHERE id IN ({placeholders}) AND user_id = ?",
+        tuple(doomed) + (user_id,),
+    )
+    conn.commit()
+    return True
+
+
+def _checklist_depends_on(conn, idea_id: str, user_id: str) -> dict[str, list[str]]:
+    """Adjacency: item_id -> [ids it depends on], for one idea's checklist."""
+    cur = conn.execute(
+        "SELECT d.item_id, d.depends_on_item_id FROM checklist_item_dependencies d "
+        "JOIN checklist_items i ON i.id = d.item_id "
+        "WHERE i.idea_id = ? AND i.user_id = ? AND i.superseded = 0",
+        (idea_id, user_id),
+    )
+    adj: dict[str, list[str]] = {}
+    for item_id, depends_on in cur.fetchall():
+        adj.setdefault(item_id, []).append(depends_on)
+    return adj
+
+
+def _would_create_cycle(
+    adj: dict[str, list[str]], item_id: str, depends_on_id: str
+) -> bool:
+    """Adding edge (item_id depends on depends_on_id) cycles iff depends_on_id
+    can already reach item_id via depends-on edges."""
+    stack = [depends_on_id]
+    seen = set()
+    while stack:
+        cur = stack.pop()
+        if cur == item_id:
+            return True
+        if cur in seen:
+            continue
+        seen.add(cur)
+        stack.extend(adj.get(cur, []))
+    return False
+
+
+def add_checklist_dependency(
+    item_id: str, depends_on_id: str, user_id: str
+) -> dict[str, Any]:
+    item = _get_checklist_item_any(item_id, user_id)
+    other = _get_checklist_item_any(depends_on_id, user_id)
+    if item is None or other is None:
+        raise ValueError("checklist item not found")
+    if item["idea_id"] != other["idea_id"]:
+        raise ValueError("dependencies must stay within one idea's checklist")
+    if item_id == depends_on_id:
+        raise ValueError("an item cannot depend on itself")
+    conn = get_connection()
+    adj = _checklist_depends_on(conn, item["idea_id"], user_id)
+    if _would_create_cycle(adj, item_id, depends_on_id):
+        raise ValueError("that dependency would create a cycle")
+    conn.execute(
+        "INSERT OR IGNORE INTO checklist_item_dependencies "
+        "(item_id, depends_on_item_id, created_at) VALUES (?, ?, ?)",
+        (item_id, depends_on_id, _now()),
+    )
+    conn.commit()
+    return get_checklist_item(item_id, user_id) or {}
+
+
+def remove_checklist_dependency(
+    item_id: str, depends_on_id: str, user_id: str
+) -> bool:
+    if _get_checklist_item_any(item_id, user_id) is None:
+        return False
+    conn = get_connection()
+    cur = conn.execute(
+        "DELETE FROM checklist_item_dependencies WHERE item_id = ? AND depends_on_item_id = ?",
+        (item_id, depends_on_id),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def mark_checklist_superseded(idea_id: str, user_id: str) -> int:
+    """Keep the graduated checklist as provenance; mark it superseded by the work."""
+    conn = get_connection()
+    cur = conn.execute(
+        "UPDATE checklist_items SET superseded = 1, updated_at = ? "
+        "WHERE idea_id = ? AND user_id = ? AND superseded = 0",
+        (_now(), idea_id, user_id),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 # --- Initiatives ---
 
 def _decode_legacy_required_people_as_seats(required_people: list[str]) -> list[dict[str, Any]]:

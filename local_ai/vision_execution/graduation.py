@@ -1,16 +1,21 @@
-"""Idea graduation: an idea becomes work when its practical fields are filled in.
+"""Idea graduation: an idea becomes work when its checklist is worked through.
 
-The decided rule (2026-10-18): an idea graduates when enough *practical*
-fields are filled in — the transition from thought experiment to work in
-progress. The hierarchy is levels of importance/scope ("buy socks" is a task,
-"start a sock company" is an initiative), never a rigid pipeline.
+Decided 2026-10-18 (reworked): instead of fixed "practical fields," each idea
+defines its own "practical" as a nested hierarchical checklist, built
+conversationally ("what would make this real?"). An idea is ready to graduate
+when its checklist is non-empty and every item is done — thought experiment
+-> work in progress. The hierarchy is levels of importance/scope ("buy socks"
+is a task, "start a sock company" is an initiative), never a rigid pipeline.
 
-The miner may *suggest* a level, but the user decides at review time
-(proposal -> user verdict, per the review philosophy).
+On graduation the checklist unfolds into the work breakdown (top-level items
+-> tasks, nested items -> subtasks, dependencies carried over) and is kept as
+provenance, marked superseded.
+
+Readiness is advisory for explicit user commands (the user decides); the
+batch confirm path enforces it via assert_checklist_ready.
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
 #: Every level an idea can land on. None (stays an idea) is the default.
@@ -21,7 +26,7 @@ GRADUATE_LEVELS = ("task", "project", "initiative")
 
 
 class IdeaNotReadyError(Exception):
-    """Graduation attempted before the idea's practical fields are filled."""
+    """Graduation attempted before the idea's checklist is worked through."""
 
     def __init__(self, missing: list[str], idea_title: str = ""):
         self.missing = missing
@@ -29,55 +34,73 @@ class IdeaNotReadyError(Exception):
         where = f" '{idea_title}'" if idea_title else ""
         super().__init__(
             f"This idea{where} isn't ready to graduate yet — it's still a thought "
-            f"experiment. Fill in: {', '.join(missing)}."
+            f"experiment. {'; '.join(missing)}."
         )
 
 
-def _as_list(v: Any) -> list:
-    if not v:
-        return []
-    if isinstance(v, str):
-        try:
-            parsed = json.loads(v)
-            return parsed if isinstance(parsed, list) else []
-        except Exception:
-            return []
-    return list(v)
+def checklist_readiness(items: list[dict[str, Any]]) -> tuple[bool, list[str], dict]:
+    """Check whether an idea's checklist is worked through.
 
-
-def graduation_readiness(idea: dict[str, Any]) -> tuple[bool, list[str]]:
-    """Check whether an idea has enough practical fields to graduate.
-
-    Uses only existing idea-schema fields (no new required columns in v1):
-    a clear title, an expanded description, and at least one actionable /
-    grounding field (intent, note, tag, person, or asset).
-
-    Returns (ready, missing) with missing named in plain language.
+    `items` are the idea's non-superseded checklist items (flat). Ready means
+    a non-empty checklist with every item done. Returns (ready, missing, stats)
+    with missing named in plain language and stats = {total, done, remaining}.
     """
-    missing: list[str] = []
-    if not (idea.get("title") or "").strip():
-        missing.append("a clear title")
-    if not (idea.get("description") or "").strip():
-        missing.append("an expanded description")
-    grounded = any(
-        [
-            (idea.get("desired_outcome") or "").strip(),
-            _as_list(idea.get("tags")),
-            _as_list(idea.get("linked_people")),
-            _as_list(idea.get("linked_assets")),
-            (idea.get("notes") or "").strip(),
+    live = [it for it in items if not it.get("superseded")]
+    total = len(live)
+    done = sum(1 for it in live if (it.get("status") or "") == "done")
+    remaining = total - done
+    stats = {"total": total, "done": done, "remaining": remaining}
+    if total == 0:
+        return (
+            False,
+            ["it needs a checklist of what would make it real — talk it through and we'll build one together"],
+            stats,
+        )
+    if remaining:
+        open_items = [it for it in live if (it.get("status") or "") != "done"]
+        named = [
+            f"'{(it.get('title') or 'untitled').strip()}' is still open"
+            for it in open_items[:5]
         ]
-    )
-    if not grounded:
-        missing.append("a grounding detail — an intent, note, tag, person, or asset")
-    return (not missing, missing)
+        if remaining > 5:
+            named.append(f"and {remaining - 5} more still open")
+        return False, named, stats
+    return True, [], stats
 
 
-def assert_ready(idea: dict[str, Any], idea_title: str = "") -> None:
-    """Raise IdeaNotReadyError naming the missing fields when not ready."""
-    ready, missing = graduation_readiness(idea)
+def assert_checklist_ready(items: list[dict[str, Any]], idea_title: str = "") -> None:
+    """Raise IdeaNotReadyError naming the unfinished items when not ready."""
+    ready, missing, _ = checklist_readiness(items)
     if not ready:
-        raise IdeaNotReadyError(missing, idea_title or str(idea.get("title") or ""))
+        raise IdeaNotReadyError(missing, idea_title)
+
+
+def build_checklist_tree(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Nest flat checklist items by parent_id into a tree.
+
+    Returns root nodes, each with `children` (sorted by position) and the
+    item's own `depends_on` ids preserved. Orphaned parent refs and self-refs
+    are treated as roots (defensive; the API validates on write).
+    """
+    by_id: dict[str, dict[str, Any]] = {
+        it["id"]: {**it, "children": []} for it in items
+    }
+    roots: list[dict[str, Any]] = []
+    for it in items:
+        node = by_id[it["id"]]
+        pid = it.get("parent_id")
+        if pid and pid in by_id and pid != it["id"]:
+            by_id[pid]["children"].append(node)
+        else:
+            roots.append(node)
+
+    def _sort(nodes: list[dict[str, Any]]) -> None:
+        nodes.sort(key=lambda n: (n.get("position") or 0))
+        for n in nodes:
+            _sort(n["children"])
+
+    _sort(roots)
+    return roots
 
 
 def build_graduated_payload(

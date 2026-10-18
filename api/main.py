@@ -246,6 +246,15 @@ except Exception as e:
     print(f"Pipeline routes not loaded: {e}")
     _router_load_errors.append(f"pipeline: {e}")
 
+# Follow-through engine — watchers, nudge-once log, commitments, growth states.
+# GET /followthrough/nudges is the feed the today-aggregate will consume.
+try:
+    from api.routes.followthrough_routes import router as followthrough_router
+    app.include_router(followthrough_router)
+except Exception as e:
+    print(f"Follow-through routes not loaded: {e}")
+    _router_load_errors.append(f"followthrough: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

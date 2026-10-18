@@ -441,3 +441,47 @@ def test_proposal_tag_without_checklist_still_parses():
     p = mining_chat._parse_proposal_tag('[PROPOSAL type=task title="Buy socks"]Get socks[/PROPOSAL]')
     assert p is not None
     assert p["checklist"] == []
+
+
+# --- garden growth wiring: checklist progress in the ideas payload --------------
+
+
+def test_list_ideas_includes_checklist_progress(ve_ctx):
+    """Bulk ideas payload carries {total, done} per idea — no N+1 for the garden."""
+    uid = ve_ctx["uid"]
+    bare = _mk_idea(uid, "Bare thought")
+    fleshed = _mk_idea(uid, "Fleshed thought")
+    items = ve.create_checklist_items_batch(
+        fleshed["id"],
+        [{"title": "Name it"}, {"title": "Price it"}, {"title": "Ship it"}],
+        uid,
+    )
+    ve.update_checklist_item(items[0]["id"], uid, status="done")
+    ve.update_checklist_item(items[1]["id"], uid, status="done")
+
+    ideas = {i["id"]: i for i in ve.list_ideas(uid)}
+    assert ideas[bare["id"]]["checklist_progress"] == {"total": 0, "done": 0}
+    assert ideas[fleshed["id"]]["checklist_progress"] == {"total": 3, "done": 2}
+
+
+def test_checklist_progress_ignores_superseded_items(ve_ctx):
+    """Graduated ideas keep their checklist as provenance; it must not inflate progress."""
+    import local_ai.vision_execution.storage as ve_store
+
+    uid = ve_ctx["uid"]
+    idea = _mk_idea(uid, "Sock company")
+    ve.create_checklist_items_batch(idea["id"], [{"title": "Name it", "done": True}], uid)
+    ve_store.mark_checklist_superseded(idea["id"], uid)
+
+    ideas = {i["id"]: i for i in ve.list_ideas(uid)}
+    assert ideas[idea["id"]]["checklist_progress"] == {"total": 0, "done": 0}
+
+
+def test_get_idea_includes_checklist_progress(ve_ctx):
+    uid = ve_ctx["uid"]
+    idea = _mk_idea(uid, "Single fetch")
+    items = ve.create_checklist_items_batch(idea["id"], [{"title": "Only step"}], uid)
+    ve.update_checklist_item(items[0]["id"], uid, status="done")
+
+    fetched = ve.get_idea(idea["id"], uid)
+    assert fetched["checklist_progress"] == {"total": 1, "done": 1}

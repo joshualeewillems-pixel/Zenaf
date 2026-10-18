@@ -7,7 +7,7 @@
 import type { Edge, Node } from '@xyflow/react'
 import type { MapEdgeTier } from './MapFlowEdge'
 import type { Project, Task } from '../vision-execution/types'
-import { conditionFromSignals, growthFromStatus, isStaleIso } from './deriveVisualState'
+import { conditionFromSignals, growthFromStatus, ideaGrowthFromChecklist, isStaleIso } from './deriveVisualState'
 import { findCouncilPreviewForRef } from './councilCorrelation'
 import type { ConditionState, MapEntityRef, MapNodePayload, WaterLevel } from './ontology'
 import type { StudioCouncilRunRow } from './studioCouncilTypes'
@@ -209,7 +209,7 @@ export function buildLiveVisionMapGraph(
               `Status: ${idea.status}`,
               idea.desired_outcome ? `Desired outcome: ${clip(idea.desired_outcome, 160)}` : '',
             ].filter(Boolean),
-            growth: growthFromStatus(idea.status),
+            growth: ideaGrowthFromChecklist(idea.status, idea.checklist_progress),
             condition: conditionFromSignals({ stale }),
           },
           councilRuns,
@@ -314,7 +314,7 @@ export function buildLiveVisionMapGraph(
                   clip(idea.summary || idea.description || '', 200),
                   `Status: ${idea.status}`,
                 ].filter(Boolean),
-                growth: growthFromStatus(idea.status),
+                growth: ideaGrowthFromChecklist(idea.status, idea.checklist_progress),
                 condition: ideaBase,
               },
               councilRuns,

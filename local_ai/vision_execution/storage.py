@@ -3479,10 +3479,15 @@ def _ensure_owned_reference(
 def list_ideas(user_id: str) -> list[dict[str, Any]]:
     conn = get_connection()
     cur = conn.execute(
-        "SELECT id, title, summary, description, status, tags, created_by, desired_outcome, "
-        "linked_people, linked_assets, linked_ideas, created_at, updated_at, notes FROM ideas "
-        "WHERE user_id = ? ORDER BY updated_at DESC",
-        (user_id,),
+        "SELECT i.id, i.title, i.summary, i.description, i.status, i.tags, i.created_by, i.desired_outcome, "
+        "i.linked_people, i.linked_assets, i.linked_ideas, i.created_at, i.updated_at, i.notes, "
+        "COALESCE(cp.total, 0) AS checklist_total, COALESCE(cp.done, 0) AS checklist_done "
+        "FROM ideas i LEFT JOIN ("
+        "SELECT idea_id, COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done "
+        "FROM checklist_items WHERE user_id = ? AND superseded = 0 GROUP BY idea_id"
+        ") cp ON cp.idea_id = i.id "
+        "WHERE i.user_id = ? ORDER BY i.updated_at DESC",
+        (user_id, user_id),
     )
     return [M.row_to_idea(tuple(r)) for r in cur.fetchall()]
 
@@ -3490,9 +3495,15 @@ def list_ideas(user_id: str) -> list[dict[str, Any]]:
 def get_idea(idea_id: str, user_id: str) -> dict[str, Any] | None:
     conn = get_connection()
     cur = conn.execute(
-        "SELECT id, title, summary, description, status, tags, created_by, desired_outcome, "
-        "linked_people, linked_assets, linked_ideas, created_at, updated_at, notes FROM ideas WHERE id = ? AND user_id = ?",
-        (idea_id, user_id),
+        "SELECT i.id, i.title, i.summary, i.description, i.status, i.tags, i.created_by, i.desired_outcome, "
+        "i.linked_people, i.linked_assets, i.linked_ideas, i.created_at, i.updated_at, i.notes, "
+        "COALESCE(cp.total, 0) AS checklist_total, COALESCE(cp.done, 0) AS checklist_done "
+        "FROM ideas i LEFT JOIN ("
+        "SELECT idea_id, COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done "
+        "FROM checklist_items WHERE user_id = ? AND superseded = 0 GROUP BY idea_id"
+        ") cp ON cp.idea_id = i.id "
+        "WHERE i.id = ? AND i.user_id = ?",
+        (user_id, idea_id, user_id),
     )
     row = cur.fetchone()
     return M.row_to_idea(tuple(row)) if row else None

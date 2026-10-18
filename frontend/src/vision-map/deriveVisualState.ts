@@ -16,6 +16,26 @@ export function growthFromStatus(status: string | null | undefined, opts?: { don
 }
 
 /**
+ * Idea-stone growth driven by checklist progress: the stone visibly ripens as the
+ * idea's checklist fills in. No checklist → seed (germinating); partial → growing;
+ * all done → ripe (fruiting); graduated → fruiting. Terminal/negative statuses
+ * (pruned, decaying) still win over progress.
+ */
+export function ideaGrowthFromChecklist(
+  status: string | null | undefined,
+  progress?: { total: number; done: number } | null,
+): GrowthState {
+  const s = (status || '').trim().toLowerCase()
+  if (s.includes('cancel') || s.includes('kill') || s.includes('archived')) return 'pruned'
+  if (s.includes('blocked') || s.includes('at risk') || s.includes('at_risk')) return 'decaying'
+  if (s.includes('graduat')) return 'fruiting'
+  const total = progress?.total ?? 0
+  if (total <= 0) return 'germinating'
+  const done = Math.min(Math.max(progress?.done ?? 0, 0), total)
+  return growthFromStatus(status, { doneRatio: done / total })
+}
+
+/**
  * Derive condition channel from flags + staleness (prototype; teacher fields from last council run metadata when wired).
  */
 export function conditionFromSignals(input: {

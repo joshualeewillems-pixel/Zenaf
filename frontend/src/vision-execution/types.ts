@@ -39,6 +39,8 @@ export interface Idea {
   notes?: string
   created_at: string
   updated_at: string
+  /** Checklist progress driving garden growth glyphs: no checklist → seed, partial → growing, all done → ripe. */
+  checklist_progress?: { total: number; done: number }
 }
 
 export interface Initiative {

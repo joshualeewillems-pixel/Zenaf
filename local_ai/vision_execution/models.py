@@ -838,12 +838,16 @@ def row_to_core_profile(row: tuple) -> dict[str, Any]:
 
 def row_to_idea(row: tuple) -> dict[str, Any]:
     notes_val = (row[13] or "") if len(row) >= 14 else ""
+    # Checklist progress (cols 14-15) is present on list/get queries; default when absent.
+    progress = {"total": 0, "done": 0}
+    if len(row) >= 16:
+        progress = {"total": int(row[14] or 0), "done": int(row[15] or 0)}
     return {
         "id": row[0], "title": row[1], "summary": row[2], "description": row[3], "status": row[4],
         "tags": _json_loads_list(row[5]), "created_by": row[6], "desired_outcome": row[7],
         "linked_people": _json_loads_list(row[8]), "linked_assets": _json_loads_list(row[9]),
         "linked_ideas": _json_loads_list(row[10]), "created_at": row[11], "updated_at": row[12],
-        "notes": notes_val,
+        "notes": notes_val, "checklist_progress": progress,
     }
 
 

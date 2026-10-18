@@ -26,7 +26,7 @@
  * to populate it. Critical SVG sizing is inline so the graphic cannot
  * collapse even if the <style> block is ever stripped.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BRAID_ORDER, STRANDS, strandColor, type StrandKey } from './strands'
 import {
   STOCK_ARCHETYPE_FALLBACK,
@@ -34,6 +34,59 @@ import {
   fetchArchetypeStatus,
   type ArchetypeStatus,
 } from './archetypes'
+import { NodeSheet } from '../tree/NodeSheet'
+
+/* ------------------------------------------------------------------ */
+/* Tree-as-organism: node sheets (phase 1)                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A tree node that can open a sheet: the central you, or a council seat
+ * branch. Strand roots keep their inline narrative panels (for now).
+ */
+export type TreeNodeRef =
+  | { kind: 'you' }
+  | {
+      kind: 'seat'
+      /** Engine seat key, e.g. 'guardian' — passed as the Today `mode`. */
+      seatKey: string
+      /** Fellowship display name, e.g. 'The Bear'. */
+      fellowshipName: string
+      /** Archetype display name, e.g. 'Guardian'. */
+      archetypeName: string
+      avatarUrl?: string | null
+    }
+
+/** The one grammar every base node speaks. Later phases extend the menus. */
+export type NodeMenuItemId =
+  | 'today'
+  | 'talk'
+  | 'review'
+  | 'projects'
+  | 'identity'
+  | 'character'
+
+/**
+ * Phase-1 composition seam: the app shell provides the mounted view for a
+ * (node, menu item) pair. Return null and the sheet shows an honest
+ * "still growing" state — later phases fill those in without touching the
+ * tree.
+ */
+export type NodeSheetContentProvider = (
+  node: TreeNodeRef,
+  item: NodeMenuItemId,
+) => ReactNode | null
+
+/** Engine seat key -> fellowship display name (mirrors TodayView's map). */
+const FELLOWSHIP_NAMES: Record<string, string> = {
+  mentor: 'The Gardener',
+  champion: 'The Firebrand',
+  guardian: 'The Bear',
+  ambassador: 'The Bridge',
+  conductor: 'The Weaver',
+  skeptic: 'The Neighbor',
+  maverick: 'The Fox',
+}
 
 const PHI = 1.618
 const CX = 200
@@ -118,18 +171,33 @@ const YOU: TreeDatum = {
   kids: [],
 }
 
-const MENU: Array<{ id: string; title: string; desc: string; cta?: 'vision_map' | 'agent_intake' }> = [
+/** The one grammar: the you-node's menu. Later phases extend, never replace. */
+const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
+  { id: 'today', title: 'Today', desc: "The council's briefing — three cards at a time, no more." },
+  { id: 'talk', title: 'Talk', desc: 'Think something through with your whole council.' },
+  { id: 'review', title: 'Review', desc: 'Moments awaiting your verdict before anything trains.' },
+  { id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
+  { id: 'identity', title: 'Identity', desc: 'Account, model connections, consent.' },
+]
+
+/** The one grammar: a seat node's menu. */
+const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
+  { id: 'today', title: 'Today', desc: 'The day through this seat’s eyes.' },
+  { id: 'talk', title: 'Talk', desc: 'Think something through with this seat.' },
+  { id: 'review', title: 'Review', desc: 'This seat’s moments awaiting your verdict.' },
+  { id: 'character', title: 'Character', desc: 'Face, strand blend, sub-personalities.' },
+]
+
+/**
+ * Pre-sheet tree options — kept reachable in the you-sheet's second section
+ * so nothing that existed is lost in the restructure.
+ */
+const LEGACY_YOU_ITEMS: Array<{ id: string; title: string; desc: string; cta?: 'agent_intake' }> = [
   {
     id: 'upload',
     title: 'Upload source materials',
     desc: 'Connect a ChatGPT or Claude conversation — paste a share link or send one from your browser. Redaction happens at capture — nothing trains until you review and approve it.',
     cta: 'agent_intake',
-  },
-  {
-    id: 'projects',
-    title: 'Current projects',
-    desc: 'Your projects live in the Vision Map — open it to see everything in flight.',
-    cta: 'vision_map',
   },
   { id: 'stats', title: 'Stats', desc: '' },
   {
@@ -138,11 +206,6 @@ const MENU: Array<{ id: string; title: string; desc: string; cta?: 'vision_map' 
     desc: 'Snapshots freeze your profile as a rentable era — automatic each year, plus after big training leaps. Nothing to snapshot yet: eras begin once training does.',
   },
   { id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
-  {
-    id: 'settings',
-    title: 'Settings',
-    desc: 'Consent scopes, cross-zone transfer asks, snapshot rhythm, actor attribution.',
-  },
 ]
 
 /* ------------------------------------------------------------------ */
@@ -617,16 +680,23 @@ function StrandBlendBars({ weights }: { weights: Record<string, number> }) {
 export function LivingTreeView({
   onNavigate,
   initials,
+  renderSheetContent,
 }: {
-  /** Navigate the app shell (e.g. onNavigate('vision_map') for Current projects). */
+  /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
   onNavigate: (view: 'vision_map' | 'agent_intake') => void
   /** Initials rendered on the central profile node; defaults to "YOU". */
   initials?: string
+  /** App-shell provider: the mounted view for a (node, menu item) pair. */
+  renderSheetContent?: NodeSheetContentProvider
 }) {
   const [sel, setSel] = useState<string | null>(null)
   const [exp, setExp] = useState<Record<string, boolean>>({})
-  const [view, setView] = useState<'tree' | 'menu'>('tree')
-  const [menuItem, setMenuItem] = useState<string | null>(null)
+  /** Open node sheet (phase 1: the tree is the app; nodes open in place). */
+  const [sheetNode, setSheetNode] = useState<TreeNodeRef | null>(null)
+  /** Null = the node's menu; otherwise the mounted menu item. */
+  const [sheetItem, setSheetItem] = useState<NodeMenuItemId | null>(null)
+  /** Legacy tree-options row expanded inline in the you-sheet. */
+  const [legacyOpen, setLegacyOpen] = useState<string | null>(null)
 
   // Archetype branches: live status from the backend, honest seed fallback
   // while loading or when unreachable. The tree renders on first paint;
@@ -705,11 +775,27 @@ export function LivingTreeView({
     }
   }, [target])
 
+  const openSheet = (node: TreeNodeRef) => {
+    setSheetItem(null)
+    setLegacyOpen(null)
+    setSheetNode(node)
+  }
+  const closeSheet = () => {
+    setSheetNode(null)
+    setSheetItem(null)
+    setLegacyOpen(null)
+    // A seat's character now lives in its sheet — clear its highlight too.
+    setSel((s) => {
+      if (!s) return s
+      const d = findDatum(s, up)
+      return d?.archetype ? null : s
+    })
+  }
+
   const onTap = (id: string) => {
     if (id === 'you') {
-      setView((v) => (v === 'menu' ? 'tree' : 'menu'))
-      setMenuItem(null)
       setSel(null)
+      openSheet({ kind: 'you' })
       return
     }
     const live = nodesRef.current.find((n) => n.datum.id === id)
@@ -721,6 +807,21 @@ export function LivingTreeView({
         return next
       })
     }
+    const datum = live?.datum ?? findDatum(id, up)
+    const arch = datum?.archetype
+    if (arch) {
+      // Seat branches open their sheet (menu: Today / Talk / Review / Character).
+      setSel(id)
+      openSheet({
+        kind: 'seat',
+        seatKey: arch.id,
+        fellowshipName: FELLOWSHIP_NAMES[arch.id] ?? arch.display_name,
+        archetypeName: arch.display_name,
+        avatarUrl: arch.avatar_url,
+      })
+      return
+    }
+    // Strand roots keep their inline narrative panels.
     setSel((s) => (s === id ? null : id))
   }
 
@@ -754,84 +855,50 @@ export function LivingTreeView({
     return `${vx} ${vy} ${vw} ${vh}`
   }, [target])
 
-  const renderPanel = () => {
-    if (view === 'menu') {
-      if (menuItem) {
-        const m = MENU.find((x) => x.id === menuItem)
-        if (!m) return null
+  /** Council-depth stats — shared by the you-sheet's Tree options. */
+  const renderStatsBlock = () => (
+    <div className="lstats">
+      <p className="lnote">
+        Council depth — each branch deepens as its strands are trained. No rentals yet — training comes
+        first.
+      </p>
+      {archetypes.map((a) => {
+        const domKey = dominantStrandKey(a)
+        const s = STRANDS.find((x) => x.key === domKey)
+        const col = a.is_skeptic ? SKEPTIC_COLOR : (s?.color ?? '#c9a86a')
         return (
-          <div>
-            <button type="button" className="lback" onClick={() => setMenuItem(null)}>
-              ‹ All options
-            </button>
-            <h3>{m.title}</h3>
-            {m.id === 'stats' ? (
-              <div className="lstats">
-                <p className="lnote">
-                  Council depth — each branch deepens as its strands are trained. No rentals yet — training comes
-                  first.
-                </p>
-                {archetypes.map((a) => {
-                  const domKey = dominantStrandKey(a)
-                  const s = STRANDS.find((x) => x.key === domKey)
-                  const col = a.is_skeptic ? SKEPTIC_COLOR : (s?.color ?? '#c9a86a')
-                  return (
-                    <div key={a.id} className="lstat">
-                      <span className="ldot" style={{ background: col }} />
-                      <span className="lname">{a.display_name}</span>
-                      <span className="lpct">{a.depth <= 0 ? 'seed' : `${a.depth}%`}</span>
-                      <div className="lbar">
-                        <div className="lfill" style={{ width: `${a.depth}%`, background: col }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            ) : (
-              <p>{m.desc}</p>
-            )}
-            {m.cta === 'vision_map' && (
-              <button type="button" className="lcta" onClick={() => onNavigate('vision_map')}>
-                Open the Vision Map ›
-              </button>
-            )}
-            {m.cta === 'agent_intake' && (
-              <button type="button" className="lcta" onClick={() => onNavigate('agent_intake')}>
-                Connect a conversation ›
-              </button>
-            )}
+          <div key={a.id} className="lstat">
+            <span className="ldot" style={{ background: col }} />
+            <span className="lname">{a.display_name}</span>
+            <span className="lpct">{a.depth <= 0 ? 'seed' : `${a.depth}%`}</span>
+            <div className="lbar">
+              <div className="lfill" style={{ width: `${a.depth}%`, background: col }} />
+            </div>
           </div>
         )
-      }
-      return (
-        <div>
-          {MENU.map((m) => (
-            <button key={m.id} type="button" className="lrow" onClick={() => setMenuItem(m.id)}>
-              <span>{m.title}</span>
-              <span className="lchev">›</span>
-            </button>
-          ))}
-        </div>
-      )
-    }
-    const d = sel ? findDatum(sel, up) : null
-    if (!d) return <div className="lhint">Tap any branch to meet its character.</div>
-    const live = nodeById.get(sel!)
-    const col = live ? strandCol(live) : '#c9a86a'
-    const arch = d.archetype
-    // Archetype branch panel: character, strand blend, twigs, marketplace.
-    if (arch) {
-      const isSeed = arch.depth <= 0
-      const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
-      return (
-        <div>
-          <h3>{arch.display_name}</h3>
-          <div className="ltag" style={{ color: col }}>
-            {arch.is_skeptic ? 'THE SKEPTIC · ' : ''}{tag}
+      })}
+    </div>
+  )
+
+  /** A seat's character panel — now lives in the seat's sheet, not under the tree. */
+  const renderSeatCharacter = (arch: ArchetypeStatus) => {
+    const isSeed = arch.depth <= 0
+    const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
+    const col = arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a'
+    return (
+      <div>
+        <div className="lavatar-head">
+          <SeatAvatar avatarUrl={arch.avatar_url} displayName={arch.display_name} size={56} />
+          <div>
+            <h3 style={{ margin: 0 }}>{arch.display_name}</h3>
+            <div className="ltag" style={{ color: col }}>
+              {arch.is_skeptic ? 'THE SKEPTIC · ' : ''}{tag}
+            </div>
           </div>
-          <p>“{arch.prompt_frame}”</p>
-          <AvatarSection arch={arch} onChanged={refreshArchetypes} />
-          <StrandBlendBars weights={arch.strand_weights} />
+        </div>
+        <p>“{arch.prompt_frame}”</p>
+        <AvatarSection arch={arch} onChanged={refreshArchetypes} />
+        <StrandBlendBars weights={arch.strand_weights} />
           {(arch.twigs ?? []).length > 0 ? (
             <div className="ltwigs">
               <div className="lsect">Sub-personalities</div>
@@ -870,8 +937,8 @@ export function LivingTreeView({
               type="button"
               className="lcta"
               onClick={() => {
-                setView('menu')
-                setMenuItem('upload')
+                closeSheet()
+                onNavigate('agent_intake')
               }}
             >
               Upload source materials to begin training ›
@@ -879,7 +946,21 @@ export function LivingTreeView({
           )}
         </div>
       )
+  }
+
+  /** Inline narrative panel under the tree — strand roots only, now that the
+      you-node and the seats open sheets. */
+  const renderPanel = () => {
+    const d = sel ? findDatum(sel, up) : null
+    if (!d || d.archetype) {
+      return (
+        <div className="lhint">
+          Tap the trunk for your options — tap any branch to meet its character.
+        </div>
+      )
     }
+    const live = nodeById.get(sel!)
+    const col = live ? strandCol(live) : '#c9a86a'
     const raw = Math.max(0, d.depth ?? 0)
     const eff = effectiveDepth(d.depth, d.lastTended)
     const fallow = raw > 0.3 && eff < raw * 0.4
@@ -899,10 +980,7 @@ export function LivingTreeView({
           <button
             type="button"
             className="lcta"
-            onClick={() => {
-              setView('menu')
-              setMenuItem('upload')
-            }}
+            onClick={() => onNavigate('agent_intake')}
           >
             Upload source materials to begin training ›
           </button>
@@ -910,6 +988,95 @@ export function LivingTreeView({
       </div>
     )
   }
+
+  /* ---------------- node sheet: menus + mounted views ---------------- */
+
+  /** The node's menu — the one grammar. Tapping a row mounts its view. */
+  const renderNodeMenu = (node: TreeNodeRef) => {
+    const items = node.kind === 'you' ? YOU_MENU : SEAT_MENU
+    return (
+      <div>
+        {items.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className="lrow"
+            onClick={() => setSheetItem(m.id)}
+          >
+            <span>
+              <span className="lrow-t">{m.title}</span>
+              <span className="lrow-d">{m.desc}</span>
+            </span>
+            <span className="lchev">›</span>
+          </button>
+        ))}
+        {node.kind === 'you' && (
+          <div className="llegacy">
+            <div className="lsect">Tree options</div>
+            {LEGACY_YOU_ITEMS.map((m) => {
+              const open = legacyOpen === m.id
+              return (
+                <div key={m.id}>
+                  <button
+                    type="button"
+                    className="lrow"
+                    onClick={() => {
+                      if (m.cta === 'agent_intake') {
+                        closeSheet()
+                        onNavigate('agent_intake')
+                        return
+                      }
+                      setLegacyOpen(open ? null : m.id)
+                    }}
+                  >
+                    <span>{m.title}</span>
+                    <span className="lchev">{m.cta || !open ? '›' : '‹'}</span>
+                  </button>
+                  {open && m.id === 'stats' && renderStatsBlock()}
+                  {open && m.id !== 'stats' && m.desc && <p className="lsub">{m.desc}</p>}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  /** Honest empty state: no fake content, no demo data — later phases fill in. */
+  const renderStillGrowing = (node: TreeNodeRef, item: NodeMenuItemId) => {
+    const name = node.kind === 'you' ? 'your whole council' : node.fellowshipName
+    const copy: Partial<Record<NodeMenuItemId, string>> = {
+      talk: `Conversations with ${name} are still growing — this is where you'll think things through together, right here on the tree. For now, the council's conversation lives in the Workspace view.`,
+    }
+    return (
+      <div className="lgrow">
+        <p className="lgrow-t">Still growing.</p>
+        <p>{copy[item] ?? 'This corner of the tree is still growing.'}</p>
+      </div>
+    )
+  }
+
+  const renderSheetBody = () => {
+    if (!sheetNode) return null
+    if (!sheetItem) return renderNodeMenu(sheetNode)
+    if (sheetItem === 'character' && sheetNode.kind === 'seat') {
+      const arch = archetypes.find((a) => a.id === sheetNode.seatKey)
+      return arch ? renderSeatCharacter(arch) : null
+    }
+    const content = renderSheetContent?.(sheetNode, sheetItem)
+    if (content) return <div className="lsheet-view">{content}</div>
+    return renderStillGrowing(sheetNode, sheetItem)
+  }
+
+  const sheetTitle = !sheetNode
+    ? ''
+    : sheetNode.kind === 'you'
+      ? (initials ?? 'You')
+      : sheetNode.fellowshipName
+  const sheetSubtitle = !sheetNode || sheetNode.kind === 'you'
+    ? 'The source'
+    : sheetNode.archetypeName
 
   return (
     <div
@@ -975,6 +1142,17 @@ export function LivingTreeView({
 .lavatar-err{font-style:normal;color:#e89a9a;font-size:11.5px;margin:6px 0 0}
 .lnarr{max-height:340px;overflow-y:auto}
 .lfoot{margin:10px 6px 0;text-align:center;font-size:10.5px;color:rgba(245,240,232,.45);line-height:1.6}
+.lrow-t{display:block;font-size:13.5px;font-weight:700;color:#f5f0e8}
+.lrow-d{display:block;font-size:11.5px;font-weight:400;color:rgba(245,240,232,.55);margin-top:2px;line-height:1.45}
+.llegacy{margin-top:6px}
+.lgrow{padding:18px 6px;text-align:center}
+.lgrow .lgrow-t{font-size:15px;font-weight:700;font-style:normal;color:#f5f0e8;margin-bottom:8px}
+.lgrow p{font-style:normal;color:rgba(245,240,232,.6);font-size:13px;line-height:1.65;max-width:300px;margin-left:auto;margin-right:auto}
+.lsheet-view{min-height:200px}
+.lsheet-view .lsub{font-style:normal}
+.lavatar-head{display:flex;gap:12px;align-items:center;margin-bottom:2px}
+.lavatar-head h3{margin:0}
+.nsh-panel{user-select:text;-webkit-user-select:text}
       `}</style>
       <div className="lhead">
         <h2>
@@ -1135,6 +1313,16 @@ export function LivingTreeView({
         Training first, rent later —<br />
         the tree is yours; the marketplace is a lens on it, one tap deep.
       </div>
+      <NodeSheet
+        open={!!sheetNode}
+        onClose={closeSheet}
+        onBack={sheetItem ? () => setSheetItem(null) : null}
+        backLabel="Back to menu"
+        title={sheetTitle}
+        subtitle={sheetSubtitle}
+      >
+        {renderSheetBody()}
+      </NodeSheet>
     </div>
   )
 }

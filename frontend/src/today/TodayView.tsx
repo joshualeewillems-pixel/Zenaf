@@ -9,6 +9,13 @@ import { apiBase } from '../apiBase'
  * three cards, a "Next" button pages the rest. Session-stateless: dismissed
  * and engaged ids live in component state for the briefing session only.
  *
+ * `mode` (optional): an engine seat key (e.g. 'guardian'). When set, the
+ * briefing opens as that seat's rendition of today — the deck re-ranks
+ * around the seat from the first fetch. The tree's seat nodes pass their
+ * seat; the you-node passes none (the whole council). Mode discovery keeps
+ * working on top: engaging a card can still propose a different mode, and
+ * clearing returns to the un-moded briefing.
+ *
  * ADHD rules (load-bearing): no badge counts, no red dots, no dumps.
  * Every card shows its `why` plainly — traceability is the product.
  */
@@ -114,7 +121,7 @@ function dateLine(): string {
   })
 }
 
-export default function TodayView() {
+export default function TodayView({ mode: initialMode = null }: { mode?: string | null }) {
   const [items, setItems] = useState<BriefingItem[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
@@ -122,7 +129,7 @@ export default function TodayView() {
   const [engagedId, setEngagedId] = useState<string | null>(null)
   const [suggestedModeRaw, setSuggestedModeRaw] = useState<string | null>(null)
   const [proposalOpen, setProposalOpen] = useState(false)
-  const [activeModeRaw, setActiveModeRaw] = useState<string | null>(null)
+  const [activeModeRaw, setActiveModeRaw] = useState<string | null>(initialMode)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [actingId, setActingId] = useState<string | null>(null)
@@ -151,9 +158,10 @@ export default function TodayView() {
     }
   }
 
-  // Fresh briefing on mount. State is session-only by design.
+  // Fresh briefing on mount. State is session-only by design. When a seat
+  // key arrives as `mode`, the briefing opens as that seat's rendition.
   useEffect(() => {
-    load({ dismissed: [] })
+    load({ dismissed: [], mode: initialMode ?? null })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

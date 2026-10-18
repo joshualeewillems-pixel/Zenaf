@@ -9,6 +9,8 @@ stored or returned.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 
@@ -16,6 +18,8 @@ from api.routes.auth_routes import get_current_user
 from local_ai.agent_intake.pipeline import AgentIntakeError
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+logger = logging.getLogger(__name__)
 
 
 class ConnectBody(BaseModel):
@@ -476,6 +480,7 @@ def confirm_agent(agent_id: str, body: ConfirmBody, current_user: dict = Depends
             accepted=body.accepted,
             corrections=body.corrections or None,
             store=store,
+            user_id=uid,
         )
     except AgentIntakeError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
@@ -751,50 +756,10 @@ def _get_claim(store, agent_id: str, claim_id: str):
     raise HTTPException(status_code=404, detail=f"unknown claim: {claim_id}")
 
 
-def _claim_to_signal(agent, claim, action: str, user_id: str, note: str = ""):
-    """Create a TrainingSignal from a reviewed intake claim."""
-    from local_ai.presence_ingest.schema import TrainingSignal
-    from local_ai.presence_ingest.store import PresenceStore
-    import time
-
-    strand = ""
-    if claim.claim_type == "strand":
-        parts = claim.id.split(":")
-        if len(parts) >= 3 and parts[1] == "strand":
-            strand = parts[2]
-        if not strand and claim.title:
-            from local_ai.agent_intake.review_claims import _STRAND_NAME
-            title_lower = claim.title.lower().replace(" strand", "")
-            for key, name in _STRAND_NAME.items():
-                if name.lower() == title_lower:
-                    strand = key
-                    break
-
-    if action == "accepted":
-        valence, layer = "endorsed", "behavior"
-    elif action == "rejected":
-        valence, layer = "rejected", "behavior"
-    else:
-        valence, layer = "corrected", "guidance"
-
-    signal = TrainingSignal(
-        signal_id=f"intake:{claim.id}:{action}",
-        ts_ms=int(time.time() * 1000),
-        layer=layer,  # type: ignore
-        zone=strand or "self",
-        actor=user_id,
-        summary=claim.inference or claim.title,
-        context_ref={},
-        payload_redacted=claim.evidence or "",
-        valence=valence,  # type: ignore
-        correction_diff=note if note else None,
-        provenance={"source": "agent_intake", "agent_id": agent.id, "claim_id": claim.id, "action": action},
-        supersedes=None,
-        status="approved",
-        session_id="",
-    )
-    PresenceStore().save_candidate_signals([signal])
-    return signal
+# NOTE: claim review verdicts are written to the canonical TrainingSignal
+# store by local_ai.agent_intake.pipeline.log_claim_feedback (kind=
+# "claim_feedback"). The old _claim_to_signal lived here; it moved there
+# in the signals consolidation.
 
 
 @router.post("/backfill-moments")
@@ -919,14 +884,14 @@ def accept_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "accepted")
-    _pipeline_mod.log_claim_feedback(
-        agent.id, claim.id, claim.claim_type, "accepted",
-        evidence=claim.evidence, inference=claim.inference,
-    )
     try:
-        _claim_to_signal(agent, claim, "accepted", uid)
+        _pipeline_mod.log_claim_feedback(
+            agent.id, claim.id, claim.claim_type, "accepted",
+            evidence=claim.evidence, inference=claim.inference,
+            claim_title=claim.title, user_id=uid,
+        )
     except Exception:
-        pass
+        logger.exception("claim feedback signal write failed")
     claim.status = "accepted"
     return claim.to_dict()
 
@@ -940,14 +905,14 @@ def correct_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "corrected", body.note)
-    _pipeline_mod.log_claim_feedback(
-        agent.id, claim.id, claim.claim_type, "corrected", note=body.note,
-        evidence=claim.evidence, inference=claim.inference,
-    )
     try:
-        _claim_to_signal(agent, claim, "corrected", uid, note=body.note)
+        _pipeline_mod.log_claim_feedback(
+            agent.id, claim.id, claim.claim_type, "corrected", note=body.note,
+            evidence=claim.evidence, inference=claim.inference,
+            claim_title=claim.title, user_id=uid,
+        )
     except Exception:
-        pass
+        logger.exception("claim feedback signal write failed")
     claim.status = "corrected"
     claim.user_note = body.note
     return claim.to_dict()
@@ -962,14 +927,14 @@ def explain_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "explained", body.note)
-    _pipeline_mod.log_claim_feedback(
-        agent.id, claim.id, claim.claim_type, "explained", note=body.note,
-        evidence=claim.evidence, inference=claim.inference,
-    )
     try:
-        _claim_to_signal(agent, claim, "explained", uid, note=body.note)
+        _pipeline_mod.log_claim_feedback(
+            agent.id, claim.id, claim.claim_type, "explained", note=body.note,
+            evidence=claim.evidence, inference=claim.inference,
+            claim_title=claim.title, user_id=uid,
+        )
     except Exception:
-        pass
+        logger.exception("claim feedback signal write failed")
     claim.status = "explained"
     claim.user_note = body.note
     return claim.to_dict()
@@ -988,14 +953,14 @@ def reject_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "rejected")
-    _pipeline_mod.log_claim_feedback(
-        agent.id, claim.id, claim.claim_type, "rejected",
-        evidence=claim.evidence, inference=claim.inference,
-    )
     try:
-        _claim_to_signal(agent, claim, "rejected", uid)
+        _pipeline_mod.log_claim_feedback(
+            agent.id, claim.id, claim.claim_type, "rejected",
+            evidence=claim.evidence, inference=claim.inference,
+            claim_title=claim.title, user_id=uid,
+        )
     except Exception:
-        pass
+        logger.exception("claim feedback signal write failed")
     claim.status = "rejected"
     return claim.to_dict()
 
@@ -1009,13 +974,18 @@ def unresolve_claim(agent_id: str, claim_id: str, current_user: dict = Depends(g
     """
     from local_ai.agent_intake import pipeline as _pipeline_mod
 
-    store = _store(_uid(current_user))
+    uid = _uid(current_user)
+    store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     store.update_claim(claim.id, "unresolved")
-    _pipeline_mod.log_claim_feedback(
-        agent.id, claim.id, claim.claim_type, "unresolved",
-        evidence=claim.evidence, inference=claim.inference,
-    )
+    try:
+        _pipeline_mod.log_claim_feedback(
+            agent.id, claim.id, claim.claim_type, "unresolved",
+            evidence=claim.evidence, inference=claim.inference,
+            claim_title=claim.title, user_id=uid,
+        )
+    except Exception:
+        logger.exception("claim feedback signal write failed")
     claim.status = "unresolved"
     return claim.to_dict()
 

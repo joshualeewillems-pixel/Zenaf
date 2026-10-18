@@ -6,15 +6,20 @@ import pytest
 
 from local_ai.pipeline import taste
 from local_ai.pipeline.store import PipelineStore
+from local_ai.presence_ingest.store import PresenceStore
 
 USER = "user-taste"
 
 
 @pytest.fixture()
 def pstore(tmp_path):
-    s = PipelineStore(tmp_path / "pipe.db")
+    # Taste observations live in the canonical signal store, not the
+    # pipeline db — inject an isolated PresenceStore for tests.
+    signals = PresenceStore(tmp_path / "signals.db")
+    s = PipelineStore(tmp_path / "pipe.db", presence_store=signals)
     yield s
     s.close()
+    signals.close()
 
 
 def test_stage_ask_with_no_data(pstore):

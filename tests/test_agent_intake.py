@@ -161,8 +161,12 @@ def store(tmp_path: Path) -> AgentStore:
 
 
 @pytest.fixture()
-def corrections_log(tmp_path: Path) -> Path:
-    return tmp_path / "corrections.jsonl"
+def signals_store(tmp_path: Path):
+    from local_ai.presence_ingest.store import PresenceStore
+
+    s = PresenceStore(tmp_path / "signals.db")
+    yield s
+    s.close()
 
 
 def test_pipeline_redacts_pii_at_capture(store: AgentStore):
@@ -199,20 +203,22 @@ def test_review_queue_lists_pending(store: AgentStore):
     assert len(store.list_all()) == 2
 
 
-def test_confirm_accept_activates(store: AgentStore, corrections_log: Path):
+def test_confirm_accept_activates(store: AgentStore, signals_store):
     agent = connect_agent("A1", "chatgpt", "Helps me write essays.", store=store)
     updated = confirm_agent(
-        agent.id, accepted=True, store=store, corrections_log=corrections_log
+        agent.id, accepted=True, store=store, presence_store=signals_store
     )
     assert updated.status == "active"
     assert store.get(agent.id).status == "active"
     assert store.list_pending() == []
-    # No correction logged on a clean accept.
-    assert not corrections_log.exists()
+    # No correction signal on a clean accept.
+    assert (
+        signals_store.count_signals_by_kind("placement_correction") == 0
+    )
 
 
 def test_confirm_with_corrections_applies_and_logs(
-    store: AgentStore, corrections_log: Path
+    store: AgentStore, signals_store
 ):
     agent = connect_agent(
         "Mediator Bot",
@@ -226,40 +232,45 @@ def test_confirm_with_corrections_applies_and_logs(
         accepted=True,
         corrections={"primary_strand": "people", "kind": "talent"},
         store=store,
-        corrections_log=corrections_log,
+        presence_store=signals_store,
     )
     assert updated.status == "active"
     assert updated.sort.primary_strand == "people"
     assert updated.sort.kind == "talent"
     assert updated.sort.needs_probing is False
-    # Original claims preserved; correction recorded separately.
+    # Original claims preserved; correction recorded separately as a
+    # canonical training signal.
     assert len(updated.sort.claims) == 7
-    lines = corrections_log.read_text(encoding="utf-8").strip().splitlines()
-    assert len(lines) == 1
-    entry = json.loads(lines[0])
-    assert entry["agent_id"] == agent.id
-    assert entry["correction"] == {"primary_strand": "people", "kind": "talent"}
-    assert entry["original"]["primary_strand"] == original_strand
-    assert "ts" in entry
+    signals = signals_store.list_signals_by_kind("placement_correction")
+    assert len(signals) == 1
+    signal = signals[0]
+    assert signal.actor == ""
+    assert signal.valence == "corrected"
+    assert signal.layer == "guidance"
+    assert signal.status == "approved"
+    assert signal.provenance["agent_id"] == agent.id
+    diff = json.loads(signal.correction_diff)
+    assert diff["correction"] == {"primary_strand": "people", "kind": "talent"}
+    assert diff["original"]["primary_strand"] == original_strand
 
 
-def test_confirm_reject_archives(store: AgentStore, corrections_log: Path):
+def test_confirm_reject_archives(store: AgentStore, signals_store):
     agent = connect_agent("A1", "chatgpt", "Helps me write essays.", store=store)
     updated = confirm_agent(
-        agent.id, accepted=False, store=store, corrections_log=corrections_log
+        agent.id, accepted=False, store=store, presence_store=signals_store
     )
     assert updated.status == "archived"
     assert store.list_pending() == []
 
 
-def test_confirm_unknown_agent_raises(store: AgentStore, corrections_log: Path):
+def test_confirm_unknown_agent_raises(store: AgentStore, signals_store):
     with pytest.raises(AgentIntakeError):
         confirm_agent(
-            "nope", accepted=True, store=store, corrections_log=corrections_log
+            "nope", accepted=True, store=store, presence_store=signals_store
         )
 
 
-def test_confirm_invalid_correction_raises(store: AgentStore, corrections_log: Path):
+def test_confirm_invalid_correction_raises(store: AgentStore, signals_store):
     agent = connect_agent("A1", "chatgpt", "Helps me write essays.", store=store)
     with pytest.raises(AgentIntakeError):
         confirm_agent(
@@ -267,7 +278,7 @@ def test_confirm_invalid_correction_raises(store: AgentStore, corrections_log: P
             accepted=True,
             corrections={"primary_strand": "moon"},
             store=store,
-            corrections_log=corrections_log,
+            presence_store=signals_store,
         )
 
 

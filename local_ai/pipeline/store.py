@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from local_ai.presence_ingest.store import PresenceStore
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = REPO_ROOT / "data" / "pipeline"
 DEFAULT_DB_PATH = DATA_DIR / "pipeline.db"
@@ -38,14 +40,10 @@ CREATE TABLE IF NOT EXISTS journal_entries (
     storified INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_journal_user ON journal_entries(user_id, created_at);
-CREATE TABLE IF NOT EXISTS taste_observations (
-    obs_id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    question TEXT NOT NULL DEFAULT '',
-    answer TEXT NOT NULL,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_taste_user ON taste_observations(user_id, created_at);
+-- NOTE: taste_observations was consolidated into the canonical
+-- TrainingSignal store (kind="taste_observation"); the table is no longer
+-- created. Pre-existing tables are imported by
+-- local_ai.presence_ingest.migrate.migrate_taste_observations.
 CREATE TABLE IF NOT EXISTS taste_profiles (
     user_id TEXT PRIMARY KEY,
     shaped INTEGER NOT NULL DEFAULT 0,
@@ -73,17 +71,30 @@ def _new_id() -> str:
 
 
 class PipelineStore:
-    """SQLite-backed pipeline state."""
+    """SQLite-backed pipeline state.
 
-    def __init__(self, db_path: Path | str | None = None) -> None:
+    Taste observations are training data: they live in the canonical
+    TrainingSignal store (see local_ai.presence_ingest), not here.
+    taste_profiles is derived working state and stays local.
+    """
+
+    def __init__(
+        self,
+        db_path: Path | str | None = None,
+        presence_store: PresenceStore | None = None,
+    ) -> None:
         self.db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._presence_store = presence_store
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
+
+    def _signals(self) -> PresenceStore:
+        return self._presence_store or PresenceStore()
 
     def close(self) -> None:
         with self._lock:
@@ -144,40 +155,60 @@ class PipelineStore:
         return self.get_entry(entry_id)
 
     # -- taste ----------------------------------------------------------------
+    # Observations are canonical training signals (kind="taste_observation");
+    # the old taste_observations table is read-only legacy for migration.
 
     def add_taste_observation(
         self, user_id: str, question: str, answer: str
     ) -> dict[str, Any]:
+        from local_ai.pipeline.taste import taste_observation_signal
+
+        store = self._signals()
+        _migrate_observations(store, self.db_path)
         obs_id = _new_id()
         now = _now_iso()
-        with self._lock:
-            self._conn.execute(
-                """INSERT INTO taste_observations (obs_id, user_id, question, answer, created_at)
-                   VALUES (?,?,?,?,?)""",
-                (obs_id, user_id, question, answer, now),
-            )
-            self._conn.commit()
-            row = self._conn.execute(
-                "SELECT * FROM taste_observations WHERE obs_id = ?", (obs_id,)
-            ).fetchone()
-        return dict(row) if row else {}
+        signal = taste_observation_signal(
+            obs_id=obs_id, user_id=user_id, question=question, answer=answer
+        )
+        store.save_candidate_signals([signal])
+        return {
+            "obs_id": obs_id,
+            "user_id": user_id,
+            "question": question,
+            "answer": answer,
+            "created_at": now,
+        }
 
     def count_observations(self, user_id: str) -> int:
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM taste_observations WHERE user_id = ?",
-                (user_id,),
-            ).fetchone()
-        return int(row["n"])
+        store = self._signals()
+        _migrate_observations(store, self.db_path)
+        return store.count_signals_by_kind("taste_observation", actor=user_id)
 
     def list_observations(self, user_id: str, limit: int = 20) -> list[dict[str, Any]]:
-        with self._lock:
-            rows = self._conn.execute(
-                """SELECT * FROM taste_observations WHERE user_id = ?
-                   ORDER BY created_at DESC LIMIT ?""",
-                (user_id, limit),
-            ).fetchall()
-        return [dict(r) for r in rows]
+        store = self._signals()
+        _migrate_observations(store, self.db_path)
+        signals = store.list_signals_by_kind(
+            "taste_observation", actor=user_id, limit=limit
+        )
+        out = []
+        for s in signals:
+            obs_id = s.signal_id
+            if obs_id.startswith("taste:"):
+                obs_id = obs_id[len("taste:"):]
+            out.append(
+                {
+                    "obs_id": obs_id,
+                    "user_id": s.actor,
+                    "question": (s.provenance or {}).get("question", ""),
+                    "answer": s.summary.split(" -> ", 1)[-1]
+                    if " -> " in s.summary
+                    else s.summary,
+                    "created_at": datetime.fromtimestamp(
+                        s.ts_ms / 1000, tz=timezone.utc
+                    ).isoformat(),
+                }
+            )
+        return out
 
     def get_taste_profile(self, user_id: str) -> dict[str, Any]:
         with self._lock:
@@ -272,3 +303,10 @@ class PipelineStore:
         if row is None or row["suggestions"] < 5:
             return None  # not enough data to judge
         return row["accepts"] / row["suggestions"]
+
+
+def _migrate_observations(signals: PresenceStore, pipeline_db_path) -> None:
+    """Lazily import legacy taste_observations rows once per store path."""
+    from local_ai.presence_ingest import migrate as _migrate
+
+    _migrate.ensure_migrated(signals, pipeline_db_path=pipeline_db_path)

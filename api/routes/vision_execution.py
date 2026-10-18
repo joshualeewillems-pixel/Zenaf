@@ -758,6 +758,8 @@ class ChecklistItemIn(BaseModel):
     title: str
     status: str = "open"
     children: list["ChecklistItemIn"] = []
+    person_id: str | None = None
+    asset_id: str | None = None
 
 
 ChecklistItemIn.model_rebuild()
@@ -806,16 +808,22 @@ class ChecklistItemPatch(BaseModel):
     title: str | None = None
     status: str | None = None
     position: int | None = None
+    person_id: str | None = None
+    asset_id: str | None = None
+    clear_person: bool = False
+    clear_asset: bool = False
 
 
 @router.patch("/checklist-items/{item_id}")
 def patch_checklist_item(
     item_id: str, body: ChecklistItemPatch, current_user: dict = Depends(get_current_user)
 ):
-    """Edit a checklist item: title, status (open|done), or position."""
+    """Edit a checklist item: title, status (open|done), position, or person/asset links."""
     try:
         out = S.update_checklist_item(
-            item_id, current_user["id"], body.title, body.status, body.position
+            item_id, current_user["id"], body.title, body.status, body.position,
+            person_id=body.person_id, asset_id=body.asset_id,
+            _clear_person=body.clear_person, _clear_asset=body.clear_asset,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

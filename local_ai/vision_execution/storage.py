@@ -289,6 +289,18 @@ def _migrate_asset_columns(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_checklist_person_asset_columns(conn: sqlite3.Connection) -> None:
+    """Add person_id / asset_id to checklist_items if missing (existing DBs)."""
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='checklist_items'")
+    if cur.fetchone() is None:
+        return
+    for column in ("person_id", "asset_id"):
+        cur = conn.execute("PRAGMA table_info(checklist_items)")
+        if not any(r[1] == column for r in cur.fetchall()):
+            conn.execute(f"ALTER TABLE checklist_items ADD COLUMN {column} TEXT")
+    conn.commit()
+
+
 def _migrate_execution_steps_table(conn: sqlite3.Connection) -> None:
     """Create execution_steps for DBs that predate schema.sql update."""
     cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='execution_steps'")
@@ -868,6 +880,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     if _SCHEMA_PATH.exists():
         conn.executescript(_SCHEMA_PATH.read_text(encoding="utf-8"))
     _migrate_asset_columns(conn)
+    _migrate_checklist_person_asset_columns(conn)
     _migrate_execution_steps_table(conn)
     _migrate_initiative_evaluation_priority(conn)
     _migrate_core_profile_raw_notes(conn)
@@ -3479,10 +3492,15 @@ def _ensure_owned_reference(
 def list_ideas(user_id: str) -> list[dict[str, Any]]:
     conn = get_connection()
     cur = conn.execute(
-        "SELECT id, title, summary, description, status, tags, created_by, desired_outcome, "
-        "linked_people, linked_assets, linked_ideas, created_at, updated_at, notes FROM ideas "
-        "WHERE user_id = ? ORDER BY updated_at DESC",
-        (user_id,),
+        "SELECT i.id, i.title, i.summary, i.description, i.status, i.tags, i.created_by, i.desired_outcome, "
+        "i.linked_people, i.linked_assets, i.linked_ideas, i.created_at, i.updated_at, i.notes, "
+        "COALESCE(cp.total, 0) AS checklist_total, COALESCE(cp.done, 0) AS checklist_done "
+        "FROM ideas i LEFT JOIN ("
+        "SELECT idea_id, COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done "
+        "FROM checklist_items WHERE user_id = ? AND superseded = 0 GROUP BY idea_id"
+        ") cp ON cp.idea_id = i.id "
+        "WHERE i.user_id = ? ORDER BY i.updated_at DESC",
+        (user_id, user_id),
     )
     return [M.row_to_idea(tuple(r)) for r in cur.fetchall()]
 
@@ -3490,9 +3508,15 @@ def list_ideas(user_id: str) -> list[dict[str, Any]]:
 def get_idea(idea_id: str, user_id: str) -> dict[str, Any] | None:
     conn = get_connection()
     cur = conn.execute(
-        "SELECT id, title, summary, description, status, tags, created_by, desired_outcome, "
-        "linked_people, linked_assets, linked_ideas, created_at, updated_at, notes FROM ideas WHERE id = ? AND user_id = ?",
-        (idea_id, user_id),
+        "SELECT i.id, i.title, i.summary, i.description, i.status, i.tags, i.created_by, i.desired_outcome, "
+        "i.linked_people, i.linked_assets, i.linked_ideas, i.created_at, i.updated_at, i.notes, "
+        "COALESCE(cp.total, 0) AS checklist_total, COALESCE(cp.done, 0) AS checklist_done "
+        "FROM ideas i LEFT JOIN ("
+        "SELECT idea_id, COUNT(*) AS total, SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done "
+        "FROM checklist_items WHERE user_id = ? AND superseded = 0 GROUP BY idea_id"
+        ") cp ON cp.idea_id = i.id "
+        "WHERE i.id = ? AND i.user_id = ?",
+        (user_id, idea_id, user_id),
     )
     row = cur.fetchone()
     return M.row_to_idea(tuple(row)) if row else None
@@ -3599,13 +3623,15 @@ def _checklist_row_to_dict(row) -> dict[str, Any]:
         "status": row[4],
         "position": row[5],
         "superseded": bool(row[6]),
-        "created_at": row[7],
-        "updated_at": row[8],
+        "person_id": row[7] if len(row) > 9 else None,
+        "asset_id": row[8] if len(row) > 9 else None,
+        "created_at": row[9] if len(row) > 9 else row[7],
+        "updated_at": row[10] if len(row) > 9 else row[8],
     }
 
 
 _CHECKLIST_COLS = (
-    "id, idea_id, parent_id, title, status, position, superseded, created_at, updated_at"
+    "id, idea_id, parent_id, title, status, position, superseded, person_id, asset_id, created_at, updated_at"
 )
 
 
@@ -3628,6 +3654,8 @@ def create_checklist_item(
     parent_id: str | None = None,
     position: int = 0,
     status: str = "open",
+    person_id: str | None = None,
+    asset_id: str | None = None,
 ) -> dict[str, Any]:
     if get_idea(idea_id, user_id) is None:
         raise ValueError("Idea not found")
@@ -3637,13 +3665,17 @@ def create_checklist_item(
         parent = _get_checklist_item_any(parent_id, user_id)
         if parent is None or parent["idea_id"] != idea_id:
             raise ValueError("parent item not found on this idea")
+    if person_id is not None and get_person(person_id) is None:
+        raise ValueError("person not found")
+    if asset_id is not None and get_asset(asset_id) is None:
+        raise ValueError("asset not found")
     conn = get_connection()
     iid = M.new_id()
     now = _now()
     conn.execute(
         "INSERT INTO checklist_items (id, user_id, idea_id, parent_id, title, status, "
-        "position, superseded, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
-        (iid, user_id, idea_id, parent_id, title, status, position, now, now),
+        "position, superseded, person_id, asset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
+        (iid, user_id, idea_id, parent_id, title, status, position, person_id, asset_id, now, now),
     )
     conn.commit()
     return _get_checklist_item_any(iid, user_id) or {}
@@ -3698,11 +3730,19 @@ def update_checklist_item(
     title: str | None = None,
     status: str | None = None,
     position: int | None = None,
+    person_id: str | None = None,
+    asset_id: str | None = None,
+    _clear_person: bool = False,
+    _clear_asset: bool = False,
 ) -> dict[str, Any] | None:
     if _get_checklist_item_any(item_id, user_id) is None:
         return None
     if status is not None and status not in CHECKLIST_STATUSES:
         raise ValueError(f"unknown checklist status: {status!r}")
+    if person_id is not None and get_person(person_id) is None:
+        raise ValueError("person not found")
+    if asset_id is not None and get_asset(asset_id) is None:
+        raise ValueError("asset not found")
     updates: list[str] = []
     args: list[Any] = []
     if title is not None:
@@ -3714,6 +3754,12 @@ def update_checklist_item(
     if position is not None:
         updates.append("position = ?")
         args.append(position)
+    if person_id is not None or _clear_person:
+        updates.append("person_id = ?")
+        args.append(person_id)
+    if asset_id is not None or _clear_asset:
+        updates.append("asset_id = ?")
+        args.append(asset_id)
     if not updates:
         return get_checklist_item(item_id, user_id)
     updates.append("updated_at = ?")

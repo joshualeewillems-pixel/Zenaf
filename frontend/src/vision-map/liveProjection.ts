@@ -6,8 +6,8 @@
  */
 import type { Edge, Node } from '@xyflow/react'
 import type { MapEdgeTier } from './MapFlowEdge'
-import type { Project, Task } from '../vision-execution/types'
-import { conditionFromSignals, growthFromStatus, isStaleIso } from './deriveVisualState'
+import type { Asset, Person, Project, Task } from '../vision-execution/types'
+import { conditionFromSignals, growthFromStatus, ideaGrowthFromChecklist, isStaleIso } from './deriveVisualState'
 import { findCouncilPreviewForRef } from './councilCorrelation'
 import type { ConditionState, MapEntityRef, MapNodePayload, WaterLevel } from './ontology'
 import type { StudioCouncilRunRow } from './studioCouncilTypes'
@@ -209,7 +209,7 @@ export function buildLiveVisionMapGraph(
               `Status: ${idea.status}`,
               idea.desired_outcome ? `Desired outcome: ${clip(idea.desired_outcome, 160)}` : '',
             ].filter(Boolean),
-            growth: growthFromStatus(idea.status),
+            growth: ideaGrowthFromChecklist(idea.status, idea.checklist_progress),
             condition: conditionFromSignals({ stale }),
           },
           councilRuns,
@@ -314,7 +314,7 @@ export function buildLiveVisionMapGraph(
                   clip(idea.summary || idea.description || '', 200),
                   `Status: ${idea.status}`,
                 ].filter(Boolean),
-                growth: growthFromStatus(idea.status),
+                growth: ideaGrowthFromChecklist(idea.status, idea.checklist_progress),
                 condition: ideaBase,
               },
               councilRuns,
@@ -382,6 +382,58 @@ export function buildLiveVisionMapGraph(
       treeCondition: treeCond,
       treeWaterLevel: waterLevelFromVital(vIni),
     }, bundle, serverVitality)
+  })
+
+  // --- Landmarks: people & assets. No growth narrative, no edges — they orient
+  // the map the way mountains orient a garden. Row above the orphan seeds.
+  const landmarkDefs: { nodeId: string; label: string; subtitle: string; ref: MapEntityRef; updatedAt?: string | null }[] = [
+    ...(bundle.persons ?? []).map((p: Person) => ({
+      nodeId: `landmark-person-${p.id}`,
+      label: p.name || 'Unnamed person',
+      subtitle: `Person${p.role ? ` · ${p.role}` : ''}`,
+      ref: { veType: 'person', id: p.id } as MapEntityRef,
+      updatedAt: p.updated_at,
+    })),
+    ...(bundle.assets ?? []).map((a: Asset) => ({
+      nodeId: `landmark-asset-${a.id}`,
+      label: a.name || 'Unnamed asset',
+      subtitle: `Asset${a.asset_type ? ` · ${a.asset_type}` : ''}`,
+      ref: { veType: 'asset', id: a.id } as MapEntityRef,
+      updatedAt: a.updated_at,
+    })),
+  ]
+  landmarkDefs.forEach((lm, idx) => {
+    const vital = {
+      ownerPresent: false,
+      entityUpdatedAt: lm.updatedAt ?? null,
+      executionShapeComplete: false,
+    }
+    nodes.push({
+      id: lm.nodeId,
+      type: 'entityMap',
+      className: RF_STONE_WRAPPER_CLASS,
+      position: { x: idx * 220, y: -300 },
+      ...mapEntityNodeLayoutPx('landmark'),
+      data: finalizeMapNodePayload(
+        payload(
+          {
+            kind: 'landmark',
+            label: lm.label,
+            subtitle: lm.subtitle,
+            ref: lm.ref,
+            summaryLines: [`${lm.subtitle} — a landmark, not a crop`],
+            growth: 'dormant',
+            condition: 'healthy',
+          },
+          councilRuns,
+          vital,
+        ),
+        bundle,
+        councilRuns,
+        vital,
+        serverVitality,
+      ),
+    })
   })
 
   return { nodes, edges }

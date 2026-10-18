@@ -1,5 +1,5 @@
 import { VISION_EXECUTION_API } from '../vision-execution/types'
-import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
+import type { Asset, Idea, Initiative, Person, Project, Task } from '../vision-execution/types'
 
 function formatFetchFailure(res: Response, bodyText: string): string {
   if (res.status === 401 || res.status === 403) {
@@ -35,30 +35,38 @@ function asArray<T>(x: unknown): T[] {
   return Array.isArray(x) ? (x as T[]) : []
 }
 
-/** Live Vision Execution lists (same routes as VisionExecutionView). */
+/** Live Vision Execution lists (same routes as VisionExecutionView). Persons/assets ride along as garden landmarks. */
 export async function fetchVisionMapEntities(): Promise<{
   ideas: Idea[]
   initiatives: Initiative[]
   projects: Project[]
   tasks: Task[]
+  persons: Person[]
+  assets: Asset[]
 }> {
-  const [ideasRes, iniRes, projRes, taskRes] = await Promise.all([
+  const [ideasRes, iniRes, projRes, taskRes, personsRes, assetsRes] = await Promise.all([
     fetch(`${VISION_EXECUTION_API}/ideas`, { credentials: 'include' }),
     fetch(`${VISION_EXECUTION_API}/initiatives`, { credentials: 'include' }),
     fetch(`${VISION_EXECUTION_API}/projects`, { credentials: 'include' }),
     fetch(`${VISION_EXECUTION_API}/tasks`, { credentials: 'include' }),
+    fetch(`${VISION_EXECUTION_API}/persons`, { credentials: 'include' }),
+    fetch(`${VISION_EXECUTION_API}/assets`, { credentials: 'include' }),
   ])
-  const [ideas, initiatives, projects, tasks] = await Promise.all([
+  const [ideas, initiatives, projects, tasks, persons, assets] = await Promise.all([
     readJson<unknown>(ideasRes),
     readJson<unknown>(iniRes),
     readJson<unknown>(projRes),
     readJson<unknown>(taskRes),
+    readJson<unknown>(personsRes),
+    readJson<unknown>(assetsRes),
   ])
   return {
     ideas: asArray<Idea>(ideas),
     initiatives: asArray<Initiative>(initiatives),
     projects: asArray<Project>(projects),
     tasks: asArray<Task>(tasks),
+    persons: asArray<Person>(persons),
+    assets: asArray<Asset>(assets),
   }
 }
 

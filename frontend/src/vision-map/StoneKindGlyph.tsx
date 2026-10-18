@@ -160,6 +160,21 @@ export function StoneKindGlyph({
     )
   }
 
+  // Landmarks (people/assets): a simple flat slate marker — no carve, no glow,
+  // no growth narrative. They're landmarks, not crops.
+  if (kind === 'landmark') {
+    return (
+      <div className={['relative isolate h-full w-full', className].filter(Boolean).join(' ')} aria-hidden>
+        <svg viewBox="0 0 64 48" className="h-full w-full" aria-hidden>
+          <ellipse cx="32" cy="27" rx="23" ry="15" fill="#4a525c" opacity="0.85" />
+          <ellipse cx="32" cy="24" rx="23" ry="15" fill="#5d6672" />
+          <ellipse cx="26" cy="20" rx="9" ry="4.5" fill="#7d8894" opacity="0.55" />
+          <circle cx="32" cy="24" r="3.2" fill="#9aa4b0" opacity="0.8" />
+        </svg>
+      </div>
+    )
+  }
+
   if (!entity) {
     return null
   }

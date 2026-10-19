@@ -4968,14 +4968,19 @@ function App() {
       )
     }
     if (item === 'talk') {
+      // The unified 1:1 conversation. Seat sheets pre-select the seat (the
+      // character header is rendered above by the tree, PR #147); the
+      // you-node offers the chips with no pre-selection — one persistent
+      // conversation, tap a seat to branch it.
       return node.kind === 'seat' ? (
         <CouncilChat
           key={`talk-${node.seatKey}`}
-          archetypeId={node.seatKey}
+          environment="sheet"
+          initialArchetypeId={node.seatKey}
           displayName={node.fellowshipName}
         />
       ) : (
-        <CouncilChat key="talk-you" />
+        <CouncilChat key="talk-you" environment="sheet" />
       )
     }
     if (node.kind !== 'you') return null

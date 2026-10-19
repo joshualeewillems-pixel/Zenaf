@@ -47,9 +47,13 @@ class VoiceChatTurn(BaseModel):
 
 class VoiceChatBody(BaseModel):
     archetype_id: str = Field(max_length=32)
-    message: str = Field(min_length=1, max_length=_MSG_MAX)
+    message: str = Field(default="", max_length=_MSG_MAX)
     history: list[VoiceChatTurn] = Field(default_factory=list, max_length=_HISTORY_MAX)
     mode: str = Field(default="trained", max_length=16)  # "trained" | "base"
+    # "Question me" (mirrors the landing demo's tap-mode): instead of
+    # responding, the voice asks the user one penetrating question from its
+    # perspective. Message may be empty — the question draws on history.
+    question: bool = Field(default=False)
 
 
 class VoiceChatResponse(BaseModel):
@@ -116,7 +120,7 @@ def voice_chat(
         raise HTTPException(status_code=422, detail=f"Unknown voice: {body.archetype_id!r}")
 
     message = body.message.strip()
-    if not message:
+    if not message and not body.question:
         raise HTTPException(status_code=422, detail="Message is empty.")
 
     mode = (body.mode or "trained").strip().lower()
@@ -171,6 +175,17 @@ def voice_chat(
             "never invent training they don't have.",
         ]
     prompt += ["", _WEAVE_INSTRUCTION, "", "Keep replies conversational (2-5 sentences)."]
+    if body.question:
+        # "Question me" — mirrors the landing demo's question tap-mode: the
+        # voice asks one penetrating question instead of responding.
+        prompt += [
+            "",
+            "The user has asked you to question them — do not answer or respond "
+            "directly. Ask ONE penetrating question from your perspective: the "
+            "single question that would most unlock this situation. Let your "
+            "defining question guide you. Output the question plus at most one "
+            "short sentence of context — no advice, no preamble.",
+        ]
 
     history = (body.history or [])[-10:]
     if history:

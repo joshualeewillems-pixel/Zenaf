@@ -18,6 +18,8 @@ export function mapEntityNodeLayoutPx(kind: MapEntityKind): Readonly<{ width: nu
       return { width: 204, height: 176 }
     case 'landmark':
       return { width: 150, height: 128 }
+    case 'cairn':
+      return { width: 190, height: 216 }
   }
 }
 

@@ -195,6 +195,21 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
     ]
 
 
+#: Shared style guard for base council voices. Models default to
+#: reflective-listening therapy patterns ("That sounds hard", "I hear you",
+#: echoing the speaker's feelings back as the reply) — the uncanny
+#: therapy-mirror Joshua flagged. Warmth comes from honesty and specificity,
+#: not from echoing. This is instruction framing around the card content, not
+#: card content itself: names, mottos, ideals, and philosophies are untouched.
+DIRECT_VOICE_STYLE = (
+    "Style guard — no therapy-speak: never open with reflective-listening "
+    "lines ('That sounds hard', 'I hear you', 'It makes sense you feel ...'), "
+    "and never mirror the speaker's feelings back as your reply. Be direct and "
+    "specific: name the sharp thing, ask the pointed question. Short sentences, "
+    "plain words; let the defining question do the work."
+)
+
+
 @dataclass
 class CouncilArchetype:
     """One council seat archetype — a strand weight vector plus prompt frame."""
@@ -368,6 +383,7 @@ def build_archetype_prompt_lines(
     name = (display_name_override or arch.display_name).strip() or arch.display_name
     lines = [f"Archetype: {name} — {arch.prompt_frame}"]
     lines.extend(philosophy_prompt_lines(archetype_id))
+    lines.append(DIRECT_VOICE_STYLE)
 
     weights = weights_override if weights_override is not None else arch.strand_weights
     if weights:

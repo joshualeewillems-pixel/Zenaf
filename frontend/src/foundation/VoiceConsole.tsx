@@ -75,6 +75,7 @@ export default function VoiceConsole() {
         </p>
         <div className="flex gap-2">
           <input
+            id="demo-claim-code"
             value={claimCode}
             onChange={(e) => setClaimCode(e.target.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 12))}
             placeholder="ABC123"

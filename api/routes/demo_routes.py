@@ -16,6 +16,10 @@ Guards (the demo is a cost center — Character.AI lesson):
 - IP rate limit: DEMO_IP_MAX messages per DEMO_IP_WINDOW_S sliding window.
 - Input cap: DEMO_MSG_MAX chars.
 - Session transcripts are memory-only with SESSION_TTL_S TTL; nothing trains.
+- Claim codes persist in SQLite (data/demo/demo_claims.db) so deploys don't
+  strand outstanding codes; still single-instance in the sense that a
+  multi-instance deploy would need a shared store (note, not a silent
+  assumption).
 - In-memory stores: correct for a single instance; a multi-instance deploy
   would need a shared store (note, not a silent assumption).
 
@@ -25,9 +29,11 @@ own copy only to sustain the conversation within the cap.
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 import uuid
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -87,10 +93,106 @@ _COLOR_WEAVE_INSTRUCTION = (
 #: session -> {"created": float, "transcript": [...], "exchanges": int, "memory": str}
 _sessions: dict[str, dict] = {}
 _ip_hits: dict[str, list[float]] = {}
-#: Claim codes: code -> {"transcript": str, "created": float}. TTL 24h, single-use.
-_claims: dict[str, dict] = {}
+#: Claim-code TTL: 24h, single-use.
 CLAIM_TTL_S = 86400
 _CLAIM_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I/l
+
+#: Claim codes persist in SQLite (data/demo/demo_claims.db) — the old
+#: in-memory dict was wiped by every staging deploy, stranding codes.
+_DEMO_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "demo"
+_DEMO_CLAIMS_DB = _DEMO_DATA_DIR / "demo_claims.db"
+
+_CLAIM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS demo_claims (
+  code TEXT PRIMARY KEY,
+  transcript TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+"""
+
+
+class DemoClaimStore:
+    """SQLite-backed store for demo claim codes.
+
+    Follows the per-domain sqlite convention (conversations, followthrough):
+    one connection guarded by a lock, CREATE TABLE IF NOT EXISTS on init.
+    Single-use and 24h TTL are enforced against the table.
+    """
+
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        self.db_path = Path(db_path) if db_path else _DEMO_CLAIMS_DB
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        with self._lock:
+            self._conn.executescript(_CLAIM_SCHEMA)
+            self._conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def sweep_expired(self, now: float | None = None) -> int:
+        """Delete expired rows. Returns the number removed."""
+        cutoff = (time.time() if now is None else now) - CLAIM_TTL_S
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM demo_claims WHERE created_at <= ?", (cutoff,)
+            )
+            self._conn.commit()
+            return cur.rowcount or 0
+
+    def exists(self, code: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM demo_claims WHERE code = ?", (code,)
+            ).fetchone()
+            return row is not None
+
+    def issue(self, code: str, transcript: str, now: float | None = None) -> None:
+        ts = time.time() if now is None else now
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO demo_claims (code, transcript, created_at)"
+                " VALUES (?, ?, ?)",
+                (code, transcript, ts),
+            )
+            self._conn.commit()
+
+    def consume(self, code: str, now: float | None = None) -> str | None:
+        """Single-use claim: returns the transcript, or None if unknown/expired.
+
+        The row is deleted whether or not it was still valid — a code works once.
+        """
+        ts = time.time() if now is None else now
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT transcript, created_at FROM demo_claims WHERE code = ?",
+                (code,),
+            ).fetchone()
+            self._conn.execute("DELETE FROM demo_claims WHERE code = ?", (code,))
+            self._conn.commit()
+        if row is None:
+            return None
+        if ts - row["created_at"] > CLAIM_TTL_S:
+            return None
+        return row["transcript"]
+
+
+_claim_store: DemoClaimStore | None = None
+_claim_store_lock = threading.Lock()
+
+
+def _get_claim_store() -> DemoClaimStore:
+    """Lazy singleton — avoids creating data dirs at import time, since this
+    module is imported widely (including by tests)."""
+    global _claim_store
+    if _claim_store is None:
+        with _claim_store_lock:
+            if _claim_store is None:
+                _claim_store = DemoClaimStore()
+    return _claim_store
 
 
 class DemoChatBody(BaseModel):
@@ -100,8 +202,8 @@ class DemoChatBody(BaseModel):
     # conversation so far with no new visitor message.
     message: str = Field(default="", max_length=DEMO_MSG_MAX)
     # Speak-turn mode: "respond" (voice answers the conversation) or
-    # "question" (voice asks the visitor one penetrating question). Ignored
-    # for normal typed messages.
+    # "question" (voice asks the visitor one penetrating question). Applies
+    # to voice-chip taps (empty message) AND to typed messages.
     mode: str = Field(default="respond", max_length=16)
 
 
@@ -170,6 +272,14 @@ def _weave_instruction(exchanges_used: int) -> str:
     return _COLOR_WEAVE_INSTRUCTION
 
 
+def _last_voice_turn(transcript: list[dict]) -> dict | None:
+    """Most recent voice (non-visitor) turn in the transcript, or None."""
+    for turn in reversed(transcript):
+        if turn.get("role") != "visitor":
+            return turn
+    return None
+
+
 def _build_demo_prompt(
     voice_id: str,
     transcript: list[dict],
@@ -181,9 +291,12 @@ def _build_demo_prompt(
     """System prompt for one demo turn.
 
     speak=True: the visitor tapped this voice with no new message — the voice
-    responds to the conversation so far from its own perspective.
-    question_mode=True (with speak): instead of responding, the voice asks the
-    visitor one penetrating question from its perspective.
+    responds to the LAST voice response in the transcript (named and quoted),
+    not the conversation in general.
+    question_mode=True: instead of answering, the voice asks the visitor one
+    penetrating question. With speak=True the question targets the last voice
+    response; with a typed message it addresses that message —
+    the message is not answered, it is questioned.
     """
     arch = get_archetype(voice_id)
     weights_override = None
@@ -200,20 +313,60 @@ def _build_demo_prompt(
         "",
     ]
     if speak:
-        if question_mode:
-            prompt.append(
-                "The visitor has tapped you to question them — no new message. Ask the "
-                "visitor ONE penetrating question from your perspective: the single "
-                "question that would most unlock this situation. Let your defining "
-                "question guide you and draw on the council memory. Output the question "
-                "plus at most one short sentence of context — no advice, no preamble."
-            )
+        last = _last_voice_turn(transcript)
+        if last is not None:
+            last_id = str(last.get("role") or "")
+            last_arch = get_archetype(last_id)
+            last_name = last_arch.display_name if last_arch else last_id
+            quote = (last.get("content") or "").strip().replace("\n", " ")
+            if len(quote) > 220:
+                quote = quote[:220].rstrip() + "…"
+            target = "your own last response" if last_id == voice_id else f"{last_name}'s last response"
+            if question_mode:
+                prompt.append(
+                    "The visitor has tapped you to question the thread — no new message. "
+                    f"Ask ONE penetrating question about {target}: \"{quote}\" — the "
+                    "single question that would most unlock what was said. Let your "
+                    "defining question guide you. Output the question plus at most one "
+                    "short sentence of context — no advice, no preamble."
+                )
+            else:
+                prompt.append(
+                    "The visitor has tapped you to respond — no new message. "
+                    f"Respond to {target} specifically: \"{quote}\" — from your "
+                    "perspective: advance it, challenge it, or deepen it. Do not "
+                    "summarize what has been said."
+                )
         else:
-            prompt.append(
-                "The visitor has tapped you to speak — no new message. Respond to the "
-                "conversation so far from your perspective: advance it, challenge it, "
-                "or deepen it. Do not summarize what has been said."
-            )
+            # No voice turn yet (defensive — the endpoint 422s on a truly empty
+            # transcript, but a visitor-only transcript is possible).
+            if question_mode:
+                prompt.append(
+                    "The visitor has tapped you to question them — no new message. Ask the "
+                    "visitor ONE penetrating question from your perspective: the single "
+                    "question that would most unlock this situation. Let your defining "
+                    "question guide you and draw on the council memory. Output the question "
+                    "plus at most one short sentence of context — no advice, no preamble."
+                )
+            else:
+                prompt.append(
+                    "The visitor has tapped you to speak — no new message. Respond to the "
+                    "conversation so far from your perspective: advance it, challenge it, "
+                    "or deepen it. Do not summarize what has been said."
+                )
+        prompt.append("")
+    elif question_mode:
+        # Typed message in question mode: the voice does not answer the
+        # message — it asks the single most penetrating question the message
+        # calls for, guided by its defining question.
+        prompt.append(
+            "The visitor wrote you a message in question mode — do not answer it. "
+            "Ask the single most penetrating question it calls for: the one question "
+            "that would most unlock this situation. Let your defining question guide "
+            "you and draw on the visitor's own words and the council memory. Output "
+            "the question plus at most one short sentence of context — no advice, "
+            "no preamble."
+        )
         prompt.append("")
     if memory:
         prompt.append(
@@ -232,7 +385,9 @@ def _build_demo_prompt(
         'Awkward: "What can your constraints teach us about what you already know well '
         'enough to charge for next week?" Plain: "What do you already know well enough '
         'to charge for next week?" If the visitor speaks more richly, you may rise to '
-        "meet them — but start plain."
+        "meet them — but start plain. Never open with therapy-speak ('That sounds "
+        "hard', 'I hear you', 'It makes sense you feel ...') and never mirror the "
+        "visitor's feelings back as your reply — be direct, be specific."
     )
     if transcript:
         prompt.append("")
@@ -290,8 +445,11 @@ def _kick_memory_refresh(session_id: str) -> None:
 def _speak_turn_params(body: DemoChatBody, sess: dict) -> tuple[bool, bool]:
     """(speak_mode, question_mode) for a demo turn.
 
-    speak_mode: empty message — the tapped voice addresses the conversation.
-    question_mode: speak turn where the voice asks the visitor one question.
+    speak_mode: empty message — the tapped voice addresses the last voice
+    response in the transcript.
+    question_mode: the tapMode toggle is on "question" — honored for voice-chip
+    taps AND for typed messages. With a typed message the voice asks one
+    penetrating question about the message instead of answering it.
     Raises 422 if a speak turn arrives with no conversation yet.
     """
     message = body.message.strip()
@@ -302,7 +460,7 @@ def _speak_turn_params(body: DemoChatBody, sess: dict) -> tuple[bool, bool]:
             detail="Say something first — then tap any voice to have them speak.",
         )
     mode = (body.mode or "respond").strip().lower()
-    question_mode = speak_mode and mode == "question"
+    question_mode = mode == "question"
     return speak_mode, question_mode
 
 
@@ -334,9 +492,10 @@ def _format_transcript_text(transcript: list[dict]) -> str:
 def _new_claim_code() -> str:
     import secrets
 
+    store = _get_claim_store()
     for _ in range(20):
         code = "".join(secrets.choice(_CLAIM_ALPHABET) for _ in range(6))
-        if code not in _claims:
+        if not store.exists(code):
             return code
     raise HTTPException(status_code=503, detail="Could not issue a claim code. Try again.")
 
@@ -365,12 +524,11 @@ def demo_save(body: DemoSaveBody) -> DemoSaveResponse:
 
     No auth. The visitor gets a short code; entering it in their account
     (Foundation tab) pulls the transcript into the intake pipeline —
-    "continue the conversation." Single-use, 24h TTL.
+    "continue the conversation." Single-use, 24h TTL. Codes persist in SQLite
+    so deploys don't strand them.
     """
-    now = time.time()
-    expired = [c for c, v in _claims.items() if now - v["created"] > CLAIM_TTL_S]
-    for c in expired:
-        del _claims[c]
+    store = _get_claim_store()
+    store.sweep_expired()
 
     sess = _sessions.get((body.session_id or "").strip())
     if not sess or not sess["transcript"]:
@@ -380,7 +538,7 @@ def demo_save(body: DemoSaveBody) -> DemoSaveResponse:
         raise HTTPException(status_code=422, detail="Nothing to save yet — say something first.")
 
     code = _new_claim_code()
-    _claims[code] = {"transcript": text, "created": now}
+    store.issue(code, text)
     return DemoSaveResponse(claim_code=code)
 
 
@@ -396,14 +554,10 @@ def demo_claim(
     Single-use: the claim code is consumed.
     """
     code = (body.claim_code or "").strip().upper()
-    entry = _claims.get(code)
-    if not entry:
+    transcript = _get_claim_store().consume(code)
+    if transcript is None:
         raise HTTPException(status_code=404, detail="Claim code not found or expired.")
-    if time.time() - entry["created"] > CLAIM_TTL_S:
-        del _claims[code]
-        raise HTTPException(status_code=404, detail="Claim code expired.")
-    del _claims[code]
-    return DemoClaimResponse(transcript=entry["transcript"])
+    return DemoClaimResponse(transcript=transcript)
 
 
 @router.post("/chat", response_model=DemoChatResponse)

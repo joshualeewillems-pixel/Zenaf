@@ -74,6 +74,7 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
           severity={conditionSeverity}
           fertilizerPulse={!!data.fertilizer_pulse}
           washColor={wash}
+          variantSeed={data.ref.id}
           size={STONE_SIZE_BY_KIND[data.kind] ?? 72}
         />
       </div>

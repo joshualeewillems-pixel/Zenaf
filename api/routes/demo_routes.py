@@ -272,6 +272,14 @@ def _weave_instruction(exchanges_used: int) -> str:
     return _COLOR_WEAVE_INSTRUCTION
 
 
+def _last_voice_turn(transcript: list[dict]) -> dict | None:
+    """Most recent voice (non-visitor) turn in the transcript, or None."""
+    for turn in reversed(transcript):
+        if turn.get("role") != "visitor":
+            return turn
+    return None
+
+
 def _build_demo_prompt(
     voice_id: str,
     transcript: list[dict],
@@ -283,10 +291,11 @@ def _build_demo_prompt(
     """System prompt for one demo turn.
 
     speak=True: the visitor tapped this voice with no new message — the voice
-    responds to the conversation so far from its own perspective.
+    responds to the LAST voice response in the transcript (named and quoted),
+    not the conversation in general.
     question_mode=True: instead of answering, the voice asks the visitor one
-    penetrating question. With speak=True the question addresses the
-    conversation so far; with a typed message it addresses that message —
+    penetrating question. With speak=True the question targets the last voice
+    response; with a typed message it addresses that message —
     the message is not answered, it is questioned.
     """
     arch = get_archetype(voice_id)
@@ -304,20 +313,47 @@ def _build_demo_prompt(
         "",
     ]
     if speak:
-        if question_mode:
-            prompt.append(
-                "The visitor has tapped you to question them — no new message. Ask the "
-                "visitor ONE penetrating question from your perspective: the single "
-                "question that would most unlock this situation. Let your defining "
-                "question guide you and draw on the council memory. Output the question "
-                "plus at most one short sentence of context — no advice, no preamble."
-            )
+        last = _last_voice_turn(transcript)
+        if last is not None:
+            last_id = str(last.get("role") or "")
+            last_arch = get_archetype(last_id)
+            last_name = last_arch.display_name if last_arch else last_id
+            quote = (last.get("content") or "").strip().replace("\n", " ")
+            if len(quote) > 220:
+                quote = quote[:220].rstrip() + "…"
+            target = "your own last response" if last_id == voice_id else f"{last_name}'s last response"
+            if question_mode:
+                prompt.append(
+                    "The visitor has tapped you to question the thread — no new message. "
+                    f"Ask ONE penetrating question about {target}: \"{quote}\" — the "
+                    "single question that would most unlock what was said. Let your "
+                    "defining question guide you. Output the question plus at most one "
+                    "short sentence of context — no advice, no preamble."
+                )
+            else:
+                prompt.append(
+                    "The visitor has tapped you to respond — no new message. "
+                    f"Respond to {target} specifically: \"{quote}\" — from your "
+                    "perspective: advance it, challenge it, or deepen it. Do not "
+                    "summarize what has been said."
+                )
         else:
-            prompt.append(
-                "The visitor has tapped you to speak — no new message. Respond to the "
-                "conversation so far from your perspective: advance it, challenge it, "
-                "or deepen it. Do not summarize what has been said."
-            )
+            # No voice turn yet (defensive — the endpoint 422s on a truly empty
+            # transcript, but a visitor-only transcript is possible).
+            if question_mode:
+                prompt.append(
+                    "The visitor has tapped you to question them — no new message. Ask the "
+                    "visitor ONE penetrating question from your perspective: the single "
+                    "question that would most unlock this situation. Let your defining "
+                    "question guide you and draw on the council memory. Output the question "
+                    "plus at most one short sentence of context — no advice, no preamble."
+                )
+            else:
+                prompt.append(
+                    "The visitor has tapped you to speak — no new message. Respond to the "
+                    "conversation so far from your perspective: advance it, challenge it, "
+                    "or deepen it. Do not summarize what has been said."
+                )
         prompt.append("")
     elif question_mode:
         # Typed message in question mode: the voice does not answer the
@@ -409,7 +445,8 @@ def _kick_memory_refresh(session_id: str) -> None:
 def _speak_turn_params(body: DemoChatBody, sess: dict) -> tuple[bool, bool]:
     """(speak_mode, question_mode) for a demo turn.
 
-    speak_mode: empty message — the tapped voice addresses the conversation.
+    speak_mode: empty message — the tapped voice addresses the last voice
+    response in the transcript.
     question_mode: the tapMode toggle is on "question" — honored for voice-chip
     taps AND for typed messages. With a typed message the voice asks one
     penetrating question about the message instead of answering it.

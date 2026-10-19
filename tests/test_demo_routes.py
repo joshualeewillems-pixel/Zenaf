@@ -95,6 +95,75 @@ def test_demo_prompt_default_has_no_question_language():
     assert "penetrating question" not in prompt
 
 
+# --- Speak turn targets the last voice response ----------------------------
+
+
+def _two_voice_transcript():
+    return [
+        {"role": "visitor", "content": "I'm at a crossroads."},
+        {"role": "skeptic", "content": "What are we assuming here? Who outside this loop has paid?"},
+        {"role": "visitor", "content": "Nobody yet."},
+        {"role": "mentor", "content": "Thirty years holds a pattern. What can it teach you?"},
+    ]
+
+
+def test_speak_turn_targets_last_voice_response():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt("champion", _two_voice_transcript(), speak=True, question_mode=False)
+    assert "Respond to Mentor's last response specifically" in prompt
+    assert "Thirty years holds a pattern" in prompt
+
+
+def test_speak_turn_question_mode_targets_last_response_as_question():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt("skeptic", _two_voice_transcript(), speak=True, question_mode=True)
+    assert "ONE penetrating question about Mentor's last response" in prompt
+    assert "Thirty years holds a pattern" in prompt
+    assert "no advice, no preamble" in prompt
+
+
+def test_speak_turn_same_voice_targets_own_response():
+    from api.routes import demo_routes as dr
+
+    transcript = [
+        {"role": "visitor", "content": "hi"},
+        {"role": "skeptic", "content": "What proof would change your mind?"},
+    ]
+    prompt = dr._build_demo_prompt("skeptic", transcript, speak=True, question_mode=False)
+    assert "your own last response" in prompt
+    assert "What proof would change your mind?" in prompt
+
+
+def test_speak_turn_no_voice_turn_yet_falls_back():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt(
+        "mentor", [{"role": "visitor", "content": "hi"}], speak=True, question_mode=False
+    )
+    assert "Respond to the" in prompt
+    assert "conversation so far" in prompt
+    assert "last response specifically" not in prompt
+
+
+def test_speak_turn_quote_truncated():
+    from api.routes import demo_routes as dr
+
+    long_reply = "word " * 100
+    transcript = [
+        {"role": "visitor", "content": "hi"},
+        {"role": "mentor", "content": long_reply},
+    ]
+    prompt = dr._build_demo_prompt("champion", transcript, speak=True, question_mode=False)
+    head = prompt.split("Conversation so far:")[0]
+    assert "…" in head
+    # The instruction quote is truncated — the full 500-char reply must not
+    # be inlined into the targeting instruction (it still appears verbatim
+    # in the "Conversation so far" transcript dump below, which is fine).
+    assert long_reply not in head
+
+
 # --- Issue 3a: SQLite claim store -------------------------------------------
 
 

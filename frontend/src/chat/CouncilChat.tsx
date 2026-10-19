@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
-import { WeaveText } from '../components/VoiceWeave'
+import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { useSeatMeta } from './SeatChips'
 
 /**
@@ -27,10 +27,10 @@ export type ConversationMessage = {
  * overt separate chats the user manages — this component shows the one
  * thread, with per-message voice attribution.
  *
- * Persistence seam: `conversationId` is accepted and carried as the
- * backend conversation-store key, and `initialMessages` hydrates the
- * thread. The store itself lands in a later build — for now the thread
- * lives in component state and nothing is sent to a store.
+ * Persistence: when `conversationId` is present, the thread hydrates from
+ * GET /conversation and each turn persists via POST /conversation/turn
+ * (carrying the sheet's live `context`). Without it, the thread lives in
+ * component state and sends go to POST /voice/chat with client history.
  *
  * - Sheet seat tab → pre-selected seat (character header rendered above by
  *   the sheet, from PR #147's merged Talk+Character tab).
@@ -47,6 +47,9 @@ export default function CouncilChat({
   displayName,
   conversationId = null,
   initialMessages,
+  context = null,
+  prefill = null,
+  seedMessages = null,
 }: {
   /** 'sheet' = compact, trained-only. 'workspace' = roomier + version toggle. */
   environment: 'sheet' | 'workspace'
@@ -54,10 +57,21 @@ export default function CouncilChat({
   initialArchetypeId?: string | null
   /** Seat fellowship name override for the composer placeholder. */
   displayName?: string
-  /** Backend conversation-store key. Accepted and carried; not sent yet. */
+  /** Backend conversation-store key. When present, the thread hydrates from
+   *  GET /conversation and turns persist via POST /conversation/turn. */
   conversationId?: string | null
   /** Hydration seam: messages a future backend store hands back. */
   initialMessages?: ConversationMessage[]
+  /** Skeleton-store live context carried on every turn (sheet + entity in
+   *  focus). Only sent when conversationId is present. */
+  context?: Record<string, unknown> | null
+  /** External draft injection: when nonce changes, the composer takes this
+   *  text. Never sends on its own. */
+  prefill?: { text: string; nonce: number } | null
+  /** Messages folded into the thread when the store thread is empty (e.g.
+   *  open questions). Client-side only; the store stays the source of truth
+   *  once it has turns. */
+  seedMessages?: ConversationMessage[] | null
 }) {
   const base = apiBase()
   const { names } = useSeatMeta()
@@ -83,6 +97,72 @@ export default function CouncilChat({
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages.length, loading])
 
+  // Skeleton-store hydration: when a conversationId is present, the thread
+  // is the server's. Hydrate once per key; an empty store thread falls back
+  // to seedMessages (folded-in open questions), then to initialMessages.
+  // Seeds apply only while the user hasn't written yet — never clobbering.
+  const namesRef = useRef(names)
+  namesRef.current = names
+  const [storeEmpty, setStoreEmpty] = useState<boolean | null>(null)
+  useEffect(() => {
+    if (!conversationId) return
+    let cancelled = false
+    setStoreEmpty(null)
+    fetch(
+      `${base}/conversation?conversation_id=${encodeURIComponent(conversationId)}&limit=50`,
+      { credentials: 'include' },
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return
+        const rows = data && Array.isArray(data.messages) ? data.messages : []
+        const mapped: ConversationMessage[] = []
+        for (const m of rows) {
+          if (!m || typeof m !== 'object') continue
+          const body = String((m as Record<string, unknown>).body ?? '').trim()
+          if (!body) continue
+          const role = (m as Record<string, unknown>).role === 'user' ? 'user' : 'voice'
+          const aid =
+            typeof (m as Record<string, unknown>).archetype_id === 'string'
+              ? ((m as Record<string, unknown>).archetype_id as string)
+              : null
+          mapped.push({
+            role,
+            content: body,
+            voiceId: role === 'voice' ? aid : null,
+            voiceName: role === 'voice' ? namesRef.current[aid ?? ''] ?? aid ?? undefined : undefined,
+            voiceColor: role === 'voice' && aid ? voiceColor(aid) : undefined,
+          })
+        }
+        if (mapped.length > 0) {
+          setMessages(mapped)
+          setStoreEmpty(false)
+        } else {
+          setStoreEmpty(true)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setStoreEmpty(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [conversationId, base])
+
+  useEffect(() => {
+    if (!conversationId || storeEmpty !== true) return
+    if (!seedMessages || seedMessages.length === 0) return
+    if (messages.some((m) => m.role === 'user')) return
+    setMessages((prev) => (prev.length === 0 ? seedMessages : prev))
+  }, [conversationId, storeEmpty, seedMessages, messages])
+
+  // External draft injection (what's-next chips): take the text, don't send.
+  const prefillNonce = prefill?.nonce ?? 0
+  useEffect(() => {
+    if (prefill && prefillNonce > 0) setInput(prefill.text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillNonce])
+
   const activeName =
     displayName ?? (activeId ? names[activeId] ?? activeId : null) ?? 'a voice'
 
@@ -90,23 +170,36 @@ export default function CouncilChat({
     const text = input.trim()
     if (!activeId || loading) return
     if (!text && !questionMode) return
-    const history = messages.map((m) => ({ role: m.role, content: m.content }))
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setInput('')
     setLoading(true)
     setSignedOut(false)
     try {
-      const r = await fetch(`${base}/voice/chat`, {
+      // Skeleton-store thread: persist via POST /conversation/turn with the
+      // sheet's live context. Otherwise the legacy client-history path.
+      const useStore = Boolean(conversationId)
+      const r = await fetch(useStore ? `${base}/conversation/turn` : `${base}/voice/chat`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          archetype_id: activeId,
-          message: text,
-          history,
-          mode: environment === 'workspace' ? voiceMode : 'trained',
-          question: questionMode,
-        }),
+        body: JSON.stringify(
+          useStore
+            ? {
+                conversation_id: conversationId,
+                archetype_id: activeId,
+                message: text,
+                mode: environment === 'workspace' ? voiceMode : 'trained',
+                question: questionMode,
+                ...(context ? { context } : {}),
+              }
+            : {
+                archetype_id: activeId,
+                message: text,
+                history: messages.map((m) => ({ role: m.role, content: m.content })),
+                mode: environment === 'workspace' ? voiceMode : 'trained',
+                question: questionMode,
+              },
+        ),
       })
       if (r.status === 401) {
         setSignedOut(true)
@@ -138,7 +231,7 @@ export default function CouncilChat({
     } finally {
       setLoading(false)
     }
-  }, [input, loading, activeId, messages, base, environment, voiceMode, questionMode, activeName])
+  }, [input, loading, activeId, messages, base, environment, voiceMode, questionMode, activeName, conversationId, context])
 
   const sendDisabled = loading || !activeId || (!input.trim() && !questionMode)
 

@@ -5079,6 +5079,27 @@ function App() {
   const [foundationTrainingMode, setFoundationTrainingMode] = useState(false)
   /** Core profile `name` field — drives the Foundation core-voice card title. */
   const [foundationCoreProfileCardTitle, setFoundationCoreProfileCardTitle] = useState('')
+
+  // Deep link from the zenaf.ai landing demo: ?claim=1 opens the Foundation
+  // (voices) view and scrolls to + focuses the claim-code input, so a
+  // visitor continuing in their account lands on the code entry instead of
+  // the front page. Query param (not hash): the SPA already parses query
+  // params for gmail_oauth, and hashes are used for in-page anchors.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('claim') !== '1') return
+    setMainView('perspectives')
+    setFoundationPanel('voices')
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    const t = window.setTimeout(() => {
+      const el = document.getElementById('demo-claim-code')
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el.focus({ preventScroll: true })
+      }
+    }, 400)
+    return () => window.clearTimeout(t)
+  }, [])
   /** Perspective Workout: ephemeral directed training in the aside (replaces council UI while active). */
   const [workoutActive, setWorkoutActive] = useState(false)
   const [workoutPerspective, setWorkoutPerspective] = useState<PerspectiveAgent | null>(null)

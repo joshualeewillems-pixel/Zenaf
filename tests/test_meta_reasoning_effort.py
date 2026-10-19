@@ -249,8 +249,9 @@ def test_speak_turn_params_modes():
     assert dr._speak_turn_params(Body("hello"), sess) == (False, False)
     assert dr._speak_turn_params(Body(""), sess) == (True, False)
     assert dr._speak_turn_params(Body("", "question"), sess) == (True, True)
-    # question mode ignored for typed messages
-    assert dr._speak_turn_params(Body("hello", "question"), sess) == (False, False)
+    # question mode honored for typed messages too — the voice questions
+    # the message instead of answering it
+    assert dr._speak_turn_params(Body("hello", "question"), sess) == (False, True)
     # unknown mode falls back to respond
     assert dr._speak_turn_params(Body("", "bogus"), sess) == (True, False)
 

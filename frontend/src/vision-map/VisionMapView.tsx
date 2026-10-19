@@ -345,6 +345,8 @@ function VisionMapFlow({
   const [radarStripRefreshNonce, setRadarStripRefreshNonce] = useState(0)
   /** False until first viewport is centered on a node (avoid fit-to-full-canvas zoom-out flash). */
   const [mapViewportReady, setMapViewportReady] = useState(false)
+  /** Overflow menu for the slim chrome header (Refresh data / Reset layout / tables). */
+  const [chromeMenuOpen, setChromeMenuOpen] = useState(false)
 
   const [nodes, setNodes] = useNodesState<Node<MapNodePayload | NestGroupNodeData>>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -1029,68 +1031,101 @@ function VisionMapFlow({
 
   return (
     <CairnInteractionContext.Provider value={cairnInteractionValue}>
-    <div className="flex flex-1 min-h-0 flex-col bg-stone-900">
-      <header className="flex items-start justify-between gap-3 px-4 py-2 border-b border-stone-700 bg-stone-900/85 shrink-0 flex-wrap">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-lg font-semibold text-stone-100" title={mapHelpTitle}>
+    <div id="vision-map-top" className="flex flex-1 min-h-0 flex-col bg-stone-900">
+      <header
+        data-testid="vision-map-chrome"
+        className="shrink-0 border-b border-stone-700 bg-stone-900/85"
+      >
+        <div className="flex items-center gap-1 px-3 min-h-[44px]">
+          <h1
+            className="min-w-0 flex-1 truncate text-sm font-semibold text-stone-100"
+            title={mapHelpTitle}
+          >
             Vision map
+            <span className="ml-2 text-[10px] font-normal text-stone-400">
+              {loadState === 'ok'
+                ? cairnMeta.cairned
+                  ? `${cairnMeta.cairnCount} cairns · ${cairnMeta.totalStones} stones`
+                  : `${nodeCount} nodes`
+                : loadState}
+            </span>
           </h1>
-          {loadState === 'ok' && cairnMeta.cairned ? (
-            <p className="text-[10px] leading-snug text-stone-400" title={mapHelpTitle}>
-              {cairnMeta.cairnCount} cairns · {cairnMeta.totalStones} stones — long-press a cairn to fan it out
-              {onOpenOperatorMode ? (
-                <>
-                  {' '}·{' '}
+          {loadState === 'ok' && cairnMeta.cairned && onOpenOperatorMode ? (
+            <button
+              type="button"
+              onClick={onOpenOperatorMode}
+              className="shrink-0 min-h-[44px] px-2 text-[11px] text-stone-400 underline underline-offset-2 hover:text-stone-200"
+            >
+              tables
+            </button>
+          ) : null}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setChromeMenuOpen((v) => !v)}
+              aria-expanded={chromeMenuOpen}
+              aria-label="Map options"
+              className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-xl leading-none text-stone-300 hover:bg-stone-800"
+            >
+              ⋯
+            </button>
+            {chromeMenuOpen ? (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close map options"
+                  onClick={() => setChromeMenuOpen(false)}
+                  className="fixed inset-0 z-40 cursor-default bg-transparent"
+                />
+                <div className="absolute right-0 top-full z-50 mt-1 w-52 overflow-hidden rounded-lg border border-stone-600 bg-stone-900 py-1 shadow-xl">
                   <button
                     type="button"
-                    onClick={onOpenOperatorMode}
-                    className="underline underline-offset-2 hover:text-stone-200"
+                    onClick={() => {
+                      setChromeMenuOpen(false)
+                      void load()
+                    }}
+                    disabled={loadState === 'loading'}
+                    className="block min-h-[44px] w-full px-4 py-2 text-left text-sm text-stone-100 hover:bg-stone-800 disabled:opacity-50"
                   >
-                    full set in Vision tables
+                    Refresh data
                   </button>
-                </>
-              ) : null}
-            </p>
-          ) : (
-            <p className="text-[10px] text-stone-500 truncate" title={mapHelpTitle}>
-              {loadState === 'ok' ? `${nodeCount} nodes` : loadState} · hover title for map legend
-            </p>
-          )}
-          {onOpenVeRadar ? (
-            <div className="mt-1.5 max-w-full">
-              <VeRadarAwarenessStrip
-                onOpenVeRadar={onOpenVeRadar}
-                refreshNonce={radarStripRefreshNonce}
-              />
-            </div>
-          ) : null}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChromeMenuOpen(false)
+                      handleResetStoneLayout()
+                    }}
+                    disabled={loadState !== 'ok' || nodeCount === 0}
+                    title="Clear saved stone positions and viewport; use auto-layout positions again"
+                    className="block min-h-[44px] w-full px-4 py-2 text-left text-sm text-stone-200 hover:bg-stone-800 disabled:opacity-40"
+                  >
+                    Reset layout
+                  </button>
+                  {onOpenOperatorMode ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChromeMenuOpen(false)
+                        onOpenOperatorMode()
+                      }}
+                      className="block min-h-[44px] w-full px-4 py-2 text-left text-sm text-stone-200 hover:bg-stone-800"
+                    >
+                      Open tables view
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap pt-0.5">
-          <button
-            type="button"
-            onClick={() => void load()}
-            disabled={loadState === 'loading'}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-stone-800 border border-stone-600 hover:bg-stone-700 disabled:opacity-50 text-stone-100"
-          >
-            Refresh data
-          </button>
-          <button
-            type="button"
-            onClick={handleResetStoneLayout}
-            disabled={loadState !== 'ok' || nodeCount === 0}
-            title="Clear saved stone positions and viewport; use auto-layout positions again"
-            className="px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-600 text-stone-300 hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            Reset layout
-          </button>
-          <button
-            type="button"
-            onClick={onOpenOperatorMode}
-            className="px-4 py-2 rounded-lg bg-stone-700 hover:bg-stone-600 text-sm font-medium text-stone-100 border border-stone-500"
-          >
-            Operator mode (tables)
-          </button>
-        </div>
+        {onOpenVeRadar ? (
+          <div className="max-w-full px-3 pb-1.5">
+            <VeRadarAwarenessStrip
+              onOpenVeRadar={onOpenVeRadar}
+              refreshNonce={radarStripRefreshNonce}
+            />
+          </div>
+        ) : null}
       </header>
 
       <div className="flex flex-1 min-h-0">

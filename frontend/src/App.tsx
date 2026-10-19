@@ -6481,8 +6481,10 @@ function App() {
         )}
 
         {/* Right: Folder review result (when in folder workflow) or conversation panel.
-            Hidden on the Living Tree home view so the tree owns the screen. */}
-        {mainView !== 'living_tree' && (
+            Hidden on the Living Tree home view so the tree owns the screen.
+            Hidden on the Vision map too: the map sheet (MapChatShell) hosts the
+            briefing conversation there — this legacy chat panel is retired. */}
+        {mainView !== 'living_tree' && mainView !== 'vision_map' && (
         <aside
           className={`w-full lg:w-[380px] lg:shrink-0 lg:sticky lg:top-0 flex flex-col min-h-0 h-auto lg:h-[calc(100vh-8rem)] max-h-[78vh] lg:max-h-[calc(100vh-4.5rem)] bg-stone-800/60 overflow-x-hidden shadow-lg ${
             mainView === 'vision_map'

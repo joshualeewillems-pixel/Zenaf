@@ -180,12 +180,12 @@ const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
 ]
 
-/** The one grammar: a seat node's menu. */
+/** The one grammar: a seat node's menu. Talk carries the seat's character card
+    as its header — who you're talking to, then the conversation. */
 const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'today', title: 'Today', desc: 'The day through this seat’s eyes.' },
-  { id: 'talk', title: 'Talk', desc: 'Think something through with this seat.' },
+  { id: 'talk', title: 'Talk', desc: 'Meet the seat, then talk it through.' },
   { id: 'review', title: 'Review', desc: 'This seat’s moments awaiting your verdict.' },
-  { id: 'character', title: 'Character', desc: 'Face, strand blend, sub-personalities.' },
 ]
 
 /**
@@ -695,6 +695,8 @@ export function LivingTreeView({
   const [sheetNode, setSheetNode] = useState<TreeNodeRef | null>(null)
   /** Null = the node's menu; otherwise the mounted menu item. */
   const [sheetItem, setSheetItem] = useState<NodeMenuItemId | null>(null)
+  /** Seat whose full character panel is expanded inside its Talk tab. */
+  const [charExpandedSeat, setCharExpandedSeat] = useState<string | null>(null)
   /** Legacy tree-options row expanded inline in the you-sheet. */
   const [legacyOpen, setLegacyOpen] = useState<string | null>(null)
 
@@ -810,7 +812,7 @@ export function LivingTreeView({
     const datum = live?.datum ?? findDatum(id, up)
     const arch = datum?.archetype
     if (arch) {
-      // Seat branches open their sheet (menu: Today / Talk / Review / Character).
+      // Seat branches open their sheet (menu: Today / Talk / Review).
       setSel(id)
       openSheet({
         kind: 'seat',
@@ -880,15 +882,20 @@ export function LivingTreeView({
     </div>
   )
 
-  /** A seat's character panel — now lives in the seat's sheet, not under the tree. */
-  const renderSeatCharacter = (arch: ArchetypeStatus) => {
+  /**
+   * Talk + Character, one tab: the seat's character card is the head of the
+   * conversation. Compact by default so the composer stays within a short
+   * scroll; the full panel expands inline via disclosure.
+   */
+  const renderCompactSeatHead = (arch: ArchetypeStatus) => {
     const isSeed = arch.depth <= 0
     const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
     const col = arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a'
+    const expanded = charExpandedSeat === arch.id
     return (
       <div>
         <div className="lavatar-head">
-          <SeatAvatar avatarUrl={arch.avatar_url} displayName={arch.display_name} size={56} />
+          <SeatAvatar avatarUrl={arch.avatar_url} displayName={arch.display_name} size={44} />
           <div>
             <h3 style={{ margin: 0 }}>{arch.display_name}</h3>
             <div className="ltag" style={{ color: col }}>
@@ -897,55 +904,79 @@ export function LivingTreeView({
           </div>
         </div>
         <p>“{arch.prompt_frame}”</p>
+        <div className="lstat">
+          <span className="lname">Viability</span>
+          <span className="lpct">{arch.depth}%</span>
+          {isSeed && <span className="lnote"> — training comes first</span>}
+        </div>
+        <button
+          type="button"
+          className="lback"
+          aria-expanded={expanded}
+          onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+        >
+          {expanded ? 'Hide full character ↑' : 'Full character →'}
+        </button>
+        {expanded && renderSeatCharacterBody(arch)}
+      </div>
+    )
+  }
+
+  /** The full character panel body — face unlock, strand blend, twigs,
+      marketplace. Shown via the Talk tab's "Full character" disclosure. */
+  const renderSeatCharacterBody = (arch: ArchetypeStatus) => {
+    const isSeed = arch.depth <= 0
+    return (
+      <div>
         <AvatarSection arch={arch} onChanged={refreshArchetypes} />
         <StrandBlendBars weights={arch.strand_weights} />
-          {(arch.twigs ?? []).length > 0 ? (
-            <div className="ltwigs">
-              <div className="lsect">Sub-personalities</div>
-              {(arch.twigs ?? []).map((t) => (
-                <div key={t.twig_id} className="ltwig">
-                  <span className="lname">{t.display_name}</span>
-                  <span className="ldomain">
-                    {t.domain_label}
-                    {t.status === 'proposed' ? ' · proposed' : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="lsub">
-              No sub-personalities yet — they sprout when your training clusters in a specific domain.
-            </p>
-          )}
-          <div className="lmarket">
-            <div className="lsect">Marketplace</div>
-            <div className="lstat">
-              <span className="lname">Viability</span>
-              <div className="lbar">
-                <div className="lfill" style={{ width: `${arch.depth}%`, background: col }} />
+        {(arch.twigs ?? []).length > 0 ? (
+          <div className="ltwigs">
+            <div className="lsect">Sub-personalities</div>
+            {(arch.twigs ?? []).map((t) => (
+              <div key={t.twig_id} className="ltwig">
+                <span className="lname">{t.display_name}</span>
+                <span className="ldomain">
+                  {t.domain_label}
+                  {t.status === 'proposed' ? ' · proposed' : ''}
+                </span>
               </div>
-              <span className="lpct">{arch.depth}%</span>
-            </div>
-            <p className="lnote">
-              {isSeed
-                ? 'Nothing to rent yet — training comes first. You set the price when there is something worth renting.'
-                : 'No rental price set yet — you set the price per archetype when there is training worth renting.'}
-            </p>
+            ))}
           </div>
-          {isSeed && (
-            <button
-              type="button"
-              className="lcta"
-              onClick={() => {
-                closeSheet()
-                onNavigate('agent_intake')
-              }}
-            >
-              Upload source materials to begin training ›
-            </button>
-          )}
+        ) : (
+          <p className="lsub">
+            No sub-personalities yet — they sprout when your training clusters in a specific domain.
+          </p>
+        )}
+        <div className="lmarket">
+          <div className="lsect">Marketplace</div>
+          <div className="lstat">
+            <span className="lname">Viability</span>
+            <div className="lbar">
+              <div className="lfill" style={{ width: `${arch.depth}%`, background: arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a' }} />
+            </div>
+            <span className="lpct">{arch.depth}%</span>
+          </div>
+          <p className="lnote">
+            {isSeed
+              ? 'Nothing to rent yet — training comes first. You set the price when there is something worth renting.'
+              : 'No rental price set yet — you set the price per archetype when there is training worth renting.'}
+          </p>
         </div>
-      )
+        {isSeed && (
+          <button
+            type="button"
+            className="lcta"
+            onClick={() => {
+              closeSheet()
+              onNavigate('agent_intake')
+            }}
+          >
+            Upload source materials to begin training ›
+          </button>
+        )}
+      </div>
+    )
   }
 
   /** Inline narrative panel under the tree — strand roots only, now that the
@@ -1057,9 +1088,17 @@ export function LivingTreeView({
   const renderSheetBody = () => {
     if (!sheetNode) return null
     if (!sheetItem) return renderNodeMenu(sheetNode)
-    if (sheetItem === 'character' && sheetNode.kind === 'seat') {
+    if (sheetItem === 'talk' && sheetNode.kind === 'seat') {
+      // Merged Talk + Character: the seat's character card heads the conversation.
       const arch = archetypes.find((a) => a.id === sheetNode.seatKey)
-      return arch ? renderSeatCharacter(arch) : null
+      if (!arch) return renderStillGrowing(sheetNode, sheetItem)
+      const chat = renderSheetContent?.(sheetNode, 'talk')
+      return (
+        <div>
+          {renderCompactSeatHead(arch)}
+          {chat ? <div className="lsheet-view">{chat}</div> : renderStillGrowing(sheetNode, 'talk')}
+        </div>
+      )
     }
     const content = renderSheetContent?.(sheetNode, sheetItem)
     if (content) return <div className="lsheet-view">{content}</div>

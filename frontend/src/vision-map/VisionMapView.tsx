@@ -39,10 +39,12 @@ import {
   CAIRN_NARROW_THRESHOLD,
   CAIRN_WIDE_THRESHOLD,
   applyDragPositions,
+  applyGardenStack,
   branchAnchorForCairn,
   collapseCairn,
   dropDragPositions,
   expandCairn,
+  MEGA_CAIRN_ID,
   type CairnEntry,
   type CairnIndex,
 } from './cairn'
@@ -322,6 +324,8 @@ function VisionMapFlow({
   /** Cairn mode: honest counts for the notice; the index + anchors live in refs (not render state). */
   const [cairnMeta, setCairnMeta] = useState({ totalStones: 0, cairnCount: 0, cairned: false })
   const [expandedCairns, setExpandedCairns] = useState<ReadonlySet<string>>(new Set())
+  /** Whole-garden stack: the initiative plus one mega-cairn, everything else hidden. */
+  const [gardenStacked, setGardenStacked] = useState(false)
   const cairnIndexRef = useRef<CairnIndex>({})
   const cairnAnchorRef = useRef<Record<string, XYPosition>>({})
 
@@ -461,6 +465,7 @@ function VisionMapFlow({
       cairnAnchorRef.current = {}
       setCairnMeta({ totalStones: g.totalStones, cairnCount: g.cairnCount, cairned: g.cairned })
       setExpandedCairns(new Set())
+      setGardenStacked(false)
       setBaseGraph({ nodes: g.nodes, edges: g.edges })
       setNestState(EMPTY_NEST_STATE)
       setPositionOverrides(restoredPos)
@@ -477,6 +482,7 @@ function VisionMapFlow({
       cairnIndexRef.current = {}
       setCairnMeta({ totalStones: 0, cairnCount: 0, cairned: false })
       setExpandedCairns(new Set())
+      setGardenStacked(false)
       viewportRestoreRef.current = null
     }
   }, [layoutStorageKey])
@@ -490,10 +496,23 @@ function VisionMapFlow({
    * fanned out around the cairn's current position (relative offsets from
    * the original layout are preserved). Members carry `expandedFromCairn`
    * so a long-press on any of them collapses back.
+   *
+   * When the garden is stacked, this layer is bypassed entirely: the
+   * initiative plus one mega-cairn, and the expanded set is left alone so
+   * unstacking restores the prior arrangement.
    */
+  const { totalStones: cairnTotalStones } = cairnMeta
   const displayGraph = useMemo(() => {
     const empty = new Set<string>()
     if (!baseGraph) return { nodes: [] as Node<MapNodePayload>[], edges: [] as Edge[], expandedMemberIds: empty }
+    if (gardenStacked) {
+      // One pile for the whole garden: the initiative plus the mega-cairn,
+      // zero edges. The 12 project cairns stay in state untouched, so
+      // unstacking restores them exactly where they were — and the
+      // expanded-cairn set is preserved across the round trip.
+      const stacked = applyGardenStack(baseGraph.nodes, baseGraph.edges, cairnTotalStones, true)
+      return { nodes: stacked.nodes, edges: stacked.edges, expandedMemberIds: empty }
+    }
     if (expandedCairns.size === 0) {
       return { nodes: baseGraph.nodes, edges: baseGraph.edges, expandedMemberIds: empty }
     }
@@ -510,10 +529,17 @@ function VisionMapFlow({
       for (const m of entry.memberNodes) expandedMemberIds.add(m.id)
     }
     return { nodes, edges, expandedMemberIds }
-  }, [baseGraph, expandedCairns])
+  }, [baseGraph, expandedCairns, gardenStacked, cairnTotalStones])
 
   const toggleCairn = useCallback(
     (cairnId: string) => {
+      // The mega-cairn's long-press unstacks the garden — consistent with the
+      // cairn grammar (long-press fans a cairn out; the mega-cairn's
+      // "members" are the 12 project cairns).
+      if (cairnId === MEGA_CAIRN_ID) {
+        setGardenStacked(false)
+        return
+      }
       const entry: CairnEntry | undefined = cairnIndexRef.current[cairnId]
       if (!entry) return
       if (expandedCairns.has(cairnId)) {
@@ -543,26 +569,18 @@ function VisionMapFlow({
   )
 
   /**
-   * Garden-wide tidy-up: collapse every expanded cairn, each restored where
-   * its branch stone sits (the same restore path as a single collapse).
-   * Returns true when anything collapsed; false is a no-op the caller can
-   * acknowledge (a silent gesture reads as broken).
+   * Whole-garden stack toggle. Long-press the initiative (or the mega-cairn)
+   * flips between the full garden and one pile — the gesture always does
+   * something visible. Stacking hides the 12 project cairns without moving
+   * them; unstacking restores them exactly where they were.
    */
-  const collapseAllCairns = useCallback(() => {
-    if (expandedCairns.size === 0) return false
-    for (const cairnId of expandedCairns) {
-      const anchor = branchAnchorForCairn(nodes, cairnId)
-      if (anchor) cairnAnchorRef.current[cairnId] = anchor
-    }
-    // Every cairn collapsed: all member drag spots go, next fan-outs start clean.
-    setMemberDragPositions({})
-    setExpandedCairns(new Set())
-    return true
-  }, [nodes, expandedCairns])
+  const toggleGardenStack = useCallback(() => {
+    setGardenStacked((v) => !v)
+  }, [])
 
   const cairnInteractionValue = useMemo(
-    () => ({ onToggleCairn: toggleCairn, onCollapseAllCairns: collapseAllCairns }),
-    [toggleCairn, collapseAllCairns],
+    () => ({ onToggleCairn: toggleCairn, onToggleGardenStack: toggleGardenStack }),
+    [toggleCairn, toggleGardenStack],
   )
 
   /** After a failed load the graph is empty; reset pan/zoom so a prior 20% zoom doesn’t hide the next success. */
@@ -1046,9 +1064,11 @@ function VisionMapFlow({
             Vision map
             <span className="ml-2 text-[10px] font-normal text-stone-400">
               {loadState === 'ok'
-                ? cairnMeta.cairned
-                  ? `${cairnMeta.cairnCount} cairns · ${cairnMeta.totalStones} stones`
-                  : `${nodeCount} nodes`
+                ? gardenStacked
+                  ? `1 cairn · ${cairnMeta.totalStones} stones — long-press to unstack`
+                  : cairnMeta.cairned
+                    ? `${cairnMeta.cairnCount} cairns · ${cairnMeta.totalStones} stones`
+                    : `${nodeCount} nodes`
                 : loadState}
             </span>
           </h1>

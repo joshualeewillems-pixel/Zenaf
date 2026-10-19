@@ -1,5 +1,4 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { useEffect, useRef, useState } from 'react'
 import type { ConditionSeverity, MapEntityKind, MapNodePayload } from './ontology'
 import {
   compactNodeStatusSummary,
@@ -36,8 +35,9 @@ const handleClass =
  * One symbolic stone per node: a single SVG (river-stone silhouette +
  * growth glyph + urgency ring + project color wash) with the label block
  * beneath. Long-press collapses an expanded cairn member back into its
- * cairn; long-press on the initiative (tree) stone collapses every expanded
- * cairn at once; tap keeps the existing select/focus behavior.
+ * cairn; long-press on the initiative (tree) stone toggles the whole-garden
+ * stack — one mega-cairn vs the full garden; tap keeps the existing
+ * select/focus behavior.
  */
 export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const labelTone = stoneTextTone(data.kind)
@@ -50,34 +50,15 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const layoutPx = mapEntityNodeLayoutPx(data.kind)
   const wash = washColorFor(washKeyForPayload(data))
 
-  const { onToggleCairn, onCollapseAllCairns } = useCairnInteraction()
+  const { onToggleCairn, onToggleGardenStack } = useCairnInteraction()
   const expandedFromCairn = (data as { expandedFromCairn?: string }).expandedFromCairn ?? null
   const target = longPressTargetFor(data.kind, expandedFromCairn)
-
-  // "Already stacked" hint: collapse-all with nothing expanded is a no-op,
-  // and a silent gesture reads as broken. Brief transient pill, 44px-safe.
-  const [stackedHint, setStackedHint] = useState(false)
-  const stackedHintTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(
-    () => () => {
-      if (stackedHintTimer.current) clearTimeout(stackedHintTimer.current)
-    },
-    [],
-  )
-  const handleCollapseAll = () => {
-    const didCollapse = onCollapseAllCairns()
-    if (!didCollapse) {
-      setStackedHint(true)
-      if (stackedHintTimer.current) clearTimeout(stackedHintTimer.current)
-      stackedHintTimer.current = setTimeout(() => setStackedHint(false), 1400)
-    }
-  }
 
   const lp = useLongPress(
     target.action === 'collapseCairn'
       ? () => onToggleCairn(target.cairnId)
-      : target.action === 'collapseAll'
-        ? handleCollapseAll
+      : target.action === 'toggleGardenStack'
+        ? onToggleGardenStack
         : null,
   )
 
@@ -97,14 +78,6 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
       title={statusTitle}
       {...lp}
     >
-      {stackedHint ? (
-        <div
-          role="status"
-          className="pointer-events-none absolute -top-1 left-1/2 z-30 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-full border border-stone-600 bg-stone-900/95 px-3 py-1.5 text-[11px] font-medium text-stone-300 shadow-lg"
-        >
-          Already stacked
-        </div>
-      ) : null}
       <div className="flex w-full items-center justify-center pt-2" aria-hidden>
         <SymbolicStone
           growth={data.growth}

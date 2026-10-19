@@ -1,7 +1,14 @@
 import { useCallback } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import type { ConditionSeverity, MapNodePayload } from './ontology'
-import { SymbolicStone, washColorFor, glyphForGrowth, type StoneGlyph } from './symbolicStone'
+import {
+  SymbolicStone,
+  washColorFor,
+  glyphForGrowth,
+  type StoneGlyph,
+} from './symbolicStone'
+import { MEGA_CAIRN_ID, type CairnPreviewStone } from './cairn'
+import { towerLayout, type TowerStone } from './cairnTower'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { useLongPress } from './useLongPress'
 import { useCairnInteraction } from './cairnContext'
@@ -9,38 +16,67 @@ import { hierarchyTitleClass, entitySubtitleClass, stoneTextTone, entityLabelTex
 
 type CairnRfNode = Node<MapNodePayload, 'cairn'>
 
-type CairnPreviewStone = {
-  growth: MapNodePayload['growth']
-  kind: MapNodePayload['kind']
-  severity: number
-  pulse: boolean
-}
-
-const MINI_STONE = 40
-const STACK_LIFT = 24
-const MAX_STACK_GLYPHS = 3
-
 const handleClass =
   '!z-[3] !bg-stone-600/75 !w-2.5 !h-2.5 !min-w-2.5 !min-h-2.5 !border-0 !rounded-full opacity-70 hover:opacity-100 !left-1/2 !-translate-x-1/2 shadow-sm'
 
+/** Whole-pile ring tones — same signal as a single stone's ring. */
+const URGENCY_RING = '#d9a441'
+const PULSE_RING = '#86b89a'
+
 /**
- * Cairn — a project's stones stacked into one node. Renders a vertical
- * stack of 2–4 symbolic stones (most urgent on top) plus a count badge.
- * Tap selects (existing inspector behavior); long-press fans the members out.
+ * Trail-cairn tower geometry lives in ./cairnTower (pure, deterministic):
+ * a rule-of-thirds procedural sculpture — each consecutive triple stays
+ * balanced, so the tower can lean, cantilever and recover like a real
+ * rock-balancing sculpture — with small accent pebbles perched precariously
+ * on column rims as the count grows toward twelve.
+ */
+
+const NEUTRAL_PREVIEW: CairnPreviewStone = {
+  growth: 'dormant',
+  kind: 'branch',
+  severity: 0,
+  pulse: false,
+}
+
+/**
+ * Cairn — a project's stones as one trail-cairn tower. The sub-stones are
+ * purely decorative (aria-hidden, pointer-events-none): the cairn node is
+ * the single hit target for tap (select/inspect), long-press (fan out — or
+ * unstack for the whole-garden mega-cairn), and drag (move the pile).
  */
 export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
   const { onToggleCairn } = useCairnInteraction()
   const toggle = useCallback(() => onToggleCairn(id), [onToggleCairn, id])
   const lp = useLongPress(toggle)
 
-  const preview = ((data.cairnPreview ?? []) as CairnPreviewStone[]).slice(0, MAX_STACK_GLYPHS)
+  const isMega = id === MEGA_CAIRN_ID
+  const preview = (data.cairnPreview ?? []) as CairnPreviewStone[]
   const count = (data.cairnCount as number) ?? preview.length
   const wash = washColorFor((data.cairnProjectId as string) ?? null)
   const severity: ConditionSeverity = effectiveConditionSeverity(data)
   const labelTone = stoneTextTone('branch')
-  // Render top = most urgent: preview arrives urgency-ordered, so the
-  // first stone sits highest in the stack.
-  const stackH = MINI_STONE + Math.max(0, preview.length - 1) * STACK_LIFT
+
+  const { stones, height: towerH, width: towerW } = towerLayout(id, Math.max(count, 1))
+  // Most urgent on top: preview arrives urgency-ordered. Accent pebbles
+  // are neutral (a plain seed glyph reads cleanest at small scale).
+  const stoneData = (st: TowerStone): CairnPreviewStone =>
+    st.accent || st.previewIndex < 0
+      ? NEUTRAL_PREVIEW
+      : (preview[st.previewIndex] ?? preview[preview.length - 1] ?? NEUTRAL_PREVIEW)
+
+  const ring =
+    severity > 0
+      ? { color: URGENCY_RING, opacity: 0.45 + 0.18 * severity }
+      : data.fertilizer_pulse
+        ? { color: PULSE_RING, opacity: 0.85 }
+        : null
+
+  const hint = isMega
+    ? `${count} stones · long-press to unstack`
+    : `${count} stones · long-press to fan out`
+  const title = isMega
+    ? `${data.label} — ${count} stones stacked. Long-press to unstack; tap to inspect.`
+    : `${data.label} — ${count} stones stacked. Long-press to fan out; tap to inspect.`
 
   return (
     <div
@@ -54,32 +90,68 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
         .join(' ')}
       data-map-entity-kind="cairn"
       data-map-condition-severity={String(severity)}
-      title={`${data.label} — ${count} stones stacked. Long-press to fan out; tap to inspect.`}
+      title={title}
       {...lp}
     >
-      <div className="relative mx-auto" style={{ width: MINI_STONE + 20, height: stackH + 10 }} aria-hidden>
-        {preview.map((p, i) => {
-          const lift = (preview.length - 1 - i) * STACK_LIFT
-          return (
-            <div
-              key={i}
-              className="absolute left-1/2"
-              style={{ bottom: lift, transform: 'translateX(-50%)', zIndex: preview.length - i }}
+      <div className="relative mx-auto" style={{ width: towerW, height: towerH + 10 }}>
+        {/* Decorative pile only — no pointer affordances here; the node
+            root above is the single tap/long-press/drag target. */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+          {ring ? (
+            <svg
+              className="absolute -inset-1.5"
+              style={{ width: 'calc(100% + 12px)', height: 'calc(100% + 12px)' }}
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
             >
-              <SymbolicStone
-                growth={p.growth}
-                kind={p.kind}
-                severity={p.severity as ConditionSeverity}
-                fertilizerPulse={p.pulse}
-                washColor={wash}
-                variantSeed={`${id}:${i}`}
-                size={MINI_STONE}
+              <ellipse
+                cx="50"
+                cy="50"
+                rx="46"
+                ry="46"
+                fill="none"
+                stroke={ring.color}
+                strokeWidth={3}
+                vectorEffect="non-scaling-stroke"
+                opacity={ring.opacity}
               />
-            </div>
-          )
-        })}
+            </svg>
+          ) : null}
+          {stones.map((s, i) => {
+            const p = stoneData(s)
+            return (
+              <div
+                key={i}
+                className="absolute"
+                style={{
+                  left: s.left,
+                  top: s.top,
+                  width: s.size,
+                  height: s.size,
+                  transform: `rotate(${s.rotation}deg)`,
+                  // rotate around the stone body's center (viewbox 31.5,38)
+                  transformOrigin: '49.2% 59.4%',
+                }}
+              >
+                <SymbolicStone
+                  growth={s.accent ? 'dormant' : p.growth}
+                  kind={p.kind}
+                  severity={0}
+                  fertilizerPulse={false}
+                  washColor={wash}
+                  variantSeed={s.seed}
+                  size={s.size}
+                  // Only the base stone (index 0 — column is bottom-up)
+                  // touches the ground; stacked stones cast no shadow.
+                  groundShadow={i === 0}
+                />
+              </div>
+            )
+          })}
+        </div>
         <div
           className="absolute -right-0.5 -bottom-0.5 z-20 flex h-6 min-w-6 items-center justify-center rounded-full bg-stone-900 px-1 text-[11px] font-semibold text-stone-100 border border-stone-600"
+          role="img"
           aria-label={`${count} stones`}
         >
           {count}
@@ -88,7 +160,7 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
       <div className="relative z-[20] flex w-full flex-col items-center px-2 pb-2 pt-1">
         <Handle type="target" position={Position.Top} className={`${handleClass} !top-0`} />
         <div className={`w-full max-w-full ${entitySubtitleClass(labelTone)} ${entityLabelTextClass()}`}>
-          {count} stones · long-press to fan out
+          {hint}
         </div>
         <div className={`w-full max-w-full leading-snug ${hierarchyTitleClass('branch')} ${entityLabelTextClass()}`}>
           {data.label}

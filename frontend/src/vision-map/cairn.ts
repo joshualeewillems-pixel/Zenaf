@@ -16,7 +16,7 @@
  * in a jsdom/node harness.
  */
 import type { Edge, Node, XYPosition } from '@xyflow/react'
-import type { MapNodePayload } from './ontology'
+import type { ConditionSeverity, MapNodePayload } from './ontology'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 
 /** Rendered-node thresholds: past these, project subtrees become cairns. */
@@ -75,7 +75,7 @@ function compareUrgencyDesc(a: Node<MapNodePayload>, b: Node<MapNodePayload>): n
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
 }
 
-type CairnPreviewStone = {
+export type CairnPreviewStone = {
   growth: MapNodePayload['growth']
   kind: MapNodePayload['kind']
   severity: number
@@ -283,22 +283,104 @@ export function branchAnchorForCairn(
 
 export type StoneLongPressTarget =
   | { action: 'collapseCairn'; cairnId: string }
-  | { action: 'collapseAll' }
+  | { action: 'toggleGardenStack' }
   | { action: 'none' }
 
 /**
  * What a long-press on a stone should do. Expanded members collapse their
- * own cairn back; the initiative (tree) stone collapses ALL expanded cairns
- * — the garden-wide tidy-up gesture. Everything else: no long-press action,
- * so tap/drag behavior is untouched.
+ * own cairn back; the initiative (tree) stone toggles the whole-garden
+ * stack — one mega-cairn vs the full garden. Everything else: no long-press
+ * action, so tap/drag behavior is untouched.
  */
 export function longPressTargetFor(
   kind: MapNodePayload['kind'],
   expandedFromCairn: string | null,
 ): StoneLongPressTarget {
   if (expandedFromCairn) return { action: 'collapseCairn', cairnId: expandedFromCairn }
-  if (kind === 'tree') return { action: 'collapseAll' }
+  if (kind === 'tree') return { action: 'toggleGardenStack' }
   return { action: 'none' }
+}
+
+/** Node id of the whole-garden mega-cairn. */
+export const MEGA_CAIRN_ID = 'cairn:garden'
+
+/** Vertical gap between the initiative stone and the mega-cairn when stacked. */
+const MEGA_CAIRN_DY = 220
+
+/**
+ * Build the whole-garden mega-cairn node: the initiative's tree node stays,
+ * and this single pile stands in for every other stone in the garden.
+ * Pure — the hidden cairns' positions stay in state untouched, so
+ * unstacking restores them exactly where they were. The mega-cairn's `ref`
+ * points at the initiative, so tapping it opens the initiative's briefing
+ * sheet (`stone:initiative:{id}`), and its preview carries the garden's
+ * most urgent stones (most urgent on top, like project cairns).
+ */
+export function buildMegaCairnNode(
+  nodes: Node<MapNodePayload>[],
+  totalStones: number,
+): Node<MapNodePayload> {
+  const tree = nodes.find((n) => (n.data as MapNodePayload).kind === 'tree')
+  const treeData = tree?.data as MapNodePayload | undefined
+  const ranked = [...nodes].sort(compareUrgencyDesc)
+  const preview: CairnPreviewStone[] = ranked.slice(0, 4).map((m) => {
+    const d = m.data as MapNodePayload
+    return {
+      growth: d.growth,
+      kind: d.kind,
+      severity: effectiveConditionSeverity(d),
+      pulse: !!d.fertilizer_pulse,
+    }
+  })
+  let maxSeverity: ConditionSeverity = 0
+  let anyPulse = false
+  for (const n of nodes) {
+    const d = n.data as MapNodePayload
+    const s = effectiveConditionSeverity(d)
+    if (s > maxSeverity) maxSeverity = s
+    if (d.fertilizer_pulse) anyPulse = true
+  }
+  const ref: MapNodePayload['ref'] = treeData?.ref ?? { veType: 'initiative', id: '' }
+  return {
+    id: MEGA_CAIRN_ID,
+    type: 'cairn',
+    position: tree ? { x: tree.position.x, y: tree.position.y + MEGA_CAIRN_DY } : { x: 0, y: 0 },
+    data: {
+      ...(treeData ?? {}),
+      kind: 'cairn',
+      label: treeData?.label?.trim() || 'The whole garden',
+      subtitle: `${totalStones} stones`,
+      condition_severity: maxSeverity,
+      summaryLines: [
+        `${totalStones} stones stacked — long-press to unstack.`,
+        ...((treeData?.summaryLines ?? []).slice(0, 2)),
+      ],
+      fertilizer_pulse: anyPulse,
+      cairnProjectId: null,
+      cairnCount: totalStones,
+      cairnPreview: preview,
+      ref,
+    },
+  }
+}
+
+/**
+ * Whole-garden stack transform. Stacked: the initiative tree node plus one
+ * mega-cairn, zero edges — the 12 project cairns (and everything else) are
+ * hidden, not moved. Unstacked: the graph passes through untouched.
+ * Pure — the view memoizes this, so the expanded-cairn set and all stored
+ * positions survive the round trip.
+ */
+export function applyGardenStack(
+  nodes: Node<MapNodePayload>[],
+  edges: Edge[],
+  totalStones: number,
+  stacked: boolean,
+): { nodes: Node<MapNodePayload>[]; edges: Edge[] } {
+  if (!stacked) return { nodes, edges }
+  const tree = nodes.find((n) => (n.data as MapNodePayload).kind === 'tree')
+  const mega = buildMegaCairnNode(nodes, totalStones)
+  return { nodes: [...(tree ? [tree] : []), mega], edges: [] }
 }
 
 /**

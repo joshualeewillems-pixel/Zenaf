@@ -141,6 +141,9 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
                   washColor={wash}
                   variantSeed={s.seed}
                   size={s.size}
+                  // Only the base stone (index 0 — column is bottom-up)
+                  // touches the ground; stacked stones cast no shadow.
+                  groundShadow={i === 0}
                 />
               </div>
             )

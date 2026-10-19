@@ -216,6 +216,9 @@ export type SymbolicStoneProps = {
   variantSeed?: string
   /** Rendered px size (square). */
   size?: number
+  /** Ground shadow ellipse. Disable for stones stacked in a tower —
+      only the base stone touches the ground. Defaults to true. */
+  groundShadow?: boolean
   className?: string
   style?: CSSProperties
 }
@@ -228,6 +231,7 @@ export function SymbolicStone({
   washColor,
   variantSeed,
   size = 64,
+  groundShadow = true,
   className,
   style,
 }: SymbolicStoneProps) {
@@ -255,8 +259,10 @@ export function SymbolicStone({
       data-severity={severity}
       data-wash={washColor}
     >
-      {/* ground shadow */}
-      <ellipse cx="32" cy="53" rx="21" ry="3.6" fill="#1c1917" opacity={0.16} />
+      {/* ground shadow — only when this stone touches the ground */}
+      {groundShadow ? (
+        <ellipse cx="32" cy="53" rx="21" ry="3.6" fill="#1c1917" opacity={0.16} />
+      ) : null}
       <g transform={`rotate(${tilt} 32 40)`}>
         <path d={variant.body} fill={granite} />
         <path d={variant.body} fill={washColor} opacity={0.14} />

@@ -34,6 +34,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.routes.auth_routes import get_current_user
+from local_ai.conversation.weave import sanitize_weave as _sanitize_weave
 from local_ai.council.archetypes import (
     STOCK_ARCHETYPES,
     build_archetype_prompt_lines,
@@ -61,6 +62,10 @@ SESSION_TTL_S = 3600
 WEAVE_OPEN = "[[u]]"
 WEAVE_CLOSE = "[[/u]]"
 
+# Shared with the authenticated chat path (local_ai/conversation/reply.py):
+# one sanitizer for every surface that renders woven replies, imported above
+# as _sanitize_weave so existing tests and call sites are untouched.
+
 _COLOR_WEAVE_INSTRUCTION = (
     "As you reply, when you genuinely echo, quote, or build directly on the "
     "visitor's own words or phrasing, wrap those words in [[u]]...[[/u]] markers. "
@@ -75,30 +80,8 @@ _COLOR_WEAVE_INSTRUCTION = (
     'ideas[[/u]], the brave move is to pick one."'
 )
 
-_WEAVE_CLOSE_RE = None  # compiled lazily below to keep module import light
-
-
-def _sanitize_weave(text: str) -> str:
-    """Normalize model-generated [[u]]...[[/u]] markers.
-
-    When weaving densely the model occasionally emits malformed closings
-    ([/u]], [/[/u]]). Normalize known variants to the canonical close, and
-    drop orphan opens so broken markup never reaches the visitor.
-    """
-    import re
-
-    global _WEAVE_CLOSE_RE
-    if _WEAVE_CLOSE_RE is None:
-        _WEAVE_CLOSE_RE = re.compile(r"\[/\[/u\]\]|\[/u\]\]|\[\[/u\]\]")
-    parts = text.split(WEAVE_OPEN)
-    out = [parts[0]]
-    for seg in parts[1:]:
-        m = _WEAVE_CLOSE_RE.search(seg)
-        if m:
-            out.append(WEAVE_OPEN + seg[: m.start()] + WEAVE_CLOSE + seg[m.end() :])
-        else:
-            out.append(seg)  # orphan open marker dropped, words kept
-    return "".join(out)
+# (moved to local_ai.conversation.weave.sanitize_weave; demo_routes keeps the
+# _sanitize_weave alias so existing tests and call sites are untouched)
 
 # In-memory session + rate-limit stores (single-instance; see module docstring).
 #: session -> {"created": float, "transcript": [...], "exchanges": int, "memory": str}

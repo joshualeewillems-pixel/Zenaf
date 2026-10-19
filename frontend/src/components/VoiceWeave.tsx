@@ -52,20 +52,36 @@ export function useDemoVoices(apiBase: string): DemoVoice[] {
 }
 
 const WEAVE_RE = /\[\[u\]\]([\s\S]*?)\[\[\/u\]\]/g
+/**
+ * Model-emitted malformed closings ([/u]], [/[/u]]). The canonical close is
+ * a third alternative so it matches at its earlier position and passes
+ * through untouched — mirroring local_ai/conversation/weave.py.
+ */
+const WEAVE_CLOSE_RE = /\[\/\[\/u\]\]|\[\/u\]\]|\[\[\/u\]\]/g
 
-/** Render text with [[u]]...[[/u]] spans highlighted as the user's woven words. */
+/** Replace malformed closing markers with the canonical [[/u]]. */
+export function normalizeWeave(text: string): string {
+  return text.replace(WEAVE_CLOSE_RE, '[[/u]]')
+}
+
+/**
+ * Render text with [[u]]...[[/u]] spans highlighted as the user's woven words.
+ * Malformed closings the model emits ([/u]], [/[/u]]) are normalized first;
+ * a marker with no recognizable close is left literal (truly malformed).
+ */
 export function WeaveText({ text, className }: { text: string; className?: string }) {
+  const src = normalizeWeave(text)
   const parts: { key: number; weave: boolean; content: string }[] = []
   let last = 0
   let m: RegExpExecArray | null
   let k = 0
   WEAVE_RE.lastIndex = 0
-  while ((m = WEAVE_RE.exec(text)) !== null) {
-    if (m.index > last) parts.push({ key: k++, weave: false, content: text.slice(last, m.index) })
+  while ((m = WEAVE_RE.exec(src)) !== null) {
+    if (m.index > last) parts.push({ key: k++, weave: false, content: src.slice(last, m.index) })
     parts.push({ key: k++, weave: true, content: m[1] })
     last = m.index + m[0].length
   }
-  if (last < text.length) parts.push({ key: k++, weave: false, content: text.slice(last) })
+  if (last < src.length) parts.push({ key: k++, weave: false, content: src.slice(last) })
 
   return (
     <span className={className} style={{ whiteSpace: 'pre-wrap' }}>

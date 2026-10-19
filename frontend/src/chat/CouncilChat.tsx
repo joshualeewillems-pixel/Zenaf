@@ -324,9 +324,9 @@ export default function CouncilChat({
       </div>
 
       {activeId && (
-        <>
+        <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2 space-y-2">
           {/* Demo's Respond / Question me toggle. */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
             <span className="text-xs text-stone-500">Ask to…</span>
             <div
               role="group"
@@ -377,12 +377,12 @@ export default function CouncilChat({
               type="button"
               onClick={send}
               disabled={sendDisabled}
-              className="min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
+              className="shrink-0 min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
             >
               Send
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   )

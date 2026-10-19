@@ -545,10 +545,11 @@ function VisionMapFlow({
   /**
    * Garden-wide tidy-up: collapse every expanded cairn, each restored where
    * its branch stone sits (the same restore path as a single collapse).
-   * Silent no-op when nothing is expanded — no flicker, no notice.
+   * Returns true when anything collapsed; false is a no-op the caller can
+   * acknowledge (a silent gesture reads as broken).
    */
   const collapseAllCairns = useCallback(() => {
-    if (expandedCairns.size === 0) return
+    if (expandedCairns.size === 0) return false
     for (const cairnId of expandedCairns) {
       const anchor = branchAnchorForCairn(nodes, cairnId)
       if (anchor) cairnAnchorRef.current[cairnId] = anchor
@@ -556,6 +557,7 @@ function VisionMapFlow({
     // Every cairn collapsed: all member drag spots go, next fan-outs start clean.
     setMemberDragPositions({})
     setExpandedCairns(new Set())
+    return true
   }, [nodes, expandedCairns])
 
   const cairnInteractionValue = useMemo(

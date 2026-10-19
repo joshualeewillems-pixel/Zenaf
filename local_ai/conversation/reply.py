@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from local_ai.agent_intake.llm_keys import generate as _default_generate
+from local_ai.conversation.weave import sanitize_weave
 from local_ai.council.archetypes import (
     PLAIN_TO_KEY,
     WEIGHT_FLOOR,
@@ -239,13 +240,15 @@ def generate_voice_reply(
         thread_summary=thread_summary,
     )
     gen = generate_fn or _default_generate
-    reply = gen(
-        "\n".join(prompt),
-        provider_id="meta",
-        user_id=user_id,
-        operation="voice-chat",
-        timeout=90,
-    ).strip()
+    reply = sanitize_weave(
+        gen(
+            "\n".join(prompt),
+            provider_id="meta",
+            user_id=user_id,
+            operation="voice-chat",
+            timeout=90,
+        ).strip()
+    )
     return VoiceReply(
         reply=reply,
         archetype_id=meta["archetype_id"],

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MapNodePayload } from './ontology'
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import CouncilChat, { type ConversationMessage } from '../chat/CouncilChat'
@@ -185,6 +185,14 @@ export function MapChatShell({
   const stoneKey = selected ? `${selected.ref.veType}:${selected.ref.id}` : null
   const conversationId = stoneKey ? `stone:${stoneKey}` : null
 
+  // Dismiss the sheet and bring the map back into view — the clear way back.
+  const handleBackToMap = useCallback(() => {
+    onClearSelection()
+    requestAnimationFrame(() => {
+      document.getElementById('vision-map-top')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }, [onClearSelection])
+
   const synopsis = useMemo(
     () => (selected ? composeSynopsis(selected, entityBundle) : []),
     [selected, entityBundle],
@@ -315,9 +323,10 @@ export function MapChatShell({
         {selected && (
           <button
             type="button"
-            onClick={onClearSelection}
-            className="shrink-0 h-8 w-8 flex items-center justify-center rounded-lg border border-stone-600 text-stone-400 hover:text-stone-100 hover:bg-stone-800 text-lg leading-none"
-            aria-label="Clear map selection"
+            onClick={handleBackToMap}
+            className="shrink-0 h-11 w-11 flex items-center justify-center rounded-lg border border-stone-600 text-stone-400 hover:text-stone-100 hover:bg-stone-800 text-xl leading-none"
+            aria-label="Back to map"
+            title="Back to map"
           >
             ×
           </button>
@@ -402,6 +411,17 @@ export function MapChatShell({
                 seedMessages={folded.length > 0 ? folded : null}
                 prefill={prefill}
               />
+            </div>
+
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={handleBackToMap}
+                data-testid="sheet-back-to-map"
+                className="w-full min-h-[48px] rounded-xl border border-stone-600 bg-stone-800/70 hover:bg-stone-700 text-stone-100 text-sm font-medium"
+              >
+                ← Back to the map
+              </button>
             </div>
           </div>
         </div>

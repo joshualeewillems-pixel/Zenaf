@@ -223,7 +223,9 @@ export function ContextActionBarContent({ className = '', idleHint = 've' }: Con
             {c.field_kind}
           </span>
         </div>
-        <FocusInviteChips className="w-full mt-0.5" />
+        {/* On the Vision map the briefing conversation (map sheet) owns next
+            actions — invite chips are retired there, not duplicated. */}
+        {idleHint !== 'map' ? <FocusInviteChips className="w-full mt-0.5" /> : null}
       </div>
       {visible.length > 0 && (
         <div

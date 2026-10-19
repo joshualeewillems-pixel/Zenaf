@@ -7,6 +7,11 @@ Foundation tab's voice console: base voices show the "empty" reference,
 trained voices show how each seat is coming along, and the conversation
 can surface training moments for granular per-voice shaping.
 
+The reply is built by the shared builder in local_ai/conversation/reply.py —
+the same builder POST /conversation/turn uses. Passing `conversation_id`
+joins the persistent skeleton: the server loads history from the store
+(instead of the client-sent `history` array) and persists both turns.
+
 Replies use the [[u]]...[[/u]] color-weave convention for user words the
 voice builds on (rendered by the shared WeaveText component).
 """
@@ -17,27 +22,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from api.routes.auth_routes import get_current_user
-from local_ai.council.archetypes import (
-    PLAIN_TO_KEY,
-    WEIGHT_FLOOR,
-    build_archetype_prompt_lines,
-    compute_skeptic_weights,
-    get_archetype,
-    stock_archetype_ids,
-    voice_color,
-)
+from local_ai.conversation.reply import generate_voice_reply
+from local_ai.conversation.store import ConversationStore
+from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
 _MSG_MAX = 2000
 _HISTORY_MAX = 20
-
-_WEAVE_INSTRUCTION = (
-    "When you genuinely echo, quote, or build directly on the user's own "
-    "words or phrasing, wrap those exact words in [[u]]...[[/u]] markers. "
-    "Use sparingly — only for real echoes of their language. Never wrap "
-    "your own words."
-)
 
 
 class VoiceChatTurn(BaseModel):
@@ -54,6 +46,10 @@ class VoiceChatBody(BaseModel):
     # responding, the voice asks the user one penetrating question from its
     # perspective. Message may be empty — the question draws on history.
     question: bool = Field(default=False)
+    # Join the persistent conversation skeleton: when present, the server
+    # loads the last turns from the store (the client-sent `history` array
+    # is ignored) and persists both turns of this exchange.
+    conversation_id: str | None = Field(default=None, max_length=64)
 
 
 class VoiceChatResponse(BaseModel):
@@ -69,39 +65,8 @@ def _uid(current_user: dict) -> str | None:
     return (current_user or {}).get("id") or (current_user or {}).get("user_id")
 
 
-def _trained_sections(user_id: str, weights: dict[str, float]) -> tuple[list[str], bool]:
-    """Render the user's trained per-strand sections for this voice's blend.
-
-    Returns (sections, has_training). Never raises — empty training falls
-    back honestly to the base voice.
-    """
-    try:
-        from local_ai.council.naming import get_display_name  # noqa: F401
-        from local_ai.personality.blend import render_user_section
-        from local_ai.personality.store import PersonalityStore
-
-        store = PersonalityStore(user_id)
-        try:
-            profile = store.get_current()
-            if profile is None:
-                return [], False
-            version_count = len(store.list_versions())
-            sections: list[str] = []
-            for plain_name, weight in sorted(weights.items(), key=lambda kv: kv[1], reverse=True):
-                if weight < WEIGHT_FLOOR:
-                    continue
-                key = PLAIN_TO_KEY.get(plain_name)
-                if not key:
-                    continue
-                try:
-                    sections.append(render_user_section(profile, key, weight, version_count))
-                except Exception:
-                    continue
-            return sections, bool(sections)
-        finally:
-            store.close()
-    except Exception:
-        return [], False
+def _conversation_store() -> ConversationStore:
+    return ConversationStore()
 
 
 @router.post("/chat", response_model=VoiceChatResponse)
@@ -123,97 +88,62 @@ def voice_chat(
     if not message and not body.question:
         raise HTTPException(status_code=422, detail="Message is empty.")
 
-    mode = (body.mode or "trained").strip().lower()
-    if mode not in ("trained", "base"):
-        mode = "trained"
-
-    # Display name honors the user's rename unlock; stock otherwise.
-    display_name = arch.display_name
-    try:
-        from local_ai.council.naming import get_display_name
-
-        custom = get_display_name(user_id, arch.id)
-        if custom:
-            display_name = custom
-    except Exception:
-        pass
-
-    weights_override = None
-    if arch.strand_weights is None:
-        weights_override = compute_skeptic_weights(user_id)
-    weights = weights_override if weights_override is not None else (arch.strand_weights or {})
-
-    prompt_lines = build_archetype_prompt_lines(
-        arch_id, weights_override=weights_override, display_name_override=display_name
-    )
-
-    sections: list[str] = []
-    has_training = False
-    mode_used = "base"
-    if mode == "trained":
-        sections, has_training = _trained_sections(user_id, weights)
-        if has_training:
-            mode_used = "trained"
-
-    prompt = [
-        f"You are {display_name}, a voice in the user's Zenaf council, in a direct one-on-one conversation.",
-        "",
-        *prompt_lines,
-    ]
-    if sections:
-        prompt += [
-            "",
-            "The user's trained patterns for the faculties you draw on (observed, approved by them):",
-            "",
-            *sections,
-        ]
+    store: ConversationStore | None = None
+    conversation_id: str | None = None
+    history: list[VoiceChatTurn] = []
+    thread_summary: str | None = None
+    if body.conversation_id:
+        # Skeleton mode: server-side history is the source of truth.
+        conversation_id = (body.conversation_id or "skeleton").strip() or "skeleton"
+        store = _conversation_store()
+        store.ensure_conversation(user_id, conversation_id)
+        for m in store.history(user_id, conversation_id, limit=10):
+            history.append(
+                VoiceChatTurn(role=m["role"], content=m["body"])
+            )
+        thread_summary = (
+            store.get_thread_state(user_id, conversation_id, arch_id)["summary"] or None
+        )
     else:
-        prompt += [
-            "",
-            "Note: this user has no published training data for your faculties yet — "
-            "you are the aspirational base voice. Be honest about that if it matters; "
-            "never invent training they don't have.",
-        ]
-    prompt += ["", _WEAVE_INSTRUCTION, "", "Keep replies conversational (2-5 sentences)."]
-    if body.question:
-        # "Question me" — mirrors the landing demo's question tap-mode: the
-        # voice asks one penetrating question instead of responding.
-        prompt += [
-            "",
-            "The user has asked you to question them — do not answer or respond "
-            "directly. Ask ONE penetrating question from your perspective: the "
-            "single question that would most unlock this situation. Let your "
-            "defining question guide you. Output the question plus at most one "
-            "short sentence of context — no advice, no preamble.",
-        ]
-
-    history = (body.history or [])[-10:]
-    if history:
-        prompt.append("")
-        prompt.append("Conversation so far:")
-        for turn in history:
-            who = "User" if turn.role == "user" else display_name
-            prompt.append(f"{who}: {turn.content[:2000]}")
-    prompt.append(f"User: {message}")
-    prompt.append(f"{display_name}:")
+        history = (body.history or [])[-10:]
 
     try:
-        from local_ai.agent_intake.llm_keys import generate as _generate
-
-        reply = _generate(
-            "\n".join(prompt), provider_id="meta", user_id=user_id,
-            operation="voice-chat", timeout=90,
-        ).strip()
+        voice_reply = generate_voice_reply(
+            user_id,
+            arch_id,
+            message,
+            history,
+            mode=body.mode,
+            question=body.question,
+            thread_summary=thread_summary,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     except Exception as exc:  # noqa: BLE001 — loud failure
         raise HTTPException(status_code=502, detail=f"Voice unavailable: {exc}")
 
+    if store is not None and conversation_id is not None:
+        mode_used = voice_reply.mode_used
+        store.append_message(
+            user_id, conversation_id, arch_id, "user", message, mode=body.mode
+        )
+        store.append_message(
+            user_id, conversation_id, arch_id, "voice", voice_reply.reply, mode=mode_used
+        )
+        # Touch the seat's thread (counter only; rolling summaries refresh on
+        # the /conversation/turn path to keep /voice/chat latency unchanged).
+        try:
+            store.update_thread_state(user_id, conversation_id, arch_id, increment=1)
+        except Exception:
+            pass
+
     return VoiceChatResponse(
-        reply=reply,
-        archetype_id=arch_id,
-        display_name=display_name,
-        voice_color=voice_color(arch_id),
-        mode_used=mode_used,
-        has_training=has_training,
+        reply=voice_reply.reply,
+        archetype_id=voice_reply.archetype_id,
+        display_name=voice_reply.display_name,
+        voice_color=voice_reply.voice_color,
+        mode_used=voice_reply.mode_used,
+        has_training=voice_reply.has_training,
     )

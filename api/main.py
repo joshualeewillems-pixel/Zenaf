@@ -265,6 +265,16 @@ except Exception as e:
     print(f"Today routes not loaded: {e}")
     _router_load_errors.append(f"today: {e}")
 
+# Conversation skeleton — one persistent conversation per user, branching
+# into personas (seat chips) and site activities (live context per turn).
+# POST /conversation/turn, GET /conversation, GET /conversation/suggestions.
+try:
+    from api.routes.conversation_routes import router as conversation_router
+    app.include_router(conversation_router)
+except Exception as e:
+    print(f"Conversation routes not loaded: {e}")
+    _router_load_errors.append(f"conversation: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

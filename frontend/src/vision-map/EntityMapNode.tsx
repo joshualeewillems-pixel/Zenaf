@@ -11,6 +11,7 @@ import {
 import { mapEntityNodeLayoutPx } from './mapEntityNodeLayout'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { SymbolicStone, washColorFor, washKeyForPayload } from './symbolicStone'
+import { longPressTargetFor } from './cairn'
 import { useLongPress } from './useLongPress'
 import { useCairnInteraction } from './cairnContext'
 
@@ -34,7 +35,8 @@ const handleClass =
  * One symbolic stone per node: a single SVG (river-stone silhouette +
  * growth glyph + urgency ring + project color wash) with the label block
  * beneath. Long-press collapses an expanded cairn member back into its
- * cairn; tap keeps the existing select/focus behavior.
+ * cairn; long-press on the initiative (tree) stone collapses every expanded
+ * cairn at once; tap keeps the existing select/focus behavior.
  */
 export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const labelTone = stoneTextTone(data.kind)
@@ -47,9 +49,16 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const layoutPx = mapEntityNodeLayoutPx(data.kind)
   const wash = washColorFor(washKeyForPayload(data))
 
-  const { onToggleCairn } = useCairnInteraction()
+  const { onToggleCairn, onCollapseAllCairns } = useCairnInteraction()
   const expandedFromCairn = (data as { expandedFromCairn?: string }).expandedFromCairn ?? null
-  const lp = useLongPress(expandedFromCairn ? () => onToggleCairn(expandedFromCairn) : null)
+  const target = longPressTargetFor(data.kind, expandedFromCairn)
+  const lp = useLongPress(
+    target.action === 'collapseCairn'
+      ? () => onToggleCairn(target.cairnId)
+      : target.action === 'collapseAll'
+        ? () => onCollapseAllCairns()
+        : null,
+  )
 
   return (
     <div

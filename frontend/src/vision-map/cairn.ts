@@ -259,3 +259,44 @@ export function collapseCairn(
     ],
   }
 }
+
+type ExpandedTag = { expandedFromCairn?: string }
+function expandedTagOf(n: Node<MapNodePayload>): ExpandedTag {
+  return (n.data ?? {}) as ExpandedTag
+}
+
+/**
+ * Collapse anchor for one cairn: the branch stone's current position, so the
+ * cairn reappears where its branch sits now (following drags). Null when the
+ * branch member isn't on screen — the caller keeps the last stored anchor.
+ * This is the single-collapse restore path; collapse-all reuses it per cairn.
+ */
+export function branchAnchorForCairn(
+  nodes: Node<MapNodePayload>[],
+  cairnId: string,
+): { x: number; y: number } | null {
+  const branch = nodes.find(
+    (n) => expandedTagOf(n).expandedFromCairn === cairnId && n.data.kind === 'branch',
+  )
+  return branch ? { ...branch.position } : null
+}
+
+export type StoneLongPressTarget =
+  | { action: 'collapseCairn'; cairnId: string }
+  | { action: 'collapseAll' }
+  | { action: 'none' }
+
+/**
+ * What a long-press on a stone should do. Expanded members collapse their
+ * own cairn back; the initiative (tree) stone collapses ALL expanded cairns
+ * — the garden-wide tidy-up gesture. Everything else: no long-press action,
+ * so tap/drag behavior is untouched.
+ */
+export function longPressTargetFor(
+  kind: MapNodePayload['kind'],
+  expandedFromCairn: string | null,
+): StoneLongPressTarget {
+  if (expandedFromCairn) return { action: 'collapseCairn', cairnId: expandedFromCairn }
+  if (kind === 'tree') return { action: 'collapseAll' }
+  return { action: 'none' }
+}

@@ -38,6 +38,7 @@ import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX, NEST_NODE_LAYOUT_WIDTH_PX } 
 import {
   CAIRN_NARROW_THRESHOLD,
   CAIRN_WIDE_THRESHOLD,
+  branchAnchorForCairn,
   collapseCairn,
   expandCairn,
   type CairnEntry,
@@ -505,12 +506,8 @@ function VisionMapFlow({
       if (!entry) return
       if (expandedCairns.has(cairnId)) {
         // Collapsing: the cairn reappears where its branch stone sits now.
-        const branch = nodes.find(
-          (n) =>
-            (n.data as MapNodePayload)?.expandedFromCairn === cairnId &&
-            (n.data as MapNodePayload).kind === 'branch',
-        )
-        if (branch) cairnAnchorRef.current[cairnId] = { ...branch.position }
+        const anchor = branchAnchorForCairn(nodes, cairnId)
+        if (anchor) cairnAnchorRef.current[cairnId] = anchor
         setExpandedCairns((prev) => {
           const next = new Set(prev)
           next.delete(cairnId)
@@ -525,7 +522,24 @@ function VisionMapFlow({
     [nodes, expandedCairns],
   )
 
-  const cairnInteractionValue = useMemo(() => ({ onToggleCairn: toggleCairn }), [toggleCairn])
+  /**
+   * Garden-wide tidy-up: collapse every expanded cairn, each restored where
+   * its branch stone sits (the same restore path as a single collapse).
+   * Silent no-op when nothing is expanded — no flicker, no notice.
+   */
+  const collapseAllCairns = useCallback(() => {
+    if (expandedCairns.size === 0) return
+    for (const cairnId of expandedCairns) {
+      const anchor = branchAnchorForCairn(nodes, cairnId)
+      if (anchor) cairnAnchorRef.current[cairnId] = anchor
+    }
+    setExpandedCairns(new Set())
+  }, [nodes, expandedCairns])
+
+  const cairnInteractionValue = useMemo(
+    () => ({ onToggleCairn: toggleCairn, onCollapseAllCairns: collapseAllCairns }),
+    [toggleCairn, collapseAllCairns],
+  )
 
   /** After a failed load the graph is empty; reset pan/zoom so a prior 20% zoom doesn’t hide the next success. */
   useEffect(() => {

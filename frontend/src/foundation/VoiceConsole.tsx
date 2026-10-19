@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
-import { WeaveText, voiceColor, useDemoVoices, type DemoVoice } from '../components/VoiceWeave'
+import { voiceColor, useDemoVoices, type DemoVoice } from '../components/VoiceWeave'
+import VoiceChat from '../chat/VoiceChat'
 
 /**
  * Foundation tab voice console — Joshua's 2026-10-16 concept.
@@ -13,8 +14,6 @@ import { WeaveText, voiceColor, useDemoVoices, type DemoVoice } from '../compone
  * Also hosts the demo claim-code entry: "continue the conversation" —
  * a landing-demo transcript pulled into the intake pipeline.
  */
-
-type ChatMsg = { role: 'user' | 'voice'; content: string }
 
 type VoiceStatus = {
   id: string
@@ -29,18 +28,9 @@ export default function VoiceConsole() {
   const [mode, setMode] = useState<'trained' | 'base'>('trained')
   const [statuses, setStatuses] = useState<VoiceStatus[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [messages, setMessages] = useState<ChatMsg[]>([])
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [modeUsed, setModeUsed] = useState<string | null>(null)
   const [claimCode, setClaimCode] = useState('')
   const [claimMsg, setClaimMsg] = useState<string | null>(null)
   const [claiming, setClaiming] = useState(false)
-  const chatEndRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
 
   // Per-voice training depth (the "how it's coming along" bars).
   useEffect(() => {
@@ -85,37 +75,7 @@ export default function VoiceConsole() {
 
   const openVoice = (id: string) => {
     setActiveId(id)
-    setMessages([])
-    setModeUsed(null)
   }
-
-  const send = useCallback(async () => {
-    const text = input.trim()
-    if (!text || loading || !activeId) return
-    const history = messages.map((m) => ({ role: m.role, content: m.content }))
-    setMessages((prev) => [...prev, { role: 'user', content: text }])
-    setInput('')
-    setLoading(true)
-    try {
-      const r = await fetch(`${base}/voice/chat`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ archetype_id: activeId, message: text, history, mode }),
-      })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const data = await r.json()
-      setMessages((prev) => [...prev, { role: 'voice', content: data.reply }])
-      setModeUsed(data.mode_used)
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'voice', content: "I couldn't reach my voice just now — try again in a moment." },
-      ])
-    } finally {
-      setLoading(false)
-    }
-  }, [input, loading, activeId, messages, base, mode])
 
   const claim = async () => {
     const code = claimCode.trim().toUpperCase()
@@ -222,64 +182,17 @@ export default function VoiceConsole() {
         })}
       </div>
 
-      {/* Chat with the selected voice */}
+      {/* Chat with the selected voice — the shared VoiceChat component (also used by the tree's Talk sheets). */}
       {activeVoice && (
         <div className="rounded-xl border border-stone-700 bg-stone-900/50 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-sm font-semibold" style={{ color: activeVoice.color }}>
-              {displayName(activeVoice.id)}
-              {modeUsed && (
-                <span className="ml-2 text-[11px] font-normal text-stone-500">
-                  {modeUsed === 'trained' ? 'your trained voice' : 'base voice (no training yet)'}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={() => setActiveId(null)}
-              className="text-xs text-stone-500 min-h-[44px] px-2"
-              aria-label="Close voice chat"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="max-h-[300px] overflow-y-auto space-y-2 mb-3">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm leading-snug ${
-                    m.role === 'user' ? 'bg-stone-700 text-stone-100' : 'bg-stone-800/80 border text-stone-200'
-                  }`}
-                  style={m.role === 'voice' ? { borderColor: `${activeVoice.color}55`, borderLeftWidth: 3, borderLeftColor: activeVoice.color } : undefined}
-                >
-                  {m.role === 'voice' ? <WeaveText text={m.content} /> : m.content}
-                </div>
-              </div>
-            ))}
-            {loading && <div className="text-xs text-stone-500">thinking…</div>}
-            <div ref={chatEndRef} />
-          </div>
-          <div className="flex gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault()
-                  send()
-                }
-              }}
-              placeholder={`Talk to ${displayName(activeVoice.id)}…`}
-              maxLength={2000}
-              className="flex-1 min-w-0 bg-stone-950 border border-stone-700 rounded-full px-4 py-2.5 text-sm text-stone-200 outline-none focus:border-amber-500/60"
-            />
-            <button
-              onClick={send}
-              disabled={loading || !input.trim()}
-              className="min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
-            >
-              Send
-            </button>
-          </div>
+          <VoiceChat
+            key={activeId}
+            archetypeId={activeId!}
+            displayName={displayName(activeId!)}
+            initialColor={activeVoice.color}
+            mode={mode}
+            onClose={() => setActiveId(null)}
+          />
         </div>
       )}
 

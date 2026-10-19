@@ -925,16 +925,18 @@ function deriveVeSelectionFromDetailState(
 const PERSPECTIVE_AGENTS_STORAGE_KEY = 'zenaf-perspective-agents'
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'meeting_capture', label: 'Meeting Capture' },
   { id: 'ideas', label: 'Ideas' },
   { id: 'execution', label: 'Execution' },
   { id: 'people', label: 'Team' },
   { id: 'assets', label: 'Assets' },
-  { id: 'radar', label: 'Radar' },
   { id: 'matching_internal', label: 'Matching (Internal)' },
-  { id: 'roadmap', label: 'Roadmap' },
-  { id: 'executive', label: 'Executive View' },
 ]
+// NOTE (2026-10-18): Meeting Capture, Radar, Roadmap, Executive View tabs were
+// scrapped per Joshua's review — meeting capture is the conversation now; the
+// other three were already condemned. Their render blocks below are kept so
+// deep links / focus requests (e.g. the vision-map radar strip's
+// focusTabRequest('radar')) still land on working content; the buttons are gone.
+// Backend endpoints are untouched (flagged callerless for the later intentional gutting).
 
 /** Inbox handoff: section keys allowed when merging a forwarded extraction row. */
 const WORKSPACE_FORWARDABLE_SECTIONS = new Set<string>([
@@ -5392,7 +5394,7 @@ export function VisionExecutionView({
   radarScrollBucketRequest?: VeRadarBucketId | null
   onRadarScrollBucketConsumed?: () => void
 } = {}) {
-  const [tab, setTab] = useState<TabId>('ideas')
+  const [tab, setTab] = useState<TabId>('execution')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -7882,7 +7884,7 @@ export function VisionExecutionView({
               setDetailPersonId(null)
               setDetailAssetId(null)
             }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+            className={`min-h-[44px] px-3 py-1.5 rounded-lg text-sm font-medium ${
               tab === t.id ? 'bg-slate-700 text-slate-100' : 'text-slate-400 hover:text-slate-300'
             }`}
           >

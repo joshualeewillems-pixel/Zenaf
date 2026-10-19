@@ -13,8 +13,6 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react'
 import type { MapTriadDevelopmentalSnapshot } from '../developmentalGuidance/types'
-import type { ExecutionStep } from '../vision-execution/types'
-import { VISION_EXECUTION_API } from '../vision-execution/types'
 import {
   Controls,
   Panel,
@@ -48,7 +46,6 @@ import {
 import { CairnInteractionContext } from './cairnContext'
 import { MapFlowEdge } from './MapFlowEdge'
 import { MapChatShell } from './MapChatShell'
-import { resolveInspectEntityRef } from './mapTriadInspector'
 import { fetchNodeVitalityMap, fetchVisionMapEntities } from './veMapApi'
 import { fetchStudioCouncilRuns } from './fetchStudioCouncilRuns'
 import { buildLiveVisionMapGraph } from './liveProjection'
@@ -70,7 +67,6 @@ import {
   applyNestTransform,
   canNestNode,
   computeNestGrowthTriad,
-  computeNestVitality,
   createNestGroup,
   dissolveNestsMergedIntoAncestor,
   getNestGroupForRoot,
@@ -329,8 +325,6 @@ function VisionMapFlow({
   useEffect(() => {
     onCouncilEntityBundleSnapshot?.(entityBundle)
   }, [entityBundle, onCouncilEntityBundleSnapshot])
-  const [inspectorExecSteps, setInspectorExecSteps] = useState<ExecutionStep[] | null>(null)
-  const [inspectorExecStepsLoading, setInspectorExecStepsLoading] = useState(false)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [selectedPayload, setSelectedPayload] = useState<MapNodePayload | null>(null)
   const [nestState, setNestState] = useState<NestState>(EMPTY_NEST_STATE)
@@ -769,44 +763,6 @@ function VisionMapFlow({
     setSelectedPayload(null)
   }, [])
 
-  const initiativeIdForExecSteps = useMemo(() => {
-    if (!selectedPayload) return null
-    const r = resolveInspectEntityRef(selectedPayload)
-    return r.veType === 'initiative' ? r.id : null
-  }, [selectedPayload])
-
-  useEffect(() => {
-    if (!initiativeIdForExecSteps) {
-      setInspectorExecSteps(null)
-      setInspectorExecStepsLoading(false)
-      return
-    }
-    let cancelled = false
-    setInspectorExecStepsLoading(true)
-    setInspectorExecSteps(null)
-    void fetch(`${VISION_EXECUTION_API}/initiatives/${initiativeIdForExecSteps}/execution-steps`, {
-      credentials: 'include',
-    })
-      .then(async (res) => {
-        const data = (await res.json().catch(() => [])) as unknown
-        if (cancelled) return
-        if (!res.ok) {
-          setInspectorExecSteps([])
-          return
-        }
-        setInspectorExecSteps(Array.isArray(data) ? (data as ExecutionStep[]) : [])
-      })
-      .catch(() => {
-        if (!cancelled) setInspectorExecSteps([])
-      })
-      .finally(() => {
-        if (!cancelled) setInspectorExecStepsLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [initiativeIdForExecSteps])
-
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       // Selection is owned by `selectedNodeId` + `applyFocusToVisionMap`. Applying RF `select` changes
@@ -973,19 +929,6 @@ function VisionMapFlow({
     return Math.max(SCENE_BASE_HEIGHT_PX, Math.ceil(maxY - minY + SCENE_CONTENT_PADDING_PX))
   }, [nodes])
 
-  const selectedNestMetaForPanel = useMemo(() => {
-    if (!selectedNest) return null
-    return {
-      memberCount: selectedNest.memberNodeIds.length,
-      kindCounts: selectedNest.kindCounts,
-      vitality: computeNestVitality(selectedNestTriad ?? selectedNest.triad),
-    }
-  }, [selectedNest, selectedNestTriad])
-
-  const onGuidanceHarvestFeedback = useCallback((nodeId: string) => {
-    setGuidancePulseNodeId(nodeId)
-  }, [])
-
   const handleResetStoneLayout = useCallback(() => {
     clearVisionMapLayout(layoutStorageKey)
     viewportRestoreRef.current = null
@@ -1130,22 +1073,11 @@ function VisionMapFlow({
           <MapChatShell
             selected={selectedPayload}
             entityBundle={entityBundle}
-            developmentalSnapshotForPrompt={developmentalSnapshotForPrompt}
             onClearSelection={clearSelection}
-            councilQuestionDraft={councilQuestionDraft}
-            onVisionMapCouncilInteraction={onVisionMapCouncilInteraction}
             canNestSelected={canNestSelected}
             canExpandSelected={canExpandSelected}
             onNestSelected={nestSelectedGroup}
             onExpandSelected={expandSelectedGroup}
-            growthTriadOverride={selectedNestTriad}
-            growthCaptionOverride={
-              selectedNestTriad ? 'This compressed cluster needs care as one living branch.' : undefined
-            }
-            selectedNestMeta={selectedNestMetaForPanel}
-            onGuidanceHarvestFeedback={onGuidanceHarvestFeedback}
-            initiativeExecutionSteps={inspectorExecSteps}
-            initiativeExecutionStepsLoading={inspectorExecStepsLoading}
           />
         ) : null}
       </div>

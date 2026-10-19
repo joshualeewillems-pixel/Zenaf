@@ -34,6 +34,7 @@ import {
   fetchArchetypeStatus,
   type ArchetypeStatus,
 } from './archetypes'
+import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
 import { NodeSheet } from '../tree/NodeSheet'
 
 /* ------------------------------------------------------------------ */
@@ -563,11 +564,13 @@ function AvatarSection({
     }
   }
 
+  const face = resolveSeatFace(arch)
+  const panelArt = resolveSeatPanel(arch)
   return (
     <div className="lavatar-sect">
       <div className="lsect">Face</div>
       <div className="lavatar-row">
-        <SeatAvatar avatarUrl={arch.avatar_url} displayName={arch.display_name} />
+        <SeatAvatar avatarUrl={face} displayName={arch.display_name} />
         <div className="lavatar-meta">
           {arch.avatar_url ? (
             <p className="lnote">
@@ -575,8 +578,8 @@ function AvatarSection({
             </p>
           ) : arch.avatar_unlocked ? (
             <p className="lnote">
-              You've earned this seat's face. Give {arch.display_name} one — generate
-              or upload an image.
+              The fellowship's face for {arch.display_name}, revealed through training.
+              Generate or upload an image to replace it with your own.
             </p>
           ) : (
             <p className="lnote">
@@ -588,6 +591,13 @@ function AvatarSection({
           {error && <p className="lavatar-err">{error}</p>}
         </div>
       </div>
+      {panelArt && (
+        <img
+          className="lavatar-panel"
+          src={panelArt}
+          alt={`${arch.display_name} — full portrait`}
+        />
+      )}
       {arch.avatar_unlocked && !showUpload && (
         <div className="lavatar-btns">
           <button
@@ -895,7 +905,7 @@ export function LivingTreeView({
     return (
       <div>
         <div className="lavatar-head">
-          <SeatAvatar avatarUrl={arch.avatar_url} displayName={arch.display_name} size={44} />
+          <SeatAvatar avatarUrl={resolveSeatFace(arch)} displayName={arch.display_name} size={44} />
           <div>
             <h3 style={{ margin: 0 }}>{arch.display_name}</h3>
             <div className="ltag" style={{ color: col }}>
@@ -1168,6 +1178,7 @@ export function LivingTreeView({
 .lavatar-ph{position:relative;flex:none;border-radius:50%;overflow:hidden}
 .lavatar-qqq{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;letter-spacing:.08em;color:rgba(245,240,232,.75)}
 .lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,106,.5)}
+.lavatar-panel{display:block;width:100%;max-height:340px;object-fit:cover;object-position:top center;border-radius:12px;border:1px solid rgba(201,168,106,.25);margin:8px 0 2px}
 .lavatar-meta{flex:1;min-width:0}
 .lavatar-meta .lnote{margin:0}
 .lavatar-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}

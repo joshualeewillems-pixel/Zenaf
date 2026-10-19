@@ -110,7 +110,7 @@ def detect_active_archetypes(
 
     # Skeptic: dynamic per-user weights (uniform fallback inside).
     try:
-        skeptic_weights = compute_skeptic_weights(user_id)
+        skeptic_weights = compute_skeptic_weights(user_id, mode="trained")
         sim = _cosine(entry_vec, _to_vector(skeptic_weights))
         scored.append(("skeptic", sim))
     except Exception:

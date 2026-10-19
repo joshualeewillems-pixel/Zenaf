@@ -140,7 +140,7 @@ def build_voice_prompt(
 
     weights_override = None
     if arch.strand_weights is None:
-        weights_override = compute_skeptic_weights(user_id)
+        weights_override = compute_skeptic_weights(user_id, mode=mode)
     weights = weights_override if weights_override is not None else (arch.strand_weights or {})
 
     prompt_lines = build_archetype_prompt_lines(

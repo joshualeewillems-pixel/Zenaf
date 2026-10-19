@@ -420,17 +420,28 @@ def compute_skeptic_weights_from_depths(
     return {k: v / total for k, v in inverted.items()}
 
 
-def compute_skeptic_weights(user_id: str | None) -> dict[str, float]:
+def compute_skeptic_weights(
+    user_id: str | None, mode: str = "base"
+) -> dict[str, float]:
     """Dynamic Skeptic weight vector for a user.
 
-    Loads per-strand training depth and inverts it (see
-    compute_skeptic_weights_from_depths). Never raises: on any failure
-    (no user, no license, no data) returns a uniform distribution.
-    Keys are plain-spoken strand names.
+    Two expressions, like the other seats' base/trained voices:
+
+    - ``mode="base"`` (default): the stock Skeptic — a uniform distribution
+      over all seven strands. This is the default expression.
+    - ``mode="trained"``: the Skeptic that knows the user — loads per-strand
+      training depth and inverts it (see
+      ``compute_skeptic_weights_from_depths``), so it questions from the
+      user's least-developed strands. This is the custom expression.
+
+    Never raises: on any failure (no user, no license, no data) returns a
+    uniform distribution. Keys are plain-spoken strand names.
     """
     n = len(PLAIN_TO_KEY)
     uniform = {plain: 1.0 / n for plain in PLAIN_TO_KEY}
     if not user_id:
+        return uniform
+    if (mode or "base").strip().lower() != "trained":
         return uniform
     try:
         from local_ai.personality.depth import compute_training_depth
@@ -450,7 +461,7 @@ def compute_skeptic_weights(user_id: str | None) -> dict[str, float]:
                     signals.append(sig)
             signals_store.close()
 
-        store = PersonalityStore(user_id)
+        store = PersonalityStore(user_id=user_id)
         try:
             profile = store.get_current()
             versions: list = []

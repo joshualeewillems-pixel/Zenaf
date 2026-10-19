@@ -4953,7 +4953,20 @@ function App() {
         />
       )
     }
-    if (item === 'review') return <ReviewView />
+    if (item === 'review') {
+      // Seat sheets scope the review queue to the seat's strands; the
+      // you-node keeps the whole queue. Keyed per seat so sheet state
+      // resets when switching branches.
+      return node.kind === 'seat' ? (
+        <ReviewView
+          key={`review-${node.seatKey}`}
+          seatKey={node.seatKey}
+          seatName={node.fellowshipName}
+        />
+      ) : (
+        <ReviewView key="review-you" />
+      )
+    }
     if (item === 'talk') {
       return node.kind === 'seat' ? (
         <CouncilChat

@@ -9,6 +9,11 @@ type Message = {
 type Props = {
   agentId: string
   agentName: string
+  /** Seat-scoped review: when set, only moments attributed to these strand
+      keys are shown. Null = all moments (you-node, Skeptic, unknown seat). */
+  strandFilter?: string[] | null
+  /** Fellowship display name for the honest empty state ("The Bear"). */
+  seatName?: string | null
 }
 
 type Proposal = {
@@ -32,7 +37,7 @@ type StrandGroup = {
   moments: MomentItem[]
 }
 
-export default function ReviewChat({ agentId, agentName }: Props) {
+export default function ReviewChat({ agentId, agentName, strandFilter = null, seatName = null }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
@@ -63,9 +68,9 @@ export default function ReviewChat({ agentId, agentName }: Props) {
         })
         const data = await r.json()
         setMessages([{ role: 'zenaf', content: data.reply }])
-        if (data.moments_overview) {
-          setMomentsOverview(data.moments_overview)
-        }
+        // Normalize to an array so "loaded, none" is distinguishable from
+        // "not loaded yet" for the seat-scoped empty state below.
+        setMomentsOverview(data.moments_overview ?? [])
       } catch (e) {
         setMessages([{
           role: 'zenaf',
@@ -198,7 +203,7 @@ export default function ReviewChat({ agentId, agentName }: Props) {
       const data = await r.json()
       setMessages(prev => [...prev, { role: 'zenaf', content: data.reply }])
       if (data.moments_overview) {
-        setMomentsOverview(data.moments_overview)
+        setMomentsOverview(data.moments_overview ?? [])
       }
       setSelectedIndices(prev => {
         const next = new Set(prev)
@@ -233,6 +238,13 @@ export default function ReviewChat({ agentId, agentName }: Props) {
     }
   }
 
+  // Seat-scoped review: show only moments attributed to the seat's strands.
+  // Moment indices are the backend's global indices, so quick-file and
+  // discuss-in-depth keep working on the filtered set unchanged.
+  const visibleOverview = strandFilter
+    ? (momentsOverview ?? []).filter((g) => strandFilter.includes(g.strand))
+    : momentsOverview
+
   return (
     <div className="flex flex-col h-[60vh] min-h-[400px]">
       <div className="flex-1 overflow-y-auto mb-4 space-y-3">
@@ -265,12 +277,12 @@ export default function ReviewChat({ agentId, agentName }: Props) {
         )}
         <div ref={messagesEndRef} />
       </div>
-      {momentsOverview && momentsOverview.length > 0 && (
+      {visibleOverview && visibleOverview.length > 0 && (
         <div className="mb-3 rounded-xl border border-stone-700 bg-stone-900/50 p-3 max-h-[40vh] overflow-y-auto">
           <div className="text-xs font-semibold text-stone-400 mb-2 uppercase tracking-wide">
             Flagged moments — tap one to read it fully, then file or discuss
           </div>
-          {momentsOverview.map((group) => (
+          {visibleOverview.map((group) => (
             <div key={group.strand} className="mb-3">
               <div className="text-sm font-semibold text-stone-300 mb-1">
                 {group.strand_name} ({group.moments.length})
@@ -349,6 +361,11 @@ export default function ReviewChat({ agentId, agentName }: Props) {
             </button>
           )}
         </div>
+      )}
+      {strandFilter && momentsOverview !== null && (visibleOverview ?? []).length === 0 && (
+        <p className="text-stone-500 text-sm mb-3">
+          Nothing awaiting {seatName ? `${seatName}'s` : "this seat's"} review.
+        </p>
       )}
       {pendingProposal && (
         <div className="mb-3 rounded-xl border-2 border-amber-500/60 bg-amber-950/30 p-3">

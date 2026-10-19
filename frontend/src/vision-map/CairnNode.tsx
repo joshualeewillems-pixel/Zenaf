@@ -72,6 +72,7 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
                 severity={p.severity as ConditionSeverity}
                 fertilizerPulse={p.pulse}
                 washColor={wash}
+                variantSeed={`${id}:${i}`}
                 size={MINI_STONE}
               />
             </div>

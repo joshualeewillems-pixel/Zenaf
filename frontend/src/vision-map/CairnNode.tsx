@@ -8,6 +8,7 @@ import {
   type StoneGlyph,
 } from './symbolicStone'
 import { MEGA_CAIRN_ID, type CairnPreviewStone } from './cairn'
+import { towerLayout, type TowerStone } from './cairnTower'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { useLongPress } from './useLongPress'
 import { useCairnInteraction } from './cairnContext'
@@ -23,71 +24,12 @@ const URGENCY_RING = '#d9a441'
 const PULSE_RING = '#86b89a'
 
 /**
- * Trail-cairn tower geometry. Stones shrink toward the top and each one
- * sits INTO the one below (the vertical step is well under a stone's
- * height), with small deterministic horizontal offsets for a hand-balanced
- * feel — one pile, not separate pebbles and not a pyramid.
+ * Trail-cairn tower geometry lives in ./cairnTower (pure, deterministic):
+ * a rule-of-thirds procedural sculpture — each consecutive triple stays
+ * balanced, so the tower can lean, cantilever and recover like a real
+ * rock-balancing sculpture — with small accent pebbles perched precariously
+ * on column rims as the count grows toward twelve.
  */
-const TOWER_BASE = 50
-const TOWER_SHRINK = 0.86
-/** Vertical step between stones, as a fraction of the lower stone's size. */
-const TOWER_STEP = 0.34
-const TOWER_MAX_DX = 4
-const TOWER_W = TOWER_BASE + TOWER_MAX_DX * 2 + 16
-
-/** 3–5 tower stones depending on the count — the mega-cairn gets the full five. */
-export function towerStoneCount(count: number): number {
-  if (count >= 20) return 5
-  if (count >= 8) return 4
-  return 3
-}
-
-function hash32(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return h >>> 0
-}
-
-export type TowerStone = {
-  /** px size of the stone's svg box */
-  size: number
-  /** px from the tower container's left edge to the stone's left edge */
-  left: number
-  /** px from the tower container's top edge to the stone's top edge */
-  top: number
-  /** preview index (0 = most urgent, sits highest) driving glyph + variant */
-  previewIndex: number
-}
-
-/**
- * Pure tower layout: bottom-up, shrinking, overlapping, slightly offset.
- * Exported for the harness — the visual contract lives here.
- */
-export function towerLayout(cairnId: string, count: number): { stones: TowerStone[]; height: number; width: number } {
-  const n = towerStoneCount(count)
-  const sizes: number[] = []
-  for (let i = 0; i < n; i++) sizes.push(Math.round(TOWER_BASE * Math.pow(TOWER_SHRINK, i)))
-  const steps = sizes.slice(0, n - 1).map((s) => s * TOWER_STEP)
-  const totalH = sizes[0]! + steps.reduce((a, b) => a + b, 0)
-  const cx = TOWER_W / 2
-  const stones: TowerStone[] = []
-  let bottomEdge = totalH
-  for (let i = 0; i < n; i++) {
-    if (i > 0) bottomEdge -= steps[i - 1]!
-    const size = sizes[i]!
-    const dx = (hash32(`${cairnId}:${n - 1 - i}`) % 9) - 4 // -4..+4, stable
-    stones.push({
-      size,
-      left: cx + dx - size / 2,
-      top: bottomEdge - size,
-      previewIndex: n - 1 - i,
-    })
-  }
-  return { stones, height: totalH, width: TOWER_W }
-}
 
 const NEUTRAL_PREVIEW: CairnPreviewStone = {
   growth: 'dormant',
@@ -115,9 +57,12 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
   const labelTone = stoneTextTone('branch')
 
   const { stones, height: towerH, width: towerW } = towerLayout(id, Math.max(count, 1))
-  // Most urgent on top: preview arrives urgency-ordered.
-  const stoneData = (previewIndex: number): CairnPreviewStone =>
-    preview[previewIndex] ?? preview[preview.length - 1] ?? NEUTRAL_PREVIEW
+  // Most urgent on top: preview arrives urgency-ordered. Accent pebbles
+  // are neutral (a plain seed glyph reads cleanest at small scale).
+  const stoneData = (st: TowerStone): CairnPreviewStone =>
+    st.accent || st.previewIndex < 0
+      ? NEUTRAL_PREVIEW
+      : (preview[st.previewIndex] ?? preview[preview.length - 1] ?? NEUTRAL_PREVIEW)
 
   const ring =
     severity > 0
@@ -173,20 +118,28 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
             </svg>
           ) : null}
           {stones.map((s, i) => {
-            const p = stoneData(s.previewIndex)
+            const p = stoneData(s)
             return (
               <div
                 key={i}
                 className="absolute"
-                style={{ left: s.left, top: s.top, width: s.size, height: s.size }}
+                style={{
+                  left: s.left,
+                  top: s.top,
+                  width: s.size,
+                  height: s.size,
+                  transform: `rotate(${s.rotation}deg)`,
+                  // rotate around the stone body's center (viewbox 31.5,38)
+                  transformOrigin: '49.2% 59.4%',
+                }}
               >
                 <SymbolicStone
-                  growth={p.growth}
+                  growth={s.accent ? 'dormant' : p.growth}
                   kind={p.kind}
                   severity={0}
                   fertilizerPulse={false}
                   washColor={wash}
-                  variantSeed={`${id}:${s.previewIndex}`}
+                  variantSeed={s.seed}
                   size={s.size}
                 />
               </div>

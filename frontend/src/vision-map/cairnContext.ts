@@ -8,8 +8,9 @@ import { createContext, useContext } from 'react'
  */
 export const CairnInteractionContext = createContext<{
   onToggleCairn: (cairnId: string) => void
-  onCollapseAllCairns: () => void
-}>({ onToggleCairn: () => {}, onCollapseAllCairns: () => {} })
+  /** Collapses every expanded cairn. Returns true when anything collapsed. */
+  onCollapseAllCairns: () => boolean
+}>({ onToggleCairn: () => {}, onCollapseAllCairns: () => false })
 
 export function useCairnInteraction() {
   return useContext(CairnInteractionContext)

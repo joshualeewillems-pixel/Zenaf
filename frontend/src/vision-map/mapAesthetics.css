@@ -943,3 +943,38 @@
   }
 }
 
+
+/* Own the touch gesture on the garden canvas. React Flow drives pan, pinch
+   and node drag itself through pointer events; without this, iOS Safari
+   hijacks the touch for its native handling and stone drags die. Scoped to
+   the map canvas — the stone sheet is a sibling, not a child, so its scroll
+   is unaffected. */
+.map-graph-canvas {
+  touch-action: none;
+}
+
+/* Long-press armed state: the press has dwelled long enough and the cairn
+   has "caught" — lift to fan out (or collapse). Painted via classList only,
+   never a re-render, so React Flow's in-progress gesture tracking survives. */
+.map-cairn-armed {
+  outline: 2px solid rgba(217, 164, 65, 0.9);
+  outline-offset: 4px;
+  border-radius: 14px;
+  animation: map-cairn-armed-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes map-cairn-armed-pulse {
+  0%,
+  100% {
+    outline-color: rgba(217, 164, 65, 0.9);
+  }
+  50% {
+    outline-color: rgba(217, 164, 65, 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-cairn-armed {
+    animation: none;
+  }
+}

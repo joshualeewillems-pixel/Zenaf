@@ -7,7 +7,7 @@ import {
   glyphForGrowth,
   type StoneGlyph,
 } from './symbolicStone'
-import { MEGA_CAIRN_ID, type CairnPreviewStone } from './cairn'
+import { isMegaCairnId, type CairnPreviewStone } from './cairn'
 import { towerLayout, type TowerStone } from './cairnTower'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { useLongPress } from './useLongPress'
@@ -49,7 +49,7 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
   const toggle = useCallback(() => onToggleCairn(id), [onToggleCairn, id])
   const lp = useLongPress(toggle)
 
-  const isMega = id === MEGA_CAIRN_ID
+  const isMega = isMegaCairnId(id)
   const preview = (data.cairnPreview ?? []) as CairnPreviewStone[]
   const count = (data.cairnCount as number) ?? preview.length
   const wash = washColorFor((data.cairnProjectId as string) ?? null)

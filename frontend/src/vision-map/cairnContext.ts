@@ -3,15 +3,15 @@ import { createContext, useContext } from 'react'
 /**
  * Lets stone nodes drive cairn gestures without prop-drilling through React
  * Flow's static `nodeTypes` map. The view provides both actions: cairn nodes
- * toggle themselves, expanded member stones collapse back, the initiative
- * (tree) stone toggles the whole-garden stack, and the mega-cairn unstacks
- * through the same toggle path as any cairn.
+ * toggle themselves, expanded member stones collapse back, an initiative
+ * (tree) stone toggles that initiative's stack, and a mega-cairn unstacks
+ * its initiative through the same toggle path as any cairn.
  */
 export const CairnInteractionContext = createContext<{
   onToggleCairn: (cairnId: string) => void
-  /** Toggles the whole-garden stack: one mega-cairn vs the full garden. */
-  onToggleGardenStack: () => void
-}>({ onToggleCairn: () => {}, onToggleGardenStack: () => {} })
+  /** Toggles one initiative's stack: its children as one mega-cairn vs the full subtree. */
+  onToggleGardenStack: (treeId: string) => void
+}>({ onToggleCairn: () => {}, onToggleGardenStack: (_treeId: string) => {} })
 
 export function useCairnInteraction() {
   return useContext(CairnInteractionContext)

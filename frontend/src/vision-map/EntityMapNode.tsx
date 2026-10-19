@@ -52,13 +52,13 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
 
   const { onToggleCairn, onToggleGardenStack } = useCairnInteraction()
   const expandedFromCairn = (data as { expandedFromCairn?: string }).expandedFromCairn ?? null
-  const target = longPressTargetFor(data.kind, expandedFromCairn)
+  const target = longPressTargetFor(data.kind, expandedFromCairn, id)
 
   const lp = useLongPress(
     target.action === 'collapseCairn'
       ? () => onToggleCairn(target.cairnId)
       : target.action === 'toggleGardenStack'
-        ? onToggleGardenStack
+        ? () => onToggleGardenStack(target.treeId)
         : null,
   )
 

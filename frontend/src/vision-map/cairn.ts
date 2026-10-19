@@ -15,7 +15,7 @@
  * All functions here are pure (no React) so they can be driven directly
  * in a jsdom/node harness.
  */
-import type { Edge, Node } from '@xyflow/react'
+import type { Edge, Node, XYPosition } from '@xyflow/react'
 import type { MapNodePayload } from './ontology'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 
@@ -299,4 +299,49 @@ export function longPressTargetFor(
   if (expandedFromCairn) return { action: 'collapseCairn', cairnId: expandedFromCairn }
   if (kind === 'tree') return { action: 'collapseAll' }
   return { action: 'none' }
+}
+
+/**
+ * Apply session drag positions after layout computation. Expanded cairn
+ * members keep their fan-out positions unless the user dragged them this
+ * session — then the dragged spot wins. Persisted/session position
+ * overrides are deliberately NOT applied to expanded members: they would
+ * yank stones to stale full-garden spots. Everything else takes the
+ * override when present.
+ *
+ * Pure: the view calls this on the display graph before handing nodes to
+ * React Flow, so a dragged member survives graph rebuilds instead of
+ * snapping back to its fan-out position.
+ */
+export function applyDragPositions<T extends Node>(
+  nodes: T[],
+  expandedMemberIds: ReadonlySet<string>,
+  memberDragPositions: Record<string, XYPosition>,
+  positionOverrides: Record<string, XYPosition>,
+): T[] {
+  return nodes.map((n) => {
+    const drag = expandedMemberIds.has(n.id) ? memberDragPositions[n.id] : positionOverrides[n.id]
+    return drag ? { ...n, position: { ...drag } } : n
+  })
+}
+
+/**
+ * Drop session drag overrides for the given member ids — used when their
+ * cairn collapses, so the next fan-out starts from the clean radial layout
+ * instead of stale dragged spots. Returns the input unchanged when there
+ * is nothing to drop.
+ */
+export function dropDragPositions(
+  prev: Record<string, XYPosition>,
+  memberIds: Iterable<string>,
+): Record<string, XYPosition> {
+  let changed = false
+  const next: Record<string, XYPosition> = { ...prev }
+  for (const id of memberIds) {
+    if (id in next) {
+      delete next[id]
+      changed = true
+    }
+  }
+  return changed ? next : prev
 }

@@ -38,8 +38,10 @@ import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX, NEST_NODE_LAYOUT_WIDTH_PX } 
 import {
   CAIRN_NARROW_THRESHOLD,
   CAIRN_WIDE_THRESHOLD,
+  applyDragPositions,
   branchAnchorForCairn,
   collapseCairn,
+  dropDragPositions,
   expandCairn,
   type CairnEntry,
   type CairnIndex,
@@ -330,6 +332,13 @@ function VisionMapFlow({
   const [selectedPayload, setSelectedPayload] = useState<MapNodePayload | null>(null)
   const [nestState, setNestState] = useState<NestState>(EMPTY_NEST_STATE)
   const [positionOverrides, setPositionOverrides] = useState<Record<string, XYPosition>>({})
+  /**
+   * Session-only drag positions for expanded cairn members. Dragged members
+   * keep their spots across graph rebuilds instead of snapping back to the
+   * fan-out layout; dropped per-cairn on collapse so the next fan-out
+   * starts clean. Never persisted to the layout store.
+   */
+  const [memberDragPositions, setMemberDragPositions] = useState<Record<string, XYPosition>>({})
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [loadErr, setLoadErr] = useState<string | null>(null)
   /** Bumps VeRadarAwarenessStrip refresh when map reloads VE entities. */
@@ -453,6 +462,7 @@ function VisionMapFlow({
       setBaseGraph({ nodes: g.nodes, edges: g.edges })
       setNestState(EMPTY_NEST_STATE)
       setPositionOverrides(restoredPos)
+      setMemberDragPositions({})
       setSelectedNodeId(null)
       setSelectedPayload(null)
       setLoadState('ok')
@@ -508,6 +518,14 @@ function VisionMapFlow({
         // Collapsing: the cairn reappears where its branch stone sits now.
         const anchor = branchAnchorForCairn(nodes, cairnId)
         if (anchor) cairnAnchorRef.current[cairnId] = anchor
+        // Drop this cairn's member drag spots so the next fan-out starts
+        // from the clean radial layout.
+        setMemberDragPositions((prev) =>
+          dropDragPositions(
+            prev,
+            entry.memberNodes.map((m) => m.id),
+          ),
+        )
         setExpandedCairns((prev) => {
           const next = new Set(prev)
           next.delete(cairnId)
@@ -533,6 +551,8 @@ function VisionMapFlow({
       const anchor = branchAnchorForCairn(nodes, cairnId)
       if (anchor) cairnAnchorRef.current[cairnId] = anchor
     }
+    // Every cairn collapsed: all member drag spots go, next fan-outs start clean.
+    setMemberDragPositions({})
     setExpandedCairns(new Set())
   }, [nodes, expandedCairns])
 
@@ -580,14 +600,13 @@ function VisionMapFlow({
       setEdges([])
       return
     }
-    const baseNodes = viewGraph.nodes.map((n) => ({
+    const baseNodes = applyDragPositions(
+      viewGraph.nodes,
+      viewGraph.expandedMemberIds,
+      memberDragPositions,
+      positionOverrides,
+    ).map((n) => ({
       ...n,
-      // Expanded cairn members keep their fan-out positions; persisted
-      // overrides would yank them to stale full-garden spots.
-      position:
-        !viewGraph.expandedMemberIds.has(n.id) && positionOverrides[n.id]
-          ? { ...positionOverrides[n.id]! }
-          : n.position,
       data: {
         ...n.data,
         fertilizer_pulse: n.data.fertilizer_pulse || n.id === guidancePulseNodeId,
@@ -659,6 +678,7 @@ function VisionMapFlow({
     setEdges,
     nestState,
     positionOverrides,
+    memberDragPositions,
     guidancePulseNodeId,
     schedulePersistLayout,
   ])
@@ -789,18 +809,35 @@ function VisionMapFlow({
         (c) => c.type === 'position' && !!(c as { position?: XYPosition }).position && !(c as { dragging?: boolean }).dragging,
       ) as Array<{ id: string; position: XYPosition }>
       if (moveChanges.length === 0) return
-      setPositionOverrides((prev) => {
-        const next = { ...prev }
-        for (const c of moveChanges) {
-          const n = nodes.find((nn) => nn.id === c.id)
-          if (n?.type === 'nestGroup') {
-            setNestState((cur) => updateNestAnchor(cur, c.id, c.position))
-          } else {
-            next[c.id] = { ...c.position }
-          }
+      // Expanded cairn members record session-only drag spots (kept across
+      // rebuilds so they don't snap back); everything else records into
+      // the persisted position overrides.
+      const memberMoves: Array<{ id: string; position: XYPosition }> = []
+      const otherMoves: Array<{ id: string; position: XYPosition }> = []
+      for (const c of moveChanges) {
+        const n = nodes.find((nn) => nn.id === c.id)
+        if (n?.type === 'nestGroup') {
+          setNestState((cur) => updateNestAnchor(cur, c.id, c.position))
+        } else if ((n?.data as { expandedFromCairn?: string } | undefined)?.expandedFromCairn) {
+          memberMoves.push(c)
+        } else {
+          otherMoves.push(c)
         }
-        return next
-      })
+      }
+      if (memberMoves.length > 0) {
+        setMemberDragPositions((prev) => {
+          const next = { ...prev }
+          for (const c of memberMoves) next[c.id] = { ...c.position }
+          return next
+        })
+      }
+      if (otherMoves.length > 0) {
+        setPositionOverrides((prev) => {
+          const next = { ...prev }
+          for (const c of otherMoves) next[c.id] = { ...c.position }
+          return next
+        })
+      }
       schedulePersistLayout()
     },
     [nodes, setNodes, schedulePersistLayout],

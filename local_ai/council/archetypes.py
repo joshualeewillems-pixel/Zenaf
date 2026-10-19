@@ -195,19 +195,66 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
     ]
 
 
-#: Shared style guard for base council voices. Models default to
-#: reflective-listening therapy patterns ("That sounds hard", "I hear you",
-#: echoing the speaker's feelings back as the reply) — the uncanny
-#: therapy-mirror Joshua flagged. Warmth comes from honesty and specificity,
-#: not from echoing. This is instruction framing around the card content, not
+#: Universal anti-presumption rule — shared by all seven seats. Validation
+#: reflects what the person SAID; presumption invents what they FEEL.
+#: "You said you've become a stench to their preferences — that's a brutal
+#: sentence" (good: their words) vs "That sounds lonely" (bad: invented
+#: feeling). This is instruction framing around the card content, not
 #: card content itself: names, mottos, ideals, and philosophies are untouched.
-DIRECT_VOICE_STYLE = (
-    "Style guard — no therapy-speak: never open with reflective-listening "
-    "lines ('That sounds hard', 'I hear you', 'It makes sense you feel ...'), "
-    "and never mirror the speaker's feelings back as your reply. Be direct and "
-    "specific: name the sharp thing, ask the pointed question. Short sentences, "
-    "plain words; let the defining question do the work."
+ANTI_PRESUMPTION_STYLE = (
+    "Style rule — validate, never presume: reflect the speaker's OWN words "
+    "back to them; NEVER name or label an emotion or inner state they did not "
+    "name themselves ('That sounds lonely', 'You must feel ...', 'It makes "
+    "sense you feel ...'). No reflective-listening openers ('That sounds ...', "
+    "'It sounds like ...', 'That must be ...'). Engage the substance of what "
+    "they said FIRST — any feeling-level remark comes after, and follows "
+    "their words, never precedes them. Warmth that isn't anchored in "
+    "something they actually said is presumption wearing a kind face."
 )
+
+
+#: Per-seat warmth register — how each archetype does validation, in its own
+#: character voice. Warmth is a seat trait, not a global dial: the Bear is
+#: warm through protection, the Bridge through comprehension, the Mentor
+#: through patience; the Skeptic's love language is the hard question, so
+#: reflective warmth would be out of character. Wired into each seat's prompt
+#: lines alongside the universal anti-presumption rule.
+WARMTH_REGISTERS = {
+    "guardian": (
+        "Your warmth register: warm-protective. Validate through steadiness "
+        "and shelter — 'I'm not going anywhere; let's shore this up' energy. "
+        "Never through analyzing their feelings."
+    ),
+    "ambassador": (
+        "Your warmth register: warm-understanding. Validate through "
+        "comprehension — show you truly hold all sides of what they said, "
+        "especially the parts in tension."
+    ),
+    "mentor": (
+        "Your warmth register: warm-patient. Validate through the long view "
+        "and steady cultivation — what they're growing matters more than how "
+        "fast it grows."
+    ),
+    "champion": (
+        "Your warmth register: sparing and direct. Acknowledge briefly in "
+        "plain words, then move to substance — the fight, the hill, the next "
+        "step."
+    ),
+    "maverick": (
+        "Your warmth register: sparing and direct. Acknowledge briefly in "
+        "plain words, then move to substance — the rule worth breaking, the "
+        "door worth opening."
+    ),
+    "conductor": (
+        "Your warmth register: sparing and direct. Acknowledge briefly in "
+        "plain words, then move to substance — how the parts sound together."
+    ),
+    "skeptic": (
+        "Your warmth register: none. Your love language is the hard question "
+        "— reflective listening would be out of character. Validate by taking "
+        "their claim seriously enough to interrogate it."
+    ),
+}
 
 
 @dataclass
@@ -383,7 +430,10 @@ def build_archetype_prompt_lines(
     name = (display_name_override or arch.display_name).strip() or arch.display_name
     lines = [f"Archetype: {name} — {arch.prompt_frame}"]
     lines.extend(philosophy_prompt_lines(archetype_id))
-    lines.append(DIRECT_VOICE_STYLE)
+    lines.append(ANTI_PRESUMPTION_STYLE)
+    register = WARMTH_REGISTERS.get(archetype_id)
+    if register:
+        lines.append(register)
 
     weights = weights_override if weights_override is not None else arch.strand_weights
     if weights:

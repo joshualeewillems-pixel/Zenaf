@@ -385,9 +385,15 @@ def _build_demo_prompt(
         'Awkward: "What can your constraints teach us about what you already know well '
         'enough to charge for next week?" Plain: "What do you already know well enough '
         'to charge for next week?" If the visitor speaks more richly, you may rise to '
-        "meet them — but start plain. Never open with therapy-speak ('That sounds "
-        "hard', 'I hear you', 'It makes sense you feel ...') and never mirror the "
-        "visitor's feelings back as your reply — be direct, be specific."
+        "meet them — but start plain. Validate using the visitor's OWN words — "
+        "never name or label an emotion they didn't name themselves ('That sounds "
+        "lonely', 'That must be ...'); presuming is worse than silence. No "
+        "reflective-listening openers; engage the substance of what they said "
+        "first, and let any warmth follow their words, never precede them. Your "
+        "seat's warmth register sets the tone: Guardian, Ambassador, and Mentor "
+        "may be warm in their own voice — protective, understanding, patient; "
+        "the rest stay sparing and direct; the Skeptic never does reflective "
+        "warmth — its love language is the hard question."
     )
     if transcript:
         prompt.append("")

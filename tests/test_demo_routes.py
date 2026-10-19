@@ -1,5 +1,6 @@
 """Tests for the anonymous landing demo routes: question-mode toggle,
-SQLite-backed claim codes, and the therapy-speak style guard."""
+SQLite-backed claim codes, and the anti-presumption rule + per-seat warmth
+registers."""
 
 from __future__ import annotations
 
@@ -244,18 +245,67 @@ def test_claim_codes_survive_reopen(tmp_path):
         s2.close()
 
 
-# --- Issue 4: therapy-speak style guard --------------------------------------
+# --- Issue 4: anti-presumption rule + per-seat warmth registers -----------------
 
 
-def test_direct_voice_style_in_archetype_prompt():
+def test_anti_presumption_rule_present_for_all_seats():
     from local_ai.council import archetypes as arch
 
     for vid in arch.stock_archetype_ids():
         text = "\n".join(arch.build_archetype_prompt_lines(vid))
-        assert "no therapy-speak" in text.lower() or "therapy-speak" in text, vid
+        assert "never presume" in text.lower(), vid
+        assert "own words" in text.lower(), vid
 
 
-def test_direct_voice_style_leaves_card_content_untouched():
+def test_anti_presumption_names_banned_patterns():
+    from local_ai.council import archetypes as arch
+
+    text = "\n".join(arch.build_archetype_prompt_lines("guardian"))
+    # Presumption is steered against by name ...
+    assert "That sounds lonely" in text
+    # ... while validation with the user's own words is explicitly allowed.
+    assert "reflect the speaker's own words" in text.lower()
+
+
+def test_warmth_registers_differ_per_seat():
+    from local_ai.council import archetypes as arch
+
+    warm = {
+        "guardian": "warm-protective",
+        "ambassador": "warm-understanding",
+        "mentor": "warm-patient",
+    }
+    for vid, marker in warm.items():
+        text = "\n".join(arch.build_archetype_prompt_lines(vid))
+        assert marker in text, vid
+
+    for vid in ("champion", "maverick", "conductor"):
+        text = "\n".join(arch.build_archetype_prompt_lines(vid))
+        assert "sparing and direct" in text, vid
+
+    skeptic = "\n".join(arch.build_archetype_prompt_lines("skeptic"))
+    assert "warmth register: none" in skeptic
+    assert "hard question" in skeptic
+
+    # The warm seats' registers are genuinely different lines, not one
+    # shared string — no flattening into seven Skeptics.
+    registers = {
+        next(
+            line for line in arch.build_archetype_prompt_lines(vid)
+            if line.startswith("Your warmth register:")
+        )
+        for vid in arch.stock_archetype_ids()
+    }
+    assert len(registers) == len(arch.stock_archetype_ids())
+
+
+def test_warmth_register_covers_every_stock_seat():
+    from local_ai.council import archetypes as arch
+
+    assert set(arch.WARMTH_REGISTERS) == set(arch.stock_archetype_ids())
+
+
+def test_anti_presumption_leaves_card_content_untouched():
     from local_ai.council import archetypes as arch
 
     # Card content assertions from the existing suite still hold: philosophy
@@ -265,9 +315,11 @@ def test_direct_voice_style_leaves_card_content_untouched():
     assert "What are we assuming?" in "\n".join(arch.build_archetype_prompt_lines("skeptic"))
 
 
-def test_demo_prompt_bans_therapy_openers():
+def test_demo_prompt_matches_two_layer_framing():
     from api.routes import demo_routes as dr
 
     prompt = dr._build_demo_prompt("guardian", [], speak=False, question_mode=False)
-    assert "therapy-speak" in prompt
-    assert "That sounds" in prompt  # the banned opener pattern is named
+    assert "That sounds lonely" in prompt  # the presumption pattern is named
+    assert "warmth register" in prompt
+    # The per-seat register flows into the demo prompt via the archetype lines.
+    assert "warm-protective" in prompt

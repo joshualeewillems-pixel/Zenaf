@@ -3,6 +3,7 @@ import { apiBase } from '../apiBase'
 import ClaimCard, { Claim } from './ClaimCard'
 import ReviewChat from './ReviewChat'
 import MiningChat from './MiningChat'
+import { seatStrands, SORT_WEIGHT_THRESHOLD } from './seatStrands'
 import {
   MINED_CLAIM_TYPES,
   MiningState,
@@ -62,7 +63,18 @@ async function api(path: string, opts: RequestInit = {}) {
   return data
 }
 
-export default function ReviewView() {
+export default function ReviewView({
+  seatKey = null,
+  seatName = null,
+}: {
+  seatKey?: string | null
+  seatName?: string | null
+} = {}) {
+  // Seat-scoped review: when opened from a council seat's sheet, the queue
+  // shows only agents whose sorted strand weights reach the seat's strands,
+  // and each agent's moments are filtered to those strands (see ReviewChat).
+  // Null (you-node, Skeptic, unknown seat) = the whole queue, unchanged.
+  const scopeStrands = seatStrands(seatKey)
   const [agents, setAgents] = useState<Agent[]>([])
   const [reviewed, setReviewed] = useState<Agent[]>([])
   const [selected, setSelected] = useState<Agent | null>(null)
@@ -336,7 +348,12 @@ export default function ReviewView() {
         </div>
 
         {reviewTab === 'chat' ? (
-          <ReviewChat agentId={a.id} agentName={a.name} />
+          <ReviewChat
+            agentId={a.id}
+            agentName={a.name}
+            strandFilter={scopeStrands}
+            seatName={seatName}
+          />
         ) : reviewTab === 'mining' ? (
           <MiningChat agentId={a.id} agentName={a.name} />
         ) : (
@@ -431,8 +448,23 @@ export default function ReviewView() {
     )
   }
 
+  /** An agent belongs in a seat's review queue when any of the seat's
+      strands reaches the sorter's multi-frame routing threshold in the
+      agent's sort weights. Unsorted agents (sort null) can't be attributed
+      to any seat — they stay in the whole queue only. */
+  const inSeatScope = (a: Agent) =>
+    !scopeStrands ||
+    (a.sort != null &&
+      scopeStrands.some((s) => (a.sort!.strand_weights[s] ?? 0) >= SORT_WEIGHT_THRESHOLD))
+  const visibleAgents = agents.filter(inSeatScope)
+  const visibleReviewed = reviewed.filter(inSeatScope)
+
   const queueLabel =
-    agents.length === 0 ? 'Nothing waiting for review.' : `${agents.length} conversation${agents.length === 1 ? '' : 's'} to review.`
+    visibleAgents.length === 0
+      ? seatName
+        ? `Nothing awaiting ${seatName}'s review.`
+        : 'Nothing waiting for review.'
+      : `${visibleAgents.length} conversation${visibleAgents.length === 1 ? '' : 's'} to review.`
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-4 max-w-2xl mx-auto w-full">
@@ -441,7 +473,7 @@ export default function ReviewView() {
       {loading && <p className="text-stone-500 text-sm">Loading…</p>}
       {error && <p className="text-red-300 text-sm mb-3">{error}</p>}
       <div className="space-y-2 mb-8">
-        {agents.map((a) => (
+        {visibleAgents.map((a) => (
           <button
             key={a.id}
             onClick={() => select(a)}
@@ -457,10 +489,10 @@ export default function ReviewView() {
 
       <h2 className="text-xl font-bold text-stone-100 mb-1">Reviewed</h2>
       <p className="text-stone-400 text-sm mb-4">
-        {reviewed.length === 0 ? 'Nothing reviewed yet.' : 'Filed agents — you can still mine projects from them.'}
+        {visibleReviewed.length === 0 ? 'Nothing reviewed yet.' : 'Filed agents — you can still mine projects from them.'}
       </p>
       <div className="space-y-2">
-        {reviewed.map((a) => (
+        {visibleReviewed.map((a) => (
           <button
             key={a.id}
             onClick={() => select(a)}

@@ -3,7 +3,7 @@
  * ideas → seeds, initiatives → trees, projects → branches, tasks → flowers, outcomes → fruit.
  */
 
-export type MapEntityKind = 'seed' | 'tree' | 'branch' | 'flower' | 'fruit' | 'landmark'
+export type MapEntityKind = 'seed' | 'tree' | 'branch' | 'flower' | 'fruit' | 'landmark' | 'cairn'
 
 /** Stewardship / attention (simple tiered; projection-only). */
 export type WaterLevel = 'high' | 'medium' | 'low'

@@ -35,7 +35,17 @@ import '@xyflow/react/dist/style.css'
 import './mapAesthetics.css'
 
 import { EntityMapNode } from './EntityMapNode'
+import { CairnNode } from './CairnNode'
 import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX, NEST_NODE_LAYOUT_WIDTH_PX } from './NestGroupNode'
+import {
+  CAIRN_NARROW_THRESHOLD,
+  CAIRN_WIDE_THRESHOLD,
+  collapseCairn,
+  expandCairn,
+  type CairnEntry,
+  type CairnIndex,
+} from './cairn'
+import { CairnInteractionContext } from './cairnContext'
 import { MapFlowEdge } from './MapFlowEdge'
 import { MapChatShell } from './MapChatShell'
 import { resolveInspectEntityRef } from './mapTriadInspector'
@@ -79,7 +89,7 @@ import { mapPayloadToConversationFocusDescriptor } from './mapFocusDescriptor'
 import { VeRadarAwarenessStrip } from './VeRadarAwarenessStrip'
 import type { VeRadarBucketId } from '../vision-execution/veRadarAwareness'
 
-const nodeTypes = { entityMap: EntityMapNode, nestGroup: NestGroupNode }
+const nodeTypes = { entityMap: EntityMapNode, nestGroup: NestGroupNode, cairn: CairnNode }
 const edgeTypes = { mapFlow: MapFlowEdge }
 const TRACKPAD_ZOOM_GAIN = 2.2
 const SCENE_BASE_HEIGHT_PX = 560
@@ -310,6 +320,11 @@ function VisionMapFlow({
   const rf = useReactFlow()
   const [baseGraph, setBaseGraph] = useState<{ nodes: Node<MapNodePayload>[]; edges: Edge[] } | null>(null)
   const [entityBundle, setEntityBundle] = useState<VisionMapEntityBundle | null>(null)
+  /** Cairn mode: honest counts for the notice; the index + anchors live in refs (not render state). */
+  const [cairnMeta, setCairnMeta] = useState({ totalStones: 0, cairnCount: 0, cairned: false })
+  const [expandedCairns, setExpandedCairns] = useState<ReadonlySet<string>>(new Set())
+  const cairnIndexRef = useRef<CairnIndex>({})
+  const cairnAnchorRef = useRef<Record<string, XYPosition>>({})
 
   useEffect(() => {
     onCouncilEntityBundleSnapshot?.(entityBundle)
@@ -421,9 +436,13 @@ function VisionMapFlow({
         fetchStudioCouncilRuns(80),
         fetchNodeVitalityMap().catch(() => undefined),
       ])
-      const { nodes: n, edges: e } = buildLiveVisionMapGraph(entities, runs, serverVitality)
+      const narrow =
+        typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+      const g = buildLiveVisionMapGraph(entities, runs, serverVitality, {
+        cairnThreshold: narrow ? CAIRN_NARROW_THRESHOLD : CAIRN_WIDE_THRESHOLD,
+      })
       const persisted = loadVisionMapLayout(layoutStorageKey)
-      const ids = new Set(n.map((node) => node.id))
+      const ids = new Set(g.nodes.map((node) => node.id))
       const restoredPos: Record<string, XYPosition> = {}
       if (persisted?.positions) {
         for (const [id, pos] of Object.entries(persisted.positions)) {
@@ -432,7 +451,11 @@ function VisionMapFlow({
       }
       viewportRestoreRef.current = persisted?.viewport ?? null
       setEntityBundle(entities)
-      setBaseGraph({ nodes: n, edges: e })
+      cairnIndexRef.current = g.cairnIndex
+      cairnAnchorRef.current = {}
+      setCairnMeta({ totalStones: g.totalStones, cairnCount: g.cairnCount, cairned: g.cairned })
+      setExpandedCairns(new Set())
+      setBaseGraph({ nodes: g.nodes, edges: g.edges })
       setNestState(EMPTY_NEST_STATE)
       setPositionOverrides(restoredPos)
       setSelectedNodeId(null)
@@ -444,6 +467,9 @@ function VisionMapFlow({
       setLoadErr(err instanceof Error ? err.message : String(err))
       setBaseGraph(null)
       setEntityBundle(null)
+      cairnIndexRef.current = {}
+      setCairnMeta({ totalStones: 0, cairnCount: 0, cairned: false })
+      setExpandedCairns(new Set())
       viewportRestoreRef.current = null
     }
   }, [layoutStorageKey])
@@ -451,6 +477,61 @@ function VisionMapFlow({
   useEffect(() => {
     void load()
   }, [load])
+
+  /**
+   * Cairn expansion layer. Expanded cairns swap for their member stones,
+   * fanned out around the cairn's current position (relative offsets from
+   * the original layout are preserved). Members carry `expandedFromCairn`
+   * so a long-press on any of them collapses back.
+   */
+  const displayGraph = useMemo(() => {
+    const empty = new Set<string>()
+    if (!baseGraph) return { nodes: [] as Node<MapNodePayload>[], edges: [] as Edge[], expandedMemberIds: empty }
+    if (expandedCairns.size === 0) {
+      return { nodes: baseGraph.nodes, edges: baseGraph.edges, expandedMemberIds: empty }
+    }
+    let nodes = [...baseGraph.nodes]
+    let edges = [...baseGraph.edges]
+    const expandedMemberIds = new Set<string>()
+    for (const cid of expandedCairns) {
+      const entry = cairnIndexRef.current[cid]
+      if (!entry) continue
+      const anchor = cairnAnchorRef.current[cid] ?? entry.cairnNode.position
+      const ex = expandCairn(nodes, edges, entry, anchor)
+      nodes = ex.nodes
+      edges = ex.edges
+      for (const m of entry.memberNodes) expandedMemberIds.add(m.id)
+    }
+    return { nodes, edges, expandedMemberIds }
+  }, [baseGraph, expandedCairns])
+
+  const toggleCairn = useCallback(
+    (cairnId: string) => {
+      const entry: CairnEntry | undefined = cairnIndexRef.current[cairnId]
+      if (!entry) return
+      if (expandedCairns.has(cairnId)) {
+        // Collapsing: the cairn reappears where its branch stone sits now.
+        const branch = nodes.find(
+          (n) =>
+            (n.data as MapNodePayload)?.expandedFromCairn === cairnId &&
+            (n.data as MapNodePayload).kind === 'branch',
+        )
+        if (branch) cairnAnchorRef.current[cairnId] = { ...branch.position }
+        setExpandedCairns((prev) => {
+          const next = new Set(prev)
+          next.delete(cairnId)
+          return next
+        })
+      } else {
+        const cairn = nodes.find((n) => n.id === cairnId)
+        if (cairn) cairnAnchorRef.current[cairnId] = { ...cairn.position }
+        setExpandedCairns((prev) => new Set(prev).add(cairnId))
+      }
+    },
+    [nodes, expandedCairns],
+  )
+
+  const cairnInteractionValue = useMemo(() => ({ onToggleCairn: toggleCairn }), [toggleCairn])
 
   /** After a failed load the graph is empty; reset pan/zoom so a prior 20% zoom doesn’t hide the next success. */
   useEffect(() => {
@@ -485,14 +566,20 @@ function VisionMapFlow({
   }, [selectedNodeId, nestState, baseGraph])
 
   useEffect(() => {
+    const viewGraph = displayGraph
     if (!baseGraph) {
       setNodes([])
       setEdges([])
       return
     }
-    const baseNodes = baseGraph.nodes.map((n) => ({
+    const baseNodes = viewGraph.nodes.map((n) => ({
       ...n,
-      position: positionOverrides[n.id] ? { ...positionOverrides[n.id]! } : n.position,
+      // Expanded cairn members keep their fan-out positions; persisted
+      // overrides would yank them to stale full-garden spots.
+      position:
+        !viewGraph.expandedMemberIds.has(n.id) && positionOverrides[n.id]
+          ? { ...positionOverrides[n.id]! }
+          : n.position,
       data: {
         ...n.data,
         fertilizer_pulse: n.data.fertilizer_pulse || n.id === guidancePulseNodeId,
@@ -500,7 +587,7 @@ function VisionMapFlow({
     }))
     const focusAll = applyFocusToVisionMap(
       baseNodes as Node<MapNodePayload>[],
-      baseGraph.edges,
+      viewGraph.edges,
       selectedNodeId,
     )
     const focusByNodeId: Record<string, { dimmed?: boolean; focusLineage?: boolean }> = {}
@@ -557,6 +644,7 @@ function VisionMapFlow({
     setNodes([...(focused.nodes as Node<MapNodePayload>[]), ...transformed.nestNodes])
     setEdges(focused.edges)
   }, [
+    displayGraph,
     baseGraph,
     selectedNodeId,
     setNodes,
@@ -863,7 +951,7 @@ function VisionMapFlow({
     cb(developmentalSnapshotForPrompt)
   }, [onDevelopmentalSignalsChange, developmentalSnapshotForPrompt])
 
-  const nodeCount = baseGraph?.nodes.length ?? 0
+  const nodeCount = displayGraph.nodes.length
   const hasContextSelection = Boolean(selectedPayload)
   const sceneHeightPx = useMemo(() => {
     if (nodes.length === 0) return SCENE_BASE_HEIGHT_PX
@@ -943,18 +1031,37 @@ function VisionMapFlow({
   }, [layoutStorageKey, rf])
 
   const mapHelpTitle =
-    'Live VE projection · gloss/wetness = water (stewardship) · stone cracks = structural severity (0–3) · green ring = recent update or council · fruit = shipped project + deliverables · drag stones · pan: empty map / Space / right-drag / two-finger trackpad'
+    'Live VE projection · stone wash = project hue · glyph = growth (seed/sprout/sapling/bloom/fruit) · amber ring = needs attention · green ring = recent update · cairns stack a project\u2019s stones \u2014 long-press to fan out · drag stones · pan: empty map / Space / right-drag / two-finger trackpad'
 
   return (
+    <CairnInteractionContext.Provider value={cairnInteractionValue}>
     <div className="flex flex-1 min-h-0 flex-col bg-stone-900">
       <header className="flex items-start justify-between gap-3 px-4 py-2 border-b border-stone-700 bg-stone-900/85 shrink-0 flex-wrap">
         <div className="min-w-0 flex-1">
           <h1 className="text-lg font-semibold text-stone-100" title={mapHelpTitle}>
             Vision map
           </h1>
-          <p className="text-[10px] text-stone-500 truncate" title={mapHelpTitle}>
-            {loadState === 'ok' ? `${nodeCount} nodes` : loadState} · hover title for map legend
-          </p>
+          {loadState === 'ok' && cairnMeta.cairned ? (
+            <p className="text-[10px] leading-snug text-stone-400" title={mapHelpTitle}>
+              {cairnMeta.cairnCount} cairns · {cairnMeta.totalStones} stones — long-press a cairn to fan it out
+              {onOpenOperatorMode ? (
+                <>
+                  {' '}·{' '}
+                  <button
+                    type="button"
+                    onClick={onOpenOperatorMode}
+                    className="underline underline-offset-2 hover:text-stone-200"
+                  >
+                    full set in Vision tables
+                  </button>
+                </>
+              ) : null}
+            </p>
+          ) : (
+            <p className="text-[10px] text-stone-500 truncate" title={mapHelpTitle}>
+              {loadState === 'ok' ? `${nodeCount} nodes` : loadState} · hover title for map legend
+            </p>
+          )}
           {onOpenVeRadar ? (
             <div className="mt-1.5 max-w-full">
               <VeRadarAwarenessStrip
@@ -1043,6 +1150,7 @@ function VisionMapFlow({
         ) : null}
       </div>
     </div>
+    </CairnInteractionContext.Provider>
   )
 }
 

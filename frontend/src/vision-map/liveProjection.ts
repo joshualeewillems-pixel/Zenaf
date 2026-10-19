@@ -14,6 +14,8 @@ import type { StudioCouncilRunRow } from './studioCouncilTypes'
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import type { ServerNodeVitalityMap } from './veMapApi'
 import { PROJECTION_UNSCOPED_INITIATIVE_ID } from './mapCouncilActions'
+import { applyCairnMode, type CairnIndex, type CairnModeResult } from './cairn'
+export type { CairnIndex, CairnModeResult }
 import { computeMapEdgeVitality, type MapEdgeEndpointMeta } from './mapEdgeVitality'
 import {
   deriveFertilizerPulse,
@@ -153,11 +155,22 @@ function finalizeMapNodePayload(
   }
 }
 
+export type LiveVisionMapGraphOptions = {
+  /**
+   * Rendered-node threshold for cairn mode. When the projected graph holds
+   * more nodes than this, project subtrees collapse into cairns (stacked
+   * stones, nothing dropped). Omit / undefined = no cairning, today's
+   * behavior exactly.
+   */
+  cairnThreshold?: number
+}
+
 export function buildLiveVisionMapGraph(
   bundle: VisionMapEntityBundle,
   councilRuns: StudioCouncilRunRow[],
   serverVitality?: ServerNodeVitalityMap,
-): { nodes: Node<MapNodePayload>[]; edges: Edge[] } {
+  opts?: LiveVisionMapGraphOptions,
+): CairnModeResult {
   const { ideas, initiatives, projects, tasks } = bundle
   const nodes: Node<MapNodePayload>[] = []
   const edges: Edge[] = []
@@ -436,7 +449,10 @@ export function buildLiveVisionMapGraph(
     })
   })
 
-  return { nodes, edges }
+  if (opts?.cairnThreshold == null) {
+    return { nodes, edges, totalStones: nodes.length, cairnCount: 0, cairned: false, cairnIndex: {} }
+  }
+  return applyCairnMode(nodes, edges, opts.cairnThreshold)
 }
 
 function layoutProjectsUnderTree(

@@ -137,7 +137,7 @@ def get_archetype_status(current_user: dict = Depends(get_current_user)):
     """
     user_id = _user_id(current_user)
     strand_scores = _strand_depth_scores(user_id)
-    skeptic_weights = compute_skeptic_weights(user_id)
+    skeptic_weights = compute_skeptic_weights(user_id, mode="trained")
     twigs_by_parent = _twigs_by_parent(user_id)
 
     # Avatar unlock state comes from the naming-milestone depth model

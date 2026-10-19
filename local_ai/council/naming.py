@@ -101,7 +101,7 @@ def archetype_depths(user_id: str | None) -> dict[str, float]:
                 vectors[aid] = arch.strand_weights
             else:
                 # Skeptic: dynamic inverse of the user's dominant strands.
-                vectors[aid] = compute_skeptic_weights(user_id)
+                vectors[aid] = compute_skeptic_weights(user_id, mode="trained")
 
         from local_ai.personality.depth import map_signal_to_strand
 

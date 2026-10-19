@@ -63,7 +63,7 @@ export type NodeMenuItemId =
   | 'talk'
   | 'review'
   | 'projects'
-  | 'identity'
+  | 'settings'
   | 'character'
 
 /**
@@ -177,7 +177,7 @@ const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'talk', title: 'Talk', desc: 'Think something through with your whole council.' },
   { id: 'review', title: 'Review', desc: 'Moments awaiting your verdict before anything trains.' },
   { id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
-  { id: 'identity', title: 'Identity', desc: 'Account, model connections, consent.' },
+  { id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
 ]
 
 /** The one grammar: a seat node's menu. */
@@ -1045,10 +1045,7 @@ export function LivingTreeView({
 
   /** Honest empty state: no fake content, no demo data — later phases fill in. */
   const renderStillGrowing = (node: TreeNodeRef, item: NodeMenuItemId) => {
-    const name = node.kind === 'you' ? 'your whole council' : node.fellowshipName
-    const copy: Partial<Record<NodeMenuItemId, string>> = {
-      talk: `Conversations with ${name} are still growing — this is where you'll think things through together, right here on the tree. For now, the council's conversation lives in the Workspace view.`,
-    }
+    const copy: Partial<Record<NodeMenuItemId, string>> = {}
     return (
       <div className="lgrow">
         <p className="lgrow-t">Still growing.</p>

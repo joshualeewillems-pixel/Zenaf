@@ -175,6 +175,7 @@ import { ContentFrontDoor } from './content'
 import AgentIntakeView from './agent-intake/AgentIntakeView'
 import ReviewView from './agent-intake/ReviewView'
 import TodayView from './today/TodayView'
+import CouncilChat from './chat/CouncilChat'
 import { fetchPendingReviewCount } from './agent-intake/reviewQueue'
 import SignalReviewView from './presence-review/SignalReviewView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
@@ -4953,6 +4954,17 @@ function App() {
       )
     }
     if (item === 'review') return <ReviewView />
+    if (item === 'talk') {
+      return node.kind === 'seat' ? (
+        <CouncilChat
+          key={`talk-${node.seatKey}`}
+          archetypeId={node.seatKey}
+          displayName={node.fellowshipName}
+        />
+      ) : (
+        <CouncilChat key="talk-you" />
+      )
+    }
     if (node.kind !== 'you') return null
     if (item === 'projects') {
       return (
@@ -4971,7 +4983,7 @@ function App() {
         />
       )
     }
-    if (item === 'identity') {
+    if (item === 'settings') {
       return (
         <SettingsView
           user={currentUser}

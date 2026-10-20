@@ -5,6 +5,12 @@ per seat, exactly as Joshua approved in the design (no quotes, no mottos —
 name and face first, like meeting someone in real life). Content revisions are
 data edits here, never rebuilds.
 
+Order is fixed and starts with the Conductor (entry seat): in optimal form it
+is the amalgamation of the others' strengths and weaknesses and the
+negotiation between them, so it introduces the council. The other six follow
+in the user's choice of order. Keystone 4 gates RENTABILITY, not training —
+training runs continuously throughout normal usage, per user approval.
+
 Seeding logic lives in local_ai/vision_execution/keystone_seeding.py.
 The keystone *conversations* themselves are a separate build (intro-conversation
 unlock) — this is the scaffolding: initiative, checklist, dependencies, seed.
@@ -16,16 +22,26 @@ INITIATIVE_KEY = "meet-your-council"
 INITIATIVE_TITLE = "Meet your council"
 INITIATIVE_STATUS = "Active"
 INITIATIVE_BRIEF = (
-    "Meet the seven seats of your council, one at a time. Like meeting someone "
-    "in real life: name and face first, then what each one is good at, what "
-    "each one is not good at, and finally the part of you that echoes each of "
-    "them. No quotes, no mottos — just getting to know them."
+    "Meet the seven seats of your council. Start with the Conductor — the one "
+    "who hears how the others fit together — and it will introduce the rest. "
+    "Like meeting someone in real life: name and face first, then what each "
+    "one is good at, what each one is not good at, and finally the part of "
+    "you that echoes each of them. No quotes, no mottos — just getting to "
+    "know them."
 )
 
 PROJECT_STATUS = "Ready"
 
 #: Canonical seat ids (local_ai/council/archetypes.py stock_archetype_ids).
+#: Conductor first — it is the ENTRY seat (see module docstring).
 SEATS: tuple[dict[str, str], ...] = (
+    {
+        "seat_ref": "conductor",
+        "character": "Weaver",
+        "demeanor": "Hears how parts fit; cannot leave a loose thread.",
+        "echo": "the part that arranges; also the anxious planner when blended",
+        "entry": "true",
+    },
     {
         "seat_ref": "mentor",
         "character": "Gardener",
@@ -49,12 +65,6 @@ SEATS: tuple[dict[str, str], ...] = (
         "character": "Bridge",
         "demeanor": "Curious about the other side; holds two truths lightly.",
         "echo": "the part that translates between your warring inner voices",
-    },
-    {
-        "seat_ref": "conductor",
-        "character": "Weaver",
-        "demeanor": "Hears how parts fit; cannot leave a loose thread.",
-        "echo": "the part that arranges; also the anxious planner when blended",
     },
     {
         "seat_ref": "skeptic",
@@ -83,7 +93,6 @@ def keystones_for(seat: dict[str, str]) -> list[dict[str, str]]:
     """The 4 keystone tasks for one seat, in dependency order 1→2→3→4."""
     character = seat["character"]
     demeanor = seat["demeanor"]
-    echo = seat["echo"]
     return [
         _keystone(
             title="First meeting",
@@ -115,15 +124,21 @@ def keystones_for(seat: dict[str, str]) -> list[dict[str, str]]:
         _keystone(
             title="The echo",
             description=(
-                f"Find the part of you that echoes {character}: {echo}. "
-                "Name a lived moment of being in it willingly — consulting it "
-                "on purpose — and a lived moment of being blended with it "
-                "unwillingly, when it had the wheel and you didn't know it."
+                f"Not a solo exercise — a conversation {character} initiates "
+                "when the system senses readiness. Training has been running "
+                "all along, with your approval, so there is something real to "
+                "talk about: what the seat has discovered about you over "
+                "usage. Personal recognition, parallels and divergences "
+                "between the archetype and your echo of it. Expect questions "
+                "like: what does the image that parallels us look like? What "
+                "name feels right for it?"
             ),
             completion_criteria=(
-                "Unlocked: full character sheet. "
-                f"{character} becomes mirror-eligible (training unlocks only "
-                "for seats you have met)."
+                "Unlocked: full character sheet; the seat's 'You' profile "
+                "becomes visible and interactable (the Zenaf / You switch). "
+                f"{character} becomes RENTABLE — viable to rent to someone "
+                "else. Training is not gated by this keystone: it runs "
+                "continuously throughout normal usage, per your approval."
             ),
         ),
     ]

@@ -154,7 +154,9 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
         ),
         "question": "How can these parts become a whole?",
         "shadow": (
-            "Overengineering: control, reducing people to components of a system."
+            "Subordinating the ensemble to its own conception of harmony: "
+            "forcing resolution, smoothing away the differences the council "
+            "exists to preserve."
         ),
         "tension": (
             "Impatient with the Skeptic's refusal to resolve and the Maverick's "

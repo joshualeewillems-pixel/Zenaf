@@ -139,3 +139,28 @@ export async function createInvite(displayName?: string): Promise<InviteCreated>
   }
   return data as InviteCreated
 }
+
+export interface KeystoneSeedEntry {
+  email: string | null
+  created: boolean
+  initiative_id: string
+}
+
+export interface KeystoneBackfillResult {
+  ok: boolean
+  seeded: KeystoneSeedEntry[]
+}
+
+export async function seedKeystones(): Promise<KeystoneBackfillResult> {
+  const res = await fetch(`${AUTH_BASE}/admin/seed-keystones`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(authError(data, 'Could not run the keystone backfill'))
+  }
+  return data as KeystoneBackfillResult
+}

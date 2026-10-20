@@ -1,5 +1,5 @@
 import type { CurrentUser } from '../../auth/session'
-import { createInvite } from '../../auth/session'
+import { createInvite, seedKeystones } from '../../auth/session'
 import { useState } from 'react'
 
 type Props = {
@@ -16,6 +16,9 @@ export function InvitesSection({ user }: Props) {
   const [copied, setCopied] = useState(false)
   const [err, setErr] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [backfilling, setBackfilling] = useState(false)
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null)
+  const [backfillErr, setBackfillErr] = useState<string | null>(null)
 
   if (!user.is_admin) return null
 
@@ -30,6 +33,28 @@ export function InvitesSection({ user }: Props) {
       setErr(e instanceof Error ? e.message : 'Could not create an invite link')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const backfill = async () => {
+    setBackfillMsg(null)
+    setBackfillErr(null)
+    setBackfilling(true)
+    try {
+      const result = await seedKeystones()
+      const created = result.seeded.filter((s) => s.created)
+      if (created.length === 0) {
+        setBackfillMsg('Everyone already has it — nothing to do.')
+      } else {
+        const names = created.map((s) => s.email ?? 'unknown account').join(', ')
+        setBackfillMsg(
+          `Seeded ${created.length} account${created.length === 1 ? '' : 's'}: ${names}`,
+        )
+      }
+    } catch (e) {
+      setBackfillErr(e instanceof Error ? e.message : 'Could not run the keystone backfill')
+    } finally {
+      setBackfilling(false)
     }
   }
 
@@ -87,6 +112,24 @@ export function InvitesSection({ user }: Props) {
         </div>
       )}
       {err && <p className="text-red-400 text-sm">{err}</p>}
+      <div className="border-t border-slate-700 pt-3 space-y-3">
+        <h3 className="text-base font-semibold text-slate-100">Keystone backfill</h3>
+        <p className="text-sm text-slate-400">
+          Give every existing account the &lsquo;Meet your council&rsquo; starting
+          initiative. Safe to run more than once — accounts that already have
+          it are skipped.
+        </p>
+        <button
+          type="button"
+          disabled={backfilling}
+          onClick={backfill}
+          className="min-h-[44px] px-4 py-2 rounded-lg text-sm bg-amber-600 text-white hover:bg-amber-500 disabled:opacity-50"
+        >
+          {backfilling ? 'Backfilling…' : 'Backfill keystone initiative'}
+        </button>
+        {backfillMsg && <p className="text-sm text-slate-300">{backfillMsg}</p>}
+        {backfillErr && <p className="text-red-400 text-sm">{backfillErr}</p>}
+      </div>
     </section>
   )
 }

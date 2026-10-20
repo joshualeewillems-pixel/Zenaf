@@ -471,3 +471,177 @@ def test_recusal_not_offered_in_question_mode():
             vid, _two_voice_transcript(), speak=True, question_mode=True
         )
         assert "recuse" not in prompt, vid
+
+
+# --- Register flag: "!" over the seat whose register a reply entered -------
+
+
+def test_register_flag_instruction_on_speak_turns_all_seats():
+    from api.routes import demo_routes as dr
+    from local_ai.council.archetypes import stock_archetype_ids
+
+    for vid in stock_archetype_ids():
+        prompt = dr._build_demo_prompt(
+            vid, _two_voice_transcript(), speak=True, question_mode=False
+        )
+        assert "[[register:" in prompt, vid
+
+
+def test_register_flag_instruction_lists_other_seats_only():
+    from api.routes import demo_routes as dr
+    from local_ai.council.archetypes import stock_archetype_ids
+
+    for vid in stock_archetype_ids():
+        instruction = dr._register_flag_instruction(vid)
+        # Every other seat is a named flag target, with its register text —
+        # including the Skeptic, whose register a reply can enter even
+        # though the Skeptic itself never recuses.
+        for other in stock_archetype_ids():
+            if other == vid:
+                assert f"({other})" not in instruction, vid
+            else:
+                assert f"({other})" in instruction, (vid, other)
+                assert dr._SEAT_REGISTERS[other] in instruction, (vid, other)
+        # Rare, singular, never its own seat — the recusal spirit. (The
+        # hand-off wording avoids "recuse" so the Skeptic's prompt keeps
+        # #171's invariant: no recusal language is ever addressed to it.)
+        assert "At most one marker" in instruction
+        assert "never your own seat" in instruction
+        assert "add no marker" in instruction
+        assert "hand-off already names the seat" in instruction
+
+
+def test_register_flag_absent_in_question_mode():
+    from api.routes import demo_routes as dr
+
+    # Hard constraint: question mode stays exactly as-is — no flag there.
+    for vid in ("mentor", "guardian", "conductor", "skeptic"):
+        prompt = dr._build_demo_prompt(
+            vid, _two_voice_transcript(), speak=True, question_mode=True
+        )
+        assert "[[register:" not in prompt, vid
+
+
+def test_register_flag_absent_for_typed_messages():
+    from api.routes import demo_routes as dr
+
+    # Speak turns only: a typed message in respond mode gets no instruction.
+    prompt = dr._build_demo_prompt(
+        "mentor",
+        [{"role": "visitor", "content": "I'm at a crossroads."}],
+        speak=False,
+        question_mode=False,
+    )
+    assert "[[register:" not in prompt
+
+
+def test_register_flag_parsed_and_stripped():
+    from api.routes import demo_routes as dr
+
+    text, flag = dr._extract_register_flag(
+        "Watch what this costs the people around you.\n[[register:guardian]]",
+        "mentor",
+    )
+    assert flag == "guardian"
+    assert text == "Watch what this costs the people around you."
+
+
+def test_register_flag_none_without_marker():
+    from api.routes import demo_routes as dr
+
+    text, flag = dr._extract_register_flag("A plain answer in my own voice.", "mentor")
+    assert flag is None
+    assert text == "A plain answer in my own voice."
+
+
+def test_register_flag_with_trailing_whitespace():
+    from api.routes import demo_routes as dr
+
+    text, flag = dr._extract_register_flag(
+        "An answer.\n[[register:guardian]]  \n", "mentor"
+    )
+    assert flag == "guardian"
+    assert text == "An answer."
+
+
+def test_register_flag_recusal_carries_no_flag():
+    from api.routes import demo_routes as dr
+
+    # The recusal already names the seat — a marker on top of it is ignored.
+    text, flag = dr._extract_register_flag(
+        "This is the Guardian's ground — protection, not translation.\n"
+        "[[register:guardian]]",
+        "ambassador",
+    )
+    assert flag is None
+    assert text == "This is the Guardian's ground — protection, not translation."
+
+
+def test_register_flag_malformed_never_leaks():
+    from api.routes import demo_routes as dr
+
+    cases = [
+        # Unknown seat: no flag, marker gone.
+        "An answer.\n[[register:bogus]]",
+        # Empty seat id.
+        "An answer.\n[[register:]]",
+        # Missing a closing bracket: not flag-bearing, still stripped.
+        "An answer.\n[[register:guardian]",
+        # A seat never flags itself.
+        "An answer.\n[[register:mentor]]",
+    ]
+    for raw in cases:
+        text, flag = dr._extract_register_flag(raw, "mentor")
+        assert flag is None, raw
+        assert "register" not in text, raw
+        assert text == "An answer.", raw
+    # Turns that may not flag (typed / question mode) strip but never flag.
+    text, flag = dr._extract_register_flag(
+        "An answer.\n[[register:guardian]]", "mentor", enabled=False
+    )
+    assert flag is None
+    assert "register" not in text
+
+
+def test_register_flag_first_valid_marker_wins():
+    from api.routes import demo_routes as dr
+
+    text, flag = dr._extract_register_flag(
+        "An answer.\n[[register:guardian]]\n[[register:skeptic]]", "mentor"
+    )
+    assert flag == "guardian"
+    assert "register" not in text
+    assert text == "An answer."
+
+
+def test_stream_safe_split_holds_split_marker():
+    from api.routes import demo_routes as dr
+
+    # A marker arriving split across chunks is never emitted in pieces.
+    safe, held = dr._split_stream_safe("An answer.\n[[reg")
+    assert safe == "An answer.\n"
+    assert held == "[[reg"
+    safe, held = dr._split_stream_safe(held + "ister:guard")
+    assert safe == ""
+    assert held == "[[register:guard"
+    safe, held = dr._split_stream_safe(held + "ian]]")
+    assert safe == ""
+    assert held == "[[register:guardian]]"
+    # Plain text with no marker shape passes straight through.
+    safe, held = dr._split_stream_safe("Just prose, nothing held.")
+    assert safe == "Just prose, nothing held."
+    assert held == ""
+
+
+def test_register_flag_response_field_defaults_none():
+    from api.routes.demo_routes import DemoChatResponse
+
+    resp = DemoChatResponse(
+        reply="hi",
+        session_id="s",
+        voice="mentor",
+        voice_color="#c9a86a",
+        exchanges_used=1,
+        exchanges_left=11,
+    )
+    assert resp.register_flag is None

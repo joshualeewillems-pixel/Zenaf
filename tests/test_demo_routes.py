@@ -390,3 +390,84 @@ def test_demo_prompt_matches_two_layer_framing():
     assert "warmth register" in prompt
     # The per-seat register flows into the demo prompt via the archetype lines.
     assert "warm-protective" in prompt
+
+
+# --- Conductor orchestration v1: dissent-preserving synthesis ----------------
+
+
+def test_conductor_speak_turn_carries_orchestration_block():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt(
+        "conductor", _two_voice_transcript(), speak=True, question_mode=False
+    )
+    # Name the standing disagreements and let them stand — no false consensus.
+    assert "standing disagreements" in prompt
+    assert "never a consensus the thread hasn't reached" in prompt
+    # A moved position must be owned out loud, with what changed it.
+    assert "say what changed it" in prompt
+
+
+def test_orchestration_block_is_conductor_only():
+    from api.routes import demo_routes as dr
+
+    for vid in ("mentor", "champion", "guardian", "maverick", "ambassador", "skeptic"):
+        prompt = dr._build_demo_prompt(
+            vid, _two_voice_transcript(), speak=True, question_mode=False
+        )
+        assert "standing disagreements" not in prompt, vid
+
+
+def test_conductor_question_mode_untouched_by_orchestration():
+    from api.routes import demo_routes as dr
+
+    # Hard constraint: question mode stays exactly as-is.
+    prompt = dr._build_demo_prompt(
+        "conductor", _two_voice_transcript(), speak=True, question_mode=True
+    )
+    assert "standing disagreements" not in prompt
+    assert "ONE penetrating question about Mentor's last response" in prompt
+
+
+# --- Conductor orchestration v1: seat recusal --------------------------------
+
+
+def test_recusal_offered_to_every_seat_but_skeptic():
+    from api.routes import demo_routes as dr
+    from local_ai.council.archetypes import stock_archetype_ids
+
+    for vid in stock_archetype_ids():
+        prompt = dr._build_demo_prompt(
+            vid, _two_voice_transcript(), speak=True, question_mode=False
+        )
+        if vid == "skeptic":
+            # The Skeptic never recuses — examining is always its ground.
+            assert "recuse" not in prompt, vid
+        else:
+            assert "recuse" in prompt, vid
+            # The seat's own home ground is named, so the boundary is legible.
+            assert dr._SEAT_TERRITORY[vid] in prompt, vid
+
+
+def test_recusal_is_rare_and_complete():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt(
+        "ambassador", _two_voice_transcript(), speak=True, question_mode=False
+    )
+    # Rare/literal: plainly another seat's ground only, never a dodge.
+    assert "Recuse rarely" in prompt
+    assert "never to dodge a hard question" in prompt
+    # A recusal is the whole reply for the turn — one generation, no extra call.
+    assert "a recusal is a complete reply" in prompt
+
+
+def test_recusal_not_offered_in_question_mode():
+    from api.routes import demo_routes as dr
+
+    # Hard constraint: question mode stays exactly as-is — no recusal there.
+    for vid in ("mentor", "guardian", "conductor"):
+        prompt = dr._build_demo_prompt(
+            vid, _two_voice_transcript(), speak=True, question_mode=True
+        )
+        assert "recuse" not in prompt, vid

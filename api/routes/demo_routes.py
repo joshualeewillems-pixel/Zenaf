@@ -280,6 +280,58 @@ def _last_voice_turn(transcript: list[dict]) -> dict | None:
     return None
 
 
+#: Conductor orchestration (conductor-orchestration v1, mechanism 1):
+#: appended to the Conductor's speak-turn prompt in respond mode only.
+#: The Conductor conducts — it finds the shape underneath the disagreement
+#: instead of smoothing it away. This operationalizes its shadow line
+#: (PR #169): subordinating the ensemble to its own conception of harmony
+#: by forcing resolution is its characteristic failure mode, so the prompt
+#: names the opposite duty explicitly.
+_CONDUCTOR_ORCHESTRATION_BLOCK = (
+    "You conduct this council — you do not smooth it. Name the standing "
+    "disagreements in this thread explicitly, and let them stand where they "
+    "stand: your job is the shape underneath the disagreement, never a "
+    "consensus the thread hasn't reached. Never declare agreement that isn't "
+    "there. If another voice here has moved your own position, say what "
+    "changed it, in plain words. A tension left standing is a result, not a "
+    "failure."
+)
+
+#: Each seat's home ground, for the speak-turn recusal rule
+#: (conductor-orchestration v1, mechanism 2). The Skeptic is deliberately
+#: absent: examining is always its ground, so it never recuses.
+_SEAT_TERRITORY: dict[str, str] = {
+    "mentor": "what a thing can teach, and the long view",
+    "champion": "what is worth fighting for, and the brave move",
+    "guardian": "what must be protected, and who gets hurt",
+    "maverick": "whether the rules are wrong, and the door nobody questions",
+    "ambassador": "translating between worlds, and what brings people together",
+    "conductor": "how the parts fit into a whole",
+}
+
+
+def _recusal_instruction(voice_id: str) -> str:
+    """Speak-turn recusal permission for one seat; "" for the Skeptic.
+
+    A recusal is a complete one-sentence reply naming whose ground the
+    topic is — it happens inside the turn's single generation, never as an
+    extra call. It is deliberately narrow: plainly another seat's ground
+    only, never a dodge for a hard question on the seat's own ground.
+    """
+    territory = _SEAT_TERRITORY.get(voice_id)
+    if not territory:
+        return ""
+    return (
+        f"Your home ground is {territory}. If what you are being asked to "
+        "address is squarely another seat's ground and not yours, you may "
+        "recuse instead of bluffing an answer: one short sentence naming "
+        "whose ground it is ('This is the Guardian's ground — protection, "
+        "not translation'), and nothing more — a recusal is a complete "
+        "reply. Recuse rarely: only when the topic is plainly another "
+        "seat's, never to dodge a hard question on your own ground."
+    )
+
+
 def _build_demo_prompt(
     voice_id: str,
     transcript: list[dict],
@@ -351,6 +403,11 @@ def _build_demo_prompt(
                     "a clear stance. Do not restate the previous voice's point in "
                     "different words."
                 )
+                if voice_id == "conductor":
+                    prompt.append(_CONDUCTOR_ORCHESTRATION_BLOCK)
+                recusal = _recusal_instruction(voice_id)
+                if recusal:
+                    prompt.append(recusal)
         else:
             # No voice turn yet (defensive — the endpoint 422s on a truly empty
             # transcript, but a visitor-only transcript is possible).
@@ -368,6 +425,9 @@ def _build_demo_prompt(
                     "conversation so far from your perspective: advance it, challenge it, "
                     "or deepen it. Do not summarize what has been said."
                 )
+                recusal = _recusal_instruction(voice_id)
+                if recusal:
+                    prompt.append(recusal)
         prompt.append("")
     elif question_mode:
         # Typed message in question mode: the voice does not answer the

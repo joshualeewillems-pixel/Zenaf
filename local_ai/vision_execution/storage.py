@@ -289,6 +289,18 @@ def _migrate_asset_columns(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_keystone_columns(conn: sqlite3.Connection) -> None:
+    """Add seed_key to initiatives and seat_ref to tasks if missing (existing DBs)."""
+    for table, column in [
+        ("initiatives", "seed_key"),
+        ("tasks", "seat_ref"),
+    ]:
+        cur = conn.execute(f"PRAGMA table_info({table})")
+        if not any(r[1] == column for r in cur.fetchall()):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+    conn.commit()
+
+
 def _migrate_checklist_person_asset_columns(conn: sqlite3.Connection) -> None:
     """Add person_id / asset_id to checklist_items if missing (existing DBs)."""
     cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='checklist_items'")
@@ -899,6 +911,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_node_memory_tables(conn)
     _migrate_aspiration_tables(conn)
     _migrate_strand_weightings_table(conn)
+    _migrate_keystone_columns(conn)
     _ensure_default_owner_and_backfill(conn)
     conn.commit()
 
@@ -961,6 +974,23 @@ def get_user_by_email(email: str) -> dict[str, Any] | None:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def list_users() -> list[dict[str, Any]]:
+    """All login accounts (admin use: backfill, seeding). No password hashes."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT id, email, display_name, is_admin FROM users ORDER BY created_at"
+    ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "email": row["email"],
+            "display_name": row["display_name"],
+            "is_admin": bool(row["is_admin"]),
+        }
+        for row in rows
+    ]
 
 
 def get_user_by_id(user_id: str) -> dict[str, Any] | None:
@@ -3992,14 +4022,14 @@ def list_initiatives(user_id: str | None = None) -> list[dict[str, Any]]:
             "SELECT id, source_idea_id, title, brief, status, owner_id, priority_rank_manual, strategic_value_manual, "
             "energy_impact_manual, evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai, "
             "required_people, required_assets, dependencies, risks, recommendation, counts_toward_capacity, "
-            "manual_override, kill_criteria, notes, created_at, updated_at FROM initiatives ORDER BY updated_at DESC"
+            "manual_override, kill_criteria, notes, created_at, updated_at, seed_key FROM initiatives ORDER BY updated_at DESC"
         )
     else:
         cur = conn.execute(
             "SELECT id, source_idea_id, title, brief, status, owner_id, priority_rank_manual, strategic_value_manual, "
             "energy_impact_manual, evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai, "
             "required_people, required_assets, dependencies, risks, recommendation, counts_toward_capacity, "
-            "manual_override, kill_criteria, notes, created_at, updated_at FROM initiatives WHERE user_id = ? ORDER BY updated_at DESC",
+            "manual_override, kill_criteria, notes, created_at, updated_at, seed_key FROM initiatives WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         )
     initiatives = [M.row_to_initiative(tuple(r)) for r in cur.fetchall()]
@@ -4015,7 +4045,7 @@ def get_initiative(initiative_id: str, user_id: str | None = None) -> dict[str, 
             "SELECT id, source_idea_id, title, brief, status, owner_id, priority_rank_manual, strategic_value_manual, "
             "energy_impact_manual, evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai, "
             "required_people, required_assets, dependencies, risks, recommendation, counts_toward_capacity, "
-            "manual_override, kill_criteria, notes, created_at, updated_at FROM initiatives WHERE id = ?",
+            "manual_override, kill_criteria, notes, created_at, updated_at, seed_key FROM initiatives WHERE id = ?",
             (initiative_id,),
         )
     else:
@@ -4023,7 +4053,7 @@ def get_initiative(initiative_id: str, user_id: str | None = None) -> dict[str, 
             "SELECT id, source_idea_id, title, brief, status, owner_id, priority_rank_manual, strategic_value_manual, "
             "energy_impact_manual, evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai, "
             "required_people, required_assets, dependencies, risks, recommendation, counts_toward_capacity, "
-            "manual_override, kill_criteria, notes, created_at, updated_at FROM initiatives WHERE id = ? AND user_id = ?",
+            "manual_override, kill_criteria, notes, created_at, updated_at, seed_key FROM initiatives WHERE id = ? AND user_id = ?",
             (initiative_id, user_id),
         )
     row = cur.fetchone()
@@ -4051,15 +4081,15 @@ def create_initiative(data: M.InitiativeCreate, user_id: str) -> dict[str, Any]:
           id, user_id, source_idea_id, title, brief, status, owner_id,
           evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai,
           required_assets, dependencies, risks, recommendation,
-          kill_criteria, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+          kill_criteria, notes, seed_key, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             iid, user_id, data.source_idea_id, data.title, data.brief, data.status, data.owner_id,
             data.evaluation_priority,
             data.estimated_cost_ai, data.estimated_timeframe_ai, data.philosophical_alignment_ai, data.next_step_ai,
             M._json_dumps_list(data.required_assets),
             data.dependencies, data.risks, data.recommendation,
-            data.kill_criteria, data.notes, now, now,
+            data.kill_criteria, data.notes, data.seed_key, now, now,
         ),
     )
     if seats_to_persist:
@@ -4559,7 +4589,7 @@ def list_tasks(
         cur = conn.execute(
             """
             SELECT t.id, t.project_id, t.parent_task_id, t.title, t.description, t.assignee_id, t.status, t.priority,
-            t.estimated_hours, t.due_date, t.dependency_ids, t.required_asset_ids, t.completion_criteria, t.notes, t.created_at, t.updated_at
+            t.estimated_hours, t.due_date, t.dependency_ids, t.required_asset_ids, t.completion_criteria, t.notes, t.created_at, t.updated_at, t.seat_ref
             FROM tasks t
             INNER JOIN projects p ON p.id = t.project_id AND p.user_id = t.user_id
             WHERE p.initiative_id = ? AND t.user_id = ?
@@ -4571,28 +4601,28 @@ def list_tasks(
     if project_id and user_id is not None:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
             "FROM tasks WHERE project_id = ? AND user_id = ? ORDER BY updated_at DESC",
             (project_id, user_id),
         )
     elif project_id:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
             "FROM tasks WHERE project_id = ? ORDER BY updated_at DESC",
             (project_id,),
         )
     elif user_id is not None:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
             "FROM tasks WHERE user_id = ? ORDER BY updated_at DESC",
             (user_id,),
         )
     else:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
             "FROM tasks ORDER BY updated_at DESC"
         )
     return [M.row_to_task(tuple(r)) for r in cur.fetchall()]
@@ -4603,14 +4633,14 @@ def get_task(task_id: str, user_id: str | None = None) -> dict[str, Any] | None:
     if user_id is None:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
             "FROM tasks WHERE id = ?",
             (task_id,),
         )
     else:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
             "FROM tasks WHERE id = ? AND user_id = ?",
             (task_id, user_id),
         )
@@ -4640,13 +4670,13 @@ def create_task(data: M.TaskCreate, user_id: str) -> dict[str, Any]:
     conn.execute(
         """INSERT INTO tasks (
           id, user_id, project_id, parent_task_id, title, description, assignee_id, status, priority,
-          estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+          estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, seat_ref, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             tid, user_id, data.project_id, data.parent_task_id, data.title, data.description, data.assignee_id,
             data.status, data.priority, data.estimated_hours, data.due_date,
             M._json_dumps_list(data.dependency_ids), M._json_dumps_list(data.required_asset_ids),
-            data.completion_criteria, data.notes, now, now,
+            data.completion_criteria, data.notes, data.seat_ref, now, now,
         ),
     )
     conn.commit()

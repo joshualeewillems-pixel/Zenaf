@@ -81,6 +81,15 @@ class SignupRequest(BaseModel):
     invite_code: str = Field(..., min_length=1, max_length=64)
 
 
+class SeedKeystonesRequest(BaseModel):
+    """Admin-only: backfill the "Meet your council" keystone initiative.
+
+    With an email: seed that one user. Without: seed every user missing it.
+    """
+
+    email: str | None = Field(default=None, max_length=320)
+
+
 class SettingsLLMProfileUpdate(BaseModel):
     default_provider: str = "ollama"
     default_model: str | None = None
@@ -257,6 +266,9 @@ class InitiativeCreate(BaseModel):
     recommendation: str = ""
     kill_criteria: str = ""
     notes: str = ""
+    # Stable key for system-seeded initiatives (e.g. "meet-your-council");
+    # empty for user-created ones. Seeding is idempotent on this key.
+    seed_key: str = ""
 
 
 class InitiativeUpdate(BaseModel):
@@ -277,6 +289,7 @@ class InitiativeUpdate(BaseModel):
     recommendation: str | None = None
     kill_criteria: str | None = None
     notes: str | None = None
+    seed_key: str | None = None
 
 
 class ExecutionStepCreate(BaseModel):
@@ -363,6 +376,10 @@ class TaskCreate(BaseModel):
     required_asset_ids: list[str] = Field(default_factory=list)
     completion_criteria: str = ""
     notes: str = ""
+    # Council seat this task belongs to (canonical archetype id, e.g.
+    # "mentor"); empty for ordinary tasks. Lets the frontend deep-link
+    # keystone tasks to a seat's conversation.
+    seat_ref: str = ""
 
 
 class TaskUpdate(BaseModel):
@@ -379,6 +396,7 @@ class TaskUpdate(BaseModel):
     required_asset_ids: list[str] | None = None
     completion_criteria: str | None = None
     notes: str | None = None
+    seat_ref: str | None = None
 
 
 class SeatRequestCreate(BaseModel):
@@ -880,6 +898,7 @@ def row_to_initiative(row: tuple) -> dict[str, Any]:
         "dependencies": row[16], "risks": row[17], "recommendation": row[18],
         "kill_criteria": row[21],
         "notes": row[22], "created_at": row[23], "updated_at": row[24],
+        "seed_key": row[25] if len(row) > 25 else "",
     }
 
 
@@ -925,6 +944,7 @@ def row_to_task(row: tuple) -> dict[str, Any]:
         "required_asset_ids": _json_loads_list(row[11]) if n > 11 else [],
         "completion_criteria": row[12] if n > 12 else "", "notes": row[13] if n > 13 else "",
         "created_at": row[14] if n > 14 else "", "updated_at": row[15] if n > 15 else "",
+        "seat_ref": row[16] if n > 16 else "",
     }
 
 

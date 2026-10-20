@@ -6,6 +6,7 @@ import { NotificationsSection } from './sections/NotificationsSection'
 import { PrivacySection } from './sections/PrivacySection'
 import { CouncilIntegrityReviewSection } from './sections/CouncilIntegrityReviewSection'
 import { PermissionsSection } from './sections/PermissionsSection'
+import { InvitesSection } from './sections/InvitesSection'
 
 type Props = {
   user: CurrentUser
@@ -27,6 +28,7 @@ export function SettingsView({ user, onLogout, onUserUpdated }: Props) {
       <CouncilIntegrityReviewSection />
       <ModelConnectionsSection />
       <NotificationsSection />
+      {user.is_admin && <InvitesSection user={user} />}
     </div>
   )
 }

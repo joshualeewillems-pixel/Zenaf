@@ -65,6 +65,22 @@ class AdminUserCreate(BaseModel):
     is_admin: bool = False
 
 
+class InviteCreate(BaseModel):
+    """Admin-only: mint a single-use invite link."""
+
+    display_name: str = Field(default="", max_length=240)
+    ttl_hours: float | None = Field(default=None, gt=0, le=24 * 30)
+
+
+class SignupRequest(BaseModel):
+    """Public: create an account with a valid, unused, unexpired invite code."""
+
+    email: str = Field(..., min_length=3, max_length=320)
+    password: str = Field(..., min_length=1, max_length=256)
+    display_name: str = Field(default="", max_length=240)
+    invite_code: str = Field(..., min_length=1, max_length=64)
+
+
 class SettingsLLMProfileUpdate(BaseModel):
     default_provider: str = "ollama"
     default_model: str | None = None

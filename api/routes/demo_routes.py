@@ -29,6 +29,7 @@ own copy only to sustain the conversation within the cap.
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 import time
@@ -222,6 +223,12 @@ class DemoChatResponse(BaseModel):
     exchanges_used: int
     exchanges_left: int
     capped: bool = False
+    #: Seat whose register a speak-turn reply substantially sat in, parsed
+    #: from the reply's [[register:<seat>]] marker (stripped from `reply`);
+    #: None when the reply stayed in the speaker's own register. The client
+    #: lights a "!" over that seat's chip. Always None outside speak turns
+    #: in respond mode.
+    register_flag: str | None = None
 
 
 def _client_ip(request: Request) -> str:
@@ -332,6 +339,130 @@ def _recusal_instruction(voice_id: str) -> str:
     )
 
 
+#: Each seat's register, for the speak-turn register flag (companion to
+#: conductor-orchestration v1). Same ground as _SEAT_TERRITORY, plus the
+#: Skeptic: it never recuses, but a reply can still land in its register —
+#: examining is a register any seat can drift into.
+_SEAT_REGISTERS: dict[str, str] = {
+    **_SEAT_TERRITORY,
+    "skeptic": "examining what is being assumed, and whether it holds up",
+}
+
+#: Machine-read marker a speak-turn voice appends on its own final line when
+#: its answer substantially sits in another seat's register:
+#: [[register:<seat_id>]]. Stripped before the reply is shown or stored;
+#: surfaced to the client as DemoChatResponse.register_flag (chat) or the
+#: done event's register_flag (stream), which lights a "!" over that seat's
+#: chip. The strict pattern is the only flag-bearing shape; the loose one
+#: exists so marker-shaped remnants (empty/unknown seat, missing bracket)
+#: never leak into visible text either.
+_REGISTER_MARKER_RE = re.compile(r"\[\[\s*register\s*:\s*([A-Za-z_]+)\s*\]\]")
+_REGISTER_MARKER_LOOSE_RE = re.compile(r"\[\[\s*register\s*:[^\]\n]*\]?\]?")
+_REGISTER_MARKER_OPEN = "[[register:"
+
+
+def _register_flag_instruction(voice_id: str) -> str:
+    """Speak-turn register flag instruction for one seat.
+
+    The listener-side twin of recusal: recusal is the speaker yielding its
+    turn to the seat whose ground the topic is; the register flag is a
+    delivered answer pointing at whose register it actually did its work
+    in. Detection is prompt-level, inside the turn's single generation —
+    no extra call. The marker is machine-read and stripped before the
+    visitor sees the reply; the visitor is never told it exists.
+    """
+    others = []
+    for seat_id, register in _SEAT_REGISTERS.items():
+        if seat_id == voice_id:
+            continue
+        arch = get_archetype(seat_id)
+        name = arch.display_name if arch else seat_id
+        others.append(f"the {name} ({seat_id}) — {register}")
+    return (
+        "Last, a silent judgment: once your answer is composed, ask whose "
+        "register it substantially sits in. The other seats' registers: "
+        + "; ".join(others)
+        + ". If the substance of your answer does its work in another "
+        "seat's register — not a passing mention of their theme, not a "
+        "brief quote of their view, but the answer itself thinking the way "
+        "they think — append exactly one marker on its own final line, "
+        "after everything else: [[register:seat_id]], using that seat's "
+        "id from the list. At most one marker, for the strongest case "
+        "only, and never your own seat. Most answers sit in your own "
+        "register and carry no marker — the flag is rare and literal, "
+        "never a habit. If your whole reply is a hand-off — one sentence "
+        "naming whose ground this is, instead of an answer — add no "
+        "marker: the hand-off already names the seat. Never mention the "
+        "marker or explain it."
+    )
+
+
+#: A recusal's shape, per the recusal rule above: one short sentence naming
+#: whose ground the topic is ("This is the Guardian's ground — ...").
+_RECUSAL_SHAPE_RE = re.compile(
+    r"^(this is|that is|that's)\b[^.]*\bground\b", re.IGNORECASE
+)
+
+
+def _looks_like_recusal(text: str) -> bool:
+    """True when the visible reply is a recusal. A recusal already names
+    its seat, so it never also carries a register flag."""
+    t = " ".join(text.split())
+    if len(t) > 240:
+        return False
+    if len([s for s in t.split(".") if s.strip()]) > 1:
+        return False
+    return bool(_RECUSAL_SHAPE_RE.match(t))
+
+
+def _extract_register_flag(
+    text: str, speaker_id: str, *, enabled: bool = True
+) -> tuple[str, str | None]:
+    """Split a raw reply into (visible text, register flag seat id | None).
+
+    The flag is the first well-formed [[register:<seat>]] marker naming a
+    real seat other than the speaker. Every marker-shaped remnant —
+    malformed, unknown seat, self-flag, duplicate — is stripped from the
+    visible text: marker text never reaches the visitor, whether or not
+    the turn was allowed to flag (enabled=False strips but never flags).
+    A recusal never carries a flag.
+    """
+    flag: str | None = None
+    if enabled:
+        for m in _REGISTER_MARKER_RE.finditer(text):
+            seat = m.group(1).strip().lower()
+            if seat in stock_archetype_ids() and seat != speaker_id:
+                flag = seat
+                break
+    cleaned = _REGISTER_MARKER_LOOSE_RE.sub("", text)
+    # Removing a final-line marker can leave dangling blank lines behind.
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    if flag is not None and _looks_like_recusal(cleaned):
+        flag = None
+    return cleaned, flag
+
+
+def _split_stream_safe(buffer: str) -> tuple[str, str]:
+    """Split pending streamed text into (safe to emit, hold back).
+
+    The register marker rides the reply's final line and may arrive split
+    across chunks; hold back any tail that could still grow into one so it
+    never reaches the client in a token event. Whatever stays held back at
+    end-of-stream is dropped from the token flow — the done event carries
+    the canonical (stripped) reply and the parsed flag either way, the
+    same settle-on-done pattern the [[u]] weave markers already use.
+    """
+    m = re.search(r"\[\[\s*register\s*:[^\]]*\]{0,2}\s*$", buffer)
+    if m:
+        return buffer[: m.start()], buffer[m.start() :]
+    # A trailing partial of the "[[register:" opener itself ("[[", "[[r",
+    # "[[reg", ...) could still grow into the marker — hold it back too.
+    for n in range(len(_REGISTER_MARKER_OPEN) - 1, 0, -1):
+        if buffer.endswith(_REGISTER_MARKER_OPEN[:n]):
+            return buffer[:-n], buffer[-n:]
+    return buffer, ""
+
+
 def _build_demo_prompt(
     voice_id: str,
     transcript: list[dict],
@@ -408,6 +539,7 @@ def _build_demo_prompt(
                 recusal = _recusal_instruction(voice_id)
                 if recusal:
                     prompt.append(recusal)
+                prompt.append(_register_flag_instruction(voice_id))
         else:
             # No voice turn yet (defensive — the endpoint 422s on a truly empty
             # transcript, but a visitor-only transcript is possible).
@@ -428,6 +560,7 @@ def _build_demo_prompt(
                 recusal = _recusal_instruction(voice_id)
                 if recusal:
                     prompt.append(recusal)
+                prompt.append(_register_flag_instruction(voice_id))
         prompt.append("")
     elif question_mode:
         # Typed message in question mode: the voice does not answer the
@@ -694,6 +827,14 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
     except Exception as exc:  # noqa: BLE001 — loud failure, honest 502
         raise HTTPException(status_code=502, detail=f"Demo voice unavailable: {exc}")
 
+    # Register flag: the [[register:...]] marker is control data, not prose —
+    # split it off before the reply is stored or shown. Speak turns in
+    # respond mode are the only turns instructed to flag; marker-shaped
+    # text is stripped on every turn regardless.
+    reply, register_flag = _extract_register_flag(
+        reply, voice_id, enabled=speak_mode and not question_mode
+    )
+
     if not speak_mode:
         transcript.append({"role": "visitor", "content": message})
     transcript.append({"role": voice_id, "content": reply})
@@ -709,6 +850,7 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         exchanges_used=sess["exchanges"],
         exchanges_left=left,
         capped=left == 0,
+        register_flag=register_flag,
     )
 
 
@@ -719,7 +861,8 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
     Same body, same guards. Events:
       data: {"type": "token", "text": "..."}   — reply chunks as they arrive
       data: {"type": "done", "session_id": ..., "voice": ..., "voice_color": ...,
-             "exchanges_used": N, "exchanges_left": M, "capped": bool}
+             "exchanges_used": N, "exchanges_left": M, "capped": bool,
+             "register_flag": <seat id or null>}
     A capped session returns 403 JSON (same as /demo/chat), not SSE.
     """
     import json as _json
@@ -765,19 +908,32 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
         from local_ai.providers import meta as _meta
 
         chunks: list[str] = []
+        held = ""
         try:
             # api_key="" -> server env key; low effort keeps latency and cost down.
             for chunk in _meta.generate_stream(
                 "", full_prompt, timeout=90, reasoning_effort="low"
             ):
                 chunks.append(chunk)
-                yield f"data: {_json.dumps({'type': 'token', 'text': chunk})}\n\n"
+                # Hold back any tail that could still grow into a
+                # [[register:...]] marker: it is control data and must never
+                # reach the client in a token event, even split across
+                # chunks. Everything else streams raw, as before. A tail
+                # still held at end-of-stream is dropped here — the done
+                # event carries the canonical reply either way.
+                held += chunk
+                safe, held = _split_stream_safe(held)
+                if safe:
+                    yield f"data: {_json.dumps({'type': 'token', 'text': safe})}\n\n"
         except Exception as exc:  # noqa: BLE001 — honest error event, then stop
             yield f"data: {_json.dumps({'type': 'error', 'detail': f'Demo voice unavailable: {exc}'})}\n\n"
             return
         # Sanitize the assembled reply: mid-stream chunks are raw, so the done
         # event carries the corrected full text for the client to settle on.
         reply = _sanitize_weave("".join(chunks).strip())
+        reply, register_flag = _extract_register_flag(
+            reply, voice_id, enabled=speak_mode and not question_mode
+        )
         if not speak_mode:
             transcript.append({"role": "visitor", "content": message})
         transcript.append({"role": voice_id, "content": reply})
@@ -792,6 +948,7 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
             "exchanges_used": sess["exchanges"],
             "exchanges_left": left,
             "capped": left == 0,
+            "register_flag": register_flag,
         }
         yield f"data: {_json.dumps(done)}\n\n"
         _kick_memory_refresh(session_id)

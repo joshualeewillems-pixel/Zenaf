@@ -275,6 +275,15 @@ except Exception as e:
     print(f"Conversation routes not loaded: {e}")
     _router_load_errors.append(f"conversation: {e}")
 
+# Per-seat "You" profiles — the Zenaf/You switch + QC surface data.
+# GET /you-profile/{archetype_id}, PUT /you-profile/{archetype_id}.
+try:
+    from api.routes.you_profile_routes import router as you_profile_router
+    app.include_router(you_profile_router)
+except Exception as e:
+    print(f"You-profile routes not loaded: {e}")
+    _router_load_errors.append(f"you_profile: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the

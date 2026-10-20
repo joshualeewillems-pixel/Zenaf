@@ -51,7 +51,7 @@ export default function CouncilChat({
   prefill = null,
   seedMessages = null,
 }: {
-  /** 'sheet' = compact, trained-only. 'workspace' = roomier + version toggle. */
+  /** 'sheet' = compact, with the Zenaf/You side switch. 'workspace' = roomier + version toggle. */
   environment: 'sheet' | 'workspace'
   /** Pre-selected seat (seat-branch sheets). Omit → chips, no selection. */
   initialArchetypeId?: string | null
@@ -84,8 +84,19 @@ export default function CouncilChat({
   const [loading, setLoading] = useState(false)
   /** Demo's "Respond / Question me" toggle, brought to the authenticated chat. */
   const [questionMode, setQuestionMode] = useState(false)
-  /** Workspace-only version toggle; sheets are always the trained voice. */
+  /** Workspace-only trained/base version toggle. Sheets get the Zenaf/You side switch below. */
   const [voiceMode, setVoiceMode] = useState<'trained' | 'base'>('trained')
+  /**
+   * Sheet-only Zenaf/You switch (per seat): Zenaf = the canonical character
+   * (base voice), You = the user's trained echo of the seat (trained voice).
+   * Either side can be talked to at any time — the switch selects which
+   * voice renders the reply; the You *profile* (name, recognition) is what
+   * keystone 4 unlocks, not the talking. Defaults to You, matching the
+   * sheet's historical trained-only behavior.
+   */
+  const [side, setSide] = useState<'you' | 'zenaf'>('you')
+  const chatMode: 'trained' | 'base' =
+    environment === 'workspace' ? voiceMode : side === 'you' ? 'trained' : 'base'
   const [signedOut, setSignedOut] = useState(false)
   const chatEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -188,7 +199,7 @@ export default function CouncilChat({
                 conversation_id: conversationId,
                 archetype_id: activeId,
                 message: text,
-                mode: environment === 'workspace' ? voiceMode : 'trained',
+                mode: chatMode,
                 question: questionMode,
                 ...(context ? { context } : {}),
               }
@@ -196,7 +207,7 @@ export default function CouncilChat({
                 archetype_id: activeId,
                 message: text,
                 history: messages.map((m) => ({ role: m.role, content: m.content })),
-                mode: environment === 'workspace' ? voiceMode : 'trained',
+                mode: chatMode,
                 question: questionMode,
               },
         ),
@@ -231,7 +242,7 @@ export default function CouncilChat({
     } finally {
       setLoading(false)
     }
-  }, [input, loading, activeId, messages, base, environment, voiceMode, questionMode, activeName, conversationId, context])
+  }, [input, loading, activeId, messages, base, environment, chatMode, questionMode, activeName, conversationId, context])
 
   const sendDisabled = loading || !activeId || (!input.trim() && !questionMode)
 
@@ -265,6 +276,35 @@ export default function CouncilChat({
             {voiceMode === 'trained'
               ? 'Your seats, shaped by your training.'
               : 'The aspirational stock voices — no training.'}
+          </p>
+        </div>
+      )}
+
+      {environment === 'sheet' && activeId && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            role="group"
+            aria-label="Zenaf or You — which side of this seat"
+            className="flex rounded-full border border-stone-700 overflow-hidden"
+          >
+            {(['zenaf', 'you'] as const).map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSide(s)}
+                aria-pressed={side === s}
+                className={`min-h-[44px] px-4 text-sm font-medium ${
+                  side === s ? 'bg-amber-950/40 text-amber-300' : 'text-stone-400'
+                }`}
+              >
+                {s === 'zenaf' ? 'Zenaf' : 'You'}
+              </button>
+            ))}
+          </div>
+          <p className="text-[11px] text-stone-500">
+            {side === 'you'
+              ? 'Your echo of the seat — shaped by your approved training.'
+              : 'The seat as written — the stock character, before any training.'}
           </p>
         </div>
       )}

@@ -181,6 +181,7 @@ import SignalReviewView from './presence-review/SignalReviewView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
 import { DomainProvider } from './domain/DomainContext'
 import { AuthGate } from './auth/AuthGate'
+import { InviteAcceptView } from './auth/InviteAcceptView'
 import { ConsentOnboardingGate } from './auth/ConsentOnboardingGate'
 import {
   getCurrentUser,
@@ -1784,6 +1785,11 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true)
   const [authSubmitting, setAuthSubmitting] = useState(false)
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null)
+  // Invite deep link: ?invite=CODE (read once). Logged-out visitors land
+  // on the invite accept view instead of the sign-in gate.
+  const [inviteCode, setInviteCode] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get('invite')
+  )
   const [consentRequired, setConsentRequired] = useState(false)
   const [consentSubmitting, setConsentSubmitting] = useState(false)
 
@@ -1827,6 +1833,18 @@ function App() {
       }
     } finally {
       setAuthSubmitting(false)
+    }
+  }, [])
+
+  const handleInviteSignedUp = useCallback(async (user: CurrentUser) => {
+    setCurrentUser(user)
+    setInviteCode(null)
+    window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+    try {
+      const perms = await fetchUserPermissionsSettings()
+      setConsentRequired(!perms.consent_given)
+    } catch {
+      setConsentRequired(true)
     }
   }, [])
 
@@ -5812,6 +5830,18 @@ function App() {
   }
 
   if (!currentUser) {
+    if (inviteCode) {
+      return (
+        <InviteAcceptView
+          code={inviteCode}
+          onSignedUp={handleInviteSignedUp}
+          onBackToSignIn={() => {
+            setInviteCode(null)
+            window.history.replaceState({}, '', window.location.pathname + window.location.hash)
+          }}
+        />
+      )
+    }
     return <AuthGate onLogin={handleLogin} loading={authSubmitting} />
   }
 

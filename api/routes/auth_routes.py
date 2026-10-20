@@ -126,3 +126,237 @@ def admin_create_user(body: M.AdminUserCreate, _admin: dict = Depends(get_curren
             raise HTTPException(status_code=400, detail="Invalid email") from e
         raise HTTPException(status_code=400, detail=code) from e
     return {"ok": True, "user": user}
+
+
+# ---------------------------------------------------------------- invites
+# Minimal invite system: an admin mints a single-use code/link; the invitee
+# opens ?invite=CODE, picks email + password, and lands logged in. Store
+# follows the DemoClaimStore convention (per-domain SQLite under data/,
+# one connection guarded by a lock, CREATE TABLE IF NOT EXISTS on init).
+
+import secrets
+import sqlite3
+import threading
+import time
+from pathlib import Path
+
+#: Invite-code alphabet: no 0/O, 1/I/l (same as demo claim codes).
+_INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+_INVITE_CODE_LEN = 8
+#: Invite TTL: 7 days by default, 30 days max.
+_INVITE_DEFAULT_TTL_S = 7 * 86400
+_INVITE_MAX_TTL_S = 30 * 86400
+
+_INVITE_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "auth"
+_INVITE_DB = _INVITE_DATA_DIR / "invites.db"
+
+_INVITE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS invites (
+  code TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL DEFAULT '',
+  created_at REAL NOT NULL,
+  expires_at REAL NOT NULL,
+  used_at REAL,
+  used_by_email TEXT
+);
+"""
+
+#: Sliding-window IP throttle for invite validation + signup endpoints.
+_INVITE_IP_WINDOW_S = 3600
+_INVITE_IP_MAX = 20
+_invite_ip_hits: dict[str, list[float]] = {}
+
+
+def _invite_client_ip(request: Request) -> str:
+    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if fwd:
+        return fwd
+    return request.client.host if request.client else "unknown"
+
+
+def _check_invite_ip_limit(ip: str) -> None:
+    now = time.time()
+    hits = [t for t in _invite_ip_hits.get(ip, []) if now - t < _INVITE_IP_WINDOW_S]
+    if len(hits) >= _INVITE_IP_MAX:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many attempts. Come back in a bit.",
+        )
+    hits.append(now)
+    _invite_ip_hits[ip] = hits
+
+
+class InviteStore:
+    """SQLite-backed store for single-use invite codes.
+
+    Follows the per-domain sqlite convention (demo claims, conversations,
+    followthrough): one connection guarded by a lock, schema on init.
+    Single-use and TTL are enforced against the table; used rows are kept
+    (used_at / used_by_email) so a spent code is auditable, and a signup
+    that fails on a fixable form error can release its code back.
+    """
+
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        self.db_path = Path(db_path) if db_path else _INVITE_DB
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        self._conn.row_factory = sqlite3.Row
+        with self._lock:
+            self._conn.executescript(_INVITE_SCHEMA)
+            self._conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def exists(self, code: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM invites WHERE code = ?", (code,)
+            ).fetchone()
+            return row is not None
+
+    def issue(
+        self, code: str, display_name: str, created_at: float, expires_at: float
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO invites (code, display_name, created_at, expires_at)"
+                " VALUES (?, ?, ?, ?)",
+                (code, display_name, created_at, expires_at),
+            )
+            self._conn.commit()
+
+    def _valid_row(self, code: str, now: float):
+        row = self._conn.execute(
+            "SELECT * FROM invites WHERE code = ?", (code,)
+        ).fetchone()
+        if row is None or row["used_at"] is not None or now > row["expires_at"]:
+            return None
+        return row
+
+    def peek(self, code: str, now: float | None = None):
+        """Return the invite row if the code is valid, without consuming it."""
+        ts = time.time() if now is None else now
+        with self._lock:
+            return self._valid_row(code, ts)
+
+    def consume(self, code: str, email: str, now: float | None = None):
+        """Atomically validate + mark used. Returns the row, or None."""
+        ts = time.time() if now is None else now
+        with self._lock:
+            row = self._valid_row(code, ts)
+            if row is None:
+                return None
+            self._conn.execute(
+                "UPDATE invites SET used_at = ?, used_by_email = ? WHERE code = ?",
+                (ts, email, code),
+            )
+            self._conn.commit()
+            return row
+
+    def release(self, code: str) -> None:
+        """Undo a consume (signup failed on a fixable error — don't burn it)."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE invites SET used_at = NULL, used_by_email = NULL"
+                " WHERE code = ?",
+                (code,),
+            )
+            self._conn.commit()
+
+
+_invite_store: InviteStore | None = None
+_invite_store_lock = threading.Lock()
+
+
+def _get_invite_store() -> InviteStore:
+    global _invite_store
+    if _invite_store is None:
+        with _invite_store_lock:
+            if _invite_store is None:
+                _invite_store = InviteStore()
+    return _invite_store
+
+
+def _new_invite_code(store: InviteStore) -> str:
+    for _ in range(16):
+        code = "".join(
+            secrets.choice(_INVITE_ALPHABET) for _ in range(_INVITE_CODE_LEN)
+        )
+        if not store.exists(code):
+            return code
+    raise HTTPException(status_code=500, detail="Could not generate an invite code")
+
+
+@router.post("/admin/invites")
+def admin_create_invite(
+    body: M.InviteCreate,
+    request: Request,
+    _admin: dict = Depends(get_current_admin_user),
+):
+    store = _get_invite_store()
+    code = _new_invite_code(store)
+    ttl_s = _INVITE_DEFAULT_TTL_S
+    if body.ttl_hours is not None:
+        ttl_s = min(max(body.ttl_hours * 3600.0, 3600.0), _INVITE_MAX_TTL_S)
+    now = time.time()
+    store.issue(code, (body.display_name or "").strip(), now, now + ttl_s)
+    return {
+        "ok": True,
+        "code": code,
+        "invite_url": f"{request.base_url}?invite={code}",
+        "expires_at": now + ttl_s,
+    }
+
+
+@router.get("/invite/{code}")
+def check_invite(code: str, request: Request):
+    """Public: validate an invite code without consuming it."""
+    _check_invite_ip_limit(_invite_client_ip(request))
+    row = _get_invite_store().peek(code.strip().upper())
+    if row is None:
+        return {"valid": False, "display_name": None}
+    return {"valid": True, "display_name": row["display_name"] or None}
+
+
+@router.post("/signup")
+def signup(body: M.SignupRequest, request: Request, response: Response):
+    """Public: create an account from a valid invite code; lands logged in."""
+    _check_invite_ip_limit(_invite_client_ip(request))
+    code = (body.invite_code or "").strip().upper()
+    store = _get_invite_store()
+    row = store.consume(code, (body.email or "").strip().lower())
+    if row is None:
+        raise HTTPException(
+            status_code=400,
+            detail="That invite link is invalid, expired, or already used.",
+        )
+    try:
+        user = S.create_user_account(
+            body.email, body.password, body.display_name or row["display_name"]
+        )
+    except ValueError as e:
+        # Don't burn the invite on a fixable form error (taken email, typos).
+        store.release(code)
+        err = str(e)
+        if err == "user_exists":
+            raise HTTPException(
+                status_code=409, detail="An account with this email already exists"
+            ) from e
+        if err == "invalid_email":
+            raise HTTPException(status_code=400, detail="Invalid email") from e
+        raise HTTPException(status_code=400, detail="Could not create the account") from e
+    session_token = S.create_session(user["id"])
+    response.set_cookie(SESSION_COOKIE_NAME, session_token, **_session_cookie_settings())
+    return {
+        "ok": True,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "display_name": user["display_name"],
+            "is_admin": bool(user.get("is_admin")),
+            "avatar_data_url": user.get("avatar_data_url"),
+        },
+    }

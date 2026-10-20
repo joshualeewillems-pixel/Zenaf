@@ -72,3 +72,70 @@ export async function patchCurrentUser(updates: {
 export async function updateDisplayName(displayName: string): Promise<CurrentUser> {
   return patchCurrentUser({ display_name: displayName })
 }
+
+export interface InviteInfo {
+  valid: boolean
+  display_name?: string | null
+}
+
+export interface InviteCreated {
+  code: string
+  invite_url: string
+  expires_at: number
+}
+
+function authError(data: unknown, fallback: string): string {
+  const d = (data as { detail?: unknown })?.detail
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) {
+    return d
+      .map((x: unknown) => (typeof x === 'object' && x != null && 'msg' in x ? String((x as { msg: string }).msg) : String(x)))
+      .join('; ')
+  }
+  return fallback
+}
+
+export async function getInvite(code: string): Promise<InviteInfo> {
+  const res = await fetch(`${AUTH_BASE}/invite/${encodeURIComponent(code)}`, {
+    method: 'GET',
+    credentials: 'include',
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(authError(data, 'Could not check this invite link'))
+  }
+  return data as InviteInfo
+}
+
+export async function signupWithInvite(input: {
+  email: string
+  password: string
+  display_name: string
+  invite_code: string
+}): Promise<CurrentUser> {
+  const res = await fetch(`${AUTH_BASE}/signup`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(authError(data, 'Signup failed'))
+  }
+  return data.user as CurrentUser
+}
+
+export async function createInvite(displayName?: string): Promise<InviteCreated> {
+  const res = await fetch(`${AUTH_BASE}/admin/invites`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ display_name: displayName ?? '' }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(authError(data, 'Could not create an invite link'))
+  }
+  return data as InviteCreated
+}

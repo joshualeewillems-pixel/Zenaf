@@ -328,14 +328,28 @@ def _build_demo_prompt(
                     f"Ask ONE penetrating question about {target}: \"{quote}\" — the "
                     "single question that would most unlock what was said. Let your "
                     "defining question guide you. Output the question plus at most one "
-                    "short sentence of context — no advice, no preamble."
+                    "short sentence of context — no advice, no preamble. "
+                    "Speak to the visitor, never about the other voices: do not narrate "
+                    "what another voice said, asked, or assumes ('Ambassador assumes...', "
+                    "'Mentor is asking...'). Take up the point itself and address the "
+                    "visitor directly. Your question must open a door that is still "
+                    "closed — bring something new that the visitor hasn't said and no "
+                    "voice has named yet: a fact, a tradeoff, a consequence, a stance. "
+                    "Never rephrase the previous voice's question in different words."
                 )
             else:
                 prompt.append(
                     "The visitor has tapped you to respond — no new message. "
                     f"Respond to {target} specifically: \"{quote}\" — from your "
                     "perspective: advance it, challenge it, or deepen it. Do not "
-                    "summarize what has been said."
+                    "summarize what has been said. "
+                    "Speak to the visitor, never about the other voices: do not narrate "
+                    "what another voice said, asked, or assumes ('Ambassador assumes...', "
+                    "'Mentor is asking...'). Take up the point itself and address the "
+                    "visitor directly. Bring something new that the visitor hasn't said "
+                    "and no voice has named yet — a fact, a tradeoff, a consequence, or "
+                    "a clear stance. Do not restate the previous voice's point in "
+                    "different words."
                 )
         else:
             # No voice turn yet (defensive — the endpoint 422s on a truly empty

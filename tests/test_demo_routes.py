@@ -165,6 +165,73 @@ def test_speak_turn_quote_truncated():
     assert long_reply not in head
 
 
+# --- Question-tennis fix: anti-narration + new-substance rules ----------------
+
+
+def _question_tennis_transcript():
+    # Mirrors the observed 10-turn failure: the last voice rephrased the
+    # previous voice's question instead of bringing anything new.
+    return [
+        {"role": "visitor", "content": "Part of me wants the rocket ship, part wants to keep it mine."},
+        {"role": "skeptic", "content": "What are you assuming makes YC different?"},
+        {"role": "guardian", "content": "What must be protected if the rocket ship means you don't keep it yours?"},
+        {"role": "skeptic", "content": "What are you assuming lets the rocket ship still let you keep it yours?"},
+    ]
+
+
+def test_speak_turn_question_mode_bans_narration():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt(
+        "ambassador", _question_tennis_transcript(), speak=True, question_mode=True
+    )
+    assert "never about the other voices" in prompt
+    assert "do not narrate" in prompt
+
+
+def test_speak_turn_respond_mode_bans_narration():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt(
+        "ambassador", _question_tennis_transcript(), speak=True, question_mode=False
+    )
+    assert "never about the other voices" in prompt
+    assert "do not narrate" in prompt
+
+
+def test_speak_turn_question_mode_requires_new_substance():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt(
+        "skeptic", _question_tennis_transcript(), speak=True, question_mode=True
+    )
+    assert "open a door that is still closed" in prompt
+    assert "Never rephrase the previous voice's question" in prompt
+    # The instruction targets the LAST voice turn (the rephrase), not the
+    # earlier one — the prompt must name what it is responding to.
+    assert "What are you assuming lets the rocket ship still let you keep it yours?" in prompt
+
+
+def test_speak_turn_respond_mode_requires_new_substance():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt(
+        "champion", _question_tennis_transcript(), speak=True, question_mode=False
+    )
+    assert "Bring something new" in prompt
+    assert "Do not restate the previous voice's point" in prompt
+
+
+def test_speak_turn_addresses_visitor_directly():
+    from api.routes import demo_routes as dr
+
+    for mode in (True, False):
+        prompt = dr._build_demo_prompt(
+            "mentor", _question_tennis_transcript(), speak=True, question_mode=mode
+        )
+        assert "address the visitor directly" in prompt
+
+
 # --- Issue 3a: SQLite claim store -------------------------------------------
 
 

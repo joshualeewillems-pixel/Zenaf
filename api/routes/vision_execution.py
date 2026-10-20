@@ -262,6 +262,20 @@ def put_council_workspace_perspectives(
     return {"ok": True, "updated_at": out["updated_at"]}
 
 
+@router.get("/keystone-attention")
+def get_keystone_attention(current_user: dict = Depends(get_current_user)):
+    """Living Tree "!" attention markers for the keystone seats.
+
+    Read-only. The Conductor (entry seat) carries the marker until its
+    first keystone completes; then every seat with an incomplete chain
+    does, with reason "recognition" once only keystone 4 remains. Honest
+    empty state: no seeded initiative → seeded=False, no markers, no error.
+    """
+    from local_ai.vision_execution import keystone_seeding
+
+    return keystone_seeding.keystone_attention(current_user["id"])
+
+
 # --- Core profiles ---
 @router.get("/core-profiles")
 def list_core_profiles(current_user: dict = Depends(get_current_user)):

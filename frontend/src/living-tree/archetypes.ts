@@ -54,6 +54,41 @@ export async function fetchArchetypeStatus(): Promise<ArchetypeStatus[] | null> 
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Keystone attention markers ("!")                                    */
+/* ------------------------------------------------------------------ */
+
+/** Why a seat wants the user's attention:
+    intro = entry seat awaiting its first meeting; meet = an open
+    keystone chain; recognition = only keystone 4 ("The echo") remains. */
+export type KeystoneAttentionReason = 'intro' | 'meet' | 'recognition'
+
+export type KeystoneAttentionMarker = {
+  attention: boolean
+  reason: KeystoneAttentionReason | null
+}
+
+/** Per-seat attention state from GET /vision-execution/keystone-attention.
+    `seeded` false = the account has no "Meet your council" initiative yet:
+    an honest empty state with no markers, not an error. */
+export type KeystoneAttention = {
+  seeded: boolean
+  markers: Record<string, KeystoneAttentionMarker>
+}
+
+/** Fetch keystone attention markers. Returns null on any failure (no markers). */
+export async function fetchKeystoneAttention(): Promise<KeystoneAttention | null> {
+  try {
+    const res = await fetch('/vision-execution/keystone-attention', { credentials: 'include' })
+    if (!res.ok) return null
+    const j = (await res.json()) as Partial<KeystoneAttention>
+    if (typeof j.seeded !== 'boolean' || !j.markers || typeof j.markers !== 'object') return null
+    return j as KeystoneAttention
+  } catch {
+    return null
+  }
+}
+
 /**
  * Honest seed fallback — the 7 stock archetypes at 0 depth. Mirrors
  * local_ai/council/archetypes.py; the Skeptic gets a uniform distribution

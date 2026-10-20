@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
+from local_ai.vision_execution import keystone_seeding
 from local_ai.vision_execution import models as M
 from local_ai.vision_execution import service as S
 
@@ -348,6 +349,14 @@ def signup(body: M.SignupRequest, request: Request, response: Response):
         if err == "invalid_email":
             raise HTTPException(status_code=400, detail="Invalid email") from e
         raise HTTPException(status_code=400, detail="Could not create the account") from e
+    # Every new account starts with the "Meet your council" keystone
+    # initiative. Best-effort: the account exists and the invite is spent, so
+    # a seeding failure must not fail the signup — the admin backfill
+    # endpoint (POST /auth/admin/seed-keystones) is the repair path.
+    try:
+        keystone_seeding.seed_meet_your_council(user["id"])
+    except Exception:  # noqa: BLE001 — never break signup over seeding
+        pass
     session_token = S.create_session(user["id"])
     response.set_cookie(SESSION_COOKIE_NAME, session_token, **_session_cookie_settings())
     return {
@@ -360,3 +369,33 @@ def signup(body: M.SignupRequest, request: Request, response: Response):
             "avatar_data_url": user.get("avatar_data_url"),
         },
     }
+
+
+@router.post("/admin/seed-keystones")
+def admin_seed_keystones(
+    body: M.SeedKeystonesRequest, _admin: dict = Depends(get_current_admin_user)
+):
+    """Admin-only: backfill the "Meet your council" keystone initiative.
+
+    With an email: seed that one user. Without: seed every user missing it.
+    Idempotent — users who already have it are skipped.
+    """
+    email = (body.email or "").strip().lower()
+    if email:
+        user = S.get_user_by_email(email)
+        if user is None:
+            raise HTTPException(status_code=404, detail="No account with that email")
+        targets = [user]
+    else:
+        targets = S.list_users()
+    seeded: list[dict] = []
+    for target in targets:
+        result = keystone_seeding.seed_meet_your_council(target["id"])
+        seeded.append(
+            {
+                "email": target.get("email"),
+                "created": result["created"],
+                "initiative_id": result["initiative"]["id"],
+            }
+        )
+    return {"ok": True, "seeded": seeded}

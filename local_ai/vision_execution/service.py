@@ -643,6 +643,14 @@ def get_session_user(session_token: str):
     return S.get_session_user(session_token)
 
 
+def get_user_by_email(email: str):
+    return S.get_user_by_email(email)
+
+
+def list_users():
+    return S.list_users()
+
+
 def revoke_session(session_token: str):
     return S.revoke_session(session_token)
 

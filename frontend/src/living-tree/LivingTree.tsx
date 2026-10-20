@@ -32,9 +32,13 @@ import {
   STOCK_ARCHETYPE_FALLBACK,
   dominantStrandKey,
   fetchArchetypeStatus,
+  fetchKeystoneAttention,
   type ArchetypeStatus,
+  type KeystoneAttention,
+  type KeystoneAttentionReason,
 } from './archetypes'
 import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
+import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
 import { NodeSheet } from '../tree/NodeSheet'
 import { YouEchoPanel } from './YouEchoPanel'
 
@@ -88,6 +92,16 @@ const FELLOWSHIP_NAMES: Record<string, string> = {
   conductor: 'The Weaver',
   skeptic: 'The Neighbor',
   maverick: 'The Fox',
+}
+
+/** Spoken form of a seat's attention marker, by reason. The intro line is
+    Joshua's narrative: on a fresh tree only the Weaver carries the marker —
+    "the Weaver wants to talk about something." */
+function markerTitle(archetypeId: string, reason: KeystoneAttentionReason | null | undefined): string {
+  const name = FELLOWSHIP_NAMES[archetypeId] ?? 'A seat'
+  if (reason === 'intro') return `${name} wants to talk about something.`
+  if (reason === 'recognition') return `${name} wants to talk about what it has discovered.`
+  return `${name} wants to meet you.`
 }
 
 const PHI = 1.618
@@ -730,6 +744,21 @@ export function LivingTreeView({
     }
   }, [])
 
+  // Keystone attention markers ("!"): a seat that wants the user carries a
+  // small badge over its node — narrative guidance that waits on the tree,
+  // never a push. Null/empty (unseeded account, backend unreachable) simply
+  // means no markers.
+  const [attention, setAttention] = useState<KeystoneAttention | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchKeystoneAttention().then((a) => {
+      if (!cancelled && a) setAttention(a)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const up = useMemo(() => buildArchetypeNodes(archetypes), [archetypes])
 
   const braid = useMemo(() => computeBraid(), [])
@@ -1284,6 +1313,12 @@ export function LivingTreeView({
             const collapsed = p.kids.length > 0 && !exp[p.datum.id]
             const faceR = nodeR(p)
             const initialsText = isYou ? initials ?? 'YOU' : p.datum.name.split(' ')[0].slice(0, 2).toUpperCase()
+            // Keystone attention: a seat that wants the user carries a small
+            // "!" badge at its top-right, in the app's amber attention
+            // accent. Decorative — it lives inside the node's own <g>, so
+            // the full node stays the tap target (44px rule untouched).
+            const attnMarker = p.datum.archetype ? attention?.markers[p.datum.archetype.id] : undefined
+            const showMarker = !!attnMarker?.attention
             return (
               <g
                 key={p.datum.id}
@@ -1304,6 +1339,18 @@ export function LivingTreeView({
                 <text className="nm" y={isYou ? 7 : 4} style={{ fontSize: isYou ? '15px' : '9px' }}>
                   {initialsText}
                 </text>
+                {showMarker && (
+                  <g
+                    className="attn"
+                    transform={`translate(${faceR * 0.78}, ${-faceR * 0.78})`}
+                    role="img"
+                    aria-label={markerTitle(p.datum.archetype!.id, attnMarker.reason)}
+                  >
+                    <title>{markerTitle(p.datum.archetype!.id, attnMarker.reason)}</title>
+                    <circle className="attndot" r={7.5} fill={USER_WEAVE_COLOR} stroke="#0b0a09" strokeWidth={1.5} />
+                    <text className="attnt" y={3.8} style={{ fontSize: '10.5px', fontWeight: 800, fill: '#0b0a09' }}>!</text>
+                  </g>
+                )}
                 {collapsed && (
                   <>
                     <circle

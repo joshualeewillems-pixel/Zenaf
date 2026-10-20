@@ -74,3 +74,112 @@ def seed_meet_your_council(user_id: str) -> dict[str, Any]:
             previous_task_id = task["id"]
 
     return {"initiative": initiative, "created": True}
+
+
+# ---------------------------------------------------------------------------
+# Living Tree attention markers ("!")
+#
+# A seat that wants the user's attention carries a "!" marker over its node
+# on the Living Tree — narrative guidance, never a push notification; the
+# marker waits on the tree. Rules (Joshua's design):
+#
+# - The Conductor is the entry seat. Until its first keystone ("First
+#   meeting") completes, ONLY the conductor carries a marker (reason
+#   "intro" — the Weaver wants to talk about something).
+# - Once the conductor's first keystone completes, every other seat with an
+#   incomplete keystone chain carries a marker (reason "meet").
+# - A seat whose keystones 1–3 are complete but whose keystone 4 ("The
+#   echo" — the recognition conversation) is not carries reason
+#   "recognition". (v1 proxy for readiness; true readiness detection is
+#   separate future work.)
+# - A seat with all four keystones Done carries no marker.
+# - No initiative seeded → no markers, never an error.
+# ---------------------------------------------------------------------------
+
+#: The entry seat_ref — the seat flagged "entry" in the seed data (Conductor).
+ENTRY_SEAT_REF: str = next(
+    (s["seat_ref"] for s in KD.SEATS if s.get("entry") == "true"),
+    KD.SEATS[0]["seat_ref"],
+)
+
+_DONE = "Done"
+
+
+def _chain_order(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order one seat's keystone tasks 1→2→3→4 by dependency-chain depth.
+
+    The seed chains each task to exactly the previous one, so a task's
+    chain depth (number of ancestors) is its keystone index. Falls back
+    gracefully on partial/odd data: unknown deps stop the walk.
+    """
+    by_id = {t["id"]: t for t in tasks if t.get("id")}
+
+    def depth(task: dict[str, Any]) -> int:
+        d = 0
+        seen: set[str] = set()
+        cur = task
+        while True:
+            deps = [x for x in (cur.get("dependency_ids") or []) if x in by_id]
+            if not deps or deps[0] in seen:
+                return d
+            seen.add(deps[0])
+            d += 1
+            cur = by_id[deps[0]]
+
+    return sorted(tasks, key=lambda t: depth(t))
+
+
+def keystone_attention(user_id: str) -> dict[str, Any]:
+    """Per-seat attention-marker state for the Living Tree.
+
+    Returns {"seeded": bool, "markers": {seat_ref: {"attention": bool,
+    "reason": "intro" | "meet" | "recognition" | None}}} covering all seven
+    canonical seats. Read-only; an unseeded user gets seeded=False with no
+    markers lit.
+    """
+    markers: dict[str, dict[str, Any]] = {
+        seat["seat_ref"]: {"attention": False, "reason": None} for seat in KD.SEATS
+    }
+    initiative = find_keystone_initiative(user_id)
+    if initiative is None:
+        return {"seeded": False, "markers": markers}
+
+    project_ids = {
+        p["id"]
+        for p in S.list_projects(user_id)
+        if p.get("initiative_id") == initiative["id"]
+    }
+    tasks_by_seat: dict[str, list[dict[str, Any]]] = {}
+    for task in S.list_tasks(user_id):
+        if task.get("project_id") not in project_ids:
+            continue
+        ref = (task.get("seat_ref") or "").strip()
+        if ref in markers:
+            tasks_by_seat.setdefault(ref, []).append(task)
+
+    chains: dict[str, list[bool]] = {}
+    for ref, seat_tasks in tasks_by_seat.items():
+        ordered = _chain_order(seat_tasks)
+        chains[ref] = [t.get("status") == _DONE for t in ordered]
+
+    def chain_of(ref: str) -> list[bool]:
+        return chains.get(ref, [])
+
+    entry_chain = chain_of(ENTRY_SEAT_REF)
+    entry_intro_done = bool(entry_chain) and entry_chain[0]
+
+    for seat in KD.SEATS:
+        ref = seat["seat_ref"]
+        done = chain_of(ref)
+        if not done or all(done):
+            continue  # nothing seeded for this seat, or chain complete
+        if ref == ENTRY_SEAT_REF and not done[0]:
+            markers[ref] = {"attention": True, "reason": "intro"}
+        elif not entry_intro_done and ref != ENTRY_SEAT_REF:
+            continue  # conductor first — the others wait for the intro
+        elif len(done) >= 4 and all(done[:3]) and not done[3]:
+            markers[ref] = {"attention": True, "reason": "recognition"}
+        else:
+            markers[ref] = {"attention": True, "reason": "meet"}
+
+    return {"seeded": True, "markers": markers}

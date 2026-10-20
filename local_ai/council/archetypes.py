@@ -83,8 +83,9 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
         ),
         "question": "What can this teach us?",
         "shadow": (
-            "Paternalism: endless instruction, withholding a straight answer "
-            "when guidance is what's needed."
+            "Paternalism: withholding the straight answer to stay necessary — "
+            "teaching that cultivates dependence, growth kept on the mentor's "
+            "schedule."
         ),
         "tension": (
             "Distrusts the Champion's rush to act and the Maverick's glee in "
@@ -126,7 +127,9 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
         ),
         "question": "What if the rules are wrong?",
         "shadow": (
-            "Contrarianism: destruction without replacement, novelty mistaken for progress."
+            "Contrarianism: breaking doors to prove it isn't captive — "
+            "destruction without replacement, transgression as identity "
+            "rather than liberation."
         ),
         "tension": (
             "Accuses the Guardian of making captivity comfortable; needles the "
@@ -140,7 +143,8 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
         ),
         "question": "What can bring us together?",
         "shadow": (
-            "Appeasement: sacrificing truth for agreement, manipulation dressed as diplomacy."
+            "Appeasement: translating each side into what it wants to hear, "
+            "until nobody has actually met."
         ),
         "tension": (
             "Accuses the Champion of manufacturing enemies; the Skeptic suspects the "

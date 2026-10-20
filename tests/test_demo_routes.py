@@ -645,3 +645,559 @@ def test_register_flag_response_field_defaults_none():
         exchanges_left=11,
     )
     assert resp.register_flag is None
+
+
+# --- Progression reader: background arc verdict lights the fork -------------
+
+
+def test_progression_verdict_parse_valid():
+    from api.routes import demo_routes as dr
+
+    verdict = dr._parse_progression_verdict(
+        '{"flags": ["skeptic", "guardian"], "reasons": '
+        '{"skeptic": "a bias is hardening here", '
+        '"guardian": "the visitor is being pummeled"}}'
+    )
+    assert verdict["flags"] == ["skeptic", "guardian"]
+    assert verdict["reasons"] == {
+        "skeptic": "a bias is hardening here",
+        "guardian": "the visitor is being pummeled",
+    }
+
+
+def test_progression_verdict_validates_and_dedupes():
+    from api.routes import demo_routes as dr
+
+    verdict = dr._parse_progression_verdict(
+        '{"flags": ["Skeptic", "skeptic", "bogus-seat", "guardian", 42], '
+        '"reasons": {"skeptic": "  a bias\\n is hardening  ", '
+        '"guardian": "", "maverick": "not flagged, dropped"}}'
+    )
+    # Unknown seats and duplicates dropped; order preserved.
+    assert verdict["flags"] == ["skeptic", "guardian"]
+    # Reasons: only for flagged seats, non-empty, whitespace-collapsed.
+    assert verdict["reasons"] == {"skeptic": "a bias is hardening"}
+
+
+def test_progression_verdict_invalid_is_empty():
+    from api.routes import demo_routes as dr
+
+    for raw in (
+        "",
+        "not json at all",
+        '["skeptic"]',                       # a list, not an object
+        '{"flags": "skeptic"}',             # flags not a list
+        '{"reasons": {"skeptic": "x"}}',    # no flags at all
+        '{"flags": []}',
+    ):
+        assert dr._parse_progression_verdict(raw) == {"flags": [], "reasons": {}}, raw
+
+
+def test_split_memory_and_verdict():
+    from api.routes import demo_routes as dr
+
+    mem, verdict = dr._split_memory_and_verdict(
+        "- circling the job question\n- tension: money vs freedom\n"
+        "- 'I keep saying later'\n\nVERDICT:\n"
+        '{"flags": ["maverick"], "reasons": {"maverick": "the same circle again"}}'
+    )
+    assert "circling the job question" in mem
+    # The verdict is control data — it never rides along in the memory text.
+    assert "VERDICT" not in mem
+    assert "flags" not in mem
+    assert verdict["flags"] == ["maverick"]
+    assert verdict["reasons"] == {"maverick": "the same circle again"}
+
+
+def test_split_memory_without_verdict_marker():
+    from api.routes import demo_routes as dr
+
+    # Old-format output (model forgot the marker): all memory, empty verdict.
+    mem, verdict = dr._split_memory_and_verdict("- bullet one\n- bullet two")
+    assert mem == "- bullet one\n- bullet two"
+    assert verdict == {"flags": [], "reasons": {}}
+
+
+def test_split_memory_malformed_verdict_keeps_memory():
+    from api.routes import demo_routes as dr
+
+    mem, verdict = dr._split_memory_and_verdict(
+        "- the memory survives\nVERDICT:\n{not really json"
+    )
+    assert mem == "- the memory survives"
+    assert verdict == {"flags": [], "reasons": {}}
+
+
+def test_progression_reader_section_judges_arc_with_restraint():
+    from api.routes import demo_routes as dr
+
+    section = dr._progression_reader_section(
+        ["Visitor: I keep delaying.", "Mentor: What can the pattern teach?"],
+        "guardian",
+        "Strand analysis of the recent window: the window's strands lean Logic 80%.",
+    )
+    # Judges the arc, not the last answer's accent.
+    assert "Judge the ARC" in section
+    assert "not the last answer's accent" in section
+    # Restraint is load-bearing: silence is valid, lighting everyone fails.
+    assert "An empty verdict is common and valid" in section
+    assert "Never light all seven" in section
+    assert "The visitor chooses the road" in section
+    # Inputs present: memory-adjacent window turns, the register signal
+    # (named by display name), and the strand signal.
+    assert "Visitor: I keep delaying." in section
+    assert "Guardian" in section
+    assert "Strand analysis of the recent window" in section
+    # Reasons name the situation, never the seat's job description.
+    assert "never the seat's job description" in section
+    assert "at most 10 words" in section
+    # Strict output contract.
+    assert "VERDICT:" in section
+    assert '{"flags":' in section
+
+
+def test_progression_reader_section_without_signals():
+    from api.routes import demo_routes as dr
+
+    section = dr._progression_reader_section(["Visitor: hi"], None, "")
+    assert "No seat flagged the last reply's register." in section
+    assert "Strand analysis" not in section
+
+
+def _reader_session(**overrides):
+    sess = {
+        "created": time.time(),
+        "transcript": [
+            {"role": "visitor", "content": "Everyone keeps telling me to just quit."},
+            {"role": "mentor", "content": "Thirty years holds a pattern. What can it teach you?"},
+            {"role": "visitor", "content": "Nobody has actually asked what I want."},
+            {"role": "guardian", "content": "What must be protected while you decide?"},
+        ],
+        "exchanges": 2,
+        "memory": "",
+        "progression": {"flags": [], "reasons": {}, "exchanges_used": 0},
+        "last_register_flag": "guardian",
+    }
+    sess.update(overrides)
+    return sess
+
+
+def test_progression_worker_stores_verdict(monkeypatch):
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    captured = {}
+
+    def fake_generate(api_key, prompt, **kwargs):
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
+        return (
+            "- circling the job question\n- tension: other people's advice\n"
+            "- 'just quit'\n\nVERDICT:\n"
+            '{"flags": ["skeptic", "ambassador"], "reasons": '
+            '{"skeptic": "a bias is hardening here"}}'
+        )
+
+    monkeypatch.setattr(meta, "generate", fake_generate)
+    sid = "reader-test-session"
+    dr._sessions[sid] = _reader_session()
+    transcript_before = [dict(t) for t in dr._sessions[sid]["transcript"]]
+    try:
+        dr._refresh_council_memory(sid)
+        sess = dr._sessions[sid]
+        # Verdict stored on the session, stamped with the exchange count.
+        assert sess["progression"]["flags"] == ["skeptic", "ambassador"]
+        assert sess["progression"]["reasons"] == {"skeptic": "a bias is hardening here"}
+        assert sess["progression"]["exchanges_used"] == 2
+        # Memory updated WITHOUT the verdict — no contamination either way.
+        assert "circling the job question" in sess["memory"]
+        assert "VERDICT" not in sess["memory"]
+        assert "skeptic" not in sess["memory"]
+        assert sess["transcript"] == transcript_before
+        # The generation was asked for both products: memory prompt intact,
+        # reader section riding along with its inputs (memory, window,
+        # register flag) — and still background-cheap (minimal effort).
+        prompt = captured["prompt"]
+        assert "shared memory keeper" in prompt
+        assert "progression reader" in prompt
+        assert "Guardian" in prompt  # the register-flag signal, by name
+        assert captured["kwargs"].get("reasoning_effort") == "minimal"
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_progression_worker_failure_leaves_session_untouched(monkeypatch):
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    def boom(api_key, prompt, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr(meta, "generate", boom)
+    sid = "reader-test-down"
+    dr._sessions[sid] = _reader_session(memory="old memory")
+    try:
+        dr._refresh_council_memory(sid)  # must not raise into the caller
+        sess = dr._sessions[sid]
+        assert sess["memory"] == "old memory"
+        assert sess["progression"] == {"flags": [], "reasons": {}, "exchanges_used": 0}
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_progression_worker_unparseable_verdict_is_empty(monkeypatch):
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    monkeypatch.setattr(
+        meta, "generate", lambda api_key, prompt, **kw: "- fresh memory\nVERDICT:\n???"
+    )
+    sid = "reader-test-junk"
+    dr._sessions[sid] = _reader_session()
+    try:
+        dr._refresh_council_memory(sid)
+        sess = dr._sessions[sid]
+        # No verdict rather than junk — but the memory fold still lands,
+        # and the empty verdict is stamped so pollers stop waiting for it.
+        assert sess["memory"] == "- fresh memory"
+        assert sess["progression"]["flags"] == []
+        assert sess["progression"]["exchanges_used"] == 2
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_progression_endpoint_returns_stored_verdict():
+    from api.routes import demo_routes as dr
+
+    sid = "reader-test-endpoint"
+    dr._sessions[sid] = _reader_session(
+        progression={
+            "flags": ["guardian"],
+            "reasons": {"guardian": "the visitor is being pummeled"},
+            "exchanges_used": 2,
+        }
+    )
+    try:
+        resp = dr.demo_progression(sid)
+        assert resp.flags == ["guardian"]
+        assert resp.reasons == {"guardian": "the visitor is being pummeled"}
+        assert resp.exchanges_used == 2
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_progression_endpoint_unknown_session_is_empty_not_error():
+    from api.routes import demo_routes as dr
+
+    resp = dr.demo_progression("no-such-session")
+    assert resp.flags == []
+    assert resp.reasons == {}
+    assert resp.exchanges_used == 0
+    assert dr.demo_progression("").flags == []
+
+
+class _StubRequest:
+    headers: dict = {}
+    client = None
+
+
+def _seed_chat_session(dr, sid, **overrides):
+    sess = {
+        "created": time.time(),
+        "transcript": [],
+        "exchanges": 0,
+        "memory": "",
+        "progression": {"flags": [], "reasons": {}, "exchanges_used": 0},
+        "last_register_flag": None,
+    }
+    sess.update(overrides)
+    dr._sessions[sid] = sess
+    return sess
+
+
+def test_chat_response_carries_previous_progression_verdict(monkeypatch):
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    monkeypatch.setattr(
+        meta, "generate", lambda api_key, prompt, **kw: "A plain answer."
+    )
+    monkeypatch.setattr(dr, "_kick_memory_refresh", lambda session_id: None)
+    sid = "reader-test-chat"
+    _seed_chat_session(
+        dr,
+        sid,
+        progression={
+            "flags": ["skeptic"],
+            "reasons": {"skeptic": "a bias is hardening here"},
+            "exchanges_used": 0,
+        },
+    )
+    try:
+        resp = dr.demo_chat(_body(session_id=sid, message="hello there"), _StubRequest())
+        # The verdict from the previous exchange rides this response...
+        assert resp.progression_flags == ["skeptic"]
+        assert resp.progression_reasons == {"skeptic": "a bias is hardening here"}
+        assert resp.register_flag is None
+        # ...and the endpoint serves the same stored verdict.
+        assert dr.demo_progression(sid).flags == ["skeptic"]
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_stream_done_event_carries_progression_verdict(monkeypatch):
+    import asyncio
+    import json as _json
+
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    def fake_stream(api_key, prompt, **kwargs):
+        yield "A streamed "
+        yield "answer."
+
+    monkeypatch.setattr(meta, "generate_stream", fake_stream)
+    monkeypatch.setattr(dr, "_kick_memory_refresh", lambda session_id: None)
+    sid = "reader-test-stream"
+    _seed_chat_session(
+        dr,
+        sid,
+        progression={
+            "flags": ["maverick"],
+            "reasons": {"maverick": "the same circle again"},
+            "exchanges_used": 0,
+        },
+    )
+    try:
+        resp = dr.demo_stream(_body(session_id=sid, message="hello"), _StubRequest())
+
+        async def _collect():
+            chunks = []
+            async for chunk in resp.body_iterator:
+                chunks.append(chunk.decode() if isinstance(chunk, bytes) else chunk)
+            return "".join(chunks)
+
+        events = []
+        for frame in asyncio.run(_collect()).split("\n\n"):
+            frame = frame.strip()
+            if frame.startswith("data:"):
+                events.append(_json.loads(frame[5:].strip()))
+        done = [e for e in events if e.get("type") == "done"]
+        assert len(done) == 1
+        assert done[0]["progression_flags"] == ["maverick"]
+        assert done[0]["progression_reasons"] == {"maverick": "the same circle again"}
+        assert done[0]["register_flag"] is None
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_progression_response_fields_default_empty():
+    from api.routes.demo_routes import DemoChatResponse
+
+    resp = DemoChatResponse(
+        reply="hi",
+        session_id="s",
+        voice="mentor",
+        voice_color="#c9a86a",
+        exchanges_used=1,
+        exchanges_left=11,
+    )
+    assert resp.progression_flags == []
+    assert resp.progression_reasons == {}
+
+
+# --- Fork log: verdicts recorded, picks resolve them ------------------------
+
+
+def test_progression_worker_logs_fork_event(monkeypatch):
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    monkeypatch.setattr(
+        meta,
+        "generate",
+        lambda api_key, prompt, **kw: (
+            "- memory\nVERDICT:\n"
+            '{"flags": ["skeptic", "guardian"], "reasons": '
+            '{"skeptic": "a bias is hardening here"}}'
+        ),
+    )
+    sid = "fork-test-log"
+    dr._sessions[sid] = _reader_session()
+    try:
+        dr._refresh_council_memory(sid)
+        forks = dr._sessions[sid]["forks"]
+        assert len(forks) == 1
+        event = forks[0]
+        assert event["exchange"] == 2
+        assert event["offered"] == ["skeptic", "guardian"]
+        assert event["reasons"] == {"skeptic": "a bias is hardening here"}
+        assert event["resolution"] is None  # outstanding until the visitor acts
+        assert isinstance(event["at"], float) and event["at"] > 0
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_progression_worker_empty_verdict_logs_no_fork(monkeypatch):
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    # No VERDICT marker → empty verdict: silence is logged too, but it
+    # offered no fork, so it is born resolved and never outstanding.
+    monkeypatch.setattr(
+        meta, "generate", lambda api_key, prompt, **kw: "- just memory"
+    )
+    sid = "fork-test-silent"
+    dr._sessions[sid] = _reader_session()
+    try:
+        dr._refresh_council_memory(sid)
+        forks = dr._sessions[sid]["forks"]
+        assert len(forks) == 1
+        assert forks[0]["offered"] == []
+        assert forks[0]["resolution"] == "no_fork"
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def _fork_session(dr, sid, offered=("skeptic", "guardian")):
+    """A mid-conversation session with one outstanding fork event."""
+    sess = _seed_chat_session(dr, sid)
+    sess["transcript"] = [
+        {"role": "visitor", "content": "I am at a crossroads."},
+        {"role": "mentor", "content": "Thirty years holds a pattern."},
+    ]
+    sess["exchanges"] = 1
+    sess["forks"] = [
+        {
+            "exchange": 1,
+            "offered": list(offered),
+            "reasons": {"skeptic": "a bias is hardening here"},
+            "at": time.time(),
+            "resolution": None,
+        }
+    ]
+    return sess
+
+
+def _quiet_chat(monkeypatch, dr):
+    from local_ai.providers import meta
+
+    monkeypatch.setattr(
+        meta, "generate", lambda api_key, prompt, **kw: "A plain answer."
+    )
+    monkeypatch.setattr(dr, "_kick_memory_refresh", lambda session_id: None)
+
+
+def test_fork_resolves_chose_on_tap_in_set(monkeypatch):
+    from api.routes import demo_routes as dr
+
+    _quiet_chat(monkeypatch, dr)
+    sid = "fork-test-chose"
+    _fork_session(dr, sid)
+    try:
+        # Speak-turn tap (empty message) on an offered seat.
+        dr.demo_chat(_body(session_id=sid, voice="skeptic", message=""), _StubRequest())
+        assert dr._sessions[sid]["forks"][0]["resolution"] == "chose:skeptic"
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_fork_resolves_off_menu_on_tap_outside_set(monkeypatch):
+    from api.routes import demo_routes as dr
+
+    _quiet_chat(monkeypatch, dr)
+    sid = "fork-test-offmenu"
+    _fork_session(dr, sid)
+    try:
+        # A tap on a seat the reader did NOT offer: a fork the reader missed.
+        dr.demo_chat(_body(session_id=sid, voice="maverick", message=""), _StubRequest())
+        assert dr._sessions[sid]["forks"][0]["resolution"] == "off_menu:maverick"
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_fork_resolves_self_directed_on_typed_message(monkeypatch):
+    from api.routes import demo_routes as dr
+
+    _quiet_chat(monkeypatch, dr)
+    sid = "fork-test-typed"
+    _fork_session(dr, sid)
+    try:
+        dr.demo_chat(
+            _body(session_id=sid, voice="guardian", message="my own words"),
+            _StubRequest(),
+        )
+        assert dr._sessions[sid]["forks"][0]["resolution"] == "self_directed"
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_fork_resolution_also_fires_on_stream(monkeypatch):
+    import asyncio
+
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    monkeypatch.setattr(
+        meta, "generate_stream", lambda api_key, prompt, **kw: iter(["An answer."])
+    )
+    monkeypatch.setattr(dr, "_kick_memory_refresh", lambda session_id: None)
+    sid = "fork-test-stream"
+    _fork_session(dr, sid)
+    try:
+        resp = dr.demo_stream(
+            _body(session_id=sid, voice="guardian", message=""), _StubRequest()
+        )
+
+        async def _drain():
+            async for _ in resp.body_iterator:
+                pass
+
+        asyncio.run(_drain())
+        assert dr._sessions[sid]["forks"][0]["resolution"] == "chose:guardian"
+    finally:
+        dr._sessions.pop(sid, None)
+
+
+def test_new_verdict_supersedes_unresolved_fork(monkeypatch):
+    from api.routes import demo_routes as dr
+    from local_ai.providers import meta
+
+    sid = "fork-test-supersede"
+    sess = _reader_session()
+    sess["forks"] = [
+        {
+            "exchange": 1,
+            "offered": ["guardian"],
+            "reasons": {},
+            "at": time.time(),
+            "resolution": None,
+        }
+    ]
+    dr._sessions[sid] = sess
+    try:
+        # A newer verdict lands before the visitor ever acted on the old one.
+        monkeypatch.setattr(
+            meta,
+            "generate",
+            lambda api_key, prompt, **kw: (
+                '- memory\nVERDICT:\n{"flags": ["maverick"], "reasons": {}}'
+            ),
+        )
+        dr._refresh_council_memory(sid)
+        forks = dr._sessions[sid]["forks"]
+        assert len(forks) == 2
+        assert forks[0]["resolution"] is None  # superseded, untouched
+        assert forks[1]["offered"] == ["maverick"]
+        assert forks[1]["resolution"] is None
+
+        # The visitor's next act resolves ONLY the outstanding (newest) one.
+        _quiet_chat(monkeypatch, dr)
+        dr.demo_chat(
+            _body(session_id=sid, message="taking the floor myself"), _StubRequest()
+        )
+        forks = dr._sessions[sid]["forks"]
+        assert forks[0]["resolution"] is None
+        assert forks[1]["resolution"] == "self_directed"
+    finally:
+        dr._sessions.pop(sid, None)

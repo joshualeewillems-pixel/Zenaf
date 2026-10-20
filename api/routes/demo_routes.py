@@ -11,6 +11,22 @@ into the session's memory, and every voice's prompt builds on it — perspective
 accumulate toward a solution instead of restarting each turn. The weave
 instruction densifies as the conversation deepens.
 
+The same background generation also runs the progression reader: it judges
+the conversation's arc and stores a per-session verdict — the set of seats
+whose move the progression could genuinely use next (the live forks, with a
+short reason each). Clients light a "!" over those seats; the visitor chooses
+the road. The reader is background-only, best-effort, and restrained by
+design: an empty verdict (silence) is common and valid.
+
+Fork choices are a training metric, so every stored verdict also appends a
+fork event to the session's log ({exchange, offered, reasons, at,
+resolution}). The visitor's NEXT request resolves the outstanding event —
+chose:<seat> (tapped an offered seat), off_menu:<seat> (tapped another),
+self_directed (typed their own message) — a revealed preference with the
+situation and the alternatives attached. Events are session-side only: the
+claim flow's payload is the visitor's own words, kept verbatim for intake,
+so fork metadata deliberately does not ride into it.
+
 Guards (the demo is a cost center — Character.AI lesson):
 - Session cap: DEMO_EXCHANGE_CAP exchanges per anonymous session.
 - IP rate limit: DEMO_IP_MAX messages per DEMO_IP_WINDOW_S sliding window.
@@ -29,6 +45,7 @@ own copy only to sustain the conversation within the cap.
 
 from __future__ import annotations
 
+import json
 import re
 import sqlite3
 import threading
@@ -91,7 +108,9 @@ _COLOR_WEAVE_INSTRUCTION = (
 # _sanitize_weave alias so existing tests and call sites are untouched)
 
 # In-memory session + rate-limit stores (single-instance; see module docstring).
-#: session -> {"created": float, "transcript": [...], "exchanges": int, "memory": str}
+#: session -> {"created": float, "transcript": [...], "exchanges": int,
+#:             "memory": str, "progression": {...}, "forks": [...],
+#:             "last_register_flag": ...}
 _sessions: dict[str, dict] = {}
 _ip_hits: dict[str, list[float]] = {}
 #: Claim-code TTL: 24h, single-use.
@@ -229,6 +248,13 @@ class DemoChatResponse(BaseModel):
     #: lights a "!" over that seat's chip. Always None outside speak turns
     #: in respond mode.
     register_flag: str | None = None
+    #: The progression reader's latest verdict for this session (assessed in
+    #: the background after the PREVIOUS exchange — the current exchange's
+    #: verdict lands later; poll GET /demo/progression for it). A set of
+    #: seat ids whose move the progression could use next, with a short
+    #: situation reason each. Empty = silence, a common and valid verdict.
+    progression_flags: list[str] = Field(default_factory=list)
+    progression_reasons: dict[str, str] = Field(default_factory=dict)
 
 
 def _client_ip(request: Request) -> str:
@@ -259,7 +285,15 @@ def _get_session(session_id: str | None) -> tuple[str, dict]:
     if session_id and session_id in _sessions:
         return session_id, _sessions[session_id]
     sid = uuid.uuid4().hex
-    sess = {"created": now, "transcript": [], "exchanges": 0, "memory": ""}
+    sess = {
+        "created": now,
+        "transcript": [],
+        "exchanges": 0,
+        "memory": "",
+        "progression": {"flags": [], "reasons": {}, "exchanges_used": 0},
+        "forks": [],
+        "last_register_flag": None,
+    }
     _sessions[sid] = sess
     return sid, sess
 
@@ -610,12 +644,194 @@ def _build_demo_prompt(
     return "\n".join(prompt)
 
 
+def _speaker_lines(turns: list[dict]) -> list[str]:
+    """Transcript turns as 'Speaker: text' lines (visitor + display names)."""
+    lines = []
+    for turn in turns:
+        role = turn["role"]
+        if role == "visitor":
+            speaker = "Visitor"
+        else:
+            arch = get_archetype(role)
+            speaker = arch.display_name if arch else role
+        lines.append(f"{speaker}: {(turn['content'] or '')[:500]}")
+    return lines
+
+
+#: The progression reader (companion to the register flag): a second product
+#: of the memory-fold generation. After each exchange it judges the
+#: conversation's ARC and stores a per-session verdict — the set of seats
+#: whose move the progression could genuinely use next (the live forks),
+#: each with a short reason naming the situation. The client lights "!"
+#: over those seats and the visitor chooses the road; the reader proposes
+#: branches, never paths. Restraint is load-bearing: precision beats
+#: coverage, and the empty verdict (silence) is common and valid.
+
+#: Marker separating the memory bullets from the verdict JSON in the
+#: background generation's output. Chosen to be prose-implausible so the
+#: split never fires on memory text itself.
+_PROGRESSION_VERDICT_MARKER = "VERDICT:"
+
+
+def _empty_verdict() -> dict:
+    return {"flags": [], "reasons": {}}
+
+
+def _parse_progression_verdict(text: str) -> dict:
+    """Validate one progression-reader JSON verdict.
+
+    Seat ids are checked against the stock archetypes and deduped; reasons
+    are kept only for flagged seats and trimmed to one short line. Anything
+    unparseable or malformed yields the empty verdict — the suggestions
+    honesty rule: no verdict rather than junk.
+    """
+    try:
+        data = json.loads(text)
+    except Exception:
+        return _empty_verdict()
+    if not isinstance(data, dict):
+        return _empty_verdict()
+    valid = set(stock_archetype_ids())
+    flags: list[str] = []
+    raw_flags = data.get("flags")
+    if isinstance(raw_flags, list):
+        for item in raw_flags:
+            seat = str(item).strip().lower()
+            if seat in valid and seat not in flags:
+                flags.append(seat)
+    reasons: dict[str, str] = {}
+    raw_reasons = data.get("reasons")
+    if isinstance(raw_reasons, dict):
+        for seat in flags:
+            reason = raw_reasons.get(seat)
+            if isinstance(reason, str) and reason.strip():
+                reasons[seat] = " ".join(reason.split())[:80]
+    return {"flags": flags, "reasons": reasons}
+
+
+def _split_memory_and_verdict(raw: str) -> tuple[str, dict]:
+    """Split the background generation into (memory text, verdict).
+
+    The verdict is control data: it is split off here and never stored in
+    the session's memory text or transcript. No marker (the model forgot,
+    or an old-format reply) → the whole text is memory and the verdict is
+    empty; a malformed verdict JSON → empty verdict, memory still kept.
+    """
+    idx = raw.rfind(_PROGRESSION_VERDICT_MARKER)
+    if idx == -1:
+        return raw.strip(), _empty_verdict()
+    mem = raw[:idx].strip()
+    tail = raw[idx + len(_PROGRESSION_VERDICT_MARKER) :]
+    m = re.search(r"\{.*\}", tail, re.DOTALL)
+    verdict = _parse_progression_verdict(m.group(0)) if m else _empty_verdict()
+    return mem, verdict
+
+
+def _strand_signal_line(window_text: str) -> str:
+    """One deterministic strand read of the recent window, as a prompt line.
+
+    Uses the journal story machinery (rule-based sorter + archetype
+    matching — no LLM call, no import cycle: the import is lazy and this
+    helper is only reached from the background worker). Best-effort: ""
+    when nothing scores or anything fails; the reader weighs the line as
+    one signal among several, never as the decision.
+    """
+    try:
+        from local_ai.journal.story import (
+            CAST_THRESHOLD,
+            analyze_entry_strands,
+            detect_active_archetypes,
+        )
+
+        weights = analyze_entry_strands(window_text or "")
+        if not weights:
+            return ""
+        top = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)[:3]
+        strand_part = ", ".join(
+            f"{name} {w:.0%}" for name, w in top if w >= 0.1
+        )
+        names = []
+        for seat_id, sim in detect_active_archetypes(weights):
+            if sim < CAST_THRESHOLD or len(names) >= 3:
+                continue
+            arch = get_archetype(seat_id)
+            names.append(arch.display_name if arch else seat_id)
+        parts = []
+        if strand_part:
+            parts.append(f"the window's strands lean {strand_part}")
+        if names:
+            parts.append("the text already resembles " + " and ".join(names))
+        if not parts:
+            return ""
+        return "Strand analysis of the recent window: " + "; ".join(parts) + "."
+    except Exception:
+        return ""
+
+
+def _progression_reader_section(
+    window_lines: list[str],
+    register_flag: str | None,
+    strand_line: str,
+) -> str:
+    """The progression-reader half of the background generation's prompt.
+
+    Judges the arc, not the last answer's accent. Inputs: the council
+    memory (already in the prompt above this section), the last ~6
+    transcript turns, the last reply's self-reported register flag, and
+    the deterministic strand read — weighed together, none deciding alone.
+    """
+    if register_flag:
+        arch = get_archetype(register_flag)
+        name = arch.display_name if arch else register_flag
+        register_line = (
+            f"- The last voice's reply substantially sat in the {name}'s "
+            f"register — that seat's territory was flagged from inside the reply."
+        )
+    else:
+        register_line = "- No seat flagged the last reply's register."
+    signals = [register_line]
+    if strand_line:
+        signals.append(f"- {strand_line}")
+    seats = ", ".join(stock_archetype_ids())
+    return (
+        "After the memory bullets, one more job. You are also the council's "
+        "progression reader. Judge the ARC — where this visitor's story is "
+        "heading — not the last answer's accent. A seat is a live fork when "
+        "its move would take the progression somewhere genuinely different: "
+        "the Skeptic when a bias is hardening, the Guardian when the visitor "
+        "is being pummeled, the Maverick when the conversation keeps walking "
+        "the same circle, the Ambassador when two worlds in the story have "
+        "stopped hearing each other. Weigh the open tensions in the memory "
+        "above, how the visitor is actually doing inside the story, and "
+        "these signals (weigh them; none decides alone):\n"
+        + "\n".join(signals)
+        + "\n\nRecent conversation:\n"
+        + "\n".join(window_lines)
+        + "\n\nRestraint is the job: precision beats coverage. An empty "
+        "verdict is common and valid. Name only genuine forks — often two "
+        "to four, sometimes one, often none. Never light all seven: a fork "
+        "with every road lit is no fork at all. The visitor chooses the "
+        "road; you only mark the forks.\n\n"
+        f"Then, on its own line, write {_PROGRESSION_VERDICT_MARKER} and "
+        "after it ONLY this JSON object — no prose, no code fences:\n"
+        '{"flags": ["seat_id", ...], "reasons": {"seat_id": "short reason"}}'
+        f"\nSeat ids, exactly: {seats}. Each reason is at most 10 words and "
+        "names the situation in the visitor's story ('a bias is hardening "
+        "here', 'the visitor is being pummeled') — never the seat's job "
+        "description."
+    )
+
+
 def _refresh_council_memory(session_id: str) -> None:
-    """Fold the latest exchange into the session's shared council memory.
+    """Fold the latest exchange into the session's shared council memory,
+    and assess the conversation's progression (the reader verdict).
 
     Runs in a daemon thread after the reply is delivered — best-effort, never
-    raises into the request path. The memory is what lets each voice build on
-    the conversation's arc instead of only the last message.
+    raises into the request path. One generation, two products: the memory
+    text (what lets each voice build on the conversation's arc) and the
+    progression verdict (which seats the arc could use next). The verdict is
+    split off the generation and stored on the session only — it never
+    enters the memory text or the transcript.
     """
     try:
         from local_ai.providers import meta as _meta
@@ -623,16 +839,11 @@ def _refresh_council_memory(session_id: str) -> None:
         sess = _sessions.get(session_id)
         if not sess or not sess["transcript"]:
             return
-        recent = sess["transcript"][-4:]  # last two exchanges
-        convo_lines = []
-        for turn in recent:
-            role = turn["role"]
-            if role == "visitor":
-                speaker = "Visitor"
-            else:
-                arch = get_archetype(role)
-                speaker = arch.display_name if arch else role
-            convo_lines.append(f"{speaker}: {(turn['content'] or '')[:500]}")
+        transcript = sess["transcript"]
+        assessed_exchanges = sess.get("exchanges", 0)
+        recent = transcript[-4:]  # last two exchanges (the fold's window)
+        window = transcript[-6:]  # the reader reads a slightly wider arc
+        convo_lines = _speaker_lines(recent)
         prompt = (
             "You are the council's shared memory keeper. Update the council's running "
             "memory in exactly 3 short bullets: (1) what the visitor seems to want or "
@@ -642,11 +853,71 @@ def _refresh_council_memory(session_id: str) -> None:
             f"Latest exchanges:\n" + "\n".join(convo_lines) + "\n\n"
             "Updated memory (3 bullets, terse):"
         )
-        mem = _meta.generate("", prompt, timeout=45, reasoning_effort="minimal").strip()
+        prompt += "\n\n" + _progression_reader_section(
+            _speaker_lines(window),
+            sess.get("last_register_flag"),
+            _strand_signal_line(
+                " ".join((t.get("content") or "") for t in window)
+            ),
+        )
+        raw = _meta.generate("", prompt, timeout=45, reasoning_effort="minimal").strip()
+        if not raw:
+            return
+        mem, verdict = _split_memory_and_verdict(raw)
         if mem:
             sess["memory"] = mem[:1200]
+        # A slower worker for an older exchange must not overwrite a newer
+        # verdict with its staler read of the arc.
+        stored = sess.get("progression") or {}
+        if assessed_exchanges >= (stored.get("exchanges_used") or 0):
+            sess["progression"] = {
+                "flags": verdict["flags"],
+                "reasons": verdict["reasons"],
+                "exchanges_used": assessed_exchanges,
+            }
+            # Log the fork this verdict offered. The visitor's next request
+            # resolves it (see _resolve_outstanding_fork) — the pick is a
+            # revealed preference and a grade on the reader. An empty
+            # verdict offered no fork; it is logged pre-resolved ("no_fork")
+            # so the log also shows how often the reader stayed silent, and
+            # it never becomes the outstanding event.
+            sess.setdefault("forks", []).append(
+                {
+                    "exchange": assessed_exchanges,
+                    "offered": list(verdict["flags"]),
+                    "reasons": dict(verdict["reasons"]),
+                    "at": time.time(),
+                    "resolution": None if verdict["flags"] else "no_fork",
+                }
+            )
     except Exception:
-        pass  # memory is best-effort; the conversation must never break
+        pass  # memory + verdict are best-effort; the conversation must never break
+
+
+def _resolve_outstanding_fork(sess: dict, *, speak: bool, voice_id: str) -> None:
+    """Resolve the session's outstanding fork event from the visitor's act.
+
+    Called when the NEXT request arrives, before the turn is processed: a
+    speak-turn tap on an offered seat is a pick (chose:<seat>); a tap on
+    any other seat went off the reader's menu (off_menu:<seat>); a typed
+    message means the visitor took the floor themselves (self_directed).
+    Only the latest unresolved event resolves — an older unresolved event
+    was superseded by a newer verdict before the visitor acted, and stays
+    unresolved in the log as its own datum.
+    """
+    outstanding = None
+    for event in reversed(sess.get("forks") or []):
+        if event.get("resolution") is None:
+            outstanding = event
+            break
+    if outstanding is None:
+        return
+    if not speak:
+        outstanding["resolution"] = "self_directed"
+    elif voice_id in (outstanding.get("offered") or []):
+        outstanding["resolution"] = f"chose:{voice_id}"
+    else:
+        outstanding["resolution"] = f"off_menu:{voice_id}"
 
 
 def _kick_memory_refresh(session_id: str) -> None:
@@ -689,6 +960,49 @@ def demo_voices() -> list[DemoVoiceInfo]:
         )
         for a in STOCK_ARCHETYPES
     ]
+
+
+class DemoProgressionResponse(BaseModel):
+    """The progression reader's latest verdict for one session.
+
+    flags: seat ids whose move the progression could genuinely use next
+    (the live forks). reasons: per-seat short situation phrases. An empty
+    verdict is the reader's silence — common and valid. exchanges_used is
+    the exchange count the verdict was assessed at, so a polling client
+    can tell a fresh verdict from a stale one.
+    """
+
+    flags: list[str] = Field(default_factory=list)
+    reasons: dict[str, str] = Field(default_factory=dict)
+    exchanges_used: int = 0
+
+
+def _current_progression(sess: dict) -> tuple[list[str], dict[str, str]]:
+    """(flags, reasons) of the session's stored progression verdict."""
+    verdict = sess.get("progression") or {}
+    return (
+        list(verdict.get("flags") or []),
+        dict(verdict.get("reasons") or {}),
+    )
+
+
+@router.get("/progression", response_model=DemoProgressionResponse)
+def demo_progression(session_id: str = "") -> DemoProgressionResponse:
+    """Latest progression-reader verdict for a demo session — no auth.
+
+    Read-only and quiet: unknown or expired sessions get the empty verdict,
+    never an error. The verdict is assessed in the background after each
+    exchange, so it can lag the conversation by one exchange.
+    """
+    sess = _sessions.get((session_id or "").strip())
+    if not sess:
+        return DemoProgressionResponse()
+    verdict = sess.get("progression") or {}
+    return DemoProgressionResponse(
+        flags=list(verdict.get("flags") or []),
+        reasons=dict(verdict.get("reasons") or {}),
+        exchanges_used=int(verdict.get("exchanges_used") or 0),
+    )
 
 
 def _format_transcript_text(transcript: list[dict]) -> str:
@@ -799,6 +1113,11 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
     message = body.message.strip()
     speak_mode, question_mode = _speak_turn_params(body, sess)
 
+    # The visitor's act resolves the outstanding fork before this turn
+    # is processed: the pick (or the refusal of the menu) is the signal,
+    # and it belongs to the moment of choice.
+    _resolve_outstanding_fork(sess, speak=speak_mode, voice_id=voice_id)
+
     transcript = sess["transcript"]
     system = _build_demo_prompt(
         voice_id,
@@ -839,6 +1158,11 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         transcript.append({"role": "visitor", "content": message})
     transcript.append({"role": voice_id, "content": reply})
     sess["exchanges"] += 1
+    # The background reader weighs the last reply's register flag as one of
+    # its signals; the verdict delivered here is the PREVIOUS exchange's
+    # (this exchange's lands in the background — poll /demo/progression).
+    sess["last_register_flag"] = register_flag
+    progression_flags, progression_reasons = _current_progression(sess)
     _kick_memory_refresh(session_id)
     left = DEMO_EXCHANGE_CAP - sess["exchanges"]
 
@@ -851,6 +1175,8 @@ def demo_chat(body: DemoChatBody, request: Request) -> DemoChatResponse:
         exchanges_left=left,
         capped=left == 0,
         register_flag=register_flag,
+        progression_flags=progression_flags,
+        progression_reasons=progression_reasons,
     )
 
 
@@ -862,7 +1188,10 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
       data: {"type": "token", "text": "..."}   — reply chunks as they arrive
       data: {"type": "done", "session_id": ..., "voice": ..., "voice_color": ...,
              "exchanges_used": N, "exchanges_left": M, "capped": bool,
-             "register_flag": <seat id or null>}
+             "register_flag": <seat id or null>,
+             "progression_flags": [...], "progression_reasons": {...}}
+    The progression fields carry the reader's verdict from the PREVIOUS
+    exchange (this exchange's is assessed in the background afterwards).
     A capped session returns 403 JSON (same as /demo/chat), not SSE.
     """
     import json as _json
@@ -889,6 +1218,11 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
 
     message = body.message.strip()
     speak_mode, question_mode = _speak_turn_params(body, sess)
+
+    # The visitor's act resolves the outstanding fork before this turn
+    # is processed: the pick (or the refusal of the menu) is the signal,
+    # and it belongs to the moment of choice.
+    _resolve_outstanding_fork(sess, speak=speak_mode, voice_id=voice_id)
 
     transcript = sess["transcript"]
     system = _build_demo_prompt(
@@ -938,6 +1272,8 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
             transcript.append({"role": "visitor", "content": message})
         transcript.append({"role": voice_id, "content": reply})
         sess["exchanges"] += 1
+        sess["last_register_flag"] = register_flag
+        progression_flags, progression_reasons = _current_progression(sess)
         left = DEMO_EXCHANGE_CAP - sess["exchanges"]
         done = {
             "type": "done",
@@ -949,6 +1285,8 @@ def demo_stream(body: DemoChatBody, request: Request) -> StreamingResponse:
             "exchanges_left": left,
             "capped": left == 0,
             "register_flag": register_flag,
+            "progression_flags": progression_flags,
+            "progression_reasons": progression_reasons,
         }
         yield f"data: {_json.dumps(done)}\n\n"
         _kick_memory_refresh(session_id)

@@ -36,6 +36,7 @@ import {
 } from './archetypes'
 import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
 import { NodeSheet } from '../tree/NodeSheet'
+import { YouEchoPanel } from './YouEchoPanel'
 
 /* ------------------------------------------------------------------ */
 /* Tree-as-organism: node sheets (phase 1)                             */
@@ -973,6 +974,10 @@ export function LivingTreeView({
               : 'No rental price set yet — you set the price per archetype when there is training worth renting.'}
           </p>
         </div>
+        <YouEchoPanel
+          archetypeId={arch.id}
+          character={FELLOWSHIP_NAMES[arch.id] ?? arch.display_name}
+        />
         {isSeed && (
           <button
             type="button"

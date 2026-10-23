@@ -90,6 +90,49 @@ _ACK_TOKENS = {
     "alright", "all right", "go on", "continue", "ready",
 }
 
+#: Acknowledgment phrases for _is_acknowledgment's containment check.
+_ACK_PHRASES = (
+    "sounds good", "sounds great", "looks good", "all good", "makes sense",
+    "got it", "thank you", "thanks", "understood", "go on", "okay", "ok",
+    "yes", "yeah", "yep", "sure", "cool", "great", "fine", "alright",
+    "all right", "continue", "ready", "perfect", "nice",
+)
+
+#: Words that turn a short reply into something other than an ack.
+_ACK_CONTRASTS = ("but", "except", "however", "actually", "though")
+
+
+def _is_acknowledgment(message: str) -> bool:
+    """Human-shaped ack detection (the first live run's lesson: exact
+    token matching sent "Ok sounds good" down the question path, where
+    the framed answer improvised a second introduction). A short,
+    question-free reply containing an ack phrase — and no contrast
+    word — is an acknowledgment; anything else is treated as a
+    question and answered from the script's facts."""
+    norm = " ".join((message or "").strip().lower().strip(".! ").split())
+    if not norm or "?" in norm:
+        return False
+    if norm in _ACK_TOKENS:
+        return True
+    words = norm.split()
+    if len(words) > 6:
+        return False
+    if any(c in words for c in _ACK_CONTRASTS):
+        return False
+    return any(phrase in norm for phrase in _ACK_PHRASES)
+
+
+def _excerpt(text: str, limit: int) -> str:
+    """A word-boundary excerpt for inline display; the full text stays
+    on the meeting record and in review."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text.rfind(" ", 0, limit)
+    if cut < limit // 2:
+        cut = limit
+    return text[:cut].rstrip(" ,;:") + "…"
+
 #: Short answers that mean "ask me a different one" rather than an answer.
 #: Exact-match after normalization — a substantive "no, because…" is an
 #: answer, not a pass.
@@ -450,8 +493,8 @@ class MeetingService:
             self._say(
                 user_id, cid, arch_id,
                 script.pulled_item_template.format(
-                    claim=row.get("readback_claim") or "",
-                    response=row.get("readback_response") or "",
+                    claim=_excerpt(row.get("readback_claim") or "", 160),
+                    response=_excerpt(row.get("readback_response") or "", 120),
                 ),
             )
         if script.pulled_where_template:
@@ -475,8 +518,7 @@ class MeetingService:
     def _orientation_beat(self, user_id: str, arch_id: str, keystone_index: int,
                           script: MT.MeetingScript, message: str) -> None:
         cid = conversation_id_for(arch_id, keystone_index)
-        norm = " ".join((message or "").strip().lower().strip(".! ").split())
-        if norm not in _ACK_TOKENS and not _is_pass(message):
+        if not _is_acknowledgment(message) and not _is_pass(message):
             # A real question about how the system works: one framed
             # answer from the script's facts, then the meeting proceeds.
             history = self._history_for_reply(user_id, cid)

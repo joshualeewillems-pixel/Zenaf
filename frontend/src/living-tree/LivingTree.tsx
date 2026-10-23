@@ -133,6 +133,26 @@ export function markerTitle(
   return `${name} wants to meet you.`
 }
 
+export type MeetingDoorState = 'begin' | 'revisit' | null
+
+/** Whether the seat's character head carries a door into the first-meeting
+    overlay, and which one. 'intro' is the fresh-tree invitation — the
+    "Begin" door. The intro marker lasts only until the first meeting
+    completes; after that the reason moves on ('meet', a later keystone)
+    and the Begin door vanishes. A seat already met (face_revealed — true
+    exactly when keystone 1 is Done or the face is depth-unlocked) gets
+    the revisit door instead, so the completed meeting stays reachable:
+    MeetingView renders the transcript and "Meet again" once open. Seats
+    neither intro nor met have unwritten meetings; no door is honest. */
+export function meetingDoorState(
+  reason: KeystoneAttentionReason | null | undefined,
+  met = false,
+): MeetingDoorState {
+  if (reason === 'intro') return 'begin'
+  if (met) return 'revisit'
+  return null
+}
+
 const PHI = 1.618
 const CX = 200
 const TRUNK_TOP = 302
@@ -1014,6 +1034,7 @@ export function LivingTreeView({
     const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
     const col = arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a'
     const expanded = charExpandedSeat === arch.id
+    const door = meetingDoorState(attention?.markers[arch.id]?.reason, arch.face_revealed === true)
     return (
       <div>
         <div className="lavatar-head">
@@ -1026,7 +1047,7 @@ export function LivingTreeView({
           </div>
         </div>
         <p>“{arch.prompt_frame}”</p>
-        {attention?.markers[arch.id]?.reason === 'intro' && (
+        {door && (
           <button
             type="button"
             className="lcta"
@@ -1036,7 +1057,7 @@ export function LivingTreeView({
               setMeetingSeat(arch.id)
             }}
           >
-            Begin the first meeting →
+            {door === 'begin' ? 'Begin the first meeting →' : 'Your first meeting →'}
           </button>
         )}
         <div className="lstat">

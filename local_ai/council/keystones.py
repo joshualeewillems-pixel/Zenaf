@@ -7,13 +7,16 @@ data edits here, never rebuilds.
 
 Order is fixed and starts with the Conductor (entry seat): in optimal form it
 is the amalgamation of the others' strengths and weaknesses and the
-negotiation between them, so it introduces the council. The other six follow
-in the user's choice of order. Keystone 4 gates RENTABILITY, not training —
-training runs continuously throughout normal usage, per user approval.
+negotiation between them, so it is met first. It does NOT introduce the
+others (Joshua's rule, 2026-10-22): each seat is met individually, in its own
+meeting, or not at all. The other six follow in the user's choice of order.
+Keystone 4 gates RENTABILITY, not training — training runs continuously
+throughout normal usage, per user approval.
 
 Seeding logic lives in local_ai/vision_execution/keystone_seeding.py.
-The keystone *conversations* themselves are a separate build (intro-conversation
-unlock) — this is the scaffolding: initiative, checklist, dependencies, seed.
+The keystone *conversations* live in local_ai/council/meetings.py (scripts,
+as data) and local_ai/conversation/meeting.py (the engine); this module is
+the scaffolding: initiative, checklist, dependencies, seed.
 """
 
 from __future__ import annotations
@@ -23,11 +26,12 @@ INITIATIVE_TITLE = "Meet your council"
 INITIATIVE_STATUS = "Active"
 INITIATIVE_BRIEF = (
     "Meet the seven seats of your council. Start with the Conductor — the one "
-    "who hears how the others fit together — and it will introduce the rest. "
-    "Like meeting someone in real life: name and face first, then what each "
-    "one is good at, what each one is not good at, and finally the part of "
-    "you that echoes each of them. No quotes, no mottos — just getting to "
-    "know them."
+    "who hears how the others fit together. It opens the door; the rest "
+    "introduce themselves, each in their own meeting — nobody is met by "
+    "proxy. Like meeting someone in real life: name and face first, then "
+    "what each one is good at, what each one is not good at, and finally "
+    "the part of you that echoes each of them. No quotes, no mottos — "
+    "just getting to know them."
 )
 
 PROJECT_STATUS = "Ready"

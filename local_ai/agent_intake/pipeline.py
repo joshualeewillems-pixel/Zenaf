@@ -337,6 +337,27 @@ def log_claim_feedback(
 
     store = presence_store or PresenceStore()
     _migrate.ensure_migrated(store)
+    # A meeting impression is filed under every strand its read-back
+    # named (up to two): the verdict lands one signal per strand, each
+    # zoned to that strand, so the approved impression becomes evidence
+    # under all of them — not just the machinery's single-zone default.
+    strands = intake_signals.claim_strands(claim_id, claim_type)
+    if strands:
+        for strand in strands:
+            signal = intake_signals.claim_feedback_signal(
+                agent_id=agent_id,
+                claim_id=claim_id,
+                claim_type=claim_type,
+                claim_title=claim_title,
+                action=action,
+                user_id=user_id or "",
+                evidence=evidence,
+                inference=inference,
+                note=note,
+                strand_override=strand,
+            )
+            intake_signals.save_intake_signal(signal, store)
+        return
     signal = intake_signals.claim_feedback_signal(
         agent_id=agent_id,
         claim_id=claim_id,

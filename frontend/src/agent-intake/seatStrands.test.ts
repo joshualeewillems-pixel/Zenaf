@@ -27,4 +27,14 @@ describe('seatKeysForWeights', () => {
     expect(seatKeysForWeights(null)).toEqual([])
     expect(seatKeysForWeights(undefined)).toEqual([])
   })
+
+  it('a meeting-impression agent (read-back strands at full weight) reaches by those strands', () => {
+    // A first meeting's read-back named Compass + Logic: the filing
+    // sorts the meeting agent at 1.0 on exactly those strands. Compass
+    // is in every seat's weave, so the impression surfaces in every
+    // seat's review queue — the established one-piece-many-profiles
+    // semantics, not a special case.
+    const keys = seatKeysForWeights({ self: 1.0, number: 1.0 })
+    expect(keys).toEqual(['mentor', 'champion', 'guardian', 'ambassador', 'conductor', 'maverick'])
+  })
 })

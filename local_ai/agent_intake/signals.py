@@ -43,6 +43,29 @@ def _strand_from_claim(claim_id: str, claim_type: str, claim_title: str) -> str:
     return ""
 
 
+def claim_strands(claim_id: str, claim_type: str) -> list[str]:
+    """The strand keys a meeting-impression claim was filed under.
+
+    Meeting-impression claim ids carry their strands in the segment after
+    "impression" ("{agent}:impression:self+people:{run_key}", or "none"
+    when the read-back named none) — the same id-parsing precedent
+    _strand_from_claim sets for strand claims. Every other claim type
+    returns []: their verdict signals route by _strand_from_claim.
+    """
+    if claim_type != "meeting_impression":
+        return []
+    parts = (claim_id or "").split(":")
+    if len(parts) < 4 or parts[1] != "impression":
+        return []
+    segment = parts[2]
+    if not segment or segment == "none":
+        return []
+    from local_ai.strands import strand_keys
+
+    known = set(strand_keys())
+    return [k for k in segment.split("+") if k in known]
+
+
 def placement_correction_signal(
     *,
     agent_id: str,
@@ -98,16 +121,26 @@ def claim_feedback_signal(
     evidence: str = "",
     inference: str = "",
     note: str = "",
+    strand_override: str = "",
 ) -> TrainingSignal:
     """Build the canonical signal for one reviewed intake claim.
 
     Supersedes the old _claim_to_signal in api/routes/agent_routes.py;
     claim_type is now preserved in provenance (it wasn't before).
+
+    strand_override pins the signal's zone to one named strand and
+    suffixes the signal id with it, so a claim filed under several
+    strands (a meeting impression) can land one signal per strand
+    without the per-strand rows overwriting each other. Without an
+    override, behavior is exactly as before.
     """
     valence, layer = _CLAIM_ACTION_MAP.get(action, ("observed", "guidance"))
-    strand = _strand_from_claim(claim_id, claim_type, claim_title)
+    strand = strand_override or _strand_from_claim(claim_id, claim_type, claim_title)
+    signal_id = f"intake:{claim_id}:{action}"
+    if strand_override:
+        signal_id = f"{signal_id}:{strand_override}"
     return TrainingSignal(
-        signal_id=f"intake:{claim_id}:{action}",
+        signal_id=signal_id,
         ts_ms=int(time.time() * 1000),
         layer=layer,  # type: ignore[typeddict-item]
         zone=strand or "self",

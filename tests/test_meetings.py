@@ -10,8 +10,9 @@ Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22):
   - Passing is participation: it offers the next banked question; passing
     the whole bank still reaches the read-back.
   - The read-back claim and the user's response are stored verbatim on the
-    meeting record as an UNFILED first impression. Nothing here files
-    training.
+    meeting record as the first impression. Filing it into the review
+    queue is covered by tests/test_meeting_impressions.py; nothing here
+    files training.
   - Meetings resume: re-starting never repeats the opening.
 """
 
@@ -414,7 +415,7 @@ def test_restart_archives_run_resets_state_and_reverts_keystone(ve_ctx, tmp_path
     assert naming.keystone_one_done(uid, "conductor") is False
 
     # The prior run survives verbatim in the archive: full transcript and
-    # the unfiled read-back impression, both sides.
+    # the read-back impression, both sides.
     archives = svc.meetings.list_archives(uid, "conductor", 1)
     assert len(archives) == 1
     archive = archives[0]

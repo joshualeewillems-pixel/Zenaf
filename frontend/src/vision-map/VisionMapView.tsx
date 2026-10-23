@@ -44,7 +44,7 @@ import {
   collapseCairn,
   dropDragPositions,
   expandCairn,
-  megaCairnTreeId,
+  isGardenStackData,
   subtreeCairnIds,
   type CairnEntry,
   type CairnIndex,
@@ -326,7 +326,7 @@ function VisionMapFlow({
   const [cairnMeta, setCairnMeta] = useState({ totalStones: 0, cairnCount: 0, cairned: false })
   const [expandedCairns, setExpandedCairns] = useState<ReadonlySet<string>>(new Set())
   /** Per-initiative stacking: stacked tree ids. Each stacked initiative
-      keeps its tree; its descendant cairns hide under one mega-cairn pile. */
+      becomes its garden stack; its descendant cairns hide beneath the pile. */
   const [stackedInitiatives, setStackedInitiatives] = useState<ReadonlySet<string>>(new Set())
   const cairnIndexRef = useRef<CairnIndex>({})
   const cairnAnchorRef = useRef<Record<string, XYPosition>>({})
@@ -499,10 +499,11 @@ function VisionMapFlow({
    * the original layout are preserved). Members carry `expandedFromCairn`
    * so a long-press on any of them collapses back.
    *
-   * Per-initiative stacking runs first: each stacked tree keeps its tree
-   * node while its descendant cairns hide under one mega-cairn. Cairns
-   * hidden this way are skipped by the expansion layer — the expanded set
-   * is left alone so unstacking restores the prior arrangement.
+   * Per-initiative stacking runs first: each stacked tree's node becomes
+   * its garden stack — the pile sitting on the parent stone as one object
+   * — while its descendant cairns hide beneath it. Cairns hidden this way
+   * are skipped by the expansion layer — the expanded set is left alone
+   * so unstacking restores the prior arrangement.
    */
   const displayGraph = useMemo(() => {
     const empty = new Set<string>()
@@ -529,15 +530,16 @@ function VisionMapFlow({
 
   const toggleCairn = useCallback(
     (cairnId: string) => {
-      // A mega-cairn's long-press unstacks its initiative — consistent with
-      // the cairn grammar (long-press fans a cairn out; the mega-cairn's
-      // "members" are that initiative's cairns).
-      const megaTreeId = megaCairnTreeId(cairnId)
-      if (megaTreeId !== null) {
+      // A garden stack's long-press unstacks its initiative — consistent
+      // with the cairn grammar (long-press fans a cairn out; the stack's
+      // "members" are that initiative's cairns). The stack IS the parent
+      // stone (same id), so the id that arrives here is the tree's own.
+      const toggledNode = nodes.find((n) => n.id === cairnId)
+      if (toggledNode && isGardenStackData(toggledNode.data)) {
         setStackedInitiatives((prev) => {
-          if (!prev.has(megaTreeId)) return prev
+          if (!prev.has(cairnId)) return prev
           const next = new Set(prev)
-          next.delete(megaTreeId)
+          next.delete(cairnId)
           return next
         })
         return
@@ -572,8 +574,8 @@ function VisionMapFlow({
 
   /**
    * Per-initiative stack toggle. Long-press a tree: that initiative's
-   * descendant cairns hide under one mega-cairn pile (positions preserved
-   * in state); long-press again (or the pile) to restore. Other
+   * descendant cairns hide under the pile on its own stone (positions
+   * preserved in state); long-press the stone again to restore. Other
    * initiatives render fully normally.
    */
   const toggleGardenStack = useCallback((treeId: string) => {

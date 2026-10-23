@@ -10,12 +10,12 @@ Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22):
   - Passing is participation: it offers the next banked question; passing
     the whole bank still reaches the read-back.
   - The read-back claim and the user's response are stored verbatim on the
-    meeting record as an UNFILED first impression. Nothing here files
-    training.
+    meeting record as the first impression. Nothing here files training.
   - The redesign's correction semantics (2026-10-23) — a correction
     replaces the stored impression, an acknowledgment leaves it standing,
     and the dialogue carries no system explanation — are covered in
-    tests/test_weaver_rewrite.py.
+    tests/test_weaver_rewrite.py; filing the impression into the review
+    queue is covered by tests/test_meeting_impressions.py.
   - Meetings resume: re-starting never repeats the opening.
 """
 
@@ -423,7 +423,7 @@ def test_restart_archives_run_resets_state_and_reverts_keystone(ve_ctx, tmp_path
     assert naming.keystone_one_done(uid, "conductor") is False
 
     # The prior run survives verbatim in the archive: full transcript and
-    # the unfiled read-back impression, both sides.
+    # the read-back impression, both sides.
     archives = svc.meetings.list_archives(uid, "conductor", 1)
     assert len(archives) == 1
     archive = archives[0]
@@ -526,6 +526,93 @@ def test_orientation_never_quotes_the_record_back(ve_ctx, tmp_path):
     assert bodies.count(claim) == 1  # the read-back bubble only
     assert not any("the heart of my first impression" in b for b in bodies)
     assert not any("waits in your review" in b for b in bodies)
+
+
+def test_orientation_never_leaks_weave_markers(ve_ctx, tmp_path, monkeypatch):
+    """The engine's pulled-item path quotes the read-back inside prose
+    \u2014 the stored claim's [[u]]...[[/u]] markers are markup for the
+    woven bubble, not text for the reader. On the 2026-10-23 live run a
+    literal "[[u]]" reached the orientation bubble. The quote must carry
+    the woven words with the markers stripped, even when the excerpt
+    limit cuts through a woven span \u2014 while the stored record and
+    the live read-back bubble keep their markers untouched.
+
+    The Weaver's own script no longer quotes the record at all (the
+    2026-10-23 redesign; tests/test_weaver_rewrite.py guards that), so
+    this test drives the engine path with a template-bearing script
+    \u2014 the protection belongs to any script that quotes.
+    """
+
+    class WovenGen:
+        def __init__(self):
+            self.prompts: list[str] = []
+
+        def __call__(self, prompt, **kwargs):
+            self.prompts.append(prompt)
+            if "READ-BACK beat" in prompt:
+                return (
+                    "A first impression, plainly put: you lead from "
+                    "[[u]]intuition based usually[[/u]], and you only shift "
+                    "tracks when [[u]]there's something practical pressing "
+                    "hard on the day, the kind of tangle that has to be "
+                    "written down in full before it can be slept on[[/u]] "
+                    "— tell me where that reading is wrong."
+                    "\nStrands: Compass, Logic"
+                )
+            if "ENCOUNTER beat" in prompt:
+                return "An engaged reply that hears two tensions together."
+            return "A plain reply."
+
+    # Drive the engine's pulled-item path: same Weaver script, but with
+    # a template that quotes the record (the pre-redesign shape).
+    quoting_script = dataclasses.replace(
+        MT.CONDUCTOR_FIRST_MEETING,
+        pulled_item_template=(
+            "Here is the one thing I pulled from it \u2014 the heart of "
+            "my first impression: \u201c{claim}\u201d And the heart of "
+            "your answer: \u201c{response}\u201d"
+        ),
+    )
+    monkeypatch.setitem(MT.SCRIPTS, ("conductor", 1), quoting_script)
+
+    uid = _seeded_user()
+    svc = _svc(tmp_path, WovenGen())
+    svc.start(uid, "conductor")
+    svc.turn(
+        uid, "conductor",
+        "Intuition based usually, unless something practical is pressing.",
+    )
+    state = svc.turn(uid, "conductor", "Close enough.")
+    assert state["stage"] == "orientation"
+    bodies = [m["body"] for m in state["messages"]]
+    pulled = next(b for b in bodies if "the heart of my first impression" in b)
+    # No marker — whole, severed, or malformed — anywhere in the quote.
+    assert "[[" not in pulled and "]]" not in pulled
+    assert "[/u" not in pulled
+    # The woven words themselves survive; only the markup is gone.
+    assert "intuition based usually" in pulled
+    # The claim excerpt really was cut (the raw claim is far past 160
+    # chars), so the cut passed through the second woven span.
+    row = svc.meetings.get(uid, "conductor", 1)
+    assert len(row["readback_claim"]) > 160
+    # Storage is untouched: markers intact on the record…
+    assert "[[u]]intuition based usually[[/u]]" in row["readback_claim"]
+    # …and the live read-back bubble in the same conversation still
+    # carries them for the client's amber rendering.
+    assert any("[[u]]" in b for b in bodies)
+
+
+def test_strip_weave_markers_keeps_words_drops_markup():
+    """Unit coverage for the stripper: canonical pairs, the malformed
+    closings sanitize_weave tolerates, and plain text passthrough."""
+    from local_ai.conversation.weave import strip_weave_markers as _strip_weave_markers
+
+    assert _strip_weave_markers("lead from [[u]]your words[[/u]] here") == \
+        "lead from your words here"
+    assert _strip_weave_markers("a [[u]]span[/u]] b") == "a span b"
+    assert _strip_weave_markers("a [[u]]span[/[/u]] b") == "a span b"
+    assert _strip_weave_markers("no markers at all") == "no markers at all"
+    assert _strip_weave_markers("") == ""
 
 
 def test_ok_sounds_good_proceeds_straight_to_reveal(ve_ctx, tmp_path):

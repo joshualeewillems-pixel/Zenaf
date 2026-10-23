@@ -57,6 +57,16 @@ describe('canFinishReview', () => {
     expect(canFinishReview([pending('a')], 'mined')).toBe(false)
     expect(canFinishReview([], 'mined')).toBe(false)
   })
+
+  it('a pending meeting impression gates finishing like any primary claim', () => {
+    const impression = {
+      id: 'meeting-conductor-1:impression:self+number:20261023T1',
+      claim_type: 'meeting_impression',
+      status: 'pending',
+    }
+    expect(canFinishReview([impression], 'skipped')).toBe(false)
+    expect(canFinishReview([{ ...impression, status: 'accepted' }], 'skipped')).toBe(true)
+  })
 })
 
 describe('whatsLeft', () => {
@@ -141,6 +151,17 @@ describe('insight groups', () => {
   it('returns empty for no insights', () => {
     expect(insightGroups([])).toEqual([])
     expect(insightGroups([{ id: 'strand:self', claim_type: 'strand', status: 'pending' }])).toEqual([])
+  })
+
+  it('a meeting impression renders as an insight group of its own', () => {
+    const impression = {
+      id: 'meeting-conductor-1:impression:self+number:20261023T1',
+      claim_type: 'meeting_impression',
+      status: 'pending',
+    }
+    const groups = insightGroups([impression, insight(0)])
+    expect(groups.map((g) => g.insight.id)).toEqual([impression.id, 'insight:0'])
+    expect(groups[0].alternatives).toEqual([])
   })
 })
 

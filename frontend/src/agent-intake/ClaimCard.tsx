@@ -47,6 +47,7 @@ const TYPE_LABEL: Record<string, string> = {
   preference: 'Preference',
   alternative: 'Alternative',
   recurrence: 'Recurrence',
+  meeting_impression: 'First impression',
 }
 
 const SCOPE_LABEL: Record<string, string> = {
@@ -192,7 +193,7 @@ function ClaimBody({
 
       {/* 2. Interpretation — one specific claim */}
       <p className="text-stone-100 text-[15px] leading-relaxed mb-1">{claim.inference}</p>
-      {claim.detail && !claim.turn_ref && <p className="text-stone-500 text-sm mb-3">{claim.detail}</p>}
+      {claim.detail && !claim.turn_ref && <p className="text-stone-500 text-sm mb-3 whitespace-pre-wrap">{claim.detail}</p>}
 
       {/* 5. Your response */}
       {resolved ? (

@@ -12,12 +12,17 @@ Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22):
   - The read-back claim and the user's response are stored verbatim on the
     meeting record as an UNFILED first impression. Nothing here files
     training.
+  - The redesign's correction semantics (2026-10-23) — a correction
+    replaces the stored impression, an acknowledgment leaves it standing,
+    and the dialogue carries no system explanation — are covered in
+    tests/test_weaver_rewrite.py.
   - Meetings resume: re-starting never repeats the opening.
 """
 
 from __future__ import annotations
 
 import dataclasses
+import json
 import threading
 
 import pytest
@@ -163,12 +168,13 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     assert state["status"] == "active"  # not complete yet
     assert _conductor_k1_status(uid) != "Done"
     bodies = [m["body"] for m in state["messages"]]
-    # The pulled-item accounting quotes BOTH sides verbatim, names the
-    # strands the impression was filed under, and the bookkeeping line
-    # itself never reaches the user.
-    assert any("A first impression, anchored in" in b and "word for word" in b for b in bodies)
+    # The orientation is theatre now, not accounting (redesign,
+    # 2026-10-23): it never quotes the record back — no pulled-item
+    # excerpt, no "waits in your review" — and the bookkeeping line
+    # itself never reaches the user. The strands live on the record.
     assert any("Mostly right — except I protect mornings first." in b for b in bodies)
-    assert any("the Compass and Logic strands" in b for b in bodies)
+    assert not any("the heart of my first impression" in b for b in bodies)
+    assert not any("waits in your review" in b for b in bodies)
     assert not any(b.strip().startswith("Strands:") for b in bodies)
 
     state = svc.turn(uid, "conductor", "Got it.")
@@ -181,11 +187,14 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     # The reveal names the Weaver and his demeanor — and no motto, no flaw.
     assert any("I'm the Weaver." in b for b in bodies)
 
-    # Keystone 1 flipped; the record kept both sides of the read-back verbatim.
+    # Keystone 1 flipped; the record kept both sides of the read-back
+    # verbatim, and the strand attribution lives on the record (the
+    # intelligence layer), not in anything the Weaver said.
     assert _conductor_k1_status(uid) == "Done"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"].startswith("A first impression")
     assert row["readback_response"] == "Mostly right — except I protect mornings first."
+    assert json.loads(row["readback_strands"]) == ["Compass", "Logic"]
 
     # Attention moves on: every seat now invites a meeting.
     attention = keystone_seeding.keystone_attention(uid)
@@ -278,9 +287,9 @@ def test_orientation_question_is_answered_then_reveal(ve_ctx, tmp_path):
     assert state["status"] == "complete"
     bodies = [m["body"] for m in state["messages"]]
     assert "A factual orientation answer from the notes." in bodies
-    # The answer was framed by the orientation facts, not improvised.
+    # The answer was framed by the workshop facts, not improvised.
     orientation_prompts = [p for p in gen.prompts if "ORIENTATION beat" in p]
-    assert orientation_prompts and "seven seats" in orientation_prompts[0]
+    assert orientation_prompts and "seven rather incompatible parts" in orientation_prompts[0]
 
 
 def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, monkeypatch):
@@ -493,10 +502,13 @@ def test_acknowledgment_detection_is_human_shaped():
     )
 
 
-def test_orientation_shows_excerpts_not_the_full_dump(ve_ctx, tmp_path):
-    """The pulled-item accounting excerpts the claim and the answer —
-    the full verbatim texts live on the record and in review. In the
-    first live run the full dump read as parroting."""
+def test_orientation_never_quotes_the_record_back(ve_ctx, tmp_path):
+    """Redesign (2026-10-23): the orientation no longer quotes the
+    read-back or the user's answer back at them — the self-quoting
+    audit log was purged from the Weaver's dialogue entirely. The full
+    verbatim texts live on the record and in review (interface layer);
+    in the room, each is spoken exactly once: the claim by the Weaver,
+    the answer by the user."""
     uid = _seeded_user()
     long_answer = (
         "I decide by writing the whole tangle down first, then I sleep on "
@@ -509,11 +521,11 @@ def test_orientation_shows_excerpts_not_the_full_dump(ve_ctx, tmp_path):
     state = svc.turn(uid, "conductor", "Close enough.")
     assert state["stage"] == "orientation"
     bodies = [m["body"] for m in state["messages"]]
-    pulled = next(b for b in bodies if "the heart of my first impression" in b)
-    assert "the full text of both waits in your review" in pulled.lower() or \
-        "waits in your review" in pulled
-    # The user's full answer is NOT dumped back inline.
-    assert long_answer not in pulled
+    assert bodies.count(long_answer) == 1  # the user's own bubble only
+    claim = svc.meetings.get(uid, "conductor", 1)["readback_claim"]
+    assert bodies.count(claim) == 1  # the read-back bubble only
+    assert not any("the heart of my first impression" in b for b in bodies)
+    assert not any("waits in your review" in b for b in bodies)
 
 
 def test_ok_sounds_good_proceeds_straight_to_reveal(ve_ctx, tmp_path):

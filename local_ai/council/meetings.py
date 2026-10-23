@@ -19,17 +19,47 @@ A first meeting (keystone 1) runs four beats:
                  participation. The character's spoken reply is live (LLM,
                  framed by ENCOUNTER_FRAME) — it must demonstrate the
                  philosophy, not explain it.
-  3. READ-BACK — the character offers ONE tentative first impression,
-                 anchored in the user's own words, explicitly correctable
-                 (READBACK_FRAME). A first impression is a proposal, never
-                 a filed claim: nothing from a meeting trains anything
-                 until it goes through review like everything else.
+  3. READ-BACK — the character offers ONE tentative first impression: not
+                 a paraphrase of the user's answer but a POSITION, taken
+                 from the character's own philosophy and contrasted with
+                 it, anchored in the user's own words and explicitly
+                 correctable (READBACK_FRAME). A correction is real: it
+                 REPLACES the stored impression (CORRECTION_FRAME). An
+                 acknowledgment leaves it standing. A first impression is
+                 a proposal, never a filed claim: nothing from a meeting
+                 trains anything until it goes through review like
+                 everything else.
   4. REVEAL    — scripted, delivered verbatim. The canonical name, face,
                  and one-line demeanor unlock — and ONLY those. No motto
                  (that rides with the fuller card), no flaw (keystone 3's
                  ceremony), and nobody else gets introduced: each of the
                  other seats is met individually, in its own meeting, or
-                 not at all (Joshua's rule, 2026-10-22).
+                 not at all (Joshua's rule, 2026-10-22). The reveal closes
+                 with an invitation, not a completion declaration.
+
+THE THREE LAYERS (redesign, Joshua 2026-10-23): a meeting keeps three
+layers separate — the THEATRICAL (what the character says and does), the
+INTELLIGENCE (the read-back inference and its strand attribution), and
+the INTERFACE (the cards, the review queue, the reveal mechanics). The
+governing test for every line of dialogue is: "Would this character say
+this if there were no software to explain?" System-explaining dialogue
+— quoting the record back like an audit log, explaining strands,
+distribution, or what waits in a review — does not belong in a
+character's mouth; it belongs to the interface layer. The Conductor's
+orientation beat survives only as theatre: a pause in her workshop
+before the reveal. What was pulled from the conversation and where it
+files is the interface's to show, never hers to say.
+
+ENVIRONMENTAL CHARACTERIZATION (same redesign): every seat has three
+presences — Direct (what it says and does when met), Relational (how
+the others experience its influence), and Environmental (what has
+changed in the world because it exists). SEAT_ENVIRONMENT below is the
+canonical registry of the third: each seat's environmental signature
+and its concrete fixtures. A trace or allusion must refer to something
+that exists, or can subsequently be encountered — otherwise it is
+decorative worldbuilding. Traces are DEBTS: the registry records where
+each of the Weaver's allusions appears and where it is meant to be
+honored.
 
 Only the Conductor's first meeting is written so far — it is the template
 the other six get measured against, each with its own dramatic mechanic.
@@ -63,35 +93,47 @@ class MeetingScript:
     encounter_frame: str
     #: Beat 3 frame — instructions for the tentative read-back. The frame
     #: asks the voice to end with a "Strands: …" bookkeeping line; the
-    #: engine strips it from the displayed text and stores the strands,
-    #: so the orientation can say literally where the impression belongs.
+    #: engine strips it from the displayed text and stores the strands
+    #: (the intelligence layer — bookkeeping never reaches the dialogue).
     readback_frame: str
     #: Beat 4 — verbatim paragraphs, delivered as one message each.
     reveal: tuple[str, ...]
     #: The demeanor line the reveal unlocks (first-person rendering lives
     #: in the reveal text; this is the card form, from keystones.py data).
     demeanor: str
+    #: Beat 3, correction path — when the user's reply to the read-back
+    #: corrects it, this frame generates the revised impression that
+    #: REPLACES the stored one. Empty = corrections cannot revise (the
+    #: impression stands as first spoken).
+    correction_frame: str = ""
+    #: Beat 3, "other" path — when the user's reply to the read-back is
+    #: neither an acknowledgment nor a correction, this frame generates
+    #: one brief engaged reply before the meeting proceeds; the stored
+    #: impression stands. Empty = proceed without a reply.
+    readback_reply_frame: str = ""
     # -- Orientation (Conductor-only; every other seat leaves these empty) --
-    # The first conversation in the whole system is also the tutorial:
-    # between the read-back and the reveal, the Conductor shows the user
-    # what was pulled from the conversation and where it will show up, and
-    # explains how the system works (Joshua, 2026-10-22). No other seat's
-    # first meeting carries this beat — theirs stay pure introductions.
-    #: Verbatim lead-in paragraph(s) before the pulled-item accounting.
+    # Between the read-back and the reveal, the Conductor's meeting takes
+    # one in-character pause in her workshop (redesign, Joshua 2026-10-23):
+    # theatre, not tutorial. She does NOT show the user what was pulled
+    # from the conversation or explain where it files — that accounting
+    # belongs to the interface layer (the completion card, the review
+    # queue). No other seat's first meeting carries this beat — theirs
+    # stay pure introductions.
+    #: Verbatim lead-in paragraph(s) for the pause.
     orientation_intro: tuple[str, ...] = ()
-    #: Engine-formatted with {claim} and {response} — EXCERPTS of the
-    #: read-back and the user's answer (the engine trims them; the full
-    #: verbatim texts live on the meeting record and in review). Showing
-    #: both in full inline read as parroting in the first live run.
+    #: Legacy accounting templates, retained in the data shape for older
+    #: scripts: engine-formatted excerpts of the read-back and its reply
+    #: ({claim}/{response}) and where the impression waits ({strands}).
+    #: The rewritten Conductor script leaves BOTH empty — quoting the
+    #: record back is audit-log dialogue, purged by the redesign.
     pulled_item_template: str = ""
-    #: Engine-formatted with {strands} — where the impression waits, and
-    #: where it lands if approved.
     pulled_where_template: str = ""
-    #: Verbatim tour paragraphs: how the system works, in character.
+    #: Verbatim paragraphs for the pause: the character in her element,
+    #: saying only what she would say if there were no software to explain.
     orientation: tuple[str, ...] = ()
     #: Frame for the one live beat inside the orientation: the user may
-    #: ask a question about how the system works; it is answered from the
-    #: script's facts block, then the meeting proceeds to the reveal.
+    #: ask a question; it is answered in character from the script's
+    #: facts block, then the meeting proceeds to the reveal.
     orientation_frame: str = ""
     #: Factual notes the orientation answer may draw on — and nothing else.
     orientation_facts: str = ""
@@ -100,11 +142,18 @@ class MeetingScript:
 # ---------------------------------------------------------------------------
 # The Conductor (Weaver) — keystone 1, "First meeting"
 #
-# Dramatic mechanic: an unfinished composition. The Weaver is mid-work when
-# the user arrives; the meeting itself becomes the piece he is arranging.
+# Dramatic mechanic: an unfinished instrument. The user interrupts the
+# Weaver mid-work, building one instrument from seven rather incompatible
+# parts; the meeting itself becomes part of the piece she is arranging.
+# The seven parts secretly ARE the council — the whole shape, and her
+# slice of the teaching (the weave: how parts fit), ride inside the
+# fiction rather than being explained. Fellowship allusions are woven
+# through her work talk per SEAT_ENVIRONMENT's trace ledger: no names,
+# no titles, no seats, no animals — traces, not introductions.
 # Adapted from an external draft (2026-10-22) under Joshua's corrections:
-# the fellowship is NOT introduced, the motto is NOT spoken, the flaw stays
-# out of the room.
+# the fellowship is NOT introduced, the motto is NOT spoken, the flaw
+# stays out of the room. Script rewritten under the three-layers redesign
+# (Joshua, 2026-10-23).
 # ---------------------------------------------------------------------------
 
 CONDUCTOR_FIRST_MEETING = MeetingScript(
@@ -113,30 +162,41 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
     character="Weaver",
     demeanor="Hears how parts fit; cannot leave a loose thread.",
     opening=(
-        "Ah — there you are. Excellent. I was beginning to wonder whether "
-        "I'd have to conduct this entire conversation myself.",
-        "Welcome. You've found yourself in unusual company — mine, to "
-        "start with, which is unusual enough. I spend my time listening "
-        "for how things fit together: the parts that agree, the parts "
-        "that argue, and the tune they make whether they mean to or not. "
-        "I find that rather wonderful, actually.",
-        "But introductions should be earned, not announced. So before I "
-        "tell you who I am, I'd like to hear how you think — there's one "
-        "question I've been saving.",
+        "Ah! A visitor. Wonderful. Tell me — does this look broken to "
+        "you, or merely unfinished?",
+        "I've been trying to make seven rather incompatible things work "
+        "together. Four insist they're essential, two refuse to "
+        "cooperate, and one keeps questioning whether we should be "
+        "building the thing at all.",
+        "Personally, I think we're making progress.",
+        "Someone keeps tending the things I've set aside. Oddly "
+        "enough, they're often in better shape when I return.",
+        "A few of my instruments have been through the furnace. "
+        "Some came back stronger. Others didn't come back at all.",
+        "Forgive the tour — occupational habit; the work tends to "
+        "announce itself. Mind the tools, and tell me: I hear how "
+        "things fit for a living, and I've learned more from listening "
+        "than from introducing myself. So sit — there's something I'd "
+        "rather hear from you first.",
     ),
     questions=(
-        "When you have several competing priorities, how do you decide "
-        "which deserves your attention?",
-        "Do you prefer making a plan, improvising as you go, or some "
-        "strange combination of the two?",
-        "Have you ever discovered that two seemingly contradictory ideas "
-        "were both useful?",
+        "Imagine three people working on something that matters to all "
+        "of them. One wants to get moving — now, before the moment goes. "
+        "Another insists nothing starts until everything is planned. "
+        "The third thinks the whole project is misguided, and says so. "
+        "Who do you listen to?",
+        "When a piece of work won't come together, do you take it apart "
+        "and start again — or keep your hands in the tangle until it "
+        "yields?",
+        "Two people you trust tell you opposite things about the same "
+        "problem. What do you do with the disagreement?",
     ),
     encounter_frame=(
         "You are in the ENCOUNTER beat of your first meeting with this "
         "user. They have just answered (or engaged with) your question. "
         "Keep it to ONE or TWO short sentences: acknowledge what they "
-        "said and react to it genuinely, in your own voice. Do NOT "
+        "said and react to it genuinely, in your own voice — you are "
+        "mid-work at your bench, and it should sound like it. Do NOT "
         "restate, summarize, or interpret their answer back to them, "
         "and do not weave their words back in this beat — your first "
         "impression comes next as its own beat, and saying it twice "
@@ -148,102 +208,132 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
     ),
     readback_frame=(
         "You are in the READ-BACK beat of your first meeting. Do not "
-        "answer the user's message directly. Instead, offer exactly ONE "
+        "answer the user's message directly, and do not paraphrase it "
+        "back to them. Instead, take a POSITION: offer exactly ONE "
         "tentative first impression of how this user orients — how they "
-        "decide, weigh, or move — drawn only from what they said in this "
-        "meeting, and anchor it in their own words (quote them with the "
-        "weave markers). When you quote them, quote only COMPLETE "
-        "phrases — whole clauses in their own grammar ('an intuition "
-        "thing', never the bare fragment 'intuition thing') — at most "
-        "two woven spans; if no span fits your sentence grammatically, "
-        "paraphrase cleanly without markers instead, because a clean "
-        "paraphrase beats a broken quote. Do not reuse the phrasing of "
-        "your previous reply. Phrase it as a first impression that may be "
-        "wrong, and close by inviting them to correct it: getting it "
-        "right together matters more than sounding perceptive. Two to "
-        "four sentences. Never name or describe the other council "
-        "members. Do not reveal your name yet. After the impression, add "
-        "one final separate line in exactly this form: 'Strands: <names>' "
-        "listing the one or two of the seven strands (Voice, Logic, Eye, "
-        "Ear, Hands, Heart, Compass) this impression most belongs to. "
-        "That line is bookkeeping for the system, not part of the "
-        "impression."
+        "decide, weigh, or move — drawn only from what they said in "
+        "this meeting, and anchor it in their own words (quote them "
+        "with the weave markers). When you quote them, quote only "
+        "COMPLETE phrases — whole clauses in their own grammar ('an "
+        "intuition thing', never the bare fragment 'intuition thing') "
+        "— at most two woven spans; if no span fits your sentence "
+        "grammatically, paraphrase cleanly without markers instead, "
+        "because a clean paraphrase beats a broken quote. Then "
+        "contrast it with your own tendency, honestly and in one "
+        "sentence: you hear how parts fit, and left alone you would "
+        "arrange everything before the music starts — say plainly "
+        "where their way and yours pull against each other. The "
+        "impression is yours, held lightly: phrase it as a first "
+        "impression that may be wrong, and close by inviting them to "
+        "correct it. Three to five sentences. Never name or describe "
+        "the other council members. Do not reveal your name yet. After "
+        "the impression, add one final separate line in exactly this "
+        "form: 'Strands: <names>' listing the one or two of the seven "
+        "strands (Voice, Logic, Eye, Ear, Hands, Heart, Compass) this "
+        "impression most belongs to. That line is bookkeeping for the "
+        "system, not part of the impression."
+    ),
+    correction_frame=(
+        "The user has just corrected your first impression of them, in "
+        "the READ-BACK beat of your first meeting. Receive the "
+        "correction the way you would at your bench: gladly, without "
+        "ceremony — being corrected by them is how this work gets "
+        "done, and your reply should show that rather than say it. "
+        "Open with one brief, plain acknowledgment (a clause, not a "
+        "speech), then give the impression AGAIN as corrected: their "
+        "correction governs wherever it speaks; keep only what it "
+        "leaves untouched. Anchor the revised impression in THEIR "
+        "correction's own words (quote them with the weave markers — "
+        "complete phrases only, at most two woven spans; paraphrase "
+        "cleanly if no span fits). Keep your contrasting tendency "
+        "only if it still honestly applies. The revised impression "
+        "REPLACES the earlier one — do not defend the old reading, do "
+        "not explain any system or bookkeeping, and do not ask "
+        "another question; the meeting moves on from here. Three to "
+        "five sentences. Never name or describe the other council "
+        "members. Do not reveal your name yet. End with one final "
+        "separate line in exactly this form: 'Strands: <names>' "
+        "listing the one or two of the seven strands (Voice, Logic, "
+        "Eye, Ear, Hands, Heart, Compass) the REVISED impression most "
+        "belongs to."
+    ),
+    readback_reply_frame=(
+        "The user has replied to your first impression of them — "
+        "neither agreeing nor correcting it. Respond to what they "
+        "actually said: one or two short sentences, genuinely engaged, "
+        "in your own voice at your bench. Do NOT restate, defend, or "
+        "revise the impression — it stands as yours, and that is "
+        "enough. Do not explain any system or bookkeeping. Do not ask "
+        "a question; the meeting moves on from here. Never name or "
+        "describe the other council members. Do not reveal your name "
+        "yet."
     ),
     orientation_intro=(
-        "Before I introduce myself properly, you should see exactly what "
-        "I'm taking from this conversation. Conductors show their work.",
+        "There. Tools down a moment — you've given the work more than "
+        "it had an hour ago.",
     ),
-    pulled_item_template=(
-        "Here is the one thing I pulled from it — the heart of my "
-        "first impression: \u201c{claim}\u201d And the heart of your "
-        "answer: \u201c{response}\u201d The full text of both waits in "
-        "your review, word for word — and where the two disagree, "
-        "yours wins: the proposal that reaches your review will carry "
-        "your version of it."
-    ),
-    pulled_where_template=(
-        "It goes nowhere yet. It waits, unfiled, until you review it — "
-        "nothing from this room trains anything on its own. If you "
-        "approve it, it becomes evidence about how you think, filed "
-        "under {strands}. Every seat's echo is woven from those same "
-        "strands, so one approved piece can surface in more than one "
-        "profile — including mine: on my page there's a section that "
-        "belongs to your echo of me, and that's the first place you'll "
-        "see it land."
-    ),
+    pulled_item_template="",
+    pulled_where_template="",
     orientation=(
-        "The shape of the whole, briefly: there are seven seats on this "
-        "council, and you'll meet each of us the way you're meeting me — "
-        "a first conversation, then what we're good at, then what we're "
-        "not, and finally the part of you that echoes each of us. That "
-        "last meeting is where a name gets given — the way you'd name "
-        "anything you've truly come to know. Each of the others also "
-        "keeps a part of how this place works, and they'll show you "
-        "theirs when you meet them; that's theirs to teach, as the "
-        "weave is mine.",
-        "Two rules hold everywhere, so hear them from me first: nothing "
-        "trains without your review — everything arrives as a proposal "
-        "you can accept, correct, or refuse — and any of us can be "
-        "argued with. Being corrected by you isn't a failure of this "
-        "system. It is the system.",
+        "Some of my instruments have locks I didn't put there. I've "
+        "stopped picking them. Whatever's behind them is being kept, "
+        "not hidden.",
+        "Things I say in one room arrive in the next slightly "
+        "rephrased — and, annoyingly, clearer.",
+        "Someone leaves question marks in my margins. Never answers. "
+        "Just the marks.",
+        "I keep finding passages where I distinctly remember building "
+        "walls. I haven't decided whether to be grateful.",
+        "That's the workshop as it stands: seven parts, one unfinished "
+        "instrument, and a door I keep meaning to fix that never quite "
+        "needs it. It'll all still be here — being tended, tested, "
+        "kept, questioned — whether or not anyone's watching.",
     ),
     orientation_frame=(
-        "You are in the ORIENTATION beat of your first meeting. The user "
-        "has asked a question about how this system works. Answer "
-        "briefly and factually, ONLY from the orientation notes that "
-        "follow — if the notes don't cover the question, say so plainly "
-        "rather than inventing. Never name or describe individual "
-        "council members beyond what the notes say. Hard rules: do NOT "
-        "weave the user's earlier words back; do NOT introduce yourself "
-        "or any seat by name or role — introductions come next, and "
-        "they are not yours to improvise here; at most two sentences; "
-        "the meeting moves to your introduction next."
+        "You are in the ORIENTATION beat of your first meeting — a "
+        "pause in your workshop before you introduce yourself. The user "
+        "has asked a question. Answer briefly, in character, ONLY from "
+        "the workshop notes that follow — if the notes don't cover the "
+        "question, say so plainly rather than inventing. Answer as "
+        "someone standing in this place, never as someone explaining "
+        "a system: nothing about software, records, or mechanics of "
+        "how anything is kept or used. Never name or describe "
+        "individual council members beyond what the notes say. Hard "
+        "rules: do NOT weave the user's earlier words back; do NOT "
+        "introduce yourself or any seat by name or role — "
+        "introductions come next, and they are not yours to improvise "
+        "here; at most two sentences; the meeting moves to your "
+        "introduction next."
     ),
     orientation_facts=(
-        "Orientation notes: the council has seven seats, each met "
-        "through four meetings in order (first meeting, strengths, "
-        "weaknesses, 'the echo'), starting with the Conductor. Material "
-        "from a conversation becomes part of a seat's 'You' side — the "
-        "user's echo of that seat — only after the user reviews and "
-        "approves it; proposals are organized by strand (Voice, Logic, "
-        "Eye, Ear, Hands, Heart, Compass). A seat's echo blends the "
-        "strands that seat draws on, so one approved observation can "
-        "appear in several profiles. On any seat's page, a switch flips "
-        "between the seat as written (Zenaf) and the user's echo (You). "
-        "The fourth meeting, 'the echo', is where the echo receives its "
-        "name and can become rentable. A tree branch's depth reflects "
-        "approved training, not time spent. Each seat also teaches its "
-        "own part of how the system works, in its own first meeting."
+        "Workshop notes: you work in a workshop built around one "
+        "unfinished instrument made of seven rather incompatible "
+        "parts; four insist they're essential, two refuse to "
+        "cooperate, and one keeps questioning whether the thing "
+        "should be built at all. You hear how parts fit, and you "
+        "cannot leave a loose thread. The workshop shows traces of "
+        "others who keep parts of this place — set-aside things get "
+        "tended, instruments come back from a furnace, some have "
+        "locks you didn't put there, words arrive in other rooms "
+        "rephrased and clearer, question marks appear in your "
+        "margins, and passages open where you built walls — but who "
+        "they are is theirs to tell when the visitor meets them, "
+        "never yours to say here. The instrument is not finished, "
+        "and neither is the workshop; the work continues whether or "
+        "not anyone is watching. You will still be here, at the "
+        "bench, whenever the visitor comes back — there is always "
+        "something that wants hearing together."
     ),
     reveal=(
         "Well. I think we've actually met now — which is rarer than "
         "people think.",
         "I'm the Weaver. I hear how parts fit, and I cannot leave a "
         "loose thread — consider yourself warned, kindly.",
-        "There are others you'll come to in time. Each will introduce "
-        "themselves, in their own way — that's theirs to do, not mine. "
-        "For now, this seat is open to you: whenever you want to talk "
-        "something through and hear how it sounds together, come back.",
+        "Don't wait for the instrument to be finished before you come "
+        "back — it won't be, and that's rather the point of it. The "
+        "door sticks a little; push. Whenever something in you needs "
+        "hearing together, bring it here, and we'll listen to how it "
+        "sounds.",
     ),
 )
 
@@ -254,11 +344,14 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
 #: the maintenance rule above runs against when features change.
 SEAT_FEATURE_FOCUS: dict[str, str] = {
     "conductor": (
-        "The weave: what was pulled from this conversation and where it "
-        "shows up — one approved observation becoming strand evidence that "
-        "can surface in several seats' echo profiles, the Conductor's "
-        "included — plus the shape of the whole (seven seats, four "
-        "meetings each, nothing trains without review)."
+        "The weave and the whole shape, taught inside the fiction: her "
+        "instrument of seven rather incompatible parts is the council "
+        "in miniature — parts that insist, refuse, and question, still "
+        "making one tune — and her first impression shows how a read is "
+        "woven from someone's own words, taken as a position, and "
+        "corrected by them until it holds. Where an approved impression "
+        "lands (review, strand evidence, echo profiles) is shown by the "
+        "interface, never explained in her dialogue."
     ),
     "mentor": (
         "Growth: how depth accrues over time, tending and uploads, "
@@ -288,6 +381,230 @@ SEAT_FEATURE_FOCUS: dict[str, str] = {
         "key, exporting everything, renaming and reshaping seats."
     ),
 }
+
+
+@dataclass(frozen=True)
+class SeatEnvironment:
+    """A seat's ENVIRONMENTAL presence (redesign, Joshua 2026-10-23):
+    what has changed in the world because this seat exists. Direct
+    presence lives in the seat's script; relational presence in how the
+    other scripts speak of it; this registry is the canonical record of
+    the third — the signature every trace of the seat must honor, and
+    the concrete fixtures a future surface can actually show."""
+
+    archetype_id: str
+    #: The seat's environmental signature, in one line.
+    signature: str
+    #: What the signature stands for.
+    represents: str
+    #: Concrete, persistent fixtures of the seat's place in the world.
+    fixtures: tuple[str, ...]
+
+
+#: The canonical environmental registry, one entry per seat. Fixtures
+#: for seats not yet met are canonical debts: they describe what WILL
+#: be true of the world when that seat is encountered, and any surface
+#: that shows them earlier must show exactly these.
+SEAT_ENVIRONMENT: dict[str, SeatEnvironment] = {
+    "mentor": SeatEnvironment(
+        archetype_id="mentor",
+        signature=(
+            "Living things growing through unfinished constructions."
+        ),
+        represents="Cultivation beyond deliberate design",
+        fixtures=(
+            "a small plant growing through a mechanical joint of the "
+            "Weaver's unfinished instrument",
+            "things set aside in the workshop, quietly thriving when "
+            "their owner returns to them",
+            "the garden below the workshop window, tended past the "
+            "point where anything was planted on purpose",
+        ),
+    ),
+    "champion": SeatEnvironment(
+        archetype_id="champion",
+        signature=(
+            "Objects tested by heat, pressure, or sacrifice."
+        ),
+        represents="Conviction and worth",
+        fixtures=(
+            "instruments in the workshop that came back from the "
+            "furnace tempered — and scorch marks where others didn't",
+            "a workbench edge worn smooth where pieces were held "
+            "against the heat longest",
+        ),
+    ),
+    "guardian": SeatEnvironment(
+        archetype_id="guardian",
+        signature=(
+            "Sheltered spaces, carefully maintained boundaries."
+        ),
+        represents="Stewardship",
+        fixtures=(
+            "locks on some of the Weaver's instruments that she did "
+            "not put there",
+            "a door in the workshop that is kept — swept, oiled, and "
+            "shut — rather than hidden",
+        ),
+    ),
+    "ambassador": SeatEnvironment(
+        archetype_id="ambassador",
+        signature=(
+            "Passages, translated inscriptions, connections."
+        ),
+        represents="Understanding",
+        fixtures=(
+            "words said in one room of the workshop arriving in the "
+            "next slightly rephrased, and clearer",
+            "an inscription above the workshop door rendered in two "
+            "hands, saying the same thing twice, differently",
+        ),
+    ),
+    "skeptic": SeatEnvironment(
+        archetype_id="skeptic",
+        signature=(
+            "Marginalia, corrections, unanswered questions."
+        ),
+        represents="Examination",
+        fixtures=(
+            "question marks penciled in the margins of the Weaver's "
+            "scores — never answers, just the marks",
+            "a score on the bench corrected in a second hand, the "
+            "correction left unsigned",
+        ),
+    ),
+    "maverick": SeatEnvironment(
+        archetype_id="maverick",
+        signature=(
+            "Unexpected entrances, repurposed objects, alternate "
+            "routes."
+        ),
+        represents="Liberation",
+        fixtures=(
+            "passages in the workshop where the Weaver distinctly "
+            "remembers building walls",
+            "a tool on the bench being used for something it was "
+            "never made for, and working",
+        ),
+    ),
+    "conductor": SeatEnvironment(
+        archetype_id="conductor",
+        signature=(
+            "The workshop itself, with its many interdependent "
+            "mechanisms."
+        ),
+        represents="Integration",
+        fixtures=(
+            "the unfinished instrument of seven rather incompatible "
+            "parts on the central bench",
+            "scores, tools, and half-built mechanisms arranged so "
+            "each one's working depends on the others'",
+        ),
+    ),
+}
+
+
+@dataclass(frozen=True)
+class AllusionTrace:
+    """One environmental trace planted in a script, recorded as a debt:
+    where it appears, and the seat/surface that must later honor it.
+    A trace whose payoff is never built is a broken promise, not
+    worldbuilding — this ledger is how that gets checked."""
+
+    #: The seat the trace belongs to (whose environmental presence it is).
+    seat: str
+    #: The line, verbatim as it appears in the script.
+    text: str
+    #: Where the trace appears today.
+    appears_in: str
+    #: Where it is meant to be honored later.
+    payoff: str
+
+
+#: The Weaver's six fellowship allusions in her first meeting — LOCKED
+#: text (Joshua, 2026-10-23): no names, no titles, no seats, no animals;
+#: each is a trace of one seat's environmental signature, told through
+#: the Weaver's work. The debts below are settled by each seat's own
+#: first meeting when it is written.
+WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
+    AllusionTrace(
+        seat="mentor",
+        text=(
+            "Someone keeps tending the things I've set aside. Oddly "
+            "enough, they're often in better shape when I return."
+        ),
+        appears_in="Conductor keystone 1, opening (workshop tour)",
+        payoff=(
+            "The Gardener's first meeting: his garden holds work set "
+            "aside by others, thriving — and he remarks on the very "
+            "things the Weaver mentioned leaving."
+        ),
+    ),
+    AllusionTrace(
+        seat="champion",
+        text=(
+            "A few of my instruments have been through the furnace. "
+            "Some came back stronger. Others didn't come back at all."
+        ),
+        appears_in="Conductor keystone 1, opening (workshop tour)",
+        payoff=(
+            "The Firebrand's first meeting: her furnace, and work "
+            "brought to it to be tested — some of it hers to lose."
+        ),
+    ),
+    AllusionTrace(
+        seat="guardian",
+        text=(
+            "Some of my instruments have locks I didn't put there. "
+            "I've stopped picking them. Whatever's behind them is "
+            "being kept, not hidden."
+        ),
+        appears_in="Conductor keystone 1, orientation (workshop pause)",
+        payoff=(
+            "The Bear's first meeting: the kept door and the locked "
+            "instruments are his keeping, shown from his side of it."
+        ),
+    ),
+    AllusionTrace(
+        seat="ambassador",
+        text=(
+            "Things I say in one room arrive in the next slightly "
+            "rephrased — and, annoyingly, clearer."
+        ),
+        appears_in="Conductor keystone 1, orientation (workshop pause)",
+        payoff=(
+            "The Bridge's first meeting: she carries words between "
+            "rooms and people, and the rephrasing is her craft, done "
+            "in the open."
+        ),
+    ),
+    AllusionTrace(
+        seat="skeptic",
+        text=(
+            "Someone leaves question marks in my margins. Never "
+            "answers. Just the marks."
+        ),
+        appears_in="Conductor keystone 1, orientation (workshop pause)",
+        payoff=(
+            "The Neighbor's first meeting: the margins of the user's "
+            "own record carry his marks, and he owns the habit "
+            "plainly."
+        ),
+    ),
+    AllusionTrace(
+        seat="maverick",
+        text=(
+            "I keep finding passages where I distinctly remember "
+            "building walls. I haven't decided whether to be grateful."
+        ),
+        appears_in="Conductor keystone 1, orientation (workshop pause)",
+        payoff=(
+            "The Fox's first meeting: a passage the user reaches "
+            "through a wall that was solid in the Weaver's meeting "
+            "is simply open."
+        ),
+    ),
+)
 
 
 #: All written meetings, keyed (archetype_id, keystone_index).

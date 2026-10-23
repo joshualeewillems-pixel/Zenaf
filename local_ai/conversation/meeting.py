@@ -6,9 +6,11 @@ run against the script in local_ai/council/meetings.py. Beats:
   opening   (scripted) → encounter (one question, live reply)
             → readback  (one tentative impression, live)
             → orientation (ONLY where the script carries one — the
-              Conductor's, today: what was pulled from the conversation,
-              where it shows up, how the system works. The tutorials are
-              distributed per seat; see meetings.SEAT_FEATURE_FOCUS)
+              Conductor's, today: an in-character pause in her workshop
+              before the reveal. What was pulled from the conversation
+              and where it files is the interface layer's to show, never
+              hers to explain; the tutorials are distributed per seat and
+              ride inside the fiction; see meetings.SEAT_FEATURE_FOCUS)
             → reveal    (scripted) → keystone task marked Done
 
 State lives in its own small store (stage, question pointer, the read-back
@@ -28,6 +30,11 @@ Rules the engine enforces (Joshua's design, not preferences):
   - The read-back is stored on the meeting record as an UNFILED first
     impression, verbatim, with the user's response verbatim. Nothing here
     writes a training signal; filing it belongs to the review flow.
+  - The user's reply to the read-back is classified three ways —
+    acknowledgment / correction / other. A CORRECTION replaces the
+    stored impression with the corrected understanding (the record the
+    orientation and the impression-filing read); an acknowledgment or
+    any other reply leaves the impression standing exactly as spoken.
   - Meetings are resumable: state is server-side, so leaving mid-meeting
     loses nothing, and beginning again picks up at the current beat.
   - A COMPLETED meeting can be met again (restart): the prior run —
@@ -119,6 +126,43 @@ _ACK_PHRASES = (
 
 #: Words that turn a short reply into something other than an ack.
 _ACK_CONTRASTS = ("but", "except", "however", "actually", "though")
+
+#: Correction signals for the read-back reply: the user amending the
+#: impression rather than accepting it or changing the subject. Matched
+#: against the normalized reply (phrases as substrings, plus a leading
+#: negation); acknowledgment is checked FIRST, so an ack carrying a
+#: contrast word (which _is_acknowledgment already rejects) reaches
+#: this check and can still classify as a correction via "actually" /
+#: "except" / "however" / "though".
+_CORRECTION_PHRASES = (
+    "actually", "except", "however", "though", "instead", "rather",
+    "not quite", "not really", "more like", "that's wrong", "that is wrong",
+    "you got it wrong", "you've got it wrong", "not how i", "not how it",
+    "i meant", "what i meant", "i mean,", "let me correct", "correction",
+    "the opposite", "it's the other", "it is the other",
+)
+
+
+def _classify_readback_reply(message: str) -> str:
+    """Three-way classification of the user's reply to the read-back:
+    "ack" (the impression stands, agreed), "correction" (the user is
+    amending it — the stored impression gets replaced), or "other"
+    (neither — the impression stands as the character's own)."""
+    if _is_acknowledgment(message):
+        return "ack"
+    norm = " ".join((message or "").strip().lower().strip(".! ").split())
+    if not norm:
+        return "other"
+    if norm in ("no problem", "no worries", "no complaints"):
+        return "ack"
+    if norm == "no" or norm.startswith(("no ", "no,", "no —", "no -", "nope")):
+        return "correction"
+    if any(phrase in norm for phrase in _CORRECTION_PHRASES):
+        return "correction"
+    words = norm.split()
+    if "but" in words:
+        return "correction"
+    return "other"
 
 
 def _is_acknowledgment(message: str) -> bool:
@@ -534,29 +578,12 @@ class MeetingService:
         )
         self._say(user_id, cid, arch_id, claim)
 
-    def _readback(self, user_id: str, arch_id: str, script: MT.MeetingScript) -> tuple[str, list[str]]:
-        """Generate the read-back; split off its 'Strands:' bookkeeping
-        line. Returns (display claim, strand names). A missing or garbled
-        trailer degrades to no strands — the meeting never breaks on it."""
-        cid = conversation_id_for(arch_id, script.keystone_index)
-        history = self._history_for_reply(user_id, cid)
-        # The builder appends the current user turn itself, so hand it the
-        # transcript with the last user message lifted out as the input —
-        # everything else (including the encounter reply just given) stays
-        # as context, in order.
-        last_user_idx = max(
-            (i for i, m in enumerate(history) if m["role"] == "user"), default=None
-        )
-        if last_user_idx is None:
-            return "", []
-        last_user = history[last_user_idx]
-        prior = history[:last_user_idx] + history[last_user_idx + 1:]
-        reply = generate_voice_reply(
-            user_id, arch_id, last_user.get("content", ""), prior,
-            mode="base", generate_fn=self._generate_fn,
-            extra_instructions=script.readback_frame,
-        )
-        text = reply.reply.strip()
+    @staticmethod
+    def _split_strands_trailer(text: str) -> tuple[str, list[str]]:
+        """Split a generated read-back's 'Strands:' bookkeeping line off
+        its display text. A missing or garbled trailer degrades to no
+        strands — the meeting never breaks on it."""
+        text = (text or "").strip()
         strands: list[str] = []
         lines = text.split("\n")
         for i in range(len(lines) - 1, -1, -1):
@@ -570,6 +597,41 @@ class MeetingService:
             break
         return text, strands
 
+    def _generate_framed(self, user_id: str, arch_id: str, keystone_index: int,
+                         frame: str) -> str:
+        """Run one live beat against the transcript: the last user message
+        is lifted out as the reply builder's input, everything else stays
+        as context, in order. Returns the raw reply text."""
+        cid = conversation_id_for(arch_id, keystone_index)
+        history = self._history_for_reply(user_id, cid)
+        last_user_idx = max(
+            (i for i, m in enumerate(history) if m["role"] == "user"), default=None
+        )
+        if last_user_idx is None:
+            return ""
+        last_user = history[last_user_idx]
+        prior = history[:last_user_idx] + history[last_user_idx + 1:]
+        reply = generate_voice_reply(
+            user_id, arch_id, last_user.get("content", ""), prior,
+            mode="base", generate_fn=self._generate_fn,
+            extra_instructions=frame,
+        )
+        return reply.reply
+
+    def _readback(self, user_id: str, arch_id: str, script: MT.MeetingScript) -> tuple[str, list[str]]:
+        """Generate the read-back; split off its 'Strands:' bookkeeping
+        line. Returns (display claim, strand names)."""
+        text = self._generate_framed(user_id, arch_id, script.keystone_index, script.readback_frame)
+        return self._split_strands_trailer(text)
+
+    def _corrected_readback(self, user_id: str, arch_id: str,
+                            script: MT.MeetingScript) -> tuple[str, list[str]]:
+        """Generate the corrected impression after a correction: same
+        shape as the read-back, framed by the script's correction frame
+        so the user's correction governs the revision."""
+        text = self._generate_framed(user_id, arch_id, script.keystone_index, script.correction_frame)
+        return self._split_strands_trailer(text)
+
     # -- orientation (only scripts that carry one — today, the Conductor) ------
 
     def _has_orientation(self, script: MT.MeetingScript) -> bool:
@@ -580,6 +642,31 @@ class MeetingService:
         # The user's response to the impression is part of the record —
         # verbatim, uninterpreted. Filing it is the review flow's job.
         self.meetings.update(user_id, arch_id, keystone_index, readback_response=message)
+        cid = conversation_id_for(arch_id, keystone_index)
+        kind = _classify_readback_reply(message)
+        if kind == "correction" and script.correction_frame:
+            # Correction is real: the corrected understanding REPLACES
+            # the stored impression — the record the orientation and the
+            # impression-filing read — and is spoken in the room, so the
+            # user hears the revision, not a promise of one. A degraded
+            # (empty) generation keeps the original claim rather than
+            # blanking the record.
+            claim, strands = self._corrected_readback(user_id, arch_id, script)
+            if claim:
+                self.meetings.update(
+                    user_id, arch_id, keystone_index,
+                    readback_claim=claim, readback_strands=json.dumps(strands),
+                )
+                self._say(user_id, cid, arch_id, claim)
+        elif kind == "other" and script.readback_reply_frame:
+            # Neither agreement nor correction: one brief engaged reply;
+            # the impression stands as the character's own.
+            reply_text = self._generate_framed(
+                user_id, arch_id, keystone_index, script.readback_reply_frame
+            ).strip()
+            if reply_text:
+                self._say(user_id, cid, arch_id, reply_text)
+        # An acknowledgment alters nothing: the impression stands as spoken.
         if self._has_orientation(script):
             self._deliver_orientation(user_id, arch_id, keystone_index, script)
             self.meetings.update(user_id, arch_id, keystone_index, stage="orientation")

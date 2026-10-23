@@ -608,7 +608,42 @@ class MeetingService:
             if task.get("status") != "Done":
                 ve.update_task(task["id"], ve_models.TaskUpdate(status="Done"), user_id)
         self.meetings.update(user_id, arch_id, keystone_index, stage="complete", status="complete")
+        # Fellowship Runtime P1: the completed meeting is a
+        # shared-reality event, emitted at this same single chokepoint
+        # (guarded inside _emit_meeting_completed — it can never break
+        # the close, and its derivation only produces observations).
+        self._emit_meeting_completed(user_id, arch_id, keystone_index)
         self._file_impression(user_id, arch_id, keystone_index, script)
+
+    def _emit_meeting_completed(self, user_id: str, arch_id: str, keystone_index: int) -> None:
+        """Record the completed meeting as a fellowship event.
+
+        Evidence is the user's verbatim read-back answer (their words
+        about the impression) when the run stored one; otherwise the
+        observation will cite the meeting itself by reference. Guarded
+        like _file_impression: failures are logged, never raised.
+        """
+        try:
+            from local_ai.fellowship.events import emit_event
+
+            row = self.meetings.get(user_id, arch_id, keystone_index) or {}
+            emit_event(
+                kind="meeting_completed",
+                user_id=user_id,
+                entity_type="meeting",
+                entity_id=conversation_id_for(arch_id, keystone_index),
+                evidence_text=(row.get("readback_response") or ""),
+                summary=(
+                    f"First meeting completed with the {arch_id} voice "
+                    f"(keystone {keystone_index})."
+                ),
+                payload={
+                    "archetype_id": arch_id,
+                    "keystone_index": keystone_index,
+                },
+            )
+        except Exception:
+            logger.exception("fellowship: meeting-completed event failed")
 
     def _file_impression(self, user_id: str, arch_id: str, keystone_index: int,
                          script: MT.MeetingScript) -> None:

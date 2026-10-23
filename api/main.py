@@ -71,6 +71,19 @@ app.add_middleware(
 # startup check can report WHY a router is missing, not just that it is.
 _router_load_errors: list = []
 
+# Fellowship Runtime P1: install the derivation pipeline so emitted
+# events (conversation turns, claim verdicts, task completions, meeting
+# completions, decision records) derive observations on the slow path.
+# Guarded: the app must boot even if the fellowship layer cannot —
+# without a pipeline, events are still recorded, derivation just
+# doesn't run (local_ai/fellowship/derivation.py).
+try:
+    from local_ai.fellowship.derivation import install_default_pipeline
+
+    install_default_pipeline()
+except Exception as e:  # noqa: BLE001 — app boot outranks derivation
+    print(f"Fellowship derivation pipeline not installed: {e}")
+
 # Vision → Execution Engine: separate domain (ideas, initiatives, projects, tasks, people, assets). Not part of /run or file sorter.
 try:
     from api.routes.vision_execution import router as vision_execution_router

@@ -201,6 +201,27 @@ class ConversationStore:
             )
         return out
 
+    def clear_conversation(self, user_id: str, conversation_id: str) -> None:
+        """Remove a conversation's messages and derived per-conversation
+        state (thread summaries, cached suggestion runs). The conversation
+        row itself stays. Used by the meeting restart: the prior run's
+        transcript is archived in the meeting store before this runs, so
+        nothing is lost — the live conversation simply starts empty."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM messages WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            )
+            self._conn.execute(
+                "DELETE FROM thread_state WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            )
+            self._conn.execute(
+                "DELETE FROM suggestion_runs WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            )
+            self._conn.commit()
+
     def latest_message_id(self, user_id: str, conversation_id: str = "skeleton") -> str | None:
         with self._lock:
             row = self._conn.execute(

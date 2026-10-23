@@ -30,6 +30,13 @@ Rules the engine enforces (Joshua's design, not preferences):
     writes a training signal; filing it belongs to the review flow.
   - Meetings are resumable: state is server-side, so leaving mid-meeting
     loses nothing, and beginning again picks up at the current beat.
+  - A COMPLETED meeting can be met again (restart): the prior run —
+    transcript plus the verbatim, unfiled read-back impression — is
+    archived in the meeting store, never deleted; the meeting resets to
+    not-started and the seat's keystone task returns to its seeded
+    status, so the face the meeting revealed re-locks until the new run
+    completes. An in-progress meeting is never restartable — it can be
+    paused and resumed instead.
 
 The character's live beats go through the shared voice-reply builder with
 the script's frame as extra instructions — the meeting never forks the
@@ -75,6 +82,18 @@ CREATE TABLE IF NOT EXISTS meetings (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, archetype_id, keystone_index)
+);
+CREATE TABLE IF NOT EXISTS meeting_archives (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL,
+  archetype_id TEXT NOT NULL,
+  keystone_index INTEGER NOT NULL,
+  transcript_json TEXT NOT NULL DEFAULT '[]',
+  readback_claim TEXT NOT NULL DEFAULT '',
+  readback_response TEXT NOT NULL DEFAULT '',
+  readback_strands TEXT NOT NULL DEFAULT '[]',
+  meeting_created_at TEXT NOT NULL DEFAULT '',
+  archived_at TEXT NOT NULL
 );
 """
 
@@ -132,6 +151,11 @@ def _excerpt(text: str, limit: int) -> str:
     if cut < limit // 2:
         cut = limit
     return text[:cut].rstrip(" ,;:") + "…"
+
+#: The status seeded keystone tasks start with: keystone_seeding creates
+#: them through TaskCreate without a status, so the model's default is the
+#: seed state. Restart returns a completed meeting's task to exactly this.
+_SEEDED_TASK_STATUS = "Todo"
 
 #: Short answers that mean "ask me a different one" rather than an answer.
 #: Exact-match after normalization — a substantive "no, because…" is an
@@ -213,6 +237,85 @@ class MeetingStore:
                 )
                 self._conn.commit()
         return self.get(user_id, archetype_id, keystone_index)  # type: ignore[return-value]
+
+    def delete(self, user_id: str, archetype_id: str, keystone_index: int) -> None:
+        """Remove the live meeting row. Only ever called by restart, AFTER
+        the run has been archived — the record survives in the archive."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM meetings WHERE user_id = ? AND archetype_id = ? "
+                "AND keystone_index = ?",
+                (user_id, archetype_id, keystone_index),
+            )
+            self._conn.commit()
+
+    # -- archives (prior runs, preserved verbatim) ------------------------------
+
+    def archive_run(
+        self,
+        user_id: str,
+        archetype_id: str,
+        keystone_index: int,
+        row: dict[str, Any],
+        transcript: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Preserve a completed run before a restart resets it: the full
+        transcript plus the read-back impression and the user's response,
+        verbatim and unfiled — exactly as the live record held them."""
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO meeting_archives (user_id, archetype_id, "
+                "keystone_index, transcript_json, readback_claim, "
+                "readback_response, readback_strands, meeting_created_at, "
+                "archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    user_id,
+                    archetype_id,
+                    keystone_index,
+                    json.dumps(transcript, ensure_ascii=True),
+                    row.get("readback_claim") or "",
+                    row.get("readback_response") or "",
+                    row.get("readback_strands") or "[]",
+                    row.get("created_at") or "",
+                    _utcnow(),
+                ),
+            )
+            self._conn.commit()
+            archive_id = cur.lastrowid
+        return self.get_archive(user_id, archive_id)  # type: ignore[return-value]
+
+    def get_archive(self, user_id: str, archive_id: int) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM meeting_archives WHERE user_id = ? AND id = ?",
+                (user_id, archive_id),
+            ).fetchone()
+        return _archive_dict(row) if row else None
+
+    def list_archives(
+        self, user_id: str, archetype_id: str, keystone_index: int
+    ) -> list[dict[str, Any]]:
+        """Every archived run of this meeting, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM meeting_archives WHERE user_id = ? AND "
+                "archetype_id = ? AND keystone_index = ? ORDER BY id ASC",
+                (user_id, archetype_id, keystone_index),
+            ).fetchall()
+        return [_archive_dict(r) for r in rows]
+
+
+def _archive_dict(row: sqlite3.Row) -> dict[str, Any]:
+    out = dict(row)
+    try:
+        out["transcript"] = json.loads(out.pop("transcript_json") or "[]")
+    except Exception:
+        out["transcript"] = []
+    try:
+        out["readback_strands"] = json.loads(out.get("readback_strands") or "[]")
+    except Exception:
+        out["readback_strands"] = []
+    return out
 
 
 def _seat_keystone_tasks(user_id: str, archetype_id: str) -> list[dict[str, Any]]:
@@ -545,6 +648,62 @@ class MeetingService:
             if task.get("status") != "Done":
                 ve.update_task(task["id"], ve_models.TaskUpdate(status="Done"), user_id)
         self.meetings.update(user_id, arch_id, keystone_index, stage="complete", status="complete")
+
+    def restart(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
+        """Meet again: reset a COMPLETED meeting so it can be run fresh.
+
+        The prior run is archived verbatim (transcript + the unfiled
+        read-back impression) in the meeting store before anything is
+        reset — archived, never deleted. The seat's keystone task returns
+        to the status it was seeded with, which also re-locks the face
+        the first meeting revealed (PR #186's face_revealed reads the
+        same task store) until the new run completes.
+
+        Refusals are honest: no meeting on record, a meeting still in
+        progress (pause/resume serves that), or a seat whose meeting
+        isn't written yet. Nothing here trains — same invariant as the
+        rest of the engine."""
+        arch_id = (archetype_id or "").strip().lower()
+        if arch_id not in stock_archetype_ids():
+            raise ValueError(f"Unknown seat: {archetype_id!r}")
+        script = MT.get_script(arch_id, keystone_index)
+        if script is None:
+            raise MeetingError(
+                "That meeting isn't written yet. It will get its own "
+                "conversation when its turn comes — nothing improvised."
+            )
+        row = self.meetings.get(user_id, arch_id, keystone_index)
+        if row is None:
+            raise MeetingError(
+                "There's no finished meeting to meet again — this seat "
+                "hasn't been met yet."
+            )
+        if row["status"] != "complete":
+            raise MeetingError(
+                "This meeting is still in progress — it waits where you "
+                "left it and can be resumed. Meeting again is for a "
+                "meeting that has reached its close."
+            )
+
+        cid = conversation_id_for(arch_id, keystone_index)
+        transcript = self.conversations.history(user_id, cid, limit=200)
+        self.meetings.archive_run(user_id, arch_id, keystone_index, row, transcript)
+        self.conversations.clear_conversation(user_id, cid)
+        self.meetings.delete(user_id, arch_id, keystone_index)
+
+        # Revert the keystone task through the same VE service layer the
+        # completion path writes through (_do_reveal), back to the exact
+        # status seeded keystone tasks start with.
+        tasks = _seat_keystone_tasks(user_id, arch_id)
+        if len(tasks) >= keystone_index:
+            task = tasks[keystone_index - 1]
+            if task.get("status") != _SEEDED_TASK_STATUS:
+                ve.update_task(
+                    task["id"],
+                    ve_models.TaskUpdate(status=_SEEDED_TASK_STATUS),
+                    user_id,
+                )
+        return self.state(user_id, arch_id, keystone_index)
 
     def pause(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         arch_id = (archetype_id or "").strip().lower()

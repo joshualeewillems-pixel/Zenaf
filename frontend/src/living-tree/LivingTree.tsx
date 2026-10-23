@@ -117,11 +117,19 @@ const FELLOWSHIP_NAMES: Record<string, string> = {
 
 /** Spoken form of a seat's attention marker, by reason. The intro line is
     Joshua's narrative: on a fresh tree only the Weaver carries the marker —
-    "the Weaver wants to talk about something." */
-function markerTitle(archetypeId: string, reason: KeystoneAttentionReason | null | undefined): string {
+    "the Weaver wants to talk about something." The "meet" reason really
+    means "a later keystone is pending"; for a seat already met (its face
+    revealed — the honest signal the first meeting happened) the title
+    must not claim a first meeting is still owed. */
+export function markerTitle(
+  archetypeId: string,
+  reason: KeystoneAttentionReason | null | undefined,
+  met = false,
+): string {
   const name = FELLOWSHIP_NAMES[archetypeId] ?? 'A seat'
   if (reason === 'intro') return `${name} wants to talk about something.`
   if (reason === 'recognition') return `${name} wants to talk about what it has discovered.`
+  if (met) return `${name} has more to discover with you.`
   return `${name} wants to meet you.`
 }
 
@@ -1449,9 +1457,9 @@ export function LivingTreeView({
                     className="attn"
                     transform={`translate(${faceR * 0.78}, ${-faceR * 0.78})`}
                     role="img"
-                    aria-label={markerTitle(p.datum.archetype!.id, attnMarker.reason)}
+                    aria-label={markerTitle(p.datum.archetype!.id, attnMarker.reason, p.datum.archetype!.face_revealed === true)}
                   >
-                    <title>{markerTitle(p.datum.archetype!.id, attnMarker.reason)}</title>
+                    <title>{markerTitle(p.datum.archetype!.id, attnMarker.reason, p.datum.archetype!.face_revealed === true)}</title>
                     <circle className="attndot" r={7.5} fill={USER_WEAVE_COLOR} stroke="#0b0a09" strokeWidth={1.5} />
                     <text className="attnt" y={3.8} style={{ fontSize: '10.5px', fontWeight: 800, fill: '#0b0a09' }}>!</text>
                   </g>

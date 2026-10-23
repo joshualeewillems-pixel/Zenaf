@@ -353,6 +353,126 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
     assert state["demeanor"] and "loose thread" in state["demeanor"]
 
 
+# ----------------------------------------------------------------- restart
+
+
+def _run_conductor_to_completion(svc, uid, answer="Deadlines first.", response="That's right."):
+    svc.start(uid, "conductor")
+    svc.turn(uid, "conductor", answer)
+    svc.turn(uid, "conductor", response)
+    return svc.turn(uid, "conductor", "Got it.")
+
+
+def test_restart_refusals(ve_ctx, tmp_path):
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+
+    # No meeting on record at all.
+    with pytest.raises(MeetingError, match="hasn't been met yet"):
+        svc.restart(uid, "conductor")
+    # A seat whose meeting isn't written yet — same honest gate as start.
+    with pytest.raises(MeetingError, match="isn't written yet"):
+        svc.restart(uid, "mentor")
+    with pytest.raises(ValueError, match="Unknown seat"):
+        svc.restart(uid, "not-a-seat")
+
+    # In progress (active or paused) is resumable, never restartable.
+    svc.start(uid, "conductor")
+    with pytest.raises(MeetingError, match="still in progress"):
+        svc.restart(uid, "conductor")
+    svc.pause(uid, "conductor")
+    with pytest.raises(MeetingError, match="still in progress"):
+        svc.restart(uid, "conductor")
+
+
+def test_restart_archives_run_resets_state_and_reverts_keystone(ve_ctx, tmp_path):
+    from local_ai.council import naming
+
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+    done = _run_conductor_to_completion(
+        svc, uid,
+        answer="I triage by what breaks first if I ignore it.",
+        response="Mostly right — except I protect mornings first.",
+    )
+    assert done["status"] == "complete"
+    assert _conductor_k1_status(uid) == "Done"
+    assert naming.keystone_one_done(uid, "conductor") is True
+    first_bodies = [m["body"] for m in done["messages"]]
+    row = svc.meetings.get(uid, "conductor", 1)
+    assert row is not None
+
+    state = svc.restart(uid, "conductor")
+
+    # Fresh not-started state: no live row, no messages, keystone task
+    # back to the exact status it was seeded with ("Todo"), and the face
+    # the meeting revealed is locked again behind the new run.
+    assert state["status"] == "not_started"
+    assert state["messages"] == []
+    assert svc.meetings.get(uid, "conductor", 1) is None
+    assert _conductor_k1_status(uid) == "Todo"
+    assert naming.keystone_one_done(uid, "conductor") is False
+
+    # The prior run survives verbatim in the archive: full transcript and
+    # the unfiled read-back impression, both sides.
+    archives = svc.meetings.list_archives(uid, "conductor", 1)
+    assert len(archives) == 1
+    archive = archives[0]
+    assert [m["body"] for m in archive["transcript"]] == first_bodies
+    assert archive["readback_claim"] == row["readback_claim"]
+    assert archive["readback_response"] == "Mostly right — except I protect mornings first."
+    assert archive["readback_strands"] == ["Compass", "Logic"]
+
+
+def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+    _run_conductor_to_completion(svc, uid)
+    svc.restart(uid, "conductor")
+
+    # A fresh run delivers the opening again and runs the whole arc;
+    # completing it flips keystone 1 back to Done.
+    state = svc.start(uid, "conductor")
+    assert state["status"] == "active"
+    script = MT.get_script("conductor", 1)
+    bodies = [m["body"] for m in state["messages"]]
+    assert bodies[: len(script.opening)] == list(script.opening)
+
+    svc.turn(uid, "conductor", "Second time: I start with people, not tasks.")
+    svc.turn(uid, "conductor", "Yes, that's the shape of it.")
+    state = svc.turn(uid, "conductor", "Ok sounds good")
+    assert state["status"] == "complete"
+    assert _conductor_k1_status(uid) == "Done"
+
+    # A second restart archives the second run alongside the first.
+    svc.restart(uid, "conductor")
+    archives = svc.meetings.list_archives(uid, "conductor", 1)
+    assert len(archives) == 2
+    assert any(
+        "Second time: I start with people, not tasks." in [m["body"] for m in a["transcript"]]
+        for a in archives
+    )
+
+
+def test_restart_api_mapping(ve_ctx, tmp_path, monkeypatch):
+    import api.routes.conversation_routes as routes
+
+    uid = _seeded_user("restart-api@example.com")
+    svc = _svc(tmp_path)
+    monkeypatch.setattr(routes, "_meeting_service", lambda: svc)
+    user = {"id": uid}
+
+    # Nothing to restart yet → the refusal maps to 409.
+    with pytest.raises(HTTPException) as exc:
+        routes.meeting_restart(routes.MeetingRestartBody(archetype_id="conductor"), user)
+    assert exc.value.status_code == 409
+
+    _run_conductor_to_completion(svc, uid)
+    state = routes.meeting_restart(routes.MeetingRestartBody(archetype_id="conductor"), user)
+    assert state["status"] == "not_started"
+    assert _conductor_k1_status(uid) == "Todo"
+
+
 # -- The feel fixes (Joshua's first live run, 2026-10-23) ---------------------
 
 def test_acknowledgment_detection_is_human_shaped():

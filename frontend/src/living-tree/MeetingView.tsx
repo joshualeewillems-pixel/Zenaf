@@ -229,6 +229,19 @@ export function MeetingView({
     if (s) apply(s)
   }
 
+  // Meet again: the server archives the finished run verbatim and resets
+  // the meeting; starting right away runs the new meeting in place. The
+  // fresh messages carry new ids, so the streaming reveal types them like
+  // any new run — and the composer works without a reload.
+  const meetAgain = async () => {
+    finishTyping() // settle the old run's bubbles before it leaves
+    const s = await call('/restart', { archetype_id: archetypeId, keystone_index: 1 })
+    if (!s) return
+    apply(s)
+    const started = await call('/start', { archetype_id: archetypeId, keystone_index: 1 })
+    if (started) apply(started)
+  }
+
   const send = async () => {
     const text = input.trim()
     if (!text || busy) return
@@ -397,13 +410,27 @@ export function MeetingView({
 
         {complete && (
           <div className="mtg-foot">
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-[44px] px-5 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
-            >
-              Back to the tree
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="min-h-[44px] px-5 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
+              >
+                Back to the tree
+              </button>
+              <button
+                type="button"
+                onClick={() => void meetAgain()}
+                disabled={busy}
+                className="min-h-[44px] px-5 rounded-full border border-amber-600/60 text-amber-100 text-sm font-semibold disabled:opacity-40"
+              >
+                {busy ? 'Setting the room…' : 'Meet again'}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-stone-500 leading-relaxed">
+              Meeting again runs the conversation fresh. The first run stays on record —
+              nothing from it is lost.
+            </p>
           </div>
         )}
       </section>

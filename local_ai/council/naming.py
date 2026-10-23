@@ -167,6 +167,40 @@ def avatar_unlocked_for_depth(depth: float) -> bool:
     return depth >= AVATAR_DEPTH_THRESHOLD
 
 
+def keystone_one_done(user_id: str | None, archetype_id: str) -> bool:
+    """Whether the seat's first meeting (keystone 1) is complete.
+
+    The keystone design (settled 2026-10-19) makes the first meeting the
+    reveal of the seat's name, face, and demeanor — but the face gate
+    here predated the meetings and only ever listened to training
+    depth, so a completed meeting revealed nothing on the seat's page
+    (Joshua's first live run, 2026-10-23). Keystone completion is
+    derived from the VE task store, the same ground truth the meeting
+    engine and the You profile read. Never raises.
+    """
+    if not user_id:
+        return False
+    try:
+        from local_ai.vision_execution import keystone_seeding
+        from local_ai.vision_execution import service as ve
+
+        initiative = keystone_seeding.find_keystone_initiative(user_id)
+        if initiative is None:
+            return False
+        tasks: list[dict] = []
+        for project in ve.list_projects(user_id):
+            if project.get("initiative_id") != initiative["id"]:
+                continue
+            tasks.extend(ve.list_tasks(user_id, project_id=project["id"]))
+        mine = [t for t in tasks if t.get("seat_ref") == archetype_id]
+        if not mine:
+            return False
+        ordered = keystone_seeding._chain_order(mine)
+        return bool(ordered) and ordered[0].get("status") == "Done"
+    except Exception:
+        return False
+
+
 def rename_status(user_id: str | None) -> dict:
     """Naming unlock status for every archetype, plus milestone progress.
 
@@ -194,6 +228,11 @@ def rename_status(user_id: str | None) -> dict:
                     if av_unlocked
                     else max(0, math.ceil(AVATAR_DEPTH_THRESHOLD - d))
                 ),
+                # The assigned fellowship face is REVEALED by meeting the
+                # seat (keystone 1) or by the depth milestone — two
+                # doors, one room. Customization (generate/upload your
+                # own face) stays on avatar_unlocked alone.
+                "face_revealed": bool(av_unlocked or keystone_one_done(user_id, aid)),
             }
         )
     total = sum(depths.values())

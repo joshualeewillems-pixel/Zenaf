@@ -638,16 +638,21 @@ function AvatarSection({
             <p className="lnote">
               This is {arch.display_name}'s face — the one you've earned the right to see.
             </p>
-          ) : arch.avatar_unlocked ? (
+          ) : face && arch.avatar_unlocked ? (
             <p className="lnote">
-              The fellowship's face for {arch.display_name}, revealed through training.
-              Generate or upload an image to replace it with your own.
+              The fellowship's face for {arch.display_name}. Generate or upload an
+              image to replace it with your own.
+            </p>
+          ) : face ? (
+            <p className="lnote">
+              The fellowship's face for {arch.display_name} — revealed when the two
+              of you met.
             </p>
           ) : (
             <p className="lnote">
-              <strong>???</strong> — this seat's face is still undiscovered. Train it
-              ({arch.avatar_signals_to_unlock} more depth to go) and you'll earn the
-              right to see it.
+              <strong>???</strong> — this seat's face is still undiscovered. Meet this
+              seat — or train it ({arch.avatar_signals_to_unlock} more depth to go) —
+              and you'll earn the right to see it.
             </p>
           )}
           {error && <p className="lavatar-err">{error}</p>}

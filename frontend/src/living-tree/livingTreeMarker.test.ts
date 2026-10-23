@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { markerTitle } from './LivingTree'
+import { markerTitle, meetingDoorState } from './LivingTree'
 
 /**
  * Attention-marker wording (2026-10-23): the "meet" reason means "a later
@@ -36,5 +36,36 @@ describe('markerTitle', () => {
   it('falls back to the meet wording for unknown reasons and seats', () => {
     expect(markerTitle('mentor', null)).toBe('The Gardener wants to meet you.')
     expect(markerTitle('unknown-seat', 'meet')).toBe('A seat wants to meet you.')
+  })
+})
+
+/**
+ * Meeting-door visibility (2026-10-23): the "Begin the first meeting"
+ * button was the meeting overlay's only door, and it rendered only for
+ * the 'intro' marker — which disappears the moment the first meeting
+ * completes. The completed meeting (transcript + "Meet again") became
+ * unreachable. The door now follows the seat's state: intro → begin,
+ * already met (face_revealed) → revisit, otherwise no door at all.
+ */
+describe('meetingDoorState', () => {
+  it('an intro marker gets the begin door, met or not', () => {
+    expect(meetingDoorState('intro')).toBe('begin')
+    expect(meetingDoorState('intro', false)).toBe('begin')
+    expect(meetingDoorState('intro', true)).toBe('begin')
+  })
+
+  it('a met seat keeps a revisit door after the intro marker moves on', () => {
+    expect(meetingDoorState('meet', true)).toBe('revisit')
+    expect(meetingDoorState('recognition', true)).toBe('revisit')
+    expect(meetingDoorState(null, true)).toBe('revisit')
+    expect(meetingDoorState(undefined, true)).toBe('revisit')
+  })
+
+  it('an unmet seat without the intro marker gets no door', () => {
+    expect(meetingDoorState('meet')).toBeNull()
+    expect(meetingDoorState('meet', false)).toBeNull()
+    expect(meetingDoorState('recognition', false)).toBeNull()
+    expect(meetingDoorState(null)).toBeNull()
+    expect(meetingDoorState(undefined)).toBeNull()
   })
 })

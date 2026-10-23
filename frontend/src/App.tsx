@@ -7024,6 +7024,12 @@ function App() {
                 </div>
                 <div className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-stone-700 bg-stone-800/80">
                   <div className="space-y-3 p-4">
+                <p className="rounded-lg border border-stone-700 bg-stone-900/70 px-3 py-2 text-[11px] leading-snug text-stone-400">
+                  Talking with your council lives in one place now — open any seat on the
+                  tree and choose Talk; “Ask the council” there reaches every seat in one
+                  thread. This console is the deliberation desk: folder runs, synthesis,
+                  and recorded insights.
+                </p>
                 <div>
                   <label className="block text-xs text-stone-500 mb-1">Your reply</label>
                   <CouncilQuestionTextarea

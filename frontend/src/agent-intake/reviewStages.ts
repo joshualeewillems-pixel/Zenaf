@@ -15,7 +15,7 @@ export type MiningState = 'pending' | 'mined' | 'skipped'
 
 export const MINED_CLAIM_TYPES = ['initiative', 'project', 'task', 'idea']
 export const PLACEMENT_CLAIM_TYPES = ['strand', 'kind']
-export const INSIGHT_CLAIM_TYPES = ['value_inference', 'decision_pattern', 'stance', 'preference']
+export const INSIGHT_CLAIM_TYPES = ['value_inference', 'decision_pattern', 'stance', 'preference', 'recurrence']
 export const ALTERNATIVE_CLAIM_TYPE = 'alternative'
 
 /** Claims that gate finishing the review. Alternatives never block: pending

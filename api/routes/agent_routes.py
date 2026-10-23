@@ -1008,7 +1008,7 @@ def unresolve_claim(agent_id: str, claim_id: str, current_user: dict = Depends(g
 _REGENERATED_CLAIM_TYPES = (
     "strand", "kind",
     "value_inference", "decision_pattern", "stance", "preference",
-    "alternative",
+    "alternative", "recurrence",
 )
 
 
@@ -1038,6 +1038,13 @@ def regenerate_claims(agent_id: str, current_user: dict = Depends(get_current_us
         claims.append(kind_claim)
     insights, engine = insight_miner.mine_insights(agent.examples, user_id=uid)
     claims.extend(review_claims.build_insight_claims(insights, agent.id))
+
+    # Recurrence pass: what the person keeps coming back to across turns
+    # (pattern-scope claims, grounded in quotes from distinct turns).
+    from local_ai.agent_intake import recurrence
+
+    patterns, _recurrence_engine = recurrence.mine_recurrences(agent.examples, user_id=uid)
+    claims.extend(review_claims.build_recurrence_claims(patterns, agent.id))
 
     for c in claims:
         old = existing.get(c.id)

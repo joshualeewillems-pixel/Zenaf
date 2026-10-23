@@ -46,6 +46,7 @@ const TYPE_LABEL: Record<string, string> = {
   stance: 'Stance',
   preference: 'Preference',
   alternative: 'Alternative',
+  recurrence: 'Recurrence',
 }
 
 const SCOPE_LABEL: Record<string, string> = {

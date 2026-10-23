@@ -1317,7 +1317,7 @@ export function LivingTreeView({
 .lavatar-ph{position:relative;flex:none;border-radius:50%;overflow:hidden}
 .lavatar-qqq{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;letter-spacing:.08em;color:rgba(245,240,232,.75)}
 .lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,106,.5)}
-.lavatar-panel{display:block;width:100%;max-height:340px;object-fit:cover;object-position:top center;border-radius:12px;border:1px solid rgba(201,168,106,.25);margin:8px 0 2px}
+.lavatar-panel{display:block;width:auto;height:min(600px,70dvh);max-width:100%;object-fit:contain;border-radius:12px;border:1px solid rgba(201,168,106,.25);margin:8px auto 2px}
 .lavatar-meta{flex:1;min-width:0}
 .lavatar-meta .lnote{margin:0}
 .lavatar-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}

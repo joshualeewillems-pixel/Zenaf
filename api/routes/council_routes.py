@@ -60,6 +60,10 @@ class ArchetypeStatus(BaseModel):
     avatar_url: str | None = None
     avatar_unlocked: bool = False
     avatar_signals_to_unlock: int = 0
+    # The assigned fellowship face is revealed — by completing the
+    # seat's first meeting (keystone 1) or by the depth milestone.
+    # Distinct from avatar_unlocked (customization: generate/upload).
+    face_revealed: bool = False
 
 
 class ArchetypeStatusResponse(BaseModel):
@@ -180,6 +184,9 @@ def get_archetype_status(current_user: dict = Depends(get_current_user)):
                 ),
                 avatar_signals_to_unlock=int(
                     (naming_by_id.get(arch.id) or {}).get("avatar_signals_to_unlock", 0)
+                ),
+                face_revealed=bool(
+                    (naming_by_id.get(arch.id) or {}).get("face_revealed", False)
                 ),
             )
         )

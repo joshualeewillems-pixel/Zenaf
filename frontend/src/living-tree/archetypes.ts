@@ -39,6 +39,10 @@ export type ArchetypeStatus = {
   avatar_unlocked: boolean
   /** Depth points still needed to unlock the avatar (0 when unlocked). */
   avatar_signals_to_unlock: number
+  /** The assigned fellowship face is revealed: the seat's first meeting
+      (keystone 1) is complete, or the depth milestone is reached.
+      Customization (avatar_unlocked) is a separate, later door. */
+  face_revealed: boolean
 }
 
 /** Fetch live archetype status. Returns null on any failure (caller falls back). */
@@ -108,6 +112,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
     avatar_url: null,
     avatar_unlocked: false,
     avatar_signals_to_unlock: 10,
+    face_revealed: false,
   },
   {
     id: 'champion',
@@ -122,6 +127,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
     avatar_url: null,
     avatar_unlocked: false,
     avatar_signals_to_unlock: 10,
+    face_revealed: false,
   },
   {
     id: 'guardian',
@@ -136,6 +142,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
     avatar_url: null,
     avatar_unlocked: false,
     avatar_signals_to_unlock: 10,
+    face_revealed: false,
   },
   {
     id: 'maverick',
@@ -150,6 +157,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
     avatar_url: null,
     avatar_unlocked: false,
     avatar_signals_to_unlock: 10,
+    face_revealed: false,
   },
   {
     id: 'ambassador',
@@ -164,6 +172,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
     avatar_url: null,
     avatar_unlocked: false,
     avatar_signals_to_unlock: 10,
+    face_revealed: false,
   },
   {
     id: 'conductor',
@@ -178,6 +187,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
     avatar_url: null,
     avatar_unlocked: false,
     avatar_signals_to_unlock: 10,
+    face_revealed: false,
   },
   {
     id: 'skeptic',
@@ -192,6 +202,7 @@ export const STOCK_ARCHETYPE_FALLBACK: ArchetypeStatus[] = [
     avatar_url: null,
     avatar_unlocked: false,
     avatar_signals_to_unlock: 10,
+    face_revealed: false,
   },
 ]
 

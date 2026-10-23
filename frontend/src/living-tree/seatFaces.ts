@@ -6,12 +6,18 @@
  * fox/Fox, crane/Bridge, octopus/Weaver, raven/Neighbor — each in its
  * seat's canonical color.
  *
- * These are the REVEALED faces. They render only once the training-depth
- * unlock is earned (`avatar_unlocked` from GET /council/archetypes/status,
- * threshold AVATAR_DEPTH_THRESHOLD = 10 depth points in
- * local_ai/council/naming.py). The ??? placeholder stays until then — the
- * gate is never weakened here. A user-uploaded/generated custom avatar
- * (`avatar_url`) always wins over the fellowship face.
+ * These are the REVEALED faces. They render once the seat's face is
+ * revealed (`face_revealed` from GET /council/archetypes/status), which
+ * happens by EITHER door: completing the seat's first meeting
+ * (keystone 1 — the keystone design makes the meeting the reveal of
+ * name, face, and demeanor) or earning the training-depth milestone
+ * (AVATAR_DEPTH_THRESHOLD = 10 depth points in
+ * local_ai/council/naming.py). Before 2026-10-23 only the depth door
+ * existed here, so a completed first meeting revealed nothing — the
+ * two unlock systems had never been reconciled. A user-uploaded/
+ * generated custom avatar (`avatar_url`) always wins over the
+ * fellowship face; customization itself stays depth-gated
+ * (`avatar_unlocked`).
  */
 
 import mentorAvatar from '../assets/seats/mentor-avatar.jpg'
@@ -57,25 +63,33 @@ export interface SeatFaceSource {
   id: string
   avatar_url: string | null | undefined
   avatar_unlocked: boolean
+  /** Revealed by the first meeting or the depth milestone. Optional
+   *  for older payloads — falls back to the depth door alone. */
+  face_revealed?: boolean
+}
+
+function isRevealed(arch: SeatFaceSource): boolean {
+  return arch.face_revealed ?? arch.avatar_unlocked
 }
 
 /**
  * Resolve the face to render for a seat.
  *
- * Custom user avatar wins; otherwise the fellowship face once the depth
- * unlock is earned; otherwise null and the ??? placeholder stays.
+ * Custom user avatar wins; otherwise the fellowship face once revealed
+ * (first meeting complete, or the depth milestone); otherwise null and
+ * the ??? placeholder stays.
  */
 export function resolveSeatFace(arch: SeatFaceSource): string | null {
   if (arch.avatar_url) return arch.avatar_url
-  if (arch.avatar_unlocked) return SEAT_FACES[arch.id] ?? null
+  if (isRevealed(arch)) return SEAT_FACES[arch.id] ?? null
   return null
 }
 
 /**
  * Full character panel art for a seat — the illustration behind the face.
- * Gated on the same unlock: locked seats reveal nothing.
+ * Gated on the same reveal: unrevealed seats show nothing.
  */
 export function resolveSeatPanel(arch: SeatFaceSource): string | null {
-  if (!arch.avatar_unlocked) return null
+  if (!isRevealed(arch)) return null
   return SEAT_PANELS[arch.id] ?? null
 }

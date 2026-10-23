@@ -176,7 +176,6 @@ import AgentIntakeView from './agent-intake/AgentIntakeView'
 import ReviewView from './agent-intake/ReviewView'
 import TodayView from './today/TodayView'
 import CouncilChat from './chat/CouncilChat'
-import { fetchPendingReviewCount } from './agent-intake/reviewQueue'
 import SignalReviewView from './presence-review/SignalReviewView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
 import { DomainProvider } from './domain/DomainContext'
@@ -5002,6 +5001,22 @@ function App() {
       )
     }
     if (node.kind !== 'you') return null
+    if (item === 'content') {
+      // Content lives with YOU now (it left the global menu with the rest
+      // of the distribution). Same honest placeholder the old Content
+      // page showed — the journal itself is still being thought through.
+      return (
+        <div className="px-2 py-6 text-center">
+          <div className="text-4xl mb-4">📝</div>
+          <h3 className="text-lg font-semibold text-stone-200 mb-2">Content — coming soon</h3>
+          <p className="text-stone-400 text-sm leading-relaxed">
+            This is where your journal will live — a place for reflections that feed
+            back into your training, and maybe into something more.
+            We're thinking it through.
+          </p>
+        </div>
+      )
+    }
     if (item === 'projects') {
       return (
         <VisionExecutionView
@@ -5046,16 +5061,6 @@ function App() {
     | 'provenance'
     | 'settings'
   const [mainView, setMainView] = useState<MainView>('living_tree')
-  const [navOpen, setNavOpen] = useState(false)
-  // Review-queue alert: number of connected agents awaiting review. Fetched
-  // when the nav opens (and refreshed on view change) so the badge stays fresh.
-  const [reviewCount, setReviewCount] = useState<number | null>(null)
-  useEffect(() => {
-    if (!navOpen) return
-    let cancelled = false
-    fetchPendingReviewCount(API_BASE).then((n) => { if (!cancelled) setReviewCount(n) })
-    return () => { cancelled = true }
-  }, [navOpen, mainView])
   // Mobile: the conversation panel starts collapsed so the view's content owns
   // the screen; expand on demand. Desktop (lg+) always shows it.
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(
@@ -5865,201 +5870,19 @@ function App() {
         <div className="flex items-center gap-3 min-w-0">
           <ProfileAvatarControl user={currentUser} onUserUpdated={setCurrentUser} />
           <div className="flex items-center gap-4 min-w-0">
-            <h1 className="text-base lg:text-xl font-semibold truncate">Zenaf</h1>
+            {/* The tree is home — there is no global menu anymore. Every
+                destination lives with the seat that owns it (the seats'
+                sheets) or with YOU; the title returns to the tree. */}
+            <button
+              type="button"
+              onClick={() => setMainView('living_tree')}
+              className="text-base lg:text-xl font-semibold truncate text-left hover:text-amber-100 transition-colors"
+              aria-label="Home — the Living Tree"
+            >
+              Zenaf
+            </button>
             <span className="text-xs text-stone-400 shrink-0 hidden sm:inline">{currentUser.email}</span>
           </div>
-        </div>
-        <nav
-          className="hidden lg:flex min-w-0 items-center gap-1 overflow-x-auto"
-          aria-label="Primary"
-        >
-          {/* Today: the morning briefing — the product's front door */}
-          <button
-            type="button"
-            onClick={() => setMainView('today')}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
-              mainView === 'today'
-                ? 'bg-stone-700 text-stone-100 ring-1 ring-yellow-600/35'
-                : 'text-stone-200 hover:text-white border border-transparent hover:border-yellow-700/30 hover:bg-stone-800/80'
-            }`}
-          >
-            Today
-          </button>
-          {/* Home: Living Tree */}
-          <button
-            type="button"
-            onClick={() => setMainView('living_tree')}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
-              mainView === 'living_tree'
-                ? 'bg-stone-700 text-stone-100 ring-1 ring-yellow-600/35'
-                : 'text-stone-200 hover:text-white border border-transparent hover:border-yellow-700/30 hover:bg-stone-800/80'
-            }`}
-          >
-            Tree
-          </button>
-          {/* Core: Foundation (actors / profiles) + Vision & Execution */}
-          <button
-            type="button"
-            onClick={() => setMainView('perspectives')}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
-              mainView === 'perspectives'
-                ? 'bg-stone-700 text-stone-100 ring-1 ring-yellow-600/35'
-                : 'text-stone-200 hover:text-white border border-transparent hover:border-yellow-700/30 hover:bg-stone-800/80'
-            }`}
-          >
-            Foundation
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setVeSelection(null)
-              setMainView('vision_map')
-            }}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-semibold transition-colors ${
-              mainView === 'vision_map'
-                ? 'bg-stone-700 text-stone-100 ring-1 ring-emerald-700/35'
-                : 'text-stone-200 hover:text-white border border-transparent hover:border-emerald-700/25 hover:bg-stone-800/80'
-            }`}
-          >
-            Vision map
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setVeSelection(null)
-              setMainView('vision_execution')
-            }}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium transition-colors ${
-              mainView === 'vision_execution'
-                ? 'bg-stone-700 text-stone-100'
-                : 'text-stone-300 hover:text-stone-100'
-            }`}
-          >
-            Vision (tables)
-          </button>
-
-          <div
-            className="mx-2 h-6 w-px shrink-0 bg-stone-600/90"
-            role="separator"
-            aria-orientation="vertical"
-            aria-hidden="true"
-          />
-
-          {/* Supporting: Workspace + Content + Provenance */}
-          <button
-            type="button"
-            onClick={() => setMainView('content')}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium transition-colors ${
-              mainView === 'content' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
-            }`}
-          >
-            Content
-          </button>
-          <button
-            type="button"
-            onClick={() => setMainView('provenance')}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium transition-colors ${
-              mainView === 'provenance' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
-            }`}
-          >
-            Provenance
-          </button>
-
-          <div
-            className="mx-2 h-6 w-px shrink-0 bg-stone-600/90"
-            role="separator"
-            aria-orientation="vertical"
-            aria-hidden="true"
-          />
-
-          {/* Utility: Settings + Logout */}
-          <button
-            type="button"
-            onClick={() => setMainView('settings')}
-            className={`px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium transition-colors ${
-              mainView === 'settings' ? 'bg-stone-700 text-stone-100' : 'text-stone-400 hover:text-stone-300'
-            }`}
-          >
-            Settings
-          </button>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="px-3 py-2 lg:py-1.5 min-h-[44px] lg:min-h-0 rounded-lg text-sm font-medium text-stone-300 hover:text-stone-100 border border-stone-700 hover:border-stone-600 transition-colors"
-          >
-            Logout
-          </button>
-        </nav>
-        {/* Hamburger menu below lg — nav items don't fit a phone row, portrait or landscape */}
-        <div className="lg:hidden relative shrink-0">
-          <button
-            type="button"
-            onClick={() => setNavOpen((o) => !o)}
-            className="flex items-center justify-center min-h-[44px] min-w-[44px] rounded-lg text-stone-200 hover:text-white hover:bg-stone-800/80"
-            aria-label="Open menu"
-            aria-expanded={navOpen}
-          >
-            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden>
-              <path d="M4 7h16M4 12h16M4 17h16" strokeLinecap="round" />
-            </svg>
-          </button>
-          {navOpen && (
-            <>
-              <div className="fixed inset-0 z-20" onClick={() => setNavOpen(false)} aria-hidden />
-              <div className="absolute right-0 top-full mt-1 w-60 rounded-xl border border-stone-700 bg-stone-900 shadow-2xl z-30 py-1.5" role="menu">
-                {(
-                  [
-                    { view: 'today', label: 'Today' },
-                    { view: 'living_tree', label: 'Tree' },
-                    { view: 'perspectives', label: 'Foundation' },
-                    { view: 'vision_map', label: 'Vision map' },
-                    { view: 'vision_execution', label: 'Vision (tables)' },
-                    { view: 'agent_intake', label: 'Connect' },
-                    { view: 'review', label: 'Review' },
-                    { view: 'content', label: 'Content' },
-                    { view: 'provenance', label: 'Provenance' },
-                    { view: 'settings', label: 'Settings' },
-                  ] as Array<{ view: MainView; label: string }>
-                ).map((item) => (
-                  <button
-                    key={item.view}
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      if (item.view === 'vision_map' || item.view === 'vision_execution') setVeSelection(null)
-                      setMainView(item.view)
-                      setNavOpen(false)
-                    }}
-                    className={`block w-full text-left px-4 py-3 min-h-[44px] text-[15px] font-semibold ${
-                      mainView === item.view ? 'text-yellow-500/90 bg-stone-800/60' : 'text-stone-200'
-                    }`}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      {item.label}
-                      {item.view === 'review' && reviewCount != null && reviewCount > 0 && (
-                        <span className="inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full bg-yellow-500/90 text-stone-950 text-xs font-bold">
-                          {reviewCount}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                ))}
-                <div className="border-t border-stone-800 mt-1.5 pt-1.5">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setNavOpen(false)
-                      handleLogout()
-                    }}
-                    className="block w-full text-left px-4 py-3 min-h-[44px] text-[15px] font-medium text-stone-400"
-                  >
-                    Logout
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
         </div>
       </header>
 

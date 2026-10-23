@@ -1,4 +1,4 @@
-"""Sub-personality twigs — domain-clustered offshoots of council archetypes.
+"""Specialization twigs — domain-clustered offshoots of council archetypes.
 
 When a user's approved training signals cluster distinctly in a domain
 (e.g. 20+ cooking decisions whose strand pattern diverges from every stock

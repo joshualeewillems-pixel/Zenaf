@@ -271,7 +271,7 @@ class CouncilArchetype:
     display_name: str                # user-customizable after unlock milestones
     strand_weights: dict[str, float] | None  # 7-vector summing to 1.0; None = computed (Skeptic)
     prompt_frame: str                # role description for council prompts
-    parent_id: str | None = None     # for sub-personality twigs; None for stock
+    parent_id: str | None = None     # for specialization twigs; None for stock
     is_stock: bool = True            # True for the 7 defaults
 
     def __post_init__(self) -> None:

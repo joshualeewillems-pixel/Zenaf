@@ -1,4 +1,4 @@
-"""Sub-personality twigs — proposals, approval, and listing.
+"""Specialization twigs — proposals, approval, and listing.
 
 GET  /council/twigs                 — list the user's twigs (proposed + approved)
 POST /council/twigs/detect          — run cluster detection, create proposals

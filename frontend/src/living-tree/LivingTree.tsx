@@ -210,7 +210,7 @@ function buildArchetypeNodes(statuses: ArchetypeStatus[]): TreeDatum[] {
       narrative:
         t.status === 'proposed'
           ? `A proposed ${t.domain_label} specialization of ${a.display_name} — ${t.signal_count} signals clustered here. Review it to let it sprout.`
-          : `A ${t.domain_label} specialization of ${a.display_name} — a sub-personality that sprouted where your training clustered (${t.signal_count} signals).`,
+          : `A ${t.domain_label} specialization of ${a.display_name}, sprouted where your training clustered (${t.signal_count} signals).`,
       kids: [],
     }))
     return {
@@ -607,13 +607,18 @@ function SeatAvatar({
   return <AvatarPlaceholder size={size} />
 }
 
-/** Avatar unlock section for an archetype's character panel. */
+/** Avatar unlock section for an archetype's character panel.
+    When the parent lays the body out in columns (panel art present), it
+    renders the panel image itself in the left column and passes
+    showPanel={false} so the art isn't duplicated here. */
 function AvatarSection({
   arch,
   onChanged,
+  showPanel = true,
 }: {
   arch: ArchetypeStatus
   onChanged: () => void
+  showPanel?: boolean
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -686,7 +691,7 @@ function AvatarSection({
           {error && <p className="lavatar-err">{error}</p>}
         </div>
       </div>
-      {panelArt && (
+      {showPanel && panelArt && (
         <img
           className="lavatar-panel"
           src={panelArt}
@@ -1079,16 +1084,21 @@ export function LivingTreeView({
   }
 
   /** The full character panel body — face unlock, strand blend, twigs,
-      marketplace. Shown via the Talk tab's "Full character" disclosure. */
+      marketplace. Shown via the Talk tab's "Full character" disclosure.
+      When the seat's panel art is revealed it becomes a left-justified
+      column and every profile section flows in a column to its right
+      (Joshua, 2026-10-23); without art the body is the single column
+      it has always been — no empty gutter. */
   const renderSeatCharacterBody = (arch: ArchetypeStatus) => {
     const isSeed = arch.depth <= 0
-    return (
-      <div>
-        <AvatarSection arch={arch} onChanged={refreshArchetypes} />
+    const panelArt = resolveSeatPanel(arch)
+    const main = (
+      <>
+        <AvatarSection arch={arch} onChanged={refreshArchetypes} showPanel={!panelArt} />
         <StrandBlendBars weights={arch.strand_weights} />
         {(arch.twigs ?? []).length > 0 ? (
           <div className="ltwigs">
-            <div className="lsect">Sub-personalities</div>
+            <div className="lsect">Specializations</div>
             {(arch.twigs ?? []).map((t) => (
               <div key={t.twig_id} className="ltwig">
                 <span className="lname">{t.display_name}</span>
@@ -1101,7 +1111,7 @@ export function LivingTreeView({
           </div>
         ) : (
           <p className="lsub">
-            No sub-personalities yet — they sprout when your training clusters in a specific domain.
+            No specializations yet — they sprout when your training clusters in a specific domain.
           </p>
         )}
         <div className="lmarket">
@@ -1135,6 +1145,21 @@ export function LivingTreeView({
             Upload source materials to begin training ›
           </button>
         )}
+      </>
+    )
+    if (!panelArt) {
+      return <div>{main}</div>
+    }
+    return (
+      <div className="lchar-cols">
+        <div className="lchar-art">
+          <img
+            className="lavatar-panel"
+            src={panelArt}
+            alt={`${arch.display_name} — full portrait`}
+          />
+        </div>
+        <div className="lchar-main">{main}</div>
       </div>
     )
   }
@@ -1346,7 +1371,10 @@ export function LivingTreeView({
 .lavatar-ph{position:relative;flex:none;border-radius:50%;overflow:hidden}
 .lavatar-qqq{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;letter-spacing:.08em;color:rgba(245,240,232,.75)}
 .lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,106,.5)}
-.lavatar-panel{display:block;width:auto;height:min(600px,70dvh);max-width:100%;object-fit:contain;border-radius:12px;border:1px solid rgba(201,168,106,.25);margin:8px auto 2px}
+.lchar-cols{display:flex;gap:12px;align-items:flex-start}
+.lchar-art{flex:0 0 38%;min-width:0;padding-top:12px}
+.lchar-main{flex:1 1 auto;min-width:0}
+.lavatar-panel{display:block;width:100%;height:auto;max-width:100%;object-fit:contain;border-radius:12px;border:1px solid rgba(201,168,106,.25);margin:0}
 .lavatar-meta{flex:1;min-width:0}
 .lavatar-meta .lnote{margin:0}
 .lavatar-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}

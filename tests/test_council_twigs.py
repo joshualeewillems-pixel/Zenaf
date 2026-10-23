@@ -1,4 +1,4 @@
-"""Tests for sub-personality twigs (local_ai/council/twigs.py).
+"""Tests for specialization twigs (local_ai/council/twigs.py).
 
 Covers:
   * domain slug/label normalization;

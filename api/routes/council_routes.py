@@ -2,7 +2,7 @@
 
 GET /council/archetypes/status: the 7 stock archetypes with live per-archetype
 depth (derived from strand training depths), the Skeptic's dynamically computed
-weights, and the user's sub-personality twigs grouped under their parents.
+weights, and the user's specialization twigs grouped under their parents.
 
 Read-only: computes from live stores and mutates nothing. Session auth only.
 """
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/council", tags=["council"])
 
 
 class TwigStatus(BaseModel):
-    """A sub-personality twig sprouted off a stock archetype."""
+    """A specialization twig sprouted off a stock archetype."""
 
     twig_id: str
     display_name: str

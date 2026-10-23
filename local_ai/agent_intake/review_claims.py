@@ -49,6 +49,8 @@ CLAIM_TYPES = (
     "stance",
     "preference",
     "alternative",
+    # Recurrence claims (a topic returned to across turns -> one pattern).
+    "recurrence",
 )
 # Claim statuses. "rejected" = the user judged the inference wrong.
 # "unresolved" = the user actively left it open — first-class, not a verdict,
@@ -670,4 +672,45 @@ def build_insight_claims(insights: list, agent_id: str) -> list[ReviewClaim]:
                     turn_ref=turn_label,
                 )
             )
+    return claims
+
+
+def build_recurrence_claims(patterns: list, agent_id: str) -> list[ReviewClaim]:
+    """One claim per mined recurrence (recurrence.py).
+
+    A recurrence is pattern-scope by construction: the claim exists
+    because the topic returned across turns. The first evidencing quote
+    is the card's anchor; the remaining quotes ride in detail so the
+    reviewer can see the return, not just be told about it. The strand
+    the recurrence speaks to is named in detail — accepting the claim
+    files it as evidence heard under that strand.
+    """
+    claims: list[ReviewClaim] = []
+    for n, p in enumerate(patterns):
+        quotes = list(getattr(p, "quotes", None) or [])
+        turns = list(getattr(p, "turns", None) or [])
+        turn_label = ", ".join(f"Turn {t}" for t in turns)
+        meta = []
+        strand = getattr(p, "strand", None)
+        if strand:
+            meta.append(f"Heard under the {strand} strand")
+        if turn_label:
+            meta.append(f"Returns in {turn_label}")
+        detail = " · ".join(meta)
+        extra = "\n".join(f"“{q}”" for q in quotes[1:])
+        if extra:
+            detail = f"{detail}\n{extra}" if detail else extra
+        claims.append(
+            ReviewClaim(
+                id=f"{agent_id}:recurrence:{n}",
+                claim_type="recurrence",
+                title=f"Keeps coming back to: {getattr(p, 'topic', '') or 'Untitled'}",
+                evidence=quotes[0] if quotes else "",
+                inference=getattr(p, "inference", "") or "",
+                detail=detail,
+                question="Does that sound right to you?",
+                scope="pattern",
+                turn_ref=turn_label,
+            )
+        )
     return claims

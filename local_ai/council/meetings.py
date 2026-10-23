@@ -266,7 +266,9 @@ SEAT_FEATURE_FOCUS: dict[str, str] = {
     ),
     "skeptic": (
         "Checking the work: the review queue, anchored evidence, "
-        "contesting a read, the blend view (user-sourced vs base fill)."
+        "contesting a read, recurrence patterns (what you keep coming "
+        "back to across a conversation, cited from separate turns), "
+        "the blend view (user-sourced vs base fill)."
     ),
     "maverick": (
         "Exits and keys: importing conversation exports, bring-your-own "

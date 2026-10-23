@@ -16,9 +16,12 @@ responsiveness ruling):
      ceiling the close is graceful ("I've kept you long enough") and
      the impression still files exactly once.
   3. RESPONSIVENESS. The happy path spends exactly ONE generation
-     call per user turn that needs one, and none on the turns that
-     don't (acks and passes are deterministic) — counted here via the
-     fake generator, per the two-speed law.
+     call per user turn, never more — counted here via the fake
+     generator, per the two-speed law. (Adaptivity fix: an
+     acknowledgment answering the impression now also spends its
+     one call — the close decision must be a semantic judgment
+     riding that generation, not a phrase match. Passes remain
+     deterministic and spend none.)
 """
 
 from __future__ import annotations
@@ -66,7 +69,7 @@ class WeaverGen:
             )
         if "mid-conversation in your workshop" in prompt:
             return "Then hold this joint steady — two hands are better than my six."
-        if "ENCOUNTER beat" in prompt:
+        if "ENCOUNTER" in prompt:
             # The single engage generation: reply movement, delimiter,
             # impression movement with its bookkeeping trailer.
             return (
@@ -76,15 +79,13 @@ class WeaverGen:
                 "the moment asks for[[/u]]."
                 "\nStrands: Compass, Heart"
             )
-        if "READ-BACK beat" in prompt:
+        if "READ-BACK" in prompt:
             return (
                 "A first impression from the whole exchange: you "
                 "[[u]]keep many threads in hand[[/u]]."
                 "\nStrands: Compass"
             )
-        if "ORIENTATION beat" in prompt:
-            return "An in-character answer from the workshop notes."
-        if "neither agreeing nor correcting" in prompt:
+        if "Whatever its valence" in prompt:
             return "A brief engaged reply; the impression stands."
         return "A plain reply."
 
@@ -221,21 +222,22 @@ def test_weaver_introduction_end_to_end_on_objectives(ve_ctx, tmp_path):
     assert state["stage"] == "readback"
     assert state["status"] == "active"  # offered, not yet answered
 
-    # The genuine answer (an ack): the impression stands, the pause
-    # arrives, and the reveal STILL has not fired.
+    # The genuine answer (an ack): recognition is complete and
+    # nothing is left hanging, so the meeting closes on THIS turn —
+    # her brief reply, then the reveal. (Adaptivity fix: the old
+    # contract delivered the workshop pause here and closed a turn
+    # later; recognition now concludes, and the pause's content is
+    # context, not a block.)
     state = svc.turn(uid, "conductor", "Yes — that's exactly right.")
-    assert state["stage"] == "orientation"
-    assert state["status"] == "active"
-    assert not any(p in _bodies(state) for p in script.reveal)
+    assert state["status"] == "complete"
+    assert state["stage"] == "complete"
+    for paragraph in script.reveal:
+        assert paragraph in _bodies(state)
     enc = _enc_state(svc, uid)
     assert enc.satisfied["impression_answered"] is True
     assert enc.satisfied["own_undertaking_engaged"] is True
 
-    # The closing exchange completes it — and files exactly once.
-    state = svc.turn(uid, "conductor", "Got it.")
-    assert state["status"] == "complete"
-    for paragraph in script.reveal:
-        assert paragraph in _bodies(state)
+    # And it filed exactly once.
     store = AgentStore(agents_db, user_id=uid)
     assert len(store.get_claims("meeting-conductor-1")) == 1
     svc.start(uid, "conductor")  # re-entry backfill is a no-op
@@ -302,15 +304,19 @@ def test_happy_path_spends_one_generation_call_per_turn(ve_ctx, tmp_path):
     counts = []
     for message in (
         "I triage by what breaks first if I ignore it.",  # engage: 1
-        "Yes — that's exactly right.",                     # ack: 0
-        "Got it.",                                         # pause ack: 0
+        "Yes — that's exactly right.",                     # ack: 1
     ):
         before = len(gen.prompts)
         state = svc.turn(uid, "conductor", message)
         counts.append(len(gen.prompts) - before)
     assert state["status"] == "complete"
-    assert counts == [1, 0, 0]
-    assert len(gen.prompts) == 1  # the whole happy path: one call
+    # UPDATED for the adaptivity fix: the ack that answers the
+    # impression now spends its one generation too — the open-door
+    # judgment (may this meeting close?) is semantic and rides the
+    # reply's own call, never a phrase match (Joshua's refinement).
+    # The invariant that matters is unchanged: never more than one.
+    assert counts == [1, 1]
+    assert len(gen.prompts) == 2
 
 
 def test_conversational_turn_spends_exactly_one_call(ve_ctx, tmp_path):
@@ -397,7 +403,10 @@ def test_state_json_round_trip_and_legacy_hydration(ve_ctx, tmp_path):
         state_json="",
     )
     state = svc.turn(uid, "conductor", "Yes — that's exactly right.")
-    assert state["stage"] == "orientation"
+    # UPDATED for the adaptivity fix: an ack answer closes on
+    # recognition (reply + reveal in the same turn) — the old
+    # contract stopped in the orientation beat first.
+    assert state["stage"] == "complete"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == "A legacy impression, spoken before the runtime."
     assert row["readback_response"] == "Yes — that's exactly right."

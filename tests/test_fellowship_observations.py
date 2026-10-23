@@ -356,12 +356,12 @@ class _MeetingGen:
 
     def __call__(self, prompt, **kwargs):
         self.prompts.append(prompt)
-        if "READ-BACK beat" in prompt:
+        if "READ-BACK" in prompt:
             return (
                 "A first impression, anchored in [[u]]your words[[/u]] — correct me."
                 "\nStrands: Compass, Logic"
             )
-        if "ENCOUNTER beat" in prompt:
+        if "ENCOUNTER" in prompt:
             return "An engaged reply that hears two tensions together."
         return "A plain reply."
 

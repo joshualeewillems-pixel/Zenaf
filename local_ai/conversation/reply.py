@@ -112,10 +112,18 @@ def build_voice_prompt(
     context_hint: str | None = None,
     thread_summary: str | None = None,
     extra_instructions: str | None = None,
+    weave: bool = True,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
 
     Raises ValueError on unknown archetype or empty message (and not question).
+
+    `weave=False` omits the [[u]] quote-weaving instruction: the
+    encounter runtime (keystone meetings) runs under the
+    evidence/expression separation (Joshua's ruling, 2026-10-23) —
+    dialogue synthesizes in the character's own words and is never
+    required to splice the user's phrases, while exact quotations
+    live in the evidence layer. Chat surfaces keep the default.
     """
     arch_id = (archetype_id or "").strip().lower()
     arch = get_archetype(arch_id)
@@ -176,7 +184,9 @@ def build_voice_prompt(
             "you are the aspirational base voice. Be honest about that if it matters; "
             "never invent training they don't have.",
         ]
-    prompt += ["", _WEAVE_INSTRUCTION, "", "Keep replies conversational (2-5 sentences)."]
+    if weave:
+        prompt += ["", _WEAVE_INSTRUCTION]
+    prompt += ["", "Keep replies conversational (2-5 sentences)."]
     if question:
         # "Question me" — mirrors the landing demo's question tap-mode: the
         # voice asks one penetrating question instead of responding.
@@ -191,8 +201,13 @@ def build_voice_prompt(
     if extra_instructions:
         # A situational frame layered over the voice (e.g. a keystone
         # meeting beat). The voice itself is unchanged; the frame only
-        # says what this particular exchange is for.
-        prompt += ["", extra_instructions.strip()[:2000]]
+        # says what this particular exchange is for. The cap is sized
+        # for prepared context, not a one-liner: an encounter frame
+        # legitimately carries the seat's jurisdiction, every live
+        # objective's guidance, the place's facts, and the turn's
+        # bookkeeping instructions (encounter runtime) — truncating
+        # any of those silently would corrupt the turn's contract.
+        prompt += ["", extra_instructions.strip()[:8000]]
     if thread_summary:
         prompt += [
             "",
@@ -234,6 +249,7 @@ def generate_voice_reply(
     thread_summary: str | None = None,
     generate_fn: GenerateFn | None = None,
     extra_instructions: str | None = None,
+    weave: bool = True,
 ) -> VoiceReply:
     """One exchange with a single council voice. Raises RuntimeError on LLM failure."""
     prompt, meta = build_voice_prompt(
@@ -246,6 +262,7 @@ def generate_voice_reply(
         context_hint=context_hint,
         thread_summary=thread_summary,
         extra_instructions=extra_instructions,
+        weave=weave,
     )
     gen = generate_fn or _default_generate
     reply = sanitize_weave(

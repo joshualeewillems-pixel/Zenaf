@@ -59,14 +59,17 @@ class FakeGen:
 
     def __call__(self, prompt, **kwargs):
         self.prompts.append(prompt)
-        if "READ-BACK beat" in prompt:
+        if "has just corrected your first impression" in prompt:
             return (
                 "A first impression, anchored in [[u]]your words[[/u]] — correct me."
                 "\nStrands: Compass, Logic"
             )
-        if "ORIENTATION beat" in prompt:
-            return "A factual orientation answer from the notes."
-        if "ENCOUNTER beat" in prompt:
+        if "READ-BACK" in prompt:
+            return (
+                "A first impression, anchored in [[u]]your words[[/u]] — correct me."
+                "\nStrands: Compass, Logic"
+            )
+        if "ENCOUNTER" in prompt:
             return "An engaged reply that hears two tensions together."
         return "A plain reply."
 
@@ -166,7 +169,11 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     state = svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
     assert state["stage"] == "readback"
     bodies = [m["body"] for m in state["messages"]]
-    assert "A first impression, anchored in [[u]]your words[[/u]] — correct me." in bodies
+    # The fake's claim text carries weave markers; the spoken claim
+    # does not (evidence/expression separation, 2026-10-23): the
+    # words survive, the markup does not — dialogue is hers now.
+    assert "A first impression, anchored in your words — correct me." in bodies
+    assert not any("[[u]]" in b for b in bodies)
     # UPDATED for the encounter runtime (P3): the answer turn is ONE
     # generation carrying both movements — the engaged reply and the
     # first impression — split on the frame's delimiter (the two-speed
@@ -175,20 +182,24 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     # the turn's spoken output; both frames are present in the single
     # prompt, where the stage machine spent two calls.
     assert len(gen.prompts) == 1
-    assert "ENCOUNTER beat" in gen.prompts[0]
-    assert "READ-BACK beat" in gen.prompts[0]
+    assert "ENCOUNTER" in gen.prompts[0]
+    assert "READ-BACK" in gen.prompts[0]
 
-    # The Conductor's meeting is unique: the orientation beat comes
-    # between the read-back response and the reveal.
+    # UPDATED for the adaptivity fix: no orientation beat follows the
+    # read-back response. The correction is answered (the revised
+    # impression is spoken), and because the fake gives no thread
+    # trailer and the correction is substantive new material, the
+    # deterministic estimate keeps the encounter open in the
+    # post-recognition phase — derived stage label "orientation",
+    # as the API has always named that position.
     state = svc.turn(uid, "conductor", "Mostly right — except I protect mornings first.")
     assert state["stage"] == "orientation"
     assert state["status"] == "active"  # not complete yet
     assert _conductor_k1_status(uid) != "Done"
     bodies = [m["body"] for m in state["messages"]]
-    # The orientation is theatre now, not accounting (redesign,
-    # 2026-10-23): it never quotes the record back — no pulled-item
-    # excerpt, no "waits in your review" — and the bookkeeping line
-    # itself never reaches the user. The strands live on the record.
+    # Nothing quotes the record back — no pulled-item excerpt, no
+    # "waits in your review" — and the bookkeeping line itself never
+    # reaches the user. The strands live on the record.
     assert any("Mostly right — except I protect mornings first." in b for b in bodies)
     assert not any("the heart of my first impression" in b for b in bodies)
     assert not any("waits in your review" in b for b in bodies)
@@ -247,7 +258,7 @@ def test_passing_the_whole_bank_still_reaches_readback(ve_ctx, tmp_path):
     assert state["stage"] == "readback"
     assert state["messages"][-1]["body"].startswith("A first impression")
     # Only the read-back frame ran — there was nothing to engage with.
-    assert len(gen.prompts) == 1 and "READ-BACK beat" in gen.prompts[0]
+    assert len(gen.prompts) == 1 and "READ-BACK" in gen.prompts[0]
 
 
 def test_substantive_no_is_an_answer_not_a_pass(ve_ctx, tmp_path):
@@ -285,33 +296,72 @@ def test_completed_meeting_cannot_be_replayed(ve_ctx, tmp_path):
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Deadlines first, then everything else.")
-    svc.turn(uid, "conductor", "That's right.")
-    svc.turn(uid, "conductor", "Got it.")
+    # UPDATED for the adaptivity fix: the answering turn completes
+    # the meeting on recognition — there is no third exchange.
+    state = svc.turn(uid, "conductor", "That's right.")
+    assert state["status"] == "complete"
     state = svc.start(uid, "conductor")
     assert state["status"] == "complete"
     with pytest.raises(MeetingError, match="No meeting is in progress"):
         svc.turn(uid, "conductor", "again?")
 
 
-def test_orientation_question_is_answered_then_reveal(ve_ctx, tmp_path):
+def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path):
+    """REWRITTEN for the adaptivity fix (was: the orientation beat's
+    one Q&A exchange, then the reveal). There is no orientation beat:
+    after recognition, a question is ordinary conversation — one
+    generation under the conversational frame, with the workshop
+    facts riding as prepared context — and the meeting closes only
+    when a later turn settles."""
+
+    class ThreadGen:
+        def __init__(self):
+            self.prompts: list[str] = []
+
+        def __call__(self, prompt, **kwargs):
+            self.prompts.append(prompt)
+            if "READ-BACK" in prompt:
+                return (
+                    "A first impression, anchored in plain words — correct me."
+                    "\nStrands: Compass, Logic"
+                )
+            if "Whatever its valence" in prompt:
+                # The answer to the impression leaves a thread open.
+                return "Fair enough.\n[[thread:open]]"
+            if "mid-conversation in your workshop" in prompt:
+                if "settled now" in prompt:
+                    return "Then we're heard.\n[[thread:settled]]"
+                return "It lives on the bench, same as everything here.\n[[thread:open]]"
+            return "A plain reply."
+
     uid = _seeded_user()
-    gen = FakeGen()
+    gen = ThreadGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I plan in pencil and improvise in ink.")
     svc.turn(uid, "conductor", "Close enough.")
     state = svc.turn(uid, "conductor", "Where does that impression actually live?")
-    assert state["status"] == "complete"
+    assert state["status"] == "active"  # the open question holds it open
     bodies = [m["body"] for m in state["messages"]]
-    assert "A factual orientation answer from the notes." in bodies
-    # The answer was framed by the workshop facts, not improvised.
-    orientation_prompts = [p for p in gen.prompts if "ORIENTATION beat" in p]
-    assert orientation_prompts and "seven rather incompatible parts" in orientation_prompts[0]
+    assert "It lives on the bench, same as everything here." in bodies
+    # The answer was framed by the workshop facts, not improvised:
+    # the facts block rides the conversational frame as context.
+    assert "mid-conversation in your workshop" in gen.prompts[-1]
+    assert "seven rather incompatible parts" in gen.prompts[-1]
+
+    state = svc.turn(uid, "conductor", "Alright — settled now, thank you.")
+    assert state["status"] == "complete"
+    script = MT.get_script("conductor", 1)
+    bodies = [m["body"] for m in state["messages"]]
+    for paragraph in script.reveal:
+        assert paragraph in bodies
 
 
 def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, monkeypatch):
-    """The orientation is the Conductor's distinction, not the engine's
-    shape: a script without one keeps the four-beat meeting."""
+    """UPDATED for the adaptivity fix: there is no orientation beat
+    for ANY script now — recognition closes the meeting. A script
+    stripped of orientation content behaves exactly like one that
+    carries it: answer the impression, and the reveal follows."""
     uid = _seeded_user()
     base = MT.get_script("conductor", 1)
     plain = dataclasses.replace(
@@ -321,17 +371,17 @@ def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, mo
     )
     monkeypatch.setitem(MT.SCRIPTS, ("mentor", 1), plain)
     svc = _svc(tmp_path)
-    # Conductor first (full five-beat flow), then the mentor's four.
+    # Conductor first, then the mentor — both close on recognition.
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Slow is smooth.")
-    svc.turn(uid, "conductor", "Yes.")
-    svc.turn(uid, "conductor", "Got it.")
+    state = svc.turn(uid, "conductor", "Yes.")
+    assert state["status"] == "complete"
     assert _conductor_k1_status(uid) == "Done"
 
     svc.start(uid, "mentor")
     svc.turn(uid, "mentor", "I learned patience the hard way.")
     state = svc.turn(uid, "mentor", "That's fair.")
-    assert state["status"] == "complete"  # no orientation stop
+    assert state["status"] == "complete"  # no orientation stop anywhere
 
 
 # -------------------------------------------------------------------- API
@@ -367,14 +417,12 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
         routes.MeetingTurnBody(archetype_id="conductor", message="Right."),
         user,
     )
-    assert state["stage"] == "orientation"
-    assert state["demeanor"] is None  # the reveal hasn't happened yet
-
-    state = routes.meeting_turn(
-        routes.MeetingTurnBody(archetype_id="conductor", message="ok"),
-        user,
-    )
+    # UPDATED for the adaptivity fix: the answering turn completes
+    # the meeting on recognition — the reveal (and its demeanor)
+    # arrives with that same turn; there is no orientation stop
+    # where the demeanor is still locked.
     assert state["status"] == "complete"
+    assert state["stage"] == "complete"
     assert state["character"] == "Weaver"
     assert state["demeanor"] and "loose thread" in state["demeanor"]
 
@@ -385,8 +433,12 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
 def _run_conductor_to_completion(svc, uid, answer="Deadlines first.", response="That's right."):
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
-    svc.turn(uid, "conductor", response)
-    return svc.turn(uid, "conductor", "Got it.")
+    state = svc.turn(uid, "conductor", response)
+    if state["status"] != "complete":
+        # The answer left a thread open (a substantive correction,
+        # under the deterministic estimate): one settled turn ends it.
+        state = svc.turn(uid, "conductor", "Got it.")
+    return state
 
 
 def test_restart_refusals(ve_ctx, tmp_path):
@@ -467,8 +519,9 @@ def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
     assert bodies == [script.opening[0], script.questions[0]]
 
     svc.turn(uid, "conductor", "Second time: I start with people, not tasks.")
-    svc.turn(uid, "conductor", "Yes, that's the shape of it.")
-    state = svc.turn(uid, "conductor", "Ok sounds good")
+    # UPDATED for the adaptivity fix: the answering turn completes
+    # the rerun on recognition — no third exchange exists.
+    state = svc.turn(uid, "conductor", "Yes, that's the shape of it.")
     assert state["status"] == "complete"
     assert _conductor_k1_status(uid) == "Done"
 
@@ -521,13 +574,14 @@ def test_acknowledgment_detection_is_human_shaped():
     )
 
 
-def test_orientation_never_quotes_the_record_back(ve_ctx, tmp_path):
-    """Redesign (2026-10-23): the orientation no longer quotes the
-    read-back or the user's answer back at them — the self-quoting
-    audit log was purged from the Weaver's dialogue entirely. The full
-    verbatim texts live on the record and in review (interface layer);
-    in the room, each is spoken exactly once: the claim by the Weaver,
-    the answer by the user."""
+def test_the_record_is_never_quoted_back_in_dialogue(ve_ctx, tmp_path):
+    """Redesign (2026-10-23), strengthened by the adaptivity fix: the
+    dialogue never quotes the read-back or the user's answer back at
+    them — the self-quoting audit log was purged from the Weaver's
+    dialogue entirely, and the pause that once carried it is retired.
+    The full verbatim texts live on the record and in review
+    (interface layer); in the room, each is spoken exactly once: the
+    claim by the Weaver, the answer by the user."""
     uid = _seeded_user()
     long_answer = (
         "I decide by writing the whole tangle down first, then I sleep on "
@@ -538,7 +592,7 @@ def test_orientation_never_quotes_the_record_back(ve_ctx, tmp_path):
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", long_answer)
     state = svc.turn(uid, "conductor", "Close enough.")
-    assert state["stage"] == "orientation"
+    assert state["stage"] == "complete"  # recognition closed it
     bodies = [m["body"] for m in state["messages"]]
     assert bodies.count(long_answer) == 1  # the user's own bubble only
     claim = svc.meetings.get(uid, "conductor", 1)["readback_claim"]
@@ -547,19 +601,20 @@ def test_orientation_never_quotes_the_record_back(ve_ctx, tmp_path):
     assert not any("waits in your review" in b for b in bodies)
 
 
-def test_orientation_never_leaks_weave_markers(ve_ctx, tmp_path, monkeypatch):
-    """The engine's pulled-item path quotes the read-back inside prose
-    \u2014 the stored claim's [[u]]...[[/u]] markers are markup for the
-    woven bubble, not text for the reader. On the 2026-10-23 live run a
-    literal "[[u]]" reached the orientation bubble. The quote must carry
-    the woven words with the markers stripped, even when the excerpt
-    limit cuts through a woven span \u2014 while the stored record and
-    the live read-back bubble keep their markers untouched.
-
-    The Weaver's own script no longer quotes the record at all (the
-    2026-10-23 redesign; tests/test_weaver_rewrite.py guards that), so
-    this test drives the engine path with a template-bearing script
-    \u2014 the protection belongs to any script that quotes.
+def test_weave_markers_never_reach_dialogue_or_the_record(ve_ctx, tmp_path, monkeypatch):
+    """REWRITTEN for the Mad Lib ruling (Joshua, 2026-10-23): the old
+    contract kept [[u]] markers in the spoken claim and on the record
+    (for the client's amber rendering) and stripped them only where
+    the record was quoted back. That structure is gone. Evidence and
+    expression are separate layers now: no frame asks for weaving,
+    and when a model emits markers anyway — splicing the user's
+    first-person phrases into her sentences, exactly the failure
+    this guards — the runtime strips the markup from everything she
+    speaks AND from the stored claim. The words survive; the splice
+    markup does not. (The user's own verbatim texts, stored as
+    evidence, are never touched by this.) The pulled-item templates
+    are retired from dialogue entirely: even a template-bearing
+    script produces no quoted-record bubble.
     """
 
     class WovenGen:
@@ -568,7 +623,7 @@ def test_orientation_never_leaks_weave_markers(ve_ctx, tmp_path, monkeypatch):
 
         def __call__(self, prompt, **kwargs):
             self.prompts.append(prompt)
-            if "READ-BACK beat" in prompt:
+            if "READ-BACK" in prompt:
                 return (
                     "A first impression, plainly put: you lead from "
                     "[[u]]intuition based usually[[/u]], and you only shift "
@@ -578,12 +633,12 @@ def test_orientation_never_leaks_weave_markers(ve_ctx, tmp_path, monkeypatch):
                     "— tell me where that reading is wrong."
                     "\nStrands: Compass, Logic"
                 )
-            if "ENCOUNTER beat" in prompt:
+            if "ENCOUNTER" in prompt:
                 return "An engaged reply that hears two tensions together."
             return "A plain reply."
 
-    # Drive the engine's pulled-item path: same Weaver script, but with
-    # a template that quotes the record (the pre-redesign shape).
+    # A template-bearing script (the pre-redesign shape): the runtime
+    # must never format it into dialogue now.
     quoting_script = dataclasses.replace(
         MT.CONDUCTOR_FIRST_MEETING,
         pulled_item_template=(
@@ -602,23 +657,19 @@ def test_orientation_never_leaks_weave_markers(ve_ctx, tmp_path, monkeypatch):
         "Intuition based usually, unless something practical is pressing.",
     )
     state = svc.turn(uid, "conductor", "Close enough.")
-    assert state["stage"] == "orientation"
+    assert state["stage"] == "complete"
     bodies = [m["body"] for m in state["messages"]]
-    pulled = next(b for b in bodies if "the heart of my first impression" in b)
-    # No marker — whole, severed, or malformed — anywhere in the quote.
-    assert "[[" not in pulled and "]]" not in pulled
-    assert "[/u" not in pulled
-    # The woven words themselves survive; only the markup is gone.
-    assert "intuition based usually" in pulled
-    # The claim excerpt really was cut (the raw claim is far past 160
-    # chars), so the cut passed through the second woven span.
+    # No marker — whole, severed, or malformed — in anything spoken.
+    assert not any("[[" in b or "[/u" in b for b in bodies)
+    # No pulled-item bubble exists to leak through.
+    assert not any("the heart of my first impression" in b for b in bodies)
+    # The woven words themselves survive in her claim; only the
+    # markup is gone — in the bubble and on the record alike.
+    assert any("intuition based usually" in b for b in bodies)
     row = svc.meetings.get(uid, "conductor", 1)
-    assert len(row["readback_claim"]) > 160
-    # Storage is untouched: markers intact on the record…
-    assert "[[u]]intuition based usually[[/u]]" in row["readback_claim"]
-    # …and the live read-back bubble in the same conversation still
-    # carries them for the client's amber rendering.
-    assert any("[[u]]" in b for b in bodies)
+    assert "[[" not in row["readback_claim"]
+    assert "intuition based usually" in row["readback_claim"]
+    assert "there's something practical pressing" in row["readback_claim"]
 
 
 def test_strip_weave_markers_keeps_words_drops_markup():
@@ -634,18 +685,27 @@ def test_strip_weave_markers_keeps_words_drops_markup():
     assert _strip_weave_markers("") == ""
 
 
-def test_ok_sounds_good_proceeds_straight_to_reveal(ve_ctx, tmp_path):
-    """The exact live-run break: 'Ok sounds good' after the orientation
-    was treated as a question and got an improvised second introduction.
-    It must now proceed directly — no orientation generation at all."""
+def test_ok_sounds_good_closes_on_recognition(ve_ctx, tmp_path):
+    """REWRITTEN for the adaptivity fix (the live-run break, in its
+    new form): 'Ok sounds good' answering the impression must be
+    received as the acknowledgment it is — one brief generated
+    reply, then the reveal — never answered as if it were a
+    question, and never with an improvised second introduction.
+    (The orientation beat it once stumbled into no longer exists;
+    and acks now generate precisely so the close decision is the
+    model's semantic judgment, not a phrase match.)"""
     uid = _seeded_user()
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I plan in pencil and improvise in ink.")
-    svc.turn(uid, "conductor", "Close enough.")
     prompts_before = len(gen.prompts)
     state = svc.turn(uid, "conductor", "Ok sounds good")
     assert state["status"] == "complete"
     new_prompts = gen.prompts[prompts_before:]
-    assert not any("ORIENTATION beat" in p for p in new_prompts)
+    assert len(new_prompts) == 1  # exactly one generation: her reply
+    assert not any("ORIENTATION" in p for p in new_prompts)
+    bodies = [m["body"] for m in state["messages"]]
+    script = MT.get_script("conductor", 1)
+    for paragraph in script.reveal:
+        assert paragraph in bodies

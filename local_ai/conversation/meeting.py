@@ -25,13 +25,15 @@ Rules the engine enforces (Joshua's design, not preferences):
     honestly instead of improvising one.
   - Keystones run in chain order: keystone N's meeting requires N-1 Done.
     (Only keystone 1 is written in this build.)
-  - The read-back is stored on the meeting record as an UNFILED first
-    impression, verbatim, with the user's response verbatim. Nothing here
-    writes a training signal; filing it belongs to the review flow.
+  - The read-back is stored on the meeting record verbatim, with the
+    user's response verbatim. When the meeting completes, the impression
+    is filed into the review queue as a pending claim (the orientation
+    promises it "waits in your review, word for word") — filing writes
+    no training signal; only the user's verdict on the claim does.
   - Meetings are resumable: state is server-side, so leaving mid-meeting
     loses nothing, and beginning again picks up at the current beat.
   - A COMPLETED meeting can be met again (restart): the prior run —
-    transcript plus the verbatim, unfiled read-back impression — is
+    transcript plus the verbatim read-back impression — is
     archived in the meeting store, never deleted; the meeting resets to
     not-started and the seat's keystone task returns to its seeded
     status, so the face the meeting revealed re-locks until the new run
@@ -47,6 +49,7 @@ canonical character; the user's echo is a different side of the switch).
 from __future__ import annotations
 
 import json
+import logging
 import re
 import sqlite3
 import threading
@@ -55,15 +58,18 @@ from pathlib import Path
 from typing import Any, Callable
 
 from local_ai.council import meetings as MT
-from local_ai.council.archetypes import stock_archetype_ids
+from local_ai.council.archetypes import PLAIN_TO_KEY, stock_archetype_ids
 from local_ai.vision_execution import keystone_seeding
 from local_ai.vision_execution import models as ve_models
 from local_ai.vision_execution import service as ve
 
 from .reply import generate_voice_reply
 from .store import ConversationStore
+from .weave import strip_weave_markers
 
 GenerateFn = Callable[..., str]
+
+logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = REPO_ROOT / "data" / "conversations"
@@ -154,24 +160,13 @@ def _excerpt(text: str, limit: int) -> str:
     return text[:cut].rstrip(" ,;:") + "…"
 
 
-#: Weave markers as they can appear in stored text: the canonical pair
-#: plus the malformed closings sanitize_weave (weave.py) knows about.
-_WEAVE_MARK_RE = re.compile(r"\[/\[/u\]\]|\[{1,2}/?u\]\]")
-
-
-def _strip_weave_markers(text: str) -> str:
-    """Remove [[u]]...[[/u]] weave markers, keeping the woven words.
-
-    For PLAIN contexts that quote stored woven text — the orientation's
-    pulled item is prose inside quotation marks, not a woven bubble.
-    The stored claim keeps its markers (MeetingView renders them as
-    amber spans in the live read-back); a quote inside another sentence
-    must not leak the markup into the user's reading (seen live
-    2026-10-23: a literal "[[u]]" in the orientation bubble). Stripping
-    happens before excerpting, so a cut can never sever a marker and
-    leave half of one behind."""
-    stripped = _WEAVE_MARK_RE.sub("", text or "")
-    return re.sub(r"[ \t]{2,}", " ", stripped)
+#: Plain contexts that quote stored woven text (the orientation's pulled
+#: item is prose inside quotation marks, not a woven bubble) strip the
+#: markers with weave.strip_weave_markers BEFORE excerpting, so a cut can
+#: never sever a marker and leave half of one behind. The stored claim
+#: keeps its markers — MeetingView renders them as amber spans in the
+#: live read-back. (Seen live 2026-10-23: a literal "[[u]]" in the
+#: orientation bubble; the strip helper is shared with review claims.)
 
 #: The status seeded keystone tasks start with: keystone_seeding creates
 #: them through TaskCreate without a status, so the model's default is the
@@ -282,7 +277,9 @@ class MeetingStore:
     ) -> dict[str, Any]:
         """Preserve a completed run before a restart resets it: the full
         transcript plus the read-back impression and the user's response,
-        verbatim and unfiled — exactly as the live record held them."""
+        verbatim — exactly as the live record held them. (The run's
+        review claim, filed at completion, is a separate record and
+        keeps its verdict; archiving never touches it.)"""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO meeting_archives (user_id, archetype_id, "
@@ -364,10 +361,15 @@ class MeetingService:
         conversation_store: ConversationStore,
         meeting_store: MeetingStore,
         generate_fn: GenerateFn | None = None,
+        agent_store_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self.conversations = conversation_store
         self.meetings = meeting_store
         self._generate_fn = generate_fn
+        # user_id -> AgentStore for filing meeting impressions into the
+        # review queue; None builds the default-path store per user,
+        # the same store the intake routes read.
+        self._agent_store_factory = agent_store_factory
 
     # -- guards ---------------------------------------------------------------
 
@@ -466,6 +468,10 @@ class MeetingService:
             if row is None:
                 row = self.meetings.create(user_id, arch_id, keystone_index)
             self.meetings.update(user_id, arch_id, keystone_index, stage="complete", status="complete")
+            # A meeting completed before impressions were filed (or one
+            # whose filing was missed) backfills here — the filing is
+            # idempotent per run, so this is a no-op once filed.
+            self._file_impression(user_id, arch_id, keystone_index, script)
             return self.state(user_id, arch_id, keystone_index)
 
         row = self.meetings.get(user_id, arch_id, keystone_index)
@@ -618,10 +624,10 @@ class MeetingService:
                 user_id, cid, arch_id,
                 script.pulled_item_template.format(
                     claim=_excerpt(
-                        _strip_weave_markers(row.get("readback_claim") or ""), 160
+                        strip_weave_markers(row.get("readback_claim") or ""), 160
                     ),
                     response=_excerpt(
-                        _strip_weave_markers(row.get("readback_response") or ""), 120
+                        strip_weave_markers(row.get("readback_response") or ""), 120
                     ),
                 ),
             )
@@ -673,12 +679,135 @@ class MeetingService:
             if task.get("status") != "Done":
                 ve.update_task(task["id"], ve_models.TaskUpdate(status="Done"), user_id)
         self.meetings.update(user_id, arch_id, keystone_index, stage="complete", status="complete")
+        # The single completion chokepoint: every path that finishes a
+        # meeting funnels through this reveal, so the impression is
+        # filed exactly once per run, here.
+        self._file_impression(user_id, arch_id, keystone_index, script)
+
+    def _file_impression(self, user_id: str, arch_id: str, keystone_index: int,
+                         script: MT.MeetingScript) -> None:
+        """File the completed meeting's read-back impression as a review
+        claim — the orientation's promise ("the full text of both waits
+        in your review, word for word"), kept.
+
+        One "meeting_impression" claim under a ConnectedAgent anchored
+        to the meeting's transcript id ("meeting-{seat}-{keystone}"),
+        carrying the full read-back and the user's verbatim answer.
+        Nothing trains: the claim sits pending like every other claim
+        until the user rules on it, and the verdict is what writes the
+        training signal (under the read-back's strands, via the normal
+        claim-feedback machinery).
+
+        Idempotent per run: the claim id carries the run's creation
+        time, and an existing claim is never re-saved (save_claims is
+        INSERT OR REPLACE — re-saving would reset its verdict). A
+        replay is a new run with a new claim; the archived run's claim
+        and verdict stay untouched. Filing must never break a meeting's
+        close, so failures are logged, not raised.
+        """
+        try:
+            row = self.meetings.get(user_id, arch_id, keystone_index)
+            if not row or not (row.get("readback_claim") or "").strip():
+                return
+            from local_ai.agent_intake import review_claims
+            from local_ai.agent_intake.schema import (
+                ConnectedAgent,
+                MomentClaim,
+                SortResult,
+                StrandClaim,
+            )
+            from local_ai.agent_intake.store import AgentStore
+
+            store = (
+                self._agent_store_factory(user_id)
+                if self._agent_store_factory is not None
+                else AgentStore(user_id=user_id)
+            )
+            agent_id = conversation_id_for(arch_id, keystone_index)
+            try:
+                strand_names = json.loads(row.get("readback_strands") or "[]")
+            except Exception:
+                strand_names = []
+            strand_keys = [PLAIN_TO_KEY[n] for n in strand_names if n in PLAIN_TO_KEY]
+            run_key = re.sub(r"[^0-9A-Za-z]", "", row.get("created_at") or "") or "run"
+            claim = review_claims.build_meeting_impression_claim(
+                agent_id=agent_id,
+                seat_name=script.character,
+                readback_claim=row.get("readback_claim") or "",
+                readback_response=row.get("readback_response") or "",
+                strand_keys=strand_keys,
+                run_key=run_key,
+            )
+            is_new = claim.id not in {c.id for c in store.get_claims(agent_id)}
+
+            # The meeting as a reviewable source: its transcript is the
+            # agent's material; the read-back's own strand attribution
+            # is its sort (which is also what places it under the seat's
+            # review group). Refreshed per run — the claim ids keep each
+            # run's filing distinct.
+            history = self.conversations.history(user_id, agent_id, limit=200)
+            examples = [
+                f"{'USER' if m.get('role') == 'user' else 'ASSISTANT'}: {m.get('body') or ''}"
+                for m in history
+            ]
+            sort = SortResult(
+                primary_strand=strand_keys[0] if strand_keys else "",
+                claims=[
+                    StrandClaim(
+                        strand=k,
+                        score=1.0,
+                        reasoning="Named by the seat's read-back in its first meeting.",
+                    )
+                    for k in strand_keys
+                ],
+                strand_weights={k: 1.0 for k in strand_keys},
+                kind="undecided",
+                confidence=1.0,
+                needs_probing=False,
+                moments=(
+                    [
+                        MomentClaim(
+                            strand=strand_keys[0],
+                            quote=claim.evidence,
+                            inference=claim.inference,
+                        )
+                    ]
+                    if strand_keys
+                    else []
+                ),
+            )
+            agent = store.get(agent_id)
+            if agent is None:
+                agent = ConnectedAgent(
+                    id=agent_id,
+                    name=f"First meeting — {script.character}",
+                    source_platform="meeting",
+                    description=(
+                        f"{script.character}'s first meeting with you — the "
+                        "read-back impression it formed, filed for your review."
+                    ),
+                    instructions=None,
+                    examples=examples,
+                    sort=sort,
+                    status="pending_review",
+                    created_at=row.get("created_at") or _utcnow(),
+                    mining_state="skipped",
+                )
+            else:
+                agent.examples = examples
+                agent.sort = sort
+                agent.status = "pending_review"
+            store.save(agent)
+            if is_new:
+                store.save_claims(agent_id, [claim])
+        except Exception:
+            logger.exception("meeting impression filing failed")
 
     def restart(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         """Meet again: reset a COMPLETED meeting so it can be run fresh.
 
-        The prior run is archived verbatim (transcript + the unfiled
-        read-back impression) in the meeting store before anything is
+        The prior run is archived verbatim (transcript + the read-back
+        impression) in the meeting store before anything is
         reset — archived, never deleted. The seat's keystone task returns
         to the status it was seeded with, which also re-locks the face
         the first meeting revealed (PR #186's face_revealed reads the

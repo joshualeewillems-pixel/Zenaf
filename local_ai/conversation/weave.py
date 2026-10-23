@@ -16,6 +16,20 @@ WEAVE_CLOSE = "[[/u]]"
 _WEAVE_CLOSE_RE = re.compile(r"\[/\[/u\]\]|\[/u\]\]|\[\[/u\]\]")
 
 
+def strip_weave_markers(text: str) -> str:
+    """Remove weave markers entirely, keeping the woven words.
+
+    For surfaces that quote a woven text outside the weaving renderer
+    (review cards, excerpts): the markers are markup, not words, so the
+    quoted text keeps every word and drops the markup — canonical and
+    malformed closings alike. Horizontal whitespace runs left behind by
+    removed markers are collapsed, so prose quotes read clean.
+    """
+    text = _WEAVE_CLOSE_RE.sub("", text or "")
+    text = text.replace(WEAVE_OPEN, "")
+    return re.sub(r"[ \t]{2,}", " ", text)
+
+
 def sanitize_weave(text: str) -> str:
     """Normalize model-generated [[u]]...[[/u]] markers.
 

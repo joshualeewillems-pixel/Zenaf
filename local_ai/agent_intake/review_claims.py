@@ -51,6 +51,8 @@ CLAIM_TYPES = (
     "alternative",
     # Recurrence claims (a topic returned to across turns -> one pattern).
     "recurrence",
+    # Meeting impressions (a seat's first-meeting read-back -> one claim).
+    "meeting_impression",
 )
 # Claim statuses. "rejected" = the user judged the inference wrong.
 # "unresolved" = the user actively left it open — first-class, not a verdict,
@@ -693,6 +695,64 @@ def build_insight_claims(insights: list, agent_id: str) -> list[ReviewClaim]:
                 )
             )
     return claims
+
+
+def build_meeting_impression_claim(
+    *,
+    agent_id: str,
+    seat_name: str,
+    readback_claim: str,
+    readback_response: str,
+    strand_keys: list[str],
+    run_key: str,
+) -> ReviewClaim:
+    """The one claim a completed first meeting files: the seat's read-back
+    impression, with the user's answer as its verbatim evidence.
+
+    The Weaver's orientation promises the user both texts "wait in your
+    review, word for word" — so the card carries them complete, never
+    excerpted: the inference IS the full read-back (weave markers are
+    markup, not words, and are stripped for display), the evidence is the
+    user's answer verbatim, and the detail repeats both in full alongside
+    the strands the read-back named, so the filing is inspectable from
+    the card alone.
+
+    Claim id: "{agent_id}:impression:{strands}:{run_key}". agent_id is
+    the meeting's transcript id ("meeting-{seat}-{keystone}"), so the
+    claim is anchored to the meeting it came from. The strand segment
+    ("self+people", or "none") is the machine channel the verdict-signal
+    routing reads (signals.claim_strands) — the same id-parsing precedent
+    strand claims set. run_key discriminates runs: a replay files a NEW
+    claim under a new run_key and never touches the archived run's claim
+    or its verdict.
+    """
+    from local_ai.conversation.weave import strip_weave_markers
+
+    plain_claim = strip_weave_markers(readback_claim or "").strip()
+    keys = [k for k in (strand_keys or []) if k in _STRAND_NAME]
+    strand_segment = "+".join(keys) if keys else "none"
+    detail_parts: list[str] = []
+    if keys:
+        names = [_STRAND_NAME[k] for k in keys]
+        if len(names) == 1:
+            detail_parts.append(f"Heard under the {names[0]} strand.")
+        else:
+            detail_parts.append(
+                f"Heard under the {' and '.join(names)} strands."
+            )
+    detail_parts.append(f"The read-back, word for word:\n{plain_claim}")
+    detail_parts.append(f"Your answer, word for word:\n{readback_response or ''}")
+    return ReviewClaim(
+        id=f"{agent_id}:impression:{strand_segment}:{run_key}",
+        claim_type="meeting_impression",
+        title=f"First impression — {seat_name}",
+        evidence=readback_response or "",
+        inference=plain_claim,
+        detail="\n\n".join(detail_parts),
+        question="Does that first impression sound right to you?",
+        scope="moment",
+        turn_ref="",
+    )
 
 
 def build_recurrence_claims(patterns: list, agent_id: str) -> list[ReviewClaim]:

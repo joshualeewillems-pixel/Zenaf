@@ -7,7 +7,7 @@ import {
   glyphForGrowth,
   type StoneGlyph,
 } from './symbolicStone'
-import { isMegaCairnId, type CairnPreviewStone } from './cairn'
+import { isGardenStackData, type CairnPreviewStone } from './cairn'
 import { towerLayout, type TowerStone } from './cairnTower'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { useLongPress } from './useLongPress'
@@ -42,14 +42,14 @@ const NEUTRAL_PREVIEW: CairnPreviewStone = {
  * Cairn — a project's stones as one trail-cairn tower. The sub-stones are
  * purely decorative (aria-hidden, pointer-events-none): the cairn node is
  * the single hit target for tap (select/inspect), long-press (fan out — or
- * unstack for the whole-garden mega-cairn), and drag (move the pile).
+ * unstack for a garden stack), and drag (move the pile).
  */
 export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
   const { onToggleCairn } = useCairnInteraction()
   const toggle = useCallback(() => onToggleCairn(id), [onToggleCairn, id])
   const lp = useLongPress(toggle)
 
-  const isMega = isMegaCairnId(id)
+  const isMega = isGardenStackData(data)
   const preview = (data.cairnPreview ?? []) as CairnPreviewStone[]
   const count = (data.cairnCount as number) ?? preview.length
   const wash = washColorFor((data.cairnProjectId as string) ?? null)

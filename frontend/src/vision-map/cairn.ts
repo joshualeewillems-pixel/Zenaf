@@ -289,7 +289,7 @@ export type StoneLongPressTarget =
 /**
  * What a long-press on a stone should do. Expanded members collapse their
  * own cairn back; an initiative (tree) stone toggles that initiative's
- * stack — its children as one mega-cairn vs the full subtree. Everything
+ * stack — its children as the pile on its stone vs the full subtree. Everything
  * else: no long-press action, so tap/drag behavior is untouched.
  */
 export function longPressTargetFor(
@@ -303,22 +303,19 @@ export function longPressTargetFor(
 }
 
 /**
- * Per-initiative mega-cairn ids: `cairn:garden:{treeId}` — one pile per
- * stacked initiative, never a single global pile.
+ * A stacked initiative is ONE object (Joshua, 2026-10-22): the pile sits
+ * ON its parent stone — the merged node carries the tree's own id,
+ * position, and edges, flagged `gardenStack` in its data — never a second
+ * node floating beside the parent. This predicate is how renderers and
+ * the toggle handler recognize that merged object.
  */
-export const MEGA_CAIRN_PREFIX = 'cairn:garden:'
-export function megaCairnId(treeId: string): string {
-  return `${MEGA_CAIRN_PREFIX}${treeId}`
+export function isGardenStackData(data: unknown): boolean {
+  return (
+    !!data &&
+    typeof data === 'object' &&
+    (data as { gardenStack?: unknown }).gardenStack === true
+  )
 }
-export function isMegaCairnId(id: string): boolean {
-  return id.startsWith(MEGA_CAIRN_PREFIX)
-}
-export function megaCairnTreeId(id: string): string | null {
-  return isMegaCairnId(id) ? id.slice(MEGA_CAIRN_PREFIX.length) : null
-}
-
-/** Vertical gap between an initiative stone and its mega-cairn when stacked. */
-const MEGA_CAIRN_DY = 220
 
 /**
  * An initiative's descendant cairn ids: BFS over OUTGOING edges from the
@@ -366,15 +363,16 @@ function cairnStoneCount(n: Node<MapNodePayload>): number {
 }
 
 /**
- * Build one initiative's mega-cairn: the tree stays, and this single pile
- * stands in for that initiative's cairns. Pure — the hidden cairns'
- * positions stay in state untouched, so unstacking restores them exactly
- * where they were. The mega-cairn's `ref` points at its own initiative, so
- * tapping it opens that initiative's briefing sheet
- * (`stone:initiative:{id}`), and its preview carries the subtree's most
- * urgent stones (most urgent on top, like project cairns).
+ * Build one initiative's garden-stack node: the pile sits ON the parent
+ * stone as a single object — the returned node carries the tree's own id
+ * and position (its edges follow automatically), flagged `gardenStack`.
+ * Pure — the hidden cairns' positions stay in state untouched, so
+ * unstacking restores them exactly where they were. The node's `ref`
+ * points at its own initiative, so tapping it opens that initiative's
+ * briefing sheet (`stone:initiative:{id}`), and its preview carries the
+ * subtree's most urgent stones (most urgent on top, like project cairns).
  */
-export function buildMegaCairnNode(
+export function buildGardenStackNode(
   tree: Node<MapNodePayload>,
   subtreeCairns: Node<MapNodePayload>[],
 ): Node<MapNodePayload> {
@@ -404,12 +402,13 @@ export function buildMegaCairnNode(
     if ((c.data as MapNodePayload).fertilizer_pulse) anyPulse = true
   }
   return {
-    id: megaCairnId(tree.id),
+    id: tree.id,
     type: 'cairn',
-    position: { x: tree.position.x, y: tree.position.y + MEGA_CAIRN_DY },
+    position: { ...tree.position },
     data: {
       ...treeData,
       kind: 'cairn',
+      gardenStack: true,
       label: treeData.label?.trim() || 'Stacked initiative',
       subtitle: `${totalStones} stones`,
       condition_severity: maxSeverity,
@@ -428,10 +427,11 @@ export function buildMegaCairnNode(
 
 /**
  * Per-initiative stack transform. For each stacked tree: its descendant
- * cairns (and only those) are hidden — not moved — and one mega-cairn
- * stands in below the tree, with zero incident edges. Unstacked initiatives
- * pass through untouched. Trees with no descendant cairns are a no-op
- * (no empty pile).
+ * cairns (and only those) are hidden — not moved — and the tree node
+ * itself is replaced by its garden-stack node: the pile sitting on the
+ * parent stone as one object, keeping the tree's id, position, and edges.
+ * Unstacked initiatives pass through untouched. Trees with no descendant
+ * cairns are a no-op (no empty pile).
  *
  * Pure — the view memoizes this, so hidden cairns' positions and the
  * expanded-cairn set survive the round trip untouched.
@@ -447,7 +447,7 @@ export function applyGardenStack(
   // Work on a shrinking set so a cairn is never claimed by two trees.
   let liveNodes = [...nodes]
   let liveEdges = [...edges]
-  const megas: Node<MapNodePayload>[] = []
+  const stacks: Node<MapNodePayload>[] = []
   for (const treeId of stackedTreeIds) {
     const tree = byId.get(treeId)
     if (!tree || (tree.data as MapNodePayload).kind !== 'tree') continue
@@ -460,9 +460,13 @@ export function applyGardenStack(
     for (const id of hidden) hiddenCairnIds.add(id)
     liveNodes = liveNodes.filter((n) => !hidden.has(n.id))
     liveEdges = liveEdges.filter((e) => !hidden.has(e.source) && !hidden.has(e.target))
-    megas.push(buildMegaCairnNode(tree, cairnNodes))
+    // The parent stone is replaced by its stack — one object, not two.
+    // Its edges reference the tree id, which the stack node keeps, so
+    // they stay attached without rewriting.
+    liveNodes = liveNodes.filter((n) => n.id !== treeId)
+    stacks.push(buildGardenStackNode(tree, cairnNodes))
   }
-  return { nodes: [...liveNodes, ...megas], edges: liveEdges, hiddenCairnIds }
+  return { nodes: [...liveNodes, ...stacks], edges: liveEdges, hiddenCairnIds }
 }
 
 /**

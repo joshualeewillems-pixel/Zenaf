@@ -36,7 +36,7 @@ const handleClass =
  * growth glyph + urgency ring + project color wash) with the label block
  * beneath. Long-press collapses an expanded cairn member back into its
  * cairn; long-press on the initiative (tree) stone toggles the whole-garden
- * stack — one mega-cairn vs the full garden; tap keeps the existing
+ * stack — the pile on its own stone vs the full garden; tap keeps the existing
  * select/focus behavior.
  */
 export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {

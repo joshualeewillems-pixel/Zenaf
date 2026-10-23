@@ -63,7 +63,7 @@ export type TowerDebug = {
   scale: number
 }
 
-/** Rendered stones: min(count, 12) — the mega-cairn gets the full twelve. */
+/** Rendered stones: min(count, 12) — a garden stack gets the full twelve. */
 export function towerStoneCount(count: number): number {
   return Math.min(Math.max(Math.floor(count), 1), 12)
 }

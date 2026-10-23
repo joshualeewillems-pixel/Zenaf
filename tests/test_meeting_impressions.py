@@ -53,14 +53,17 @@ class FakeGen:
 
     def __call__(self, prompt, **kwargs):
         self.prompts.append(prompt)
-        if "READ-BACK beat" in prompt:
+        if "has just corrected your first impression" in prompt:
             return (
                 "A first impression, anchored in [[u]]your words[[/u]] — correct me."
                 "\nStrands: Compass, Logic"
             )
-        if "ORIENTATION beat" in prompt:
-            return "A factual orientation answer from the notes."
-        if "ENCOUNTER beat" in prompt:
+        if "READ-BACK" in prompt:
+            return (
+                "A first impression, anchored in [[u]]your words[[/u]] — correct me."
+                "\nStrands: Compass, Logic"
+            )
+        if "ENCOUNTER" in prompt:
             return "An engaged reply that hears two tensions together."
         return "A plain reply."
 
@@ -88,8 +91,12 @@ def _seeded_user(email="impressions@example.com"):
 def _run_conductor_to_completion(svc, uid, answer="Deadlines first.", response="That's right."):
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
-    svc.turn(uid, "conductor", response)
-    return svc.turn(uid, "conductor", "Got it.")
+    state = svc.turn(uid, "conductor", response)
+    if state["status"] != "complete":
+        # The answer left a thread open (a substantive correction,
+        # under the deterministic estimate): one settled turn ends it.
+        state = svc.turn(uid, "conductor", "Got it.")
+    return state
 
 
 READBACK_STRIPPED = "A first impression, anchored in your words — correct me."

@@ -65,17 +65,15 @@ class FakeGen:
                 "first[[/u]] — everything arranged before anything moves."
                 "\nStrands: Logic"
             )
-        if "READ-BACK beat" in prompt:
+        if "READ-BACK" in prompt:
             return (
                 "A first read, held lightly: you [[u]]listen to whoever "
                 "the moment asks for[[/u]]. Me, I'd arrange it all first."
                 "\nStrands: Compass, Heart"
             )
-        if "ENCOUNTER beat" in prompt:
+        if "ENCOUNTER" in prompt:
             return "An engaged reply from the bench."
-        if "ORIENTATION beat" in prompt:
-            return "An in-character answer from the workshop notes."
-        if "neither agreeing nor correcting" in prompt:
+        if "Whatever its valence" in prompt:
             return "A brief engaged reply; the impression stands."
         return "A plain reply."
 
@@ -201,7 +199,10 @@ def test_acknowledgment_leaves_the_impression_untouched(ve_ctx, tmp_path):
     before = svc.meetings.get(uid, "conductor", 1)
 
     state = svc.turn(uid, "conductor", "Yeah, that's right.")
-    assert state["stage"] == "orientation"
+    # UPDATED for the adaptivity fix: the ack completes the
+    # recognition and nothing hangs, so the meeting closes on this
+    # turn — the old contract stopped in the orientation beat.
+    assert state["stage"] == "complete"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == before["readback_claim"]
     assert row["readback_strands"] == before["readback_strands"]
@@ -215,7 +216,9 @@ def test_other_reply_engages_and_the_impression_stands(ve_ctx, tmp_path):
     before = svc.meetings.get(uid, "conductor", 1)
 
     state = svc.turn(uid, "conductor", "Hmm. Interesting.")
-    assert state["stage"] == "orientation"
+    # UPDATED for the adaptivity fix: as with the ack, a settled
+    # "other" answer closes on recognition in the same turn.
+    assert state["stage"] == "complete"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == before["readback_claim"]
     bodies = [m["body"] for m in state["messages"]]

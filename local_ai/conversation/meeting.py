@@ -34,8 +34,8 @@ Rules the service enforces (Joshua's design, not preferences):
     user's response verbatim. The user's reply to the read-back is
     classified three ways — acknowledgment / correction / other. A
     CORRECTION replaces the stored impression with the corrected
-    understanding (the record the orientation and the impression-filing
-    read); an acknowledgment or any other reply leaves the impression
+    understanding (the record the impression-filing reads); an
+    acknowledgment or any other reply leaves the impression
     standing exactly as spoken. When the meeting completes, the
     impression is filed into the review queue as a pending claim, where
     it waits, word for word — filing writes no training signal; only
@@ -562,6 +562,11 @@ class MeetingService:
             state.response_recorded = True
         if row.get("stage") == "orientation":
             state.pause_delivered = True
+            # The orientation stage was only ever reachable after
+            # the read-back was answered, in both engines — the
+            # adaptive runtime reads it as the post-recognition
+            # phase, so an in-flight meeting is never stranded.
+            state.impression_answered = True
         return state
 
     def _history_for_reply(self, user_id: str, cid: str) -> list[dict[str, str]]:
@@ -586,6 +591,11 @@ class MeetingService:
             user_id, arch_id, last_user.get("content", ""), prior,
             mode="base", generate_fn=self._generate_fn,
             extra_instructions=frame,
+            # Meetings run under the evidence/expression separation
+            # (Joshua's ruling, 2026-10-23): no quote-weaving
+            # instruction on this path — the character synthesizes
+            # in her own words; exact quotes live in the evidence.
+            weave=False,
         )
         return reply.reply
 

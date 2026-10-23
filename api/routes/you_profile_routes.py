@@ -14,10 +14,15 @@ Endpoints:
                                     references) — all visible from day one
   PUT /you-profile/{archetype_id}   set the echo's identity fields
                                     (personal_name, avatar_ref,
-                                    current_snapshot_id). NOT gated: the
-                                    switch, the QC surface, and this record
-                                    are open from day one; keystone 4 gates
-                                    only the card reveal and rentability.
+                                    current_snapshot_id). The switch, the
+                                    QC surface, and this record are open
+                                    from day one — except the NAME:
+                                    setting personal_name is gated on
+                                    keystone 4 ("The echo"), where the name
+                                    is co-given in the recognition
+                                    conversation. Before it, a name write
+                                    returns 409. Keystone 4 also gates the
+                                    card reveal and rentability.
 
 All heavy data is composed at read time from its ground-truth store
 (depth, TrainingSignal store, PersonalityStore, vision_execution tasks);

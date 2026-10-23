@@ -12,10 +12,11 @@ import { apiBase } from '../apiBase'
  *  - Honest empty states. No training yet reads as no training yet — never
  *    placeholder data.
  *  - The You identity card (name/face presentation) stays unrevealed until
- *    keystone 4 ("The echo") is complete — that's a presentation gate only.
- *    This QC data is visible from day one, and the record is writable from
- *    day one, because checking what's being fashioned is the day-to-day
- *    point of the switch.
+ *    keystone 4 ("The echo") is complete. The QC data is visible from day
+ *    one, because checking what's being fashioned is the day-to-day point
+ *    of the switch — but the echo's NAME cannot be set before then: you
+ *    have to get to know it before you can name it, and the naming happens
+ *    in the recognition conversation itself.
  *  - Signal anchors are shown read-only, exactly as recorded (they were
  *    redacted at capture).
  */
@@ -173,26 +174,10 @@ export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; 
             and full presentation arrive then. The switch above and everything below stay
             open in the meantime: this is yours to inspect from day one.
           </p>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <input
-              value={nameDraft}
-              onChange={(e) => setNameDraft(e.target.value)}
-              placeholder="Give it a name early, if one has come to you"
-              aria-label="Your echo's personal name"
-              style={{
-                minHeight: 44, padding: '8px 12px', borderRadius: 10, flex: '1 1 160px',
-                background: 'rgba(245,240,232,.06)', border: '1px solid rgba(201,168,106,.35)',
-                color: '#f5f0e8', fontFamily: 'inherit', fontSize: 14,
-              }}
-            />
-            <button type="button" className="lcta" onClick={saveName} disabled={saving}>
-              {saving ? 'Saving…' : 'Save name'}
-            </button>
-          </div>
-          {saveNote ? <p className="lnote">{saveNote}</p> : null}
           <p className="lnote">
-            Naming it early is fine — the name simply won’t show on the seat’s card
-            until the meeting happens.
+            It doesn’t have a name yet — you have to get to know it before you can
+            name it. The name comes from the recognition conversation, when the two
+            of you land on one together.
           </p>
         </div>
       )}

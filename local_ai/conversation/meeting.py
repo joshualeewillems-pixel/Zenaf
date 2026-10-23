@@ -5,6 +5,10 @@ run against the script in local_ai/council/meetings.py. Beats:
 
   opening   (scripted) → encounter (one question, live reply)
             → readback  (one tentative impression, live)
+            → orientation (ONLY where the script carries one — the
+              Conductor's, today: what was pulled from the conversation,
+              where it shows up, how the system works. The tutorials are
+              distributed per seat; see meetings.SEAT_FEATURE_FOCUS)
             → reveal    (scripted) → keystone task marked Done
 
 State lives in its own small store (stage, question pointer, the read-back
@@ -35,6 +39,7 @@ canonical character; the user's echo is a different side of the switch).
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -66,11 +71,24 @@ CREATE TABLE IF NOT EXISTS meetings (
   question_idx INTEGER NOT NULL DEFAULT 0,
   readback_claim TEXT NOT NULL DEFAULT '',
   readback_response TEXT NOT NULL DEFAULT '',
+  readback_strands TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, archetype_id, keystone_index)
 );
 """
+
+#: Plain strand names the read-back's bookkeeping line may cite.
+_STRAND_NAMES = ("Voice", "Logic", "Eye", "Ear", "Hands", "Heart", "Compass")
+
+#: Orientation acknowledgments — the user signaling "understood, go on"
+#: rather than asking something. Anything else in the orientation beat is
+#: treated as a question and answered from the script's facts block.
+_ACK_TOKENS = {
+    "ok", "okay", "got it", "thanks", "thank you", "yes", "yeah", "yep",
+    "makes sense", "understood", "cool", "great", "sure", "fine",
+    "alright", "all right", "go on", "continue", "ready",
+}
 
 #: Short answers that mean "ask me a different one" rather than an answer.
 #: Exact-match after normalization — a substantive "no, because…" is an
@@ -104,6 +122,14 @@ class MeetingStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # Additive migration for stores created before the read-back
+            # carried strand attribution.
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(meetings)")}
+            if "readback_strands" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE meetings ADD COLUMN readback_strands "
+                    "TEXT NOT NULL DEFAULT '[]'"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -132,7 +158,7 @@ class MeetingStore:
         return self.get(user_id, archetype_id, keystone_index)  # type: ignore[return-value]
 
     def update(self, user_id: str, archetype_id: str, keystone_index: int, **fields: Any) -> dict[str, Any]:
-        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response"}
+        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response", "readback_strands"}
         sets = {k: v for k, v in fields.items() if k in allowed}
         if sets:
             cols = ", ".join(f"{k} = ?" for k in sets)
@@ -314,7 +340,9 @@ class MeetingService:
         if row["stage"] == "encounter":
             self._encounter_beat(user_id, arch_id, keystone_index, script, row, message)
         elif row["stage"] == "readback":
-            self._reveal_beat(user_id, arch_id, keystone_index, script, message)
+            self._readback_response_beat(user_id, arch_id, keystone_index, script, row, message)
+        elif row["stage"] == "orientation":
+            self._orientation_beat(user_id, arch_id, keystone_index, script, message)
         else:  # a completed-stage row that isn't status=complete: treat as done
             raise MeetingError("This meeting has already reached its close.")
         return self.state(user_id, arch_id, keystone_index)
@@ -336,9 +364,10 @@ class MeetingService:
             # Bank exhausted with nothing answered: the read-back reflects
             # the choosing-not-to-answer itself. Fall through to read-back
             # with the pass as the latest user turn.
-            claim = self._readback(user_id, arch_id, script)
+            claim, strands = self._readback(user_id, arch_id, script)
             self.meetings.update(
-                user_id, arch_id, keystone_index, stage="readback", readback_claim=claim
+                user_id, arch_id, keystone_index, stage="readback",
+                readback_claim=claim, readback_strands=json.dumps(strands),
             )
             self._say(user_id, cid, arch_id, claim)
             return
@@ -352,13 +381,17 @@ class MeetingService:
         )
         self._say(user_id, cid, arch_id, reply.reply)
 
-        claim = self._readback(user_id, arch_id, script)
+        claim, strands = self._readback(user_id, arch_id, script)
         self.meetings.update(
-            user_id, arch_id, keystone_index, stage="readback", readback_claim=claim
+            user_id, arch_id, keystone_index, stage="readback",
+            readback_claim=claim, readback_strands=json.dumps(strands),
         )
         self._say(user_id, cid, arch_id, claim)
 
-    def _readback(self, user_id: str, arch_id: str, script: MT.MeetingScript) -> str:
+    def _readback(self, user_id: str, arch_id: str, script: MT.MeetingScript) -> tuple[str, list[str]]:
+        """Generate the read-back; split off its 'Strands:' bookkeeping
+        line. Returns (display claim, strand names). A missing or garbled
+        trailer degrades to no strands — the meeting never breaks on it."""
         cid = conversation_id_for(arch_id, script.keystone_index)
         history = self._history_for_reply(user_id, cid)
         # The builder appends the current user turn itself, so hand it the
@@ -369,7 +402,7 @@ class MeetingService:
             (i for i, m in enumerate(history) if m["role"] == "user"), default=None
         )
         if last_user_idx is None:
-            return ""
+            return "", []
         last_user = history[last_user_idx]
         prior = history[:last_user_idx] + history[last_user_idx + 1:]
         reply = generate_voice_reply(
@@ -377,15 +410,90 @@ class MeetingService:
             mode="base", generate_fn=self._generate_fn,
             extra_instructions=script.readback_frame,
         )
-        return reply.reply
+        text = reply.reply.strip()
+        strands: list[str] = []
+        lines = text.split("\n")
+        for i in range(len(lines) - 1, -1, -1):
+            stripped = lines[i].strip()
+            if not stripped:
+                continue
+            if stripped.lower().startswith("strands:"):
+                cited = [s.strip() for s in stripped.split(":", 1)[1].split(",")]
+                strands = [s for s in cited if s in _STRAND_NAMES][:2]
+                text = "\n".join(lines[:i]).strip()
+            break
+        return text, strands
 
-    def _reveal_beat(self, user_id: str, arch_id: str, keystone_index: int,
-                     script: MT.MeetingScript, message: str) -> None:
-        cid = conversation_id_for(arch_id, keystone_index)
+    # -- orientation (only scripts that carry one — today, the Conductor) ------
+
+    def _has_orientation(self, script: MT.MeetingScript) -> bool:
+        return bool(script.orientation_intro or script.pulled_item_template)
+
+    def _readback_response_beat(self, user_id: str, arch_id: str, keystone_index: int,
+                                script: MT.MeetingScript, row: dict[str, Any], message: str) -> None:
         # The user's response to the impression is part of the record —
         # verbatim, uninterpreted. Filing it is the review flow's job.
         self.meetings.update(user_id, arch_id, keystone_index, readback_response=message)
+        if self._has_orientation(script):
+            self._deliver_orientation(user_id, arch_id, keystone_index, script)
+            self.meetings.update(user_id, arch_id, keystone_index, stage="orientation")
+        else:
+            self._do_reveal(user_id, arch_id, keystone_index, script)
 
+    def _deliver_orientation(self, user_id: str, arch_id: str, keystone_index: int,
+                             script: MT.MeetingScript) -> None:
+        cid = conversation_id_for(arch_id, keystone_index)
+        row = self.meetings.get(user_id, arch_id, keystone_index) or {}
+        for paragraph in script.orientation_intro:
+            self._say(user_id, cid, arch_id, paragraph)
+        if script.pulled_item_template:
+            self._say(
+                user_id, cid, arch_id,
+                script.pulled_item_template.format(
+                    claim=row.get("readback_claim") or "",
+                    response=row.get("readback_response") or "",
+                ),
+            )
+        if script.pulled_where_template:
+            try:
+                strands = json.loads(row.get("readback_strands") or "[]")
+            except Exception:
+                strands = []
+            if len(strands) == 1:
+                phrase = f"the {strands[0]} strand"
+            elif len(strands) >= 2:
+                phrase = f"the {strands[0]} and {strands[1]} strands"
+            else:
+                phrase = "the strands it was heard under"
+            self._say(
+                user_id, cid, arch_id,
+                script.pulled_where_template.format(strands=phrase),
+            )
+        for paragraph in script.orientation:
+            self._say(user_id, cid, arch_id, paragraph)
+
+    def _orientation_beat(self, user_id: str, arch_id: str, keystone_index: int,
+                          script: MT.MeetingScript, message: str) -> None:
+        cid = conversation_id_for(arch_id, keystone_index)
+        norm = " ".join((message or "").strip().lower().strip(".! ").split())
+        if norm not in _ACK_TOKENS and not _is_pass(message):
+            # A real question about how the system works: one framed
+            # answer from the script's facts, then the meeting proceeds.
+            history = self._history_for_reply(user_id, cid)
+            frame = script.orientation_frame
+            if script.orientation_facts:
+                frame = f"{frame}\n\n{script.orientation_facts}"
+            reply = generate_voice_reply(
+                user_id, arch_id, message, history[:-1],
+                mode="base", generate_fn=self._generate_fn,
+                extra_instructions=frame,
+            )
+            self._say(user_id, cid, arch_id, reply.reply)
+        self._do_reveal(user_id, arch_id, keystone_index, script)
+
+    def _do_reveal(self, user_id: str, arch_id: str, keystone_index: int,
+                   script: MT.MeetingScript) -> None:
+        cid = conversation_id_for(arch_id, keystone_index)
         for paragraph in script.reveal:
             self._say(user_id, cid, arch_id, paragraph)
 

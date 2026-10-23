@@ -51,7 +51,12 @@ class FakeGen:
     def __call__(self, prompt, **kwargs):
         self.prompts.append(prompt)
         if "READ-BACK beat" in prompt:
-            return "A first impression, anchored in [[u]]your words[[/u]] — correct me."
+            return (
+                "A first impression, anchored in [[u]]your words[[/u]] — correct me."
+                "\nStrands: Compass, Logic"
+            )
+        if "ORIENTATION beat" in prompt:
+            return "A factual orientation answer from the notes."
         if "ENCOUNTER beat" in prompt:
             return "An engaged reply that hears two tensions together."
         return "A plain reply."
@@ -151,7 +156,22 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     assert any("ENCOUNTER beat" in p for p in gen.prompts)
     assert any("READ-BACK beat" in p for p in gen.prompts)
 
+    # The Conductor's meeting is unique: the orientation beat comes
+    # between the read-back response and the reveal.
     state = svc.turn(uid, "conductor", "Mostly right — except I protect mornings first.")
+    assert state["stage"] == "orientation"
+    assert state["status"] == "active"  # not complete yet
+    assert _conductor_k1_status(uid) != "Done"
+    bodies = [m["body"] for m in state["messages"]]
+    # The pulled-item accounting quotes BOTH sides verbatim, names the
+    # strands the impression was filed under, and the bookkeeping line
+    # itself never reaches the user.
+    assert any("A first impression, anchored in" in b and "word for word" in b for b in bodies)
+    assert any("Mostly right — except I protect mornings first." in b for b in bodies)
+    assert any("the Compass and Logic strands" in b for b in bodies)
+    assert not any(b.strip().startswith("Strands:") for b in bodies)
+
+    state = svc.turn(uid, "conductor", "Got it.")
     assert state["status"] == "complete"
     assert state["stage"] == "complete"
     script = MT.get_script("conductor", 1)
@@ -240,10 +260,52 @@ def test_completed_meeting_cannot_be_replayed(ve_ctx, tmp_path):
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Deadlines first, then everything else.")
     svc.turn(uid, "conductor", "That's right.")
+    svc.turn(uid, "conductor", "Got it.")
     state = svc.start(uid, "conductor")
     assert state["status"] == "complete"
     with pytest.raises(MeetingError, match="No meeting is in progress"):
         svc.turn(uid, "conductor", "again?")
+
+
+def test_orientation_question_is_answered_then_reveal(ve_ctx, tmp_path):
+    uid = _seeded_user()
+    gen = FakeGen()
+    svc = _svc(tmp_path, gen)
+    svc.start(uid, "conductor")
+    svc.turn(uid, "conductor", "I plan in pencil and improvise in ink.")
+    svc.turn(uid, "conductor", "Close enough.")
+    state = svc.turn(uid, "conductor", "Where does that impression actually live?")
+    assert state["status"] == "complete"
+    bodies = [m["body"] for m in state["messages"]]
+    assert "A factual orientation answer from the notes." in bodies
+    # The answer was framed by the orientation facts, not improvised.
+    orientation_prompts = [p for p in gen.prompts if "ORIENTATION beat" in p]
+    assert orientation_prompts and "seven seats" in orientation_prompts[0]
+
+
+def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, monkeypatch):
+    """The orientation is the Conductor's distinction, not the engine's
+    shape: a script without one keeps the four-beat meeting."""
+    uid = _seeded_user()
+    base = MT.get_script("conductor", 1)
+    plain = dataclasses.replace(
+        base, archetype_id="mentor", character="Gardener",
+        orientation_intro=(), pulled_item_template="", pulled_where_template="",
+        orientation=(), orientation_frame="", orientation_facts="",
+    )
+    monkeypatch.setitem(MT.SCRIPTS, ("mentor", 1), plain)
+    svc = _svc(tmp_path)
+    # Conductor first (full five-beat flow), then the mentor's four.
+    svc.start(uid, "conductor")
+    svc.turn(uid, "conductor", "Slow is smooth.")
+    svc.turn(uid, "conductor", "Yes.")
+    svc.turn(uid, "conductor", "Got it.")
+    assert _conductor_k1_status(uid) == "Done"
+
+    svc.start(uid, "mentor")
+    svc.turn(uid, "mentor", "I learned patience the hard way.")
+    state = svc.turn(uid, "mentor", "That's fair.")
+    assert state["status"] == "complete"  # no orientation stop
 
 
 # -------------------------------------------------------------------- API
@@ -274,3 +336,18 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
     fetched = routes.meeting_state("conductor", 1, user)
     assert fetched["stage"] == "readback"
     assert fetched["has_script"] is True
+
+    state = routes.meeting_turn(
+        routes.MeetingTurnBody(archetype_id="conductor", message="Right."),
+        user,
+    )
+    assert state["stage"] == "orientation"
+    assert state["demeanor"] is None  # the reveal hasn't happened yet
+
+    state = routes.meeting_turn(
+        routes.MeetingTurnBody(archetype_id="conductor", message="ok"),
+        user,
+    )
+    assert state["status"] == "complete"
+    assert state["character"] == "Weaver"
+    assert state["demeanor"] and "loose thread" in state["demeanor"]

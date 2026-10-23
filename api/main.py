@@ -213,6 +213,18 @@ except Exception as e:
     print(f"Council routes not loaded: {e}")
     _router_load_errors.append(f"council: {e}")
 
+# Council jurisdiction registry — canonical per-seat focus/periphery/
+# conflicts/register records, read-only (Fellowship Runtime P0).
+try:
+    from api.routes.council_jurisdiction_routes import (
+        router as council_jurisdiction_router,
+    )
+
+    app.include_router(council_jurisdiction_router)
+except Exception as e:
+    print(f"Council jurisdiction routes not loaded: {e}")
+    _router_load_errors.append(f"council-jurisdictions: {e}")
+
 # Anonymous landing-page demo — the 7 base voices, no auth.
 try:
     from api.routes.demo_routes import router as demo_router

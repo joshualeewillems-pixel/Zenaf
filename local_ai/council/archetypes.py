@@ -18,6 +18,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from local_ai.council.jurisdictions import jurisdiction_prompt_lines
+
 
 # Plain-spoken strand name -> lowercase strand key (see local_ai/strands.py).
 PLAIN_TO_KEY: dict[str, str] = {
@@ -445,9 +447,20 @@ def build_archetype_prompt_lines(
     lines = [f"Archetype: {name} — {arch.prompt_frame}"]
     lines.extend(philosophy_prompt_lines(archetype_id))
     lines.append(ANTI_PRESUMPTION_STYLE)
-    register = WARMTH_REGISTERS.get(archetype_id)
-    if register:
-        lines.append(register)
+    if arch.id == "conductor":
+        # Fellowship Runtime P0: the Weaver is the first seat whose
+        # focus/register lines are sourced from the canonical
+        # jurisdiction registry (local_ai/council/jurisdictions.py).
+        # Her warmth line is among them — the registry's record, kept
+        # verbatim from WARMTH_REGISTERS during migration — so it is
+        # NOT appended again below. The other six seats still read
+        # their warmth from WARMTH_REGISTERS and gain no lines: their
+        # prompts are unchanged until each seat migrates in turn.
+        lines.extend(jurisdiction_prompt_lines(arch.id))
+    else:
+        register = WARMTH_REGISTERS.get(archetype_id)
+        if register:
+            lines.append(register)
 
     weights = weights_override if weights_override is not None else arch.strand_weights
     if weights:

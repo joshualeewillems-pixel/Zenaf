@@ -251,7 +251,9 @@ export default function TodayView({ mode: initialMode = null }: { mode?: string 
       <p className="text-[11px] font-medium text-stone-500 uppercase tracking-wide">Today</p>
       <h1 className="text-xl font-bold text-stone-100 mt-0.5">{dateLine()}</h1>
       <p className="text-stone-500 text-sm mt-1 mb-4">
-        Your council's briefing — three cards at a time, no more.
+        {activeModeRaw && modeShort
+          ? `Through the ${modeShort}'s eyes — its cards first, then the council's. Three at a time, no more.`
+          : "Your council's briefing — three cards at a time, no more."}
       </p>
 
       {error && <p className="text-red-300 text-sm mb-3">{error}</p>}

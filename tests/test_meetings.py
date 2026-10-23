@@ -517,6 +517,75 @@ def test_orientation_shows_excerpts_not_the_full_dump(ve_ctx, tmp_path):
     assert long_answer not in pulled
 
 
+def test_orientation_never_leaks_weave_markers(ve_ctx, tmp_path):
+    """The orientation quotes the read-back inside prose — the stored
+    claim's [[u]]...[[/u]] markers are markup for the woven bubble, not
+    text for the reader. On the 2026-10-23 live run a literal "[[u]]"
+    reached the orientation bubble. The quote must carry the woven
+    words with the markers stripped, even when the excerpt limit cuts
+    through a woven span — while the stored record and the live
+    read-back bubble keep their markers untouched."""
+
+    class WovenGen:
+        def __init__(self):
+            self.prompts: list[str] = []
+
+        def __call__(self, prompt, **kwargs):
+            self.prompts.append(prompt)
+            if "READ-BACK beat" in prompt:
+                return (
+                    "A first impression, plainly put: you lead from "
+                    "[[u]]intuition based usually[[/u]], and you only shift "
+                    "tracks when [[u]]there's something practical pressing "
+                    "hard on the day, the kind of tangle that has to be "
+                    "written down in full before it can be slept on[[/u]] "
+                    "— tell me where that reading is wrong."
+                    "\nStrands: Compass, Logic"
+                )
+            if "ENCOUNTER beat" in prompt:
+                return "An engaged reply that hears two tensions together."
+            return "A plain reply."
+
+    uid = _seeded_user()
+    svc = _svc(tmp_path, WovenGen())
+    svc.start(uid, "conductor")
+    svc.turn(
+        uid, "conductor",
+        "Intuition based usually, unless something practical is pressing.",
+    )
+    state = svc.turn(uid, "conductor", "Close enough.")
+    assert state["stage"] == "orientation"
+    bodies = [m["body"] for m in state["messages"]]
+    pulled = next(b for b in bodies if "the heart of my first impression" in b)
+    # No marker — whole, severed, or malformed — anywhere in the quote.
+    assert "[[" not in pulled and "]]" not in pulled
+    assert "[/u" not in pulled
+    # The woven words themselves survive; only the markup is gone.
+    assert "intuition based usually" in pulled
+    # The claim excerpt really was cut (the raw claim is far past 160
+    # chars), so the cut passed through the second woven span.
+    row = svc.meetings.get(uid, "conductor", 1)
+    assert len(row["readback_claim"]) > 160
+    # Storage is untouched: markers intact on the record…
+    assert "[[u]]intuition based usually[[/u]]" in row["readback_claim"]
+    # …and the live read-back bubble in the same conversation still
+    # carries them for the client's amber rendering.
+    assert any("[[u]]" in b for b in bodies)
+
+
+def test_strip_weave_markers_keeps_words_drops_markup():
+    """Unit coverage for the stripper: canonical pairs, the malformed
+    closings sanitize_weave tolerates, and plain text passthrough."""
+    from local_ai.conversation.weave import strip_weave_markers as _strip_weave_markers
+
+    assert _strip_weave_markers("lead from [[u]]your words[[/u]] here") == \
+        "lead from your words here"
+    assert _strip_weave_markers("a [[u]]span[/u]] b") == "a span b"
+    assert _strip_weave_markers("a [[u]]span[/[/u]] b") == "a span b"
+    assert _strip_weave_markers("no markers at all") == "no markers at all"
+    assert _strip_weave_markers("") == ""
+
+
 def test_ok_sounds_good_proceeds_straight_to_reveal(ve_ctx, tmp_path):
     """The exact live-run break: 'Ok sounds good' after the orientation
     was treated as a question and got an improvised second introduction.

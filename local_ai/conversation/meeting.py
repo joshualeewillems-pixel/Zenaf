@@ -65,6 +65,7 @@ from local_ai.vision_execution import service as ve
 
 from .reply import generate_voice_reply
 from .store import ConversationStore
+from .weave import strip_weave_markers
 
 GenerateFn = Callable[..., str]
 
@@ -157,6 +158,15 @@ def _excerpt(text: str, limit: int) -> str:
     if cut < limit // 2:
         cut = limit
     return text[:cut].rstrip(" ,;:") + "…"
+
+
+#: Plain contexts that quote stored woven text (the orientation's pulled
+#: item is prose inside quotation marks, not a woven bubble) strip the
+#: markers with weave.strip_weave_markers BEFORE excerpting, so a cut can
+#: never sever a marker and leave half of one behind. The stored claim
+#: keeps its markers — MeetingView renders them as amber spans in the
+#: live read-back. (Seen live 2026-10-23: a literal "[[u]]" in the
+#: orientation bubble; the strip helper is shared with review claims.)
 
 #: The status seeded keystone tasks start with: keystone_seeding creates
 #: them through TaskCreate without a status, so the model's default is the
@@ -613,8 +623,12 @@ class MeetingService:
             self._say(
                 user_id, cid, arch_id,
                 script.pulled_item_template.format(
-                    claim=_excerpt(row.get("readback_claim") or "", 160),
-                    response=_excerpt(row.get("readback_response") or "", 120),
+                    claim=_excerpt(
+                        strip_weave_markers(row.get("readback_claim") or ""), 160
+                    ),
+                    response=_excerpt(
+                        strip_weave_markers(row.get("readback_response") or ""), 120
+                    ),
                 ),
             )
         if script.pulled_where_template:

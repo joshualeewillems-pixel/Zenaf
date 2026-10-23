@@ -88,7 +88,7 @@ const STYLE = `
 .mtg-title{margin:0;font-size:17px;font-weight:600}
 .mtg-sub{font-size:12px;color:#a89f8d;letter-spacing:.04em;text-transform:uppercase}
 .mtg-close{margin-left:auto;min-width:44px;min-height:44px;border-radius:999px;border:1px solid rgba(201,168,106,.35);background:transparent;color:#f5f0e8;font-size:16px}
-.mtg-body{flex:1;overflow-y:auto;padding:14px 16px}
+.mtg-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 16px}
 .mtg-foot{padding:10px 14px 16px;border-top:1px solid rgba(201,168,106,.18)}
 .mtg-reveal{margin:4px 0 14px;padding:14px;border:1px solid rgba(232,163,61,.55);border-radius:14px;background:rgba(232,163,61,.08)}
 `

@@ -111,6 +111,7 @@ def build_voice_prompt(
     question: bool = False,
     context_hint: str | None = None,
     thread_summary: str | None = None,
+    extra_instructions: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
 
@@ -187,6 +188,11 @@ def build_voice_prompt(
             "defining question guide you. Output the question plus at most one "
             "short sentence of context — no advice, no preamble.",
         ]
+    if extra_instructions:
+        # A situational frame layered over the voice (e.g. a keystone
+        # meeting beat). The voice itself is unchanged; the frame only
+        # says what this particular exchange is for.
+        prompt += ["", extra_instructions.strip()[:2000]]
     if thread_summary:
         prompt += [
             "",
@@ -227,6 +233,7 @@ def generate_voice_reply(
     context_hint: str | None = None,
     thread_summary: str | None = None,
     generate_fn: GenerateFn | None = None,
+    extra_instructions: str | None = None,
 ) -> VoiceReply:
     """One exchange with a single council voice. Raises RuntimeError on LLM failure."""
     prompt, meta = build_voice_prompt(
@@ -238,6 +245,7 @@ def generate_voice_reply(
         question=question,
         context_hint=context_hint,
         thread_summary=thread_summary,
+        extra_instructions=extra_instructions,
     )
     gen = generate_fn or _default_generate
     reply = sanitize_weave(

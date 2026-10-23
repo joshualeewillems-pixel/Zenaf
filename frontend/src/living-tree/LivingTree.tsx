@@ -26,7 +26,7 @@
  * to populate it. Critical SVG sizing is inline so the graphic cannot
  * collapse even if the <style> block is ever stripped.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { BRAID_ORDER, STRANDS, strandColor, type StrandKey } from './strands'
 import {
   STOCK_ARCHETYPE_FALLBACK,
@@ -41,6 +41,7 @@ import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
 import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
 import { NodeSheet } from '../tree/NodeSheet'
 import { YouEchoPanel } from './YouEchoPanel'
+import { MeetingView } from './MeetingView'
 
 /* ------------------------------------------------------------------ */
 /* Tree-as-organism: node sheets (phase 1)                             */
@@ -749,6 +750,11 @@ export function LivingTreeView({
   // never a push. Null/empty (unseeded account, backend unreachable) simply
   // means no markers.
   const [attention, setAttention] = useState<KeystoneAttention | null>(null)
+  const refreshAttention = useCallback(() => {
+    fetchKeystoneAttention().then((a) => {
+      if (a) setAttention(a)
+    })
+  }, [])
   useEffect(() => {
     let cancelled = false
     fetchKeystoneAttention().then((a) => {
@@ -758,6 +764,8 @@ export function LivingTreeView({
       cancelled = true
     }
   }, [])
+  /** Seat whose keystone meeting overlay is open, if any. */
+  const [meetingSeat, setMeetingSeat] = useState<string | null>(null)
 
   const up = useMemo(() => buildArchetypeNodes(archetypes), [archetypes])
 
@@ -944,6 +952,19 @@ export function LivingTreeView({
           </div>
         </div>
         <p>“{arch.prompt_frame}”</p>
+        {attention?.markers[arch.id]?.reason === 'intro' && (
+          <button
+            type="button"
+            className="lcta"
+            style={{ margin: '10px 0' }}
+            onClick={() => {
+              closeSheet()
+              setMeetingSeat(arch.id)
+            }}
+          >
+            Begin the first meeting →
+          </button>
+        )}
         <div className="lstat">
           <span className="lname">Viability</span>
           <span className="lpct">{arch.depth}%</span>
@@ -1422,6 +1443,16 @@ export function LivingTreeView({
       >
         {renderSheetBody()}
       </NodeSheet>
+      {meetingSeat && (
+        <MeetingView
+          archetypeId={meetingSeat}
+          onClose={() => {
+            setMeetingSeat(null)
+            refreshAttention()
+            refreshArchetypes()
+          }}
+        />
+      )}
     </div>
   )
 }

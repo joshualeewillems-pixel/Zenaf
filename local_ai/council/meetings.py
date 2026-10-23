@@ -79,8 +79,10 @@ class MeetingScript:
     # first meeting carries this beat — theirs stay pure introductions.
     #: Verbatim lead-in paragraph(s) before the pulled-item accounting.
     orientation_intro: tuple[str, ...] = ()
-    #: Engine-formatted with {claim} and {response} — the exact read-back
-    #: and the user's exact answer, shown back verbatim.
+    #: Engine-formatted with {claim} and {response} — EXCERPTS of the
+    #: read-back and the user's answer (the engine trims them; the full
+    #: verbatim texts live on the meeting record and in review). Showing
+    #: both in full inline read as parroting in the first live run.
     pulled_item_template: str = ""
     #: Engine-formatted with {strands} — where the impression waits, and
     #: where it lands if approved.
@@ -133,15 +135,16 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
     encounter_frame=(
         "You are in the ENCOUNTER beat of your first meeting with this "
         "user. They have just answered (or engaged with) your question. "
-        "Respond to what they actually said — specifically, not "
-        "generically. Demonstrate your philosophy instead of explaining "
-        "it: connect something in their answer to at least two competing "
-        "perspectives or tensions, and show how you hear them together "
-        "without forcing them to agree. NEVER name, list, or describe "
-        "the other council members — they will introduce themselves in "
-        "their own time. Do not reveal your name yet. Do not ask another "
+        "Keep it to ONE or TWO short sentences: acknowledge what they "
+        "said and react to it genuinely, in your own voice. Do NOT "
+        "restate, summarize, or interpret their answer back to them, "
+        "and do not weave their words back in this beat — your first "
+        "impression comes next as its own beat, and saying it twice "
+        "flattens both. NEVER name, list, or describe the other "
+        "council members — they will introduce themselves in their "
+        "own time. Do not reveal your name yet. Do not ask another "
         "question; one question explored well is the whole beat. End "
-        "warmly, in a way that lets you offer a first impression next."
+        "by offering your first impression."
     ),
     readback_frame=(
         "You are in the READ-BACK beat of your first meeting. Do not "
@@ -149,7 +152,13 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
         "tentative first impression of how this user orients — how they "
         "decide, weigh, or move — drawn only from what they said in this "
         "meeting, and anchor it in their own words (quote them with the "
-        "weave markers). Phrase it as a first impression that may be "
+        "weave markers). When you quote them, quote only COMPLETE "
+        "phrases — whole clauses in their own grammar ('an intuition "
+        "thing', never the bare fragment 'intuition thing') — at most "
+        "two woven spans; if no span fits your sentence grammatically, "
+        "paraphrase cleanly without markers instead, because a clean "
+        "paraphrase beats a broken quote. Do not reuse the phrasing of "
+        "your previous reply. Phrase it as a first impression that may be "
         "wrong, and close by inviting them to correct it: getting it "
         "right together matters more than sounding perceptive. Two to "
         "four sentences. Never name or describe the other council "
@@ -165,11 +174,12 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
         "I'm taking from this conversation. Conductors show their work.",
     ),
     pulled_item_template=(
-        "Here is the one thing I pulled from it — my first impression, "
-        "word for word: \u201c{claim}\u201d And your answer to it, word "
-        "for word: \u201c{response}\u201d Where the two disagree, yours "
-        "wins: the proposal that reaches your review will carry your "
-        "version of it."
+        "Here is the one thing I pulled from it — the heart of my "
+        "first impression: \u201c{claim}\u201d And the heart of your "
+        "answer: \u201c{response}\u201d The full text of both waits in "
+        "your review, word for word — and where the two disagree, "
+        "yours wins: the proposal that reaches your review will carry "
+        "your version of it."
     ),
     pulled_where_template=(
         "It goes nowhere yet. It waits, unfiled, until you review it — "
@@ -203,8 +213,11 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
         "briefly and factually, ONLY from the orientation notes that "
         "follow — if the notes don't cover the question, say so plainly "
         "rather than inventing. Never name or describe individual "
-        "council members beyond what the notes say. Keep it to a few "
-        "sentences; the meeting moves to your introduction next."
+        "council members beyond what the notes say. Hard rules: do NOT "
+        "weave the user's earlier words back; do NOT introduce yourself "
+        "or any seat by name or role — introductions come next, and "
+        "they are not yours to improvise here; at most two sentences; "
+        "the meeting moves to your introduction next."
     ),
     orientation_facts=(
         "Orientation notes: the council has seven seats, each met "

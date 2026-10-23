@@ -351,3 +351,63 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
     assert state["status"] == "complete"
     assert state["character"] == "Weaver"
     assert state["demeanor"] and "loose thread" in state["demeanor"]
+
+
+# -- The feel fixes (Joshua's first live run, 2026-10-23) ---------------------
+
+def test_acknowledgment_detection_is_human_shaped():
+    """'Ok sounds good' must proceed to the reveal, not be answered as if
+    it were a question (the live run's worst break). Contrast words and
+    real questions still route to the framed answer."""
+    from local_ai.conversation.meeting import _is_acknowledgment
+
+    assert _is_acknowledgment("Ok sounds good")
+    assert _is_acknowledgment("ok")
+    assert _is_acknowledgment("Yeah, that's right")
+    assert _is_acknowledgment("Perfect, thanks")
+    assert not _is_acknowledgment("Yes, but what about the review queue?")
+    assert not _is_acknowledgment("Where does that impression live?")
+    assert not _is_acknowledgment("Ok but actually I disagree with the strands")
+    assert not _is_acknowledgment(
+        "I mostly agree and the second strand feels right to me overall"
+    )
+
+
+def test_orientation_shows_excerpts_not_the_full_dump(ve_ctx, tmp_path):
+    """The pulled-item accounting excerpts the claim and the answer —
+    the full verbatim texts live on the record and in review. In the
+    first live run the full dump read as parroting."""
+    uid = _seeded_user()
+    long_answer = (
+        "I decide by writing the whole tangle down first, then I sleep on "
+        "it, then I ask the one person who will tell me the truth even "
+        "when it stings, and only then do I actually choose anything."
+    )
+    svc = _svc(tmp_path, FakeGen())
+    svc.start(uid, "conductor")
+    svc.turn(uid, "conductor", long_answer)
+    state = svc.turn(uid, "conductor", "Close enough.")
+    assert state["stage"] == "orientation"
+    bodies = [m["body"] for m in state["messages"]]
+    pulled = next(b for b in bodies if "the heart of my first impression" in b)
+    assert "the full text of both waits in your review" in pulled.lower() or \
+        "waits in your review" in pulled
+    # The user's full answer is NOT dumped back inline.
+    assert long_answer not in pulled
+
+
+def test_ok_sounds_good_proceeds_straight_to_reveal(ve_ctx, tmp_path):
+    """The exact live-run break: 'Ok sounds good' after the orientation
+    was treated as a question and got an improvised second introduction.
+    It must now proceed directly — no orientation generation at all."""
+    uid = _seeded_user()
+    gen = FakeGen()
+    svc = _svc(tmp_path, gen)
+    svc.start(uid, "conductor")
+    svc.turn(uid, "conductor", "I plan in pencil and improvise in ink.")
+    svc.turn(uid, "conductor", "Close enough.")
+    prompts_before = len(gen.prompts)
+    state = svc.turn(uid, "conductor", "Ok sounds good")
+    assert state["status"] == "complete"
+    new_prompts = gen.prompts[prompts_before:]
+    assert not any("ORIENTATION beat" in p for p in new_prompts)

@@ -165,6 +165,11 @@ class MeetingPauseBody(BaseModel):
     keystone_index: int = Field(default=1, ge=1, le=4)
 
 
+class MeetingRestartBody(BaseModel):
+    archetype_id: str = Field(max_length=32)
+    keystone_index: int = Field(default=1, ge=1, le=4)
+
+
 def _meeting_call(fn) -> dict:
     try:
         return fn()
@@ -209,6 +214,19 @@ def meeting_pause(body: MeetingPauseBody, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=401, detail="Sign in to pause the meeting.")
     arch_id = _check_seat(body.archetype_id)
     return _meeting_call(lambda: _meeting_service().pause(user_id, arch_id, body.keystone_index))
+
+
+@router.post("/meeting/restart")
+def meeting_restart(body: MeetingRestartBody, current_user: dict = Depends(get_current_user)) -> dict:
+    """Meet again: archive a completed meeting verbatim and reset it to
+    not-started (its keystone task returns to its seeded status), so the
+    conversation can be run fresh. Refuses — 409 — when there is no
+    completed meeting to restart."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to meet again.")
+    arch_id = _check_seat(body.archetype_id)
+    return _meeting_call(lambda: _meeting_service().restart(user_id, arch_id, body.keystone_index))
 
 
 @router.get("/meeting")

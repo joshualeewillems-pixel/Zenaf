@@ -1,25 +1,30 @@
 """Per-seat "You" profiles — the Zenaf/You switch's durable record + QC read.
 
-Semantics under test (Joshua's correction, 2026-10-19): keystone 4 gates
-exactly two things — (a) the identity REVEAL (the character card's
-name/face/presentation) and (b) rentability. The switch, the QC surface,
-and this record are open from day one; training runs continuously per user
-approval.
+Semantics under test (Joshua's corrections, 2026-10-19 and 2026-10-22):
+keystone 4 gates (a) the identity REVEAL (the character card's
+name/face/presentation), (b) rentability, and (c) SETTING the echo's name —
+you have to get to know it before you can name it, in the recognition
+conversation itself. The switch, the QC surface, and the rest of this record
+are open from day one; training runs continuously per user approval.
 
 Covers:
 - store CRUD: upsert/get/partial-update/clear/delete, per-user isolation,
   idempotent re-upsert, input validation
 - recognition is DERIVED from keystone tasks (never stored): unseeded ->
   unmet; 1-3 keystones Done -> meeting; "The echo" Done -> recognized +
-  rentable (rentability is the one hard gate alongside the reveal)
-- writes are NOT gated: the echo can be named/pinned before keystone 4;
+  rentable (rentability is a hard gate alongside the reveal and naming)
+- naming is gated: setting the echo's name before keystone 4 raises
+  PermissionError, while other record writes (e.g. avatar reference) stay
+  open; a directly-stored legacy name is withheld from GET until recognition;
   GET reports revealed=False while unmet, revealed=True after
 - reference-not-duplicate: the you_profiles table carries only identity
   fields + pointers; depth/signals/persona/snapshot data is composed live
   from its ground-truth store on read (a read performs no writes, and a
   later publish is visible without touching the you store)
-- API: route functions return the composed payload shape; PUT succeeds
-  before and after keystone 4; 404 on unknown archetype
+- API: route functions return the composed payload shape; a PUT that sets
+  the name before keystone 4 returns the service's conflict as 409, while
+  non-name writes succeed and naming succeeds after recognition; 404 on
+  unknown archetype
 """
 
 from __future__ import annotations
@@ -208,26 +213,38 @@ def test_recognition_is_per_seat(ve_ctx):
     assert keystone_progress(uid, "conductor")["status"] == "unmet"
 
 
-# -------------------------------------- writes open; reveal is the only gate
+# --------------------------- naming gated; other record writes stay open
 
 
-def test_writes_open_before_keystone4(ve_ctx, tmp_path):
-    """The record is writable from day one. What keystone 4 withholds is the
-    REVEAL (revealed=False) and rentability — not the data."""
+def test_naming_gated_until_keystone4(ve_ctx, tmp_path):
+    """You have to get to know it before you can name it. Before the
+    recognition conversation completes, setting a name is refused; other
+    identity-record writes remain available, and a name stored directly by
+    an older build is withheld — not deleted — until recognition."""
     user = ve.create_user_account("new@example.com", "pw", "New")
     uid = user["id"]
     keystone_seeding.seed_meet_your_council(uid)
     svc = _svc(tmp_path)
 
-    record = svc.update_profile(uid, "conductor", personal_name="Arranger")
-    assert record["personal_name"] == "Arranger"
+    with pytest.raises(PermissionError, match="haven't met this echo yet"):
+        svc.update_profile(uid, "conductor", personal_name="Arranger")
 
+    record = svc.update_profile(uid, "conductor", avatar_ref="asset-early")
+    assert record["avatar_ref"] == "asset-early"
+    assert record["personal_name"] is None
+
+    # Simulate a name written before this gate existed. The composed profile
+    # must not surface it before the recognition conversation.
+    svc._you_store.upsert(uid, "conductor", personal_name="Legacy")
     profile = svc.get_profile(uid, "conductor")
     assert profile["you"]["revealed"] is False
     assert profile["you"]["state"] == "unmet"
-    # The user's own record reads back — the gate is presentational.
-    assert profile["you"]["personal_name"] == "Arranger"
+    assert profile["you"]["personal_name"] is None
     assert profile["recognition"]["rentable"] is False
+
+    # Clearing identity is not naming, so it remains allowed.
+    record = svc.update_profile(uid, "conductor", personal_name=None)
+    assert record["personal_name"] is None
 
 
 def test_reveal_after_keystone4(ve_ctx, tmp_path):
@@ -235,8 +252,8 @@ def test_reveal_after_keystone4(ve_ctx, tmp_path):
     uid = user["id"]
     keystone_seeding.seed_meet_your_council(uid)
     svc = _svc(tmp_path)
-    svc.update_profile(uid, "conductor", personal_name="Arranger")
     _complete_all_keystones(uid, "conductor")
+    svc.update_profile(uid, "conductor", personal_name="Arranger")
 
     profile = svc.get_profile(uid, "conductor")
     assert profile["you"]["revealed"] is True
@@ -399,14 +416,40 @@ def test_api_get_shape_and_unknown_seat(ve_ctx, api_ctx):
     assert payload["you"]["revealed"] is False
 
 
-def test_api_put_open_and_roundtrip(ve_ctx, api_ctx):
+def test_api_put_name_gated_until_recognition(ve_ctx, api_ctx):
     import api.routes.you_profile_routes as routes
 
     user = ve.create_user_account("api2@example.com", "pw", "API2")
     uid = user["id"]
     keystone_seeding.seed_meet_your_council(uid)
 
-    # PUT before keystone 4 succeeds — the record is not gated.
+    # Naming before keystone 4 is a conflict, not a silent early write.
+    with pytest.raises(HTTPException) as exc_info:
+        routes.update_you_profile(
+            "conductor",
+            routes.YouProfileUpdate(personal_name="Arranger"),
+            user={"id": uid},
+        )
+    assert exc_info.value.status_code == 409
+    assert "haven't met this echo yet" in exc_info.value.detail
+
+    # Other record fields remain writable before recognition.
+    result = routes.update_you_profile(
+        "conductor",
+        routes.YouProfileUpdate(avatar_ref="asset-early"),
+        user={"id": uid},
+    )
+    assert result["ok"] is True
+    assert result["record"]["avatar_ref"] == "asset-early"
+
+    payload = routes.get_you_profile("conductor", user={"id": uid})
+    assert payload["you"]["revealed"] is False
+    assert payload["you"]["personal_name"] is None
+    assert payload["recognition"]["rentable"] is False
+
+    # After the recognition keystone, naming succeeds and the reveal flips;
+    # rentability follows the same completion.
+    _complete_all_keystones(uid, "conductor")
     result = routes.update_you_profile(
         "conductor",
         routes.YouProfileUpdate(personal_name="Arranger"),
@@ -415,13 +458,6 @@ def test_api_put_open_and_roundtrip(ve_ctx, api_ctx):
     assert result["ok"] is True
     assert result["record"]["personal_name"] == "Arranger"
 
-    payload = routes.get_you_profile("conductor", user={"id": uid})
-    assert payload["you"]["revealed"] is False
-    assert payload["you"]["personal_name"] == "Arranger"
-    assert payload["recognition"]["rentable"] is False
-
-    # After the recognition keystone, the reveal flips; rentability too.
-    _complete_all_keystones(uid, "conductor")
     payload = routes.get_you_profile("conductor", user={"id": uid})
     assert payload["you"]["revealed"] is True
     assert payload["you"]["personal_name"] == "Arranger"

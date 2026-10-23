@@ -14,12 +14,14 @@ being fashioned"). Everything here is a REFERENCE assembled at read time:
                             vision_execution — never stored twice
 
 The only writes live in YouProfileStore (the echo's own identity fields).
-They are NOT gated: the user may name their echo or pin a snapshot at any
-time. Keystone 4 gates exactly two things — (a) the identity REVEAL (the
-character card's name/face/presentation, expressed here as `revealed`), and
-(b) rentability (in the recognition block). Training runs continuously per
-user approval, and the QC data below is visible from day one: watching the
-You side being fashioned is the point of the switch.
+Most stay open — a snapshot may be pinned at any time — but setting the
+echo's name is gated by keystone 4: the name is co-given in the recognition
+conversation, after the user has gotten to know the echo. Keystone 4 gates
+(a) the identity REVEAL (the character card's name/face/presentation,
+expressed here as `revealed`), (b) rentability (in the recognition block),
+and (c) setting `personal_name`. Training runs continuously per user
+approval, and the QC data below is visible from day one: watching the You
+side being fashioned is the point of the switch.
 """
 
 from __future__ import annotations
@@ -292,14 +294,16 @@ class YouProfileService:
                 # the same trained rendering /voice/chat and
                 # /conversation/turn already serve for mode="trained".
                 "mode": "trained",
-                # `revealed` is PRESENTATIONAL, not a data gate: keystone 4
-                # ("The echo") is where the echo's card — name, face, full
-                # character presentation — is unveiled to the user. The
-                # record itself is the user's own and readable (and writable)
-                # from day one; the card stays blank until recognition.
+                # `revealed` gates the echo's identity presentation:
+                # keystone 4 ("The echo") is where the echo's card — name,
+                # face, full character presentation — is unveiled, and the
+                # name itself is co-given in that conversation. Until then
+                # the QC record is readable, but an unmet echo has no name
+                # to show: a stored value (legacy or otherwise) is withheld
+                # from this payload, never deleted.
                 "revealed": unlocked,
                 "state": "recognized" if unlocked else "unmet",
-                "personal_name": record.get("personal_name"),
+                "personal_name": record.get("personal_name") if unlocked else None,
                 "avatar_ref": record.get("avatar_ref"),
                 "current_snapshot_id": record.get("current_snapshot_id"),
                 "pinned_snapshot": pinned_snapshot,
@@ -322,7 +326,7 @@ class YouProfileService:
             },
         }
 
-    # -- write (ungated; the reveal is presentational) ------------------------
+    # -- write (the name is gated on recognition; the rest is open) ---------
 
     def update_profile(
         self,
@@ -333,18 +337,29 @@ class YouProfileService:
         avatar_ref: Any = UNSET,
         current_snapshot_id: Any = UNSET,
     ) -> dict[str, Any]:
-        """Set the echo's identity fields. NOT gated on keystone 4.
+        """Set the echo's identity fields.
 
-        Keystone 4 gates the card reveal and rentability — not the record.
-        The user can name their echo, set its avatar reference, or pin a
-        snapshot from day one (the name is usually co-given in the
-        recognition conversation, but the store doesn't police ceremony).
+        The NAME is gated on keystone 4 (Joshua's rule, 2026-10-22): you
+        have to get to know it before you can name it. The name is co-given
+        in the recognition conversation ("The echo") — setting one before
+        that conversation completes raises PermissionError (the route maps
+        it to 409). Clearing a name is always allowed (that's removing
+        identity, not bestowing it). Avatar references and snapshot pins
+        stay open: the reveal withholds their presentation, not the record.
         Raises ValueError on bad input, including a snapshot pointer that
         doesn't resolve.
         """
         arch = get_archetype(archetype_id)
         if arch is None:
             raise ValueError(f"Unknown archetype: {archetype_id!r}")
+        if isinstance(personal_name, str) and personal_name.strip():
+            recognition = keystone_progress(user_id, archetype_id)
+            if not recognition["echo_complete"]:
+                raise PermissionError(
+                    "You haven't met this echo yet — its name comes from "
+                    "the recognition conversation (keystone 4, “The echo”), "
+                    "once you've gotten to know it."
+                )
         if current_snapshot_id is not UNSET and current_snapshot_id is not None:
             store = self._personality_store(user_id)
             try:

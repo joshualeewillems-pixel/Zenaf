@@ -6,6 +6,71 @@ import { readPrivacyMode } from '../ai-actions/privacyModeBridge'
 import type { PerspectiveAgent } from '../perspectives/types'
 import { AvatarDisplay } from '../components/AvatarDisplay'
 import { CORE_PROFILE_ACTION_INTENTS } from './coreProfileTrace'
+import { STRANDS } from '../living-tree/strands'
+
+/**
+ * "Your core" — the honest replacement for the create-core-profile form
+ * (Joshua, 2026-10-22). The old UI implied a single structured form defines
+ * the user; that is no longer how the system works. What actually forms the
+ * core: (1) material the user uploads, sorted into the seven strands and
+ * trained only after review, and (2) the targets the user sets — the
+ * philosophical / theological orientation authored by them, never inferred
+ * (edited in the Aspirations panel, rendered alongside this one).
+ */
+export function CoreHowItWorksPanel({ onUpload }: { onUpload: () => void }) {
+  return (
+    <div className="rounded-xl border border-[color:var(--color-border)] bg-surface p-4 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-warm-white">Your core isn't a form</h3>
+        <p className="text-[11px] text-warm-white/50 leading-relaxed mt-1">
+          No single profile defines you here. Your core is woven from what you give the
+          system — and from what you aim it at.
+        </p>
+      </div>
+      <div>
+        <div className="text-[11px] font-semibold text-warm-white/70 uppercase tracking-wide">
+          What you upload, by strand
+        </div>
+        <p className="text-[11px] text-warm-white/50 leading-relaxed mt-1">
+          Upload conversations and material, and the sorter files each piece under the
+          strand it belongs to — your tastes under Ear and Eye, your reasoning under Logic,
+          your beliefs under Compass. Everything arrives as a proposal; nothing trains
+          until you review it.
+        </p>
+        <ul className="mt-2 space-y-1.5">
+          {STRANDS.map((s) => (
+            <li key={s.key} className="flex items-baseline gap-2 text-[11px] leading-snug">
+              <span
+                className="inline-block h-2 w-2 shrink-0 rounded-full translate-y-[1px]"
+                style={{ background: s.color }}
+                aria-hidden
+              />
+              <span className="font-medium text-warm-white/80 w-14 shrink-0">{s.agentName}</span>
+              <span className="text-warm-white/45">{s.tagline}</span>
+            </li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          onClick={onUpload}
+          className="mt-3 min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
+        >
+          Upload source material →
+        </button>
+      </div>
+      <div>
+        <div className="text-[11px] font-semibold text-warm-white/70 uppercase tracking-wide">
+          The targets you set
+        </div>
+        <p className="text-[11px] text-warm-white/50 leading-relaxed mt-1">
+          Alongside what you upload, you set the direction yourself — the philosophical
+          and theological orientation the council should grow toward. Authored by you,
+          never inferred from you. Set them in the panel below.
+        </p>
+      </div>
+    </div>
+  )
+}
 
 /** localStorage key for Brand ↔ Zenaf training thread (ZenafPresence + any future senders). */
 export function coreProfileConversationStorageKey(profileId: string) {

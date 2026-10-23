@@ -118,7 +118,7 @@ import { ZenafPresence } from './components/ZenafPresence'
 import { EntityMentionText, type EntityMentionOpenPayload } from './components/EntityMentionText'
 import { enrichScopedDigressionLabel } from './council/enrichScopedDigressionLabel'
 import { postCouncilInsightRecognition } from './vision-execution/recognitionDecisions'
-import { BrandStructuredProfilePanel, CreateCoreProfileForm } from './vision-execution/coreProfilePanels'
+import { BrandStructuredProfilePanel, CoreHowItWorksPanel } from './vision-execution/coreProfilePanels'
 import { AspirationsFoundationPanel } from './foundation/AspirationsFoundationPanel'
 import VoiceConsole from './foundation/VoiceConsole'
 import {
@@ -5397,40 +5397,6 @@ function App() {
     return perspectiveAgents.find((a) => a.id === foundationSelectedActorId) ?? null
   }, [foundationSelectedActorId, perspectiveAgents])
 
-  const handleCreateCoreProfile = async (payload: {
-    name: string
-    core_definition?: string
-    current_goals?: string
-    growth_focus_12_months?: string
-    economic_engine?: string
-    non_negotiables?: string
-    strategic_filter?: string
-    current_constraints?: string
-    capacity_limit?: string
-    kill_philosophy?: string
-    strength_positioning?: string
-  }) => {
-    setPerspectivesPageError(null)
-    try {
-      await veApiPost<CoreProfile>('/core-profiles', {
-        name: payload.name || 'Core Profile',
-        core_definition: payload.core_definition ?? '',
-        current_goals: payload.current_goals ?? '',
-        growth_focus_12_months: payload.growth_focus_12_months ?? '',
-        economic_engine: payload.economic_engine ?? '',
-        non_negotiables: payload.non_negotiables ?? '',
-        strategic_filter: payload.strategic_filter ?? '',
-        current_constraints: payload.current_constraints ?? '',
-        capacity_limit: payload.capacity_limit ?? '',
-        kill_philosophy: payload.kill_philosophy ?? '',
-        strength_positioning: payload.strength_positioning ?? '',
-      })
-      await refetchPerspectivesLinkData()
-    } catch (e) {
-      setPerspectivesPageError(e instanceof Error ? e.message : 'Create failed')
-    }
-  }
-
   // Current topic: what the system is pointed at (dynamic for context window + perspective suggestions)
   const currentTopicLabel =
     currentFocusPath || lastFolderPath
@@ -6194,18 +6160,9 @@ function App() {
                   perspectivesLinksLoading ? (
                     <p className="text-stone-500 text-sm">Loading profile…</p>
                   ) : !brandCoreProfileId ? (
-                    <div className="space-y-2">
-                      <p className="text-stone-400 text-xs">
-                        Create your <span className="text-stone-300">core profile</span> once — one identity for structured
-                        fields, training, and how Zenaf represents you. Extra rows on the server, if any, are legacy
-                        duplicates, not additional selves.
-                      </p>
-                      <CreateCoreProfileForm
-                        onSave={(v) => void handleCreateCoreProfile(v)}
-                        onCancel={() => {
-                          setPerspectivesPageError(null)
-                        }}
-                      />
+                    <div className="space-y-4">
+                      <CoreHowItWorksPanel onUpload={() => setMainView('agent_intake')} />
+                      <AspirationsFoundationPanel apiGet={veApiGet} apiPatch={veApiPatch} apiPost={veApiPost} />
                     </div>
                   ) : (
                     (() => {
@@ -6215,6 +6172,11 @@ function App() {
                       }
                       return (
                         <>
+                          <p className="text-stone-400 text-xs leading-relaxed">
+                            A legacy structured profile — one input among many. Your core as the
+                            council actually uses it is woven from your reviewed uploads, sorted
+                            by strand, and the targets you set below.
+                          </p>
                           <BrandStructuredProfilePanel
                             key={brandCoreProfileId}
                             profileId={brandCoreProfileId}

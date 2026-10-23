@@ -357,16 +357,43 @@ def log_claim_feedback(
                 strand_override=strand,
             )
             intake_signals.save_intake_signal(signal, store)
-        return
-    signal = intake_signals.claim_feedback_signal(
-        agent_id=agent_id,
-        claim_id=claim_id,
-        claim_type=claim_type,
-        claim_title=claim_title,
-        action=action,
-        user_id=user_id or "",
-        evidence=evidence,
-        inference=inference,
-        note=note,
-    )
-    intake_signals.save_intake_signal(signal, store)
+    else:
+        signal = intake_signals.claim_feedback_signal(
+            agent_id=agent_id,
+            claim_id=claim_id,
+            claim_type=claim_type,
+            claim_title=claim_title,
+            action=action,
+            user_id=user_id or "",
+            evidence=evidence,
+            inference=inference,
+            note=note,
+        )
+        intake_signals.save_intake_signal(signal, store)
+    # Fellowship Runtime P1: a verdict is a shared-reality event (the
+    # user decided — pipeline step 5 happened here). Emitted after the
+    # signals land, fully guarded: the event layer observing a verdict
+    # must never fail or alter the verdict itself. The verdict's own
+    # training effect above is unchanged; the event's derivation only
+    # ever produces observations (proposals), never signals.
+    try:
+        from local_ai.fellowship.events import emit_event
+
+        emit_event(
+            kind="claim_decided",
+            user_id=user_id or "",
+            entity_type="claim",
+            entity_id=claim_id,
+            evidence_text=evidence or "",
+            summary=f"Claim {action}: {claim_title}",
+            payload={
+                "action": action,
+                "claim_type": claim_type,
+                "claim_title": claim_title,
+                "agent_id": agent_id,
+                "inference": inference or "",
+                "note": note or "",
+            },
+        )
+    except Exception:
+        pass

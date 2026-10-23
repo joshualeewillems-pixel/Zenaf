@@ -60,6 +60,30 @@ def _ve_activity_related_id(raw: str | None) -> str | None:
     return s or None
 
 
+def _emit_fellowship_event(*, kind: str, user_id: str, entity_type: str,
+                           entity_id: str, evidence_text: str = "",
+                           summary: str = "",
+                           payload: dict | None = None) -> None:
+    """Fellowship Runtime P1 (local_ai/fellowship/events.py): record a
+    runtime event at this chokepoint, for the off-path derivation.
+    Lazy import + fully guarded, exactly like _log_ve_entity_activity
+    — an event can never break the write that produced it."""
+    try:
+        from local_ai.fellowship.events import emit_event
+
+        emit_event(
+            kind=kind,
+            user_id=user_id,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            evidence_text=evidence_text,
+            summary=summary,
+            payload=payload,
+        )
+    except Exception:
+        pass
+
+
 def _ve_task_status_done(status: str | None) -> bool:
     if not status or not str(status).strip():
         return False
@@ -4750,6 +4774,18 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
             related_entity_id=related,
             detail=f"status={new_status[:80]!r}",
         )
+        _emit_fellowship_event(
+            kind="task_completed",
+            user_id=user_id,
+            entity_type="task",
+            entity_id=task_id,
+            summary=f"Task completed: {str((after or {}).get('title') or '')[:160]}",
+            payload={
+                "title": str((after or {}).get("title") or "")[:300],
+                "status": new_status,
+                "project_id": str(rel_pid) if rel_pid else "",
+            },
+        )
     else:
         det = f"fields={','.join(patch_keys)[:200]}"
         if _ve_task_status_done(old_status) and not _ve_task_status_done(new_status):
@@ -4989,6 +5025,24 @@ def create_decision(data: M.DecisionCreate) -> dict[str, Any]:
     )
     conn.commit()
     out = get_decision(did) or {}
+    # Fellowship Runtime P1: the append-only decision record is adopted
+    # as an event source — the event references this decision by id
+    # and never duplicates the record.
+    _emit_fellowship_event(
+        kind="decision_recorded",
+        user_id=str(data.user_id or ""),
+        entity_type="decision",
+        entity_id=did,
+        summary=(
+            f"Decision recorded: {data.decision_type} on "
+            f"{data.entity_type} {data.entity_id}"
+        ),
+        payload={
+            "decision_type": data.decision_type,
+            "about_entity_type": data.entity_type,
+            "about_entity_id": data.entity_id,
+        },
+    )
     if data.decision_type == "evaluation_applied" and str(data.entity_type or "").strip().lower() in (
         "initiative",
         "idea",

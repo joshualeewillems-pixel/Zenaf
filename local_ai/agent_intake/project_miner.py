@@ -31,6 +31,11 @@ class ProposedTask:
     title: str
     detail: str = ""
     source_quote: str = ""  # brief verbatim anchor from the transcript
+    # Dedupe annotation (set by annotate_existing): this proposal matches
+    # work already in the user's workspace. Confirm links instead of
+    # creating a duplicate; review cards say so plainly.
+    existing_id: str | None = None
+    existing_title: str | None = None
 
     def to_task_create(self, project_id: str | None = None) -> dict[str, Any]:
         """Map to a Vision Execution TaskCreate payload."""
@@ -51,6 +56,8 @@ class ProposedProject:
     source_quote: str = ""
     tasks: list[ProposedTask] = field(default_factory=list)
     initiative_title: str | None = None  # parent initiative, if the miner placed it
+    existing_id: str | None = None  # dedupe annotation — see ProposedTask
+    existing_title: str | None = None
 
     def to_project_create(self, initiative_id: str | None = None) -> dict[str, Any]:
         """Map to a Vision Execution ProjectCreate payload."""
@@ -72,6 +79,8 @@ class ProposedInitiative:
     brief: str = ""
     source_quote: str = ""
     project_titles: list[str] = field(default_factory=list)  # projects under it
+    existing_id: str | None = None  # dedupe annotation — see ProposedTask
+    existing_title: str | None = None
 
     def to_initiative_create(self) -> dict[str, Any]:
         """Map to a Vision Execution InitiativeCreate payload."""
@@ -87,6 +96,8 @@ class ProposedIdea:
     detail: str = ""
     source_quote: str = ""
     desired_outcome: str = ""  # intent — what the idea is trying to become
+    existing_id: str | None = None  # dedupe annotation — see ProposedTask
+    existing_title: str | None = None
     suggested_level: str | None = None  # miner's suggestion; the user decides at review
     target_level: str | None = None  # user's verdict: idea|task|project|initiative (None = stays an idea)
     # Proposed checklist ("what would make this real?"), defined by conversation.
@@ -139,6 +150,112 @@ class MiningResult:
     engine: str  # "anthropic" | "rule_based"
 
 
+# ---------------------------------------------------------------------------
+# Dedupe against the existing workspace (Joshua, 2026-10-23).
+#
+# Mining used to be blind: the miner never saw what the user already had,
+# and confirm created whatever titles were selected — so mining two
+# conversations about the same project created it twice (the duplicates
+# then surfaced as doubled cards in Today). The fix is layered and
+# conservative: identity is normalized-title equality ONLY (no fuzzy or
+# semantic matching — a match is exact enough to defend at review).
+#   1. The miner is TOLD what exists (prompt block) and asked to reuse
+#      exact titles for work that is the same work.
+#   2. Proposals are ANNOTATED with their existing match, and review
+#      cards say "already in your workspace" plainly.
+#   3. create_confirmed LINKS instead of creating: matched initiatives /
+#      projects are reused (new nested tasks still land under them),
+#      matched tasks and ideas are not created again.
+# ---------------------------------------------------------------------------
+
+def _norm_title(title: str) -> str:
+    """Title identity for dedupe: case/punctuation-insensitive,
+    whitespace-collapsed."""
+    return " ".join(re.sub(r"[^a-z0-9 ]+", " ", (title or "").lower()).split())
+
+
+def _eid(obj: Any) -> str | None:
+    return obj.get("id") if isinstance(obj, dict) else getattr(obj, "id", None)
+
+
+def _etitle(obj: Any) -> str:
+    if isinstance(obj, dict):
+        return str(obj.get("title") or "")
+    return str(getattr(obj, "title", "") or "")
+
+
+def existing_index(user_id: str) -> dict[str, dict[str, Any]]:
+    """The user's workspace by type: normalized title -> entity row.
+
+    Best-effort: a listing failure yields whatever was gathered (possibly
+    empty) — mining proceeds undeduped rather than breaking.
+    """
+    from local_ai.vision_execution import service as ve_service
+
+    index: dict[str, dict[str, Any]] = {
+        "initiative": {},
+        "project": {},
+        "task": {},
+        "idea": {},
+    }
+    loaders = (
+        ("initiative", ve_service.list_initiatives),
+        ("project", ve_service.list_projects),
+        ("task", ve_service.list_tasks),
+        ("idea", ve_service.list_ideas),
+    )
+    for kind, loader in loaders:
+        try:
+            rows = loader(user_id) or []
+        except Exception:
+            continue
+        for row in rows:
+            key = _norm_title(_etitle(row))
+            if key and key not in index[kind]:
+                index[kind][key] = row
+    return index
+
+
+def annotate_existing(result: MiningResult, user_id: str) -> MiningResult:
+    """Mark each top-level proposal that matches existing work (same
+    normalized title, same type). Nested project tasks are matched at
+    confirm time against their (possibly linked) project's live tasks."""
+    idx = existing_index(user_id)
+    for coll, kind in (
+        (result.initiatives, "initiative"),
+        (result.projects, "project"),
+        (result.standalone_tasks, "task"),
+        (result.ideas, "idea"),
+    ):
+        for item in coll:
+            row = idx[kind].get(_norm_title(item.title))
+            if row is not None:
+                item.existing_id = _eid(row)
+                item.existing_title = _etitle(row)
+    return result
+
+
+def _existing_prompt_block(user_id: str) -> str:
+    """The miner's view of what already exists (initiatives + projects —
+    the levels where duplicates hurt most). Empty when the workspace is
+    empty or unreachable."""
+    idx = existing_index(user_id)
+    lines: list[str] = []
+    for kind, label in (("initiative", "Initiative"), ("project", "Project")):
+        for row in idx[kind].values():
+            lines.append(f"- {label}: “{_etitle(row)}”")
+    if not lines:
+        return ""
+    listed = "\n".join(lines[:80])
+    return (
+        "\nALREADY IN THIS PERSON'S WORKSPACE — do not propose these as new. "
+        "If the transcript's work IS one of them, use its title EXACTLY as "
+        "written here (it will be filed under the existing one, not created "
+        "twice); propose only genuinely new work alongside it:\n"
+        f"{listed}\n"
+    )
+
+
 _MINING_PROMPT = """Read this conversation transcript like a chief of staff. Identify work across the full hierarchy:
 
 1. INITIATIVES — large endeavors that span multiple projects. A body of work with a unifying direction (e.g. "building a philosophy practice" spanning a book, a teaching inquiry, and public writing). For each: title, brief, source quote, and which of the proposed projects belong under it.
@@ -151,7 +268,7 @@ _MINING_PROMPT = """Read this conversation transcript like a chief of staff. Ide
    For each idea include desired_outcome (the intent: what is this idea trying to become?).
    When an idea already reads like work at a clear scope, you may add suggested_level
    ("task", "project", or "initiative") — a suggestion only; the user decides at review.
-
+{existing_block}
 Transcript:
 {transcript}
 
@@ -257,27 +374,38 @@ def _parse_mining_json(raw: str) -> MiningResult:
 
 
 def mine_projects(transcript: str, model: str | None = None, user_id: str | None = None) -> MiningResult:
-    """Propose projects and tasks from a transcript. LLM-first, rule fallback."""
+    """Propose projects and tasks from a transcript. LLM-first, rule fallback.
+
+    When user_id is known, the miner is told what already exists in the
+    workspace and every proposal is annotated with its existing match —
+    see the dedupe block above.
+    """
     transcript = (transcript or "").strip()
     if not transcript:
         return MiningResult(initiatives=[], projects=[], standalone_tasks=[], ideas=[], engine="rule_based")
 
+    result: MiningResult | None = None
     api_key = _api_key(user_id)
     if api_key:
         try:
             from . import llm_keys
 
+            existing_block = _existing_prompt_block(user_id) if user_id else ""
             raw = llm_keys.generate(
-                _MINING_PROMPT.format(transcript=transcript[:12000]),
+                _MINING_PROMPT.format(transcript=transcript[:12000], existing_block=existing_block),
                 api_key=api_key,
                 user_id=user_id,
                 operation="mine",
             )
-            return _parse_mining_json(raw)
+            result = _parse_mining_json(raw)
         except Exception:
-            pass  # fall through to rule-based
+            result = None  # fall through to rule-based
 
-    return _rule_based_mine(transcript)
+    if result is None:
+        result = _rule_based_mine(transcript)
+    if user_id:
+        annotate_existing(result, user_id)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +474,15 @@ def create_confirmed(
     Respects the hierarchy: initiatives first, projects linked to them,
     ideas captured, tasks under their projects. Only creates items whose
     title is in selected_titles (or all if None).
-    Returns {"initiative_ids": [...], "project_ids": [...], "task_ids": [...], "idea_ids": [...]}.
+
+    Dedupe: a proposal whose normalized title matches an existing entity
+    of the same type is LINKED, not created — its id comes back under
+    "linked_*_ids", children still nest under it, and same-title tasks
+    under a linked project are not created again. The match is recomputed
+    here (never trusted from the stored payload), so a stale annotation
+    can't cause a wrong link.
+    Returns {"initiative_ids": [...], "project_ids": [...], "task_ids": [...],
+    "idea_ids": [...], "linked_initiative_ids": [...], ...}.
     Uses the existing VE service layer — no parallel structures.
     """
     from local_ai.vision_execution import models as M
@@ -375,11 +511,24 @@ def create_confirmed(
     project_ids: list[str] = []
     task_ids: list[str] = []
     idea_ids: list[str] = []
+    linked_initiative_ids: list[str] = []
+    linked_project_ids: list[str] = []
+    linked_task_ids: list[str] = []
+    linked_idea_ids: list[str] = []
+
+    idx = existing_index(user_id)
 
     # Initiatives first (projects link to them).
     initiative_id_by_title: dict[str, str] = {}
     for i in result.initiatives:
         if not _wanted(i.title):
+            continue
+        match = idx["initiative"].get(_norm_title(i.title))
+        if match is not None:
+            iid = _id(match)
+            if iid:
+                linked_initiative_ids.append(iid)
+                initiative_id_by_title[i.title] = iid
             continue
         created = ve_service.create_initiative(M.InitiativeCreate(**i.to_initiative_create()), user_id)
         iid = _id(created)
@@ -393,18 +542,35 @@ def create_confirmed(
         if not _wanted(p.title):
             continue
         iid = initiative_id_by_title.get(p.initiative_title or "")
-        created = ve_service.create_project(M.ProjectCreate(**p.to_project_create(iid)), user_id)
-        pid = _id(created)
-        if pid:
-            project_ids.append(pid)
-            project_id_by_title[p.title] = pid
-            _infer_entity_strands(
-                user_id, "project", pid,
-                f"{p.title} {p.goal} {p.source_quote}",
-            )
+        pmatch = idx["project"].get(_norm_title(p.title))
+        if pmatch is not None:
+            pid = _id(pmatch)
+            if pid:
+                linked_project_ids.append(pid)
+                project_id_by_title[p.title] = pid
+            # The project's live task titles — nested proposals that are
+            # already there are not created again.
+            try:
+                live_tasks = ve_service.list_tasks(user_id, pid) or []
+            except Exception:
+                live_tasks = []
+            live_task_titles = {_norm_title(_etitle(t)) for t in live_tasks}
+        else:
+            created = ve_service.create_project(M.ProjectCreate(**p.to_project_create(iid)), user_id)
+            pid = _id(created)
+            if pid:
+                project_ids.append(pid)
+                project_id_by_title[p.title] = pid
+                _infer_entity_strands(
+                    user_id, "project", pid,
+                    f"{p.title} {p.goal} {p.source_quote}",
+                )
+            live_task_titles = set()
         for t in p.tasks:
             if not _wanted(t.title):
                 continue
+            if _norm_title(t.title) in live_task_titles:
+                continue  # already a task under this project
             tc = ve_service.create_task(M.TaskCreate(**t.to_task_create(project_id=pid)), user_id)
             tid = _id(tc)
             if tid:
@@ -438,22 +604,30 @@ def create_confirmed(
 
     for idea, level, proposed in graduation_plans:
         # Persist the idea (for checklist provenance), then graduate through
-        # the standard path: shell entity + checklist unfolding.
-        created_idea = ve_service.create_idea(M.IdeaCreate(**idea.to_idea_create()), user_id)
-        iid = _id(created_idea)
-        batch = [
-            {
-                "title": p["title"],
-                "status": "done" if p["done"] else "open",
-                "children": [
-                    {"title": c["title"], "status": "done" if c["done"] else "open"}
-                    for c in p["children"]
-                ],
-            }
-            for p in proposed
-        ]
-        if batch:
-            ve_service.create_checklist_items_batch(iid, batch, user_id)
+        # the standard path: shell entity + checklist unfolding. Dedupe: an
+        # idea already captured under the same title is graduated as
+        # itself — no second shell, and its own checklist stands.
+        imatch = idx["idea"].get(_norm_title(idea.title))
+        if imatch is not None:
+            iid = _id(imatch)
+            if iid:
+                linked_idea_ids.append(iid)
+        else:
+            created_idea = ve_service.create_idea(M.IdeaCreate(**idea.to_idea_create()), user_id)
+            iid = _id(created_idea)
+            batch = [
+                {
+                    "title": p["title"],
+                    "status": "done" if p["done"] else "open",
+                    "children": [
+                        {"title": c["title"], "status": "done" if c["done"] else "open"}
+                        for c in p["children"]
+                    ],
+                }
+                for p in proposed
+            ]
+            if batch:
+                ve_service.create_checklist_items_batch(iid, batch, user_id)
         out = ve_service.promote_idea(iid, level, user_id)
         entity_type = out["entity_type"]
         if entity_type == "task":
@@ -482,6 +656,12 @@ def create_confirmed(
     for idea in wanted_ideas:
         if idea.title in graduated_titles:
             continue  # graduated above — the idea became the work itself
+        imatch = idx["idea"].get(_norm_title(idea.title))
+        if imatch is not None:
+            iid = _id(imatch)
+            if iid:
+                linked_idea_ids.append(iid)
+            continue  # already captured — not created twice
         created = ve_service.create_idea(M.IdeaCreate(**idea.to_idea_create()), user_id)
         iid = _id(created)
         if iid:
@@ -503,9 +683,19 @@ def create_confirmed(
                 ]
                 ve_service.create_checklist_items_batch(iid, batch, user_id)
 
-    # Standalone tasks (no project).
+    # Standalone tasks (no project). A same-title task that already
+    # exists with no project is the same task — link, don't duplicate.
+    loose_task_ids: dict[str, str | None] = {}
+    for row in idx["task"].values():
+        raw_pid = row.get("project_id") if isinstance(row, dict) else getattr(row, "project_id", None)
+        if not raw_pid:
+            loose_task_ids[_norm_title(_etitle(row))] = _id(row)
     for t in result.standalone_tasks:
         if not _wanted(t.title):
+            continue
+        existing_tid = loose_task_ids.get(_norm_title(t.title))
+        if existing_tid:
+            linked_task_ids.append(existing_tid)
             continue
         tc = ve_service.create_task(M.TaskCreate(**t.to_task_create()), user_id)
         tid = _id(tc)
@@ -521,4 +711,8 @@ def create_confirmed(
         "project_ids": project_ids,
         "task_ids": task_ids,
         "idea_ids": idea_ids,
+        "linked_initiative_ids": linked_initiative_ids,
+        "linked_project_ids": linked_project_ids,
+        "linked_task_ids": linked_task_ids,
+        "linked_idea_ids": linked_idea_ids,
     }

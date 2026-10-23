@@ -6087,8 +6087,8 @@ function App() {
             />
           </div>
         ) : mainView === 'perspectives' ? (
-          <div className="flex-1 flex flex-col min-h-0 lg:flex-row lg:overflow-hidden bg-surface/20">
-            <div className="flex-1 flex flex-col min-h-0 lg:overflow-hidden min-w-0">
+          <div className="flex-1 flex flex-col min-h-0 overflow-y-auto lg:flex-row lg:overflow-hidden bg-surface/20">
+            <div className="flex flex-col min-w-0 lg:flex-1 lg:min-h-0 lg:overflow-hidden">
               <div className="shrink-0 border-b border-[color:var(--color-border)] px-4 py-3 bg-surface/40">
                 <p className="text-[10px] font-medium text-warm-white/50 uppercase tracking-wide">Foundation</p>
                 <h1 className="text-lg font-semibold text-warm-white mt-0.5">Actors</h1>
@@ -6098,7 +6098,7 @@ function App() {
                 </p>
                 {perspectivesPageError && <p className="text-flare text-xs mt-2">{perspectivesPageError}</p>}
               </div>
-              <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden">
+              <div className="lg:flex-1 lg:min-h-0 lg:overflow-hidden">
                 <PerspectivesView
                   agents={perspectiveAgents}
                   onAgentsChange={setPerspectiveAgents}

@@ -71,6 +71,17 @@ export type NodeMenuItemId =
   | 'projects'
   | 'settings'
   | 'character'
+  | 'content'
+
+/** App-shell destinations a sheet entry can navigate to. Destinations live
+    with the seat (or the you-node) that owns them — there is no global
+    menu anymore (Joshua, 2026-10-22: distribute the menu into the seats). */
+export type SheetNavView =
+  | 'vision_map'
+  | 'vision_execution'
+  | 'provenance'
+  | 'perspectives'
+  | 'agent_intake'
 
 /**
  * Phase-1 composition seam: the app shell provides the mounted view for a
@@ -193,6 +204,7 @@ const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'talk', title: 'Talk', desc: 'Think something through with your whole council.' },
   { id: 'review', title: 'Review', desc: 'Moments awaiting your verdict before anything trains.' },
   { id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
+  { id: 'content', title: 'Content', desc: 'Your journal and reflections — the material that is yours.' },
   { id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
 ]
 
@@ -204,16 +216,40 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'review', title: 'Review', desc: 'This seat’s moments awaiting your verdict.' },
 ]
 
+/** Seat-owned destinations (the distributed menu, 2026-10-22): a full-screen
+    surface belongs to the seat whose slice of the system it is, and its
+    sheet carries the door. The Firebrand owns the execution surface (talk
+    into action); the Bear owns provenance (where your material came from
+    and where it went). Everything else left the global menu the same way:
+    Today lives in every seat's menu above and in YOU's, Review is already
+    per-seat, Settings and Content live with YOU, and Connect is gone —
+    its intake remains reachable from the you-sheet's upload entry. */
+const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: string; nav: SheetNavView }>> = {
+  champion: [
+    { id: 'vision_map', title: 'Vision map', desc: 'The execution surface — initiatives, projects, and their stones.', nav: 'vision_map' },
+    { id: 'vision_tables', title: 'Vision (tables)', desc: 'The same work, as tables.', nav: 'vision_execution' },
+  ],
+  guardian: [
+    { id: 'provenance', title: 'Provenance', desc: 'Where your material came from — and where it went.', nav: 'provenance' },
+  ],
+}
+
 /**
  * Pre-sheet tree options — kept reachable in the you-sheet's second section
  * so nothing that existed is lost in the restructure.
  */
-const LEGACY_YOU_ITEMS: Array<{ id: string; title: string; desc: string; cta?: 'agent_intake' }> = [
+const LEGACY_YOU_ITEMS: Array<{ id: string; title: string; desc: string; cta?: SheetNavView }> = [
   {
     id: 'upload',
     title: 'Upload source materials',
     desc: 'Connect a ChatGPT or Claude conversation — paste a share link or send one from your browser. Redaction happens at capture — nothing trains until you review and approve it.',
     cta: 'agent_intake',
+  },
+  {
+    id: 'foundation',
+    title: 'Foundation (actors)',
+    desc: 'The original actors and core-profile surface. Its pieces are moving to their seats and to you; kept reachable here until the move completes.',
+    cta: 'perspectives',
   },
   { id: 'stats', title: 'Stats', desc: '' },
   {
@@ -708,7 +744,7 @@ export function LivingTreeView({
   renderSheetContent,
 }: {
   /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
-  onNavigate: (view: 'vision_map' | 'agent_intake') => void
+  onNavigate: (view: SheetNavView) => void
   /** Initials rendered on the central profile node; defaults to "YOU". */
   initials?: string
   /** App-shell provider: the mounted view for a (node, menu item) pair. */
@@ -1069,6 +1105,7 @@ export function LivingTreeView({
   /** The node's menu — the one grammar. Tapping a row mounts its view. */
   const renderNodeMenu = (node: TreeNodeRef) => {
     const items = node.kind === 'you' ? YOU_MENU : SEAT_MENU
+    const navItems = node.kind === 'seat' ? (SEAT_NAV_ITEMS[node.seatKey] ?? []) : []
     return (
       <div>
         {items.map((m) => (
@@ -1077,6 +1114,23 @@ export function LivingTreeView({
             type="button"
             className="lrow"
             onClick={() => setSheetItem(m.id)}
+          >
+            <span>
+              <span className="lrow-t">{m.title}</span>
+              <span className="lrow-d">{m.desc}</span>
+            </span>
+            <span className="lchev">›</span>
+          </button>
+        ))}
+        {navItems.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className="lrow"
+            onClick={() => {
+              closeSheet()
+              onNavigate(m.nav)
+            }}
           >
             <span>
               <span className="lrow-t">{m.title}</span>
@@ -1096,9 +1150,9 @@ export function LivingTreeView({
                     type="button"
                     className="lrow"
                     onClick={() => {
-                      if (m.cta === 'agent_intake') {
+                      if (m.cta) {
                         closeSheet()
-                        onNavigate('agent_intake')
+                        onNavigate(m.cta)
                         return
                       }
                       setLegacyOpen(open ? null : m.id)

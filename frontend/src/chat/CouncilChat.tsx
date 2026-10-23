@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import { WeaveText, voiceColor } from '../components/VoiceWeave'
-import SeatChips, { useSeatMeta } from './SeatChips'
+import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
 
 /**
  * One message in the persistent conversation. Voice turns carry the
@@ -37,9 +37,14 @@ export type ConversationMessage = {
  * - Sheet you-node → chips with no pre-selection: an invitation to pick.
  * - Workspace (Foundation console) → adds the trained/base version toggle.
  *
- * No multi-seat fan-out: the old whole-council POST /run path lived here
- * and was removed — talking is always 1:1. The /run backend stays for the
- * workspace's deliberation console.
+ * Ask the council (Joshua, 2026-10-23 — supersedes the 1:1-only note
+ * that stood here): having two chats was confusing, so the workspace
+ * console's two conversational powers live here now — the version
+ * switch (above) and multi-seat fan-out: the "Ask the council" toggle
+ * sends one message to every seat through the same per-seat turn path,
+ * and each reply lands in this one thread under its seat's name. The
+ * workspace console remains a deliberation console (folder runs,
+ * synthesis, recorded insights) — talking lives here.
  */
 export default function CouncilChat({
   environment,
@@ -80,6 +85,8 @@ export default function CouncilChat({
   // Switching seats never touches this list.
   const [messages, setMessages] = useState<ConversationMessage[]>(initialMessages ?? [])
   const [activeId, setActiveId] = useState<string | null>(initialArchetypeId ?? null)
+  /** Ask-the-council fan-out: the next send goes to every seat at once. */
+  const [councilMode, setCouncilMode] = useState(false)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   /** Demo's "Respond / Question me" toggle, brought to the authenticated chat. */
@@ -177,17 +184,12 @@ export default function CouncilChat({
   const activeName =
     displayName ?? (activeId ? names[activeId] ?? activeId : null) ?? 'a voice'
 
-  const send = useCallback(async () => {
-    const text = input.trim()
-    if (!activeId || loading) return
-    if (!text && !questionMode) return
-    setMessages((prev) => [...prev, { role: 'user', content: text }])
-    setInput('')
-    setLoading(true)
-    setSignedOut(false)
-    try {
-      // Skeleton-store thread: persist via POST /conversation/turn with the
-      // sheet's live context. Otherwise the legacy client-history path.
+  /** One seat's turn through whichever path this mount uses (skeleton
+   *  store when conversationId is present, client-history otherwise).
+   *  Returns 'auth' on 401 so callers can settle quietly; throws on
+   *  other failures. */
+  const askSeat = useCallback(
+    async (seatId: string, text: string): Promise<ConversationMessage | 'auth'> => {
       const useStore = Boolean(conversationId)
       const r = await fetch(useStore ? `${base}/conversation/turn` : `${base}/voice/chat`, {
         method: 'POST',
@@ -197,14 +199,14 @@ export default function CouncilChat({
           useStore
             ? {
                 conversation_id: conversationId,
-                archetype_id: activeId,
+                archetype_id: seatId,
                 message: text,
                 mode: chatMode,
                 question: questionMode,
                 ...(context ? { context } : {}),
               }
             : {
-                archetype_id: activeId,
+                archetype_id: seatId,
                 message: text,
                 history: messages.map((m) => ({ role: m.role, content: m.content })),
                 mode: chatMode,
@@ -212,44 +214,116 @@ export default function CouncilChat({
               },
         ),
       })
-      if (r.status === 401) {
-        setSignedOut(true)
-        setMessages((prev) => prev.slice(0, -1))
-        return
-      }
+      if (r.status === 401) return 'auth'
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const data = await r.json()
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'voice',
-          content: data.reply,
-          voiceId: data.archetype_id ?? activeId,
-          voiceName: data.display_name ?? activeName,
-          voiceColor: data.voice_color ?? undefined,
-        },
-      ])
+      return {
+        role: 'voice',
+        content: data.reply,
+        voiceId: data.archetype_id ?? seatId,
+        voiceName:
+          data.display_name ?? (seatId === activeId ? activeName : names[seatId] ?? seatId),
+        voiceColor: data.voice_color ?? undefined,
+      }
+    },
+    [base, conversationId, context, chatMode, questionMode, messages, names, activeId, activeName],
+  )
+
+  const send = useCallback(async () => {
+    const text = input.trim()
+    if (loading) return
+    if (!councilMode && !activeId) return
+    if (!text && !questionMode) return
+    setMessages((prev) => [...prev, { role: 'user', content: text }])
+    setInput('')
+    setLoading(true)
+    setSignedOut(false)
+    try {
+      if (councilMode) {
+        // Fan out to every seat at once. A seat that fails gets a
+        // quiet, honestly-labelled bubble — the others still answer.
+        const results = await Promise.all(
+          SEAT_ORDER.map(async (seatId) => {
+            try {
+              return await askSeat(seatId, text)
+            } catch {
+              return {
+                role: 'voice' as const,
+                content: "I couldn't reach my voice just now — try again in a moment.",
+                voiceId: seatId,
+                voiceName: names[seatId] ?? seatId,
+              }
+            }
+          }),
+        )
+        if (results.every((x) => x === 'auth')) {
+          setSignedOut(true)
+          setMessages((prev) => prev.slice(0, -1))
+          return
+        }
+        setMessages((prev) => [
+          ...prev,
+          ...results.filter((x): x is ConversationMessage => x !== 'auth'),
+        ])
+      } else if (activeId) {
+        const reply = await askSeat(activeId, text)
+        if (reply === 'auth') {
+          setSignedOut(true)
+          setMessages((prev) => prev.slice(0, -1))
+          return
+        }
+        setMessages((prev) => [...prev, reply])
+      }
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'voice',
-          content: "I couldn't reach my voice just now — try again in a moment.",
-          voiceId: activeId,
-          voiceName: activeName,
-        },
-      ])
+      if (!councilMode && activeId) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: 'voice',
+            content: "I couldn't reach my voice just now — try again in a moment.",
+            voiceId: activeId,
+            voiceName: activeName,
+          },
+        ])
+      }
     } finally {
       setLoading(false)
     }
-  }, [input, loading, activeId, messages, base, environment, chatMode, questionMode, activeName, conversationId, context])
+  }, [input, loading, activeId, councilMode, askSeat, activeName, names])
 
-  const sendDisabled = loading || !activeId || (!input.trim() && !questionMode)
+  const sendDisabled = loading || (!activeId && !councilMode) || (!input.trim() && !questionMode)
 
   return (
     <div className="flex flex-col gap-3" data-conversation={conversationKey}>
       {/* Seat switcher — tapping branches the ongoing conversation. */}
-      <SeatChips activeId={activeId} onSelect={setActiveId} />
+      <SeatChips
+        activeId={councilMode ? null : activeId}
+        onSelect={(id) => {
+          setActiveId(id)
+          setCouncilMode(false)
+        }}
+      />
+
+      {/* Ask the council — one message, every seat answers in this thread. */}
+      <div className="flex flex-wrap items-center gap-3 -mt-1">
+        <button
+          type="button"
+          onClick={() => setCouncilMode((v) => !v)}
+          aria-pressed={councilMode}
+          className={`min-h-[44px] px-4 rounded-full border text-sm font-medium ${
+            councilMode
+              ? 'bg-amber-950/40 text-amber-300 border-amber-700/50'
+              : 'border-stone-700 text-stone-400'
+          }`}
+        >
+          Ask the council
+        </button>
+        {councilMode && (
+          <p className="text-[11px] text-stone-500">
+            One message — every seat answers here, under its own name.
+          </p>
+        )}
+      </div>
 
       {environment === 'workspace' && (
         <div className="flex flex-wrap items-center gap-3">
@@ -316,10 +390,10 @@ export default function CouncilChat({
         } overflow-y-auto space-y-2`}
         aria-live="polite"
       >
-        {!activeId && (
+        {!activeId && !councilMode && (
           <p className="text-sm text-stone-400 leading-relaxed px-1 py-2">
             Pick a voice above to begin — one conversation, tap a seat to
-            branch it whenever you like.
+            branch it whenever you like. Or ask the whole council at once.
           </p>
         )}
         {messages.map((m, i) =>
@@ -356,14 +430,18 @@ export default function CouncilChat({
             </div>
           ),
         )}
-        {loading && <div className="text-xs text-stone-500">thinking…</div>}
+        {loading && (
+          <div className="text-xs text-stone-500">
+            {councilMode ? 'asking the council…' : 'thinking…'}
+          </div>
+        )}
         {signedOut && (
           <div className="text-sm text-stone-400">Please sign in to talk to your voices.</div>
         )}
         <div ref={chatEndRef} />
       </div>
 
-      {activeId && (
+      {(activeId || councilMode) && (
         <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2 space-y-2">
           {/* Demo's Respond / Question me toggle. */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
@@ -407,10 +485,14 @@ export default function CouncilChat({
                 }
               }}
               placeholder={
-                questionMode ? 'Add context (optional)…' : `Talk to ${activeName}…`
+                councilMode
+                  ? 'Ask the whole council…'
+                  : questionMode
+                    ? 'Add context (optional)…'
+                    : `Talk to ${activeName}…`
               }
               maxLength={2000}
-              aria-label={`Message ${activeName}`}
+              aria-label={councilMode ? 'Message the whole council' : `Message ${activeName}`}
               className="flex-1 min-w-0 bg-stone-950 border border-stone-700 rounded-full px-4 min-h-[44px] text-sm text-stone-200 outline-none focus:border-amber-500/60"
             />
             <button

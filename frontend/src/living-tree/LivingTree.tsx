@@ -69,6 +69,7 @@ export type NodeMenuItemId =
   | 'today'
   | 'talk'
   | 'review'
+  | 'upload'
   | 'projects'
   | 'settings'
   | 'character'
@@ -83,6 +84,14 @@ export type SheetNavView =
   | 'provenance'
   | 'perspectives'
   | 'agent_intake'
+
+/**
+ * Cross-component ask: jump the open seat sheet to that seat's review
+ * (dispatched by the seat's Upload content after an intake completes).
+ * Follows the codebase's window-CustomEvent pattern (cf. the vision
+ * execution focus/insert-text event).
+ */
+export const OPEN_SEAT_REVIEW_EVENT = 'zenaf:open-seat-review'
 
 /**
  * Phase-1 composition seam: the app shell provides the mounted view for a
@@ -215,6 +224,7 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'today', title: 'Today', desc: 'The day through this seat’s eyes.' },
   { id: 'talk', title: 'Talk', desc: 'Meet the seat, then talk it through.' },
   { id: 'review', title: 'Review', desc: 'This seat’s moments awaiting your verdict.' },
+  { id: 'upload', title: 'Upload', desc: 'Add source material from this seat — sorted by content; what reaches this seat lands in its review.' },
 ]
 
 /** Seat-owned destinations (the distributed menu, 2026-10-22): a full-screen
@@ -243,7 +253,7 @@ const LEGACY_YOU_ITEMS: Array<{ id: string; title: string; desc: string; cta?: S
   {
     id: 'upload',
     title: 'Upload source materials',
-    desc: 'Connect a ChatGPT or Claude conversation — paste a share link or send one from your browser. Redaction happens at capture — nothing trains until you review and approve it.',
+    desc: 'Connect a ChatGPT or Claude conversation — paste a share link or send one from your browser. Uploading from YOU distributes across the whole council; uploading from a seat’s profile aims it there. Redaction happens at capture — nothing trains until you review and approve it.',
     cta: 'agent_intake',
   },
   {
@@ -759,6 +769,21 @@ export function LivingTreeView({
   const [sheetItem, setSheetItem] = useState<NodeMenuItemId | null>(null)
   /** Seat whose full character panel is expanded inside its Talk tab. */
   const [charExpandedSeat, setCharExpandedSeat] = useState<string | null>(null)
+
+  // A seat's Upload content asks to land in that seat's review when an
+  // intake completes (OPEN_SEAT_REVIEW_EVENT). Only the sheet that is
+  // open on that seat answers; anything else ignores the event.
+  useEffect(() => {
+    const onOpenSeatReview = (e: Event) => {
+      const seatKey = (e as CustomEvent<{ seatKey?: string }>).detail?.seatKey
+      if (!seatKey) return
+      if (sheetNode?.kind === 'seat' && sheetNode.seatKey === seatKey) {
+        setSheetItem('review')
+      }
+    }
+    window.addEventListener(OPEN_SEAT_REVIEW_EVENT, onOpenSeatReview)
+    return () => window.removeEventListener(OPEN_SEAT_REVIEW_EVENT, onOpenSeatReview)
+  }, [sheetNode])
   /** Legacy tree-options row expanded inline in the you-sheet. */
   const [legacyOpen, setLegacyOpen] = useState<string | null>(null)
 

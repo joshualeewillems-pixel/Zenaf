@@ -31,6 +31,7 @@ import {
 import { PerspectiveWorkoutPanel } from './perspectives/PerspectiveWorkoutPanel'
 import {
   LivingTreeView,
+  OPEN_SEAT_REVIEW_EVENT,
   type NodeMenuItemId,
   type NodeSheetContentProvider,
   type TreeNodeRef,
@@ -4983,6 +4984,26 @@ function App() {
       ) : (
         <ReviewView key="review-you" />
       )
+    }
+    if (item === 'upload') {
+      // Upload from a seat's profile: the same intake, framed for the
+      // seat. When an intake completes, its review button jumps this
+      // sheet to the seat's own review queue (LivingTree listens for
+      // OPEN_SEAT_REVIEW_EVENT). Uploading from YOU stays in the
+      // you-sheet's options (distributes to all seats), so a seat node
+      // is the only place this renders.
+      return node.kind === 'seat' ? (
+        <AgentIntakeView
+          key={`upload-${node.seatKey}`}
+          seatName={node.fellowshipName}
+          onOpenSettings={() => setMainView('settings')}
+          onOpenReview={() =>
+            window.dispatchEvent(
+              new CustomEvent(OPEN_SEAT_REVIEW_EVENT, { detail: { seatKey: node.seatKey } }),
+            )
+          }
+        />
+      ) : null
     }
     if (item === 'talk') {
       // The unified 1:1 conversation. Seat sheets pre-select the seat (the

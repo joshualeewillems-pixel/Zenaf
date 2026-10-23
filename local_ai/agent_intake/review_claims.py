@@ -592,6 +592,26 @@ def build_mined_claims(mining_result: Any, agent_id: str) -> list[ReviewClaim]:
             else:  # idea
                 inference = f"You've been turning this over: {title}."
                 detail = detail_text
+            # Dedupe annotation (project_miner.annotate_existing): the
+            # card says plainly that this is already in the workspace
+            # and what accepting does instead of duplicating it.
+            if getattr(item, "existing_id", None):
+                existing_title = getattr(item, "existing_title", None) or title
+                if ctype in ("initiative", "project"):
+                    inference = (
+                        f"This matches work already in your workspace: “{existing_title}”. "
+                        "Accepting files the new pieces under it — it won't be created twice."
+                    )
+                elif ctype == "task":
+                    inference = (
+                        f"This already exists as a task in your workspace: “{existing_title}”. "
+                        "Accepting won't create it twice."
+                    )
+                else:  # idea
+                    inference = (
+                        f"This idea is already captured in your workspace: “{existing_title}”. "
+                        "Accepting won't capture it twice."
+                    )
             claims.append(
                 ReviewClaim(
                     id=f"{agent_id}:{ctype}:{i}",

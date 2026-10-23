@@ -232,7 +232,16 @@ export default function ReviewView({
     accepted: Claim[],
     payload: Mined,
     ideaLevels?: Record<string, string>,
-  ): Promise<{ initiative_ids: string[]; project_ids: string[]; task_ids: string[]; idea_ids: string[] }> {
+  ): Promise<{
+    initiative_ids: string[]
+    project_ids: string[]
+    task_ids: string[]
+    idea_ids: string[]
+    linked_initiative_ids?: string[]
+    linked_project_ids?: string[]
+    linked_task_ids?: string[]
+    linked_idea_ids?: string[]
+  }> {
     const byType = (t: string) => accepted.filter((c) => c.claim_type === t).map((c) => c.title)
     const find = (arr: any[], title: string) => arr.find((x: any) => x.title === title)
     return api('/agents/mined-projects/confirm', {
@@ -266,15 +275,26 @@ export default function ReviewView({
       const out = await createAccepted(a.id, accepted, minedPayload)
       const n = (out.initiative_ids?.length || 0) + (out.project_ids?.length || 0) +
         (out.task_ids?.length || 0) + (out.idea_ids?.length || 0)
-      if (n === 0) {
+      const linked = (out.linked_initiative_ids?.length || 0) + (out.linked_project_ids?.length || 0) +
+        (out.linked_task_ids?.length || 0) + (out.linked_idea_ids?.length || 0)
+      if (n === 0 && linked === 0) {
         setError('Nothing was created — the proposals may not have matched. Try mining again.')
+      } else if (n === 0) {
+        setCreatedSummary(
+          `Nothing new created — ${linked} item${linked === 1 ? '' : 's'} matched work already in your workspace and were filed under it instead of being duplicated.`,
+        )
       } else {
         const parts: string[] = []
         if (out.initiative_ids?.length) parts.push(`${out.initiative_ids.length} initiative${out.initiative_ids.length === 1 ? '' : 's'}`)
         if (out.project_ids?.length) parts.push(`${out.project_ids.length} project${out.project_ids.length === 1 ? '' : 's'}`)
         if (out.task_ids?.length) parts.push(`${out.task_ids.length} task${out.task_ids.length === 1 ? '' : 's'}`)
         if (out.idea_ids?.length) parts.push(`${out.idea_ids.length} idea${out.idea_ids.length === 1 ? '' : 's'}`)
-        setCreatedSummary(`Created ${parts.join(', ')} — they should now appear in your Vision map.`)
+        setCreatedSummary(
+          `Created ${parts.join(', ')} — they should now appear in your Vision map.` +
+            (linked > 0
+              ? ` ${linked} item${linked === 1 ? '' : 's'} matched existing work and were filed under it, not duplicated.`
+              : ''),
+        )
       }
       setError('')
     } catch (e) {

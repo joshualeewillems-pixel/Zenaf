@@ -12,7 +12,8 @@ Query params:
                   seat pattern
   engaged_id      nudge id the user stopped on — its seat becomes
                   ``suggested_mode`` ("seems like you're in Conductor mode?")
-  mode            accepted seat name — re-ranks the remaining deck around it
+  mode            accepted seat name — the deck's lens: within each tier
+                  the seat's own cards lead (see TodayService.briefing)
 
 Response (stable contract for the frontend — keep backward compatible):
   {items[<=3], has_more, cursor|null, suggested_mode|null}

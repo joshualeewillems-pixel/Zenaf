@@ -166,19 +166,55 @@ class TodayService:
         suggested_mode = (engaged or {}).get("suggested_seat")
         mode_norm = (mode or "").strip().lower() or None
 
+        # People-waiting promotion (see _enrich): unconditional in the
+        # council briefing; inside a seat's lens, only the lens seat's own
+        # people-waiting items promote to must.
+        for e in enriched:
+            if e["people_waiting"] and e["tier"] == TIER_SHOULD:
+                seat = (e["nudge"].get("suggested_seat") or "").strip().lower()
+                if not mode_norm or seat == mode_norm:
+                    e["tier"] = TIER_MUST
+
         def sort_key(e: dict[str, Any]):
             n = e["nudge"]
             seat = n.get("suggested_seat") or ""
             return (
                 TIER_ORDER[e["tier"]],
-                -int(e["people_waiting"]),
+                # The lens (Joshua, 2026-10-23): inside a tier, the mode
+                # seat's own cards lead. Mode used to sit below
+                # people-waiting as a third-place tiebreak, which made
+                # every seat's deck identical in practice — a seat's
+                # Today is now visibly its own, while must-tier urgency
+                # still breaks through globally.
                 -int(bool(mode_norm) and seat.strip().lower() == mode_norm),
+                -int(e["people_waiting"]),
                 seat_dismissals.get(seat, 0),
                 -e["envelope_score"],
                 n.get("created_at", ""),
             )
 
         enriched.sort(key=sort_key)
+
+        # Deck dedupe: never the identical card twice. Duplicate
+        # entities (same title, same why) arise when mining created a
+        # project twice, and the store can race the same nudge in twice;
+        # both render as the same card, so the deck collapses them.
+        # Distinct nudges about one entity (different kinds, different
+        # why) are legitimate and stay. Sorted order means the
+        # best-ranked representative survives.
+        seen_texts: set[tuple[str, str]] = set()
+        deduped: list[dict[str, Any]] = []
+        for e in enriched:
+            n = e["nudge"]
+            tkey = (
+                (n.get("entity_title") or "").strip().lower(),
+                (n.get("why") or "").strip().lower(),
+            )
+            if tkey[0] and tkey in seen_texts:
+                continue
+            seen_texts.add(tkey)
+            deduped.append(e)
+        enriched = deduped
 
         offset = _decode_cursor(cursor)
         page = enriched[offset : offset + DECK_SIZE]
@@ -203,10 +239,11 @@ class TodayService:
             if due_today:
                 tier = TIER_MUST
 
-        # "Someone waiting on you" is a must-tier member: a should-tier item
-        # with a person attached gets promoted. Growth stalls stay gentle.
-        if people_waiting and tier == TIER_SHOULD:
-            tier = TIER_MUST
+        # "Someone waiting on you" promotes a should-tier item to must —
+        # applied in briefing(), not here, because the lens conditions it:
+        # in a seat's own briefing only that seat's people-waiting items
+        # promote (another seat's waiting person is the council view's
+        # urgency, not this seat's).
 
         time_pressure = self._time_pressure(kind, due_today)
         score = envelope_score("unknown", "unknown", time_pressure)

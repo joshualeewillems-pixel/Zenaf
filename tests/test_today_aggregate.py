@@ -280,3 +280,65 @@ def test_why_carried_through():
     items = svc.briefing("u1")["items"]
     assert items[0]["why"] == "why-a"
     assert items[0]["suggested_seat"] == "Conductor"
+
+
+# -- The lens + deck dedupe (Joshua, 2026-10-23) ------------------------------
+# Mode used to be a third-place tiebreak: every seat's Today delivered the
+# identical deck. Now the mode seat's own cards lead within each tier, and
+# the deck never shows an entity — or the identical card — twice.
+
+def test_lens_promotes_own_seat_over_people_waiting():
+    nudges = [
+        _nudge("n-other", "stalled", seat="Conductor", entity_id="t1"),
+        _nudge("n-own", "stalled", seat="Guardian", entity_id="t2"),
+    ]
+    tasks = [_task("t1", assignee_id="person-1"), _task("t2")]
+    svc = _svc(nudges, tasks=tasks)
+    plain_ids = [i["id"] for i in svc.briefing("u1")["items"]]
+    assert plain_ids == ["n-other", "n-own"]  # people-waiting leads un-moded
+    lens_ids = [i["id"] for i in svc.briefing("u1", mode="guardian")["items"]]
+    assert lens_ids == ["n-own", "n-other"]  # the Bear's own card leads its deck
+
+
+def test_lens_must_tier_still_breaks_through():
+    nudges = [
+        _nudge("n-overdue", "date_overdue", seat="Conductor", entity_id="t1"),
+        _nudge("n-own", "stalled", seat="Guardian", entity_id="t2"),
+    ]
+    svc = _svc(nudges, tasks=[_task("t1"), _task("t2")])
+    ids = [i["id"] for i in svc.briefing("u1", mode="guardian")["items"]]
+    assert ids[0] == "n-overdue"  # must-tier urgency outranks the lens
+
+
+def test_deck_keeps_distinct_kinds_about_one_entity():
+    # A stalled nudge and a due-date nudge about the same task say
+    # different things — both are legitimate cards.
+    nudges = [
+        _nudge("n-stalled", "stalled", entity_id="t1"),
+        _nudge("n-due", "date_approaching", entity_id="t1"),
+    ]
+    svc = _svc(nudges, tasks=[_task("t1")])
+    assert len(svc.briefing("u1")["items"]) == 2
+
+
+def test_deck_dedupes_identical_card_same_entity():
+    why = "No movement in 8 days on “Normalize confidence” — last touched 2026-10-15."
+    nudges = [
+        _nudge("n-a", "stalled", entity_id="t1", entity_title="Normalize confidence", why=why),
+        _nudge("n-b", "stalled", entity_id="t1", entity_title="Normalize confidence", why=why),
+    ]
+    svc = _svc(nudges, tasks=[_task("t1")])
+    assert len(svc.briefing("u1")["items"]) == 1
+
+
+def test_deck_dedupes_identical_card_from_duplicate_entities():
+    # The observed staging symptom: the same task title + why rendered
+    # twice in one deck (duplicate entities from double mining).
+    why = "No movement in 8 days on “Normalize confidence” — last touched 2026-10-15."
+    nudges = [
+        _nudge("n-a", "stalled", entity_id="t1", entity_title="Normalize confidence", why=why),
+        _nudge("n-b", "stalled", entity_id="t2", entity_title="Normalize confidence", why=why),
+    ]
+    svc = _svc(nudges, tasks=[_task("t1"), _task("t2")])
+    items = svc.briefing("u1")["items"]
+    assert len(items) == 1

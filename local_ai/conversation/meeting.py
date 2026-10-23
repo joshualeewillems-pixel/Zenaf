@@ -47,6 +47,7 @@ canonical character; the user's echo is a different side of the switch).
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -151,6 +152,26 @@ def _excerpt(text: str, limit: int) -> str:
     if cut < limit // 2:
         cut = limit
     return text[:cut].rstrip(" ,;:") + "…"
+
+
+#: Weave markers as they can appear in stored text: the canonical pair
+#: plus the malformed closings sanitize_weave (weave.py) knows about.
+_WEAVE_MARK_RE = re.compile(r"\[/\[/u\]\]|\[{1,2}/?u\]\]")
+
+
+def _strip_weave_markers(text: str) -> str:
+    """Remove [[u]]...[[/u]] weave markers, keeping the woven words.
+
+    For PLAIN contexts that quote stored woven text — the orientation's
+    pulled item is prose inside quotation marks, not a woven bubble.
+    The stored claim keeps its markers (MeetingView renders them as
+    amber spans in the live read-back); a quote inside another sentence
+    must not leak the markup into the user's reading (seen live
+    2026-10-23: a literal "[[u]]" in the orientation bubble). Stripping
+    happens before excerpting, so a cut can never sever a marker and
+    leave half of one behind."""
+    stripped = _WEAVE_MARK_RE.sub("", text or "")
+    return re.sub(r"[ \t]{2,}", " ", stripped)
 
 #: The status seeded keystone tasks start with: keystone_seeding creates
 #: them through TaskCreate without a status, so the model's default is the
@@ -596,8 +617,12 @@ class MeetingService:
             self._say(
                 user_id, cid, arch_id,
                 script.pulled_item_template.format(
-                    claim=_excerpt(row.get("readback_claim") or "", 160),
-                    response=_excerpt(row.get("readback_response") or "", 120),
+                    claim=_excerpt(
+                        _strip_weave_markers(row.get("readback_claim") or ""), 160
+                    ),
+                    response=_excerpt(
+                        _strip_weave_markers(row.get("readback_response") or ""), 120
+                    ),
                 ),
             )
         if script.pulled_where_template:

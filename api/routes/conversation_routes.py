@@ -29,6 +29,7 @@ from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingS
 from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import ConversationStore
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
+from local_ai.fellowship.events import emit_event as fellowship_emit_event
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
@@ -40,7 +41,9 @@ def _store() -> ConversationStore:
 
 
 def _service() -> ConversationService:
-    return ConversationService(_store())
+    # Fellowship Runtime P1: turns emit shared-reality events at the
+    # request tail; derivation is scheduled off-path by the emitter.
+    return ConversationService(_store(), event_sink=fellowship_emit_event)
 
 
 def _uid(current_user: dict) -> str | None:

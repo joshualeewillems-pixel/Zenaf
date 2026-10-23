@@ -3952,7 +3952,7 @@ def run_council(
         perspective_definitions = list(perspective_definitions)[:COUNCIL_MAX_SEATS]
     if included_roles:
         included_roles = list(included_roles)[:COUNCIL_MAX_SEATS]
-    # Sub-personality twigs: nudge parent archetype seats when the run's topic
+    # Specialization twigs: nudge parent archetype seats when the run's topic
     # matches an approved twig's domain. No-op unless seats name archetypes.
     try:
         from local_ai.council.twigs import apply_twig_overrides
@@ -4715,7 +4715,7 @@ def run_council_stream(
     if included_roles:
         included_roles = list(included_roles)[:COUNCIL_MAX_SEATS]
 
-    # Sub-personality twigs: nudge parent archetype seats when the run's topic
+    # Specialization twigs: nudge parent archetype seats when the run's topic
     # matches an approved twig's domain. No-op unless seats name archetypes.
     try:
         from local_ai.council.twigs import apply_twig_overrides

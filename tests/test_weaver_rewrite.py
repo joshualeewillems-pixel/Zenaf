@@ -105,15 +105,24 @@ def _to_readback(svc, uid, answer="Intuition, usually — unless something pract
 
 
 def test_opening_is_a_midwork_interruption(ve_ctx, tmp_path):
+    """UPDATED for the encounter runtime (P3): what is DELIVERED at the
+    door is the minimal opening — the interruption itself and the
+    invitation (the dilemma) — so the user participates within three
+    bubbles (Joshua's pacing correction after playing the rewrite:
+    the stacked six-bubble opening read as a barrage). The full
+    scripted opening still exists as the encounter's bench anchors —
+    asserted here as data, where the runtime draws on it."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies[: len(script.opening)] == list(script.opening)
+    assert bodies == [script.opening[0], script.questions[0]]
     assert "does this look broken to you, or merely unfinished?" in bodies[0]
-    assert "seven rather incompatible things" in bodies[1]
-    assert "Personally, I think we're making progress." in bodies
+    # The seven-parts material is bench context now, not a door speech.
+    assert "seven rather incompatible things" in script.opening[1]
+    assert "Personally, I think we're making progress." in script.opening
+    assert not any("seven rather incompatible things" in b for b in bodies)
 
 
 def test_first_question_is_the_dilemma(ve_ctx, tmp_path):

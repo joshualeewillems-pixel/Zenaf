@@ -1,9 +1,13 @@
-"""Keystone meetings — the first-meeting stage machine.
+"""Keystone meetings — the first-meeting encounter and its host service.
 
-Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22):
-  - A first meeting runs opening (scripted) → encounter (one question,
-    live reply) → read-back (one tentative, correctable impression) →
-    reveal (scripted), and completing it marks keystone 1 Done.
+Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22;
+the encounter runtime, Fellowship P3, 2026-10-23):
+  - A first meeting is an encounter with objectives, not a stage walk:
+    a minimal scripted opening (character, environment, invitation)
+    → open conversation → one tentative, correctable read-back
+    impression → reveal (scripted), and completing it marks keystone
+    1 Done. The stage values asserted below are the derived position
+    labels the API has always surfaced, not the engine's mechanism.
   - The Conductor is met first; no other seat's first meeting begins until
     the Weaver's keystone 1 is complete. Nobody is introduced by proxy.
   - A seat with no written script has no meeting yet — refused honestly.
@@ -92,6 +96,13 @@ def _conductor_k1_status(uid):
 
 
 def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
+    """UPDATED for the encounter runtime (P3): the delivered opening is
+    minimal — the script's first paragraph (character + environment)
+    and its first question (the invitation) — so the user is
+    participating within three bubbles. The rest of the scripted
+    opening is bench context the runtime draws on, not a monologue
+    delivered at the door (Joshua's pacing correction, 2026-10-23:
+    the old six-bubble opening read as a stressful barrage)."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
@@ -101,8 +112,8 @@ def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
     assert state["conversation_id"] == "meeting-conductor-1"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies[: len(script.opening)] == list(script.opening)
-    assert bodies[len(script.opening)] == script.questions[0]
+    assert bodies == [script.opening[0], script.questions[0]]
+    assert len(bodies) <= 3
     assert all(m["role"] == "voice" for m in state["messages"])
     assert _conductor_k1_status(uid) != "Done"
 
@@ -155,11 +166,17 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     state = svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
     assert state["stage"] == "readback"
     bodies = [m["body"] for m in state["messages"]]
-    assert "An engaged reply that hears two tensions together." in bodies
     assert "A first impression, anchored in [[u]]your words[[/u]] — correct me." in bodies
-    # Both live beats ran through the shared voice builder with their frames.
-    assert any("ENCOUNTER beat" in p for p in gen.prompts)
-    assert any("READ-BACK beat" in p for p in gen.prompts)
+    # UPDATED for the encounter runtime (P3): the answer turn is ONE
+    # generation carrying both movements — the engaged reply and the
+    # first impression — split on the frame's delimiter (the two-speed
+    # responsiveness gate: one call per turn). The fake answers the
+    # combined frame with its read-back branch, so the impression is
+    # the turn's spoken output; both frames are present in the single
+    # prompt, where the stage machine spent two calls.
+    assert len(gen.prompts) == 1
+    assert "ENCOUNTER beat" in gen.prompts[0]
+    assert "READ-BACK beat" in gen.prompts[0]
 
     # The Conductor's meeting is unique: the orientation beat comes
     # between the read-back response and the reveal.
@@ -440,12 +457,14 @@ def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
     svc.restart(uid, "conductor")
 
     # A fresh run delivers the opening again and runs the whole arc;
-    # completing it flips keystone 1 back to Done.
+    # completing it flips keystone 1 back to Done. (Opening shape as
+    # in test_start_delivers_opening_and_first_question — the minimal
+    # encounter opening, P3.)
     state = svc.start(uid, "conductor")
     assert state["status"] == "active"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies[: len(script.opening)] == list(script.opening)
+    assert bodies == [script.opening[0], script.questions[0]]
 
     svc.turn(uid, "conductor", "Second time: I start with people, not tasks.")
     svc.turn(uid, "conductor", "Yes, that's the shape of it.")

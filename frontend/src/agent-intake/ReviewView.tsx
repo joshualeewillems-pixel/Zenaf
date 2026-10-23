@@ -3,7 +3,12 @@ import { apiBase } from '../apiBase'
 import ClaimCard, { Claim } from './ClaimCard'
 import ReviewChat from './ReviewChat'
 import MiningChat from './MiningChat'
-import { seatStrands, SORT_WEIGHT_THRESHOLD } from './seatStrands'
+import {
+  SEAT_REVIEW_GROUPS,
+  seatKeysForWeights,
+  seatStrands,
+  SORT_WEIGHT_THRESHOLD,
+} from './seatStrands'
 import {
   MINED_CLAIM_TYPES,
   MiningState,
@@ -466,26 +471,68 @@ export default function ReviewView({
         : 'Nothing waiting for review.'
       : `${visibleAgents.length} conversation${visibleAgents.length === 1 ? '' : 's'} to review.`
 
+  const agentButton = (a: Agent) => (
+    <button
+      key={a.id}
+      onClick={() => select(a)}
+      className="w-full text-left rounded-2xl border border-stone-700 bg-stone-800/60 p-4 min-h-[44px]"
+    >
+      <span className="block text-stone-100 font-semibold text-[15px]">{a.name}</span>
+      <span className="block text-stone-500 text-sm mt-0.5">
+        {a.sort ? strandName(a.sort.primary_strand) : 'unsorted'} · {new Date(a.created_at).toLocaleDateString()}
+      </span>
+    </button>
+  )
+
+  // The whole queue (you-node / main view) is organized by seat: each
+  // conversation sits under every seat whose review queue it belongs in —
+  // the same reach rule the seat sheets filter by — so the queue reads
+  // the way the council is actually fed. Conversations the sorter hasn't
+  // placed under any seat wait at the end, honestly unplaced.
+  const seatGroups = SEAT_REVIEW_GROUPS.map((g) => ({
+    ...g,
+    agents: visibleAgents.filter((a) => seatKeysForWeights(a.sort?.strand_weights).includes(g.key)),
+  })).filter((g) => g.agents.length > 0)
+  const unplacedAgents = visibleAgents.filter(
+    (a) => seatKeysForWeights(a.sort?.strand_weights).length === 0,
+  )
+
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-y-auto p-4 max-w-2xl mx-auto w-full">
       <h2 className="text-xl font-bold text-stone-100 mb-1">Review queue</h2>
       <p className="text-stone-400 text-sm mb-4">{queueLabel} Nothing trains until you accept it.</p>
       {loading && <p className="text-stone-500 text-sm">Loading…</p>}
       {error && <p className="text-red-300 text-sm mb-3">{error}</p>}
-      <div className="space-y-2 mb-8">
-        {visibleAgents.map((a) => (
-          <button
-            key={a.id}
-            onClick={() => select(a)}
-            className="w-full text-left rounded-2xl border border-stone-700 bg-stone-800/60 p-4 min-h-[44px]"
-          >
-            <span className="block text-stone-100 font-semibold text-[15px]">{a.name}</span>
-            <span className="block text-stone-500 text-sm mt-0.5">
-              {a.sort ? strandName(a.sort.primary_strand) : 'unsorted'} · {new Date(a.created_at).toLocaleDateString()}
-            </span>
-          </button>
-        ))}
-      </div>
+      {seatKey ? (
+        <div className="space-y-2 mb-8">{visibleAgents.map(agentButton)}</div>
+      ) : (
+        <div className="mb-8">
+          {seatGroups.map((g) => (
+            <div key={g.key} className="mb-5">
+              <h3 className="text-sm font-semibold text-stone-300 mb-2">
+                {g.name}
+                <span className="text-stone-500 font-normal">
+                  {' '}
+                  · {g.agents.length} to review
+                </span>
+              </h3>
+              <div className="space-y-2">{g.agents.map(agentButton)}</div>
+            </div>
+          ))}
+          {unplacedAgents.length > 0 && (
+            <div className="mb-5">
+              <h3 className="text-sm font-semibold text-stone-300 mb-2">
+                Not yet placed
+                <span className="text-stone-500 font-normal">
+                  {' '}
+                  · the sorter hasn't attributed these to a seat yet
+                </span>
+              </h3>
+              <div className="space-y-2">{unplacedAgents.map(agentButton)}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       <h2 className="text-xl font-bold text-stone-100 mb-1">Reviewed</h2>
       <p className="text-stone-400 text-sm mb-4">

@@ -40,3 +40,34 @@ export function seatStrands(seatKey: string | null | undefined): string[] | null
   if (!seatKey) return null
   return SEAT_STRANDS[seatKey] ?? null
 }
+
+/**
+ * Seats as review buckets, in council order (names mirror FELLOWSHIP_NAMES
+ * in living-tree/LivingTree.tsx). The Skeptic is deliberately absent: its
+ * scope is computed dynamically server-side (the whole queue), so it is
+ * not a filing bucket an upload can be attributed to.
+ */
+export const SEAT_REVIEW_GROUPS: Array<{ key: string; name: string }> = [
+  { key: 'mentor', name: 'The Gardener' },
+  { key: 'champion', name: 'The Firebrand' },
+  { key: 'guardian', name: 'The Bear' },
+  { key: 'ambassador', name: 'The Bridge' },
+  { key: 'conductor', name: 'The Weaver' },
+  { key: 'maverick', name: 'The Fox' },
+]
+
+/**
+ * Which seats' review queues an agent belongs in, from its sort weights —
+ * the same reach rule the seat sheets filter by (any of the seat's
+ * strands at or above SORT_WEIGHT_THRESHOLD). Unsorted agents (no
+ * weights) belong to no seat yet.
+ */
+export function seatKeysForWeights(
+  weights: Record<string, number> | null | undefined,
+): string[] {
+  if (!weights) return []
+  return SEAT_REVIEW_GROUPS.filter(({ key }) => {
+    const strands = SEAT_STRANDS[key]
+    return !!strands && strands.some((s) => (weights[s] ?? 0) >= SORT_WEIGHT_THRESHOLD)
+  }).map(({ key }) => key)
+}

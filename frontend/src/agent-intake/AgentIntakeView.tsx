@@ -8,13 +8,23 @@ type Props = {
   onOpenSettings?: () => void
   /** Navigate to the review queue (shown after an intake completes or a link is queued). */
   onOpenReview?: () => void
+  /**
+   * When the surface is opened from a council seat's profile, the seat's
+   * fellowship name (e.g. 'The Weaver'). The intake itself is unchanged —
+   * the sorter still files by content — but the framing is honest about
+   * where the material lands: what reaches this seat's strands is reviewed
+   * in this seat's queue. Null (from YOU) = distributes to all seats.
+   */
+  seatName?: string | null
 }
 
-export default function AgentIntakeView({ onOpenSettings, onOpenReview }: Props) {
+export default function AgentIntakeView({ onOpenSettings, onOpenReview, seatName = null }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([
     {
       role: 'muse',
-      text: 'Paste one of your AI conversations here — or drop a share link — and I\u2019ll sort it into your seven strands and pull out your projects. Redacted at capture; nothing trains until you review it.',
+      text: seatName
+        ? `You're uploading from ${seatName}'s profile. Paste a conversation here — or drop a share link — and the sorter files it by content across your seven strands. Whatever reaches ${seatName}'s strands lands in ${seatName}'s review queue; the rest still reaches the seats it belongs to. Redacted at capture; nothing trains until you review it.`
+        : 'Paste one of your AI conversations here — or drop a share link — and I\u2019ll sort it into your seven strands and pull out your projects. Uploading from YOU distributes across the whole council. Redacted at capture; nothing trains until you review it.',
     },
   ])
   const [input, setInput] = useState('')
@@ -95,7 +105,7 @@ export default function AgentIntakeView({ onOpenSettings, onOpenReview }: Props)
                   onClick={onOpenReview}
                   className="mt-2 block min-h-[44px] px-4 rounded-xl bg-yellow-500/90 text-stone-950 text-sm font-semibold"
                 >
-                  Open review queue
+                  {seatName ? `Open ${seatName}'s review` : 'Open review queue'}
                 </button>
               ) : null}
             </div>

@@ -1,25 +1,28 @@
-"""Keystone meeting engine — the first-meeting conversation, as a stage machine.
+"""Keystone meeting service — the host of the encounter runtime.
 
-A meeting is a guided conversation between the user and ONE council seat,
-run against the script in local_ai/council/meetings.py. Beats:
+A meeting is a conversation between the user and ONE council seat.
+Since the Fellowship Runtime (P3, Joshua 2026-10-23), the conversation
+itself runs on OBJECTIVES, not a stage sequence: the encounter runtime
+(local_ai/conversation/encounter.py) holds the character's narrative
+objectives, answers the user's move before any agenda, and closes on
+conditions — the impression offered and genuinely answered, or the
+graceful ceiling. This service is the runtime's host and adapter:
 
-  opening   (scripted) → encounter (one question, live reply)
-            → readback  (one tentative impression, live)
-            → orientation (ONLY where the script carries one — the
-              Conductor's, today: an in-character pause in her workshop
-              before the reveal. What was pulled from the conversation
-              and where it files is the interface layer's to show, never
-              hers to explain; the tutorials are distributed per seat and
-              ride inside the fiction; see meetings.SEAT_FEATURE_FOCUS)
-            → reveal    (scripted) → keystone task marked Done
+  - the guards (who may be met, in what order — the rules below),
+  - the stores (meeting state in its own small store; the transcript
+    in the shared ConversationStore under "meeting-{seat}-{keystone}",
+    so hydration and rendering reuse the skeleton's machinery — a
+    meeting is a conversation, not a new kind of object),
+  - the hands the runtime borrows (say / generate / store), and
+  - the single completion chokepoint: reveal, keystone task Done,
+    and the impression filed into the review queue exactly once.
 
-State lives in its own small store (stage, question pointer, the read-back
-claim and the user's response to it). The transcript lives in the shared
-ConversationStore under conversation_id "meeting-{seat}-{keystone}", so
-hydration and rendering reuse the skeleton's machinery — a meeting is a
-conversation, not a new kind of object.
+The `stage` column survives as the derived position label the API has
+always surfaced (encounter / readback / orientation / complete); the
+runtime derives it from encounter state — position is the interface's
+view, objectives are the engine's.
 
-Rules the engine enforces (Joshua's design, not preferences):
+Rules the service enforces (Joshua's design, not preferences):
   - The Conductor is met first. Until its keystone 1 completes, no other
     seat's first meeting can begin (the attention markers encode the same
     order on the tree).
@@ -38,7 +41,8 @@ Rules the engine enforces (Joshua's design, not preferences):
     it waits, word for word — filing writes no training signal; only
     the user's verdict on the claim does.
   - Meetings are resumable: state is server-side, so leaving mid-meeting
-    loses nothing, and beginning again picks up at the current beat.
+    loses nothing, and beginning again picks up where the encounter
+    stands.
   - A COMPLETED meeting can be met again (restart): the prior run —
     transcript plus the verbatim read-back impression — is
     archived in the meeting store, never deleted; the meeting resets to
@@ -48,7 +52,7 @@ Rules the engine enforces (Joshua's design, not preferences):
     paused and resumed instead.
 
 The character's live beats go through the shared voice-reply builder with
-the script's frame as extra instructions — the meeting never forks the
+the encounter's frame as extra instructions — the meeting never forks the
 voice. Scripted beats are appended verbatim in the base voice (this is the
 canonical character; the user's echo is a different side of the switch).
 """
@@ -70,9 +74,16 @@ from local_ai.vision_execution import keystone_seeding
 from local_ai.vision_execution import models as ve_models
 from local_ai.vision_execution import service as ve
 
+from . import encounter as ENC
+from .encounter import (
+    EncounterRuntime,
+    EncounterState,
+    _classify_readback_reply,
+    _is_acknowledgment,
+    _is_pass,
+)
 from .reply import generate_voice_reply
 from .store import ConversationStore
-from .weave import strip_weave_markers
 
 GenerateFn = Callable[..., str]
 
@@ -93,6 +104,7 @@ CREATE TABLE IF NOT EXISTS meetings (
   readback_claim TEXT NOT NULL DEFAULT '',
   readback_response TEXT NOT NULL DEFAULT '',
   readback_strands TEXT NOT NULL DEFAULT '[]',
+  state_json TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, archetype_id, keystone_index)
@@ -111,119 +123,18 @@ CREATE TABLE IF NOT EXISTS meeting_archives (
 );
 """
 
-#: Plain strand names the read-back's bookkeeping line may cite.
-_STRAND_NAMES = ("Voice", "Logic", "Eye", "Ear", "Hands", "Heart", "Compass")
-
-#: Orientation acknowledgments — the user signaling "understood, go on"
-#: rather than asking something. Anything else in the orientation beat is
-#: treated as a question and answered from the script's facts block.
-_ACK_TOKENS = {
-    "ok", "okay", "got it", "thanks", "thank you", "yes", "yeah", "yep",
-    "makes sense", "understood", "cool", "great", "sure", "fine",
-    "alright", "all right", "go on", "continue", "ready",
-}
-
-#: Acknowledgment phrases for _is_acknowledgment's containment check.
-_ACK_PHRASES = (
-    "sounds good", "sounds great", "looks good", "all good", "makes sense",
-    "got it", "thank you", "thanks", "understood", "go on", "okay", "ok",
-    "yes", "yeah", "yep", "sure", "cool", "great", "fine", "alright",
-    "all right", "continue", "ready", "perfect", "nice",
-)
-
-#: Words that turn a short reply into something other than an ack.
-_ACK_CONTRASTS = ("but", "except", "however", "actually", "though")
-
-#: Correction signals for the read-back reply: the user amending the
-#: impression rather than accepting it or changing the subject. Matched
-#: against the normalized reply (phrases as substrings, plus a leading
-#: negation); acknowledgment is checked FIRST, so an ack carrying a
-#: contrast word (which _is_acknowledgment already rejects) reaches
-#: this check and can still classify as a correction via "actually" /
-#: "except" / "however" / "though".
-_CORRECTION_PHRASES = (
-    "actually", "except", "however", "though", "instead", "rather",
-    "not quite", "not really", "more like", "that's wrong", "that is wrong",
-    "you got it wrong", "you've got it wrong", "not how i", "not how it",
-    "i meant", "what i meant", "i mean,", "let me correct", "correction",
-    "the opposite", "it's the other", "it is the other",
-)
-
-
-def _classify_readback_reply(message: str) -> str:
-    """Three-way classification of the user's reply to the read-back:
-    "ack" (the impression stands, agreed), "correction" (the user is
-    amending it — the stored impression gets replaced), or "other"
-    (neither — the impression stands as the character's own)."""
-    if _is_acknowledgment(message):
-        return "ack"
-    norm = " ".join((message or "").strip().lower().strip(".! ").split())
-    if not norm:
-        return "other"
-    if norm in ("no problem", "no worries", "no complaints"):
-        return "ack"
-    if norm == "no" or norm.startswith(("no ", "no,", "no —", "no -", "nope")):
-        return "correction"
-    if any(phrase in norm for phrase in _CORRECTION_PHRASES):
-        return "correction"
-    words = norm.split()
-    if "but" in words:
-        return "correction"
-    return "other"
-
-
-def _is_acknowledgment(message: str) -> bool:
-    """Human-shaped ack detection (the first live run's lesson: exact
-    token matching sent "Ok sounds good" down the question path, where
-    the framed answer improvised a second introduction). A short,
-    question-free reply containing an ack phrase — and no contrast
-    word — is an acknowledgment; anything else is treated as a
-    question and answered from the script's facts."""
-    norm = " ".join((message or "").strip().lower().strip(".! ").split())
-    if not norm or "?" in norm:
-        return False
-    if norm in _ACK_TOKENS:
-        return True
-    words = norm.split()
-    if len(words) > 6:
-        return False
-    if any(c in words for c in _ACK_CONTRASTS):
-        return False
-    return any(phrase in norm for phrase in _ACK_PHRASES)
-
-
-def _excerpt(text: str, limit: int) -> str:
-    """A word-boundary excerpt for inline display; the full text stays
-    on the meeting record and in review."""
-    text = (text or "").strip()
-    if len(text) <= limit:
-        return text
-    cut = text.rfind(" ", 0, limit)
-    if cut < limit // 2:
-        cut = limit
-    return text[:cut].rstrip(" ,;:") + "…"
-
-
-#: Plain contexts that quote stored woven text (the orientation's pulled
-#: item is prose inside quotation marks, not a woven bubble) strip the
-#: markers with weave.strip_weave_markers BEFORE excerpting, so a cut can
-#: never sever a marker and leave half of one behind. The stored claim
-#: keeps its markers — MeetingView renders them as amber spans in the
-#: live read-back. (Seen live 2026-10-23: a literal "[[u]]" in the
-#: orientation bubble; the strip helper is shared with review claims.)
+#: The deterministic heuristics that guard the state-critical
+#: transitions (read-back reply classification, acknowledgment and
+#: pass detection, the strands-trailer split, excerpts) live in
+#: encounter.py with the runtime that uses them; the private names
+#: are re-exported above for the callers that grew up importing
+#: them from here.
 
 #: The status seeded keystone tasks start with: keystone_seeding creates
 #: them through TaskCreate without a status, so the model's default is the
 #: seed state. Restart returns a completed meeting's task to exactly this.
 _SEEDED_TASK_STATUS = "Todo"
 
-#: Short answers that mean "ask me a different one" rather than an answer.
-#: Exact-match after normalization — a substantive "no, because…" is an
-#: answer, not a pass.
-_PASS_TOKENS = {
-    "pass", "skip", "next", "next question", "another question",
-    "different question", "idk", "i don't know", "not sure", "nope",
-}
 
 
 def _utcnow() -> str:
@@ -249,13 +160,18 @@ class MeetingStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
-            # Additive migration for stores created before the read-back
-            # carried strand attribution.
+            # Additive migrations for stores created before later
+            # columns landed (strand attribution; encounter state).
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(meetings)")}
             if "readback_strands" not in cols:
                 self._conn.execute(
                     "ALTER TABLE meetings ADD COLUMN readback_strands "
                     "TEXT NOT NULL DEFAULT '[]'"
+                )
+            if "state_json" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE meetings ADD COLUMN state_json "
+                    "TEXT NOT NULL DEFAULT ''"
                 )
             self._conn.commit()
 
@@ -285,7 +201,7 @@ class MeetingStore:
         return self.get(user_id, archetype_id, keystone_index)  # type: ignore[return-value]
 
     def update(self, user_id: str, archetype_id: str, keystone_index: int, **fields: Any) -> dict[str, Any]:
-        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response", "readback_strands"}
+        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response", "readback_strands", "state_json"}
         sets = {k: v for k, v in fields.items() if k in allowed}
         if sets:
             cols = ", ".join(f"{k} = ?" for k in sets)
@@ -394,9 +310,54 @@ def _seat_keystone_tasks(user_id: str, archetype_id: str) -> list[dict[str, Any]
     return keystone_seeding._chain_order(mine)
 
 
-def _is_pass(message: str) -> bool:
-    norm = " ".join((message or "").strip().lower().strip(".! ").split())
-    return norm in _PASS_TOKENS
+class _MeetingHost:
+    """The encounter runtime's hands, lent by the meeting service
+    (encounter.EncounterHost): speech goes to the meeting's
+    conversation, generation goes through the shared voice-reply
+    builder with the runtime's frame, storage goes to the meeting
+    record, and closing goes through the service's single completion
+    chokepoint."""
+
+    def __init__(self, service: "MeetingService", user_id: str, arch_id: str,
+                 keystone_index: int, script: MT.MeetingScript) -> None:
+        self._svc = service
+        self._user_id = user_id
+        self._arch_id = arch_id
+        self._keystone_index = keystone_index
+        self._script = script
+        self._cid = conversation_id_for(arch_id, keystone_index)
+
+    def say(self, body: str) -> None:
+        self._svc._say(self._user_id, self._cid, self._arch_id, body)
+
+    def generate(self, frame: str) -> str:
+        try:
+            return self._svc._generate_framed(
+                self._user_id, self._arch_id, self._keystone_index, frame
+            )
+        except Exception:
+            # A provider failure degrades to the runtime's fallback
+            # anchors; a meeting never breaks mid-sentence on it.
+            logger.exception("meeting generation failed; degrading to fallback")
+            return ""
+
+    def store_impression(self, claim: str, strands: list[str]) -> None:
+        self._svc.meetings.update(
+            self._user_id, self._arch_id, self._keystone_index,
+            readback_claim=claim, readback_strands=json.dumps(strands),
+        )
+
+    def store_response(self, text: str) -> None:
+        self._svc.meetings.update(
+            self._user_id, self._arch_id, self._keystone_index,
+            readback_response=text,
+        )
+
+    def close(self, wrap_line: str) -> None:
+        self._svc._do_reveal(
+            self._user_id, self._arch_id, self._keystone_index,
+            self._script, wrap_line=wrap_line,
+        )
 
 
 class MeetingService:
@@ -492,7 +453,7 @@ class MeetingService:
             "messages": self.conversations.history(user_id, cid, limit=100),
         }
 
-    # -- the beats ---------------------------------------------------------------
+    # -- speech ------------------------------------------------------------------
 
     def _say(self, user_id: str, cid: str, archetype_id: str, body: str) -> dict[str, Any]:
         return self.conversations.append_message(
@@ -500,9 +461,11 @@ class MeetingService:
         )
 
     def start(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
-        """Begin (or resume) a meeting. A fresh start delivers the scripted
-        opening and the first question. A resume returns current state —
-        the transcript carries what was already said, nothing repeats."""
+        """Begin (or resume) a meeting. A fresh start delivers the
+        encounter's opening — character, environment, invitation, in
+        at most three bubbles — and the encounter begins. A resume
+        returns current state: the transcript carries what was already
+        said, nothing repeats."""
         arch_id = (archetype_id or "").strip().lower()
         script = self._check_beginnable(user_id, arch_id, keystone_index)
         cid = conversation_id_for(arch_id, keystone_index)
@@ -526,14 +489,21 @@ class MeetingService:
 
         self.meetings.create(user_id, arch_id, keystone_index)
         self.conversations.ensure_conversation(user_id, cid, kind="meeting")
-        for paragraph in script.opening:
+        definition = ENC.get_definition(script)
+        self.meetings.update(
+            user_id, arch_id, keystone_index,
+            state_json=EncounterState().to_json(),
+        )
+        for paragraph in definition.opening:
             self._say(user_id, cid, arch_id, paragraph)
-        self._say(user_id, cid, arch_id, script.questions[0])
         return self.state(user_id, arch_id, keystone_index)
 
     def turn(self, user_id: str, archetype_id: str, message: str, keystone_index: int = 1) -> dict[str, Any]:
-        """One user turn inside an active meeting. Raises MeetingError when
-        no meeting is in progress, ValueError on bad input."""
+        """One user turn inside an active meeting. The encounter
+        runtime runs the turn — the user's move first, the character's
+        objectives behind it — and this service persists the outcome.
+        Raises MeetingError when no meeting is in progress, ValueError
+        on bad input."""
         arch_id = (archetype_id or "").strip().lower()
         if arch_id not in stock_archetype_ids():
             raise ValueError(f"Unknown seat: {archetype_id!r}")
@@ -554,75 +524,49 @@ class MeetingService:
             user_id, cid, arch_id, "user", message, mode="base", context={"meeting": True}
         )
 
-        if row["stage"] == "encounter":
-            self._encounter_beat(user_id, arch_id, keystone_index, script, row, message)
-        elif row["stage"] == "readback":
-            self._readback_response_beat(user_id, arch_id, keystone_index, script, row, message)
-        elif row["stage"] == "orientation":
-            self._orientation_beat(user_id, arch_id, keystone_index, script, message)
-        else:  # a completed-stage row that isn't status=complete: treat as done
+        enc_state = self._hydrate_state(row)
+        if enc_state.closed:
             raise MeetingError("This meeting has already reached its close.")
+        definition = ENC.get_definition(script)
+        host = _MeetingHost(self, user_id, arch_id, keystone_index, script)
+        new_q_idx = EncounterRuntime(definition).handle_turn(
+            host, enc_state, message, int(row["question_idx"])
+        )
+        self.meetings.update(
+            user_id, arch_id, keystone_index,
+            question_idx=new_q_idx,
+            state_json=enc_state.to_json(),
+            stage=ENC.derived_stage(enc_state),
+        )
         return self.state(user_id, arch_id, keystone_index)
+
+    @staticmethod
+    def _hydrate_state(row: dict[str, Any]) -> EncounterState:
+        """The encounter state for a meeting row. Rows begun before
+        the encounter runtime carry no state_json; their position is
+        reconstructed from the columns the old engine already kept —
+        the read-back claim/response and the stage label — so an
+        in-progress meeting survives the engine change honestly."""
+        state = EncounterState.from_json(row.get("state_json"))
+        if row.get("state_json"):
+            return state
+        if (row.get("readback_claim") or "").strip():
+            state.impression_offered = True
+            state.impression_text = row["readback_claim"]
+            try:
+                state.impression_strands = json.loads(row.get("readback_strands") or "[]")
+            except Exception:
+                state.impression_strands = []
+        if (row.get("readback_response") or "").strip():
+            state.impression_answered = True
+            state.response_recorded = True
+        if row.get("stage") == "orientation":
+            state.pause_delivered = True
+        return state
 
     def _history_for_reply(self, user_id: str, cid: str) -> list[dict[str, str]]:
         rows = self.conversations.history(user_id, cid, limit=30)
         return [{"role": m["role"], "content": m["body"]} for m in rows]
-
-    def _encounter_beat(self, user_id: str, arch_id: str, keystone_index: int,
-                        script: MT.MeetingScript, row: dict[str, Any], message: str) -> None:
-        cid = conversation_id_for(arch_id, keystone_index)
-        q_idx = int(row["question_idx"])
-
-        if _is_pass(message):
-            if q_idx + 1 < len(script.questions):
-                self.meetings.update(user_id, arch_id, keystone_index, question_idx=q_idx + 1)
-                self._say(user_id, cid, arch_id, script.questions[q_idx + 1])
-                return
-            # Bank exhausted with nothing answered: the read-back reflects
-            # the choosing-not-to-answer itself. Fall through to read-back
-            # with the pass as the latest user turn.
-            claim, strands = self._readback(user_id, arch_id, script)
-            self.meetings.update(
-                user_id, arch_id, keystone_index, stage="readback",
-                readback_claim=claim, readback_strands=json.dumps(strands),
-            )
-            self._say(user_id, cid, arch_id, claim)
-            return
-
-        # Substantive answer: live engagement, then the read-back.
-        history = self._history_for_reply(user_id, cid)
-        reply = generate_voice_reply(
-            user_id, arch_id, message, history[:-1],
-            mode="base", generate_fn=self._generate_fn,
-            extra_instructions=script.encounter_frame,
-        )
-        self._say(user_id, cid, arch_id, reply.reply)
-
-        claim, strands = self._readback(user_id, arch_id, script)
-        self.meetings.update(
-            user_id, arch_id, keystone_index, stage="readback",
-            readback_claim=claim, readback_strands=json.dumps(strands),
-        )
-        self._say(user_id, cid, arch_id, claim)
-
-    @staticmethod
-    def _split_strands_trailer(text: str) -> tuple[str, list[str]]:
-        """Split a generated read-back's 'Strands:' bookkeeping line off
-        its display text. A missing or garbled trailer degrades to no
-        strands — the meeting never breaks on it."""
-        text = (text or "").strip()
-        strands: list[str] = []
-        lines = text.split("\n")
-        for i in range(len(lines) - 1, -1, -1):
-            stripped = lines[i].strip()
-            if not stripped:
-                continue
-            if stripped.lower().startswith("strands:"):
-                cited = [s.strip() for s in stripped.split(":", 1)[1].split(",")]
-                strands = [s for s in cited if s in _STRAND_NAMES][:2]
-                text = "\n".join(lines[:i]).strip()
-            break
-        return text, strands
 
     def _generate_framed(self, user_id: str, arch_id: str, keystone_index: int,
                          frame: str) -> str:
@@ -645,118 +589,16 @@ class MeetingService:
         )
         return reply.reply
 
-    def _readback(self, user_id: str, arch_id: str, script: MT.MeetingScript) -> tuple[str, list[str]]:
-        """Generate the read-back; split off its 'Strands:' bookkeeping
-        line. Returns (display claim, strand names)."""
-        text = self._generate_framed(user_id, arch_id, script.keystone_index, script.readback_frame)
-        return self._split_strands_trailer(text)
-
-    def _corrected_readback(self, user_id: str, arch_id: str,
-                            script: MT.MeetingScript) -> tuple[str, list[str]]:
-        """Generate the corrected impression after a correction: same
-        shape as the read-back, framed by the script's correction frame
-        so the user's correction governs the revision."""
-        text = self._generate_framed(user_id, arch_id, script.keystone_index, script.correction_frame)
-        return self._split_strands_trailer(text)
-
-    # -- orientation (only scripts that carry one — today, the Conductor) ------
-
-    def _has_orientation(self, script: MT.MeetingScript) -> bool:
-        return bool(script.orientation_intro or script.pulled_item_template)
-
-    def _readback_response_beat(self, user_id: str, arch_id: str, keystone_index: int,
-                                script: MT.MeetingScript, row: dict[str, Any], message: str) -> None:
-        # The user's response to the impression is part of the record —
-        # verbatim, uninterpreted. Filing it is the review flow's job.
-        self.meetings.update(user_id, arch_id, keystone_index, readback_response=message)
-        cid = conversation_id_for(arch_id, keystone_index)
-        kind = _classify_readback_reply(message)
-        if kind == "correction" and script.correction_frame:
-            # Correction is real: the corrected understanding REPLACES
-            # the stored impression — the record the orientation and the
-            # impression-filing read — and is spoken in the room, so the
-            # user hears the revision, not a promise of one. A degraded
-            # (empty) generation keeps the original claim rather than
-            # blanking the record.
-            claim, strands = self._corrected_readback(user_id, arch_id, script)
-            if claim:
-                self.meetings.update(
-                    user_id, arch_id, keystone_index,
-                    readback_claim=claim, readback_strands=json.dumps(strands),
-                )
-                self._say(user_id, cid, arch_id, claim)
-        elif kind == "other" and script.readback_reply_frame:
-            # Neither agreement nor correction: one brief engaged reply;
-            # the impression stands as the character's own.
-            reply_text = self._generate_framed(
-                user_id, arch_id, keystone_index, script.readback_reply_frame
-            ).strip()
-            if reply_text:
-                self._say(user_id, cid, arch_id, reply_text)
-        # An acknowledgment alters nothing: the impression stands as spoken.
-        if self._has_orientation(script):
-            self._deliver_orientation(user_id, arch_id, keystone_index, script)
-            self.meetings.update(user_id, arch_id, keystone_index, stage="orientation")
-        else:
-            self._do_reveal(user_id, arch_id, keystone_index, script)
-
-    def _deliver_orientation(self, user_id: str, arch_id: str, keystone_index: int,
-                             script: MT.MeetingScript) -> None:
-        cid = conversation_id_for(arch_id, keystone_index)
-        row = self.meetings.get(user_id, arch_id, keystone_index) or {}
-        for paragraph in script.orientation_intro:
-            self._say(user_id, cid, arch_id, paragraph)
-        if script.pulled_item_template:
-            self._say(
-                user_id, cid, arch_id,
-                script.pulled_item_template.format(
-                    claim=_excerpt(
-                        strip_weave_markers(row.get("readback_claim") or ""), 160
-                    ),
-                    response=_excerpt(
-                        strip_weave_markers(row.get("readback_response") or ""), 120
-                    ),
-                ),
-            )
-        if script.pulled_where_template:
-            try:
-                strands = json.loads(row.get("readback_strands") or "[]")
-            except Exception:
-                strands = []
-            if len(strands) == 1:
-                phrase = f"the {strands[0]} strand"
-            elif len(strands) >= 2:
-                phrase = f"the {strands[0]} and {strands[1]} strands"
-            else:
-                phrase = "the strands it was heard under"
-            self._say(
-                user_id, cid, arch_id,
-                script.pulled_where_template.format(strands=phrase),
-            )
-        for paragraph in script.orientation:
-            self._say(user_id, cid, arch_id, paragraph)
-
-    def _orientation_beat(self, user_id: str, arch_id: str, keystone_index: int,
-                          script: MT.MeetingScript, message: str) -> None:
-        cid = conversation_id_for(arch_id, keystone_index)
-        if not _is_acknowledgment(message) and not _is_pass(message):
-            # A real question about how the system works: one framed
-            # answer from the script's facts, then the meeting proceeds.
-            history = self._history_for_reply(user_id, cid)
-            frame = script.orientation_frame
-            if script.orientation_facts:
-                frame = f"{frame}\n\n{script.orientation_facts}"
-            reply = generate_voice_reply(
-                user_id, arch_id, message, history[:-1],
-                mode="base", generate_fn=self._generate_fn,
-                extra_instructions=frame,
-            )
-            self._say(user_id, cid, arch_id, reply.reply)
-        self._do_reveal(user_id, arch_id, keystone_index, script)
-
     def _do_reveal(self, user_id: str, arch_id: str, keystone_index: int,
-                   script: MT.MeetingScript) -> None:
+                   script: MT.MeetingScript, wrap_line: str = "") -> None:
+        """The completion chokepoint (the runtime's `close`): the
+        reveal, the keystone task Done, and the impression filed —
+        every path that finishes a meeting funnels through here, so
+        the filing happens exactly once per run. A ceiling close
+        speaks its wrap line first ("I've kept you long enough")."""
         cid = conversation_id_for(arch_id, keystone_index)
+        if wrap_line:
+            self._say(user_id, cid, arch_id, wrap_line)
         for paragraph in script.reveal:
             self._say(user_id, cid, arch_id, paragraph)
 
@@ -766,9 +608,6 @@ class MeetingService:
             if task.get("status") != "Done":
                 ve.update_task(task["id"], ve_models.TaskUpdate(status="Done"), user_id)
         self.meetings.update(user_id, arch_id, keystone_index, stage="complete", status="complete")
-        # The single completion chokepoint: every path that finishes a
-        # meeting funnels through this reveal, so the impression is
-        # filed exactly once per run, here.
         self._file_impression(user_id, arch_id, keystone_index, script)
 
     def _file_impression(self, user_id: str, arch_id: str, keystone_index: int,

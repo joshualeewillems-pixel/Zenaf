@@ -61,6 +61,19 @@ decorative worldbuilding. Traces are DEBTS: the registry records where
 each of the Weaver's allusions appears and where it is meant to be
 honored.
 
+ENCOUNTER RUNTIME (Fellowship P3, Joshua 2026-10-23): the beats above
+are the script's shape, but the encounter runtime
+(local_ai/conversation/encounter.py) no longer walks them as stages.
+It builds an EncounterDefinition from this data: the opening's first
+paragraph plus the first question are the delivered opening (the user
+is participating within three bubbles — the remaining opening
+paragraphs, including two allusions, are bench anchors and prepared
+context the runtime draws on, and the allusions surface through the
+runtime's fixture cues); the frames become the definition's
+generation frames; closing is on the runtime's conditions, not on
+reaching the reveal paragraph. The data here is unchanged in role —
+canonical content — only its consumption grew up.
+
 Only the Conductor's first meeting is written so far — it is the template
 the other six get measured against, each with its own dramatic mechanic.
 A seat with no script here simply has no meeting to begin yet; the engine

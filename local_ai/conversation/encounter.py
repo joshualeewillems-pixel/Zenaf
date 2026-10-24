@@ -87,32 +87,21 @@ The rules the runtime runs by:
     already on the table carry floor_waived: their recognition
     completes under the contract the meeting began with, and no
     in-flight meeting is stranded by the new floor.
-  - Tutorial beats, taught by the conversation itself (Joshua,
-    2026-10-24): a seat's first meeting must also leave the user
-    knowing what that seat is FOR — its terrain, what the visitor
-    does with it, and why it wanted to meet — drawn from its
-    feature-focus slice (meetings.SEAT_FEATURE_FOCUS) and kept in
-    conversation/tutorial_beats.py. The beats ride the
-    conversational frame as standing hopes, never a lecture block;
-    steering pressure grows with the turns (early turns mostly
-    follow, later turns steer more); after the seat's own patience
-    of exchanges — tempo, part of register, never a global — the
-    frame instructs an honest pivot — an owned direction change in
-    the character's own words, never a prescribed sentence — that
-    OWNS the direction change instead of faking a natural segue.
-    Beat coverage is read from spoken bodies alone: each beat is
-    facets (tutorial_beats), and a facet counts only on a connected
-    mention in one spoken turn — a conservative proxy, not proof
-    of understanding. Trailers ([[beat:<id>]]) are stripped as a
-    backstop and never feed coverage. The close additionally
-    requires every beat covered. The pivot NEVER satisfies the gate
-    on its own — it redirects toward uncovered facets, and steering
-    stays at maximum after it until they are covered; a pivot
-    response can satisfy the gate only by covering facets with
-    content, under the same rule as any other turn. The ceiling wrap
-    bypasses the tutorial gate
-    by design — a rescue, not a recognition claim, and by then the
-    pivot has had every chance to fire.
+  - Three intentions (Joshua, 2026-10-24 — supersedes the retired
+    tutorial-beat mechanism, its guidance tiers, pivot, and close
+    gate): a first meeting is organized by (1) be yourself —
+    converse naturally from the character, philosophy, and
+    jurisdiction, engaging with what the visitor actually brings;
+    (2) let the visitor discover who you are — what matters to
+    you, why you wanted to meet, what distinguishes your
+    perspective; (3) show one real thing within your scope,
+    explained concretely when relevant. These are intentions, not
+    speeches, turns, or a checklist: they overlap, emerge in any
+    order, and being yourself governs — never interrupt a
+    meaningful exchange to teach or to introduce yourself. "One
+    thing" is intentional: the meeting is not responsible for
+    teaching every feature. The ceiling wrap is unchanged — a
+    rescue, not a recognition claim.
   - Evidence and expression are separate layers (Joshua's ruling,
     2026-10-23): the user's exact words live in the evidence —
     stored verbatim, filed with the claim, shown in review with
@@ -139,7 +128,6 @@ from typing import Protocol
 from local_ai.council import jurisdictions as JX
 from local_ai.council import meetings as MT
 
-from . import tutorial_beats as TB
 from .weave import strip_weave_markers
 
 # ---------------------------------------------------------------------------
@@ -316,15 +304,15 @@ _RECOGNITION_NOTE = (
 
 
 # ---------------------------------------------------------------------------
-# Standing dialogue rules (2026-10-24 amendments C and E): direct
-# questions about Zenaf, and two-tier naming for other seats. The
-# naming note rides every generation path (it is a universal
-# dialogue constraint); the Zenaf note rides the conversational
-# Q&A paths (_turn_frame, engage path). Correction and impression
-# movements are impression-focused by design, so they carry the
-# naming note only — a Zenaf question bundled with a correction is
-# answered on the next conversational turn, when the standing note
-# is in frame.
+# Standing dialogue rules (2026-10-24 amendments C and E, slimmed
+# 2026-10-24): direct questions about Zenaf, and two-tier naming
+# for other seats. Both notes are one line each. The naming note
+# rides every generation path; the Zenaf note rides the
+# conversational Q&A paths (_turn_frame, engage path). Correction
+# and impression movements are impression-focused by design, so
+# they carry the naming note only — a Zenaf question bundled with
+# a correction is answered on the next conversational turn, when
+# the standing note is in frame.
 # ---------------------------------------------------------------------------
 
 #: Character name per seat role (archetype id). Roles are public
@@ -341,71 +329,29 @@ _SEAT_CHARACTER_NAMES = {
 
 
 def _naming_note(definition: EncounterDefinition) -> str:
-    """Two-tier naming (amendment E): roles before meeting,
-    character names after, seat by seat. Meeting a character is
-    not developing or training that relationship: a first meeting
-    unlocks the name, not a trained bond."""
+    """Two-tier naming (amendment E) as one line: roles before
+    meeting, character names after, seat by seat. The met list is
+    state, not a paragraph — the model reads it, it does not need
+    it explained."""
     met = [a for a in definition.met_seats
            if a in _SEAT_CHARACTER_NAMES]
     if met:
         met_text = ", ".join(
             f"{_SEAT_CHARACTER_NAMES[a]} ({a})" for a in met)
-        met_sentence = (
-            f"Seats the visitor has already met — character names "
-            f"may be used for these: {met_text}. "
-        )
-    else:
-        met_sentence = (
-            "The visitor has not met any other seat yet. "
-        )
-    return (
-        "Names for other seats: refer to every other seat by "
-        "its seat role — mentor, champion, guardian, maverick, "
-        "ambassador, conductor, skeptic — roles are public and "
-        "may be used before meeting. Use a seat's character name "
-        "only after the visitor has met that seat, seat by seat. "
-        + met_sentence +
-        "Meeting a character is not developing or training that "
-        "relationship: a first meeting unlocks the name, not a "
-        "trained bond."
-    )
+        return "Other seats: roles until met. Met: " + met_text + "."
+    return "Other seats: roles until met. None met yet."
 
 
-#: Standing responsibility (amendment C): direct questions about
-#: Zenaf get concrete answers. This is frame instruction, not a
-#: detector — the detector below is only a safety net, because no
-#: small vocabulary can recognize every way a visitor might ask.
+#: Standing responsibility (amendment C), one line: direct
+#: questions about Zenaf get concrete answers first. No detector:
+#: the line covers every phrasing, and a small regex vocabulary
+#: can only re-state it for the phrasings it happens to match.
 _ZENAF_QUESTION_NOTE = (
-    "When the visitor asks directly about Zenaf — what it is, "
-    "what it does, what it can do, why it exists — answer "
-    "concretely and directly first, before returning to their "
-    "material: the relevant places, what they do, and what the "
-    "visitor can actually do with them. Describe only "
-    "functionality that exists; if something is planned or not "
-    "built, say so plainly as planned, never as available. Do not "
-    "substitute a metaphor, a general coaching statement, or a "
-    "question about their goals for the answer."
+    "If the visitor asks about Zenaf, answer plainly first — "
+    "what it is, what it does, what they can do with it — and "
+    "say plainly what is planned rather than available. Then "
+    "return to their material."
 )
-
-#: Safety-net patterns for a direct Zenaf question. Small by design
-#: and never the mechanism: the standing note above carries the
-#: responsibility, and this only reinforces it when the wording is
-#: unmistakable.
-_ZENAF_QUESTION_PATTERNS = (
-    r"what is (this|zenaf|it)\b",
-    r"what do you do (here|on this site)\b",
-    r"what (can|does) (this|zenaf|it) (do|offer)\b",
-    r"how does (this|zenaf|it) work\b",
-    r"what is this (app|site|thing)\b",
-    r"what is zenaf\b",
-)
-
-
-def _asks_about_zenaf(message: str) -> bool:
-    """True when the visitor's message unmistakably asks directly
-    about Zenaf — safety net only (see _ZENAF_QUESTION_PATTERNS)."""
-    text = (message or "").lower()
-    return any(re.search(p, text) for p in _ZENAF_QUESTION_PATTERNS)
 
 
 def split_thread_trailer(text: str) -> tuple[str, str | None]:
@@ -518,13 +464,13 @@ def detect_move(message: str) -> str:
 class Objective:
     """One narrative objective of an encounter. `satisfied_when` is the
     predicate in words (for reviewers); the runtime evaluates it over
-    EncounterState in check_objectives, keyed by `id`. `frame` is the
-    guidance woven into generation frames while the objective is live —
-    the character is never told the objective exists as bookkeeping."""
+    EncounterState in check_objectives, keyed by `id`. Objectives are
+    server-side state only — they are never woven into generation
+    frames (slim-prompt rule, 2026-10-24): the character is never
+    told an objective exists, as bookkeeping or as guidance."""
 
     id: str
     description: str
-    frame: str
     satisfied_when: str
 
 
@@ -606,22 +552,6 @@ class EncounterDefinition:
     #: the meeting after recognition. Empty = no floor. Legacy
     #: hydration may waive it per-state (floor_waived).
     close_floor_objectives: tuple[str, ...] = ()
-    #: The seat's dictionary, framed as AVAILABLE context under the
-    #: three-layers rule (lexicon / reasoning / ordinary speech, the
-    #: last the default — never a quota). Rides the conversational
-    #: frame and, for authored encounters, the engage frame. "" for
-    #: definitions whose seat does not consume a dictionary yet.
-    dictionary_frame: str = ""
-    #: Tutorial beats (the tutorial-beat mechanism, 2026-10-24):
-    #: the seat's teaching checklist — terrain, involvement,
-    #: why-meet — from conversation/tutorial_beats.py. Empty = no
-    #: tutorial gate (the generic shape; only authored encounters
-    #: carry beats so far).
-    tutorial_beats: tuple[TB.TutorialBeat, ...] = ()
-    #: Patience: exchanges before the honest pivot fires. Tempo,
-    #: part of register — lives with the seat, never a global.
-    #: 0 = no tutorial gate.
-    tutorial_patience: int = 0
     #: Seats the visitor has already met (completed first meetings),
     #: as archetype ids — set by the meeting service per turn, never
     #: by the script. The naming rule (role before meeting, character
@@ -678,6 +608,14 @@ class EncounterState:
     impression_answer_kind: str = ""
     impression_text: str = ""
     impression_strands: list[str] = field(default_factory=list)
+    #: A generated impression held back by the sequencing rule
+    #: (2026-10-24 screenshot fix): its generation's reply ended
+    #: in a question, so speaking the impression in the same breath
+    #: would orphan that question. The held impression is the only
+    #: impression that may speak until delivered; delivery happens
+    #: after the first later reply that does not end in a question.
+    impression_pending_text: str = ""
+    impression_pending_strands: list[str] = field(default_factory=list)
     response_recorded: bool = False
     #: Legacy field, kept for state hydration: rows written by the
     #: P3 runtime (or the stage engine before it) may carry it. The
@@ -688,17 +626,6 @@ class EncounterState:
     #: "pause:N" for retired-pause paragraphs — one ledger, so the
     #: same fixture can never surface twice by either path.
     allusions_used: list[str] = field(default_factory=list)
-    #: Tutorial-beat ledger (2026-10-24; facets, 2026-10-24
-    #: amendment A): per-beat satisfied facet names, from the
-    #: character's spoken bodies alone — trailers never feed it.
-    #: tutorial_covered is the derived list of beats whose every
-    #: facet is satisfied; together with the definition's beats it
-    #: gates the close. tutorial_pivot_delivered records a spoken
-    #: set-aside marker (detection heuristic for steering only,
-    #: never a gate condition).
-    tutorial_covered: list[str] = field(default_factory=list)
-    tutorial_facets: dict[str, list[str]] = field(default_factory=dict)
-    tutorial_pivot_delivered: bool = False
     closed: bool = False
 
     def to_json(self) -> str:
@@ -718,12 +645,11 @@ class EncounterState:
             "impression_answer_kind": self.impression_answer_kind,
             "impression_text": self.impression_text,
             "impression_strands": self.impression_strands,
+            "impression_pending_text": self.impression_pending_text,
+            "impression_pending_strands": self.impression_pending_strands,
             "response_recorded": self.response_recorded,
             "pause_delivered": self.pause_delivered,
             "allusions_used": self.allusions_used,
-            "tutorial_covered": self.tutorial_covered,
-            "tutorial_facets": self.tutorial_facets,
-            "tutorial_pivot_delivered": self.tutorial_pivot_delivered,
             "closed": self.closed,
         })
 
@@ -744,10 +670,11 @@ class EncounterState:
             "substantive_turns", "floor_waived",
             "satisfied", "impression_offered",
             "impression_answered", "impression_answer_kind",
-            "impression_text", "impression_strands", "response_recorded",
+            "impression_text", "impression_strands",
+            "impression_pending_text", "impression_pending_strands",
+            "response_recorded",
             "pause_delivered", "allusions_used",
-            "tutorial_covered", "tutorial_facets",
-            "tutorial_pivot_delivered", "closed",
+            "closed",
         ):
             if key in data:
                 setattr(state, key, data[key])
@@ -841,18 +768,6 @@ _WHOLE_EXCHAUST_NOTE = (
     "across this meeting — the exchange itself is the evidence."
 )
 
-#: Appended to the engage frame when several substantive exchanges
-#: have passed without an impression: a nudge toward offering the
-#: read if she honestly has one — guidance, never a trigger.
-_IMPRESSION_NUDGE = (
-    "\n\nNote: you have heard several real answers now and still "
-    "offered no read of them. If you honestly can — even held "
-    "lightly — let this reply carry your first impression after "
-    "the --- line. If the exchange truly hasn't shown you how "
-    "they orient yet, don't invent one; the reply alone is honest."
-)
-
-
 def _spoken(text: str) -> str:
     """Generated text on its way to being spoken by the character —
     or stored as her words (the impression claim): bookkeeping
@@ -863,44 +778,7 @@ def _spoken(text: str) -> str:
     quote markup either; the user's exact words live in the stored
     evidence, untouched by this."""
     body, _verdict = split_thread_trailer(text or "")
-    return strip_weave_markers(TB.strip_beat_markers(body)).strip()
-
-
-def _apply_tutorial_coverage(definition: EncounterDefinition,
-                             state: EncounterState,
-                             raw: str) -> str:
-    """Read a generated reply's spoken body against the definition's
-    tutorial facets, then strip any beat trailers.
-
-    Coverage is trailer-independent (amendment A): every spoken body
-    is evaluated against every not-yet-satisfied facet of every
-    beat — a facet counts only on a connected mention in this body
-    (tutorial_beats.facet_satisfied), and facets accumulate across
-    turns. A beat enters tutorial_covered when every facet is
-    satisfied. The pivot flag records a spoken set-aside marker for
-    frame behavior (steering stays at maximum after a pivot) — it
-    is NOT a gate condition. Returns the raw reply with beat
-    trailers removed, so downstream trailer parsing (thread verdict,
-    strands) never sees them; _spoken strips them again as a
-    backstop, so they can never reach the user by any path.
-    Stripping is unconditional: a trailer trailing a Strands line
-    would otherwise break strand parsing even for definitions
-    without a tutorial gate (split_strands_trailer reads from the
-    end)."""
-    if definition.tutorial_beats:
-        spoken_body = _spoken(raw or "")
-        for beat in definition.tutorial_beats:
-            hits = TB.satisfied_facets(
-                beat, spoken_body,
-                set(state.tutorial_facets.get(beat.id, [])))
-            if hits:
-                state.tutorial_facets[beat.id] = sorted(hits)
-            if (TB.beat_covered(beat, hits)
-                    and beat.id not in state.tutorial_covered):
-                state.tutorial_covered.append(beat.id)
-        if TB.pivot_delivered_in(spoken_body):
-            state.tutorial_pivot_delivered = True
-    return TB.strip_beat_markers(raw or "")
+    return strip_weave_markers(body).strip()
 
 
 class EncounterRuntime:
@@ -916,9 +794,7 @@ class EncounterRuntime:
         """Generate the first impression from `frame`, store and speak
         it. Returns False when generation produced nothing usable —
         the caller degrades; no state advances on a failed impression."""
-        raw = _apply_tutorial_coverage(
-            self.definition, state,
-            host.generate(frame + "\n\n" + _naming_note(self.definition)))
+        raw = host.generate(frame + "\n\n" + _naming_note(self.definition))
         claim, strands = split_strands_trailer(raw)
         claim = _spoken(claim)
         if not claim:
@@ -943,18 +819,52 @@ class EncounterRuntime:
                 return reply, impression, True
         return "", (raw or "").strip(), False
 
+    def _deliver_pending_if_clear(self, host: EncounterHost,
+                                  state: EncounterState,
+                                  spoken_reply: str,
+                                  *, allow_bare: bool = False) -> bool:
+        """Deliver a held impression after a reply that leaves the
+        user exactly one question to answer. The hold exists because
+        a reply ending in a question must not share its breath with
+        an impression ending in another question (2026-10-24
+        screenshot: the reply's question was orphaned). So delivery
+        requires a spoken reply that does not end in a question; a
+        fallback line is not a reply and never triggers delivery.
+        `allow_bare` covers a turn with no reply movement at all:
+        the held read speaks alone rather than a fallback line.
+        No gate re-check: the held impression was gate-checked at
+        generation, and satisfaction is monotonic. Returns True
+        when a pending impression was delivered."""
+        pending = state.impression_pending_text
+        if not pending or state.impression_offered:
+            return False
+        reply = (spoken_reply or "").strip()
+        if reply.endswith("?"):
+            return False
+        if not reply and not allow_bare:
+            return False
+        host.store_impression(pending, state.impression_pending_strands)
+        state.impression_text = pending
+        state.impression_strands = state.impression_pending_strands
+        state.impression_offered = True
+        state.impression_pending_text = ""
+        state.impression_pending_strands = []
+        host.say(pending)
+        return True
+
     # -- frames ----------------------------------------------------------------
 
     def _turn_frame(self, state: EncounterState,
                     message: str) -> tuple[str, AllusionCue | None]:
         """The conversational frame for this turn: the definition's
-        move frame + prepared context — the seat's jurisdiction,
-        EVERY live objective's guidance as standing hopes (never
-        announced, never sequenced: the objectives are the frame's
-        only agenda, and the user steers), the standing Zenaf
-        question note and two-tier naming note, and at most one
-        environmental cue the conversation is passing near. The cue
-        is returned so the caller can log it against the debt
+        move frame + prepared context — the seat's jurisdiction
+        (one line), the standing Zenaf question note (one line),
+        the two-tier naming note (one line), and at most one
+        environmental cue the conversation is passing near. No
+        tutorial guidance, no objective frames: objectives are
+        server-side state, and topic coverage is observed from
+        spoken bodies, never steered from the frame. The cue is
+        returned so the caller can log it against the debt
         registry once the reply is actually spoken."""
         d = self.definition
         parts = [d.turn_frame]
@@ -962,31 +872,10 @@ class EncounterRuntime:
         if record is not None:
             parts.append(
                 "Your ground — what naturally draws your attention, "
-                f"in your register: {record.focus} "
-                f"(Metaphor family: {record.register.metaphor_family})"
+                f"in your register: {record.focus}"
             )
-        if d.dictionary_frame:
-            parts.append(d.dictionary_frame)
-        guide = TB.tutorial_guidance(
-            d.tutorial_beats,
-            {k: set(v) for k, v in state.tutorial_facets.items()},
-            state.user_turns, d.tutorial_patience,
-            state.tutorial_pivot_delivered,
-        )
-        if guide:
-            parts.append(guide)
         parts.append(_ZENAF_QUESTION_NOTE)
-        if _asks_about_zenaf(message):
-            parts.append(
-                "Note: this message asks directly about Zenaf — "
-                "answer it concretely first, per the standing note "
-                "above."
-            )
         parts.append(_naming_note(d))
-        live = [o for o in d.objectives if not state.satisfied.get(o.id)]
-        for obj in live:
-            if obj.frame:
-                parts.append(obj.frame)
         cue = self._nearby_allusion(state, message)
         if cue is not None:
             if cue.fixture:
@@ -1091,14 +980,14 @@ class EncounterRuntime:
             # The agenda does not advance — but nothing is skipped:
             # the objectives stay live for the next turn.
             frame, cue = self._turn_frame(state, message)
-            out = _spoken(_apply_tutorial_coverage(
-                d, state, host.generate(frame) or ""))
+            out = _spoken(host.generate(frame) or "")
             if out:
                 host.say(out)
                 if cue is not None:
                     # The trace surfaced: log it against the debt
                     # registry (the state's side of the ledger).
                     state.allusions_used.append(cue.seat)
+                self._deliver_pending_if_clear(host, state, out)
             elif d.fallback_line:
                 host.say(d.fallback_line)
             if move == "offer":
@@ -1113,22 +1002,14 @@ class EncounterRuntime:
         # first substantive turn. A reply-only output is the
         # character honestly not having a read yet — state does not
         # advance on it, and the impression waits for the exchange
-        # that earns it.
+        # that earns it. One question per breath: a reply ending
+        # in a question holds its impression for a later turn
+        # (2026-10-24 sequencing rule).
         state.engagements += 1
         frame = d.engage_frame
-        if state.engagements >= 3 and not state.impression_offered:
-            # The soft nudge: guidance in the frame, not a trigger —
-            # she may still honestly decline to invent a read.
-            frame += _IMPRESSION_NUDGE
         frame += "\n\n" + _ZENAF_QUESTION_NOTE
-        if _asks_about_zenaf(message):
-            frame += (
-                "\n\nNote: this message asks directly about "
-                "Zenaf — answer it concretely first, per the "
-                "standing note above."
-            )
         frame += "\n\n" + _naming_note(d)
-        raw = _apply_tutorial_coverage(d, state, host.generate(frame))
+        raw = host.generate(frame)
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
         claim = _spoken(claim)
@@ -1152,30 +1033,58 @@ class EncounterRuntime:
                 d.impression_gate_objective, False)
             if gate_held:
                 offered = False
+        # A held impression is the only impression that may speak
+        # until delivered: a fresh one this turn is discarded.
+        if state.impression_pending_text:
+            offered = False
+        spoken_reply = ""
+        bare_pending = False
         if offered:
-            if had_delim and reply_part:
-                host.say(_spoken(reply_part))
-            host.store_impression(claim, strands)
-            state.impression_text = claim
-            state.impression_strands = strands
-            state.impression_offered = True
-            host.say(claim)
+            reply_text = (_spoken(reply_part)
+                          if had_delim and reply_part else "")
+            if reply_text and reply_text.rstrip().endswith("?"):
+                # Sequencing rule (2026-10-24 screenshot): the reply
+                # ends in a question, so the impression waits — one
+                # question per breath, and the reply's question
+                # keeps its turn.
+                host.say(reply_text)
+                state.impression_pending_text = claim
+                state.impression_pending_strands = strands
+            else:
+                if reply_text:
+                    host.say(reply_text)
+                    spoken_reply = reply_text
+                host.store_impression(claim, strands)
+                state.impression_text = claim
+                state.impression_strands = strands
+                state.impression_offered = True
+                host.say(claim)
         else:
             # No impression in the output — or the gate held one the
-            # model offered early: speak what engagement there was
-            # (or the fallback anchor) and leave the impression for
-            # a later turn — state does not falsely advance. A
-            # gate-held impression-only output speaks nothing of the
-            # read itself: the reply movement, or the fallback.
-            if gate_held and not had_delim:
+            # model offered early, or a held impression outranks a
+            # fresh one: speak what engagement there was (or the
+            # fallback anchor) and leave the impression for a later
+            # turn — state does not falsely advance. A gate-held
+            # impression-only output speaks nothing of the read
+            # itself: the reply movement, or the fallback. A held
+            # impression suppresses a fresh impression-only output
+            # the same way: the held read speaks alone, never two
+            # reads in one turn.
+            if state.impression_pending_text and not had_delim:
+                spoken = ""
+                bare_pending = True
+            elif gate_held and not had_delim:
                 spoken = ""
             else:
                 spoken = impression_part if not had_delim else reply_part
             spoken = _spoken(spoken)
             if spoken:
                 host.say(spoken)
-            elif d.fallback_line:
+                spoken_reply = spoken
+            elif d.fallback_line and not bare_pending:
                 host.say(d.fallback_line)
+        self._deliver_pending_if_clear(host, state, spoken_reply,
+                                       allow_bare=bare_pending)
         check_objectives(d, state)
         return question_idx
 
@@ -1200,17 +1109,22 @@ class EncounterRuntime:
         if d.impression_gate_objective and not state.satisfied.get(
                 d.impression_gate_objective, False):
             frame, cue = self._turn_frame(state, message)
-            out = _spoken(_apply_tutorial_coverage(
-                d, state, host.generate(frame) or ""))
+            out = _spoken(host.generate(frame) or "")
             if out:
                 host.say(out)
                 if cue is not None:
                     state.allusions_used.append(cue.seat)
+                self._deliver_pending_if_clear(host, state, out)
             elif d.fallback_line:
                 host.say(d.fallback_line)
             check_objectives(d, state)
             return question_idx
-        self._offer_impression(host, state, d.impression_frame)
+        if state.impression_pending_text:
+            # A held read outranks a fresh one: it speaks alone.
+            self._deliver_pending_if_clear(host, state, "",
+                                           allow_bare=True)
+        else:
+            self._offer_impression(host, state, d.impression_frame)
         check_objectives(d, state)
         return question_idx
 
@@ -1244,11 +1158,11 @@ class EncounterRuntime:
             # the stored impression, and is spoken in the room. A
             # degraded (empty) generation keeps the original claim
             # rather than blanking the record.
-            raw = _apply_tutorial_coverage(d, state, host.generate(
-                d.correction_frame + _RECOGNITION_NOTE
+            raw = host.generate(
+                d.correction_frame
                 + "\n\n" + _naming_note(d)
                 + _THREAD_TRAILER_INSTRUCTION
-            ))
+            )
             body, verdict = split_thread_trailer(raw)
             claim, strands = split_strands_trailer(body)
             claim = _spoken(claim)
@@ -1263,11 +1177,11 @@ class EncounterRuntime:
             # character's own read, their answer beside it.
             frame = d.impression_reply_frame
             if frame:
-                raw = _apply_tutorial_coverage(d, state, host.generate(
-                    frame + _RECOGNITION_NOTE
+                raw = host.generate(
+                    frame
                     + "\n\n" + _naming_note(d)
                     + _THREAD_TRAILER_INSTRUCTION
-                ))
+                )
                 body, verdict = split_thread_trailer(raw)
                 body, _ = split_strands_trailer(body)
                 body = _spoken(body)
@@ -1301,7 +1215,7 @@ class EncounterRuntime:
                 + d.orientation_facts
             )
         frame += _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
-        raw = _apply_tutorial_coverage(d, state, host.generate(frame))
+        raw = host.generate(frame)
         body, verdict = split_thread_trailer(raw)
         body, _ = split_strands_trailer(body)
         body = _spoken(body)
@@ -1333,19 +1247,11 @@ class EncounterRuntime:
         floor reads this turn's recognition too: a substantive
         correction that itself takes the material up can complete
         it. Legacy-waived states complete under their original
-        contract instead. A definition carrying TUTORIAL BEATS adds
-        one more condition still (the tutorial-beat mechanism,
-        2026-10-24, corrected the same day): the meeting's teaching
-        must be done — EVERY beat covered, where covered means the
-        beat's essential information was actually communicated in a
-        spoken turn — before a settled verdict may close. The honest
-        pivot NEVER satisfies this gate on its own: it redirects
-        toward uncovered beats, and a pivot response satisfies it
-        only by covering beats with content, under the same rule as
-        any other turn. A meeting that would otherwise close
-        tutorial-less instead continues, and the pivot instruction
-        fires once its patience is reached. The ceiling wrap
-        bypasses this gate by design (a rescue, not a recognition
+        contract instead. Tutorial beats add NO condition (slim-
+        prompt rule, 2026-10-24): coverage is observed from spoken
+        bodies for the interface to reflect later, and a meeting
+        closes on recognition whether or not every topic landed.
+        The ceiling wrap is unchanged (a rescue, not a recognition
         claim)."""
         d = self.definition
         if verdict is None:
@@ -1358,10 +1264,6 @@ class EncounterRuntime:
                 and not any(state.satisfied.get(o, False) for o in floor)
             ):
                 return
-            if d.tutorial_beats and d.tutorial_patience > 0:
-                covered = set(state.tutorial_covered)
-                if not all(b.id in covered for b in d.tutorial_beats):
-                    return
             state.closed = True
             host.close("")
 
@@ -1372,9 +1274,15 @@ class EncounterRuntime:
         and close through the same chokepoint as every other path."""
         d = self.definition
         if not state.impression_offered:
-            self._offer_impression(
-                host, state, d.impression_frame + _WHOLE_EXCHAUST_NOTE
-            )
+            if state.impression_pending_text:
+                # A held read is the read: it speaks at the wrap
+                # rather than a freshly generated one.
+                self._deliver_pending_if_clear(host, state, "",
+                                               allow_bare=True)
+            else:
+                self._offer_impression(
+                    host, state, d.impression_frame + _WHOLE_EXCHAUST_NOTE
+                )
         if not state.response_recorded and state.longest_user_turn:
             # The impression files with verbatim evidence: the words
             # it was formed from, since no direct answer was given.
@@ -1551,19 +1459,16 @@ _GENERIC_OBJECTIVES = (
     Objective(
         id="engaged_exchange",
         description="The user has genuinely engaged with the encounter's question — in any form: an answer, a story, a refusal with reasons.",
-        frame="",
         satisfied_when="engagements ≥ 1 (a substantive, non-pass turn)",
     ),
     Objective(
         id="impression_offered",
         description="The character has offered her first impression, anchored in the user's own words.",
-        frame="",
         satisfied_when="the impression has been generated, stored, and spoken",
     ),
     Objective(
         id="impression_answered",
         description="The user has genuinely answered the impression — agreed, corrected, or argued; the impression now stands as agreed, revised, or the character's own.",
-        frame="",
         satisfied_when="a user turn has been received while the impression was on the table",
     ),
 )
@@ -1592,133 +1497,68 @@ _GENERIC_OBJECTIVES = (
 #   impression_offered / impression_answered — as generic.
 
 WEAVER_TURN_FRAME = (
-    "You are mid-conversation in your workshop, in your first "
-    "meeting with this visitor. You opened by greeting them as a "
-    "new instrument for the orchestra — 'we'll find your sound "
-    "soon enough' — and their sound is their own material, "
-    "sounded in words: that collaboration of minds, not any "
-    "question of yours, is the meeting. Respond FIRST to what "
-    "they actually just did: if they offered to help, take the "
-    "offer seriously and in kind — help here is ears and "
-    "judgment: ask them to listen with you, to tell you how "
-    "their own work sounds when its parts pull the same way; an "
-    "offered mind is how you learn a person, and the offer "
-    "itself tells you something true about how they meet "
-    "unfinished work. NEVER receive an offer — or anything else "
-    "— as pretend physical work: no holding parts steady, no "
-    "feeling for what gives, no stage directions of any kind; "
-    "your metaphors live in your speech, never in tasks you mime "
-    "at them. If they brought something of their OWN into the "
-    "room — their own version of the problem, from their own "
-    "work or life — follow THAT: it outranks the instrument on "
-    "your bench, and your next move is pursuit, not summary: "
-    "ask for the time it actually happened, the evidence of "
-    "their experience — and hear what the parts make together: "
-    "name a part they hadn't separated, locate the pull they "
-    "described, say what a join would cost, hear what third "
-    "thing the two parts make together, or hear what the "
-    "tension is protecting that a solution would destroy. "
-    "Your work is a relationship seen, a tension held honestly, "
-    "or a possibility that was not there before the parts "
-    "sounded together. A practical step is welcome when it "
-    "falls out of that hearing — it is never the hearing "
-    "itself, and never the default move. A pull that belongs "
-    "to another kind of hearing — a champion's charge ahead, "
-    "a skeptic's audit, a maverick's exit — name it by its "
-    "seat role, and keep the relationship work yourself: what "
-    "does that perspective change about how these parts sound "
-    "together? Pointing at another perspective is not handing "
-    "the visitor off. If they asked you something, answer it "
-    "from your craft, plainly and briefly. If they joked, be "
-    "amused the way a busy person is. If they changed the "
-    "subject, follow a step and see where it goes. One to "
-    "three short sentences, in your own voice. Think in music "
-    "— lines, parts, tuning, tempo, dissonance, what sounds "
-    "together — and say it in ordinary words when that "
-    "sharpens the thing. The music is how you think, not "
-    "vocabulary you must display: no required words, no "
-    "required frequency. Don't deliver your formal first "
-    "read of them in an aside like this — that comes from the "
-    "shared work itself, and only after it. Do not reveal your "
-    "name yet. The conversation finds its way on its own — your "
-    "part is to be in it, not to steer it back."
+    "You are the Weaver, conductor of this workshop, in your first "
+    "meeting with this visitor. Be yourself above all: converse "
+    "naturally from your own character, philosophy, and ground, "
+    "and engage with what the visitor actually brings — never "
+    "resume an agenda of your own when they take the conversation "
+    "somewhere real. Let them discover who you are as the "
+    "conversation allows: what matters to you, why you wanted to "
+    "meet, what distinguishes your hearing from the other seats'. "
+    "And when something in your scope becomes relevant, show them "
+    "one real thing they can do here and explain it concretely — "
+    "one thing, not a tour: this meeting is not responsible for "
+    "teaching every feature. These are intentions, not speeches, "
+    "turns, or a checklist: they overlap, they emerge in any "
+    "order, and being yourself governs — never interrupt a "
+    "meaningful exchange to introduce yourself or to teach. "
+    "Never mime physical work: your metaphors live in speech, "
+    "never in tasks you act out. One to three short sentences, "
+    "in your own voice. Think in music — lines, parts, tuning, "
+    "tempo, dissonance, what sounds together — and say it in "
+    "ordinary words when that sharpens the thing. The music is "
+    "how you think, not vocabulary you must display: no required "
+    "words, no required frequency. Don't deliver your formal "
+    "first read of them in an aside like this — that comes from "
+    "the shared work itself, and only after it. Do not reveal "
+    "your name yet. The conversation finds its way on its own — "
+    "your part is to be in it, not to steer it back."
 )
 
 _WEAVER_OBJECTIVES = (
     Objective(
         id="engaged_exchange",
         description="The user has answered her introduction — sounded how they work, reacted to her question, joined the conversation of it, in any form: a position, a story, an offer, a reasoned refusal.",
-        frame=(
-            "What you are listening for, without ever naming it: how "
-            "this person meets an unfinished thing — whether they "
-            "reach for it, test it, question it, or hand it back."
-        ),
         satisfied_when="engagements ≥ 1 (a substantive, non-pass turn)",
     ),
     Objective(
         id="shared_work_exchange",
         description="She and the user have begun the shared work together — her invitation answered in substance, or an offer of help received and taken up in conversation. The impression gate: her read is not offerable until this was satisfied on a prior turn.",
-        frame=(
-            "The work goes better with two pairs of ears. When the "
-            "moment allows, draw them deeper into the hearing of "
-            "it — ask how their own work sounds when its parts "
-            "pull against each other, invite their judgment on "
-            "where the join is failing. Always in words, always "
-            "about the real thing they brought."
-        ),
         satisfied_when="engagements ≥ 1 ∨ offers_engaged ≥ 1, as of a prior turn (the impression gate)",
     ),
     Objective(
         id="offer_of_help_received",
         description="The user has offered to help her build, and she has received the offer in character — the relationship changed direction and she noticed. (Material when it comes; never required for the close.)",
-        frame=(
-            "If they offer their help, that is not an interruption "
-            "of the meeting. To you, it IS the meeting arriving "
-            "early. Receive it as a mind offered, not hands: the "
-            "help you can use is their ears and their judgment."
-        ),
         satisfied_when="an offer-shaped turn has been engaged (offers_engaged ≥ 1)",
     ),
     Objective(
         id="own_undertaking_engaged",
         description="The user has brought their own undertaking into the room — their own version of the integration problem, from their own work or life, at substance, not in the abstract. One leg of the close floor.",
-        frame=(
-            "When their own material surfaces — their own version "
-            "of the problem, in their own words, with a real "
-            "question inside it — pursue it BEFORE you read them: "
-            "ask for the time it actually happened, the evidence "
-            "of their experience. Their material is the meeting's "
-            "real subject; the instrument on your bench is only "
-            "its occasion."
-        ),
         satisfied_when="engagements ≥ 1 ∧ user_chars ≥ 40 (the substance floor)",
     ),
     Objective(
         id="pursuit_exchange",
         description="The conversation has taken up the user's material — an exchange after it surfaced, she asking and they telling — or substantive engagement has simply accumulated across the meeting. The close floor's other leg.",
-        frame=(
-            "Follow the thread of what they brought: one more "
-            "question about the real thing is worth more than any "
-            "agenda of yours."
-        ),
         satisfied_when="pursuit_turns ≥ 1 ∨ substantive_turns ≥ 3 (see check_objectives)",
     ),
     Objective(
         id="impression_offered",
         description="She has offered her first impression: a position with an honest contrast, synthesized in her own words, held at the exact point of doubt, explicitly correctable.",
-        frame=(
-            "Your read comes only after the shared work — never on "
-            "the first exchange, and only once the exchange has "
-            "genuinely shown you how they orient. An impression "
-            "offered before it is earned is flattery, and it can "
-            "wait."
-        ),
         satisfied_when="the impression has been generated, stored, and spoken",
     ),
     Objective(
         id="impression_answered",
         description="The user has genuinely answered the impression — agreed, corrected, or argued — and it stands as agreed, revised, or hers.",
-        frame="",
         satisfied_when="a user turn has been received while the impression was on the table",
     ),
 )
@@ -1761,31 +1601,6 @@ def _weaver_allusion_pool(script: MT.MeetingScript) -> tuple[AllusionCue, ...]:
     return tuple(cues)
 
 
-def _weaver_dictionary_frame() -> str:
-    """The Weaver's dictionary as a frame: her lexicon from the
-    jurisdictions registry, presented as AVAILABLE context under the
-    three-layers rule (Joshua, 2026-10-23) — ordinary speech is the
-    default, reasoning is the substance, and the lexicon enters only
-    when a figure genuinely clarifies. The wording is asserted by
-    the pattern tests: available, never owed; no per-turn metaphor
-    instruction may ever be added here."""
-    dic = JX.get_jurisdiction("conductor").dictionary
-    return (
-        f"Your dictionary is available to you — {dic.domain}: "
-        + ", ".join(dic.lexicon)
-        + ". Three layers of language are yours: this lexicon; "
-        "your actual reasoning, in plain terms; and ordinary "
-        "speech — and ordinary speech is the default, where most "
-        "of you should live. No layer is mandatory: a word from "
-        "the lexicon enters only when it genuinely clarifies "
-        "something in THIS exchange, and any metaphor you use must "
-        "refer to something in the exchange or in this place — "
-        "never furniture, never a quota, never owed. Your "
-        "perspective, held under everything you say: "
-        f"{dic.perspective}"
-    )
-
-
 def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Weaver's first meeting as an authored encounter (the
     Weaver pattern, Joshua 2026-10-23, corrected the same evening
@@ -1797,10 +1612,8 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     question bank (the dilemma is retired; the user's own material
     is the subject); the collaboration is intellectual, never mime
     (the no-pretend law); the impression gated on the shared-work
-    exchange; the close floored on meaningful recognition; her
-    dictionary riding the frames as available context."""
+    exchange; the close floored on meaningful recognition."""
     base = build_definition(script)
-    dictionary_frame = _weaver_dictionary_frame()
     return EncounterDefinition(
         archetype_id=base.archetype_id,
         keystone_index=base.keystone_index,
@@ -1808,7 +1621,7 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         opening=tuple(script.opening),
         question_bank=(),
         objectives=_WEAVER_OBJECTIVES,
-        engage_frame=base.engage_frame + "\n\n" + dictionary_frame,
+        engage_frame=base.engage_frame,
         turn_frame=WEAVER_TURN_FRAME,
         impression_frame=base.impression_frame,
         correction_frame=base.correction_frame,
@@ -1825,9 +1638,6 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         allusion_pool=_weaver_allusion_pool(script),
         impression_gate_objective="shared_work_exchange",
         close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),
-        dictionary_frame=dictionary_frame,
-        tutorial_beats=TB.beats_for("conductor"),
-        tutorial_patience=TB.patience_for("conductor"),
     )
 
 

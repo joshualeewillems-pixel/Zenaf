@@ -80,39 +80,18 @@ class FakeGen:
 
 
 
-#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
-#: these fakes simulate a character that teaches its beats WITH
-#: CONTENT — every generation output carries a teaching sentence
-#: with all three beats' anchors plus the three beat trailers
-#: (trailers stripped before anything is spoken). Trailers alone
-#: no longer count under the content guard. Prompts and
-#: generation counts are unchanged; spoken bodies gain the
-#: teaching sentence, which these suites' substring assertions
-#: tolerate. The gate itself is pinned by
-#: tests/test_encounter_tutorial_beats.py; these suites pin the
+#: Test fake voice: every generation output carries a teaching
+#: sentence (the fake's dialogue content). No beat trailers: the
+#: tutorial-beat mechanism is deleted, and no frame invites them.
+#: The first-meeting philosophy is pinned by
+#: tests/test_first_meeting_intentions.py; these suites pin the
 #: other behaviors.
-#: Teaching sentence the fakes speak (correction 2026-10-24):
-#: beat trailers alone no longer count — coverage requires
-#: content, so a fake that teaches its beats must speak them.
-#: One sentence carrying all three conductor beats' anchors
-#: (council/tree/hearing-together, competing priorities/sit
-#: together, new voice/whole orchestra/in ear). Inserted BEFORE
-#: any Strands: bookkeeping line (strands parsing reads from the
-#: end) and before the beat trailers, so every trailer parse in
-#: the runtime sees the same trailing structure as the original
-#: output; thread trailers are position-tolerant.
 _TEACHING_SENTENCE = (
     "My ground is the council and the tree, where parts of your "
     "life need hearing together; bring me the competing priorities "
     "that will not sit together; every new voice changes what the "
     "whole orchestra can play, and I keep the whole of it in ear."
 )
-
-_BEAT_SUFFIX = (
-    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
-    "[[beat:conductor:why_meet]]"
-)
-
 
 def _teaching(gen):
     def wrapper(prompt, **kwargs):
@@ -124,7 +103,7 @@ def _teaching(gen):
                 break
         else:
             lines.append(_TEACHING_SENTENCE)
-        return "\n".join(lines) + _BEAT_SUFFIX
+        return "\n".join(lines)
     return wrapper
 
 
@@ -319,7 +298,7 @@ def test_pass_is_conversation_for_the_weaver(ve_ctx, tmp_path):
     # One conversational generation under the turn frame — the pass
     # reached the model because there is no bank to answer it.
     assert len(gen.prompts) == 1
-    assert "mid-conversation in your workshop" in gen.prompts[0]
+    assert "conductor of this workshop" in gen.prompts[0]
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == ""
 
@@ -406,7 +385,7 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
             if "Whatever its valence" in prompt:
                 # The answer to the impression leaves a thread open.
                 return "Fair enough.\n[[thread:open]]"
-            if "mid-conversation in your workshop" in prompt:
+            if "conductor of this workshop" in prompt:
                 if "settled now" in prompt:
                     return "Then we're heard.\n[[thread:settled]]"
                 return "It lives on the bench, same as everything here.\n[[thread:open]]"
@@ -427,7 +406,7 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
     assert any("It lives on the bench, same as everything here." in b for b in bodies)
     # The answer was framed by the workshop facts, not improvised:
     # the facts block rides the conversational frame as context.
-    assert "mid-conversation in your workshop" in gen.prompts[-1]
+    assert "conductor of this workshop" in gen.prompts[-1]
     assert "seven rather incompatible parts" in gen.prompts[-1]
 
     state = svc.turn(uid, "conductor", "Alright — settled now, thank you.")
@@ -861,4 +840,4 @@ def test_turn_frame_names_met_seats_and_roles_others(ve_ctx, tmp_path):
     svc.turn(uid, "conductor", "What is this place?")
     frames = "\n".join(gen.prompts)
     assert "Firebrand (champion)" in frames
-    assert "refer to every other seat by its seat role" in frames
+    assert "Other seats: roles until met." in frames

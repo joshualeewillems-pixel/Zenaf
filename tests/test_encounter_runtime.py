@@ -80,7 +80,7 @@ class WeaverGen:
                 "first[[/u]] — everything arranged before anything moves."
                 "\nStrands: Logic"
             )
-        if "mid-conversation in your workshop" in prompt:
+        if "conductor of this workshop" in prompt:
             # CORRECTED (2026-10-23, evening): her reception of an
             # offer is conversational — ears and judgment — never a
             # pretend physical task (the no-pretend law). The old
@@ -109,40 +109,18 @@ class WeaverGen:
 
 
 
-#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
-#: these fakes simulate a character that teaches its beats WITH
-#: CONTENT — every generation output carries a teaching sentence
-#: with all three beats' anchors plus the three beat trailers
-#: (trailers stripped before anything is spoken). Trailers alone
-#: no longer count under the content guard, so a fake that only
-#: claimed beats would simulate a non-compliant model. Prompts
-#: and generation counts are unchanged; spoken bodies gain the
-#: teaching sentence, which these suites' substring assertions
-#: tolerate. The gate itself is pinned by
-#: tests/test_encounter_tutorial_beats.py; these suites pin the
+#: Test fake voice: every generation output carries a teaching
+#: sentence (the fake's dialogue content). No beat trailers: the
+#: tutorial-beat mechanism is deleted, and no frame invites them.
+#: The first-meeting philosophy is pinned by
+#: tests/test_first_meeting_intentions.py; these suites pin the
 #: other behaviors.
-#: Teaching sentence the fakes speak (correction 2026-10-24):
-#: beat trailers alone no longer count — coverage requires
-#: content, so a fake that teaches its beats must speak them.
-#: One sentence carrying all three conductor beats' anchors
-#: (council/tree/hearing-together, competing priorities/sit
-#: together, new voice/whole orchestra/in ear). Inserted BEFORE
-#: any Strands: bookkeeping line (strands parsing reads from the
-#: end) and before the beat trailers, so every trailer parse in
-#: the runtime sees the same trailing structure as the original
-#: output; thread trailers are position-tolerant.
 _TEACHING_SENTENCE = (
     "My ground is the council and the tree, where parts of your "
     "life need hearing together; bring me the competing priorities "
     "that will not sit together; every new voice changes what the "
     "whole orchestra can play, and I keep the whole of it in ear."
 )
-
-_BEAT_SUFFIX = (
-    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
-    "[[beat:conductor:why_meet]]"
-)
-
 
 def _teaching(gen):
     def wrapper(prompt, **kwargs):
@@ -154,7 +132,7 @@ def _teaching(gen):
                 break
         else:
             lines.append(_TEACHING_SENTENCE)
-        return "\n".join(lines) + _BEAT_SUFFIX
+        return "\n".join(lines)
     return wrapper
 
 
@@ -233,7 +211,7 @@ def test_initiative_offer_to_help_is_engaged_not_absorbed(ve_ctx, tmp_path):
     # conversational frame and her jurisdiction — initiative was
     # recognized inside the character's own call.
     assert len(gen.prompts) == 1
-    assert "mid-conversation in your workshop" in gen.prompts[0]
+    assert "conductor of this workshop" in gen.prompts[0]
     assert "Integration, coordination" in gen.prompts[0]
     # Objectives: the offer satisfied exactly the one it genuinely
     # is — an offer received. Engagement with the undertaking and the

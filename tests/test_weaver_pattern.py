@@ -115,7 +115,7 @@ class PatternGen:
             return self._next(self.engage, "An engaged reply from the bench.")
         if "READ-BACK" in prompt:
             return "A first impression from the whole exchange.\nStrands: Compass"
-        if "mid-conversation in your workshop" in prompt:
+        if "conductor of this workshop" in prompt:
             return self._next(
                 self.turn, "A conversational reply.\n[[thread:settled]]"
             )
@@ -123,39 +123,18 @@ class PatternGen:
 
 
 
-#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
-#: these fakes simulate a character that teaches its beats WITH
-#: CONTENT — every generation output carries a teaching sentence
-#: with all three beats' anchors plus the three beat trailers
-#: (trailers stripped before anything is spoken). Trailers alone
-#: no longer count under the content guard. Prompts and
-#: generation counts are unchanged; spoken bodies gain the
-#: teaching sentence, which these suites' substring assertions
-#: tolerate. The gate itself is pinned by
-#: tests/test_encounter_tutorial_beats.py; these suites pin the
+#: Test fake voice: every generation output carries a teaching
+#: sentence (the fake's dialogue content). No beat trailers: the
+#: tutorial-beat mechanism is deleted, and no frame invites them.
+#: The first-meeting philosophy is pinned by
+#: tests/test_first_meeting_intentions.py; these suites pin the
 #: other behaviors.
-#: Teaching sentence the fakes speak (correction 2026-10-24):
-#: beat trailers alone no longer count — coverage requires
-#: content, so a fake that teaches its beats must speak them.
-#: One sentence carrying all three conductor beats' anchors
-#: (council/tree/hearing-together, competing priorities/sit
-#: together, new voice/whole orchestra/in ear). Inserted BEFORE
-#: any Strands: bookkeeping line (strands parsing reads from the
-#: end) and before the beat trailers, so every trailer parse in
-#: the runtime sees the same trailing structure as the original
-#: output; thread trailers are position-tolerant.
 _TEACHING_SENTENCE = (
     "My ground is the council and the tree, where parts of your "
     "life need hearing together; bring me the competing priorities "
     "that will not sit together; every new voice changes what the "
     "whole orchestra can play, and I keep the whole of it in ear."
 )
-
-_BEAT_SUFFIX = (
-    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
-    "[[beat:conductor:why_meet]]"
-)
-
 
 def _teaching(gen):
     def wrapper(prompt, **kwargs):
@@ -167,7 +146,7 @@ def _teaching(gen):
                 break
         else:
             lines.append(_TEACHING_SENTENCE)
-        return "\n".join(lines) + _BEAT_SUFFIX
+        return "\n".join(lines)
     return wrapper
 
 
@@ -284,7 +263,6 @@ def test_no_mime_directives_in_weaver_frames(ve_ctx, tmp_path):
         "impression": definition.impression_frame,
         "correction": definition.correction_frame,
         "impression_reply": definition.impression_reply_frame,
-        "dictionary": definition.dictionary_frame,
     }
     # The lines from his live test, and their kin — directives to
     # pretend at physical work. (The frames' own prohibitions speak
@@ -300,9 +278,11 @@ def test_no_mime_directives_in_weaver_frames(ve_ctx, tmp_path):
             assert phrase not in lowered, (name, phrase)
     # And the prohibition is present where the collaboration is
     # framed — not merely the absence of the old lines.
-    assert "stage directions" in definition.turn_frame
-    assert "NEVER direct them" in script.encounter_frame
-    assert "pretend" in definition.turn_frame.lower()
+    # The prohibition itself, one line per path (slim-prompt rule):
+    # mime is forbidden by name, metaphors live in speech.
+    assert "Never mime physical work" in definition.turn_frame
+    assert "Never mime physical work" in script.encounter_frame
+    assert "metaphors live in speech" in definition.turn_frame
 
 
 def test_impression_frame_grounds_substantive_material_only(ve_ctx, tmp_path):
@@ -349,8 +329,9 @@ def test_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     # Turn 2 — the user's own material, with a real question
     # inside it (two volunteer crews, two tempos, one rota).
     # Question-shaped, so the conversational frame runs — and it
-    # must carry the PURSUIT instruction and her dictionary as
-    # available context.
+    # must carry the intentions (be yourself, engage with what
+    # they bring) and her jurisdiction focus, not a pursuit
+    # script or a dictionary.
     gen.turn.append(
         "Tell me about the last shift where the two tempos "
         "actually met — what did it look like when it worked?"
@@ -365,10 +346,10 @@ def test_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     )
     assert len(gen.prompts) - prompts_before == 1  # one generation
     turn_prompt = gen.prompts[-1]
-    assert "mid-conversation in your workshop" in turn_prompt
-    assert "pursue it BEFORE you read them" in turn_prompt
-    assert "the evidence of their experience" in turn_prompt
-    assert "Music & Composition" in turn_prompt  # dictionary rides along
+    assert "conductor of this workshop" in turn_prompt
+    assert "Be yourself above all" in turn_prompt
+    assert "engage with what the visitor actually brings" in turn_prompt
+    assert "competing priorities" in turn_prompt  # jurisdiction focus rides along
     # No impression was smuggled into the pursuit turn either.
     assert svc.meetings.get(uid, "conductor", 1)["readback_claim"] == ""
     # Their material is on the record as material: the undertaking
@@ -503,26 +484,18 @@ def test_closing_state_carries_reply_and_reveal_together(ve_ctx, tmp_path):
 # -------------------------------------- dictionary: available, not owed
 
 
-def test_dictionary_frame_is_available_context_under_three_layers(ve_ctx, tmp_path):
+def test_register_is_available_never_owed_in_both_paths(ve_ctx, tmp_path):
+    # Slim-prompt rule (2026-10-24): no dictionary frame anymore —
+    # the register lives as one line per generation path, available
+    # never owed. The registry's dictionary itself still exists as
+    # data (jurisdictions), but nothing hands it to the character.
     script = MT.get_script("conductor", 1)
     definition = ENC.get_definition(script)
-    frame = definition.dictionary_frame
-    record = JX.get_jurisdiction("conductor")
-    # The registry's dictionary, framed by the definition.
-    assert frame.startswith("Your dictionary is available to you")
-    assert record.dictionary.domain in frame
-    for word in record.dictionary.lexicon:
-        assert word in frame, word
-    assert record.dictionary.perspective in frame
-    # The three layers, with ordinary speech the default and the
-    # no-obligation rule in so many words.
-    assert "ordinary speech" in frame
-    assert "the default" in frame
-    assert "No layer is mandatory" in frame
-    assert "never a quota" in frame
-    assert "never owed" in frame
-    # The frame rides BOTH generation paths (engage + conversational).
-    assert frame in definition.engage_frame
+    assert not hasattr(definition, "dictionary_frame")
+    # The three-layers rule in so many words, once per path.
+    assert "no required words, no required frequency" in definition.turn_frame
+    assert "never as decoration" in definition.engage_frame
+    assert "ordinary words when that sharpens the thing" in definition.turn_frame
     # And no frame on the encounter path instructs per-turn metaphor
     # use — availability wording only, obligation wording nowhere.
     frames = {
@@ -531,7 +504,6 @@ def test_dictionary_frame_is_available_context_under_three_layers(ve_ctx, tmp_pa
         "impression": definition.impression_frame,
         "correction": definition.correction_frame,
         "impression_reply": definition.impression_reply_frame,
-        "dictionary": definition.dictionary_frame,
     }
     obligation = re.compile(
         r"(every (reply|turn|response)|each (reply|turn|response)|"

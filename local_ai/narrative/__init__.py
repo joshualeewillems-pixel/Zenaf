@@ -26,6 +26,10 @@ Phase S0 (this package as built) is STATE ONLY:
               an optional scope; readings carry multiple scales plus
               a primary; progression positions are bound to a
               particular lens and may be unknown or inapplicable.
+              Part X adds the recursive structure: arc associations
+              (ThreadLink — many-to-many nesting between threads,
+              optional and inert) and a nullable thread-local
+              progression position in the same lens-bound shape.
   store.py  — NarrativeStore, the only writer of thread records,
               enforcing the two invariants in code: no reading
               without evidence; no change without NEW evidence.
@@ -40,12 +44,14 @@ keeps the story straight.
 
 from .lenses import LENSES, NarrativeLens, LensPhase, get_lens, lens_ids
 from .models import (
+    THREAD_LINK_RELATIONS,
     InvolvementMeasure,
     LensFitting,
     NarrativeThread,
     ProgressionPosition,
     ThreadChange,
     ThreadEvidence,
+    ThreadLink,
     ThreadReading,
 )
 from .refs import (
@@ -58,6 +64,7 @@ from .store import NarrativeStore
 
 __all__ = [
     "LENSES",
+    "THREAD_LINK_RELATIONS",
     "InadmissibleEvidenceError",
     "InvolvementMeasure",
     "LensFitting",
@@ -70,6 +77,7 @@ __all__ = [
     "SourceRef",
     "ThreadChange",
     "ThreadEvidence",
+    "ThreadLink",
     "ThreadReading",
     "get_lens",
     "lens_ids",

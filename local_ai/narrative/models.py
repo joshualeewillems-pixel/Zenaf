@@ -28,6 +28,28 @@ much of an artifact or a trained profile is the user's own authored
 or edited work versus Zenaf-synthesized, stored so attribution and
 incentive accounting can ever be honest. S0 stores the measure; it
 computes nothing from it and shows it nowhere.
+
+Part X (Joshua, 2026-10-23 ~22:32 PT — ratified) adds the recursive
+structure: "progression is Mandelbrot at all scales." A life arc
+contains smaller arcs, which contain smaller arcs, down to moments;
+each arc has its own progression, and each may participate in
+several larger arcs. So alongside the lens-bound reading positions
+above, the schema carries:
+
+  * **arc associations** — many-to-many links between threads
+    (ThreadLink): a thread may nest inside several larger threads
+    and contain several smaller ones. Optional, inert, unconsumed
+    by any logic — no traversal, no recursion, no cycle machinery.
+  * **a thread-local progression position** (nullable): the
+    thread's own development at its own resolution, in the same
+    lens-bound shape as a reading's. It coexists with readings'
+    positions; neither replaces the other.
+
+Scale remains what Part IX made it: the resolution at which an arc
+is examined (thread ``scope`` + readings' ``scales``). Progression
+is development at that resolution. Neither forces a universal
+sequence — the fractal mathematics, if they ever come, are a later
+phase's problem; S0's duty is a schema that will not prevent them.
 """
 
 from __future__ import annotations
@@ -89,6 +111,13 @@ INVOLVEMENT_SUBJECT_KINDS: tuple[str, ...] = ("artifact", "trained_profile")
 #: apply to a reading.
 PROGRESSION_STATES: tuple[str, ...] = ("positioned", "unknown", "inapplicable")
 
+#: Arc association kinds (Part X). A link row is stored once, in
+#: parent -> child direction; the SAME row is the child's "part_of"
+#: view — direction carries the inverse, so the vocabulary needs
+#: only the one kind today. The column exists so a later phase can
+#: add kinds without a schema change; S0 defines no others.
+THREAD_LINK_RELATIONS: tuple[str, ...] = ("contains",)
+
 
 @dataclass(frozen=True)
 class ProgressionPosition:
@@ -143,7 +172,13 @@ class NarrativeThread:
     thread itself carries identity, lifecycle, and pointers. ``scope``
     is Part IX's optional broad label (e.g. "work", "family"): it may
     be absent, and nothing in the store treats it as a category the
-    thread must obey.
+    thread must obey. ``progression`` is Part X's thread-LOCAL
+    progression position — this arc's own development at its own
+    resolution, in the same lens-bound shape as a reading's. It is
+    nullable (no local progression recorded is a normal state) and
+    coexists with readings' positions: a reading's position says
+    where an interpretation sits inside its lens; the thread's says
+    where the arc itself stands. Neither replaces the other.
     """
 
     id: str
@@ -153,6 +188,7 @@ class NarrativeThread:
     retirement_reason: str | None = None
     successor_thread_id: str | None = None
     scope: str | None = None
+    progression: ProgressionPosition | None = None
     strand_weights: dict[str, float] | None = None
     cast: list[dict[str, Any]] | None = None
     aspiration_refs: list[str] | None = None
@@ -172,6 +208,9 @@ class NarrativeThread:
             "retirement_reason": self.retirement_reason,
             "successor_thread_id": self.successor_thread_id,
             "scope": self.scope,
+            "progression": (
+                self.progression.to_dict() if self.progression else None
+            ),
             "strand_weights": self.strand_weights or {},
             "cast": self.cast or [],
             "aspiration_refs": self.aspiration_refs or [],
@@ -181,6 +220,45 @@ class NarrativeThread:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_change_at": self.last_change_at,
+        }
+
+
+@dataclass(frozen=True)
+class ThreadLink:
+    """One arc association between two threads (Part X).
+
+    Recursive narrative structure, stored flat: a link says the
+    parent arc CONTAINS the child arc. The relation is many-to-many
+    — a child may appear under several parents (it participates in
+    several larger arcs) and a parent may contain many children —
+    never a single-parent tree. Read from the child's side, the same
+    row is its ``part_of`` view; direction carries the inverse, so
+    only the one relation kind is stored.
+
+    Links are optional and INERT in S0: nothing traverses them, no
+    logic consumes them, and there is deliberately no cycle
+    detection (the store refuses only the degenerate self-link).
+    They exist so the schema will not prevent the recursive
+    analysis a later phase may want.
+    """
+
+    id: str
+    user_id: str
+    parent_thread_id: str
+    child_thread_id: str
+    relation: str = "contains"
+    note: str = ""
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "parent_thread_id": self.parent_thread_id,
+            "child_thread_id": self.child_thread_id,
+            "relation": self.relation,
+            "note": self.note,
+            "created_at": self.created_at,
         }
 
 

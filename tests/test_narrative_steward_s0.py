@@ -17,6 +17,11 @@ refinement:
   primary scale; progression positioned (bound to its lens) /
   unknown / inapplicable; threads with and without scope; the
   involvement ledger record;
+- Part X recursive structure round-trips: arc associations
+  (nesting, one child in two parents, siblings under one parent),
+  thread-local progression in each of its states under the same
+  lens-binding rule readings obey, and threads with neither links
+  nor local progression reading back unchanged;
 - the no-LLM rule: the narrative package imports no model,
   provider, or generation machinery (AST-checked, not by trust).
 
@@ -518,6 +523,208 @@ def test_involvement_measure_validates(store):
         store.record_involvement(
             USER, subject_kind="vibe", subject_id="x"
         )
+
+
+# -- arc associations: recursive structure, stored flat (Part X) -------------------
+
+
+def test_arc_nesting_round_trip(store):
+    life = _thread(store, title="A life")
+    season = _thread(store, title="The orchard season")
+    afternoon = _thread(store, title="One afternoon in the orchard")
+
+    link = store.link_threads(USER, life.id, season.id, note="its current arc")
+    assert link.relation == "contains"
+    assert link.parent_thread_id == life.id
+    assert link.child_thread_id == season.id
+    store.link_threads(USER, season.id, afternoon.id)
+
+    # read back in each direction: contains from above, part_of from below
+    assert [l.child_thread_id for l in store.links_as_parent(USER, life.id)] == [
+        season.id
+    ]
+    assert [l.parent_thread_id for l in store.links_as_child(USER, season.id)] == [
+        life.id
+    ]
+    touching = store.links_for(USER, season.id)
+    assert {l.id for l in touching} == {
+        link.id,
+        store.links_as_parent(USER, season.id)[0].id,
+    }
+    # three levels coexist as flat rows; nothing was traversed to store them
+    assert [l.child_thread_id for l in store.links_as_parent(USER, season.id)] == [
+        afternoon.id
+    ]
+
+
+def test_arc_participates_in_two_parents(store):
+    """Overlapping association: one smaller arc belongs to several
+    larger arcs at once — the many-to-many Part X requires, never a
+    single-parent tree."""
+    work = _thread(store, title="The work years")
+    family = _thread(store, title="Raising them")
+    shared = _thread(store, title="The winter of doing both")
+
+    store.link_threads(USER, work.id, shared.id)
+    store.link_threads(USER, family.id, shared.id)
+
+    parents = store.links_as_child(USER, shared.id)
+    assert {l.parent_thread_id for l in parents} == {work.id, family.id}
+    assert [l.child_thread_id for l in store.links_as_parent(USER, work.id)] == [
+        shared.id
+    ]
+    assert [l.child_thread_id for l in store.links_as_parent(USER, family.id)] == [
+        shared.id
+    ]
+
+
+def test_sibling_arcs_share_a_parent(store):
+    parent = _thread(store, title="The orchard years")
+    first = _thread(store, title="Planting")
+    second = _thread(store, title="Pruning")
+
+    store.link_threads(USER, parent.id, first.id)
+    store.link_threads(USER, parent.id, second.id)
+
+    children = store.links_as_parent(USER, parent.id)
+    assert {l.child_thread_id for l in children} == {first.id, second.id}
+    # siblings are associated through the parent only — no link
+    # between them was implied or invented
+    assert store.links_for(USER, first.id)[0].parent_thread_id == parent.id
+    assert len(store.links_for(USER, first.id)) == 1
+
+
+def test_thread_without_links_or_progression_reads_back_unchanged(store):
+    thread = _thread(store, title="Unnested, unpositioned")
+    back = store.get_thread(USER, thread.id)
+    assert back.progression is None
+    assert back.to_dict()["progression"] is None
+    assert store.links_for(USER, thread.id) == []
+    assert store.links_as_parent(USER, thread.id) == []
+    assert store.links_as_child(USER, thread.id) == []
+
+
+def test_arc_link_validation(store):
+    mine = _thread(store)
+    also_mine = _thread(store)
+    foreign = store.create_thread(OTHER, title="not mine")
+
+    # the one shallow guard: an arc cannot contain itself
+    with pytest.raises(ValueError):
+        store.link_threads(USER, mine.id, mine.id)
+    # both ends must be the linking user's own threads
+    with pytest.raises(ValueError):
+        store.link_threads(USER, mine.id, foreign.id)
+    with pytest.raises(ValueError):
+        store.link_threads(OTHER, mine.id, also_mine.id)
+    # the relation vocabulary is closed in S0
+    with pytest.raises(ValueError):
+        store.link_threads(USER, mine.id, also_mine.id, relation="causes")
+
+    # re-linking the same pair dedupes to the existing row
+    first = store.link_threads(USER, mine.id, also_mine.id)
+    again = store.link_threads(USER, mine.id, also_mine.id, note="restated")
+    assert again.id == first.id
+    assert len(store.links_for(USER, mine.id)) == 1
+
+    # unlinking removes exactly that association, and says so
+    assert store.unlink_threads(USER, mine.id, also_mine.id) is True
+    assert store.links_for(USER, mine.id) == []
+    assert store.unlink_threads(USER, mine.id, also_mine.id) is False
+
+
+# -- thread-local progression (Part X): the arc's own development ------------------
+
+
+def test_thread_local_progression_positioned_round_trip(store):
+    thread = _thread(
+        store,
+        progression=ProgressionPosition.positioned("descent_and_return", "descent"),
+    )
+    assert thread.progression.state == "positioned"
+    back = store.get_thread(USER, thread.id)
+    assert back.progression == ProgressionPosition.positioned(
+        "descent_and_return", "descent"
+    )
+
+    # the position can move, and can be cleared back to 'none
+    # recorded' — a state distinct from unknown
+    moved = store.set_thread_progression(
+        USER, thread.id,
+        ProgressionPosition.positioned("descent_and_return", "ascent"),
+    )
+    assert moved.progression.phase == "ascent"
+    cleared = store.set_thread_progression(USER, thread.id, None)
+    assert cleared.progression is None
+    assert store.get_thread(USER, thread.id).progression is None
+
+
+def test_thread_local_progression_unknown_and_inapplicable(store):
+    thread = _thread(store)
+    unknown = store.set_thread_progression(
+        USER, thread.id, ProgressionPosition.unknown()
+    )
+    assert unknown.progression.state == "unknown"
+    assert unknown.progression.lens_id is None
+    # unknown stored is NOT the same fact as no progression stored
+    assert unknown.progression is not None
+
+    inapplicable = store.set_thread_progression(
+        USER, thread.id, ProgressionPosition.inapplicable()
+    )
+    assert inapplicable.progression.state == "inapplicable"
+    assert store.get_thread(USER, thread.id).progression.state == "inapplicable"
+
+
+def test_thread_local_progression_rejects_foreign_phase(store):
+    """The same lens-binding rule readings obey: 'fallow' is a phase
+    of the seasonal lens, not of the monomyth — a thread's local
+    position may not borrow another lens's template."""
+    with pytest.raises(ValueError):
+        _thread(
+            store,
+            progression=ProgressionPosition.positioned(
+                "departure_initiation_return", "fallow"
+            ),
+        )
+    thread = _thread(store)
+    with pytest.raises(ValueError):
+        store.set_thread_progression(
+            USER, thread.id,
+            ProgressionPosition.positioned("descent_and_return", "harvest"),
+        )
+    # and a non-positioned local state may not smuggle a lens in
+    with pytest.raises(ValueError):
+        store.set_thread_progression(
+            USER, thread.id,
+            ProgressionPosition(state="unknown", lens_id="descent_and_return"),
+        )
+    assert store.get_thread(USER, thread.id).progression is None
+
+
+def test_thread_progression_coexists_with_reading_progression(store):
+    """Part X: the thread's local position and a reading's lens-bound
+    position are separate facts — under different lenses, at the
+    same time — and neither overwrites the other."""
+    thread = _thread(
+        store,
+        evidence_refs=[ENTRY_REF],
+        progression=ProgressionPosition.positioned("descent_and_return", "the_bottom"),
+    )
+    reading = store.propose_reading(
+        USER, thread.id, author="steward",
+        evidence_refs=[ENTRY_REF],
+        progression=ProgressionPosition.positioned(
+            "departure_initiation_return", "initiation"
+        ),
+    )
+    back_thread = store.get_thread(USER, thread.id)
+    assert back_thread.progression.lens_id == "descent_and_return"
+    assert back_thread.progression.phase == "the_bottom"
+    back_reading = store.readings_for(USER, thread.id)[0]
+    assert back_reading.id == reading.id
+    assert back_reading.progression.lens_id == "departure_initiation_return"
+    assert back_reading.progression.phase == "initiation"
 
 
 # -- the no-LLM rule, checked mechanically -----------------------------------------

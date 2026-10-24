@@ -25,6 +25,15 @@ not left to callers (audit Part II §2, §7):
      only when at least one cited ref was not already attached to
      the thread. The story may be said to have moved only when new
      evidence actually arrived (the anti-manufacture rule).
+
+Part X (ratified 2026-10-23 ~22:32 PT) adds recursive structure,
+stored and nothing more: arc associations (thread_links —
+many-to-many, relation-typed, read back in either direction) and a
+nullable thread-local progression position validated by the same
+_validate_progression the readings use. The store walks none of it:
+no traversal helpers, no recursion, and the only link guard is the
+shallow one its validation style already implies — a thread may
+not contain itself.
 """
 
 from __future__ import annotations
@@ -50,6 +59,7 @@ from .models import (
     PROGRESSION_STATES,
     READING_STATUSES,
     RETIREMENT_REASONS,
+    THREAD_LINK_RELATIONS,
     THREAD_ORIGINS,
     THREAD_STATUSES,
     InvolvementMeasure,
@@ -58,6 +68,7 @@ from .models import (
     ProgressionPosition,
     ThreadChange,
     ThreadEvidence,
+    ThreadLink,
     ThreadReading,
 )
 from .refs import SourceRef, require_evidence_tier
@@ -101,6 +112,7 @@ CREATE TABLE IF NOT EXISTS narrative_threads (
   retirement_reason TEXT,
   successor_thread_id TEXT,
   scope TEXT,
+  progression_json TEXT,
   strand_weights_json TEXT NOT NULL DEFAULT '{}',
   cast_json TEXT NOT NULL DEFAULT '[]',
   aspiration_refs_json TEXT NOT NULL DEFAULT '[]',
@@ -113,6 +125,21 @@ CREATE TABLE IF NOT EXISTS narrative_threads (
 );
 CREATE INDEX IF NOT EXISTS idx_threads_user_status
   ON narrative_threads (user_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS thread_links (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  parent_thread_id TEXT NOT NULL,
+  child_thread_id TEXT NOT NULL,
+  relation TEXT NOT NULL DEFAULT 'contains',
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (parent_thread_id, child_thread_id, relation)
+);
+CREATE INDEX IF NOT EXISTS idx_thread_links_parent
+  ON thread_links (parent_thread_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_thread_links_child
+  ON thread_links (child_thread_id, created_at);
 
 CREATE TABLE IF NOT EXISTS thread_evidence (
   id TEXT PRIMARY KEY,
@@ -200,6 +227,21 @@ def _loads(text: str | None, default: Any) -> Any:
     except (json.JSONDecodeError, TypeError):
         return default
     return value if isinstance(value, type(default)) else default
+
+
+def _loads_progression(text: str | None) -> ProgressionPosition | None:
+    """A thread's local progression: NULL is a real value here —
+    'no local progression recorded' — distinct from a stored
+    position in the unknown state (Part X / Part IX)."""
+    if not text:
+        return None
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    return ProgressionPosition.from_dict(value)
 
 
 # -- validation helpers -------------------------------------------------------
@@ -331,6 +373,7 @@ def _row_to_thread(row: sqlite3.Row) -> NarrativeThread:
         retirement_reason=row["retirement_reason"],
         successor_thread_id=row["successor_thread_id"],
         scope=row["scope"],
+        progression=_loads_progression(row["progression_json"]),
         strand_weights=_loads(row["strand_weights_json"], {}),
         cast=_loads(row["cast_json"], []),
         aspiration_refs=_loads(row["aspiration_refs_json"], []),
@@ -340,6 +383,18 @@ def _row_to_thread(row: sqlite3.Row) -> NarrativeThread:
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         last_change_at=row["last_change_at"],
+    )
+
+
+def _row_to_link(row: sqlite3.Row) -> ThreadLink:
+    return ThreadLink(
+        id=row["id"],
+        user_id=row["user_id"],
+        parent_thread_id=row["parent_thread_id"],
+        child_thread_id=row["child_thread_id"],
+        relation=row["relation"],
+        note=row["note"],
+        created_at=row["created_at"],
     )
 
 
@@ -424,6 +479,21 @@ class NarrativeStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # Part X migration: databases created by the original
+            # S0 commit have no progression_json column (CREATE TABLE
+            # IF NOT EXISTS does not add one). Additive only; a NULL
+            # reads back as "no local progression recorded."
+            columns = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(narrative_threads)"
+                ).fetchall()
+            }
+            if "progression_json" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE narrative_threads "
+                    "ADD COLUMN progression_json TEXT"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -525,6 +595,7 @@ class NarrativeStore:
         origin: str = "user_declared",
         title: str = "",
         scope: str | None = None,
+        progression: ProgressionPosition | dict | None = None,
         strand_weights: dict | None = None,
         cast: list | None = None,
         aspiration_refs: list | None = None,
@@ -534,12 +605,19 @@ class NarrativeStore:
 
         ``scope`` is Part IX's optional broad label — stored when
         given, NULL when not; the store never requires one.
-        Founding evidence passes the same tier gate as all evidence.
+        ``progression`` is Part X's optional thread-local position:
+        None (the default) records no local progression; a given
+        position passes the same lens-binding validation readings
+        use. Founding evidence passes the same tier gate as all
+        evidence.
         """
         if origin not in THREAD_ORIGINS:
             raise ValueError(f"unknown thread origin: {origin!r}")
         weights = _validate_strand_weights(strand_weights)
         cast_rows = _validate_cast(cast)
+        local_pos = (
+            None if progression is None else _validate_progression(progression)
+        )
         now = _utcnow()
         thread = NarrativeThread(
             id=_new_id("thr"),
@@ -547,6 +625,7 @@ class NarrativeStore:
             title=title,
             status="nascent",
             scope=scope,
+            progression=local_pos,
             strand_weights=weights,
             cast=cast_rows,
             aspiration_refs=[str(ref) for ref in (aspiration_refs or [])],
@@ -558,14 +637,16 @@ class NarrativeStore:
             self._conn.execute(
                 "INSERT INTO narrative_threads (id, user_id, title, "
                 "status, retirement_reason, successor_thread_id, "
-                "scope, strand_weights_json, cast_json, "
-                "aspiration_refs_json, standing_reading_id, "
-                "lens_fitting_id, origin, created_at, updated_at, "
-                "last_change_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?, ?, ?, ?)",
+                "scope, progression_json, strand_weights_json, "
+                "cast_json, aspiration_refs_json, "
+                "standing_reading_id, lens_fitting_id, origin, "
+                "created_at, updated_at, last_change_at) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     thread.id, thread.user_id, thread.title,
                     thread.status, None, None, thread.scope,
+                    json.dumps(local_pos.to_dict(), ensure_ascii=False)
+                    if local_pos is not None else None,
                     json.dumps(weights, ensure_ascii=False),
                     json.dumps(cast_rows, ensure_ascii=False),
                     json.dumps(thread.aspiration_refs, ensure_ascii=False),
@@ -703,6 +784,165 @@ class NarrativeStore:
             self._conn.commit()
             row = self._require_thread(user_id, thread_id)
         return _row_to_thread(row)
+
+    def set_thread_progression(
+        self,
+        user_id: str,
+        thread_id: str,
+        progression: ProgressionPosition | dict | None,
+    ) -> NarrativeThread:
+        """Record (or clear) a thread's LOCAL progression position.
+
+        Part X: the arc's own development at its own resolution,
+        stored beside — never instead of — its readings' positions.
+        The value passes _validate_progression, the same lens-
+        binding rule readings obey: a positioned state must name a
+        phase of its own lens's template; unknown and inapplicable
+        carry no lens. Passing None clears the position back to
+        'none recorded', which is a distinct fact from 'unknown'.
+        """
+        pos = (
+            None if progression is None else _validate_progression(progression)
+        )
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            self._conn.execute(
+                "UPDATE narrative_threads SET progression_json = ?, "
+                "updated_at = ? WHERE id = ? AND user_id = ?",
+                (
+                    json.dumps(pos.to_dict(), ensure_ascii=False)
+                    if pos is not None else None,
+                    _utcnow(), thread_id, user_id,
+                ),
+            )
+            self._conn.commit()
+            row = self._require_thread(user_id, thread_id)
+        return _row_to_thread(row)
+
+    # -- arc associations (Part X) --------------------------------------------------
+
+    def link_threads(
+        self,
+        user_id: str,
+        parent_thread_id: str,
+        child_thread_id: str,
+        *,
+        relation: str = "contains",
+        note: str = "",
+    ) -> ThreadLink:
+        """Record that one arc contains another (Part X).
+
+        Many-to-many by construction: nothing here limits a child
+        to one parent or a parent to one child, so arcs nest and
+        overlap exactly as lived stories do. Both threads must be
+        the user's. Re-linking the same pair with the same relation
+        returns the existing row (links dedupe like evidence).
+        The one guard is shallow and deliberate: a thread may not
+        contain ITSELF. There is no deeper cycle detection — S0
+        stores structure; it does not walk it.
+        """
+        if relation not in THREAD_LINK_RELATIONS:
+            raise ValueError(f"unknown thread link relation: {relation!r}")
+        if parent_thread_id == child_thread_id:
+            raise ValueError("a thread cannot contain itself")
+        with self._lock:
+            self._require_thread(user_id, parent_thread_id)
+            self._require_thread(user_id, child_thread_id)
+            existing = self._conn.execute(
+                "SELECT * FROM thread_links WHERE parent_thread_id = ? "
+                "AND child_thread_id = ? AND relation = ?",
+                (parent_thread_id, child_thread_id, relation),
+            ).fetchone()
+            if existing is not None:
+                return _row_to_link(existing)
+            record = ThreadLink(
+                id=_new_id("lnk"),
+                user_id=user_id,
+                parent_thread_id=parent_thread_id,
+                child_thread_id=child_thread_id,
+                relation=relation,
+                note=note,
+                created_at=_utcnow(),
+            )
+            self._conn.execute(
+                "INSERT INTO thread_links (id, user_id, "
+                "parent_thread_id, child_thread_id, relation, note, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.id, record.user_id, record.parent_thread_id,
+                    record.child_thread_id, record.relation,
+                    record.note, record.created_at,
+                ),
+            )
+            self._conn.commit()
+        return record
+
+    def unlink_threads(
+        self,
+        user_id: str,
+        parent_thread_id: str,
+        child_thread_id: str,
+        *,
+        relation: str = "contains",
+    ) -> bool:
+        """Remove one arc association. Returns True when a link was
+        removed, False when none existed — associations are the
+        user's structure to revise; removing one rewrites nothing
+        about either thread."""
+        if relation not in THREAD_LINK_RELATIONS:
+            raise ValueError(f"unknown thread link relation: {relation!r}")
+        with self._lock:
+            self._require_thread(user_id, parent_thread_id)
+            self._require_thread(user_id, child_thread_id)
+            cursor = self._conn.execute(
+                "DELETE FROM thread_links WHERE parent_thread_id = ? "
+                "AND child_thread_id = ? AND relation = ?",
+                (parent_thread_id, child_thread_id, relation),
+            )
+            self._conn.commit()
+        return cursor.rowcount > 0
+
+    def links_for(
+        self, user_id: str, thread_id: str
+    ) -> list[ThreadLink]:
+        """Every association touching a thread, in either direction:
+        the arcs it contains and the arcs it participates in.
+        (A flat read of stored rows — not a traversal.)"""
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            rows = self._conn.execute(
+                "SELECT * FROM thread_links WHERE parent_thread_id = ? "
+                "OR child_thread_id = ? ORDER BY created_at, id",
+                (thread_id, thread_id),
+            ).fetchall()
+        return [_row_to_link(r) for r in rows]
+
+    def links_as_parent(
+        self, user_id: str, thread_id: str
+    ) -> list[ThreadLink]:
+        """The arcs this thread contains (its smaller arcs)."""
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            rows = self._conn.execute(
+                "SELECT * FROM thread_links WHERE parent_thread_id = ? "
+                "ORDER BY created_at, id",
+                (thread_id,),
+            ).fetchall()
+        return [_row_to_link(r) for r in rows]
+
+    def links_as_child(
+        self, user_id: str, thread_id: str
+    ) -> list[ThreadLink]:
+        """The arcs this thread participates in (its larger arcs) —
+        plural by design: overlapping association is the point."""
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            rows = self._conn.execute(
+                "SELECT * FROM thread_links WHERE child_thread_id = ? "
+                "ORDER BY created_at, id",
+                (thread_id,),
+            ).fetchall()
+        return [_row_to_link(r) for r in rows]
 
     # -- evidence -----------------------------------------------------------------
 

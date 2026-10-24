@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { seatKeysForWeights } from './seatStrands'
+import { SEAT_REVIEW_GROUPS, seatKeysForWeights } from './seatStrands'
 
 /**
  * The reach rule behind seat-organized review (Joshua, 2026-10-22): an
@@ -21,6 +21,17 @@ describe('seatKeysForWeights', () => {
 
   it('below-threshold weights reach no seat', () => {
     expect(seatKeysForWeights({ self: 0.2, word: 0.24 })).toEqual([])
+  })
+
+  it('review buckets carry the canonical fellowship names (no retired Bridge/Neighbor)', () => {
+    expect(SEAT_REVIEW_GROUPS.map((g) => g.name)).toEqual([
+      'The Gardener',
+      'The Firebrand',
+      'The Bear',
+      'The Crane',
+      'The Weaver',
+      'The Fox',
+    ])
   })
 
   it('unsorted agents (no weights) belong to no seat yet', () => {

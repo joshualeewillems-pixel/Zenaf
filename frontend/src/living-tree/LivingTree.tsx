@@ -6,7 +6,7 @@
  * Branches are archetypes, not marketplace listings: Mentor, Champion,
  * Guardian, Maverick, Ambassador, Conductor, and the Skeptic. Each branch's
  * thickness is that archetype's training depth. Tapping a branch opens its
- * character panel — strand blend, twigs, recent stories — with marketplace
+ * character panel — strand blend, twigs — with marketplace
  * rental info one section deeper. Commerce lives in the panel, never on the
  * tree itself.
  *
@@ -72,7 +72,6 @@ export type NodeMenuItemId =
   | 'upload'
   | 'projects'
   | 'settings'
-  | 'character'
   | 'content'
 
 /** App-shell destinations a sheet entry can navigate to. Destinations live
@@ -109,9 +108,9 @@ const FELLOWSHIP_NAMES: Record<string, string> = {
   mentor: 'The Gardener',
   champion: 'The Firebrand',
   guardian: 'The Bear',
-  ambassador: 'The Bridge',
+  ambassador: 'The Crane',
   conductor: 'The Weaver',
-  skeptic: 'The Neighbor',
+  skeptic: 'The Raven',
   maverick: 'The Fox',
 }
 
@@ -177,18 +176,23 @@ type TreeDatum = {
   archetype?: ArchetypeStatus
 }
 
+/** Strand-root panels carry no live per-strand depth (roots are a static
+    seed below), so this copy states what each strand learns, never that
+    it is currently empty — an emptiness claim would still read true after
+    training. The image line keeps its conditional "once you show it" form,
+    which is a mechanism statement, not a state claim. */
 const NARRATIVES: Record<StrandKey, string> = {
-  word: 'Your voice, unborrowed. Feed the Voice your writing — drafts, messages, the sentences you rewrote three times — and it learns how you actually sound. Right now it is a blank page.',
+  word: 'Your voice, unborrowed. Feed the Voice your writing — drafts, messages, the sentences you rewrote three times — and it learns how you actually sound.',
   number:
-    'Your pattern-reader. The Logic will learn how you weigh evidence and tradeoffs — but it has not seen your data yet.',
+    'Your pattern-reader. The Logic learns how you weigh evidence and tradeoffs from what you show it.',
   image:
     'Your eye. The Eye will learn your visual taste — what you keep, what you cut — once you show it work you love.',
   sound:
-    'Your ear. The Ear learns rhythm, cadence, and tone by listening to what you make and what moves you. Still silent.',
-  body: 'Your hands. The Hands will learn how you build — your order of operations, what “done” means to you. No sawdust yet.',
+    'Your ear. The Ear learns rhythm, cadence, and tone by listening to what you make and what moves you.',
+  body: 'Your hands. The Hands will learn how you build — your order of operations, what “done” means to you.',
   people:
-    'Your way with people. The Heart learns who you listen to, how you hold a room, what fairness costs you. No conversations yet.',
-  self: 'Your compass. Compass learns direction and leverage from the calls you have actually made. None logged yet.',
+    'Your way with people. The Heart learns who you listen to, how you hold a room, what fairness costs you.',
+  self: 'Your compass. Compass learns direction and leverage from the calls you have actually made.',
 }
 
 /** Roots: the 7 agents, ordered to follow the braid. Honest seed — 0%, no children. */
@@ -298,7 +302,7 @@ const LEGACY_YOU_ITEMS: Array<{ id: string; title: string; desc: string; cta?: S
   {
     id: 'snapshot',
     title: 'Snapshot era',
-    desc: 'Snapshots freeze your profile as a rentable era — automatic each year, plus after big training leaps. Nothing to snapshot yet: eras begin once training does.',
+    desc: 'Snapshots freeze your profile as a rentable era — automatic each year, plus after big training leaps. Eras begin once training does.',
   },
   { id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
 ]

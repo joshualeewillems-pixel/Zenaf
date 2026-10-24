@@ -3,7 +3,7 @@
  *
  * ("These are the ones… Use these", 2026-10-18.) Split from his 7-panel
  * scenic sumi-e composite: elephant/Gardener, lion/Firebrand, bear/Bear,
- * fox/Fox, crane/Bridge, octopus/Weaver, raven/Neighbor — each in its
+ * fox/Fox, crane/Crane, octopus/Weaver, raven/Raven — each in its
  * seat's canonical color.
  *
  * These are the REVEALED faces. They render once the seat's face is

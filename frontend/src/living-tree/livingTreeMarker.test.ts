@@ -29,8 +29,18 @@ describe('markerTitle', () => {
     )
     expect(markerTitle('conductor', 'intro')).toBe('The Weaver wants to talk about something.')
     expect(markerTitle('skeptic', 'recognition', true)).toBe(
-      'The Neighbor wants to talk about what it has discovered.',
+      'The Raven wants to talk about what it has discovered.',
     )
+  })
+
+  it('uses the canonical fellowship names for the renamed seats', () => {
+    // Retired names Bridge (ambassador) and Neighbor (skeptic) must never
+    // surface: the doctrine's naming authority is Crane and Raven.
+    expect(markerTitle('ambassador', 'meet')).toBe('The Crane wants to meet you.')
+    expect(markerTitle('ambassador', 'discuss')).toBe('The Crane has something to discuss with you.')
+    expect(markerTitle('skeptic', 'challenge')).toBe('The Raven has something to challenge you on.')
+    expect(markerTitle('skeptic', 'offer')).toBe('The Raven has something to offer you.')
+    expect(markerTitle('ambassador', 'clarify')).toBe('The Crane wants to clarify something with you.')
   })
 
   it('falls back to the meet wording for unknown reasons and seats', () => {

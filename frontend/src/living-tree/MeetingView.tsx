@@ -113,6 +113,17 @@ export function MeetingView({
   const seenRef = useRef<Set<string>>(new Set())
   const primedRef = useRef(false)
   const [typing, setTyping] = useState<{ id: string; count: number } | null>(null)
+  // Whether every voice bubble has been delivered. Completion
+  // PRESENTATION (the "You've met the…" title, the reveal card, the
+  // complete footer) is gated on this: the closing turn's state
+  // flips status to complete while her closing words are still
+  // behind the typewriter queue, and rendering the completion UI
+  // instantly buried them (Joshua's closing screenshot, 2026-10-23:
+  // the card, and neither her reply nor the reveal above it). The
+  // meeting is not presented as over until she has finished
+  // speaking. Kept as state (not derived from seenRef during
+  // render) so the queue effects below drive it deterministically.
+  const [queueDrained, setQueueDrained] = useState(true)
   const reduceMotion =
     typeof window !== 'undefined' &&
     typeof window.matchMedia === 'function' &&
@@ -127,21 +138,33 @@ export function MeetingView({
   }, [])
 
   // Prime on first hydration; afterwards, start typing the oldest
-  // voice message that hasn't been shown yet.
+  // voice message that hasn't been shown yet. Also maintains
+  // queueDrained: false from the moment an unseen voice bubble
+  // exists (or one is typing) until the queue has fully played.
   useEffect(() => {
     if (!state) return
     if (!primedRef.current) {
       primedRef.current = true
       for (const m of state.messages) seenRef.current.add(m.id)
+      setQueueDrained(true)
       return
     }
-    if (typing) return
     if (reduceMotion) {
       for (const m of state.messages) seenRef.current.add(m.id)
+      setQueueDrained(true)
+      return
+    }
+    if (typing) {
+      setQueueDrained(false)
       return
     }
     const next = state.messages.find((m) => m.role === 'voice' && !seenRef.current.has(m.id))
-    if (next) setTyping({ id: next.id, count: 0 })
+    if (next) {
+      setQueueDrained(false)
+      setTyping({ id: next.id, count: 0 })
+    } else {
+      setQueueDrained(true)
+    }
   }, [state, typing, reduceMotion])
 
   // Advance the typing bubble at ~110 visible chars/sec (bounded).
@@ -259,6 +282,10 @@ export function MeetingView({
 
   const color = voiceColor(archetypeId)
   const complete = state?.status === 'complete'
+  // The meeting is complete in the record as soon as the closing
+  // turn lands; it is PRESENTED as complete only once her closing
+  // words have all been delivered (see queueDrained above).
+  const showComplete = complete && queueDrained
   const inRoom = state && (state.status === 'active' || state.status === 'paused')
 
   return (
@@ -270,7 +297,7 @@ export function MeetingView({
           <div>
             <div className="mtg-sub">Keystone 1 of 4 · First meeting</div>
             <h3 className="mtg-title">
-              {complete && state?.character ? `You've met the ${state.character}` : 'A first meeting'}
+              {showComplete && state?.character ? `You've met the ${state.character}` : 'A first meeting'}
             </h3>
           </div>
           <button type="button" className="mtg-close" onClick={onClose} aria-label="Close meeting">
@@ -342,7 +369,7 @@ export function MeetingView({
             </div>
           )}
 
-          {complete && state && (
+          {showComplete && state && (
             <div className="mtg-reveal">
               <div className="text-xs font-semibold tracking-wide" style={{ color: '#e8a33d' }}>
                 FIRST MEETING — COMPLETE
@@ -408,7 +435,7 @@ export function MeetingView({
           </div>
         )}
 
-        {complete && (
+        {showComplete && (
           <div className="mtg-foot">
             <div className="flex gap-2">
               <button

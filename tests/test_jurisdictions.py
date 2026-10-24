@@ -159,6 +159,105 @@ def test_jurisdiction_lines_carry_no_other_seats_register():
     assert rec.focus in "\n".join(own)
 
 
+# --- the dictionaries (Weaver-pattern release, 2026-10-23) ---------------------
+
+
+def test_every_dictionary_is_complete():
+    # Joshua's table, filled for all seven seats: domain, jurisdiction
+    # triad, a real lexicon, a distinctive perspective, a signature
+    # line — no seat's dictionary left as a placeholder.
+    for seat_id in jur.jurisdiction_ids():
+        dic = jur.get_jurisdiction(seat_id).dictionary
+        assert dic.domain.strip(), seat_id
+        assert len(dic.jurisdiction_triad) == 3, seat_id
+        assert all(t.strip() for t in dic.jurisdiction_triad), seat_id
+        assert len(dic.lexicon) >= 8, seat_id
+        assert all(w.strip() for w in dic.lexicon), seat_id
+        assert dic.perspective.strip(), seat_id
+        assert dic.signature_line.strip(), seat_id
+
+
+def test_dictionary_content_is_joshuas_table():
+    # The ratified selections, pinned verbatim — a change here is a
+    # content change that needs his verdict, not an incidental edit.
+    weaver = jur.get_jurisdiction("conductor").dictionary
+    assert weaver.domain == "Music & Composition"
+    assert weaver.jurisdiction_triad == ("harmony", "integration", "coordination")
+    assert "counterpoint" in weaver.lexicon
+    assert "dissonance" in weaver.lexicon
+    assert weaver.signature_line == "Not every voice needs to sing the same note."
+    assert weaver.provisional is False
+
+    gardener = jur.get_jurisdiction("mentor").dictionary
+    assert gardener.domain == "Horticulture & Ecology"
+    assert gardener.signature_line == (
+        "You can prune a branch, but you can't command it to bear fruit."
+    )
+
+    raven = jur.get_jurisdiction("skeptic").dictionary
+    assert raven.domain == "Investigation & Forensics"
+    assert raven.signature_line == (
+        "I'm not saying you're wrong. I'm asking how we'd find out."
+    )
+
+    crane = jur.get_jurisdiction("ambassador").dictionary
+    assert crane.domain == "Language & Diplomacy"
+    assert crane.signature_line == (
+        "Sometimes two people are fighting over an answer to questions "
+        "neither one asked."
+    )
+
+    firebrand = jur.get_jurisdiction("champion").dictionary
+    assert firebrand.domain == "Warfare & Strategy"
+    assert firebrand.signature_line == (
+        "Before you draw your sword, decide what victory would actually mean."
+    )
+
+
+def test_provisional_dictionaries_are_marked():
+    # Bear (warmth under review) and Fox (trickster/inventor/escape
+    # artist still being explored) are recorded as provisional —
+    # visibly, on the record, not as silent placeholders.
+    assert jur.get_jurisdiction("guardian").dictionary.provisional is True
+    assert jur.get_jurisdiction("maverick").dictionary.provisional is True
+    for seat_id in ("mentor", "champion", "ambassador", "conductor", "skeptic"):
+        assert (
+            jur.get_jurisdiction(seat_id).dictionary.provisional is False
+        ), seat_id
+
+
+def test_weaver_dictionary_reaches_her_prompt_as_available_context():
+    # Consumption (this release): the Weaver's prompt lines carry her
+    # dictionary — as AVAILABLE context under the three-layers rule,
+    # with the no-obligation wording present in the line itself.
+    rec = jur.get_jurisdiction("conductor")
+    text = "\n".join(jur.jurisdiction_prompt_lines("conductor"))
+    assert rec.dictionary.domain in text
+    assert rec.dictionary.perspective in text
+    for word in rec.dictionary.lexicon:
+        assert word in text, word
+    # The three-layers framing: ordinary speech is the default, and
+    # the lexicon is never owed.
+    assert "ordinary speech is your" in text
+    assert "never owed, never a quota" in text
+    # And it flows into the built voice prompt exactly once.
+    prompt = "\n".join(arch.build_archetype_prompt_lines("conductor"))
+    assert prompt.count(rec.dictionary.perspective) == 1
+
+
+def test_no_other_seat_consumes_its_dictionary_yet():
+    # The other six seats' prompts carry no dictionary content — the
+    # byte-identity test below is the strong form; this makes the
+    # intent readable at the failure site.
+    conductor_text = "\n".join(jur.jurisdiction_prompt_lines("conductor"))
+    for seat_id in jur.jurisdiction_ids():
+        if seat_id == "conductor":
+            continue
+        other = jur.get_jurisdiction(seat_id)
+        assert other.dictionary.domain not in conductor_text, seat_id
+        assert other.dictionary.signature_line not in conductor_text, seat_id
+
+
 # --- non-consumption: the other six seats are untouched --------------------------
 
 

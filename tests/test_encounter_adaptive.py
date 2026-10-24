@@ -152,8 +152,13 @@ class Run:
 
 
 def _to_readback(run: Run, answer="I decide by what breaks first if I ignore it."):
-    """Start and answer once, with the fake offering its impression
-    on that first exchange. Returns the post-answer state."""
+    """Start and reach the read-back. UPDATED for the Weaver
+    pattern: the impression is gated on the shared-work exchange,
+    so the drive is two substantive turns — the first begins the
+    shared work (her generation offers a read and the gate holds
+    it; only the reply is spoken), the second carries the
+    impression. Returns the state with the impression on the table."""
+    run.gen.engage.append("Heard — the bench takes it in.")
     run.gen.engage.append(
         "Heard, and noted at the bench."
         "\n---\n"
@@ -163,6 +168,11 @@ def _to_readback(run: Run, answer="I decide by what breaks first if I ignore it.
     )
     run.svc.start(run.uid, "conductor")
     state, _ = run.turn(answer)
+    assert state["stage"] == "encounter"  # the gate held the read
+    state, _ = run.turn(
+        "And in my own work it's the same — what breaks first "
+        "gets my hands first, every time."
+    )
     assert state["stage"] == "readback"
     return state
 
@@ -189,18 +199,22 @@ def test_cooperative_conversation_changes_direction(ve_ctx, tmp_path):
     run = Run(_svc(tmp_path, gen), gen, uid)
     script = MT.get_script("conductor", 1)
     state = run.svc.start(uid, "conductor")
-    assert len(state["messages"]) == 2
+    # UPDATED for the Weaver pattern: ONE scripted bubble — the
+    # greeting question — and she waits.
+    assert len(state["messages"]) == 1
+    assert _bodies(state) == [script.opening[0]]
 
     state, voice = run.turn(
         "I listen to the planner first — nothing moves until the shape is clear."
     )
     # No impression was forced out of a thin exchange, and no
-    # banked question was served as if nothing had been said.
+    # banked question was served as if nothing had been said (the
+    # bank is retired; the retired dilemma's text appears nowhere).
     assert voice == ["A shape before motion. Noted at the bench."]
     assert state["stage"] == "encounter"
     row = run.svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == ""
-    assert script.questions[1] not in _bodies(state)
+    assert not any("Who do you listen to" in b for b in _bodies(state))
     enc = _enc_state(run.svc, uid)
     assert enc.satisfied["impression_offered"] is False
 
@@ -524,6 +538,10 @@ def test_dialogue_and_claim_carry_no_markers_but_evidence_is_verbatim(ve_ctx, tm
     answer, word for word."""
     uid = _seeded_user()
     gen = ScriptedGen()
+    # UPDATED for the Weaver pattern: the first engage generation
+    # is a reply only (the gate holds any early read); the spliced
+    # impression rides the second substantive turn.
+    gen.engage.append("Heard — the bench takes it in.")
     gen.engage.append(
         "Heard."
         "\n---\n"
@@ -540,7 +558,11 @@ def test_dialogue_and_claim_carry_no_markers_but_evidence_is_verbatim(ve_ctx, tm
     run = Run(svc, gen, uid)
     svc.start(uid, "conductor")
 
-    state, _ = run.turn("I decide by what breaks first if I ignore it.")
+    run.turn("I decide by what breaks first if I ignore it.")
+    state, _ = run.turn(
+        "And in my own work it's the same — what breaks first "
+        "gets my hands first, every time."
+    )
     assert state["stage"] == "readback"
     correction = "Mostly right — except I protect mornings first."
     state, _ = run.turn(correction)

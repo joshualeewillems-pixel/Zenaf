@@ -67,6 +67,25 @@ The rules the runtime runs by:
     or returns nothing, the character says the definition's fallback
     line and the encounter state does not advance — degradation is
     honest, never a silent skip.
+  - MEANINGFUL recognition, not merely sufficient (the Weaver
+    pattern, Joshua 2026-10-23 — his live test of the adaptivity
+    fix ended the meeting after two user turns: an impression
+    offered at the first opportunity and answered with an
+    affirmation). An authored definition may therefore carry two
+    structural guards, both formalized as objective predicates over
+    state (see check_objectives), never as turn counters in the
+    close path: an IMPRESSION GATE (the read is not offerable until
+    a named objective — the shared-work exchange — was satisfied on
+    a PRIOR turn, so a turn-one impression is structurally
+    impossible), and a CLOSE FLOOR (an answered impression closes
+    the meeting only when at least one of the named floor
+    objectives is also satisfied: the user's own material was taken
+    up, or a pursuit exchange followed it). The ceiling backstop
+    bypasses both — a wrap is a rescue, not a recognition claim.
+    Rows hydrated from pre-runtime storage whose impression was
+    already on the table carry floor_waived: their recognition
+    completes under the contract the meeting began with, and no
+    in-flight meeting is stranded by the new floor.
   - Evidence and expression are separate layers (Joshua's ruling,
     2026-10-23): the user's exact words live in the evidence —
     stored verbatim, filed with the claim, shown in review with
@@ -455,6 +474,23 @@ class EncounterDefinition:
     #: degradation; the encounter state does not advance.
     fallback_line: str
     allusion_pool: tuple[AllusionCue, ...] = ()
+    #: The impression gate (the Weaver pattern): the objective id
+    #: that must already be satisfied — as of a PRIOR turn's
+    #: check_objectives — before an impression may be offered on the
+    #: engage path or the pass path. "" = no gate (the generic
+    #: shape). The ceiling wrap bypasses it by design.
+    impression_gate_objective: str = ""
+    #: The close floor (the Weaver pattern): objective ids of which
+    #: at least one must be satisfied for a settled verdict to close
+    #: the meeting after recognition. Empty = no floor. Legacy
+    #: hydration may waive it per-state (floor_waived).
+    close_floor_objectives: tuple[str, ...] = ()
+    #: The seat's dictionary, framed as AVAILABLE context under the
+    #: three-layers rule (lexicon / reasoning / ordinary speech, the
+    #: last the default — never a quota). Rides the conversational
+    #: frame and, for authored encounters, the engage frame. "" for
+    #: definitions whose seat does not consume a dictionary yet.
+    dictionary_frame: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +514,27 @@ class EncounterState:
     offers_engaged: int = 0
     user_chars: int = 0
     longest_user_turn: str = ""
+    #: The recognition floor's trackers (the Weaver pattern). They
+    #: are transcript-derived counters like the ones above; the
+    #: objectives read them, the close path never counts turns.
+    #: material_turn: the user_turns value of the first user message
+    #: at substance (≥ SUBSTANCE_MIN_USER_CHARS), 0 = their own
+    #: material has not surfaced yet. pursuit_turns: turns AFTER the
+    #: material surfaced in which the conversation followed it (any
+    #: non-pass, non-bare-ack move) — plus, once recognition has
+    #: happened, any further non-pass turn: a user who answered the
+    #: impression and stayed to talk again has taken the thread up,
+    #: and the floor must never hold a willing user hostage.
+    #: substantive_turns: substantive-move turns across all phases.
+    material_turn: int = 0
+    pursuit_turns: int = 0
+    substantive_turns: int = 0
+    #: Set ONLY by legacy hydration (meeting.py): the row predates
+    #: the runtime and its impression was already on the table when
+    #: the runtime first saw the meeting, so the close floor is
+    #: waived for it — the recognition completes under the contract
+    #: the meeting began with.
+    floor_waived: bool = False
     satisfied: dict[str, bool] = field(default_factory=dict)
     impression_offered: bool = False
     impression_answered: bool = False
@@ -503,6 +560,10 @@ class EncounterState:
             "offers_engaged": self.offers_engaged,
             "user_chars": self.user_chars,
             "longest_user_turn": self.longest_user_turn,
+            "material_turn": self.material_turn,
+            "pursuit_turns": self.pursuit_turns,
+            "substantive_turns": self.substantive_turns,
+            "floor_waived": self.floor_waived,
             "satisfied": self.satisfied,
             "impression_offered": self.impression_offered,
             "impression_answered": self.impression_answered,
@@ -528,7 +589,9 @@ class EncounterState:
         state = cls()
         for key in (
             "user_turns", "engagements", "offers_engaged", "user_chars",
-            "longest_user_turn", "satisfied", "impression_offered",
+            "longest_user_turn", "material_turn", "pursuit_turns",
+            "substantive_turns", "floor_waived",
+            "satisfied", "impression_offered",
             "impression_answered", "impression_answer_kind",
             "impression_text", "impression_strands", "response_recorded",
             "pause_delivered", "allusions_used", "closed",
@@ -548,8 +611,22 @@ def check_objectives(definition: EncounterDefinition, state: EncounterState) -> 
         ok = False
         if obj.id == "engaged_exchange":
             ok = state.engagements >= 1
+        elif obj.id == "shared_work_exchange":
+            # The shared work has begun: a substantive engagement
+            # with the undertaking at her bench, or an offer of
+            # hands received — either way, she and the user are
+            # working the same thing together.
+            ok = state.engagements >= 1 or state.offers_engaged >= 1
         elif obj.id == "offer_of_help_received":
             ok = state.offers_engaged >= 1
+        elif obj.id == "pursuit_exchange":
+            # The conversation has TAKEN UP the user's material:
+            # either an exchange followed its surfacing (the
+            # character asked, the user told — tracked structurally
+            # in handle_turn), or substantive engagement has simply
+            # accumulated across the meeting.
+            ok = (state.pursuit_turns >= 1
+                  or state.substantive_turns >= 3)
         elif obj.id == "own_undertaking_engaged":
             ok = (state.engagements >= 1
                   and state.user_chars >= SUBSTANCE_MIN_USER_CHARS)
@@ -695,6 +772,8 @@ class EncounterRuntime:
                 f"in your register: {record.focus} "
                 f"(Metaphor family: {record.register.metaphor_family})"
             )
+        if d.dictionary_frame:
+            parts.append(d.dictionary_frame)
         live = [o for o in d.objectives if not state.satisfied.get(o.id)]
         for obj in live:
             if obj.frame:
@@ -744,6 +823,29 @@ class EncounterRuntime:
         if len(text) > len(state.longest_user_turn):
             state.longest_user_turn = text
 
+        # The recognition floor's trackers (the Weaver pattern):
+        # structural facts about the exchange, recorded before any
+        # branch runs so every path this turn takes sees them. The
+        # objectives read them; nothing here decides anything.
+        move0 = detect_move(message)
+        if len(text) >= SUBSTANCE_MIN_USER_CHARS and not state.material_turn:
+            state.material_turn = state.user_turns
+        if move0 == "substantive":
+            state.substantive_turns += 1
+        if move0 != "pass" and (
+            state.impression_answered
+            or (
+                state.material_turn
+                and state.user_turns > state.material_turn
+                and move0 != "ack"
+            )
+        ):
+            # The conversation followed the user's material after it
+            # surfaced — or, recognition already having happened,
+            # the user stayed and answered again. Either way the
+            # thread was taken up, not merely opened.
+            state.pursuit_turns += 1
+
         # The impression is on the table: this turn ANSWERS it, whatever
         # else it also is. (Correction detection here is a safety
         # check — it decides whether the stored impression is revised.)
@@ -772,7 +874,7 @@ class EncounterRuntime:
         move = detect_move(message)
 
         if move == "pass":
-            return self._pass_turn(host, state, question_idx)
+            return self._pass_turn(host, state, message, question_idx)
 
         if move in ("offer", "question", "direction", "joke", "greeting", "ack"):
             # Initiative and detours: the character responds to the
@@ -819,6 +921,19 @@ class EncounterRuntime:
         # the character honestly not having a read yet, and the
         # impression waits for the exchange that earns it.
         offered = bool(claim) and (had_delim or bool(strands))
+        gate_held = False
+        if offered and d.impression_gate_objective:
+            # The impression gate (the Weaver pattern): the read is
+            # offerable only once the gate objective was satisfied
+            # as of a PRIOR turn — state.satisfied is the snapshot
+            # check_objectives left at the end of the last turn, and
+            # nothing has refreshed it yet this turn. A turn-one
+            # impression is therefore structurally impossible: the
+            # shared work must already have happened.
+            gate_held = not state.satisfied.get(
+                d.impression_gate_objective, False)
+            if gate_held:
+                offered = False
         if offered:
             if had_delim and reply_part:
                 host.say(_spoken(reply_part))
@@ -828,10 +943,16 @@ class EncounterRuntime:
             state.impression_offered = True
             host.say(claim)
         else:
-            # No impression in the output: speak what engagement there
-            # was (or the fallback anchor) and leave the impression
-            # for a later turn — state does not falsely advance.
-            spoken = impression_part if not had_delim else reply_part
+            # No impression in the output — or the gate held one the
+            # model offered early: speak what engagement there was
+            # (or the fallback anchor) and leave the impression for
+            # a later turn — state does not falsely advance. A
+            # gate-held impression-only output speaks nothing of the
+            # read itself: the reply movement, or the fallback.
+            if gate_held and not had_delim:
+                spoken = ""
+            else:
+                spoken = impression_part if not had_delim else reply_part
             spoken = _spoken(spoken)
             if spoken:
                 host.say(spoken)
@@ -843,15 +964,33 @@ class EncounterRuntime:
     # -- beat handlers -----------------------------------------------------------
 
     def _pass_turn(self, host: EncounterHost, state: EncounterState,
-                   question_idx: int) -> int:
+                   message: str, question_idx: int) -> int:
         """Passing is participation: offer the next banked question.
         With the bank exhausted, the choosing-not-to-answer is itself
-        the material — the impression forms from the whole exchange."""
+        the material — the impression forms from the whole exchange.
+        A GATED definition whose gate is not yet satisfied is the
+        exception (the Weaver pattern): there is no bank to fall
+        back on and the read has not been earned, so a pass is
+        simply conversation — she answers in character and the
+        meeting goes on; a pass can never conjure an impression the
+        shared work hasn't earned."""
         d = self.definition
         bank = d.question_bank
         if question_idx + 1 < len(bank):
             host.say(bank[question_idx + 1])
             return question_idx + 1
+        if d.impression_gate_objective and not state.satisfied.get(
+                d.impression_gate_objective, False):
+            frame, cue = self._turn_frame(state, message)
+            out = _spoken(host.generate(frame) or "")
+            if out:
+                host.say(out)
+                if cue is not None:
+                    state.allusions_used.append(cue.seat)
+            elif d.fallback_line:
+                host.say(d.fallback_line)
+            check_objectives(d, state)
+            return question_idx
         self._offer_impression(host, state, d.impression_frame)
         check_objectives(d, state)
         return question_idx
@@ -963,10 +1102,27 @@ class EncounterRuntime:
         estimate when it didn't. Settled closes through the host's
         chokepoint at this turn's end (her reply is already spoken;
         the reveal is the close itself). Open simply continues —
-        the encounter stays in conversation."""
+        the encounter stays in conversation. A definition carrying
+        a CLOSE FLOOR adds one more condition: recognition must be
+        MEANINGFUL, not merely sufficient — at least one floor
+        objective satisfied (the user's own material taken up, or a
+        pursuit exchange) — before a settled verdict may close.
+        check_objectives has already run for this turn, so the
+        floor reads this turn's recognition too: a substantive
+        correction that itself takes the material up can complete
+        it. Legacy-waived states complete under their original
+        contract instead."""
+        d = self.definition
         if verdict is None:
             verdict = _fallback_thread_verdict(message)
         if verdict == "settled":
+            floor = d.close_floor_objectives
+            if (
+                floor
+                and not state.floor_waived
+                and not any(state.satisfied.get(o, False) for o in floor)
+            ):
+                return
             state.closed = True
             host.close("")
 
@@ -1115,11 +1271,21 @@ def build_definition(script: MT.MeetingScript) -> EncounterDefinition:
     the shape every first meeting shares. Authored encounters (the
     Weaver's K1, below) replace the objective set and bench material."""
     engage = script.encounter_frame + _ENGAGE_GLUE + script.readback_frame
+    if script.opening and script.questions:
+        opening = (script.opening[0], script.questions[0])
+    elif script.opening:
+        # A script whose bank is retired (the Weaver's) opens on its
+        # first paragraph alone.
+        opening = (script.opening[0],)
+    elif script.questions:
+        opening = (script.questions[0],)
+    else:
+        opening = ()
     return EncounterDefinition(
         archetype_id=script.archetype_id,
         keystone_index=script.keystone_index,
         character=script.character,
-        opening=(script.opening[0], script.questions[0]) if script.opening else (script.questions[0],),
+        opening=opening,
         question_bank=script.questions,
         objectives=_GENERIC_OBJECTIVES,
         engage_frame=engage,
@@ -1166,50 +1332,74 @@ _GENERIC_OBJECTIVES = (
 # -- The Weaver, keystone 1 — the first authored encounter. ------------------
 #
 # Her objectives (for Joshua's verdict, listed in the PR):
-#   engaged_exchange      — the user has taken up the undertaking at
-#                           her bench, in any form.
+#   engaged_exchange      — the user has taken up the work at her
+#                           bench, in any form.
+#   shared_work_exchange  — she and the user have begun working the
+#                           instrument together. The IMPRESSION GATE:
+#                           the read is not offerable until this was
+#                           satisfied on a prior turn.
 #   offer_of_help_received — the user has offered to help her build,
 #                           and she has received it in character.
 #                           (Not required for the close — the offer is
 #                           material when it comes, never a toll.)
 #   own_undertaking_engaged — the user has brought their own
 #                           undertaking into the room, at substance.
+#                           One leg of the CLOSE FLOOR.
+#   pursuit_exchange      — the conversation took up the user's
+#                           material after it surfaced (or substantive
+#                           engagement accumulated). The floor's
+#                           other leg.
 #   impression_offered / impression_answered — as generic.
 
 WEAVER_TURN_FRAME = (
     "You are mid-conversation in your workshop, in your first "
     "meeting with this visitor. The unfinished instrument of seven "
     "rather incompatible parts is on the bench between you, and "
-    "the question of the meeting — who they would listen to among "
-    "the mover, the planner, and the doubter — is its occasion, "
-    "not its script. Respond FIRST to what they actually just "
-    "did: if they offered to help, take the offer seriously and "
-    "in kind — a part to hold, a joint to steady; helping hands "
-    "are how you learn a person, and the offer itself tells you "
-    "something true about how they meet unfinished work. If they "
-    "asked you something, answer it from the bench, plainly and "
-    "briefly. If they joked, be amused the way a busy person is. "
-    "If they changed the subject, follow a step and see where it "
-    "goes. One to three short sentences, in your own voice, hands "
-    "never quite still. Don't deliver your formal first read of "
-    "them in an aside like this — that comes from the bench work "
-    "itself. Do not restate or re-ask your question word for "
-    "word; never name or describe the other council members; do "
-    "not reveal your name yet. The conversation finds its way on "
-    "its own — your part is to be in it, not to steer it back."
+    "you are working on it TOGETHER — that collaboration, not any "
+    "question of yours, is the meeting. Respond FIRST to what they "
+    "actually just did: if they offered to help, take the offer "
+    "seriously and in kind — a part to hold, a passage to sound; "
+    "helping hands are how you learn a person, and the offer "
+    "itself tells you something true about how they meet "
+    "unfinished work. If they brought something of their OWN into "
+    "the room — their own version of the problem, from their own "
+    "work or life — follow THAT: it outranks the instrument on "
+    "your bench, and your next move is pursuit, not summary: ask "
+    "for the time it actually happened, the evidence of their "
+    "experience. If they asked you something, answer it from the "
+    "bench, plainly and briefly. If they joked, be amused the way "
+    "a busy person is. If they changed the subject, follow a step "
+    "and see where it goes. One to three short sentences, in your "
+    "own voice, hands never quite still, in ordinary speech "
+    "unless a plainer figure genuinely helps. Don't deliver your "
+    "formal first read of them in an aside like this — that comes "
+    "from the shared work itself, and only after it. Never name "
+    "or describe the other council members; do not reveal your "
+    "name yet. The conversation finds its way on its own — your "
+    "part is to be in it, not to steer it back."
 )
 
 _WEAVER_OBJECTIVES = (
     Objective(
         id="engaged_exchange",
-        description="The user has taken up the undertaking at her bench — answered the dilemma in any form: a position, a story, an offer, a reasoned refusal.",
+        description="The user has taken up the work at her bench — answered her greeting, reacted to the instrument, joined the question of it, in any form: a position, a story, an offer, a reasoned refusal.",
         frame=(
             "What you are listening for, without ever naming it: how "
-            "this person takes up a shared undertaking — who they "
-            "listen to when the mover, the planner, and the doubter "
-            "disagree."
+            "this person meets an unfinished thing — whether they "
+            "reach for it, test it, question it, or hand it back."
         ),
         satisfied_when="engagements ≥ 1 (a substantive, non-pass turn)",
+    ),
+    Objective(
+        id="shared_work_exchange",
+        description="She and the user have begun working the instrument together — the greeting answered in substance, or hands offered and received. The impression gate: her read is not offerable until this was satisfied on a prior turn.",
+        frame=(
+            "The work goes better with two pairs of ears. When the "
+            "moment allows, draw them into the sounding of the "
+            "thing — a part to hold, a passage to judge, a joint "
+            "to steady."
+        ),
+        satisfied_when="engagements ≥ 1 ∨ offers_engaged ≥ 1, as of a prior turn (the impression gate)",
     ),
     Objective(
         id="offer_of_help_received",
@@ -1223,18 +1413,38 @@ _WEAVER_OBJECTIVES = (
     ),
     Objective(
         id="own_undertaking_engaged",
-        description="The user has brought their own undertaking into the room — answered from their own work or life, at substance, not in the abstract.",
+        description="The user has brought their own undertaking into the room — their own version of the integration problem, from their own work or life, at substance, not in the abstract. One leg of the close floor.",
         frame=(
-            "Where you can, invite the mapping without demanding "
-            "it: the dilemma is any undertaking of theirs, and you "
-            "would rather hear about the real one."
+            "When their own material surfaces — their own version "
+            "of the problem, in their own words, with a real "
+            "question inside it — pursue it BEFORE you read them: "
+            "ask for the time it actually happened, the evidence "
+            "of their experience. Their material is the meeting's "
+            "real subject; the instrument on your bench is only "
+            "its occasion."
         ),
         satisfied_when="engagements ≥ 1 ∧ user_chars ≥ 40 (the substance floor)",
     ),
     Objective(
+        id="pursuit_exchange",
+        description="The conversation has taken up the user's material — an exchange after it surfaced, she asking and they telling — or substantive engagement has simply accumulated across the meeting. The close floor's other leg.",
+        frame=(
+            "Follow the thread of what they brought: one more "
+            "question about the real thing is worth more than any "
+            "agenda of yours."
+        ),
+        satisfied_when="pursuit_turns ≥ 1 ∨ substantive_turns ≥ 3 (see check_objectives)",
+    ),
+    Objective(
         id="impression_offered",
-        description="She has offered her first impression: a position with an honest contrast, anchored in the user's own words, explicitly correctable.",
-        frame="",
+        description="She has offered her first impression: a position with an honest contrast, synthesized in her own words, held at the exact point of doubt, explicitly correctable.",
+        frame=(
+            "Your read comes only after the shared work — never on "
+            "the first exchange, and only once the exchange has "
+            "genuinely shown you how they orient. An impression "
+            "offered before it is earned is flattery, and it can "
+            "wait."
+        ),
         satisfied_when="the impression has been generated, stored, and spoken",
     ),
     Objective(
@@ -1283,18 +1493,49 @@ def _weaver_allusion_pool(script: MT.MeetingScript) -> tuple[AllusionCue, ...]:
     return tuple(cues)
 
 
+def _weaver_dictionary_frame() -> str:
+    """The Weaver's dictionary as a frame: her lexicon from the
+    jurisdictions registry, presented as AVAILABLE context under the
+    three-layers rule (Joshua, 2026-10-23) — ordinary speech is the
+    default, reasoning is the substance, and the lexicon enters only
+    when a figure genuinely clarifies. The wording is asserted by
+    the pattern tests: available, never owed; no per-turn metaphor
+    instruction may ever be added here."""
+    dic = JX.get_jurisdiction("conductor").dictionary
+    return (
+        f"Your dictionary is available to you — {dic.domain}: "
+        + ", ".join(dic.lexicon)
+        + ". Three layers of language are yours: this lexicon; "
+        "your actual reasoning, in plain terms; and ordinary "
+        "speech — and ordinary speech is the default, where most "
+        "of you should live. No layer is mandatory: a word from "
+        "the lexicon enters only when it genuinely clarifies "
+        "something in THIS exchange, and any metaphor you use must "
+        "refer to something in the exchange or in this place — "
+        "never furniture, never a quota, never owed. Your "
+        "perspective, held under everything you say: "
+        f"{dic.perspective}"
+    )
+
+
 def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
-    """The Weaver's first meeting as an authored encounter: her
-    objectives, her bench, the dilemma as the opening's invitation."""
+    """The Weaver's first meeting as an authored encounter (the
+    Weaver pattern, Joshua 2026-10-23): ONE scripted bubble — her
+    greeting question, asked for real, and she waits; no question
+    bank (the dilemma is retired; the user's own material is the
+    subject); the impression gated on the shared-work exchange; the
+    close floored on meaningful recognition; her dictionary riding
+    the frames as available context."""
     base = build_definition(script)
+    dictionary_frame = _weaver_dictionary_frame()
     return EncounterDefinition(
         archetype_id=base.archetype_id,
         keystone_index=base.keystone_index,
         character=base.character,
-        opening=base.opening,
-        question_bank=base.question_bank,
+        opening=(script.opening[0],) if script.opening else (),
+        question_bank=(),
         objectives=_WEAVER_OBJECTIVES,
-        engage_frame=base.engage_frame,
+        engage_frame=base.engage_frame + "\n\n" + dictionary_frame,
         turn_frame=WEAVER_TURN_FRAME,
         impression_frame=base.impression_frame,
         correction_frame=base.correction_frame,
@@ -1309,6 +1550,9 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         wrap_line=_WEAVER_WRAP_LINE,
         fallback_line=_WEAVER_FALLBACK_LINE,
         allusion_pool=_weaver_allusion_pool(script),
+        impression_gate_objective="shared_work_exchange",
+        close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),
+        dictionary_frame=dictionary_frame,
     )
 
 

@@ -377,6 +377,11 @@ def test_meeting_completion_emits_event(ve_ctx, tmp_path, activity_records):
     )
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
+    # UPDATED for the Weaver pattern: a second substantive turn
+    # carries the read (the first begins the shared work; the
+    # impression is gated), so the correction below is genuinely
+    # the read-back ANSWER the event evidence must carry.
+    svc.turn(uid, "conductor", "Mostly I protect the mornings before anything else.")
     readback_answer = "Mostly right — except I protect mornings first."
     svc.turn(uid, "conductor", readback_answer)
     state = svc.turn(uid, "conductor", "Got it.")

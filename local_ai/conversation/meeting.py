@@ -553,6 +553,12 @@ class MeetingService:
         if (row.get("readback_claim") or "").strip():
             state.impression_offered = True
             state.impression_text = row["readback_claim"]
+            # The recognition floor (the Weaver pattern) did not
+            # exist when this meeting's impression was offered: the
+            # recognition completes under the contract the meeting
+            # began with, so the floor is waived for this row —
+            # never for one the runtime itself has run.
+            state.floor_waived = True
             try:
                 state.impression_strands = json.loads(row.get("readback_strands") or "[]")
             except Exception:

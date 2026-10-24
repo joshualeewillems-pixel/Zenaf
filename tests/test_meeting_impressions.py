@@ -88,9 +88,20 @@ def _seeded_user(email="impressions@example.com"):
     return user["id"]
 
 
-def _run_conductor_to_completion(svc, uid, answer="Deadlines first.", response="That's right."):
+def _run_conductor_to_completion(
+    svc, uid,
+    answer="I work by deadlines first, then everything else follows.",
+    response="That's right.",
+):
+    """UPDATED for the Weaver pattern: the drive is the pattern's
+    shape — a first substantive turn (the shared work begins), a
+    second (the read lands), then the response to the impression."""
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
+    svc.turn(
+        uid, "conductor",
+        "And in my own work it's the same — what breaks first gets my hands first.",
+    )
     state = svc.turn(uid, "conductor", response)
     if state["status"] != "complete":
         # The answer left a thread open (a substantive correction,

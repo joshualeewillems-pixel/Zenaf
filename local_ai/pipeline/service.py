@@ -22,6 +22,13 @@ from local_ai.provenance.store import ProvenanceStore
 
 from . import markers, packs, quote_cards, stories, taste
 from .store import PipelineStore
+from .tiers import (
+    TIER_ADOPTED,
+    TIER_CERTIFIED,
+    TIER_DRAMATIZATION,
+    TIER_USER_AUTHORED,
+    normalize_text,
+)
 
 ANCHORING_QUESTION = "How does this piece express this moment to you?"
 
@@ -39,7 +46,14 @@ def _require_owner(entry_or_artifact: dict[str, Any], user_id: str, what: str) -
 
 
 def _story_content(artifact: dict[str, Any]) -> dict[str, Any]:
-    """Story artifacts carry their content as JSON in `description`."""
+    """Story artifacts carry their content as JSON in `description`.
+
+    Key-line tier fields (S4, F3): ``key_line_tier`` is None on legacy
+    artifacts minted before tiers existed — and None means UNCERTIFIED
+    (fail closed: the quote-card gate refuses them until the migration
+    classifies them). ``key_line_source`` names the entry the certified
+    span came from; it is empty for every other tier.
+    """
     try:
         data = json.loads(artifact.get("description") or "{}")
     except (json.JSONDecodeError, TypeError):
@@ -47,7 +61,11 @@ def _story_content(artifact: dict[str, Any]) -> dict[str, Any]:
     return {
         "title": artifact.get("title") or "",
         "narrative": data.get("narrative") or "",
-        "key_line": data.get("key_line") or "",
+        "key_line": data.get("key_line") or None,
+        "key_line_tier": data.get("key_line_tier"),
+        "key_line_candidates": data.get("key_line_candidates") or [],
+        "key_line_selection": data.get("key_line_selection"),
+        "key_line_source": data.get("key_line_source") or {},
         "archetype_cast": artifact.get("archetype_cast") or [],
     }
 
@@ -148,6 +166,12 @@ def make_story(
 
     content = stories.extract_story(entry["text"], user_id=user_id, api_key=api_key)
 
+    # Tier on the record (S4, F3): the key line is certified verbatim
+    # with its source, or absent (None) — never an uncertified line
+    # presented as the user's words. The story artifact itself stays
+    # creator-declared: it is the user's commissioned personal artifact,
+    # and its narrative is openly a story, not a quotation. Word-level
+    # truth lives in the tier fields, not in the artifact-level flag.
     artifact = prov_store.create_artifact(
         creator_user_id=user_id,
         custodian_user_id=user_id,
@@ -155,12 +179,24 @@ def make_story(
         description=json.dumps({
             "narrative": content["narrative"],
             "key_line": content["key_line"],
+            "key_line_tier": content["key_line_tier"],
+            "key_line_candidates": content["key_line_candidates"],
+            "key_line_selection": None,
+            "key_line_source": (
+                {
+                    "entry_id": entry_id,
+                    "entry_artifact_id": entry["artifact_id"],
+                }
+                if content["key_line"]
+                else {}
+            ),
         }),
         archetype_cast=content["archetype_cast"],
         source_hash=entry["source_hash"],
         modality="text",
         sha256=_text_sha256(
-            content["title"] + "\n" + content["narrative"] + "\n" + content["key_line"]
+            content["title"] + "\n" + content["narrative"] + "\n"
+            + (content["key_line"] or "")
         ),
         visibility="unlisted",
         remix_policy="open",
@@ -176,6 +212,116 @@ def make_story(
     pstore.update_entry(entry_id, storified=True)
 
     return {"artifact": artifact, "content": content}
+
+
+# -- key-line selection (S4, audit Part XIII) ---------------------------------
+#
+# propose → choose/edit → record. Choosing is user decision-making and
+# is recorded falsifiably (chosen line, alternatives offered, final
+# attribution). Word provenance and choice provenance stay apart:
+# - choosing a stored verbatim candidate → certified quotation, source kept
+# - editing a candidate → user_authored final text, NOT an entry span
+# - adopting a Zenaf composition → adopted, wording stays synthesized,
+#   attributed as chosen from Zenaf's options, never a quotation
+# No selection path can turn a missing quote into a quotation: the
+# fallback rule (omit) governs, and the quote-card gate below enforces it.
+
+
+def choose_key_line(
+    pstore: PipelineStore,
+    prov_store: ProvenanceStore,
+    user_id: str,
+    story_id: str,
+    *,
+    candidate: str | None = None,
+    edited_text: str | None = None,
+    adopted_text: str | None = None,
+) -> dict[str, Any]:
+    """Record the user's key-line choice on a story artifact.
+
+    Exactly one of ``candidate``, ``edited_text``, ``adopted_text``.
+    Returns {artifact, content} with the updated record.
+    """
+    story = prov_store.get_artifact(story_id)
+    if story is None:
+        raise KeyError(f"unknown story: {story_id}")
+    _require_owner(story, user_id, "story")
+    content = _story_content(story)
+    given = [
+        name
+        for name, value in (
+            ("candidate", candidate),
+            ("edited_text", edited_text),
+            ("adopted_text", adopted_text),
+        )
+        if value is not None
+    ]
+    if len(given) != 1:
+        raise ValueError(
+            "choose exactly one of candidate, edited_text, adopted_text"
+        )
+    alternatives = list(content["key_line_candidates"] or [])
+
+    if candidate is not None:
+        # Must be one of the stored verified candidates: the user can
+        # only certify what the record already verified verbatim.
+        if normalize_text(candidate) not in [
+            normalize_text(c) for c in alternatives
+        ]:
+            raise ValueError("candidate is not one of the verified passages")
+        key_line = normalize_text(candidate)
+        tier = TIER_CERTIFIED
+        selection = {
+            "kind": "chosen_verbatim",
+            "chosen": key_line,
+            "alternatives": alternatives,
+            "attribution": "verbatim from your journal entry",
+        }
+        source = content["key_line_source"] or {}
+    elif edited_text is not None:
+        key_line = edited_text.strip()
+        if not key_line:
+            raise ValueError("edited text is empty")
+        tier = TIER_USER_AUTHORED
+        selection = {
+            "kind": "edited",
+            "chosen": key_line,
+            "alternatives": alternatives,
+            "attribution": "written by you",
+            "edited_from": content["key_line"],
+        }
+        # Edited text is the user's new wording, not an entry span:
+        # the entry source no longer applies to it.
+        source = {}
+    else:
+        key_line = (adopted_text or "").strip()
+        if not key_line:
+            raise ValueError("adopted text is empty")
+        tier = TIER_ADOPTED
+        selection = {
+            "kind": "adopted",
+            "chosen": key_line,
+            "alternatives": alternatives,
+            "attribution": "chosen by you from Zenaf's options",
+        }
+        source = {}
+
+    try:
+        data = json.loads(story.get("description") or "{}")
+    except (json.JSONDecodeError, TypeError):
+        data = {}
+    data.update(
+        {
+            "key_line": key_line,
+            "key_line_tier": tier,
+            "key_line_selection": selection,
+            "key_line_source": source,
+        }
+    )
+    artifact = prov_store.update_artifact(
+        story_id, description=json.dumps(data)
+    )
+    return {"artifact": artifact, "content": _story_content(artifact)}
 
 
 # -- prompt packs ---------------------------------------------------------------
@@ -353,14 +499,23 @@ def make_quote_card(
     badge: bool = True,
 ) -> dict[str, Any]:
     """Render a quote card in-house and auto-mint it as a `quote_card`
-    artifact parented to the story (no import step)."""
+    artifact parented to the story (no import step).
+
+    Gate (S4, F3): a quote card means "the user's words", so ONLY a
+    certified verbatim line may be minted or rendered as one. Stories
+    with no line, legacy stories with no tier (uncertified until the
+    migration classifies them), user-authored edits, and adopted or
+    dramatized lines are all refused here — fail closed.
+    """
     story = prov_store.get_artifact(story_id)
     if story is None:
         raise KeyError(f"unknown story: {story_id}")
     _require_owner(story, user_id, "story")
     content = _story_content(story)
-    if not content["key_line"]:
-        raise ValueError("story has no key line to render")
+    if not content["key_line"] or content["key_line_tier"] != TIER_CERTIFIED:
+        raise ValueError(
+            "story has no certified verbatim key line to render as a quote"
+        )
 
     style_anchors = taste.style_anchors_for_prompt(pstore, user_id)
 
@@ -376,7 +531,13 @@ def make_quote_card(
         image_base64=base64.b64encode(plain_png).decode(),
         creator_user_id=user_id,
         title=f"Quote card — {content['title']}",
-        description=json.dumps({"key_line": content["key_line"]}),
+        description=json.dumps({
+            "key_line": content["key_line"],
+            # Certified by the gate above; the card inherits the line's
+            # tier and source so the record stays honest on its own.
+            "key_line_tier": TIER_CERTIFIED,
+            "key_line_source": content["key_line_source"] or {},
+        }),
         archetype_cast=content["archetype_cast"],
         source_hash=story.get("sha256"),
         remix_policy="open",

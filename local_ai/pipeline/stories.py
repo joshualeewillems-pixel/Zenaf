@@ -1,10 +1,21 @@
 """Story extraction: journal entry -> archetype story (spec §2).
 
-On-demand ("Make this a story"). The LLM produces a title, a short
-narrative of the growth moment, and one quotable key line — in the
-product's 11th-grade plain register: short sentences, no stacked clauses.
+On-demand ("Make this a story"). The LLM produces a title and a short
+narrative of the growth moment — in the product's 11th-grade plain
+register: short sentences, no stacked clauses — plus, IF the entry
+contains one, a verbatim passage to serve as the story's key line.
 Council context comes from the existing strand/archetype analysis in
 `local_ai/journal/story.py` (rule-based, no extra LLM cost).
+
+F3 grounding (S4, audit Parts XII–XIII): the key line is DISTILLED,
+never invented. The model proposes candidate passages; every candidate
+is mechanically verified word-for-word against the entry
+(:mod:`local_ai.pipeline.tiers`). A candidate that is not verbatim —
+composed, paraphrased, tidied up, or merely near — is discarded, and a
+story with no verified candidate succeeds with ``key_line`` null. An
+omitted quote is correct; a forced quote is a second failure mode.
+The key line is NEVER truncated: the stored line must be the span that
+was verified, and a mid-sentence cut can distort its meaning.
 """
 
 from __future__ import annotations
@@ -19,6 +30,8 @@ from local_ai.journal.story import (
     detect_active_archetypes,
     select_cast,
 )
+
+from .tiers import TIER_CERTIFIED, verified_span
 
 _STORY_PROMPT = """You turn a journal entry into a short archetype story: the growth moment in it, told plainly.
 
@@ -36,7 +49,7 @@ Respond with ONLY a JSON object (no markdown fences, no commentary):
 {{
   "title": "a short evocative title, under 8 words",
   "narrative": "the growth moment as a short story, 120-200 words, plain register. Second person ('you') is fine. Name what shifted.",
-  "key_line": "ONE quotable sentence from the story's heart, under 25 words. This will become a shareable quote card."
+  "key_line_candidates": ["up to 3 passages COPIED EXACTLY from the journal entry above, word for word — a sentence or passage that stands out as the heart of the moment. Do NOT compose a quotable sentence, do NOT paraphrase, do NOT tidy up wording, do NOT fix grammar. Copy only. If no passage in the entry stands out as quotable, return an empty list — an omitted quote is correct."]
 }}
 """
 
@@ -89,8 +102,13 @@ def extract_story(
 ) -> dict[str, Any]:
     """Extract a story artifact's content from a journal entry.
 
-    Returns {title, narrative, key_line, archetype_cast, strand_weights}.
-    Raises RuntimeError if the LLM call fails, ValueError on bad output.
+    Returns {title, narrative, key_line, key_line_candidates,
+    key_line_tier, archetype_cast, strand_weights}. ``key_line`` is the
+    first mechanically verified verbatim passage from the entry, or
+    None when the entry holds no quotable passage — that is a valid
+    outcome, NOT an error. ``key_line_tier`` is "certified" when a line
+    exists, else None. Raises RuntimeError if the LLM call fails,
+    ValueError when title or narrative is missing.
     """
     from local_ai.providers import meta as _meta
 
@@ -119,14 +137,36 @@ def extract_story(
     data = _extract_json(reply)
     title = str(data.get("title") or "").strip()
     narrative = str(data.get("narrative") or "").strip()
-    key_line = str(data.get("key_line") or "").strip()
-    if not title or not narrative or not key_line:
-        raise ValueError("LLM story was missing title, narrative, or key_line.")
+    if not title or not narrative:
+        raise ValueError("LLM story was missing title or narrative.")
+
+    # Grounding: every proposed passage is verified word-for-word
+    # against the entry. A legacy "key_line" field from the model is
+    # treated as one more UNVERIFIED candidate, never trusted as-is.
+    # No retry loop pressures invention: unverified candidates simply
+    # drop out, and an empty verified list means no key line.
+    raw_candidates = data.get("key_line_candidates")
+    if not isinstance(raw_candidates, list):
+        raw_candidates = []
+    raw_candidates = [str(c) for c in raw_candidates]
+    legacy_line = str(data.get("key_line") or "").strip()
+    if legacy_line:
+        raw_candidates.append(legacy_line)
+    verified: list[str] = []
+    for candidate in raw_candidates:
+        span = verified_span(candidate, text)
+        if span is not None and span not in verified:
+            verified.append(span)
+    key_line = verified[0] if verified else None
 
     return {
         "title": title[:120],
         "narrative": narrative[:2000],
-        "key_line": key_line[:280],
+        # Never truncated: the stored line must be the verified span,
+        # and a mid-sentence cut can distort its meaning.
+        "key_line": key_line,
+        "key_line_candidates": verified,
+        "key_line_tier": TIER_CERTIFIED if key_line else None,
         "archetype_cast": cast_names,
         "strand_weights": {k: round(v, 3) for k, v in strand_weights.items()},
     }

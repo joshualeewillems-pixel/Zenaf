@@ -199,9 +199,10 @@ def test_cooperative_conversation_changes_direction(ve_ctx, tmp_path):
     run = Run(_svc(tmp_path, gen), gen, uid)
     script = MT.get_script("conductor", 1)
     state = run.svc.start(uid, "conductor")
-    # CORRECTED (2026-10-23, evening): the scripted opening is her
-    # INTRODUCTION — three bubbles — and she waits.
-    assert len(state["messages"]) == len(script.opening) == 3
+    # FINAL (Joshua, 2026-10-23, ~22:45 PT): the scripted opening
+    # is her INTRODUCTION — his authored text, four bubbles — and
+    # she waits.
+    assert len(state["messages"]) == len(script.opening) == 4
     assert _bodies(state) == list(script.opening)
 
     state, voice = run.turn(

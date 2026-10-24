@@ -13,8 +13,9 @@ proving ground, not a special case.
 The rules the runtime runs by:
 
   - Minimal scripted opening: character, environment, invitation.
-    The user is participating within three short bubbles — the rest
-    of the old scripted opening survives as bench anchors and
+    A few short bubbles, delivered verbatim, then the character
+    waits and the user is participating — the rest of the old
+    scripted opening survives as bench anchors and
     prepared context, not as a monologue delivered at the door.
   - Objectives, never announced: each objective is a predicate over
     the encounter state (transcript-derived counters and flags),
@@ -430,8 +431,8 @@ class EncounterDefinition:
     archetype_id: str
     keystone_index: int
     character: str
-    #: Delivered verbatim at start — at most three bubbles: character,
-    #: environment, invitation.
+    #: Delivered verbatim at start — a few short bubbles (character,
+    #: environment, invitation), then the character waits.
     opening: tuple[str, ...]
     #: The encounter's question bank: [0] is the invitation inside the
     #: opening; the rest are branches a pass can offer, never a
@@ -1355,8 +1356,8 @@ _GENERIC_OBJECTIVES = (
 WEAVER_TURN_FRAME = (
     "You are mid-conversation in your workshop, in your first "
     "meeting with this visitor. You opened by greeting them as a "
-    "new instrument for the orchestra and asking them to play a "
-    "few notes with you — and the notes are their own material, "
+    "new instrument for the orchestra — 'we'll find your sound "
+    "soon enough' — and their sound is their own material, "
     "sounded in words: that collaboration of minds, not any "
     "question of yours, is the meeting. Respond FIRST to what "
     "they actually just did: if they offered to help, take the "
@@ -1394,7 +1395,7 @@ WEAVER_TURN_FRAME = (
 _WEAVER_OBJECTIVES = (
     Objective(
         id="engaged_exchange",
-        description="The user has answered her invitation — played a few notes: sounded how they work, reacted to her question, joined the conversation of it, in any form: a position, a story, an offer, a reasoned refusal.",
+        description="The user has answered her introduction — sounded how they work, reacted to her question, joined the conversation of it, in any form: a position, a story, an offer, a reasoned refusal.",
         frame=(
             "What you are listening for, without ever naming it: how "
             "this person meets an unfinished thing — whether they "
@@ -1535,10 +1536,12 @@ def _weaver_dictionary_frame() -> str:
 
 def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Weaver's first meeting as an authored encounter (the
-    Weaver pattern, Joshua 2026-10-23, corrected the same evening):
-    her INTRODUCTION is the scripted opening — Joshua's paragraph
-    in her voice, trimmed (meetings.WEAVER_INTRODUCTION): greeting,
-    her standing question, the invitation — and she waits; no
+    Weaver pattern, Joshua 2026-10-23, corrected the same evening
+    and finalized by his hand): her INTRODUCTION is the scripted
+    opening — Joshua's authored text in her voice, verbatim
+    (2026-10-23 ~22:45 PT; meetings.WEAVER_INTRODUCTION): the
+    greeting and its promise, the two camps, her fascination, her
+    open question — and she waits; no
     question bank (the dilemma is retired; the user's own material
     is the subject); the collaboration is intellectual, never mime
     (the no-pretend law); the impression gated on the shared-work

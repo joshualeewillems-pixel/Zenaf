@@ -4,8 +4,9 @@ Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22;
 the encounter runtime, Fellowship P3, 2026-10-23; the Weaver pattern,
 2026-10-23):
   - A first meeting is an encounter with objectives, not a stage walk:
-    her scripted INTRODUCTION (three short bubbles — greeting, her
-    standing question, the invitation to play a few notes) →
+    her scripted INTRODUCTION (four bubbles, Joshua's authored text
+    verbatim — the greeting and its promise, the two camps among
+    her friends, her fascination, her open question) →
     collaboration on the user's own material → one tentative,
     correctable read-back impression (gated on the shared-work
     exchange) → reveal (scripted), and completing it marks keystone
@@ -103,11 +104,12 @@ def _conductor_k1_status(uid):
 
 
 def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
-    """CORRECTED (2026-10-23, evening): the delivered opening is
-    her INTRODUCTION, whole — three short bubbles (greeting, her
-    standing question, the invitation), and she waits for the
-    answer. (The pattern build served a single scenery question;
-    the introduction is the real first move, and nothing else is
+    """FINAL (Joshua, 2026-10-23, ~22:45 PT): the delivered opening
+    is her INTRODUCTION, whole — his authored text verbatim, four
+    bubbles (the greeting and its promise, the two camps, her
+    fascination, her open question), and she waits for the answer.
+    (The pattern build served a single scenery question; the
+    introduction is the real first move, and nothing else is
     scripted to serve before the user's first turn.)"""
     uid = _seeded_user()
     svc = _svc(tmp_path)
@@ -119,8 +121,11 @@ def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
     assert bodies == list(script.opening)
-    assert len(bodies) == 3
-    assert bodies[-1] == "Play a few notes with me."
+    assert len(bodies) == 4
+    assert bodies[0].startswith("Ah! A new instrument for the orchestra!")
+    # The last bubble is her question, left open — it trails off
+    # with no terminal punctuation, exactly as he wrote it.
+    assert bodies[-1].endswith("Or is the question itself a misunderstanding")
     assert all(m["role"] == "voice" for m in state["messages"])
     assert _conductor_k1_status(uid) != "Done"
 
@@ -564,7 +569,7 @@ def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
     # A fresh run delivers the opening again and runs the whole arc;
     # completing it flips keystone 1 back to Done. (Opening shape as
     # in test_start_delivers_opening_and_first_question — her
-    # introduction, three bubbles.)
+    # introduction, four authored bubbles.)
     state = svc.start(uid, "conductor")
     assert state["status"] == "active"
     script = MT.get_script("conductor", 1)

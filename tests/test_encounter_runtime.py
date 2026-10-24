@@ -30,8 +30,9 @@ gated on the shared-work exchange (no turn-one impressions); the
 close is floored on meaningful recognition (own material taken up,
 or a pursuit exchange) — see tests/test_weaver_pattern.py for the
 dedicated acceptance tests. CORRECTED the same evening: the
-scripted opening is her INTRODUCTION (three short bubbles —
-greeting, her standing question, the invitation — and she waits),
+scripted opening is her INTRODUCTION (four bubbles — Joshua's
+authored text verbatim: the greeting and its promise, the two
+camps, her fascination, her open question — and she waits),
 and offers of help are received conversationally, never as
 pretend physical work (the no-pretend law).
 """
@@ -150,11 +151,11 @@ def test_initiative_offer_to_help_is_engaged_not_absorbed(ve_ctx, tmp_path):
     svc = _svc(tmp_path, gen)
     script = MT.get_script("conductor", 1)
     state = svc.start(uid, "conductor")
-    # CORRECTED (2026-10-23, evening): the delivered opening is her
-    # INTRODUCTION — three scripted bubbles (greeting, her standing
-    # question, the invitation). She waits; nothing else is served
-    # before the user's first turn.
-    assert len(state["messages"]) == len(script.opening) == 3
+    # FINAL (Joshua, 2026-10-23, ~22:45 PT): the delivered opening
+    # is her INTRODUCTION — his authored text, four scripted
+    # bubbles, verbatim. She waits; nothing else is served before
+    # the user's first turn.
+    assert len(state["messages"]) == len(script.opening) == 4
     assert script.questions == ()  # the bank is retired for the Weaver
 
     before = len(state["messages"])
@@ -222,9 +223,12 @@ def test_weaver_introduction_end_to_end_on_objectives(ve_ctx, tmp_path):
     svc, agents_db = _svc_with_agents(tmp_path)
     script = MT.get_script("conductor", 1)
 
-    # Opening: the user's first turn arrives within 3 bubbles.
+    # Opening: her authored introduction is delivered whole —
+    # exactly his four bubbles, verbatim — and she waits; the
+    # user's first turn comes right after them.
     state = svc.start(uid, "conductor")
-    assert len(state["messages"]) <= 3
+    assert _bodies(state) == list(script.opening)
+    assert len(state["messages"]) == 4
 
     # Detours first — the reveal must not fire, the impression must
     # not form, while the user is doing something else entirely.
@@ -403,7 +407,8 @@ def test_weaver_definition_objectives_are_the_authored_five(ve_ctx, tmp_path):
     for obj in definition.objectives:
         assert obj.description.strip()
         assert obj.satisfied_when.strip()
-    assert len(definition.opening) <= 3
+    assert definition.opening == MT.WEAVER_INTRODUCTION
+    assert len(definition.opening) == 4
     assert definition.wrap_line.startswith("I've kept you long enough")
 
 

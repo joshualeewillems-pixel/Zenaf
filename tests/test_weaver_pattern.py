@@ -36,10 +36,15 @@ voice — as the user playing the encounter, and built its
 had also curdled into mime ("hold this edge steady"). The
 correction tests below pin the restored shape:
 
-  7. HER INTRODUCTION, restored: the scripted opening is the
-     trimmed paragraph (meetings.WEAVER_INTRODUCTION) — greeting,
-     then HER standing question (the "classical jazz" question),
-     then the invitation "Play a few notes with me" — three short
+  7. HER INTRODUCTION, restored — and finally AUTHORED by him:
+     the scripted opening is meetings.WEAVER_INTRODUCTION,
+     Joshua's text verbatim (authored outright 2026-10-23,
+     ~22:45 PT, superseding Reynard's trim of his draft earlier
+     that evening): the greeting with its promise ("we'll find
+     your sound soon enough" — the invitation lives there now),
+     the two camps among her friends, her lifelong fascination
+     with synthesizing "classical jazz," and her question left
+     open, trailing off without terminal punctuation — four
      bubbles, she waits, no generation spent. The classical-jazz
      words are HERS, in her bubbles; they never appear as a user
      turn anywhere in this suite.
@@ -143,32 +148,52 @@ def _bodies(state):
 # ------------------------------------- her introduction, restored
 
 
-def test_introduction_is_hers_question_first_then_invitation(ve_ctx, tmp_path):
-    """CORRECTED (Joshua, 2026-10-23, evening): the opening is the
-    trimmed introduction paragraph HE wrote in HER voice — not a
-    greeting question about scenery, and never user material. Its
-    structure is his direction: greeting → HER standing question →
-    the invitation, in three short bubbles, and she waits."""
+def test_introduction_is_his_authored_text_verbatim(ve_ctx, tmp_path):
+    """FINAL (Joshua, 2026-10-23, ~22:45 PT): the opening is the
+    introduction HE authored in HER voice, verbatim — not a
+    greeting question about scenery, never user material, and no
+    longer a trim: he ruled by writing it himself. Four bubbles:
+    the greeting, whose promise ("we'll find your sound soon
+    enough") is where the invitation now lives; the two camps
+    among her friends; her lifelong fascination; and her
+    question, left open, trailing off without terminal
+    punctuation. She delivers exactly this, and waits."""
+    # His authored text, bubble for bubble — bubble 3's
+    # typographic quotes and bubble 4's trailing-off (no terminal
+    # punctuation) are his, exactly as written.
+    authored = (
+        "Ah! A new instrument for the orchestra! Bass? Woodwind? Percussion, perhaps? Well, we'll find your sound soon enough.",
+        "You know, some of my friends swear by rigorous training, perfect pitch, and rhythmic precision. Others would find that positively suffocating. They prefer the wild improvisations of jazz.",
+        "I've spent a lifetime fascinated by the possibility of synthesizing “classical jazz”—finding harmony among wildly different voices without sacrificing what makes each one extraordinary.",
+        "Every so often, it happens quite naturally. Beautifully, even. Which leaves me wondering… can something so spontaneous ever be composed deliberately? Are we more honest humbled before its ineffability? Or is the question itself a misunderstanding",
+    )
     uid = _seeded_user()
     gen = PatternGen()
     svc = _svc(tmp_path, gen)
     script = MT.get_script("conductor", 1)
 
-    # The script's opening IS the named introduction, whole.
+    # The script's opening IS the named introduction, whole — and
+    # the introduction IS his authored text, character for
+    # character.
     assert script.opening == MT.WEAVER_INTRODUCTION
-    assert len(script.opening) == 3
-    greeting, question, invitation = script.opening
-    assert greeting.startswith("Ah! A new instrument for the orchestra")
-    # Her question: the lifelong fascination, the harmonies in
-    # extravagant divergence, and whether it can be reverse
-    # engineered — her words, kept intact from his draft.
-    assert "classical jazz" in question
-    assert "extravagantly diverse" in question
-    assert "reverse engineered" in question
-    # The invitation is the last bubble — the thing she waits on —
-    # and her question precedes it (structure, not just content).
-    assert invitation == "Play a few notes with me."
-    assert script.opening.index(question) < script.opening.index(invitation)
+    assert MT.WEAVER_INTRODUCTION == authored
+    assert len(script.opening) == 4
+    greeting, camps, fascination, question = script.opening
+    # The invitation lives in the greeting now — there is no
+    # separate invitation bubble, and the superseded trim's lines
+    # and the old draft's wording are gone from her opening.
+    assert "we'll find your sound soon enough" in greeting
+    assert "rigorous training" in camps
+    assert "wild improvisations of jazz" in camps
+    assert "“classical jazz”" in fascination
+    assert "without sacrificing what makes each one extraordinary" in fascination
+    assert not any("Play a few notes" in b for b in script.opening)
+    assert not any("extravagantly diverse" in b for b in script.opening)
+    # Her question comes LAST and stays open: it trails off with
+    # no terminal punctuation, exactly as he wrote it.
+    assert question == authored[-1]
+    assert not question.endswith((".", "?", "!"))
+    assert "can something so spontaneous ever be composed deliberately?" in question
     # The retired scenery question is gone from the opening.
     assert not any("does this look broken" in b for b in script.opening)
 
@@ -257,7 +282,7 @@ def test_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     script = MT.get_script("conductor", 1)
     svc.start(uid, "conductor")
 
-    # Turn 1 — the invitation answered, briefly. The generation
+    # Turn 1 — her introduction answered, briefly. The generation
     # offers a read; the gate holds it: NO impression on the first
     # substantive turn.
     gen.engage.append(

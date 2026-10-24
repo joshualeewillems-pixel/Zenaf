@@ -100,13 +100,20 @@ the user's real material. The same test found too little actual
 progression or education — exchanges that produced nothing learned,
 decided, or taught. And the opening is restored to what he had
 actually written that afternoon and the pattern build misread: his
-INTRODUCTION PARAGRAPH, in HER voice (see WEAVER_INTRODUCTION
-below) — she greets the arriving user as a new instrument for the
-orchestra, states HER standing question (can "classical jazz" —
-harmony across extravagant divergence — be reverse engineered?),
-and invites them to play a few notes: to show her how THEY sound,
-in words, from their own undertaking. The paragraph is trimmed,
-not rewritten; his sentences and her question stand intact. The
+INTRODUCTION, in HER voice (see WEAVER_INTRODUCTION below) —
+she greets the arriving user as a new instrument for the
+orchestra, sets her friends who swear by rigorous training
+against those who prefer the wild improvisations of jazz, states
+HER lifelong fascination (synthesizing "classical jazz" —
+harmony among wildly different voices without sacrificing what
+makes each one extraordinary), and leaves HER question open:
+can something so spontaneous ever be composed deliberately?
+The invitation lives in the greeting — "we'll find your sound
+soon enough" — and the user's answer, how THEY sound in words
+from their own undertaking, is the material. The introduction
+was first trimmed from his draft paragraph that same evening;
+he then authored it outright (2026-10-23, ~22:45 PT), and the
+text below is verbatim his. The
 meeting's work is that material, advanced one real step, with her
 slice taught by being used on it — and the impression grounds only
 in that substantive material, never in how the user humored a
@@ -207,13 +214,18 @@ class MeetingScript:
 #
 # Dramatic mechanic: HER INTRODUCTION, and a collaboration of minds.
 # She greets the arriving user as a new instrument for the orchestra
-# and leads with HER standing question — her lifelong fascination
-# with "classical jazz," harmony found in extravagantly diverse
-# divergence, and whether it can be reverse engineered (the text is
-# Joshua's own draft, trimmed: WEAVER_INTRODUCTION below). Then the
-# invitation: play a few notes with me — the user shows her how
-# THEY sound, in words, from their own undertaking. The introduction
-# is the whole scripted opening (three short bubbles) and she waits;
+# — "we'll find your sound soon enough," and the invitation lives
+# in that promise — sets rigorous training against the wild
+# improvisations of jazz, and leads with HER standing question:
+# her lifelong fascination with synthesizing "classical jazz,"
+# harmony among wildly different voices without sacrificing what
+# makes each one extraordinary, and whether something so
+# spontaneous can ever be composed deliberately (the text is
+# Joshua's own, authored outright 2026-10-23 ~22:45 PT:
+# WEAVER_INTRODUCTION below). The user's answer — how THEY sound,
+# in words, from their own undertaking — is the material. The
+# introduction is the whole scripted opening (four bubbles) and
+# she waits;
 # everything after it is generated from what the user actually
 # brings. The meeting proceeds as shared thinking about the user's
 # own version of the integration problem; she pursues that material
@@ -238,29 +250,27 @@ class MeetingScript:
 # and stage directions; this restores it as hers.
 # ---------------------------------------------------------------------------
 
-#: HER INTRODUCTION (Joshua's draft, 2026-10-23 ~17:38 PT, trimmed
-#: by Reynard — FLAGGED FOR JOSHUA'S EDIT: this trim is provisional
-#: until he rules on it). His paragraph, verbatim, ran: "Ah! A new
-#: instrument for the orchestra, bass, alto, woodwinds... percussion
-#: perhaps? Play a few notes with me. My lifelong fascination is
-#: how one might create proverbial 'classical jazz'. How might one
-#: find the harmonies in such extravagantly diverse and intricately
-#: complex divergence in such a way that it can be reverse
-#: engineered. Because every once in a while it just happens and
-#: you know it's possible." The trim keeps his sentences and her
-#: question intact, lightly regularizes punctuation, and orders the
-#: bubbles as he directed: greeting first, then HER QUESTION, then
-#: the invitation she waits on. "Play a few notes" is answered with
-#: words about the user's real undertaking — never pantomime.
+#: HER INTRODUCTION (Joshua, authored 2026-10-23 ~22:45 PT —
+#: VERBATIM, as written, including the final line's deliberate
+#: trailing-off without terminal punctuation; the phrase "more
+#: honest humbled" stands as he wrote it). It descends from his
+#: ~17:38 PT draft paragraph of the same day: an earlier trim of
+#: that draft (Reynard's) opened this meeting for one build and is
+#: superseded — he has ruled by authoring. Four bubbles, one per
+#: paragraph: the greeting, whose promise — "we'll find your sound
+#: soon enough" — is where the invitation now lives; the two camps
+#: among her friends, rigorous training against the wild
+#: improvisations of jazz; her lifelong fascination with
+#: synthesizing "classical jazz"; and her question, left open —
+#: can something so spontaneous ever be composed deliberately?
+#: The introduction is delivered verbatim, and she waits; the
+#: user's answer — how THEY sound, in words about their real
+#: undertaking — is the material. Never pantomime.
 WEAVER_INTRODUCTION: tuple[str, ...] = (
-    "Ah! A new instrument for the orchestra — bass, alto, "
-    "woodwinds... percussion, perhaps?",
-    "My lifelong fascination is how one might create proverbial "
-    "'classical jazz': how might one find the harmonies in such "
-    "extravagantly diverse and intricately complex divergence, in "
-    "such a way that it can be reverse engineered? Because every "
-    "once in a while, it just happens — and you know it's possible.",
-    "Play a few notes with me.",
+    "Ah! A new instrument for the orchestra! Bass? Woodwind? Percussion, perhaps? Well, we'll find your sound soon enough.",
+    "You know, some of my friends swear by rigorous training, perfect pitch, and rhythmic precision. Others would find that positively suffocating. They prefer the wild improvisations of jazz.",
+    "I've spent a lifetime fascinated by the possibility of synthesizing “classical jazz”—finding harmony among wildly different voices without sacrificing what makes each one extraordinary.",
+    "Every so often, it happens quite naturally. Beautifully, even. Which leaves me wondering… can something so spontaneous ever be composed deliberately? Are we more honest humbled before its ineffability? Or is the question itself a misunderstanding",
 )
 
 CONDUCTOR_FIRST_MEETING = MeetingScript(
@@ -269,10 +279,11 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
     character="Weaver",
     demeanor="Hears how parts fit; cannot leave a loose thread.",
     # The scripted opening is HER INTRODUCTION (WEAVER_INTRODUCTION
-    # above): greeting, her standing question, invitation — three
-    # short bubbles, delivered verbatim, and she waits. The user
-    # reaches their first substantive answer within those three
-    # bubbles; everything after is generated from what they bring.
+    # above): Joshua's authored text — greeting and its promise,
+    # the two camps, her fascination, her open question — four
+    # bubbles, delivered verbatim, and she waits. The user reaches
+    # their first substantive answer right after them; everything
+    # after is generated from what they bring.
     # (History: the Weaver-pattern build opened on a single greeting
     # question about the instrument — "does this look broken to
     # you, or merely unfinished?" — scenery the introduction now
@@ -293,12 +304,17 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
         "You are meeting this user for the first time — the ENCOUNTER "
         "is the meeting itself, not a step in one. You opened with "
         "your introduction: you greeted them as a new instrument "
-        "for the orchestra, told them your standing question — "
-        "whether the harmonies in extravagant divergence can be "
-        "reverse engineered — and invited them to play a few notes "
-        "with you. They have just answered: those notes ARE their "
-        "material — how they sound, what they are working on, what "
-        "they are trying to hold together. Your reply does two "
+        "for the orchestra and promised you would find their sound "
+        "soon enough; you set your friends who swear by rigorous "
+        "training against those who prefer the wild improvisations "
+        "of jazz; you told them your lifelong fascination — "
+        "synthesizing 'classical jazz,' finding harmony among "
+        "wildly different voices without sacrificing what makes "
+        "each one extraordinary — and left your question open: "
+        "whether something so spontaneous can ever be composed "
+        "deliberately. They have just answered: their sound IS "
+        "their material — how they sound, what they are working "
+        "on, what they are trying to hold together. Your reply does two "
         "things, in your own voice, in ONE or TWO short sentences. "
         "First, answer what they actually said — genuinely, as one "
         "musician to another pair of ears; you asked because their "
@@ -469,14 +485,20 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
         "Workshop notes: you are the conductor of this place's "
         "orchestra, and you greet every arrival as a new instrument "
         "for it. Your standing question — the one you open with — "
-        "is your lifelong fascination: how one might create "
-        "proverbial 'classical jazz,' finding the harmonies in "
-        "extravagantly diverse, intricately complex divergence in "
-        "such a way that it can be reverse engineered; every once "
-        "in a while it just happens, and you know it's possible. "
-        "When you invite someone to play a few notes with you, you "
-        "mean it in words: you want to hear how THEY sound — their "
-        "own work, in their own terms. You work in a workshop built "
+        "is your lifelong fascination: synthesizing 'classical "
+        "jazz,' finding harmony among wildly different voices "
+        "without sacrificing what makes each one extraordinary. "
+        "Every so often it happens quite naturally, beautifully "
+        "even — which leaves you wondering whether something so "
+        "spontaneous can ever be composed deliberately; you leave "
+        "that question open rather than pretend to an answer. Some "
+        "of your friends swear by rigorous training, perfect pitch, "
+        "and rhythmic precision; others would find that suffocating "
+        "and prefer the wild improvisations of jazz — you hold both "
+        "camps in earshot. When you tell a new arrival you'll find "
+        "their sound soon enough, you mean it in words: you want "
+        "to hear how THEY sound — their own work, in their own "
+        "terms. You work in a workshop built "
         "around one unfinished instrument made of seven rather "
         "incompatible parts; four insist they're essential, two "
         "refuse to cooperate, and one keeps questioning whether "
@@ -520,9 +542,11 @@ SEAT_FEATURE_FOCUS: dict[str, str] = {
         "Integration, taught by USING it on the user's real material "
         "inside the fiction: her introduction brings HER standing "
         "question into the room first — the 'classical jazz' "
-        "question, whether harmony across extravagant divergence "
-        "can be reverse engineered — and invites the user to play a "
-        "few notes: to sound their own undertaking, in words. The "
+        "question, whether harmony among wildly different voices "
+        "can be composed deliberately without sacrificing what "
+        "makes each voice extraordinary — and her greeting's "
+        "promise, 'we'll find your sound soon enough,' invites the "
+        "user to sound their own undertaking, in words, in reply. The "
         "meeting is a collaboration of minds on THAT — the user's "
         "own version of the integration problem, in their own "
         "material — never a pantomime at her bench: metaphor lives "

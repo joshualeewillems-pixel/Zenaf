@@ -1,11 +1,15 @@
 """The Weaver's first meeting, rewritten (redesign, Joshua 2026-10-23).
 
 Semantics under test:
-  - The opening is HER INTRODUCTION — Joshua's paragraph in her
-    voice, trimmed (meetings.WEAVER_INTRODUCTION): she greets the
-    user as a new instrument for the orchestra, states her standing
-    question (the "classical jazz" question), and invites them to
-    play a few notes — then waits. (Corrected 2026-10-23, evening:
+  - The opening is HER INTRODUCTION — Joshua's authored text in
+    her voice, verbatim (meetings.WEAVER_INTRODUCTION; authored
+    outright 2026-10-23 ~22:45 PT, superseding the evening's trim
+    of his draft): she greets the user as a new instrument for the
+    orchestra ("we'll find your sound soon enough" — the invitation
+    lives there), sets rigorous training against the wild
+    improvisations of jazz, states her lifelong fascination (the
+    "classical jazz" question), and leaves her question open —
+    then waits. (Corrected 2026-10-23, evening:
     the Weaver-pattern build had opened on a scenery question —
     "does this look broken to you, or merely unfinished?" — and
     misread his paragraph as user material; both are corrected.
@@ -120,10 +124,11 @@ def _to_readback(svc, uid, answer="Intuition, usually — unless something pract
 
 
 def test_opening_is_her_introduction(ve_ctx, tmp_path):
-    """CORRECTED (2026-10-23, evening): what is DELIVERED at the
-    door is her introduction — the trimmed paragraph, three short
-    bubbles: greeting, her standing question, the invitation —
-    and she WAITS. (The pattern build delivered a single scenery
+    """FINAL (Joshua, 2026-10-23, ~22:45 PT): what is DELIVERED at
+    the door is her introduction — his authored text, verbatim,
+    four bubbles: the greeting and its promise, the two camps,
+    her fascination, her open question — and she WAITS. (The
+    pattern build delivered a single scenery
     question — "does this look broken to you, or merely
     unfinished?" — which was never waited for; the introduction
     replaces it, and her question is the real first move.) The
@@ -137,9 +142,14 @@ def test_opening_is_her_introduction(ve_ctx, tmp_path):
     bodies = [m["body"] for m in state["messages"]]
     assert bodies == list(script.opening)
     assert script.opening == MT.WEAVER_INTRODUCTION
-    assert len(script.opening) == 3
-    assert "classical jazz" in bodies[1]
-    assert bodies[2] == "Play a few notes with me."
+    assert len(script.opening) == 4
+    assert "we'll find your sound soon enough" in bodies[0]
+    assert "wild improvisations of jazz" in bodies[1]
+    assert "classical jazz" in bodies[2]
+    # Her question is the last bubble, left open — trailing off
+    # with no terminal punctuation, exactly as he wrote it.
+    assert bodies[3].startswith("Every so often, it happens quite naturally.")
+    assert bodies[3].endswith("Or is the question itself a misunderstanding")
     assert not any("does this look broken" in b for b in bodies)
     # The seven-parts material lives in the workshop notes (prepared
     # context), not in anything delivered at the door.
@@ -292,7 +302,23 @@ def _dialogue_paragraphs(script):
 def test_dialogue_carries_no_system_explanation(ve_ctx, tmp_path):
     script = MT.get_script("conductor", 1)
     for paragraph in _dialogue_paragraphs(script):
-        assert not _SYSTEM_TALK.search(paragraph), paragraph
+        for match in _SYSTEM_TALK.finditer(paragraph):
+            # ONE sanctioned match: Joshua's authored introduction
+            # (2026-10-23 ~22:45 PT, verbatim — pinned character
+            # for character in tests/test_weaver_pattern.py) uses
+            # "rigorous training" of MUSICIANS: perfect pitch and
+            # rhythmic precision, set against jazz improvisation.
+            # That is not the training system, and his text stands
+            # as written. Every other match, in any paragraph —
+            # including any future edit of the introduction that
+            # is not exactly this authored phrase — is system talk
+            # in her mouth and fails here.
+            sanctioned = (
+                paragraph in MT.WEAVER_INTRODUCTION
+                and match.group(0).lower() == "training"
+                and "rigorous training" in paragraph
+            )
+            assert sanctioned, paragraph
     # The purged audit-log templates are empty in the rewritten script.
     assert script.pulled_item_template == ""
     assert script.pulled_where_template == ""

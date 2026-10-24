@@ -66,13 +66,13 @@ SEATS: tuple[dict[str, str], ...] = (
     },
     {
         "seat_ref": "ambassador",
-        "character": "Bridge",
+        "character": "Crane",
         "demeanor": "Curious about the other side; holds two truths lightly.",
         "echo": "the part that translates between your warring inner voices",
     },
     {
         "seat_ref": "skeptic",
-        "character": "Neighbor",
+        "character": "Raven",
         "demeanor": "Flint-eyed, unimpressed by performance; asks the question no one wants.",
         "echo": "the inner questioner; the critic when blended",
     },

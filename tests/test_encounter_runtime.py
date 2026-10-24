@@ -25,12 +25,15 @@ responsiveness ruling):
      has no bank since the pattern release — her passes are
      conversation and spend their one call like any other turn.)
 
-The Weaver pattern (Joshua, 2026-10-23) adds: the greeting is ONE
-scripted bubble and she waits; the impression is gated on the
-shared-work exchange (no turn-one impressions); the close is floored
-on meaningful recognition (own material taken up, or a pursuit
-exchange) — see tests/test_weaver_pattern.py for the dedicated
-acceptance tests.
+The Weaver pattern (Joshua, 2026-10-23) adds: the impression is
+gated on the shared-work exchange (no turn-one impressions); the
+close is floored on meaningful recognition (own material taken up,
+or a pursuit exchange) — see tests/test_weaver_pattern.py for the
+dedicated acceptance tests. CORRECTED the same evening: the
+scripted opening is her INTRODUCTION (three short bubbles —
+greeting, her standing question, the invitation — and she waits),
+and offers of help are received conversationally, never as
+pretend physical work (the no-pretend law).
 """
 
 from __future__ import annotations
@@ -77,7 +80,12 @@ class WeaverGen:
                 "\nStrands: Logic"
             )
         if "mid-conversation in your workshop" in prompt:
-            return "Then hold this joint steady — two hands are better than my six."
+            # CORRECTED (2026-10-23, evening): her reception of an
+            # offer is conversational — ears and judgment — never a
+            # pretend physical task (the no-pretend law). The old
+            # fixture answered "let me hold something" with "hold
+            # this joint steady"; that was the mime this fix removes.
+            return "You can — with your ears. Listen with me, and tell me where it stops agreeing with itself."
         if "ENCOUNTER" in prompt:
             # The single engage generation: reply movement, delimiter,
             # impression movement with its bookkeeping trailer.
@@ -142,10 +150,11 @@ def test_initiative_offer_to_help_is_engaged_not_absorbed(ve_ctx, tmp_path):
     svc = _svc(tmp_path, gen)
     script = MT.get_script("conductor", 1)
     state = svc.start(uid, "conductor")
-    # UPDATED for the Weaver pattern: the delivered opening is ONE
-    # scripted bubble — her greeting question, asked for real. She
-    # waits; nothing else is served before the user's first turn.
-    assert len(state["messages"]) == 1
+    # CORRECTED (2026-10-23, evening): the delivered opening is her
+    # INTRODUCTION — three scripted bubbles (greeting, her standing
+    # question, the invitation). She waits; nothing else is served
+    # before the user's first turn.
+    assert len(state["messages"]) == len(script.opening) == 3
     assert script.questions == ()  # the bank is retired for the Weaver
 
     before = len(state["messages"])
@@ -156,8 +165,10 @@ def test_initiative_offer_to_help_is_engaged_not_absorbed(ve_ctx, tmp_path):
         m["body"] for m in state["messages"][before + 1:] if m["role"] == "voice"
     ]
     # The offer was engaged, in character — exactly one spoken reply,
-    # and it is the generated engagement, not a script line.
-    assert new_voice == ["Then hold this joint steady — two hands are better than my six."]
+    # and it is the generated engagement, not a script line. (And
+    # the engagement receives the offer conversationally — ears,
+    # not hands: the no-pretend law.)
+    assert new_voice == ["You can — with your ears. Listen with me, and tell me where it stops agreeing with itself."]
     # The retired dilemma's cast never appears as if it were agenda.
     assert "doubter" not in new_voice[0]
     # The agenda did not advance as if the offer were an answer: no

@@ -1,13 +1,18 @@
 """The Weaver's first meeting, rewritten (redesign, Joshua 2026-10-23).
 
 Semantics under test:
-  - The opening interrupts the Weaver mid-work on an instrument of seven
-    incompatible parts, and asks ONE question for real — her greeting
-    ("does this look broken to you, or merely unfinished?") — then
-    waits. (The Weaver pattern, 2026-10-23: the scripted DILEMMA —
-    mover / planner / doubter — is RETIRED as too philosophical a
-    hypothetical; the encounter is a collaboration, and the user's
-    own material is the subject. See tests/test_weaver_pattern.py.)
+  - The opening is HER INTRODUCTION — Joshua's paragraph in her
+    voice, trimmed (meetings.WEAVER_INTRODUCTION): she greets the
+    user as a new instrument for the orchestra, states her standing
+    question (the "classical jazz" question), and invites them to
+    play a few notes — then waits. (Corrected 2026-10-23, evening:
+    the Weaver-pattern build had opened on a scenery question —
+    "does this look broken to you, or merely unfinished?" — and
+    misread his paragraph as user material; both are corrected.
+    The scripted DILEMMA — mover / planner / doubter — stays
+    RETIRED as too philosophical a hypothetical; the encounter is
+    a collaboration on the user's own material. See
+    tests/test_weaver_pattern.py.)
   - The read-back is a POSITION with an honest contrast, not a
     paraphrase (the frame instructs exactly that) — offered only
     after the shared-work exchange (the impression gate).
@@ -114,24 +119,28 @@ def _to_readback(svc, uid, answer="Intuition, usually — unless something pract
 # ------------------------------------------------------- opening / dilemma
 
 
-def test_opening_is_a_midwork_interruption(ve_ctx, tmp_path):
-    """UPDATED for the Weaver pattern (2026-10-23): what is DELIVERED
-    at the door is ONE bubble — the interruption itself, her greeting
-    question — and she WAITS. (P3 delivered the greeting plus the
-    dilemma in one breath, so the question was scenery: Joshua's
-    first live-test note.) The working-together invitation is not
-    scripted; it is generated from the user's answer. The seven-parts
-    material is workshop context now (the facts block), not a door
-    speech, and nothing else is served before the user's first turn
-    ends."""
+def test_opening_is_her_introduction(ve_ctx, tmp_path):
+    """CORRECTED (2026-10-23, evening): what is DELIVERED at the
+    door is her introduction — the trimmed paragraph, three short
+    bubbles: greeting, her standing question, the invitation —
+    and she WAITS. (The pattern build delivered a single scenery
+    question — "does this look broken to you, or merely
+    unfinished?" — which was never waited for; the introduction
+    replaces it, and her question is the real first move.) The
+    seven-parts material is workshop context (the facts block),
+    not a door speech, and nothing else is served before the
+    user's first turn ends."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies == [script.opening[0]]
-    assert len(script.opening) == 1
-    assert "does this look broken to you, or merely unfinished?" in bodies[0]
+    assert bodies == list(script.opening)
+    assert script.opening == MT.WEAVER_INTRODUCTION
+    assert len(script.opening) == 3
+    assert "classical jazz" in bodies[1]
+    assert bodies[2] == "Play a few notes with me."
+    assert not any("does this look broken" in b for b in bodies)
     # The seven-parts material lives in the workshop notes (prepared
     # context), not in anything delivered at the door.
     assert "seven rather incompatible parts" in script.orientation_facts

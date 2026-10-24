@@ -1,0 +1,465 @@
+"""Narrative state records (Narrative Steward S0).
+
+Dataclasses for the Steward's store, following the fellowship
+observations.py shape: frozen records, ``to_dict()`` for the wire,
+storage concerns in store.py. The schema is audit Part II §2 **as
+amended by Part IX** (Joshua, 2026-10-23 ~22:17 PT — ratified),
+which supersedes wherever the two differ:
+
+  * Scale and progression are distinct dimensions, and neither is a
+    rigid, singular property of a thread.
+  * A thread carries an OPTIONAL ``scope`` (nullable) — a broad
+    situational label, nothing more.
+  * A reading carries MULTIPLE interpretive scales (``scales``) plus
+    a nullable ``primary_scale``. Scales are free labels, not rungs
+    of a fixed hierarchy: the same experience may hold meaningful
+    readings at several scales, and the store preserves that instead
+    of resolving it.
+  * A progression position is bound to a PARTICULAR lens (its phases
+    are that lens's template) and may be ``unknown`` or
+    ``inapplicable`` — both are first-class stored states, not
+    missing data.
+  * There is NO fixed scale hierarchy, no mandatory stage
+    progression, no traversal anywhere in this package: these are
+    records and their validation, not a map anyone must walk.
+
+The involvement measure (Part VII) is likewise a record only: how
+much of an artifact or a trained profile is the user's own authored
+or edited work versus Zenaf-synthesized, stored so attribution and
+incentive accounting can ever be honest. S0 stores the measure; it
+computes nothing from it and shows it nowhere.
+
+Part X (Joshua, 2026-10-23 ~22:32 PT — ratified) adds the recursive
+structure: "progression is Mandelbrot at all scales." A life arc
+contains smaller arcs, which contain smaller arcs, down to moments;
+each arc has its own progression, and each may participate in
+several larger arcs. So alongside the lens-bound reading positions
+above, the schema carries:
+
+  * **arc associations** — many-to-many links between threads
+    (ThreadLink): a thread may nest inside several larger threads
+    and contain several smaller ones. Optional, inert, unconsumed
+    by any logic — no traversal, no recursion, no cycle machinery.
+  * **a thread-local progression position** (nullable): the
+    thread's own development at its own resolution, in the same
+    lens-bound shape as a reading's. It coexists with readings'
+    positions; neither replaces the other.
+
+Scale remains what Part IX made it: the resolution at which an arc
+is examined (thread ``scope`` + readings' ``scales``). Progression
+is development at that resolution. Neither forces a universal
+sequence — the fractal mathematics, if they ever come, are a later
+phase's problem; S0's duty is a schema that will not prevent them.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+#: Thread lifecycle (audit Part II §2). ``retired`` is the Continuity
+#: domain's first-class ending — the story stopped fitting — kept
+#: distinct from ``resolved`` (an ending inside the story).
+THREAD_STATUSES: tuple[str, ...] = (
+    "nascent", "active", "dormant", "resolved", "retired", "archived",
+)
+
+#: Mandatory reason when a thread is retired (audit Part II §5).
+RETIREMENT_REASONS: tuple[str, ...] = (
+    "completed", "abandoned", "outgrown", "reinterpreted",
+)
+
+#: Where a thread came from (audit Part II §2).
+THREAD_ORIGINS: tuple[str, ...] = (
+    "user_declared", "claim", "journal", "initiative", "steward_proposal",
+)
+
+#: Reading lifecycle: proposed readings become standing only by
+#: acceptance; an accepted reading displaced by a newer accepted one
+#: is superseded, never edited or deleted (both persist — doctrine
+#: §6, disagreements preserved).
+READING_STATUSES: tuple[str, ...] = (
+    "proposed", "accepted", "superseded", "rejected",
+)
+
+#: "The story moved" vocabulary (audit Part II §2).
+CHANGE_KINDS: tuple[str, ...] = (
+    "opened", "extended", "contradicted", "milestone",
+    "reopened", "resolved", "retired",
+)
+
+#: Change lifecycle: changes are proposals until the user confirms.
+CHANGE_STATUSES: tuple[str, ...] = ("proposed", "confirmed", "dismissed")
+
+#: Fitting lifecycle (audit Part II §4): a lens is proposed, offered,
+#: and only ever *accepted* by user verdict; rejection is durable.
+FITTING_STATUSES: tuple[str, ...] = (
+    "proposed", "offered", "accepted", "rejected", "retired",
+)
+
+#: Who may propose a fitting (audit Part II §4: the steward, or the
+#: user themselves — "read my year as a descent-and-return").
+FITTING_PROPOSERS: tuple[str, ...] = ("steward", "user")
+
+#: Involvement ledger subjects (Part VII §4): per artifact, per
+#: trained profile.
+INVOLVEMENT_SUBJECT_KINDS: tuple[str, ...] = ("artifact", "trained_profile")
+
+#: The three states of a progression position (Part IX): a position
+#: within a lens's phases, honestly unknown, or honestly
+#: inapplicable — a lens (or progression itself) may simply not
+#: apply to a reading.
+PROGRESSION_STATES: tuple[str, ...] = ("positioned", "unknown", "inapplicable")
+
+#: Arc association kinds (Part X). A link row is stored once, in
+#: parent -> child direction; the SAME row is the child's "part_of"
+#: view — direction carries the inverse, so the vocabulary needs
+#: only the one kind today. The column exists so a later phase can
+#: add kinds without a schema change; S0 defines no others.
+THREAD_LINK_RELATIONS: tuple[str, ...] = ("contains",)
+
+
+@dataclass(frozen=True)
+class ProgressionPosition:
+    """Where a reading sits inside one lens's progression template.
+
+    Bound to a PARTICULAR lens: ``lens_id`` + ``phase`` are
+    meaningful only together (the phase is a phase OF that lens),
+    and only when ``state == "positioned"``. ``unknown`` (the
+    reading takes no position yet) and ``inapplicable`` (progression
+    under this lens does not apply to this material) are distinct,
+    deliberate states — Part IX requires both to be representable,
+    because collapsing them into null would let a later consumer
+    mistake "does not apply" for "not yet assessed," and quietly
+    assess it.
+    """
+
+    state: str = "unknown"
+    lens_id: str | None = None
+    phase: str | None = None
+
+    @classmethod
+    def unknown(cls) -> "ProgressionPosition":
+        return cls(state="unknown")
+
+    @classmethod
+    def inapplicable(cls) -> "ProgressionPosition":
+        return cls(state="inapplicable")
+
+    @classmethod
+    def positioned(cls, lens_id: str, phase: str) -> "ProgressionPosition":
+        return cls(state="positioned", lens_id=lens_id, phase=phase)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"state": self.state, "lens_id": self.lens_id, "phase": self.phase}
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "ProgressionPosition":
+        if not data:
+            return cls.unknown()
+        return cls(
+            state=str(data.get("state") or "unknown"),
+            lens_id=data.get("lens_id"),
+            phase=data.get("phase"),
+        )
+
+
+@dataclass(frozen=True)
+class NarrativeThread:
+    """One ongoing story the system keeps WITH the user, not about them.
+
+    State only — facts, tensions, questions live on readings; the
+    thread itself carries identity, lifecycle, and pointers. ``scope``
+    is Part IX's optional broad label (e.g. "work", "family"): it may
+    be absent, and nothing in the store treats it as a category the
+    thread must obey. ``progression`` is Part X's thread-LOCAL
+    progression position — this arc's own development at its own
+    resolution, in the same lens-bound shape as a reading's. It is
+    nullable (no local progression recorded is a normal state) and
+    coexists with readings' positions: a reading's position says
+    where an interpretation sits inside its lens; the thread's says
+    where the arc itself stands. Neither replaces the other.
+    """
+
+    id: str
+    user_id: str
+    title: str = ""
+    status: str = "nascent"
+    retirement_reason: str | None = None
+    successor_thread_id: str | None = None
+    scope: str | None = None
+    progression: ProgressionPosition | None = None
+    strand_weights: dict[str, float] | None = None
+    cast: list[dict[str, Any]] | None = None
+    aspiration_refs: list[str] | None = None
+    standing_reading_id: str | None = None
+    lens_fitting_id: str | None = None
+    origin: str = "user_declared"
+    created_at: str = ""
+    updated_at: str = ""
+    last_change_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "title": self.title,
+            "status": self.status,
+            "retirement_reason": self.retirement_reason,
+            "successor_thread_id": self.successor_thread_id,
+            "scope": self.scope,
+            "progression": (
+                self.progression.to_dict() if self.progression else None
+            ),
+            "strand_weights": self.strand_weights or {},
+            "cast": self.cast or [],
+            "aspiration_refs": self.aspiration_refs or [],
+            "standing_reading_id": self.standing_reading_id,
+            "lens_fitting_id": self.lens_fitting_id,
+            "origin": self.origin,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "last_change_at": self.last_change_at,
+        }
+
+
+@dataclass(frozen=True)
+class ThreadLink:
+    """One arc association between two threads (Part X).
+
+    Recursive narrative structure, stored flat: a link says the
+    parent arc CONTAINS the child arc. The relation is many-to-many
+    — a child may appear under several parents (it participates in
+    several larger arcs) and a parent may contain many children —
+    never a single-parent tree. Read from the child's side, the same
+    row is its ``part_of`` view; direction carries the inverse, so
+    only the one relation kind is stored.
+
+    Links are optional and INERT in S0: nothing traverses them, no
+    logic consumes them, and there is deliberately no cycle
+    detection (the store refuses only the degenerate self-link).
+    They exist so the schema will not prevent the recursive
+    analysis a later phase may want.
+    """
+
+    id: str
+    user_id: str
+    parent_thread_id: str
+    child_thread_id: str
+    relation: str = "contains"
+    note: str = ""
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "parent_thread_id": self.parent_thread_id,
+            "child_thread_id": self.child_thread_id,
+            "relation": self.relation,
+            "note": self.note,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class ThreadEvidence:
+    """One evidence-tier record attached to a thread.
+
+    Rows of this table are the ONLY things readings, changes, and
+    fittings may cite: the store creates them exclusively through the
+    tier-checked attach path (refs.require_evidence_tier), so a
+    dramatization or an interpretation can never exist as a row here.
+    ``note`` says why this evidence belongs to the thread — proposal
+    text or the user's own note.
+    """
+
+    id: str
+    thread_id: str
+    ref_kind: str
+    ref_id: str
+    evidence_kind: str = "entity_ref"
+    note: str = ""
+    created_at: str = ""
+
+    @property
+    def key(self) -> tuple[str, str]:
+        """Identity for dedupe / newness checks: same record, once."""
+        return (self.ref_kind, self.ref_id)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "thread_id": self.thread_id,
+            "ref_kind": self.ref_kind,
+            "ref_id": self.ref_id,
+            "evidence_kind": self.evidence_kind,
+            "note": self.note,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class ThreadReading:
+    """One attributable interpretation of a thread — versioned, never edited.
+
+    ``reading`` is structured state, not prose: tensions, open
+    questions, milestones, per-seat cast notes. ``scales`` +
+    ``primary_scale`` and ``progression`` are Part IX's two distinct
+    dimensions, stored per reading (interpretations sit at scales;
+    threads as such do not). ``evidence_refs`` are thread_evidence
+    row ids — REQUIRED non-empty, enforced by the store (audit
+    invariant 1).
+    """
+
+    id: str
+    thread_id: str
+    author: str  # a seat id | "steward" | "user"
+    reading: dict[str, Any] = field(default_factory=dict)
+    scales: list[str] | None = None
+    primary_scale: str | None = None
+    progression: ProgressionPosition = field(
+        default_factory=ProgressionPosition.unknown
+    )
+    evidence_refs: list[str] | None = None
+    status: str = "proposed"
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "thread_id": self.thread_id,
+            "author": self.author,
+            "reading": self.reading or {},
+            "scales": self.scales or [],
+            "primary_scale": self.primary_scale,
+            "progression": self.progression.to_dict(),
+            "evidence_refs": self.evidence_refs or [],
+            "status": self.status,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class ThreadChange:
+    """One recognized movement in a thread's story.
+
+    ``evidence_refs`` are thread_evidence row ids, and the store
+    guarantees at least one of them was NEW to the thread when the
+    change was recorded (audit invariant 2 — the anti-manufacture
+    rule: the story may only be said to have moved when new evidence
+    actually arrived).
+    """
+
+    id: str
+    thread_id: str
+    kind: str
+    evidence_refs: list[str] | None = None
+    prior_reading_id: str | None = None
+    new_reading_id: str | None = None
+    status: str = "proposed"
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "thread_id": self.thread_id,
+            "kind": self.kind,
+            "evidence_refs": self.evidence_refs or [],
+            "prior_reading_id": self.prior_reading_id,
+            "new_reading_id": self.new_reading_id,
+            "status": self.status,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class LensFitting:
+    """One lens proposed / offered / accepted / rejected for one thread.
+
+    ``evidence_refs`` (thread_evidence row ids) are required — a
+    fitting proposal must cite the evidence that suggested it
+    (audit Part II §4). ``decided_at`` is set when the user accepts
+    or rejects; rejection is durable data, not an obstacle the
+    steward routes around.
+    """
+
+    id: str
+    thread_id: str
+    lens_id: str
+    status: str = "proposed"
+    evidence_refs: list[str] | None = None
+    proposed_by: str = "steward"
+    created_at: str = ""
+    decided_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "thread_id": self.thread_id,
+            "lens_id": self.lens_id,
+            "status": self.status,
+            "evidence_refs": self.evidence_refs or [],
+            "proposed_by": self.proposed_by,
+            "created_at": self.created_at,
+            "decided_at": self.decided_at,
+        }
+
+
+@dataclass(frozen=True)
+class InvolvementMeasure:
+    """The involvement ledger record for one artifact or profile (Part VII §4).
+
+    Units are deliberately uninterpreted counts (words, sentences,
+    claims — the recording surface decides and says so in ``note``);
+    what matters for attribution and incentive accounting is that
+    authored, edited, and synthesized contributions are kept in
+    separate columns from the first day, so no later phase has to
+    reconstruct provenance it failed to store. S0 stores only.
+    """
+
+    id: str
+    user_id: str
+    subject_kind: str  # "artifact" | "trained_profile"
+    subject_id: str
+    user_authored_units: float = 0.0
+    user_edited_units: float = 0.0
+    synthesized_units: float = 0.0
+    note: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+    @property
+    def total_units(self) -> float:
+        return (
+            self.user_authored_units
+            + self.user_edited_units
+            + self.synthesized_units
+        )
+
+    @property
+    def user_share(self) -> float | None:
+        """The user's fraction of the whole — None when unmeasured.
+
+        Edits count as the user's: an edit is authorship and
+        correction in one act (Part VII §1).
+        """
+        total = self.total_units
+        if total <= 0:
+            return None
+        return (self.user_authored_units + self.user_edited_units) / total
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "subject_kind": self.subject_kind,
+            "subject_id": self.subject_id,
+            "user_authored_units": self.user_authored_units,
+            "user_edited_units": self.user_edited_units,
+            "synthesized_units": self.synthesized_units,
+            "user_share": self.user_share,
+            "note": self.note,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }

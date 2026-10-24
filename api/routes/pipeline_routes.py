@@ -12,6 +12,7 @@ Endpoints:
   POST /pipeline/packs                          generate prompt packs
   POST /pipeline/packs/{id}/regen               "give me another take"
   POST /pipeline/quote-card                     render + auto-mint a quote card
+  POST /pipeline/story/key-line                 choose/edit/adopt a key line (S4)
   POST /pipeline/mint-standalone                 mint with no journal parent
   POST /pipeline/mint-standalone/{id}/anchor    answer the anchoring question
 """
@@ -80,6 +81,21 @@ class QuoteCardBody(BaseModel):
     badge: bool = True
 
 
+class KeyLineChoiceBody(BaseModel):
+    """Exactly one of candidate / edited_text / adopted_text (S4, Part XIII).
+
+    candidate: one of the story's stored verified passages → certified.
+    edited_text: the user's own wording → user_authored, not an entry span.
+    adopted_text: a Zenaf composition the user adopts → adopted, never
+    a quotation.
+    """
+
+    story_id: str
+    candidate: str | None = None
+    edited_text: str | None = None
+    adopted_text: str | None = None
+
+
 class StandaloneBody(BaseModel):
     image_base64: str = Field(description="Image bytes as base64 (data: URL ok)")
     title: str = ""
@@ -128,6 +144,29 @@ def make_story(body: StoryBody, user: dict = Depends(get_current_user)):
     try:
         return pipe.make_story(
             _pstore(), _store(), _user_id(user), body.journal_entry_id
+        )
+    except Exception as exc:
+        raise _http(exc)
+
+
+# -- key-line selection -----------------------------------------------------------------
+#
+# S4 (audit Part XIII): propose → choose/edit → record. The picker UI
+# is a follow-up; this endpoint is the record half, and it is what the
+# frontend will call when the picker lands.
+
+
+@router.post("/story/key-line")
+def choose_key_line(body: KeyLineChoiceBody, user: dict = Depends(get_current_user)):
+    try:
+        return pipe.choose_key_line(
+            _pstore(),
+            _store(),
+            _user_id(user),
+            body.story_id,
+            candidate=body.candidate,
+            edited_text=body.edited_text,
+            adopted_text=body.adopted_text,
         )
     except Exception as exc:
         raise _http(exc)

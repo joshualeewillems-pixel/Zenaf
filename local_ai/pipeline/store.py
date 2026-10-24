@@ -124,6 +124,23 @@ class PipelineStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def get_entry_by_artifact_id(
+        self, artifact_id: str
+    ) -> dict[str, Any] | None:
+        """Find a journal entry via its registry artifact id.
+
+        Added for the S4 tier migration: a story artifact links to its
+        source entry's artifact, and the migration must recover the
+        entry text to re-verify the story's key line. Additive lookup;
+        no existing behavior changes.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM journal_entries WHERE artifact_id = ?",
+                (artifact_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
     def list_entries(self, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
         with self._lock:
             rows = self._conn.execute(

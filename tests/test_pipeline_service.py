@@ -26,10 +26,16 @@ JOURNEY_TEXT = (
     "Now I feel grateful for the struggle; it made me stronger and wiser."
 )
 
+# S4 (F3): the mocked model output must itself be honest — the candidate
+# below is a VERBATIM sentence from JOURNEY_TEXT. The old fixture's
+# composed line ("The struggle taught me...") is exactly the bug: it is
+# not in the entry, so the grounded pipeline must reject it (null line).
+VERBATIM_LINE = "Now I feel grateful for the struggle; it made me stronger and wiser."
+
 STORY_JSON = {
     "title": "Leaving to Begin",
     "narrative": "You left the safe job in March. The first months were hard and you felt lost. But you kept going, and you learned what you actually want. Now you are grateful for the struggle.",
-    "key_line": "The struggle taught me what I actually want.",
+    "key_line_candidates": [VERBATIM_LINE],
 }
 
 PACK_JSON = {
@@ -119,7 +125,8 @@ def test_make_story_parents_to_entry(stores):
     result = pipe.make_story(pstore, prov, ALICE, entry_id)
     artifact = result["artifact"]
     assert artifact["title"] == "Leaving to Begin"
-    assert result["content"]["key_line"] == STORY_JSON["key_line"]
+    assert result["content"]["key_line"] == VERBATIM_LINE
+    assert result["content"]["key_line_tier"] == "certified"
     parents = prov.parents_of(artifact["artifact_id"])
     assert len(parents) == 1
     assert parents[0]["parent_id"] == created["entry"]["artifact_id"]

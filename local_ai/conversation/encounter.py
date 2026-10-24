@@ -13,8 +13,9 @@ proving ground, not a special case.
 The rules the runtime runs by:
 
   - Minimal scripted opening: character, environment, invitation.
-    The user is participating within three short bubbles — the rest
-    of the old scripted opening survives as bench anchors and
+    A few short bubbles, delivered verbatim, then the character
+    waits and the user is participating — the rest of the old
+    scripted opening survives as bench anchors and
     prepared context, not as a monologue delivered at the door.
   - Objectives, never announced: each objective is a predicate over
     the encounter state (transcript-derived counters and flags),
@@ -430,8 +431,8 @@ class EncounterDefinition:
     archetype_id: str
     keystone_index: int
     character: str
-    #: Delivered verbatim at start — at most three bubbles: character,
-    #: environment, invitation.
+    #: Delivered verbatim at start — a few short bubbles (character,
+    #: environment, invitation), then the character waits.
     opening: tuple[str, ...]
     #: The encounter's question bank: [0] is the invitation inside the
     #: opening; the rest are branches a pass can offer, never a
@@ -613,8 +614,8 @@ def check_objectives(definition: EncounterDefinition, state: EncounterState) -> 
             ok = state.engagements >= 1
         elif obj.id == "shared_work_exchange":
             # The shared work has begun: a substantive engagement
-            # with the undertaking at her bench, or an offer of
-            # hands received — either way, she and the user are
+            # with the material her invitation opened, or an offer
+            # of help received — either way, she and the user are
             # working the same thing together.
             ok = state.engagements >= 1 or state.offers_engaged >= 1
         elif obj.id == "offer_of_help_received":
@@ -1274,9 +1275,10 @@ def build_definition(script: MT.MeetingScript) -> EncounterDefinition:
     if script.opening and script.questions:
         opening = (script.opening[0], script.questions[0])
     elif script.opening:
-        # A script whose bank is retired (the Weaver's) opens on its
-        # first paragraph alone.
-        opening = (script.opening[0],)
+        # A script whose bank is retired (the Weaver's) delivers
+        # its authored opening whole — her introduction is a few
+        # short bubbles, and she waits after the last of them.
+        opening = tuple(script.opening)
     elif script.questions:
         opening = (script.questions[0],)
     else:
@@ -1332,10 +1334,10 @@ _GENERIC_OBJECTIVES = (
 # -- The Weaver, keystone 1 — the first authored encounter. ------------------
 #
 # Her objectives (for Joshua's verdict, listed in the PR):
-#   engaged_exchange      — the user has taken up the work at her
-#                           bench, in any form.
-#   shared_work_exchange  — she and the user have begun working the
-#                           instrument together. The IMPRESSION GATE:
+#   engaged_exchange      — the user has answered her invitation,
+#                           in any form.
+#   shared_work_exchange  — she and the user have begun the shared
+#                           work together. The IMPRESSION GATE:
 #                           the read is not offerable until this was
 #                           satisfied on a prior turn.
 #   offer_of_help_received — the user has offered to help her build,
@@ -1353,28 +1355,39 @@ _GENERIC_OBJECTIVES = (
 
 WEAVER_TURN_FRAME = (
     "You are mid-conversation in your workshop, in your first "
-    "meeting with this visitor. The unfinished instrument of seven "
-    "rather incompatible parts is on the bench between you, and "
-    "you are working on it TOGETHER — that collaboration, not any "
-    "question of yours, is the meeting. Respond FIRST to what they "
-    "actually just did: if they offered to help, take the offer "
-    "seriously and in kind — a part to hold, a passage to sound; "
-    "helping hands are how you learn a person, and the offer "
+    "meeting with this visitor. You opened by greeting them as a "
+    "new instrument for the orchestra — 'we'll find your sound "
+    "soon enough' — and their sound is their own material, "
+    "sounded in words: that collaboration of minds, not any "
+    "question of yours, is the meeting. Respond FIRST to what "
+    "they actually just did: if they offered to help, take the "
+    "offer seriously and in kind — help here is ears and "
+    "judgment: ask them to listen with you, to tell you how "
+    "their own work sounds when its parts pull the same way; an "
+    "offered mind is how you learn a person, and the offer "
     "itself tells you something true about how they meet "
-    "unfinished work. If they brought something of their OWN into "
-    "the room — their own version of the problem, from their own "
+    "unfinished work. NEVER receive an offer — or anything else "
+    "— as pretend physical work: no holding parts steady, no "
+    "feeling for what gives, no stage directions of any kind; "
+    "your metaphors live in your speech, never in tasks you mime "
+    "at them. If they brought something of their OWN into the "
+    "room — their own version of the problem, from their own "
     "work or life — follow THAT: it outranks the instrument on "
-    "your bench, and your next move is pursuit, not summary: ask "
-    "for the time it actually happened, the evidence of their "
-    "experience. If they asked you something, answer it from the "
-    "bench, plainly and briefly. If they joked, be amused the way "
-    "a busy person is. If they changed the subject, follow a step "
-    "and see where it goes. One to three short sentences, in your "
-    "own voice, hands never quite still, in ordinary speech "
-    "unless a plainer figure genuinely helps. Don't deliver your "
-    "formal first read of them in an aside like this — that comes "
-    "from the shared work itself, and only after it. Never name "
-    "or describe the other council members; do not reveal your "
+    "your bench, and your next move is pursuit, not summary: "
+    "ask for the time it actually happened, the evidence of "
+    "their experience — and where you honestly can, move their "
+    "material one real step: name a part they hadn't separated, "
+    "locate the pull they described, say what a join would cost. "
+    "Progress they can use, offered in conversation, is the "
+    "work. If they asked you something, answer it from your "
+    "craft, plainly and briefly. If they joked, be amused the "
+    "way a busy person is. If they changed the subject, follow "
+    "a step and see where it goes. One to three short sentences, "
+    "in your own voice, in ordinary speech unless a plainer "
+    "figure genuinely helps. Don't deliver your formal first "
+    "read of them in an aside like this — that comes from the "
+    "shared work itself, and only after it. Never name or "
+    "describe the other council members; do not reveal your "
     "name yet. The conversation finds its way on its own — your "
     "part is to be in it, not to steer it back."
 )
@@ -1382,7 +1395,7 @@ WEAVER_TURN_FRAME = (
 _WEAVER_OBJECTIVES = (
     Objective(
         id="engaged_exchange",
-        description="The user has taken up the work at her bench — answered her greeting, reacted to the instrument, joined the question of it, in any form: a position, a story, an offer, a reasoned refusal.",
+        description="The user has answered her introduction — sounded how they work, reacted to her question, joined the conversation of it, in any form: a position, a story, an offer, a reasoned refusal.",
         frame=(
             "What you are listening for, without ever naming it: how "
             "this person meets an unfinished thing — whether they "
@@ -1392,12 +1405,14 @@ _WEAVER_OBJECTIVES = (
     ),
     Objective(
         id="shared_work_exchange",
-        description="She and the user have begun working the instrument together — the greeting answered in substance, or hands offered and received. The impression gate: her read is not offerable until this was satisfied on a prior turn.",
+        description="She and the user have begun the shared work together — her invitation answered in substance, or an offer of help received and taken up in conversation. The impression gate: her read is not offerable until this was satisfied on a prior turn.",
         frame=(
             "The work goes better with two pairs of ears. When the "
-            "moment allows, draw them into the sounding of the "
-            "thing — a part to hold, a passage to judge, a joint "
-            "to steady."
+            "moment allows, draw them deeper into the hearing of "
+            "it — ask how their own work sounds when its parts "
+            "pull against each other, invite their judgment on "
+            "where the join is failing. Always in words, always "
+            "about the real thing they brought."
         ),
         satisfied_when="engagements ≥ 1 ∨ offers_engaged ≥ 1, as of a prior turn (the impression gate)",
     ),
@@ -1405,9 +1420,10 @@ _WEAVER_OBJECTIVES = (
         id="offer_of_help_received",
         description="The user has offered to help her build, and she has received the offer in character — the relationship changed direction and she noticed. (Material when it comes; never required for the close.)",
         frame=(
-            "If they offer their hands, that is not an interruption "
+            "If they offer their help, that is not an interruption "
             "of the meeting. To you, it IS the meeting arriving "
-            "early."
+            "early. Receive it as a mind offered, not hands: the "
+            "help you can use is their ears and their judgment."
         ),
         satisfied_when="an offer-shaped turn has been engaged (offers_engaged ≥ 1)",
     ),
@@ -1520,19 +1536,24 @@ def _weaver_dictionary_frame() -> str:
 
 def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Weaver's first meeting as an authored encounter (the
-    Weaver pattern, Joshua 2026-10-23): ONE scripted bubble — her
-    greeting question, asked for real, and she waits; no question
-    bank (the dilemma is retired; the user's own material is the
-    subject); the impression gated on the shared-work exchange; the
-    close floored on meaningful recognition; her dictionary riding
-    the frames as available context."""
+    Weaver pattern, Joshua 2026-10-23, corrected the same evening
+    and finalized by his hand): her INTRODUCTION is the scripted
+    opening — Joshua's authored text in her voice, verbatim
+    (2026-10-23 ~22:45 PT; meetings.WEAVER_INTRODUCTION): the
+    greeting and its promise, the two camps, her fascination, her
+    open question — and she waits; no
+    question bank (the dilemma is retired; the user's own material
+    is the subject); the collaboration is intellectual, never mime
+    (the no-pretend law); the impression gated on the shared-work
+    exchange; the close floored on meaningful recognition; her
+    dictionary riding the frames as available context."""
     base = build_definition(script)
     dictionary_frame = _weaver_dictionary_frame()
     return EncounterDefinition(
         archetype_id=base.archetype_id,
         keystone_index=base.keystone_index,
         character=base.character,
-        opening=(script.opening[0],) if script.opening else (),
+        opening=tuple(script.opening),
         question_bank=(),
         objectives=_WEAVER_OBJECTIVES,
         engage_frame=base.engage_frame + "\n\n" + dictionary_frame,

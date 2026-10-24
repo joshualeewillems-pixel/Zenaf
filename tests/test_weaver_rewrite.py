@@ -1,13 +1,22 @@
 """The Weaver's first meeting, rewritten (redesign, Joshua 2026-10-23).
 
 Semantics under test:
-  - The opening interrupts the Weaver mid-work on an instrument of seven
-    incompatible parts, and asks ONE question for real — her greeting
-    ("does this look broken to you, or merely unfinished?") — then
-    waits. (The Weaver pattern, 2026-10-23: the scripted DILEMMA —
-    mover / planner / doubter — is RETIRED as too philosophical a
-    hypothetical; the encounter is a collaboration, and the user's
-    own material is the subject. See tests/test_weaver_pattern.py.)
+  - The opening is HER INTRODUCTION — Joshua's authored text in
+    her voice, verbatim (meetings.WEAVER_INTRODUCTION; authored
+    outright 2026-10-23 ~22:45 PT, superseding the evening's trim
+    of his draft): she greets the user as a new instrument for the
+    orchestra ("we'll find your sound soon enough" — the invitation
+    lives there), sets rigorous training against the wild
+    improvisations of jazz, states her lifelong fascination (the
+    "classical jazz" question), and leaves her question open —
+    then waits. (Corrected 2026-10-23, evening:
+    the Weaver-pattern build had opened on a scenery question —
+    "does this look broken to you, or merely unfinished?" — and
+    misread his paragraph as user material; both are corrected.
+    The scripted DILEMMA — mover / planner / doubter — stays
+    RETIRED as too philosophical a hypothetical; the encounter is
+    a collaboration on the user's own material. See
+    tests/test_weaver_pattern.py.)
   - The read-back is a POSITION with an honest contrast, not a
     paraphrase (the frame instructs exactly that) — offered only
     after the shared-work exchange (the impression gate).
@@ -114,24 +123,34 @@ def _to_readback(svc, uid, answer="Intuition, usually — unless something pract
 # ------------------------------------------------------- opening / dilemma
 
 
-def test_opening_is_a_midwork_interruption(ve_ctx, tmp_path):
-    """UPDATED for the Weaver pattern (2026-10-23): what is DELIVERED
-    at the door is ONE bubble — the interruption itself, her greeting
-    question — and she WAITS. (P3 delivered the greeting plus the
-    dilemma in one breath, so the question was scenery: Joshua's
-    first live-test note.) The working-together invitation is not
-    scripted; it is generated from the user's answer. The seven-parts
-    material is workshop context now (the facts block), not a door
-    speech, and nothing else is served before the user's first turn
-    ends."""
+def test_opening_is_her_introduction(ve_ctx, tmp_path):
+    """FINAL (Joshua, 2026-10-23, ~22:45 PT): what is DELIVERED at
+    the door is her introduction — his authored text, verbatim,
+    four bubbles: the greeting and its promise, the two camps,
+    her fascination, her open question — and she WAITS. (The
+    pattern build delivered a single scenery
+    question — "does this look broken to you, or merely
+    unfinished?" — which was never waited for; the introduction
+    replaces it, and her question is the real first move.) The
+    seven-parts material is workshop context (the facts block),
+    not a door speech, and nothing else is served before the
+    user's first turn ends."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies == [script.opening[0]]
-    assert len(script.opening) == 1
-    assert "does this look broken to you, or merely unfinished?" in bodies[0]
+    assert bodies == list(script.opening)
+    assert script.opening == MT.WEAVER_INTRODUCTION
+    assert len(script.opening) == 4
+    assert "we'll find your sound soon enough" in bodies[0]
+    assert "wild improvisations of jazz" in bodies[1]
+    assert "classical jazz" in bodies[2]
+    # Her question is the last bubble, left open — trailing off
+    # with no terminal punctuation, exactly as he wrote it.
+    assert bodies[3].startswith("Every so often, it happens quite naturally.")
+    assert bodies[3].endswith("Or is the question itself a misunderstanding")
+    assert not any("does this look broken" in b for b in bodies)
     # The seven-parts material lives in the workshop notes (prepared
     # context), not in anything delivered at the door.
     assert "seven rather incompatible parts" in script.orientation_facts
@@ -283,7 +302,23 @@ def _dialogue_paragraphs(script):
 def test_dialogue_carries_no_system_explanation(ve_ctx, tmp_path):
     script = MT.get_script("conductor", 1)
     for paragraph in _dialogue_paragraphs(script):
-        assert not _SYSTEM_TALK.search(paragraph), paragraph
+        for match in _SYSTEM_TALK.finditer(paragraph):
+            # ONE sanctioned match: Joshua's authored introduction
+            # (2026-10-23 ~22:45 PT, verbatim — pinned character
+            # for character in tests/test_weaver_pattern.py) uses
+            # "rigorous training" of MUSICIANS: perfect pitch and
+            # rhythmic precision, set against jazz improvisation.
+            # That is not the training system, and his text stands
+            # as written. Every other match, in any paragraph —
+            # including any future edit of the introduction that
+            # is not exactly this authored phrase — is system talk
+            # in her mouth and fails here.
+            sanctioned = (
+                paragraph in MT.WEAVER_INTRODUCTION
+                and match.group(0).lower() == "training"
+                and "rigorous training" in paragraph
+            )
+            assert sanctioned, paragraph
     # The purged audit-log templates are empty in the rewritten script.
     assert script.pulled_item_template == ""
     assert script.pulled_where_template == ""

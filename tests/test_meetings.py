@@ -4,12 +4,14 @@ Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22;
 the encounter runtime, Fellowship P3, 2026-10-23; the Weaver pattern,
 2026-10-23):
   - A first meeting is an encounter with objectives, not a stage walk:
-    ONE scripted opening bubble (her greeting question, asked for
-    real) → collaboration → one tentative, correctable read-back
-    impression (gated on the shared-work exchange) → reveal
-    (scripted), and completing it marks keystone 1 Done. The stage
-    values asserted below are the derived position labels the API
-    has always surfaced, not the engine's mechanism.
+    her scripted INTRODUCTION (four bubbles, Joshua's authored text
+    verbatim — the greeting and its promise, the two camps among
+    her friends, her fascination, her open question) →
+    collaboration on the user's own material → one tentative,
+    correctable read-back impression (gated on the shared-work
+    exchange) → reveal (scripted), and completing it marks keystone
+    1 Done. The stage values asserted below are the derived position
+    labels the API has always surfaced, not the engine's mechanism.
   - The Conductor is met first; no other seat's first meeting begins until
     the Weaver's keystone 1 is complete. Nobody is introduced by proxy.
   - A seat with no written script has no meeting yet — refused honestly.
@@ -102,13 +104,13 @@ def _conductor_k1_status(uid):
 
 
 def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
-    """UPDATED for the Weaver pattern (2026-10-23): the delivered
-    opening is ONE bubble — the script's first paragraph IS the
-    first question: her greeting, asked for real, and she waits for
-    the answer. (P3 delivered the greeting plus the scripted dilemma
-    in one breath, so the question was scenery — Joshua's first
-    live-test note. The dilemma is retired; there is no second
-    scripted bubble to serve.)"""
+    """FINAL (Joshua, 2026-10-23, ~22:45 PT): the delivered opening
+    is her INTRODUCTION, whole — his authored text verbatim, four
+    bubbles (the greeting and its promise, the two camps, her
+    fascination, her open question), and she waits for the answer.
+    (The pattern build served a single scenery question; the
+    introduction is the real first move, and nothing else is
+    scripted to serve before the user's first turn.)"""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
@@ -118,8 +120,12 @@ def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
     assert state["conversation_id"] == "meeting-conductor-1"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies == [script.opening[0]]
-    assert len(bodies) == 1
+    assert bodies == list(script.opening)
+    assert len(bodies) == 4
+    assert bodies[0].startswith("Ah! A new instrument for the orchestra!")
+    # The last bubble is her question, left open — it trails off
+    # with no terminal punctuation, exactly as he wrote it.
+    assert bodies[-1].endswith("Or is the question itself a misunderstanding")
     assert all(m["role"] == "voice" for m in state["messages"])
     assert _conductor_k1_status(uid) != "Done"
 
@@ -562,13 +568,13 @@ def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
 
     # A fresh run delivers the opening again and runs the whole arc;
     # completing it flips keystone 1 back to Done. (Opening shape as
-    # in test_start_delivers_opening_and_first_question — the single
-    # greeting bubble, the Weaver pattern.)
+    # in test_start_delivers_opening_and_first_question — her
+    # introduction, four authored bubbles.)
     state = svc.start(uid, "conductor")
     assert state["status"] == "active"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies == [script.opening[0]]
+    assert bodies == list(script.opening)
 
     svc.turn(uid, "conductor", "Second time: I start with people, not tasks.")
     svc.turn(uid, "conductor", "Second time: people first, whatever the deadline says.")

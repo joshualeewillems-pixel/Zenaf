@@ -20,13 +20,44 @@ Six notes, and the shape he chose in answer ("The seventh part"):
      impression-offered ∧ impression-answered. The impression is
      GATED on the shared-work exchange (turn-one impressions are
      structurally impossible), and the close is FLOORED on
-     own-material-taken-up ∨ a pursuit exchange. His specimen is
-     the canonical play shape below; his live run's two-turn
+     own-material-taken-up ∨ a pursuit exchange. The play shape
+     below is the canonical one; his live run's two-turn
      anticlimax (dilemma-style answer + affirmation → card) can no
      longer close the meeting. And the closing turn's payload
      always carries her reply AND the reveal (the backend half of
      the missing-lines bug; the frontend half is MeetingView's
      component test).
+
+CORRECTED the same evening (Joshua's live test of the pattern
+build, and his correction of the record): the pattern build had
+misread his afternoon message — an INTRODUCTION PARAGRAPH in HER
+voice — as the user playing the encounter, and built its
+"specimen" test out of his words as user turns; the collaboration
+had also curdled into mime ("hold this edge steady"). The
+correction tests below pin the restored shape:
+
+  7. HER INTRODUCTION, restored — and finally AUTHORED by him:
+     the scripted opening is meetings.WEAVER_INTRODUCTION,
+     Joshua's text verbatim (authored outright 2026-10-23,
+     ~22:45 PT, superseding Reynard's trim of his draft earlier
+     that evening): the greeting with its promise ("we'll find
+     your sound soon enough" — the invitation lives there now),
+     the two camps among her friends, her lifelong fascination
+     with synthesizing "classical jazz," and her question left
+     open, trailing off without terminal punctuation — four
+     bubbles, she waits, no generation spent. The classical-jazz
+     words are HERS, in her bubbles; they never appear as a user
+     turn anywhere in this suite.
+  8. NO PRETEND (durable law): no frame on the encounter path
+     directs the user to hold, steady, touch, or mime anything;
+     the historical mime lines are gone by name, and the frames
+     carry the prohibition itself. Collaboration is intellectual —
+     the user's real material, worked in words.
+  9. PROGRESSION + EVIDENCE HYGIENE: the pursuit frame instructs
+     moving the user's material one real step (her slice taught by
+     use), and the impression frame grounds the read ONLY in the
+     user's substantive material — never in courtesies or in how
+     they humored a scene.
 
 Latency invariant throughout: ≤1 generation per user turn.
 """
@@ -114,43 +145,135 @@ def _bodies(state):
     return [m["body"] for m in state["messages"]]
 
 
-# ------------------------------------------------- the greeting is real
+# ------------------------------------- her introduction, restored
 
 
-def test_greeting_is_one_bubble_and_she_waits(ve_ctx, tmp_path):
+def test_introduction_is_his_authored_text_verbatim(ve_ctx, tmp_path):
+    """FINAL (Joshua, 2026-10-23, ~22:45 PT): the opening is the
+    introduction HE authored in HER voice, verbatim — not a
+    greeting question about scenery, never user material, and no
+    longer a trim: he ruled by writing it himself. Four bubbles:
+    the greeting, whose promise ("we'll find your sound soon
+    enough") is where the invitation now lives; the two camps
+    among her friends; her lifelong fascination; and her
+    question, left open, trailing off without terminal
+    punctuation. She delivers exactly this, and waits."""
+    # His authored text, bubble for bubble — bubble 3's
+    # typographic quotes and bubble 4's trailing-off (no terminal
+    # punctuation) are his, exactly as written.
+    authored = (
+        "Ah! A new instrument for the orchestra! Bass? Woodwind? Percussion, perhaps? Well, we'll find your sound soon enough.",
+        "You know, some of my friends swear by rigorous training, perfect pitch, and rhythmic precision. Others would find that positively suffocating. They prefer the wild improvisations of jazz.",
+        "I've spent a lifetime fascinated by the possibility of synthesizing “classical jazz”—finding harmony among wildly different voices without sacrificing what makes each one extraordinary.",
+        "Every so often, it happens quite naturally. Beautifully, even. Which leaves me wondering… can something so spontaneous ever be composed deliberately? Are we more honest humbled before its ineffability? Or is the question itself a misunderstanding",
+    )
     uid = _seeded_user()
     gen = PatternGen()
     svc = _svc(tmp_path, gen)
     script = MT.get_script("conductor", 1)
 
+    # The script's opening IS the named introduction, whole — and
+    # the introduction IS his authored text, character for
+    # character.
+    assert script.opening == MT.WEAVER_INTRODUCTION
+    assert MT.WEAVER_INTRODUCTION == authored
+    assert len(script.opening) == 4
+    greeting, camps, fascination, question = script.opening
+    # The invitation lives in the greeting now — there is no
+    # separate invitation bubble, and the superseded trim's lines
+    # and the old draft's wording are gone from her opening.
+    assert "we'll find your sound soon enough" in greeting
+    assert "rigorous training" in camps
+    assert "wild improvisations of jazz" in camps
+    assert "“classical jazz”" in fascination
+    assert "without sacrificing what makes each one extraordinary" in fascination
+    assert not any("Play a few notes" in b for b in script.opening)
+    assert not any("extravagantly diverse" in b for b in script.opening)
+    # Her question comes LAST and stays open: it trails off with
+    # no terminal punctuation, exactly as he wrote it.
+    assert question == authored[-1]
+    assert not question.endswith((".", "?", "!"))
+    assert "can something so spontaneous ever be composed deliberately?" in question
+    # The retired scenery question is gone from the opening.
+    assert not any("does this look broken" in b for b in script.opening)
+
     state = svc.start(uid, "conductor")
-    # ONE scripted bubble — the greeting question — and nothing
-    # else: no second scripted bubble exists to be delivered before
-    # the user's first turn ends, and starting spent no generation.
-    assert _bodies(state) == [script.opening[0]]
-    assert "does this look broken to you, or merely unfinished?" in _bodies(state)[0]
+    # Exactly the introduction is delivered — nothing else is
+    # served before the user's first turn, and starting the
+    # meeting spent no generation at all.
+    assert _bodies(state) == list(script.opening)
     assert gen.prompts == []
 
     # Her next words are generated from the user's answer — the
-    # working-together invitation is not a scripted line.
+    # working-together that follows is conversational, not a
+    # scripted step and not a stage direction.
     gen.engage.append(
-        "Unfinished, then — good ears. Hold this end a moment and "
-        "tell me what you hear when I sound it."
+        "Scattered is a sound too. Then let's hear the thing "
+        "you're actually trying to hold together."
     )
-    state = svc.turn(uid, "conductor", "Unfinished, I'd say — like it's mid-sentence.")
-    new_voice = [b for b in _bodies(state) if b != script.opening[0]]
-    assert any("Hold this end" in b for b in new_voice)
-    # The invitation followed from the answer: it answers what they
-    # said (unfinished) rather than reciting a next scripted step.
+    state = svc.turn(uid, "conductor", "Scattered, mostly — that's how I sound lately.")
+    new_voice = [b for b in _bodies(state) if b not in script.opening]
+    assert any("hold together" in b for b in new_voice)
     assert not any(b in script.reveal for b in new_voice)
+
+
+def test_no_mime_directives_in_weaver_frames(ve_ctx, tmp_path):
+    """The no-pretend law, pinned (Joshua's ruling, 2026-10-23):
+    the historical mime lines are gone BY NAME from every frame on
+    the encounter path, and the frames carry the prohibition
+    itself — collaboration is intellectual, conducted in words
+    about the user's real material."""
+    script = MT.get_script("conductor", 1)
+    definition = ENC.get_definition(script)
+    frames = {
+        "script.engage": script.encounter_frame,
+        "script.impression": script.readback_frame,
+        "script.correction": script.correction_frame,
+        "script.reply": script.readback_reply_frame,
+        "engage": definition.engage_frame,
+        "turn": definition.turn_frame,
+        "impression": definition.impression_frame,
+        "correction": definition.correction_frame,
+        "impression_reply": definition.impression_reply_frame,
+        "dictionary": definition.dictionary_frame,
+    }
+    # The lines from his live test, and their kin — directives to
+    # pretend at physical work. (The frames' own prohibitions speak
+    # of mime only to forbid it, in other words than these.)
+    mime = (
+        "hold this end", "hold it just there", "hold this joint",
+        "tell me if you feel", "feel it give", "keep it steady while",
+        "two hands are better", "a part to hold", "hands offered",
+    )
+    for name, text in frames.items():
+        lowered = text.lower()
+        for phrase in mime:
+            assert phrase not in lowered, (name, phrase)
+    # And the prohibition is present where the collaboration is
+    # framed — not merely the absence of the old lines.
+    assert "stage directions" in definition.turn_frame
+    assert "NEVER direct them" in script.encounter_frame
+    assert "pretend" in definition.turn_frame.lower()
+
+
+def test_impression_frame_grounds_substantive_material_only(ve_ctx, tmp_path):
+    """Evidence hygiene (Joshua, 2026-10-23): the impression frame
+    instructs grounding in the user's SUBSTANTIVE material only —
+    courtesies and scene-humoring are named as non-evidence."""
+    script = MT.get_script("conductor", 1)
+    frame = script.readback_frame
+    assert "ONLY in their substantive material" in frame
+    assert "how someone humors a scene is not evidence" in frame
+    assert "poisons the read" in frame
 
 
 # ------------------------------------------- the canonical play shape
 
 
-def test_specimen_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
-    """Joshua's specimen (2026-10-23), the canonical shape: greet →
-    the user brings THEIR OWN material with a real question → she
+def test_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
+    """The canonical shape, corrected: her introduction → the user
+    brings THEIR OWN material (theirs — a food-bank rota, not the
+    words of her question) with a real question inside it → she
     pursues it (asks for the evidence of their experience) → only
     then may the impression come → recognition closes it."""
     uid = _seeded_user()
@@ -159,38 +282,37 @@ def test_specimen_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     script = MT.get_script("conductor", 1)
     svc.start(uid, "conductor")
 
-    # Turn 1 — the greeting answered. The generation offers a read;
-    # the gate holds it: NO impression on the first substantive turn.
+    # Turn 1 — her introduction answered, briefly. The generation
+    # offers a read; the gate holds it: NO impression on the first
+    # substantive turn.
     gen.engage.append(
-        "Mid-sentence is exactly right."
+        "Brief is honest."
         "\n---\n"
         "A first read offered far too early."
         "\nStrands: Ear"
     )
-    state = svc.turn(uid, "conductor", "Unfinished, I think.")
+    state = svc.turn(uid, "conductor", "Busy, mostly.")
     assert state["stage"] == "encounter"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == ""
     assert not any("far too early" in b for b in _bodies(state))
 
-    # Turn 2 — his own material, with a real question inside it
-    # (precision-loving friends vs. free-spirited jazz; "classical
-    # jazz"; "can it be reverse engineered?"). Question-shaped, so
-    # the conversational frame runs — and it must carry the PURSUIT
-    # instruction and her dictionary as available context.
+    # Turn 2 — the user's own material, with a real question
+    # inside it (two volunteer crews, two tempos, one rota).
+    # Question-shaped, so the conversational frame runs — and it
+    # must carry the PURSUIT instruction and her dictionary as
+    # available context.
     gen.turn.append(
-        "Tell me about one of the times it just happened — when "
-        "the precision and the loose playing locked for a moment."
+        "Tell me about the last shift where the two tempos "
+        "actually met — what did it look like when it worked?"
         "\n[[thread:open]]"
     )
     prompts_before = len(gen.prompts)
     state = svc.turn(
         uid, "conductor",
-        "It's like my two closest friends — one thrives on rigorous "
-        "precision, everything charted, and the other only plays "
-        "free, pure jazz instinct. I've been fascinated my whole "
-        "life by classical jazz. Can something like that be reverse "
-        "engineered?",
+        "I'm merging two volunteer crews at the food bank — one "
+        "runs on strict schedules, the other on whoever shows up. "
+        "How do you get two tempos like that onto one rota?",
     )
     assert len(gen.prompts) - prompts_before == 1  # one generation
     turn_prompt = gen.prompts[-1]
@@ -200,48 +322,51 @@ def test_specimen_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     assert "Music & Composition" in turn_prompt  # dictionary rides along
     # No impression was smuggled into the pursuit turn either.
     assert svc.meetings.get(uid, "conductor", 1)["readback_claim"] == ""
-    # His material is on the record as material: the undertaking
+    # Their material is on the record as material: the undertaking
     # objective engaged, and the material turn is tracked.
     enc = _enc_state(svc, uid)
     assert enc.satisfied["own_undertaking_engaged"] is True
     assert enc.material_turn == 2
 
-    # Turn 3 — he gives her the evidence she asked for. The pursuit
-    # exchange has now occurred, and the impression may finally land.
+    # Turn 3 — they give her the evidence she asked for. The
+    # pursuit exchange has now occurred, and the impression may
+    # finally land.
     gen.engage.append(
-        "A minute of it locking — that's the evidence that matters."
+        "A week is the evidence that matters."
         "\n---\n"
-        "A first read, in her own words: you hold precision and "
-        "freedom in one hearing, and you keep asking whether the "
-        "join can be learned rather than merely witnessed."
+        "A first read, in her own words: you protect the reliable "
+        "by instinct and grieve the loose ones, and you keep "
+        "asking whether the rota can hold both without lying "
+        "about either."
         "\nStrands: Ear, Compass"
     )
     state = svc.turn(
         uid, "conductor",
-        "Last spring, at a rehearsal — half the band reading charts, "
-        "half improvising, and for about a minute it genuinely "
-        "locked. Nobody could say afterwards how it happened.",
+        "Last month we tried one shared rota. The scheduled crew "
+        "loved it; the walk-ins drifted off within a week, and I "
+        "still don't know which of them I failed.",
     )
     assert state["stage"] == "readback"
     enc = _enc_state(svc, uid)
     assert enc.satisfied["pursuit_exchange"] is True
     assert enc.satisfied["impression_offered"] is True
 
-    # Turn 4 — his answer to the read settles it, and the floor is
-    # met (his material was taken up AND pursued): the meeting
-    # closes, with her reply AND the reveal in the closing state.
-    gen.reply.append("Then it can be learned.\n[[thread:settled]]")
+    # Turn 4 — their answer to the read settles it, and the floor
+    # is met (their material was taken up AND pursued): the
+    # meeting closes, with her reply AND the reveal in the
+    # closing state.
+    gen.reply.append("Then the rota can be honest.\n[[thread:settled]]")
     state = svc.turn(
         uid, "conductor",
-        "That's uncomfortably close to true. The holding-both part — yes.",
+        "That's uncomfortably close to true. The walk-ins part — yes.",
     )
     assert state["status"] == "complete"
     bodies = _bodies(state)
-    assert "Then it can be learned." in bodies
+    assert "Then the rota can be honest." in bodies
     for paragraph in script.reveal:
         assert paragraph in bodies
     # Her reply precedes the reveal in the transcript.
-    assert bodies.index("Then it can be learned.") < bodies.index(script.reveal[0])
+    assert bodies.index("Then the rota can be honest.") < bodies.index(script.reveal[0])
 
 
 # --------------------------------- the old two-turn playthrough is dead

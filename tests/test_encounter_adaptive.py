@@ -199,10 +199,11 @@ def test_cooperative_conversation_changes_direction(ve_ctx, tmp_path):
     run = Run(_svc(tmp_path, gen), gen, uid)
     script = MT.get_script("conductor", 1)
     state = run.svc.start(uid, "conductor")
-    # UPDATED for the Weaver pattern: ONE scripted bubble — the
-    # greeting question — and she waits.
-    assert len(state["messages"]) == 1
-    assert _bodies(state) == [script.opening[0]]
+    # FINAL (Joshua, 2026-10-23, ~22:45 PT): the scripted opening
+    # is her INTRODUCTION — his authored text, four bubbles — and
+    # she waits.
+    assert len(state["messages"]) == len(script.opening) == 4
+    assert _bodies(state) == list(script.opening)
 
     state, voice = run.turn(
         "I listen to the planner first — nothing moves until the shape is clear."
@@ -248,13 +249,15 @@ def test_offer_of_help_after_recognition_does_not_force_close(ve_ctx, tmp_path):
 
     # The offer arrives AS the answer to her impression — and it
     # opens a thread rather than ending one: no forced close, no
-    # snap back to an agenda.
-    gen.reply.append("You may — hold it just there.\n[[thread:open]]")
+    # snap back to an agenda. (Fixture reply CORRECTED for the
+    # no-pretend law: her reception is conversational — ears
+    # offered, not a joint held.)
+    gen.reply.append("You may — listen with me, then.\n[[thread:open]]")
     state, voice = run.turn(
         "That's a fair read. And — can I help you hold that joint "
         "while you work on it?"
     )
-    assert voice == ["You may — hold it just there."]
+    assert voice == ["You may — listen with me, then."]
     assert state["status"] == "active"
     assert state["stage"] == "orientation"  # post-recognition phase
     script = MT.get_script("conductor", 1)
@@ -452,7 +455,7 @@ def test_no_forced_closure_while_a_thread_is_open(ve_ctx, tmp_path):
     # continues, answering each one.
     open_turns = [
         ("What does the tall part do?", "It waits for its moment.\n[[thread:open]]"),
-        ("Can I hold the small one?", "Gently, then.\n[[thread:open]]"),
+        ("What's the small one for?", "It keeps the time.\n[[thread:open]]"),
         ("Why does that one hum?", "Because it is tuned to the room.\n[[thread:open]]"),
         ("And if it stops humming?", "Then we listen harder.\n[[thread:open]]"),
     ]

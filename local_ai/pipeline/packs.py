@@ -94,7 +94,9 @@ def generate_pack(
     prompt = _PACK_PROMPT.format(
         title=story.get("title", ""),
         narrative=story.get("narrative", ""),
-        key_line=story.get("key_line", ""),
+        # Creative use, not quotation: a missing key line renders as an
+        # empty slot, never the string "None", never a fabricated line.
+        key_line=story.get("key_line") or "",
         style_anchors=style_block,
         modality_spec=_MODALITY_SPECS[modality].format(
             cast=", ".join(story.get("archetype_cast") or ["the narrator"])

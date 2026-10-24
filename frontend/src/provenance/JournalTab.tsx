@@ -31,12 +31,45 @@ type Entry = {
   storified: number
 }
 
+/* Key-line tiers (S4, F3 — mirror the backend tiers vocabulary).
+   Only "certified" is a verbatim quotation from the journal entry and
+   may carry quotation presentation. Every other tier renders without
+   curly quotes and with an honest label; a null line renders nothing. */
+type KeyLineTier =
+  | 'certified'
+  | 'user_authored'
+  | 'adopted'
+  | 'dramatization'
+  | null
+
 type StoryContent = {
   title: string
   narrative: string
-  key_line: string
+  key_line: string | null
+  key_line_tier: KeyLineTier
+  key_line_candidates: string[]
+  key_line_selection: {
+    kind: string
+    chosen: string
+    alternatives: string[]
+    attribution: string
+  } | null
+  key_line_source: { entry_id?: string; entry_artifact_id?: string }
   archetype_cast: string[]
   strand_weights: Record<string, number>
+}
+
+function keyLineLabel(tier: KeyLineTier): string | null {
+  switch (tier) {
+    case 'user_authored':
+      return 'Written by you'
+    case 'adopted':
+      return 'Chosen by you from Zenaf\u2019s options'
+    case 'dramatization':
+      return 'A creative rendering \u2014 not your words'
+    default:
+      return null
+  }
 }
 
 type Pack = {
@@ -334,9 +367,27 @@ function EntryCard({
           <p className="text-sm text-stone-300 mt-1 leading-relaxed whitespace-pre-wrap">
             {story.content.narrative}
           </p>
-          <p className="text-sm text-amber-200/80 italic mt-2">
-            “{story.content.key_line}”
-          </p>
+          {story.content.key_line && story.content.key_line_tier === 'certified' && (
+            <p className="text-sm text-amber-200/80 italic mt-2">
+              “{story.content.key_line}”
+            </p>
+          )}
+          {story.content.key_line && story.content.key_line_tier !== 'certified' && (
+            <p className="text-sm text-stone-300 mt-2">
+              {story.content.key_line}
+              {keyLineLabel(story.content.key_line_tier) && (
+                <span className="block text-xs text-stone-500 mt-1">
+                  {keyLineLabel(story.content.key_line_tier)}
+                </span>
+              )}
+            </p>
+          )}
+          {!story.content.key_line && (
+            <p className="text-xs text-stone-500 mt-2">
+              No quotable passage in this entry — the quote was omitted
+              rather than invented.
+            </p>
+          )}
           {story.content.archetype_cast.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
               {story.content.archetype_cast.map((c) => (
@@ -360,7 +411,17 @@ function EntryCard({
             </button>
             <button
               type="button"
-              disabled={busy}
+              disabled={
+                busy ||
+                !story.content.key_line ||
+                story.content.key_line_tier !== 'certified'
+              }
+              title={
+                story.content.key_line &&
+                story.content.key_line_tier === 'certified'
+                  ? undefined
+                  : 'Quote cards require a verified line from your journal'
+              }
               onClick={doQuoteCard}
               className="min-h-[44px] px-4 rounded-full border border-stone-700 text-sm text-stone-300 disabled:opacity-50"
             >

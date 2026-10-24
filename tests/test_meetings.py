@@ -827,3 +827,38 @@ def test_ok_sounds_good_closes_on_recognition(ve_ctx, tmp_path):
     script = MT.get_script("conductor", 1)
     for paragraph in script.reveal:
         assert paragraph in bodies
+
+
+# ---------------------------------------------------------------------------
+# Amendment E: the naming rule's met set, end to end.
+# ---------------------------------------------------------------------------
+
+def test_met_seats_counts_completed_first_meetings_only(tmp_path):
+    # A completed K1 unlocks the character name; a begun-but-active
+    # meeting, a K2 completion, or another user's row does not.
+    store = MeetingStore(tmp_path / "meetings.db")
+    store.create("u1", "champion", 1)
+    store.create("u1", "mentor", 1)
+    store.create("u1", "conductor", 2)
+    store.create("u2", "champion", 1)
+    store.update("u1", "champion", 1, status="complete")
+    store.update("u1", "conductor", 2, status="complete")
+    store.update("u2", "champion", 1, status="complete")
+    assert store.met_seats("u1") == ["champion"]
+    assert store.met_seats("nobody") == []
+
+
+def test_turn_frame_names_met_seats_and_roles_others(ve_ctx, tmp_path):
+    # The meeting service feeds completed first meetings into the
+    # definition, and the turn frame names the met seat while
+    # keeping unmet seats as roles.
+    uid = _seeded_user()
+    gen = FakeGen()
+    svc = _svc(tmp_path, gen)
+    svc.meetings.create(uid, "champion", 1)
+    svc.meetings.update(uid, "champion", 1, status="complete")
+    svc.start(uid, "conductor")
+    svc.turn(uid, "conductor", "What is this place?")
+    frames = "\n".join(gen.prompts)
+    assert "Firebrand (champion)" in frames
+    assert "refer to every other seat by its seat role" in frames

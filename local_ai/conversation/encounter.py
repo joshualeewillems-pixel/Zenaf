@@ -97,20 +97,20 @@ The rules the runtime runs by:
     steering pressure grows with the turns (early turns mostly
     follow, later turns steer more); after the seat's own patience
     of exchanges — tempo, part of register, never a global — the
-    frame instructs an honest pivot ("let's set that aside for
-    now, why I wanted to talk was…") that OWNS the direction
-    change instead of faking a natural segue. Beat coverage rides
-    the generation call the meeting already makes, as stripped
-    bookkeeping trailers ([[beat:<id>]]) — but a trailer is the
-    model's own claim, so coverage ALSO requires content: the
-    stripped spoken body must hit one of the beat's anchors
-    (tutorial_beats.beat_content_covered), or the claim does not
-    count. The close additionally requires every beat covered.
-    The pivot NEVER satisfies the gate on its own — it redirects
-    toward uncovered beats, and steering stays at maximum after
-    it until they are covered; a pivot response can satisfy the
-    gate only by covering beats with content, under the same rule
-    as any other turn. The ceiling wrap bypasses the tutorial gate
+    frame instructs an honest pivot — an owned direction change in
+    the character's own words, never a prescribed sentence — that
+    OWNS the direction change instead of faking a natural segue.
+    Beat coverage is read from spoken bodies alone: each beat is
+    facets (tutorial_beats), and a facet counts only on a connected
+    mention in one spoken turn — a conservative proxy, not proof
+    of understanding. Trailers ([[beat:<id>]]) are stripped as a
+    backstop and never feed coverage. The close additionally
+    requires every beat covered. The pivot NEVER satisfies the gate
+    on its own — it redirects toward uncovered facets, and steering
+    stays at maximum after it until they are covered; a pivot
+    response can satisfy the gate only by covering facets with
+    content, under the same rule as any other turn. The ceiling wrap
+    bypasses the tutorial gate
     by design — a rescue, not a recognition claim, and by then the
     pivot has had every chance to fire.
   - Evidence and expression are separate layers (Joshua's ruling,
@@ -313,6 +313,99 @@ _RECOGNITION_NOTE = (
     "it; the disagreement is part of the record, not a problem to "
     "smooth over."
 )
+
+
+# ---------------------------------------------------------------------------
+# Standing dialogue rules (2026-10-24 amendments C and E): direct
+# questions about Zenaf, and two-tier naming for other seats. The
+# naming note rides every generation path (it is a universal
+# dialogue constraint); the Zenaf note rides the conversational
+# Q&A paths (_turn_frame, engage path). Correction and impression
+# movements are impression-focused by design, so they carry the
+# naming note only — a Zenaf question bundled with a correction is
+# answered on the next conversational turn, when the standing note
+# is in frame.
+# ---------------------------------------------------------------------------
+
+#: Character name per seat role (archetype id). Roles are public
+#: vocabulary; character names unlock seat by seat, when met.
+_SEAT_CHARACTER_NAMES = {
+    "mentor": "Gardener",
+    "champion": "Firebrand",
+    "guardian": "Bear",
+    "maverick": "Fox",
+    "ambassador": "Crane",
+    "conductor": "Weaver",
+    "skeptic": "Raven",
+}
+
+
+def _naming_note(definition: EncounterDefinition) -> str:
+    """Two-tier naming (amendment E): roles before meeting,
+    character names after, seat by seat. Meeting a character is
+    not developing or training that relationship: a first meeting
+    unlocks the name, not a trained bond."""
+    met = [a for a in definition.met_seats
+           if a in _SEAT_CHARACTER_NAMES]
+    if met:
+        met_text = ", ".join(
+            f"{_SEAT_CHARACTER_NAMES[a]} ({a})" for a in met)
+        met_sentence = (
+            f"Seats the visitor has already met — character names "
+            f"may be used for these: {met_text}. "
+        )
+    else:
+        met_sentence = (
+            "The visitor has not met any other seat yet. "
+        )
+    return (
+        "Names for other seats: refer to every other seat by "
+        "its seat role — mentor, champion, guardian, maverick, "
+        "ambassador, conductor, skeptic — roles are public and "
+        "may be used before meeting. Use a seat's character name "
+        "only after the visitor has met that seat, seat by seat. "
+        + met_sentence +
+        "Meeting a character is not developing or training that "
+        "relationship: a first meeting unlocks the name, not a "
+        "trained bond."
+    )
+
+
+#: Standing responsibility (amendment C): direct questions about
+#: Zenaf get concrete answers. This is frame instruction, not a
+#: detector — the detector below is only a safety net, because no
+#: small vocabulary can recognize every way a visitor might ask.
+_ZENAF_QUESTION_NOTE = (
+    "When the visitor asks directly about Zenaf — what it is, "
+    "what it does, what it can do, why it exists — answer "
+    "concretely and directly first, before returning to their "
+    "material: the relevant places, what they do, and what the "
+    "visitor can actually do with them. Describe only "
+    "functionality that exists; if something is planned or not "
+    "built, say so plainly as planned, never as available. Do not "
+    "substitute a metaphor, a general coaching statement, or a "
+    "question about their goals for the answer."
+)
+
+#: Safety-net patterns for a direct Zenaf question. Small by design
+#: and never the mechanism: the standing note above carries the
+#: responsibility, and this only reinforces it when the wording is
+#: unmistakable.
+_ZENAF_QUESTION_PATTERNS = (
+    r"what is (this|zenaf|it)\b",
+    r"what do you do (here|on this site)\b",
+    r"what (can|does) (this|zenaf|it) (do|offer)\b",
+    r"how does (this|zenaf|it) work\b",
+    r"what is this (app|site|thing)\b",
+    r"what is zenaf\b",
+)
+
+
+def _asks_about_zenaf(message: str) -> bool:
+    """True when the visitor's message unmistakably asks directly
+    about Zenaf — safety net only (see _ZENAF_QUESTION_PATTERNS)."""
+    text = (message or "").lower()
+    return any(re.search(p, text) for p in _ZENAF_QUESTION_PATTERNS)
 
 
 def split_thread_trailer(text: str) -> tuple[str, str | None]:
@@ -529,6 +622,12 @@ class EncounterDefinition:
     #: part of register — lives with the seat, never a global.
     #: 0 = no tutorial gate.
     tutorial_patience: int = 0
+    #: Seats the visitor has already met (completed first meetings),
+    #: as archetype ids — set by the meeting service per turn, never
+    #: by the script. The naming rule (role before meeting, character
+    #: name after, seat by seat) reads this list; empty means no
+    #: other seat has been met yet, so every reference uses a role.
+    met_seats: tuple[str, ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -589,12 +688,16 @@ class EncounterState:
     #: "pause:N" for retired-pause paragraphs — one ledger, so the
     #: same fixture can never surface twice by either path.
     allusions_used: list[str] = field(default_factory=list)
-    #: Tutorial-beat ledger (2026-10-24): beat ids the meeting's
-    #: generations have marked taught (validated against the
-    #: definition's beats), and whether the honest pivot has been
-    #: delivered (the spoken set-aside marker). Together with the
-    #: definition's beats they gate the close.
+    #: Tutorial-beat ledger (2026-10-24; facets, 2026-10-24
+    #: amendment A): per-beat satisfied facet names, from the
+    #: character's spoken bodies alone — trailers never feed it.
+    #: tutorial_covered is the derived list of beats whose every
+    #: facet is satisfied; together with the definition's beats it
+    #: gates the close. tutorial_pivot_delivered records a spoken
+    #: set-aside marker (detection heuristic for steering only,
+    #: never a gate condition).
     tutorial_covered: list[str] = field(default_factory=list)
+    tutorial_facets: dict[str, list[str]] = field(default_factory=dict)
     tutorial_pivot_delivered: bool = False
     closed: bool = False
 
@@ -619,6 +722,7 @@ class EncounterState:
             "pause_delivered": self.pause_delivered,
             "allusions_used": self.allusions_used,
             "tutorial_covered": self.tutorial_covered,
+            "tutorial_facets": self.tutorial_facets,
             "tutorial_pivot_delivered": self.tutorial_pivot_delivered,
             "closed": self.closed,
         })
@@ -642,7 +746,8 @@ class EncounterState:
             "impression_answered", "impression_answer_kind",
             "impression_text", "impression_strands", "response_recorded",
             "pause_delivered", "allusions_used",
-            "tutorial_covered", "tutorial_pivot_delivered", "closed",
+            "tutorial_covered", "tutorial_facets",
+            "tutorial_pivot_delivered", "closed",
         ):
             if key in data:
                 setattr(state, key, data[key])
@@ -761,36 +866,37 @@ def _spoken(text: str) -> str:
     return strip_weave_markers(TB.strip_beat_markers(body)).strip()
 
 
-def _apply_tutorial_markers(definition: EncounterDefinition,
-                            state: EncounterState,
-                            raw: str) -> str:
-    """Read a generated reply's tutorial bookkeeping, then strip it.
+def _apply_tutorial_coverage(definition: EncounterDefinition,
+                             state: EncounterState,
+                             raw: str) -> str:
+    """Read a generated reply's spoken body against the definition's
+    tutorial facets, then strip any beat trailers.
 
-    ``[[beat:<id>]]`` trailers mark beats the reply claims to have
-    taught — validated against the definition's beats, so an unknown
-    id never satisfies anything, AND content-checked against the
-    stripped spoken body (tutorial_beats.beat_content_covered), so
-    an announcement-only claim never satisfies anything either. The
-    pivot flag records a spoken set-aside marker for frame behavior
-    (steering stays at maximum after a pivot) — it is NOT a gate
-    condition. Returns the raw reply with beat trailers removed, so
-    downstream trailer parsing (thread verdict, strands) never sees
-    them; _spoken strips them again as a backstop, so they can
-    never reach the user by any path. Recording is conditional on
-    the definition carrying beats, but stripping is unconditional:
-    a trailer trailing a Strands line would otherwise break strand
-    parsing even for definitions without a tutorial gate
-    (split_strands_trailer reads from the end)."""
+    Coverage is trailer-independent (amendment A): every spoken body
+    is evaluated against every not-yet-satisfied facet of every
+    beat — a facet counts only on a connected mention in this body
+    (tutorial_beats.facet_satisfied), and facets accumulate across
+    turns. A beat enters tutorial_covered when every facet is
+    satisfied. The pivot flag records a spoken set-aside marker for
+    frame behavior (steering stays at maximum after a pivot) — it
+    is NOT a gate condition. Returns the raw reply with beat
+    trailers removed, so downstream trailer parsing (thread verdict,
+    strands) never sees them; _spoken strips them again as a
+    backstop, so they can never reach the user by any path.
+    Stripping is unconditional: a trailer trailing a Strands line
+    would otherwise break strand parsing even for definitions
+    without a tutorial gate (split_strands_trailer reads from the
+    end)."""
     if definition.tutorial_beats:
-        known = {b.id: b for b in definition.tutorial_beats}
         spoken_body = _spoken(raw or "")
-        for beat_id in TB.extract_beat_markers(raw or ""):
-            beat = known.get(beat_id)
-            if (
-                beat is not None
-                and beat.id not in state.tutorial_covered
-                and TB.beat_content_covered(beat, spoken_body)
-            ):
+        for beat in definition.tutorial_beats:
+            hits = TB.satisfied_facets(
+                beat, spoken_body,
+                set(state.tutorial_facets.get(beat.id, [])))
+            if hits:
+                state.tutorial_facets[beat.id] = sorted(hits)
+            if (TB.beat_covered(beat, hits)
+                    and beat.id not in state.tutorial_covered):
                 state.tutorial_covered.append(beat.id)
         if TB.pivot_delivered_in(spoken_body):
             state.tutorial_pivot_delivered = True
@@ -810,7 +916,9 @@ class EncounterRuntime:
         """Generate the first impression from `frame`, store and speak
         it. Returns False when generation produced nothing usable —
         the caller degrades; no state advances on a failed impression."""
-        raw = _apply_tutorial_markers(self.definition, state, host.generate(frame))
+        raw = _apply_tutorial_coverage(
+            self.definition, state,
+            host.generate(frame + "\n\n" + _naming_note(self.definition)))
         claim, strands = split_strands_trailer(raw)
         claim = _spoken(claim)
         if not claim:
@@ -843,7 +951,8 @@ class EncounterRuntime:
         move frame + prepared context — the seat's jurisdiction,
         EVERY live objective's guidance as standing hopes (never
         announced, never sequenced: the objectives are the frame's
-        only agenda, and the user steers), and at most one
+        only agenda, and the user steers), the standing Zenaf
+        question note and two-tier naming note, and at most one
         environmental cue the conversation is passing near. The cue
         is returned so the caller can log it against the debt
         registry once the reply is actually spoken."""
@@ -859,12 +968,21 @@ class EncounterRuntime:
         if d.dictionary_frame:
             parts.append(d.dictionary_frame)
         guide = TB.tutorial_guidance(
-            d.tutorial_beats, set(state.tutorial_covered),
+            d.tutorial_beats,
+            {k: set(v) for k, v in state.tutorial_facets.items()},
             state.user_turns, d.tutorial_patience,
             state.tutorial_pivot_delivered,
         )
         if guide:
             parts.append(guide)
+        parts.append(_ZENAF_QUESTION_NOTE)
+        if _asks_about_zenaf(message):
+            parts.append(
+                "Note: this message asks directly about Zenaf — "
+                "answer it concretely first, per the standing note "
+                "above."
+            )
+        parts.append(_naming_note(d))
         live = [o for o in d.objectives if not state.satisfied.get(o.id)]
         for obj in live:
             if obj.frame:
@@ -973,7 +1091,7 @@ class EncounterRuntime:
             # The agenda does not advance — but nothing is skipped:
             # the objectives stay live for the next turn.
             frame, cue = self._turn_frame(state, message)
-            out = _spoken(_apply_tutorial_markers(
+            out = _spoken(_apply_tutorial_coverage(
                 d, state, host.generate(frame) or ""))
             if out:
                 host.say(out)
@@ -1002,7 +1120,15 @@ class EncounterRuntime:
             # The soft nudge: guidance in the frame, not a trigger —
             # she may still honestly decline to invent a read.
             frame += _IMPRESSION_NUDGE
-        raw = _apply_tutorial_markers(d, state, host.generate(frame))
+        frame += "\n\n" + _ZENAF_QUESTION_NOTE
+        if _asks_about_zenaf(message):
+            frame += (
+                "\n\nNote: this message asks directly about "
+                "Zenaf — answer it concretely first, per the "
+                "standing note above."
+            )
+        frame += "\n\n" + _naming_note(d)
+        raw = _apply_tutorial_coverage(d, state, host.generate(frame))
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
         claim = _spoken(claim)
@@ -1074,7 +1200,7 @@ class EncounterRuntime:
         if d.impression_gate_objective and not state.satisfied.get(
                 d.impression_gate_objective, False):
             frame, cue = self._turn_frame(state, message)
-            out = _spoken(_apply_tutorial_markers(
+            out = _spoken(_apply_tutorial_coverage(
                 d, state, host.generate(frame) or ""))
             if out:
                 host.say(out)
@@ -1118,8 +1244,9 @@ class EncounterRuntime:
             # the stored impression, and is spoken in the room. A
             # degraded (empty) generation keeps the original claim
             # rather than blanking the record.
-            raw = _apply_tutorial_markers(d, state, host.generate(
+            raw = _apply_tutorial_coverage(d, state, host.generate(
                 d.correction_frame + _RECOGNITION_NOTE
+                + "\n\n" + _naming_note(d)
                 + _THREAD_TRAILER_INSTRUCTION
             ))
             body, verdict = split_thread_trailer(raw)
@@ -1136,8 +1263,10 @@ class EncounterRuntime:
             # character's own read, their answer beside it.
             frame = d.impression_reply_frame
             if frame:
-                raw = _apply_tutorial_markers(d, state, host.generate(
-                    frame + _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
+                raw = _apply_tutorial_coverage(d, state, host.generate(
+                    frame + _RECOGNITION_NOTE
+                    + "\n\n" + _naming_note(d)
+                    + _THREAD_TRAILER_INSTRUCTION
                 ))
                 body, verdict = split_thread_trailer(raw)
                 body, _ = split_strands_trailer(body)
@@ -1172,7 +1301,7 @@ class EncounterRuntime:
                 + d.orientation_facts
             )
         frame += _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
-        raw = _apply_tutorial_markers(d, state, host.generate(frame))
+        raw = _apply_tutorial_coverage(d, state, host.generate(frame))
         body, verdict = split_thread_trailer(raw)
         body, _ = split_strands_trailer(body)
         body = _spoken(body)
@@ -1484,19 +1613,33 @@ WEAVER_TURN_FRAME = (
     "work or life — follow THAT: it outranks the instrument on "
     "your bench, and your next move is pursuit, not summary: "
     "ask for the time it actually happened, the evidence of "
-    "their experience — and where you honestly can, move their "
-    "material one real step: name a part they hadn't separated, "
-    "locate the pull they described, say what a join would cost. "
-    "Progress they can use, offered in conversation, is the "
-    "work. If they asked you something, answer it from your "
-    "craft, plainly and briefly. If they joked, be amused the "
-    "way a busy person is. If they changed the subject, follow "
-    "a step and see where it goes. One to three short sentences, "
-    "in your own voice, in ordinary speech unless a plainer "
-    "figure genuinely helps. Don't deliver your formal first "
+    "their experience — and hear what the parts make together: "
+    "name a part they hadn't separated, locate the pull they "
+    "described, say what a join would cost, hear what third "
+    "thing the two parts make together, or hear what the "
+    "tension is protecting that a solution would destroy. "
+    "Your work is a relationship seen, a tension held honestly, "
+    "or a possibility that was not there before the parts "
+    "sounded together. A practical step is welcome when it "
+    "falls out of that hearing — it is never the hearing "
+    "itself, and never the default move. A pull that belongs "
+    "to another kind of hearing — a champion's charge ahead, "
+    "a skeptic's audit, a maverick's exit — name it by its "
+    "seat role, and keep the relationship work yourself: what "
+    "does that perspective change about how these parts sound "
+    "together? Pointing at another perspective is not handing "
+    "the visitor off. If they asked you something, answer it "
+    "from your craft, plainly and briefly. If they joked, be "
+    "amused the way a busy person is. If they changed the "
+    "subject, follow a step and see where it goes. One to "
+    "three short sentences, in your own voice. Think in music "
+    "— lines, parts, tuning, tempo, dissonance, what sounds "
+    "together — and say it in ordinary words when that "
+    "sharpens the thing. The music is how you think, not "
+    "vocabulary you must display: no required words, no "
+    "required frequency. Don't deliver your formal first "
     "read of them in an aside like this — that comes from the "
-    "shared work itself, and only after it. Never name or "
-    "describe the other council members; do not reveal your "
+    "shared work itself, and only after it. Do not reveal your "
     "name yet. The conversation finds its way on its own — your "
     "part is to be in it, not to steer it back."
 )

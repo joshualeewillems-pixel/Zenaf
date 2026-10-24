@@ -68,12 +68,60 @@ class FakeGen:
         return "A plain reply."
 
 
+
+#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
+#: this fake simulates a character that teaches its beats WITH
+#: CONTENT — every generation output carries a teaching sentence
+#: with all three beats' anchors plus the three beat trailers
+#: (trailers stripped before anything is spoken). Trailers alone
+#: no longer count under the content guard. Prompts and
+#: generation counts are unchanged; spoken bodies gain the
+#: teaching sentence. The gate itself is pinned by
+#: tests/test_encounter_tutorial_beats.py; this suite pins the
+#: other behaviors.
+#: Teaching sentence the fakes speak (correction 2026-10-24):
+#: beat trailers alone no longer count — coverage requires
+#: content, so a fake that teaches its beats must speak them.
+#: One sentence carrying all three conductor beats' anchors
+#: (council/tree/hearing-together, competing priorities/sit
+#: together, new voice/whole orchestra/in ear). Inserted BEFORE
+#: any Strands: bookkeeping line (strands parsing reads from the
+#: end) and before the beat trailers, so every trailer parse in
+#: the runtime sees the same trailing structure as the original
+#: output; thread trailers are position-tolerant.
+_TEACHING_SENTENCE = (
+    "My ground is the council and the tree, where parts of your "
+    "life need hearing together; bring me the competing priorities "
+    "that will not sit together; every new voice changes what the "
+    "whole orchestra can play, and I keep the whole of it in ear."
+)
+
+_BEAT_SUFFIX = (
+    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+    "[[beat:conductor:why_meet]]"
+)
+
+
+def _teaching(gen):
+    def wrapper(prompt, **kwargs):
+        out = gen(prompt, **kwargs)
+        lines = out.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip().lower().startswith("strands:"):
+                lines.insert(i, _TEACHING_SENTENCE)
+                break
+        else:
+            lines.append(_TEACHING_SENTENCE)
+        return "\n".join(lines) + _BEAT_SUFFIX
+    return wrapper
+
+
 def _svc(tmp_path, gen=None):
     agents_db = tmp_path / "agents.db"
     return MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=gen or FakeGen(),
+        generate_fn=_teaching(gen or FakeGen()),
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
 
@@ -153,7 +201,7 @@ def test_completion_files_one_impression_claim(ve_ctx, tmp_path):
     # The promise: both texts complete, word for word. The inference is
     # the full read-back with the weave markup (not words) stripped.
     assert claim.evidence == RESPONSE
-    assert claim.inference == READBACK_STRIPPED
+    assert claim.inference == READBACK_STRIPPED + "\n" + _TEACHING_SENTENCE
     assert "[[u]]" not in claim.inference
     assert READBACK_STRIPPED in claim.detail
     assert RESPONSE in claim.detail
@@ -202,7 +250,7 @@ def test_replay_files_a_second_distinct_claim(ve_ctx, tmp_path):
     second = next(c for c in claims if c.id != first.id)
     assert second.status == "pending"
     assert second.evidence == "Yes, that's the shape of it."
-    assert second.inference == READBACK_STRIPPED
+    assert second.inference == READBACK_STRIPPED + "\n" + _TEACHING_SENTENCE
 
 
 # ----------------------------------------------------------------- verdicts
@@ -245,7 +293,7 @@ def test_acceptance_lands_evidence_under_both_readback_strands(ve_ctx, tmp_path)
     for s in signals:
         assert s.valence == "endorsed"  # the claim-feedback map's accept valence
         assert s.payload_redacted == RESPONSE
-        assert s.summary == READBACK_STRIPPED
+        assert s.summary == READBACK_STRIPPED + "\n" + _TEACHING_SENTENCE
         assert s.provenance["claim_type"] == "meeting_impression"
 
 

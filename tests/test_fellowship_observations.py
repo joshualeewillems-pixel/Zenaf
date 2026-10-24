@@ -348,6 +348,54 @@ def test_decision_record_adopted_as_event_source(ve_ctx, activity_records):
 # -- chokepoint: meeting completion ------------------------------------------------
 
 
+
+#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
+#: this fake simulates a character that teaches its beats WITH
+#: CONTENT — every generation output carries a teaching sentence
+#: with all three beats' anchors plus the three beat trailers
+#: (trailers stripped before anything is spoken). Trailers alone
+#: no longer count under the content guard. Prompts and
+#: generation counts are unchanged; spoken bodies gain the
+#: teaching sentence. The gate itself is pinned by
+#: tests/test_encounter_tutorial_beats.py; this suite pins the
+#: other behaviors.
+#: Teaching sentence the fakes speak (correction 2026-10-24):
+#: beat trailers alone no longer count — coverage requires
+#: content, so a fake that teaches its beats must speak them.
+#: One sentence carrying all three conductor beats' anchors
+#: (council/tree/hearing-together, competing priorities/sit
+#: together, new voice/whole orchestra/in ear). Inserted BEFORE
+#: any Strands: bookkeeping line (strands parsing reads from the
+#: end) and before the beat trailers, so every trailer parse in
+#: the runtime sees the same trailing structure as the original
+#: output; thread trailers are position-tolerant.
+_TEACHING_SENTENCE = (
+    "My ground is the council and the tree, where parts of your "
+    "life need hearing together; bring me the competing priorities "
+    "that will not sit together; every new voice changes what the "
+    "whole orchestra can play, and I keep the whole of it in ear."
+)
+
+_BEAT_SUFFIX = (
+    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+    "[[beat:conductor:why_meet]]"
+)
+
+
+def _teaching(gen):
+    def wrapper(prompt, **kwargs):
+        out = gen(prompt, **kwargs)
+        lines = out.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip().lower().startswith("strands:"):
+                lines.insert(i, _TEACHING_SENTENCE)
+                break
+        else:
+            lines.append(_TEACHING_SENTENCE)
+        return "\n".join(lines) + _BEAT_SUFFIX
+    return wrapper
+
+
 class _MeetingGen:
     """FakeGen in the test_meetings.py shape: answers by beat."""
 
@@ -373,7 +421,7 @@ def test_meeting_completion_emits_event(ve_ctx, tmp_path, activity_records):
     svc = MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=_MeetingGen(),
+        generate_fn=_teaching(_MeetingGen()),
     )
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")

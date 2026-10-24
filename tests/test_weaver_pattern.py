@@ -122,11 +122,60 @@ class PatternGen:
         return "A plain reply."
 
 
+
+#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
+#: these fakes simulate a character that teaches its beats WITH
+#: CONTENT — every generation output carries a teaching sentence
+#: with all three beats' anchors plus the three beat trailers
+#: (trailers stripped before anything is spoken). Trailers alone
+#: no longer count under the content guard. Prompts and
+#: generation counts are unchanged; spoken bodies gain the
+#: teaching sentence, which these suites' substring assertions
+#: tolerate. The gate itself is pinned by
+#: tests/test_encounter_tutorial_beats.py; these suites pin the
+#: other behaviors.
+#: Teaching sentence the fakes speak (correction 2026-10-24):
+#: beat trailers alone no longer count — coverage requires
+#: content, so a fake that teaches its beats must speak them.
+#: One sentence carrying all three conductor beats' anchors
+#: (council/tree/hearing-together, competing priorities/sit
+#: together, new voice/whole orchestra/in ear). Inserted BEFORE
+#: any Strands: bookkeeping line (strands parsing reads from the
+#: end) and before the beat trailers, so every trailer parse in
+#: the runtime sees the same trailing structure as the original
+#: output; thread trailers are position-tolerant.
+_TEACHING_SENTENCE = (
+    "My ground is the council and the tree, where parts of your "
+    "life need hearing together; bring me the competing priorities "
+    "that will not sit together; every new voice changes what the "
+    "whole orchestra can play, and I keep the whole of it in ear."
+)
+
+_BEAT_SUFFIX = (
+    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+    "[[beat:conductor:why_meet]]"
+)
+
+
+def _teaching(gen):
+    def wrapper(prompt, **kwargs):
+        out = gen(prompt, **kwargs)
+        lines = out.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip().lower().startswith("strands:"):
+                lines.insert(i, _TEACHING_SENTENCE)
+                break
+        else:
+            lines.append(_TEACHING_SENTENCE)
+        return "\n".join(lines) + _BEAT_SUFFIX
+    return wrapper
+
+
 def _svc(tmp_path, gen=None):
     return MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=gen or PatternGen(),
+        generate_fn=_teaching(gen or PatternGen()),
     )
 
 
@@ -362,11 +411,13 @@ def test_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     )
     assert state["status"] == "complete"
     bodies = _bodies(state)
-    assert "Then the rota can be honest." in bodies
+    assert any("Then the rota can be honest." in b for b in bodies)
     for paragraph in script.reveal:
         assert paragraph in bodies
     # Her reply precedes the reveal in the transcript.
-    assert bodies.index("Then the rota can be honest.") < bodies.index(script.reveal[0])
+    rota_idx = next(i for i, b in enumerate(bodies) if "Then the rota can be honest." in b)
+    reveal_idx = next(i for i, b in enumerate(bodies) if script.reveal[0] in b)
+    assert rota_idx < reveal_idx
 
 
 # --------------------------------- the old two-turn playthrough is dead
@@ -441,10 +492,12 @@ def test_closing_state_carries_reply_and_reveal_together(ve_ctx, tmp_path):
     assert state["status"] == "complete"
     bodies = _bodies(state)
     reply = "A brief engaged reply; the impression stands."
-    assert reply in bodies
+    assert any(reply in b for b in bodies)
     for paragraph in script.reveal:
         assert paragraph in bodies
-    assert bodies.index(reply) < bodies.index(script.reveal[0])
+    reply_idx = next(i for i, b in enumerate(bodies) if reply in b)
+    reveal_idx = next(i for i, b in enumerate(bodies) if script.reveal[0] in b)
+    assert reply_idx < reveal_idx
 
 
 # -------------------------------------- dictionary: available, not owed

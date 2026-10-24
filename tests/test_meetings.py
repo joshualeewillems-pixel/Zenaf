@@ -79,11 +79,60 @@ class FakeGen:
         return "A plain reply."
 
 
+
+#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
+#: these fakes simulate a character that teaches its beats WITH
+#: CONTENT — every generation output carries a teaching sentence
+#: with all three beats' anchors plus the three beat trailers
+#: (trailers stripped before anything is spoken). Trailers alone
+#: no longer count under the content guard. Prompts and
+#: generation counts are unchanged; spoken bodies gain the
+#: teaching sentence, which these suites' substring assertions
+#: tolerate. The gate itself is pinned by
+#: tests/test_encounter_tutorial_beats.py; these suites pin the
+#: other behaviors.
+#: Teaching sentence the fakes speak (correction 2026-10-24):
+#: beat trailers alone no longer count — coverage requires
+#: content, so a fake that teaches its beats must speak them.
+#: One sentence carrying all three conductor beats' anchors
+#: (council/tree/hearing-together, competing priorities/sit
+#: together, new voice/whole orchestra/in ear). Inserted BEFORE
+#: any Strands: bookkeeping line (strands parsing reads from the
+#: end) and before the beat trailers, so every trailer parse in
+#: the runtime sees the same trailing structure as the original
+#: output; thread trailers are position-tolerant.
+_TEACHING_SENTENCE = (
+    "My ground is the council and the tree, where parts of your "
+    "life need hearing together; bring me the competing priorities "
+    "that will not sit together; every new voice changes what the "
+    "whole orchestra can play, and I keep the whole of it in ear."
+)
+
+_BEAT_SUFFIX = (
+    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+    "[[beat:conductor:why_meet]]"
+)
+
+
+def _teaching(gen):
+    def wrapper(prompt, **kwargs):
+        out = gen(prompt, **kwargs)
+        lines = out.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip().lower().startswith("strands:"):
+                lines.insert(i, _TEACHING_SENTENCE)
+                break
+        else:
+            lines.append(_TEACHING_SENTENCE)
+        return "\n".join(lines) + _BEAT_SUFFIX
+    return wrapper
+
+
 def _svc(tmp_path, gen=None):
     return MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=gen or FakeGen(),
+        generate_fn=_teaching(gen or FakeGen()),
     )
 
 
@@ -198,7 +247,7 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     # The fake's claim text carries weave markers; the spoken claim
     # does not (evidence/expression separation, 2026-10-23): the
     # words survive, the markup does not — dialogue is hers now.
-    assert "A first impression, anchored in your words — correct me." in bodies
+    assert any("A first impression, anchored in your words — correct me." in b for b in bodies)
     assert not any("[[u]]" in b for b in bodies)
 
     # UPDATED for the adaptivity fix: no orientation beat follows the
@@ -375,7 +424,7 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
     state = svc.turn(uid, "conductor", "Where does that impression actually live?")
     assert state["status"] == "active"  # the open question holds it open
     bodies = [m["body"] for m in state["messages"]]
-    assert "It lives on the bench, same as everything here." in bodies
+    assert any("It lives on the bench, same as everything here." in b for b in bodies)
     # The answer was framed by the workshop facts, not improvised:
     # the facts block rides the conversational frame as context.
     assert "mid-conversation in your workshop" in gen.prompts[-1]

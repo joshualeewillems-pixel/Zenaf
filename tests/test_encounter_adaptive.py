@@ -95,11 +95,61 @@ class ScriptedGen:
         return "A plain reply."
 
 
+
+#: Tutorial-beat mechanism (2026-10-24, corrected the same day):
+#: these fakes simulate a character that teaches its beats WITH
+#: CONTENT — every generation output carries a teaching sentence
+#: with all three beats' anchors plus the three beat trailers
+#: (trailers stripped before anything is spoken). Trailers alone
+#: no longer count under the content guard, so a fake that only
+#: claimed beats would simulate a non-compliant model. Prompts
+#: and generation counts are unchanged; spoken bodies gain the
+#: teaching sentence, which these suites' substring assertions
+#: tolerate. The gate itself is pinned by
+#: tests/test_encounter_tutorial_beats.py; these suites pin the
+#: other behaviors.
+#: Teaching sentence the fakes speak (correction 2026-10-24):
+#: beat trailers alone no longer count — coverage requires
+#: content, so a fake that teaches its beats must speak them.
+#: One sentence carrying all three conductor beats' anchors
+#: (council/tree/hearing-together, competing priorities/sit
+#: together, new voice/whole orchestra/in ear). Inserted BEFORE
+#: any Strands: bookkeeping line (strands parsing reads from the
+#: end) and before the beat trailers, so every trailer parse in
+#: the runtime sees the same trailing structure as the original
+#: output; thread trailers are position-tolerant.
+_TEACHING_SENTENCE = (
+    "My ground is the council and the tree, where parts of your "
+    "life need hearing together; bring me the competing priorities "
+    "that will not sit together; every new voice changes what the "
+    "whole orchestra can play, and I keep the whole of it in ear."
+)
+
+_BEAT_SUFFIX = (
+    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+    "[[beat:conductor:why_meet]]"
+)
+
+
+def _teaching(gen):
+    def wrapper(prompt, **kwargs):
+        out = gen(prompt, **kwargs)
+        lines = out.split("\n")
+        for i, line in enumerate(lines):
+            if line.strip().lower().startswith("strands:"):
+                lines.insert(i, _TEACHING_SENTENCE)
+                break
+        else:
+            lines.append(_TEACHING_SENTENCE)
+        return "\n".join(lines) + _BEAT_SUFFIX
+    return wrapper
+
+
 def _svc(tmp_path, gen=None):
     return MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=gen or ScriptedGen(),
+        generate_fn=_teaching(gen or ScriptedGen()),
     )
 
 
@@ -108,7 +158,7 @@ def _svc_with_agents(tmp_path, gen=None):
     svc = MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=gen or ScriptedGen(),
+        generate_fn=_teaching(gen or ScriptedGen()),
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
     return svc, agents_db
@@ -211,7 +261,8 @@ def test_cooperative_conversation_changes_direction(ve_ctx, tmp_path):
     # No impression was forced out of a thin exchange, and no
     # banked question was served as if nothing had been said (the
     # bank is retired; the retired dilemma's text appears nowhere).
-    assert voice == ["A shape before motion. Noted at the bench."]
+    assert voice == ["A shape before motion. Noted at the bench."
+        + "\n" + _TEACHING_SENTENCE]
     assert state["stage"] == "encounter"
     row = run.svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == ""
@@ -257,7 +308,8 @@ def test_offer_of_help_after_recognition_does_not_force_close(ve_ctx, tmp_path):
         "That's a fair read. And — can I help you hold that joint "
         "while you work on it?"
     )
-    assert voice == ["You may — listen with me, then."]
+    assert voice == ["You may — listen with me, then."
+        + "\n" + _TEACHING_SENTENCE]
     assert state["status"] == "active"
     assert state["stage"] == "orientation"  # post-recognition phase
     script = MT.get_script("conductor", 1)
@@ -333,7 +385,7 @@ def test_unexpected_question_after_recognition(ve_ctx, tmp_path):
     )
     assert voice == [
         "Seven, because each insists on being heard — together "
-        "they make the one sound."
+        "they make the one sound." + "\n" + _TEACHING_SENTENCE
     ]
     assert state["status"] == "active"
     script = MT.get_script("conductor", 1)
@@ -410,20 +462,21 @@ def test_no_multi_bubble_exposition_dumps(ve_ctx, tmp_path):
     )
     assert voice == [
         "A revised read, in her own words: the route comes first for you."
+        + "\n" + _TEACHING_SENTENCE
     ]
     assert state["status"] == "active"
 
     # Post-recognition turns: one bubble each.
     gen.turn.append("A bench answer.\n[[thread:open]]")
     state, voice = run.turn("And if the route changes halfway?")
-    assert voice == ["A bench answer."]
+    assert voice == ["A bench answer." + "\n" + _TEACHING_SENTENCE]
     assert state["status"] == "active"
 
     # The closing turn is exactly: her reply + the reveal.
     gen.turn.append("Then we adjust the route together.\n[[thread:settled]]")
     state, voice = run.turn("Alright. I can work with that.")
     assert state["status"] == "complete"
-    assert voice[0] == "Then we adjust the route together."
+    assert voice[0] == "Then we adjust the route together." + "\n" + _TEACHING_SENTENCE
     assert voice[1:] == list(script.reveal)
 
     # The old pause block can never occur: none of its paragraphs
@@ -462,7 +515,7 @@ def test_no_forced_closure_while_a_thread_is_open(ve_ctx, tmp_path):
     for message, output in open_turns:
         gen.turn.append(output)
         state, voice = run.turn(message)
-        assert voice == [output.split("\n")[0]]
+        assert voice == [output.split("\n")[0] + "\n" + _TEACHING_SENTENCE]
         assert state["status"] == "active"
         assert state["stage"] == "orientation"
 
@@ -578,6 +631,7 @@ def test_dialogue_and_claim_carry_no_markers_but_evidence_is_verbatim(ve_ctx, tm
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == (
         "Revised, plainly: you protect mornings first before all else."
+        + "\n" + _TEACHING_SENTENCE
     )
     # The user's verbatim answer appears exactly once in the whole
     # transcript: in their own bubble. She never quotes it back.

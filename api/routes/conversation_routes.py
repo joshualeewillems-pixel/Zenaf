@@ -173,6 +173,11 @@ class MeetingRestartBody(BaseModel):
     keystone_index: int = Field(default=1, ge=1, le=4)
 
 
+class MeetingCompleteBody(BaseModel):
+    archetype_id: str = Field(max_length=32)
+    keystone_index: int = Field(default=1, ge=1, le=4)
+
+
 def _meeting_call(fn) -> dict:
     try:
         return fn()
@@ -230,6 +235,20 @@ def meeting_restart(body: MeetingRestartBody, current_user: dict = Depends(get_c
         raise HTTPException(status_code=401, detail="Sign in to meet again.")
     arch_id = _check_seat(body.archetype_id)
     return _meeting_call(lambda: _meeting_service().restart(user_id, arch_id, body.keystone_index))
+
+
+@router.post("/meeting/complete")
+def meeting_complete(body: MeetingCompleteBody, current_user: dict = Depends(get_current_user)) -> dict:
+    """Complete an in-progress meeting at the visitor's word, so it
+    reaches its close (and Meet again becomes available) even when the
+    runtime's own close verdict never fired. Returns the completed
+    state, including the character's closing words. Refuses — 409 —
+    when there is no meeting in progress to complete."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to complete the meeting.")
+    arch_id = _check_seat(body.archetype_id)
+    return _meeting_call(lambda: _meeting_service().complete(user_id, arch_id, body.keystone_index))
 
 
 @router.get("/meeting")

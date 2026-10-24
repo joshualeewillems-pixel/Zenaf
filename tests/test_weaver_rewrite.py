@@ -2,11 +2,15 @@
 
 Semantics under test:
   - The opening interrupts the Weaver mid-work on an instrument of seven
-    incompatible parts; the encounter question is a DILEMMA (mover /
-    planner / doubter — "Who do you listen to?"), not a generic
-    priorities question.
+    incompatible parts, and asks ONE question for real — her greeting
+    ("does this look broken to you, or merely unfinished?") — then
+    waits. (The Weaver pattern, 2026-10-23: the scripted DILEMMA —
+    mover / planner / doubter — is RETIRED as too philosophical a
+    hypothetical; the encounter is a collaboration, and the user's
+    own material is the subject. See tests/test_weaver_pattern.py.)
   - The read-back is a POSITION with an honest contrast, not a
-    paraphrase (the frame instructs exactly that).
+    paraphrase (the frame instructs exactly that) — offered only
+    after the shared-work exchange (the impression gate).
   - The reply to the read-back classifies three ways. A CORRECTION
     replaces the stored impression (claim AND strand attribution) and
     the revision is spoken in the room; an ACKNOWLEDGMENT leaves the
@@ -93,8 +97,16 @@ def _seeded_user(email="rewrite@example.com"):
 
 
 def _to_readback(svc, uid, answer="Intuition, usually — unless something practical is pressing."):
+    """UPDATED for the Weaver pattern: two substantive turns — the
+    first begins the shared work (the fake's read is gated; only
+    the reply path runs), the second carries the impression."""
     svc.start(uid, "conductor")
     state = svc.turn(uid, "conductor", answer)
+    assert state["stage"] == "encounter"  # the gate held the read
+    state = svc.turn(
+        uid, "conductor",
+        "And half the time I'm just holding the pieces until they settle.",
+    )
     assert state["stage"] == "readback"
     return state
 
@@ -103,35 +115,41 @@ def _to_readback(svc, uid, answer="Intuition, usually — unless something pract
 
 
 def test_opening_is_a_midwork_interruption(ve_ctx, tmp_path):
-    """UPDATED for the encounter runtime (P3): what is DELIVERED at the
-    door is the minimal opening — the interruption itself and the
-    invitation (the dilemma) — so the user participates within three
-    bubbles (Joshua's pacing correction after playing the rewrite:
-    the stacked six-bubble opening read as a barrage). The full
-    scripted opening still exists as the encounter's bench anchors —
-    asserted here as data, where the runtime draws on it."""
+    """UPDATED for the Weaver pattern (2026-10-23): what is DELIVERED
+    at the door is ONE bubble — the interruption itself, her greeting
+    question — and she WAITS. (P3 delivered the greeting plus the
+    dilemma in one breath, so the question was scenery: Joshua's
+    first live-test note.) The working-together invitation is not
+    scripted; it is generated from the user's answer. The seven-parts
+    material is workshop context now (the facts block), not a door
+    speech, and nothing else is served before the user's first turn
+    ends."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies == [script.opening[0], script.questions[0]]
+    assert bodies == [script.opening[0]]
+    assert len(script.opening) == 1
     assert "does this look broken to you, or merely unfinished?" in bodies[0]
-    # The seven-parts material is bench context now, not a door speech.
-    assert "seven rather incompatible things" in script.opening[1]
-    assert "Personally, I think we're making progress." in script.opening
-    assert not any("seven rather incompatible things" in b for b in bodies)
+    # The seven-parts material lives in the workshop notes (prepared
+    # context), not in anything delivered at the door.
+    assert "seven rather incompatible parts" in script.orientation_facts
+    assert not any("seven rather incompatible" in b for b in bodies)
 
 
-def test_first_question_is_the_dilemma(ve_ctx, tmp_path):
+def test_the_dilemma_is_retired(ve_ctx, tmp_path):
+    """REPLACES test_first_question_is_the_dilemma (Weaver pattern,
+    Joshua 2026-10-23): the mover/planner/doubter dilemma is retired
+    entirely — a hypothetical too philosophical to anchor the meeting
+    (his standing concreteness ruling). The Weaver's question bank
+    is empty, and the dilemma's text appears in no script paragraph
+    the runtime could serve or surface."""
     script = MT.get_script("conductor", 1)
-    dilemma = script.questions[0]
-    assert "get moving" in dilemma  # the mover
-    assert "planned" in dilemma  # the planner
-    assert "misguided" in dilemma  # the doubter
-    assert dilemma.rstrip().endswith("Who do you listen to?")
-    # The generic priorities question is gone.
-    assert not any("competing priorities" in q for q in script.questions)
+    assert script.questions == ()
+    dialogue = "\n".join(_dialogue_paragraphs(script))
+    assert "Who do you listen to?" not in dialogue
+    assert "misguided" not in dialogue
 
 
 def test_readback_frame_demands_a_position_with_contrast(ve_ctx, tmp_path):
@@ -140,7 +158,13 @@ def test_readback_frame_demands_a_position_with_contrast(ve_ctx, tmp_path):
     assert "POSITION" in frame
     assert "contrast" in frame.lower()
     assert "do not paraphrase" in frame.lower()
-    # And the position actually flows: dilemma answer → read-back stage.
+    # The Weaver pattern's register rules ride the same frame: the
+    # read comes only after the shared work, and any hedge must NAME
+    # the claim it covers — no blanket "I may have that wrong".
+    assert "after the shared work" in frame
+    assert "name THAT part as the guess" in frame
+    assert "blanket hedge" in frame
+    # And the position actually flows: shared work → read-back stage.
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = _to_readback(svc, uid)
@@ -301,10 +325,17 @@ def test_allusions_present_verbatim_and_clean(ve_ctx, tmp_path):
     for seat, line in _LOCKED_ALLUSIONS.items():
         assert line in dialogue, seat
         assert not _FORBIDDEN_IN_ALLUSION.search(line), (seat, line)
-    # Distributed, never dumped: the six live in more than one beat.
+    # UPDATED for the Weaver pattern: distribution across beats is
+    # no longer the mechanism — nothing is DELIVERED as a block at
+    # all. All six traces live in the script's CONTEXT paragraphs
+    # (the orientation pool the runtime draws proximity cues from),
+    # and NONE rides the delivered opening: the greeting question
+    # stands alone, and a trace surfaces only when the conversation
+    # passes near its fixture, at most one per turn.
     in_opening = [line for line in _LOCKED_ALLUSIONS.values() if line in "\n".join(script.opening)]
     in_orientation = [line for line in _LOCKED_ALLUSIONS.values() if line in "\n".join(script.orientation)]
-    assert 0 < len(in_opening) < 6 and 0 < len(in_orientation) < 6
+    assert in_opening == []
+    assert len(in_orientation) == 6
 
 
 def test_environment_registry_covers_every_seat(ve_ctx, tmp_path):

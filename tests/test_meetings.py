@@ -1,18 +1,21 @@
 """Keystone meetings — the first-meeting encounter and its host service.
 
 Semantics under test (Joshua's design, 2026-10-19 + corrections 2026-10-22;
-the encounter runtime, Fellowship P3, 2026-10-23):
+the encounter runtime, Fellowship P3, 2026-10-23; the Weaver pattern,
+2026-10-23):
   - A first meeting is an encounter with objectives, not a stage walk:
-    a minimal scripted opening (character, environment, invitation)
-    → open conversation → one tentative, correctable read-back
-    impression → reveal (scripted), and completing it marks keystone
-    1 Done. The stage values asserted below are the derived position
-    labels the API has always surfaced, not the engine's mechanism.
+    ONE scripted opening bubble (her greeting question, asked for
+    real) → collaboration → one tentative, correctable read-back
+    impression (gated on the shared-work exchange) → reveal
+    (scripted), and completing it marks keystone 1 Done. The stage
+    values asserted below are the derived position labels the API
+    has always surfaced, not the engine's mechanism.
   - The Conductor is met first; no other seat's first meeting begins until
     the Weaver's keystone 1 is complete. Nobody is introduced by proxy.
   - A seat with no written script has no meeting yet — refused honestly.
-  - Passing is participation: it offers the next banked question; passing
-    the whole bank still reaches the read-back.
+  - Passing is participation. For the Weaver there is no bank to
+    pass through (retired with the dilemma): a pass is conversation.
+    The generic bank machinery remains for future scripts.
   - The read-back claim and the user's response are stored verbatim on the
     meeting record as the first impression. Nothing here files training.
   - The redesign's correction semantics (2026-10-23) — a correction
@@ -99,13 +102,13 @@ def _conductor_k1_status(uid):
 
 
 def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
-    """UPDATED for the encounter runtime (P3): the delivered opening is
-    minimal — the script's first paragraph (character + environment)
-    and its first question (the invitation) — so the user is
-    participating within three bubbles. The rest of the scripted
-    opening is bench context the runtime draws on, not a monologue
-    delivered at the door (Joshua's pacing correction, 2026-10-23:
-    the old six-bubble opening read as a stressful barrage)."""
+    """UPDATED for the Weaver pattern (2026-10-23): the delivered
+    opening is ONE bubble — the script's first paragraph IS the
+    first question: her greeting, asked for real, and she waits for
+    the answer. (P3 delivered the greeting plus the scripted dilemma
+    in one breath, so the question was scenery — Joshua's first
+    live-test note. The dilemma is retired; there is no second
+    scripted bubble to serve.)"""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
@@ -115,8 +118,8 @@ def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
     assert state["conversation_id"] == "meeting-conductor-1"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies == [script.opening[0], script.questions[0]]
-    assert len(bodies) <= 3
+    assert bodies == [script.opening[0]]
+    assert len(bodies) == 1
     assert all(m["role"] == "voice" for m in state["messages"])
     assert _conductor_k1_status(uid) != "Done"
 
@@ -166,7 +169,24 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
 
+    # UPDATED for the Weaver pattern: the first substantive turn
+    # begins the shared work — the fake's read is offered in the
+    # generation and HELD by the impression gate (only the reply
+    # movement, or the honest fallback, is spoken). The prompt
+    # accounting is the P3 invariant, unchanged: ONE generation
+    # carrying both frames (the two-speed responsiveness gate).
     state = svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
+    assert state["stage"] == "encounter"
+    assert len(gen.prompts) == 1
+    assert "ENCOUNTER" in gen.prompts[0]
+    assert "READ-BACK" in gen.prompts[0]
+
+    # The second substantive turn: the gate is satisfied, and the
+    # impression lands.
+    state = svc.turn(
+        uid, "conductor",
+        "Mostly I protect the mornings before anything else gets a vote.",
+    )
     assert state["stage"] == "readback"
     bodies = [m["body"] for m in state["messages"]]
     # The fake's claim text carries weave markers; the spoken claim
@@ -174,16 +194,6 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     # words survive, the markup does not — dialogue is hers now.
     assert "A first impression, anchored in your words — correct me." in bodies
     assert not any("[[u]]" in b for b in bodies)
-    # UPDATED for the encounter runtime (P3): the answer turn is ONE
-    # generation carrying both movements — the engaged reply and the
-    # first impression — split on the frame's delimiter (the two-speed
-    # responsiveness gate: one call per turn). The fake answers the
-    # combined frame with its read-back branch, so the impression is
-    # the turn's spoken output; both frames are present in the single
-    # prompt, where the stage machine spent two calls.
-    assert len(gen.prompts) == 1
-    assert "ENCOUNTER" in gen.prompts[0]
-    assert "READ-BACK" in gen.prompts[0]
 
     # UPDATED for the adaptivity fix: no orientation beat follows the
     # read-back response. The correction is answered (the revised
@@ -230,42 +240,53 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     assert attention["markers"]["mentor"] == {"attention": True, "reason": "meet"}
 
 
-def test_pass_offers_next_question_without_llm(ve_ctx, tmp_path):
+def test_pass_is_conversation_for_the_weaver(ve_ctx, tmp_path):
+    """REWRITES test_pass_offers_next_question_without_llm and
+    test_passing_the_whole_bank_still_reaches_readback (Weaver
+    pattern, 2026-10-23): both pinned bank mechanics — a pass
+    serving the next scripted question at no generation cost, and
+    bank exhaustion forming the impression. The Weaver's bank is
+    retired, so neither contract exists for her: a pass is answered
+    in character (one conversational generation), no scripted
+    question is served (there are none), and no impression can be
+    conjured by passing — the gate requires the shared work. The
+    generic bank machinery remains in the runtime for future
+    scripts; it is unit-tested there (test_weaver_pattern)."""
     uid = _seeded_user()
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
     script = MT.get_script("conductor", 1)
+    assert script.questions == ()
 
     state = svc.turn(uid, "conductor", "pass")
     assert state["stage"] == "encounter"
-    assert state["messages"][-1]["body"] == script.questions[1]
-    assert gen.prompts == []  # a pass never reaches the model
+    # One conversational generation under the turn frame — the pass
+    # reached the model because there is no bank to answer it.
+    assert len(gen.prompts) == 1
+    assert "mid-conversation in your workshop" in gen.prompts[0]
+    row = svc.meetings.get(uid, "conductor", 1)
+    assert row["readback_claim"] == ""
 
     state = svc.turn(uid, "conductor", "next question")
-    assert state["messages"][-1]["body"] == script.questions[2]
-    assert gen.prompts == []
-
-
-def test_passing_the_whole_bank_still_reaches_readback(ve_ctx, tmp_path):
-    uid = _seeded_user()
-    gen = FakeGen()
-    svc = _svc(tmp_path, gen)
-    svc.start(uid, "conductor")
-    svc.turn(uid, "conductor", "pass")
-    svc.turn(uid, "conductor", "skip")
-    state = svc.turn(uid, "conductor", "pass")
-    assert state["stage"] == "readback"
-    assert state["messages"][-1]["body"].startswith("A first impression")
-    # Only the read-back frame ran — there was nothing to engage with.
-    assert len(gen.prompts) == 1 and "READ-BACK" in gen.prompts[0]
+    assert state["stage"] == "encounter"
+    assert len(gen.prompts) == 2
+    row = svc.meetings.get(uid, "conductor", 1)
+    assert row["readback_claim"] == ""
 
 
 def test_substantive_no_is_an_answer_not_a_pass(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
+    # A substantive "no" engages the encounter (it is not routed as
+    # navigation): the shared work begins, and the read follows on
+    # the next substantive turn — never on this one (the gate).
     state = svc.turn(uid, "conductor", "No — I decide by deadline, every time.")
+    assert state["stage"] == "encounter"
+    state = svc.turn(
+        uid, "conductor", "Deadlines first, then everything else gets scheduled."
+    )
     assert state["stage"] == "readback"
 
 
@@ -296,8 +317,10 @@ def test_completed_meeting_cannot_be_replayed(ve_ctx, tmp_path):
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Deadlines first, then everything else.")
-    # UPDATED for the adaptivity fix: the answering turn completes
-    # the meeting on recognition — there is no third exchange.
+    svc.turn(uid, "conductor", "Deadlines first, then everything else, every time.")
+    # UPDATED for the adaptivity fix + the Weaver pattern: the
+    # answering turn completes the meeting on recognition — but the
+    # read itself took the shared-work exchange first.
     state = svc.turn(uid, "conductor", "That's right.")
     assert state["status"] == "complete"
     state = svc.start(uid, "conductor")
@@ -338,7 +361,10 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
     gen = ThreadGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
+    # UPDATED for the Weaver pattern: two substantive turns to the
+    # read (the gate), then an answer that leaves the thread open.
     svc.turn(uid, "conductor", "I plan in pencil and improvise in ink.")
+    svc.turn(uid, "conductor", "And I keep the pencil sharp — plans are drafts, not promises.")
     svc.turn(uid, "conductor", "Close enough.")
     state = svc.turn(uid, "conductor", "Where does that impression actually live?")
     assert state["status"] == "active"  # the open question holds it open
@@ -372,8 +398,12 @@ def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, mo
     monkeypatch.setitem(MT.SCRIPTS, ("mentor", 1), plain)
     svc = _svc(tmp_path)
     # Conductor first, then the mentor — both close on recognition.
+    # (The Weaver's drive carries the pattern's shape: shared work,
+    # the read, then the answer. The generic mentor definition has
+    # no gate or floor — its two-turn drive is unchanged.)
     svc.start(uid, "conductor")
-    svc.turn(uid, "conductor", "Slow is smooth.")
+    svc.turn(uid, "conductor", "Slow is smooth, and smooth is fast in the end.")
+    svc.turn(uid, "conductor", "That's how I approach my own work, too.")
     state = svc.turn(uid, "conductor", "Yes.")
     assert state["status"] == "complete"
     assert _conductor_k1_status(uid) == "Done"
@@ -403,8 +433,19 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
         routes.meeting_start(routes.MeetingStartBody(archetype_id="mentor"), user)
     assert exc.value.status_code == 409
 
+    # UPDATED for the Weaver pattern: the first turn begins the
+    # shared work (stage encounter); the read lands on the second.
     state = routes.meeting_turn(
         routes.MeetingTurnBody(archetype_id="conductor", message="I plan, then improvise."),
+        user,
+    )
+    assert state["stage"] == "encounter"
+
+    state = routes.meeting_turn(
+        routes.MeetingTurnBody(
+            archetype_id="conductor",
+            message="I plan in pencil, then improvise in ink, most days.",
+        ),
         user,
     )
     assert state["stage"] == "readback"
@@ -430,9 +471,20 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
 # ----------------------------------------------------------------- restart
 
 
-def _run_conductor_to_completion(svc, uid, answer="Deadlines first.", response="That's right."):
+def _run_conductor_to_completion(
+    svc, uid,
+    answer="I work by deadlines first, then everything else follows.",
+    response="That's right.",
+):
+    """Drive the Weaver's meeting to its close under the pattern's
+    shape: a first substantive turn (the shared work begins), a
+    second (the read lands), then the response to the impression."""
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
+    svc.turn(
+        uid, "conductor",
+        "And in my own work it's the same — what breaks first gets my hands first.",
+    )
     state = svc.turn(uid, "conductor", response)
     if state["status"] != "complete":
         # The answer left a thread open (a substantive correction,
@@ -510,17 +562,18 @@ def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
 
     # A fresh run delivers the opening again and runs the whole arc;
     # completing it flips keystone 1 back to Done. (Opening shape as
-    # in test_start_delivers_opening_and_first_question — the minimal
-    # encounter opening, P3.)
+    # in test_start_delivers_opening_and_first_question — the single
+    # greeting bubble, the Weaver pattern.)
     state = svc.start(uid, "conductor")
     assert state["status"] == "active"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies == [script.opening[0], script.questions[0]]
+    assert bodies == [script.opening[0]]
 
     svc.turn(uid, "conductor", "Second time: I start with people, not tasks.")
+    svc.turn(uid, "conductor", "Second time: people first, whatever the deadline says.")
     # UPDATED for the adaptivity fix: the answering turn completes
-    # the rerun on recognition — no third exchange exists.
+    # the rerun on recognition.
     state = svc.turn(uid, "conductor", "Yes, that's the shape of it.")
     assert state["status"] == "complete"
     assert _conductor_k1_status(uid) == "Done"
@@ -591,6 +644,9 @@ def test_the_record_is_never_quoted_back_in_dialogue(ve_ctx, tmp_path):
     svc = _svc(tmp_path, FakeGen())
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", long_answer)
+    # UPDATED for the Weaver pattern: a second substantive turn
+    # carries the read (the gate), then the answer closes it.
+    svc.turn(uid, "conductor", "And honestly, the sleeping on it is the part I never skip.")
     state = svc.turn(uid, "conductor", "Close enough.")
     assert state["stage"] == "complete"  # recognition closed it
     bodies = [m["body"] for m in state["messages"]]
@@ -656,6 +712,10 @@ def test_weave_markers_never_reach_dialogue_or_the_record(ve_ctx, tmp_path, monk
         uid, "conductor",
         "Intuition based usually, unless something practical is pressing.",
     )
+    # UPDATED for the Weaver pattern: the woven impression rides
+    # the second substantive turn (the gate holds the first), and
+    # the answer turn closes the meeting.
+    svc.turn(uid, "conductor", "Close enough.")
     state = svc.turn(uid, "conductor", "Close enough.")
     assert state["stage"] == "complete"
     bodies = [m["body"] for m in state["messages"]]
@@ -699,6 +759,9 @@ def test_ok_sounds_good_closes_on_recognition(ve_ctx, tmp_path):
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I plan in pencil and improvise in ink.")
+    # UPDATED for the Weaver pattern: a second substantive turn
+    # carries the read before the acknowledgment can answer it.
+    svc.turn(uid, "conductor", "I plan in pencil and improvise in ink — the ink is where it gets real.")
     prompts_before = len(gen.prompts)
     state = svc.turn(uid, "conductor", "Ok sounds good")
     assert state["status"] == "complete"

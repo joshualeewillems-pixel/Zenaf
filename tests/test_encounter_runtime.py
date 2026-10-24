@@ -20,8 +20,17 @@ responsiveness ruling):
      generator, per the two-speed law. (Adaptivity fix: an
      acknowledgment answering the impression now also spends its
      one call — the close decision must be a semantic judgment
-     riding that generation, not a phrase match. Passes remain
-     deterministic and spend none.)
+     riding that generation, not a phrase match. Passes against a
+     question bank remain deterministic and spend none; the Weaver
+     has no bank since the pattern release — her passes are
+     conversation and spend their one call like any other turn.)
+
+The Weaver pattern (Joshua, 2026-10-23) adds: the greeting is ONE
+scripted bubble and she waits; the impression is gated on the
+shared-work exchange (no turn-one impressions); the close is floored
+on meaningful recognition (own material taken up, or a pursuit
+exchange) — see tests/test_weaver_pattern.py for the dedicated
+acceptance tests.
 """
 
 from __future__ import annotations
@@ -133,7 +142,11 @@ def test_initiative_offer_to_help_is_engaged_not_absorbed(ve_ctx, tmp_path):
     svc = _svc(tmp_path, gen)
     script = MT.get_script("conductor", 1)
     state = svc.start(uid, "conductor")
-    assert len(state["messages"]) == 2  # the minimal opening
+    # UPDATED for the Weaver pattern: the delivered opening is ONE
+    # scripted bubble — her greeting question, asked for real. She
+    # waits; nothing else is served before the user's first turn.
+    assert len(state["messages"]) == 1
+    assert script.questions == ()  # the bank is retired for the Weaver
 
     before = len(state["messages"])
     state = svc.turn(
@@ -145,8 +158,8 @@ def test_initiative_offer_to_help_is_engaged_not_absorbed(ve_ctx, tmp_path):
     # The offer was engaged, in character — exactly one spoken reply,
     # and it is the generated engagement, not a script line.
     assert new_voice == ["Then hold this joint steady — two hands are better than my six."]
-    assert script.questions[1] not in new_voice
-    assert script.questions[2] not in new_voice
+    # The retired dilemma's cast never appears as if it were agenda.
+    assert "doubter" not in new_voice[0]
     # The agenda did not advance as if the offer were an answer: no
     # impression was formed, nothing was filed or stored.
     row = svc.meetings.get(uid, "conductor", 1)
@@ -210,14 +223,29 @@ def test_weaver_introduction_end_to_end_on_objectives(ve_ctx, tmp_path):
     assert state["status"] == "active"
     assert not any(p in _bodies(state) for p in script.reveal)
 
-    # The substantive answer: ONE generation, two spoken movements —
-    # the engaged reply, then the impression as its own bubble.
+    # The first substantive answer: ONE generation, but the
+    # impression the fake offers is HELD by the gate — the shared
+    # work has only just begun on this very turn, and the read is
+    # not offerable until a prior turn satisfied the shared-work
+    # objective. Only the reply movement is spoken.
     state = svc.turn(
         uid, "conductor",
         "I listen to all three, then decide by what breaks first if nobody acts.",
     )
     bodies = _bodies(state)
     assert "A reply from the bench, hearing you." in bodies
+    assert not any(b.startswith("A first read, held lightly") for b in bodies)
+    assert state["stage"] == "encounter"
+    assert state["status"] == "active"
+
+    # The second substantive turn: the gate is satisfied now, and
+    # the same single generation carries both movements — the
+    # engaged reply, then the impression as its own bubble.
+    state = svc.turn(
+        uid, "conductor",
+        "And when nobody acts, I'm the one who ends up holding the pieces together.",
+    )
+    bodies = _bodies(state)
     assert any(b.startswith("A first read, held lightly") for b in bodies)
     assert state["stage"] == "readback"
     assert state["status"] == "active"  # offered, not yet answered
@@ -278,17 +306,25 @@ def test_ceiling_wraps_gracefully_and_still_files_once(ve_ctx, tmp_path):
 
 
 def test_reveal_never_fires_on_passes_and_detours_alone(ve_ctx, tmp_path):
-    """Passing the whole bank reaches the impression (participation),
-    but the meeting cannot complete until the impression is answered —
-    closing is a condition, not a position in a sequence."""
+    """REWRITTEN for the Weaver pattern: the old contract — passing
+    the whole bank reaches the impression — died with the bank.
+    The Weaver has no questions to pass through, and the impression
+    gate means a pass can never conjure a read the shared work
+    hasn't earned: passes are conversation, the meeting stays in
+    the encounter, and no reveal can fire. (The generic bank
+    machinery remains in the runtime for future scripts.)"""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "pass")
     svc.turn(uid, "conductor", "skip")
     state = svc.turn(uid, "conductor", "pass")
-    assert state["stage"] == "readback"
+    assert state["stage"] == "encounter"
     assert state["status"] == "active"
+    row = svc.meetings.get(uid, "conductor", 1)
+    assert row["readback_claim"] == ""
+    script = MT.get_script("conductor", 1)
+    assert not any(p in _bodies(state) for p in script.reveal)
 
 
 # ------------------------------------------------- 3. responsiveness
@@ -304,6 +340,7 @@ def test_happy_path_spends_one_generation_call_per_turn(ve_ctx, tmp_path):
     counts = []
     for message in (
         "I triage by what breaks first if I ignore it.",  # engage: 1
+        "Mostly I protect the mornings before anything else.",  # engage: 1
         "Yes — that's exactly right.",                     # ack: 1
     ):
         before = len(gen.prompts)
@@ -314,9 +351,13 @@ def test_happy_path_spends_one_generation_call_per_turn(ve_ctx, tmp_path):
     # impression now spends its one generation too — the open-door
     # judgment (may this meeting close?) is semantic and rides the
     # reply's own call, never a phrase match (Joshua's refinement).
-    # The invariant that matters is unchanged: never more than one.
-    assert counts == [1, 1]
-    assert len(gen.prompts) == 2
+    # UPDATED for the Weaver pattern: the happy path is three turns
+    # now — the first substantive turn begins the shared work (the
+    # impression is gated, reply only), the second carries the read,
+    # the third answers it. The invariant that matters is unchanged:
+    # never more than one generation per turn.
+    assert counts == [1, 1, 1]
+    assert len(gen.prompts) == 3
 
 
 def test_conversational_turn_spends_exactly_one_call(ve_ctx, tmp_path):
@@ -332,13 +373,19 @@ def test_conversational_turn_spends_exactly_one_call(ve_ctx, tmp_path):
 
 
 def test_weaver_definition_objectives_are_the_authored_five(ve_ctx, tmp_path):
+    # UPDATED for the Weaver pattern: the authored set grew by the
+    # two structural objectives the pattern runs on —
+    # shared_work_exchange (the impression gate) and
+    # pursuit_exchange (the close floor's second leg).
     script = MT.get_script("conductor", 1)
     definition = ENC.get_definition(script)
     ids = [o.id for o in definition.objectives]
     assert ids == [
         "engaged_exchange",
+        "shared_work_exchange",
         "offer_of_help_received",
         "own_undertaking_engaged",
+        "pursuit_exchange",
         "impression_offered",
         "impression_answered",
     ]
@@ -369,6 +416,26 @@ def test_objective_predicates_over_state():
     state.user_chars += 1
     ENC.check_objectives(definition, state)
     assert state.satisfied["own_undertaking_engaged"] is True
+
+    # The pattern objectives (fresh states — satisfaction is sticky):
+    # shared work is satisfied by an engagement OR a received offer.
+    s2 = ENC.EncounterState(offers_engaged=1)
+    ENC.check_objectives(definition, s2)
+    assert s2.satisfied["shared_work_exchange"] is True
+    s3 = ENC.EncounterState(engagements=1)
+    ENC.check_objectives(definition, s3)
+    assert s3.satisfied["shared_work_exchange"] is True
+    # Pursuit: an exchange after the material surfaced, or three
+    # substantive turns accumulated — and neither alone at zero.
+    s4 = ENC.EncounterState()
+    ENC.check_objectives(definition, s4)
+    assert s4.satisfied["pursuit_exchange"] is False
+    s4.pursuit_turns = 1
+    ENC.check_objectives(definition, s4)
+    assert s4.satisfied["pursuit_exchange"] is True
+    s5 = ENC.EncounterState(substantive_turns=3)
+    ENC.check_objectives(definition, s5)
+    assert s5.satisfied["pursuit_exchange"] is True
 
 
 def test_move_shapes():

@@ -26,6 +26,12 @@ records:
                     candidate seats. Runs off the reply path
                     (two-speed law): emitting code never waits on it,
                     and its failures are logged and swallowed.
+  attention.py    — P2: the per-seat attention read model merging
+                    keystone progression markers (unchanged semantics)
+                    with pending/surfaced observations, with the
+                    extended reason vocabulary (discuss | clarify |
+                    challenge | offer). Markers only — never a message,
+                    never an interruption, never a turn-path cost.
 
 Control invariants (doctrine §9): observations are proposals, not
 claims; nothing here files into the review queue and nothing writes a

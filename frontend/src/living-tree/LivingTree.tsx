@@ -129,6 +129,10 @@ export function markerTitle(
   const name = FELLOWSHIP_NAMES[archetypeId] ?? 'A seat'
   if (reason === 'intro') return `${name} wants to talk about something.`
   if (reason === 'recognition') return `${name} wants to talk about what it has discovered.`
+  if (reason === 'discuss') return `${name} has something to discuss with you.`
+  if (reason === 'clarify') return `${name} wants to clarify something with you.`
+  if (reason === 'challenge') return `${name} has something to challenge you on.`
+  if (reason === 'offer') return `${name} has something to offer you.`
   if (met) return `${name} has more to discover with you.`
   return `${name} wants to meet you.`
 }

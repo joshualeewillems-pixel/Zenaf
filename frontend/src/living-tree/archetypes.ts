@@ -64,12 +64,30 @@ export async function fetchArchetypeStatus(): Promise<ArchetypeStatus[] | null> 
 
 /** Why a seat wants the user's attention:
     intro = entry seat awaiting its first meeting; meet = an open
-    keystone chain; recognition = only keystone 4 ("The echo") remains. */
-export type KeystoneAttentionReason = 'intro' | 'meet' | 'recognition'
+    keystone chain; recognition = only keystone 4 ("The echo") remains.
+    discuss | clarify | challenge | offer = Fellowship P2: the seat has
+    a pending observation it wants to discuss, clarify, challenge, or
+    offer (the reason is a display classification of the observation;
+    the observation itself is the content). When both a keystone marker
+    and an observation marker are lit, `reason` carries the keystone
+    reason (the Begin door keys off "intro") and the observation reason
+    is preserved separately in `observation_reason`. */
+export type KeystoneAttentionReason =
+  | 'intro'
+  | 'meet'
+  | 'recognition'
+  | 'discuss'
+  | 'clarify'
+  | 'challenge'
+  | 'offer'
 
 export type KeystoneAttentionMarker = {
   attention: boolean
   reason: KeystoneAttentionReason | null
+  keystone_reason?: KeystoneAttentionReason | null
+  observation_reason?: KeystoneAttentionReason | null
+  observation_ids?: string[]
+  observation_count?: number
 }
 
 /** Per-seat attention state from GET /vision-execution/keystone-attention.

@@ -108,11 +108,32 @@ class WeaverGen:
         return "A plain reply."
 
 
+
+#: Tutorial-beat mechanism (2026-10-24): these fakes simulate a
+#: character that teaches its beats — every generation output
+#: carries the three beat trailers, stripped before anything is
+#: spoken, so spoken bodies, prompts, and generation counts are
+#: unchanged and the tutorial gate opens as it would for a
+#: compliant model. The gate itself is pinned by
+#: tests/test_encounter_tutorial_beats.py; these suites pin the
+#: other behaviors.
+_BEAT_SUFFIX = (
+    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+    "[[beat:conductor:why_meet]]"
+)
+
+
+def _teaching(gen):
+    def wrapper(prompt, **kwargs):
+        return gen(prompt, **kwargs) + _BEAT_SUFFIX
+    return wrapper
+
+
 def _svc(tmp_path, gen=None):
     return MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=gen or WeaverGen(),
+        generate_fn=_teaching(gen or WeaverGen()),
     )
 
 
@@ -121,7 +142,7 @@ def _svc_with_agents(tmp_path, gen=None):
     svc = MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=gen or WeaverGen(),
+        generate_fn=_teaching(gen or WeaverGen()),
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
     return svc, agents_db

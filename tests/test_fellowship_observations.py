@@ -348,6 +348,27 @@ def test_decision_record_adopted_as_event_source(ve_ctx, activity_records):
 # -- chokepoint: meeting completion ------------------------------------------------
 
 
+
+#: Tutorial-beat mechanism (2026-10-24): this fake simulates a
+#: character that teaches its beats — every generation output
+#: carries the three beat trailers, stripped before anything is
+#: spoken, so spoken bodies, prompts, and generation counts are
+#: unchanged and the tutorial gate opens as it would for a
+#: compliant model. The gate itself is pinned by
+#: tests/test_encounter_tutorial_beats.py; this suite pins the
+#: other behaviors.
+_BEAT_SUFFIX = (
+    "\n[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+    "[[beat:conductor:why_meet]]"
+)
+
+
+def _teaching(gen):
+    def wrapper(prompt, **kwargs):
+        return gen(prompt, **kwargs) + _BEAT_SUFFIX
+    return wrapper
+
+
 class _MeetingGen:
     """FakeGen in the test_meetings.py shape: answers by beat."""
 
@@ -373,7 +394,7 @@ def test_meeting_completion_emits_event(ve_ctx, tmp_path, activity_records):
     svc = MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),
-        generate_fn=_MeetingGen(),
+        generate_fn=_teaching(_MeetingGen()),
     )
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")

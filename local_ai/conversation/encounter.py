@@ -87,6 +87,25 @@ The rules the runtime runs by:
     already on the table carry floor_waived: their recognition
     completes under the contract the meeting began with, and no
     in-flight meeting is stranded by the new floor.
+  - Tutorial beats, taught by the conversation itself (Joshua,
+    2026-10-24): a seat's first meeting must also leave the user
+    knowing what that seat is FOR — its terrain, what the visitor
+    does with it, and why it wanted to meet — drawn from its
+    feature-focus slice (meetings.SEAT_FEATURE_FOCUS) and kept in
+    conversation/tutorial_beats.py. The beats ride the
+    conversational frame as standing hopes, never a lecture block;
+    steering pressure grows with the turns (early turns mostly
+    follow, later turns steer more); after the seat's own patience
+    of exchanges — tempo, part of register, never a global — the
+    frame instructs an honest pivot ("let's set that aside for
+    now, why I wanted to talk was…") that OWNS the direction
+    change instead of faking a natural segue. Beat coverage rides
+    the generation call the meeting already makes, as stripped
+    bookkeeping trailers ([[beat:<id>]]); the close additionally
+    requires all beats covered OR the pivot delivered. The ceiling
+    wrap bypasses the tutorial gate by design — a rescue, not a
+    recognition claim, and by then the pivot has had every chance
+    to fire.
   - Evidence and expression are separate layers (Joshua's ruling,
     2026-10-23): the user's exact words live in the evidence —
     stored verbatim, filed with the claim, shown in review with
@@ -113,6 +132,7 @@ from typing import Protocol
 from local_ai.council import jurisdictions as JX
 from local_ai.council import meetings as MT
 
+from . import tutorial_beats as TB
 from .weave import strip_weave_markers
 
 # ---------------------------------------------------------------------------
@@ -492,6 +512,16 @@ class EncounterDefinition:
     #: frame and, for authored encounters, the engage frame. "" for
     #: definitions whose seat does not consume a dictionary yet.
     dictionary_frame: str = ""
+    #: Tutorial beats (the tutorial-beat mechanism, 2026-10-24):
+    #: the seat's teaching checklist — terrain, involvement,
+    #: why-meet — from conversation/tutorial_beats.py. Empty = no
+    #: tutorial gate (the generic shape; only authored encounters
+    #: carry beats so far).
+    tutorial_beats: tuple[TB.TutorialBeat, ...] = ()
+    #: Patience: exchanges before the honest pivot fires. Tempo,
+    #: part of register — lives with the seat, never a global.
+    #: 0 = no tutorial gate.
+    tutorial_patience: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +582,13 @@ class EncounterState:
     #: "pause:N" for retired-pause paragraphs — one ledger, so the
     #: same fixture can never surface twice by either path.
     allusions_used: list[str] = field(default_factory=list)
+    #: Tutorial-beat ledger (2026-10-24): beat ids the meeting's
+    #: generations have marked taught (validated against the
+    #: definition's beats), and whether the honest pivot has been
+    #: delivered (the spoken set-aside marker). Together with the
+    #: definition's beats they gate the close.
+    tutorial_covered: list[str] = field(default_factory=list)
+    tutorial_pivot_delivered: bool = False
     closed: bool = False
 
     def to_json(self) -> str:
@@ -574,6 +611,8 @@ class EncounterState:
             "response_recorded": self.response_recorded,
             "pause_delivered": self.pause_delivered,
             "allusions_used": self.allusions_used,
+            "tutorial_covered": self.tutorial_covered,
+            "tutorial_pivot_delivered": self.tutorial_pivot_delivered,
             "closed": self.closed,
         })
 
@@ -595,7 +634,8 @@ class EncounterState:
             "satisfied", "impression_offered",
             "impression_answered", "impression_answer_kind",
             "impression_text", "impression_strands", "response_recorded",
-            "pause_delivered", "allusions_used", "closed",
+            "pause_delivered", "allusions_used",
+            "tutorial_covered", "tutorial_pivot_delivered", "closed",
         ):
             if key in data:
                 setattr(state, key, data[key])
@@ -711,7 +751,33 @@ def _spoken(text: str) -> str:
     quote markup either; the user's exact words live in the stored
     evidence, untouched by this."""
     body, _verdict = split_thread_trailer(text or "")
-    return strip_weave_markers(body).strip()
+    return strip_weave_markers(TB.strip_beat_markers(body)).strip()
+
+
+def _apply_tutorial_markers(definition: EncounterDefinition,
+                            state: EncounterState,
+                            raw: str) -> str:
+    """Read a generated reply's tutorial bookkeeping, then strip it.
+
+    ``[[beat:<id>]]`` trailers mark beats the reply taught —
+    validated against the definition's beats, so an unknown id never
+    satisfies anything. A spoken set-aside marker marks the honest
+    pivot delivered. Returns the raw reply with beat trailers
+    removed, so downstream trailer parsing (thread verdict, strands)
+    never sees them; _spoken strips them again as a backstop, so
+    they can never reach the user by any path. Recording is
+    conditional on the definition carrying beats, but stripping is
+    unconditional: a trailer trailing a Strands line would otherwise
+    break strand parsing even for definitions without a tutorial
+    gate (split_strands_trailer reads from the end)."""
+    if definition.tutorial_beats:
+        known = {b.id for b in definition.tutorial_beats}
+        for beat_id in TB.extract_beat_markers(raw or ""):
+            if beat_id in known and beat_id not in state.tutorial_covered:
+                state.tutorial_covered.append(beat_id)
+        if TB.pivot_delivered_in(_spoken(raw or "")):
+            state.tutorial_pivot_delivered = True
+    return TB.strip_beat_markers(raw or "")
 
 
 class EncounterRuntime:
@@ -727,7 +793,7 @@ class EncounterRuntime:
         """Generate the first impression from `frame`, store and speak
         it. Returns False when generation produced nothing usable —
         the caller degrades; no state advances on a failed impression."""
-        raw = host.generate(frame)
+        raw = _apply_tutorial_markers(self.definition, state, host.generate(frame))
         claim, strands = split_strands_trailer(raw)
         claim = _spoken(claim)
         if not claim:
@@ -775,6 +841,13 @@ class EncounterRuntime:
             )
         if d.dictionary_frame:
             parts.append(d.dictionary_frame)
+        guide = TB.tutorial_guidance(
+            d.tutorial_beats, set(state.tutorial_covered),
+            state.user_turns, d.tutorial_patience,
+            state.tutorial_pivot_delivered,
+        )
+        if guide:
+            parts.append(guide)
         live = [o for o in d.objectives if not state.satisfied.get(o.id)]
         for obj in live:
             if obj.frame:
@@ -883,7 +956,8 @@ class EncounterRuntime:
             # The agenda does not advance — but nothing is skipped:
             # the objectives stay live for the next turn.
             frame, cue = self._turn_frame(state, message)
-            out = _spoken(host.generate(frame) or "")
+            out = _spoken(_apply_tutorial_markers(
+                d, state, host.generate(frame) or ""))
             if out:
                 host.say(out)
                 if cue is not None:
@@ -911,7 +985,7 @@ class EncounterRuntime:
             # The soft nudge: guidance in the frame, not a trigger —
             # she may still honestly decline to invent a read.
             frame += _IMPRESSION_NUDGE
-        raw = host.generate(frame)
+        raw = _apply_tutorial_markers(d, state, host.generate(frame))
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
         claim = _spoken(claim)
@@ -983,7 +1057,8 @@ class EncounterRuntime:
         if d.impression_gate_objective and not state.satisfied.get(
                 d.impression_gate_objective, False):
             frame, cue = self._turn_frame(state, message)
-            out = _spoken(host.generate(frame) or "")
+            out = _spoken(_apply_tutorial_markers(
+                d, state, host.generate(frame) or ""))
             if out:
                 host.say(out)
                 if cue is not None:
@@ -1026,10 +1101,10 @@ class EncounterRuntime:
             # the stored impression, and is spoken in the room. A
             # degraded (empty) generation keeps the original claim
             # rather than blanking the record.
-            raw = host.generate(
+            raw = _apply_tutorial_markers(d, state, host.generate(
                 d.correction_frame + _RECOGNITION_NOTE
                 + _THREAD_TRAILER_INSTRUCTION
-            )
+            ))
             body, verdict = split_thread_trailer(raw)
             claim, strands = split_strands_trailer(body)
             claim = _spoken(claim)
@@ -1044,9 +1119,9 @@ class EncounterRuntime:
             # character's own read, their answer beside it.
             frame = d.impression_reply_frame
             if frame:
-                raw = host.generate(
+                raw = _apply_tutorial_markers(d, state, host.generate(
                     frame + _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
-                )
+                ))
                 body, verdict = split_thread_trailer(raw)
                 body, _ = split_strands_trailer(body)
                 body = _spoken(body)
@@ -1080,7 +1155,7 @@ class EncounterRuntime:
                 + d.orientation_facts
             )
         frame += _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
-        raw = host.generate(frame)
+        raw = _apply_tutorial_markers(d, state, host.generate(frame))
         body, verdict = split_thread_trailer(raw)
         body, _ = split_strands_trailer(body)
         body = _spoken(body)
@@ -1112,7 +1187,15 @@ class EncounterRuntime:
         floor reads this turn's recognition too: a substantive
         correction that itself takes the material up can complete
         it. Legacy-waived states complete under their original
-        contract instead."""
+        contract instead. A definition carrying TUTORIAL BEATS adds
+        one more condition still (the tutorial-beat mechanism,
+        2026-10-24): the meeting's teaching must be done — every
+        beat covered, or the honest pivot delivered — before a
+        settled verdict may close. A meeting that would otherwise
+        close tutorial-less instead continues, and the pivot
+        instruction fires once its patience is reached. The
+        ceiling wrap bypasses this gate by design (a rescue, not
+        a recognition claim)."""
         d = self.definition
         if verdict is None:
             verdict = _fallback_thread_verdict(message)
@@ -1124,6 +1207,12 @@ class EncounterRuntime:
                 and not any(state.satisfied.get(o, False) for o in floor)
             ):
                 return
+            if d.tutorial_beats and d.tutorial_patience > 0:
+                covered = set(state.tutorial_covered)
+                if not state.tutorial_pivot_delivered and not all(
+                    b.id in covered for b in d.tutorial_beats
+                ):
+                    return
             state.closed = True
             host.close("")
 
@@ -1574,6 +1663,8 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         impression_gate_objective="shared_work_exchange",
         close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),
         dictionary_frame=dictionary_frame,
+        tutorial_beats=TB.beats_for("conductor"),
+        tutorial_patience=TB.patience_for("conductor"),
     )
 
 

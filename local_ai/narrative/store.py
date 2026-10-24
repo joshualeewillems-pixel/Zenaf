@@ -53,6 +53,7 @@ from .lenses import get_lens
 from .models import (
     CHANGE_KINDS,
     CHANGE_STATUSES,
+    DISMISSAL_KINDS,
     FITTING_PROPOSERS,
     FITTING_STATUSES,
     INVOLVEMENT_SUBJECT_KINDS,
@@ -66,6 +67,7 @@ from .models import (
     LensFitting,
     NarrativeThread,
     ProgressionPosition,
+    StewardDismissal,
     ThreadChange,
     ThreadEvidence,
     ThreadLink,
@@ -149,6 +151,7 @@ CREATE TABLE IF NOT EXISTS thread_evidence (
   evidence_kind TEXT NOT NULL DEFAULT 'entity_ref',
   note TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
+  entity_ref TEXT,
   UNIQUE (thread_id, ref_kind, ref_id)
 );
 CREATE INDEX IF NOT EXISTS idx_thread_evidence_thread
@@ -210,6 +213,17 @@ CREATE TABLE IF NOT EXISTS involvement_measures (
 );
 CREATE INDEX IF NOT EXISTS idx_involvement_user
   ON involvement_measures (user_id, subject_kind);
+
+CREATE TABLE IF NOT EXISTS steward_dismissals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, kind, signature)
+);
+CREATE INDEX IF NOT EXISTS idx_dismissals_user
+  ON steward_dismissals (user_id, kind);
 """
 
 
@@ -407,6 +421,7 @@ def _row_to_evidence(row: sqlite3.Row) -> ThreadEvidence:
         evidence_kind=row["evidence_kind"],
         note=row["note"],
         created_at=row["created_at"],
+        entity_ref=row["entity_ref"] if "entity_ref" in row.keys() else None,
     )
 
 
@@ -468,6 +483,16 @@ def _row_to_involvement(row: sqlite3.Row) -> InvolvementMeasure:
     )
 
 
+def _row_to_dismissal(row: sqlite3.Row) -> StewardDismissal:
+    return StewardDismissal(
+        id=row["id"],
+        user_id=row["user_id"],
+        kind=row["kind"],
+        signature=row["signature"],
+        created_at=row["created_at"],
+    )
+
+
 class NarrativeStore:
     """SQLite-backed store for narrative threads and their records."""
 
@@ -493,6 +518,21 @@ class NarrativeStore:
                 self._conn.execute(
                     "ALTER TABLE narrative_threads "
                     "ADD COLUMN progression_json TEXT"
+                )
+            # S1 migration: databases created before S1 have no
+            # entity_ref column on thread_evidence (CREATE TABLE
+            # IF NOT EXISTS does not add one). Additive only; NULL
+            # reads back as "entity unknown" for older rows.
+            ev_columns = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(thread_evidence)"
+                ).fetchall()
+            }
+            if "entity_ref" not in ev_columns:
+                self._conn.execute(
+                    "ALTER TABLE thread_evidence "
+                    "ADD COLUMN entity_ref TEXT"
                 )
             self._conn.commit()
 
@@ -981,6 +1021,40 @@ class NarrativeStore:
                 (thread_id,),
             ).fetchall()
         return [_row_to_evidence(r) for r in rows]
+
+    def annotate_evidence_entities(
+        self,
+        user_id: str,
+        thread_id: str,
+        mapping: dict[tuple[str, str], str],
+    ) -> int:
+        """Record "<type>:<id>" identities on a thread's evidence rows.
+
+        S1 derivation maintains this index for evidence it attaches:
+        the row's identity stays (ref_kind, ref_id), but knowing
+        what a record is *about* lets later derivation recognize
+        that new evidence concerns the same thing as thread evidence
+        — the thread-extension path. Rows from other writers keep
+        NULL (honest unknown); annotation never invents an entity,
+        it only records one the attaching caller already knew.
+        Returns how many rows were annotated.
+        """
+        if not mapping:
+            return 0
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            updated = 0
+            for (ref_kind, ref_id), entity_ref in mapping.items():
+                if not str(entity_ref or "").strip():
+                    continue
+                cursor = self._conn.execute(
+                    "UPDATE thread_evidence SET entity_ref = ? "
+                    "WHERE thread_id = ? AND ref_kind = ? AND ref_id = ?",
+                    (entity_ref, thread_id, ref_kind, ref_id),
+                )
+                updated += cursor.rowcount
+            self._conn.commit()
+        return updated
 
     # -- readings -----------------------------------------------------------------
 
@@ -1545,3 +1619,73 @@ class NarrativeStore:
                 (user_id,),
             ).fetchall()
         return [_row_to_involvement(r) for r in rows]
+
+    # -- dismissal memory (S1) -------------------------------------------------
+
+    def record_dismissal(
+        self, user_id: str, *, kind: str, signature: str
+    ) -> StewardDismissal:
+        """Remember that the user dismissed a steward proposal.
+
+        The signature is content-addressed (derivation.py builds it
+        from the proposal's evidence keys, plus the thread id for
+        extensions), so the same evidence is never re-proposed while
+        genuinely new evidence produces a new signature and may be
+        proposed again. Recording the same dismissal twice returns
+        the existing row. This records the user's act only — it
+        never deletes or alters the thread, reading, or change that
+        was dismissed; those rows keep their own lifecycles.
+        """
+        if kind not in DISMISSAL_KINDS:
+            raise ValueError(f"unknown dismissal kind: {kind!r}")
+        if not str(signature or "").strip():
+            raise ValueError("a dismissal needs a non-empty signature")
+        now = _utcnow()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT * FROM steward_dismissals WHERE user_id = ? "
+                "AND kind = ? AND signature = ?",
+                (user_id, kind, signature),
+            ).fetchone()
+            if existing is not None:
+                return _row_to_dismissal(existing)
+            record = StewardDismissal(
+                id=_new_id("dsm"),
+                user_id=user_id,
+                kind=kind,
+                signature=signature,
+                created_at=now,
+            )
+            self._conn.execute(
+                "INSERT INTO steward_dismissals (id, user_id, kind, "
+                "signature, created_at) VALUES (?, ?, ?, ?, ?)",
+                (
+                    record.id, record.user_id, record.kind,
+                    record.signature, record.created_at,
+                ),
+            )
+            self._conn.commit()
+        return record
+
+    def is_dismissed(
+        self, user_id: str, *, kind: str, signature: str
+    ) -> bool:
+        """Has this exact proposal signature already been dismissed?"""
+        if kind not in DISMISSAL_KINDS:
+            raise ValueError(f"unknown dismissal kind: {kind!r}")
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM steward_dismissals WHERE user_id = ? "
+                "AND kind = ? AND signature = ?",
+                (user_id, kind, signature),
+            ).fetchone()
+        return row is not None
+
+    def dismissals_for(self, user_id: str) -> list[StewardDismissal]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_dismissals WHERE user_id = ? "
+                "ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+        return [_row_to_dismissal(r) for r in rows]

@@ -264,16 +264,27 @@ def put_council_workspace_perspectives(
 
 @router.get("/keystone-attention")
 def get_keystone_attention(current_user: dict = Depends(get_current_user)):
-    """Living Tree "!" attention markers for the keystone seats.
+    """Living Tree "!" attention markers, merged (Fellowship P2).
 
-    Read-only. The Conductor (entry seat) carries the marker until its
-    first keystone completes; then every seat with an incomplete chain
-    does, with reason "recognition" once only keystone 4 remains. Honest
-    empty state: no seeded initiative → seeded=False, no markers, no error.
+    Read-only. Each marker keeps the keystone contract exactly
+    (``attention`` + ``reason``; the Conductor carries "intro" until its
+    first keystone completes, then every seat with an incomplete chain
+    does, with reason "recognition" once only keystone 4 remains) and
+    gains observation fields: ``observation_reason`` (discuss | clarify
+    | challenge | offer), ``observation_ids`` and ``observation_count``
+    for the seat's active (pending/surfaced) observations, plus
+    ``keystone_reason`` preserved separately. Precedence: a keystone
+    reason wins ``reason`` when both sources are lit, so the tree's
+    Begin door (keyed off reason == "intro") is never masked by an
+    observation. A marker clears when its observations are discussed
+    or dismissed — the read model derives from observation status, so
+    nothing here writes. Honest empty state: no seeded initiative →
+    seeded=False, keystone markers dark (observation markers, if any,
+    still light — observations come from conversations, not seeding).
     """
-    from local_ai.vision_execution import keystone_seeding
+    from local_ai.fellowship import attention
 
-    return keystone_seeding.keystone_attention(current_user["id"])
+    return attention.attention_for_user(current_user["id"])
 
 
 # --- Core profiles ---

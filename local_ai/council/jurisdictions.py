@@ -650,9 +650,11 @@ SEAT_JURISDICTIONS: dict[str, SeatJurisdiction] = {
         ),
         register=SeatRegister(
             diction=(
-                "Musical diction — voices, parts, tuning, tempo; "
-                "speaks of how things sound together; precise about "
-                "connections, plain about everything else."
+                "Musical thinking — lines, parts, tuning, tempo, "
+                "dissonance — expressed in ordinary words when it "
+                "sharpens a thing; no required vocabulary, no "
+                "required frequency. Precise about connections, "
+                "plain about everything else."
             ),
             tempo=(
                 "Measured but busy-handed; many threads held at once, "

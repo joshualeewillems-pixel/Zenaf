@@ -1,4 +1,5 @@
-"""The encounter tutorial-beat mechanism (Joshua, 2026-10-24).
+"""The encounter tutorial-beat mechanism (Joshua, 2026-10-24;
+amended 2026-10-24, amendments A-F).
 
 Ratified design: a seat's first meeting must leave the user knowing
 what that seat is FOR — its terrain, what the visitor does with it,
@@ -6,27 +7,39 @@ and why it wanted to meet — drawn from its feature-focus slice.
 The beats ride the conversational frame as standing hopes (never a
 lecture block); steering pressure grows with the turns; after the
 seat's own patience of exchanges the frame instructs an honest pivot
-("let's set that aside for now, why I wanted to talk was…") that
-OWNS the direction change; and the close requires every beat
-COVERED — covered meaning the beat's essential information was
-actually communicated in a spoken turn. The pivot NEVER satisfies
-the gate on its own: it redirects toward uncovered beats, and a
-pivot response satisfies the gate only by covering beats with
-content, under the same rule as any other turn. Beat markers are
-the model's own claims, so a claim counts only with content: the
-stripped spoken body must hit one of the beat's content anchors.
+that OWNS the direction change, in the character's own words — an
+honest transition is required, prescribed wording is not; and the
+close requires every beat COVERED.
+
+Coverage is SEMANTIC (amendment A): a beat is facets — the
+understandings it consists of — and a facet counts only on a
+CONNECTED mention in a single spoken turn (one term from every term
+set). Facets accumulate across the character's spoken turns, in any
+order, whenever they naturally relate. Trailers are stripped as a
+backstop and NEVER feed coverage: the gate reads what was said, not
+what was claimed. The check is a conservative proxy, not proof of
+understanding — it blocks disconnected mentions, superficial
+explanations, and invented capabilities by construction, and depth
+judgment stays with the user at the review surface.
+
 The Weaver playtest of 2026-10-24 closed tutorial-less after ~3
 user turns; under this mechanism it extends with the pivot instead
 — and still does not close until the teaching is actually done.
+Under the facet rule that playtest's terrain would NOT have counted
+at "need hearing together": function words alone, with no council
+or tree connected to any capability, satisfy neither the places
+facet nor the functionality facet.
 
 Constraints pinned here alongside the mechanism: no new LLM call
-per turn (the gradient is frame instruction; beat recognition rides
-the generation call the meeting already makes, via stripped
-bookkeeping trailers); the Weaver's authored introduction stays
-byte-identical; everything the #200 correction protected
-(recognition floor, semantic close, dictionaries, Mad Lib law,
-hedge-names-its-claim, queueDrained gating, one generation/turn,
-no-pretend) keeps passing in the existing suites.
+per turn (the gradient is frame instruction; coverage is
+deterministic string matching over spoken bodies); the Weaver's
+authored introduction stays byte-identical; everything the #200
+correction protected (recognition floor, semantic close,
+dictionaries, Mad Lib law, hedge-names-its-claim, queueDrained
+gating, one generation/turn, no-pretend) keeps passing in the
+existing suites. Tutorial coverage serves the conversation, never
+dominates it: the visitor should leave having met a character, not
+completed a lesson.
 """
 
 from __future__ import annotations
@@ -108,58 +121,102 @@ def _weaver_beats():
     return TB.beats_for("conductor")
 
 
+def _empty_hits():
+    return {}
+
+
+_PRESCRIBED_PIVOT_SENTENCE = (
+    "let's set that aside for now, why I wanted to talk"
+)
+
+
 def test_guidance_tiers_scale_with_turn_count():
     beats = _weaver_beats()
-    light = TB.tutorial_guidance(beats, set(), 1, 5, False)
-    light2 = TB.tutorial_guidance(beats, set(), 2, 5, False)
-    gentle = TB.tutorial_guidance(beats, set(), 3, 5, False)
-    gentle2 = TB.tutorial_guidance(beats, set(), 4, 5, False)
-    pivot = TB.tutorial_guidance(beats, set(), 5, 5, False)
+    light = TB.tutorial_guidance(beats, _empty_hits(), 1, 5, False)
+    light2 = TB.tutorial_guidance(beats, _empty_hits(), 2, 5, False)
+    gentle = TB.tutorial_guidance(beats, _empty_hits(), 3, 5, False)
+    gentle2 = TB.tutorial_guidance(beats, _empty_hits(), 4, 5, False)
+    pivot = TB.tutorial_guidance(beats, _empty_hits(), 5, 5, False)
     assert "will find its moment" in light
     assert "will find its moment" in light2
-    assert "set that aside" not in light
+    assert "setting the current thread aside" not in light
     assert "natural opening" in gentle
     assert "natural opening" in gentle2
-    assert "set that aside" not in gentle
-    assert "set that aside" in pivot
-    assert "why I wanted to talk" in pivot
+    assert "setting the current thread aside" not in gentle
+    assert "setting the current thread aside" in pivot
+    assert "in your own words" in pivot
     assert "never fake a natural segue" in pivot
     assert light != gentle != pivot
+    # Amendment B: honest transition required, prescribed wording
+    # is not — the quoted sentence appears in NO tier.
+    for guide in (light, light2, gentle, gentle2, pivot):
+        assert _PRESCRIBED_PIVOT_SENTENCE not in guide
+
+
+def test_guidance_carries_the_serve_line_in_every_tier():
+    beats = _weaver_beats()
+    for turns, pivoted in ((1, False), (3, False), (5, False),
+                           (6, True)):
+        guide = TB.tutorial_guidance(beats, _empty_hits(), turns, 5,
+                                     pivoted)
+        assert "serves this conversation, never dominates it" in guide
+        assert "met a character, not completed a lesson" in guide
 
 
 def test_guidance_is_empty_when_there_is_nothing_to_teach():
     beats = _weaver_beats()
-    covered = {b.id for b in beats}
+    covered = {
+        b.id: {f.name for f in b.facets} for b in beats
+    }
     assert TB.tutorial_guidance(beats, covered, 9, 5, False) == ""
     assert TB.tutorial_guidance(beats, covered, 9, 5, True) == ""
-    assert TB.tutorial_guidance((), set(), 9, 5, False) == ""
-    assert TB.tutorial_guidance(beats, set(), 9, 0, False) == ""
+    assert TB.tutorial_guidance((), _empty_hits(), 9, 5, False) == ""
+    assert TB.tutorial_guidance(beats, _empty_hits(), 9, 0, False) == ""
 
 
 def test_guidance_stays_at_maximum_after_a_pivot():
     # Correction 2026-10-24: a pivot redirects, it does not satisfy.
     # Steering must NOT relax once the pivot is delivered — it stays
-    # at maximum until the beats are covered, and it must not
+    # at maximum until the facets are covered, and it must not
     # re-instruct a set-aside that already happened.
     beats = _weaver_beats()
-    guide = TB.tutorial_guidance(beats, set(), 6, 5, True)
+    guide = TB.tutorial_guidance(beats, _empty_hits(), 6, 5, True)
     assert guide != ""
-    assert "deliver what is still untaught" in guide
-    assert "set that aside" not in guide
+    assert "address what is still untaught" in guide
+    assert "already set aside" in guide
+    assert "setting the current thread aside" not in guide
+    assert _PRESCRIBED_PIVOT_SENTENCE not in guide
+
+
+def test_guidance_names_uncovered_facets_not_the_checklist():
+    # Amendment B: the frame names uncovered substance to address,
+    # never a script to recite. A half-covered checklist lists only
+    # what is still missing.
+    beats = _weaver_beats()
+    hits = {"conductor:terrain": {"places"}}
+    guide = TB.tutorial_guidance(beats, hits, 1, 5, False)
+    assert "how the council and the tree work" in guide
+    assert "the council and the tree as places" not in guide
 
 
 @pytest.mark.parametrize("seat,patience", sorted(EXPECTED_PATIENCE.items()))
 def test_fallback_fires_at_exactly_each_seats_threshold(seat, patience):
     beats = TB.beats_for(seat)
     for turn in range(1, patience):
-        guide = TB.tutorial_guidance(beats, set(), turn, patience, False)
-        assert "set that aside" not in guide, (seat, turn)
-    at = TB.tutorial_guidance(beats, set(), patience, patience, False)
-    assert "set that aside" in at, seat
-    assert "why I wanted to talk" in at, seat
+        guide = TB.tutorial_guidance(beats, _empty_hits(), turn,
+                                     patience, False)
+        assert "setting the current thread aside" not in guide, \
+            (seat, turn)
+    at = TB.tutorial_guidance(beats, _empty_hits(), patience,
+                              patience, False)
+    assert "setting the current thread aside" in at, seat
+    assert "never fake a natural segue" in at, seat
 
 
 def test_pivot_honesty_markers():
+    # Detection heuristic only (see PIVOT_SET_ASIDE_MARKER): the
+    # frame never prescribes these words, so a pivot phrased
+    # differently is still a pivot — it simply is not detected.
     assert TB.pivot_delivered_in(
         "Let's set that aside for now, why I wanted to talk was "
         "the orchestra itself.")
@@ -203,7 +260,7 @@ def test_weaver_definition_carries_beats_and_patience():
 
 
 # ---------------------------------------------------------------------------
-# The runtime: frames, markers, pivot, and the close gate.
+# The runtime: frames, facets, pivot, and the close gate.
 # ---------------------------------------------------------------------------
 
 class _FakeHost:
@@ -254,21 +311,34 @@ def test_gradient_rides_the_turn_frame_and_adds_no_generation():
     assert len(host.generated_frames) == 5
     assert "will find its moment" in frames[0]
     assert "natural opening" in frames[2]
-    assert "set that aside" in frames[4]
+    assert "setting the current thread aside" in frames[4]
+    assert _PRESCRIBED_PIVOT_SENTENCE not in frames[4]
     # The frame's pivot instruction must not self-trigger delivery:
     # detection runs on spoken replies, never on frames.
     assert state.tutorial_pivot_delivered is False
 
 
-def test_beat_markers_cover_beats_and_never_reach_the_user():
+def test_coverage_reads_spoken_bodies_not_markers():
+    # Amendment A: trailers NEVER feed coverage. A facet-connected
+    # body with no trailer counts; a trailer with no facet content
+    # counts for nothing; a trailer never reaches the user.
     runtime, _ = _weaver_runtime()
+
     host = _FakeHost(
-        gen_output="My ground is the council and the tree. "
-        "[[beat:conductor:terrain]]")
+        gen_output="My ground is the council and the tree — let me "
+        "show you how the council works.")
     state = ENC.EncounterState()
     runtime.handle_turn(host, state, "What is this place?", 0)
     assert state.tutorial_covered == ["conductor:terrain"]
-    assert host.said == ["My ground is the council and the tree."]
+    assert host.said == [
+        "My ground is the council and the tree — let me show you "
+        "how the council works."]
+
+    host = _FakeHost(gen_output="Something taught. [[beat:conductor:terrain]]")
+    state = ENC.EncounterState()
+    runtime.handle_turn(host, state, "What is this place?", 0)
+    assert state.tutorial_covered == []
+    assert host.said == ["Something taught."]
     assert all("[[beat:" not in said for said in host.said)
 
 
@@ -278,6 +348,7 @@ def test_unknown_beat_ids_never_satisfy_anything():
     state = ENC.EncounterState()
     runtime.handle_turn(host, state, "What is this place?", 0)
     assert state.tutorial_covered == []
+    assert state.tutorial_facets == {}
 
 
 def test_spoken_pivot_marks_the_pivot_delivered():
@@ -333,7 +404,8 @@ def test_close_refused_on_pivot_alone():
 
 def test_close_permitted_when_pivot_response_communicates_essentials():
     # The pivot response CAN satisfy the gate — but only by covering
-    # beats with content, under the same rule as any other turn.
+    # facets with content, under the same rule as any other turn,
+    # and with no trailers at all: coverage reads spoken bodies.
     runtime, _ = _weaver_runtime()
     host = _FakeHost(
         gen_output="Let's set that aside for now, why I wanted to "
@@ -342,9 +414,7 @@ def test_close_permitted_when_pivot_response_communicates_essentials():
         "me the competing priorities that will not sit together, "
         "whenever they need hearing together. And every new voice "
         "changes what the whole orchestra can play — I keep the "
-        "whole of it in ear. "
-        "[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
-        "[[beat:conductor:why_meet]]")
+        "whole of it in ear.")
     state = ENC.EncounterState()
     runtime.handle_turn(host, state, "What is this place?", 0)
     assert state.tutorial_pivot_delivered is True
@@ -359,17 +429,21 @@ def test_close_permitted_when_pivot_response_communicates_essentials():
 
 
 def test_close_refused_when_pivot_response_covers_only_some_beats():
-    # Pivot + partial content is still not the gate: every beat
-    # must be communicated, not just the pivoted-to one.
+    # Pivot + place-naming alone is still not the gate: naming the
+    # council and the tree satisfies the places facet but NOT the
+    # functionality facet, so terrain itself is uncovered — and
+    # every beat must be covered, not just the pivoted-to one.
     runtime, _ = _weaver_runtime()
     host = _FakeHost(
         gen_output="Let's set that aside for now, why I wanted to "
-        "talk was this: my ground is the council and the tree. "
-        "[[beat:conductor:terrain]]")
+        "talk was this: my ground is the council and the tree.")
     state = ENC.EncounterState()
     runtime.handle_turn(host, state, "What is this place?", 0)
     assert state.tutorial_pivot_delivered is True
-    assert state.tutorial_covered == ["conductor:terrain"]
+    assert state.tutorial_facets == {
+        "conductor:terrain": ["places"],
+    }
+    assert state.tutorial_covered == []
     state.impression_answered = True
     state.satisfied = {"own_undertaking_engaged": True}
     runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
@@ -399,42 +473,126 @@ def test_generic_definitions_close_without_a_tutorial_gate():
 def test_tutorial_state_round_trips_through_json():
     state = ENC.EncounterState()
     state.tutorial_covered = ["conductor:terrain"]
+    state.tutorial_facets = {"conductor:terrain": ["places"]}
     state.tutorial_pivot_delivered = True
     restored = ENC.EncounterState.from_json(state.to_json())
     assert restored.tutorial_covered == ["conductor:terrain"]
+    assert restored.tutorial_facets == {"conductor:terrain": ["places"]}
     assert restored.tutorial_pivot_delivered is True
     # Rows written before this mechanism load with clean defaults.
     legacy = ENC.EncounterState.from_json('{"user_turns": 3}')
     assert legacy.tutorial_covered == []
+    assert legacy.tutorial_facets == {}
     assert legacy.tutorial_pivot_delivered is False
 
 
 # ---------------------------------------------------------------------------
-# Correction 2026-10-24: markers are self-reported, so a claim counts
-# only with content. Anchors are the guard; the floor is a backstop.
+# Amendment A: the proxy blocks disconnected mentions, superficial
+# explanations, and invented capabilities — by construction.
 # ---------------------------------------------------------------------------
 
-_GENERIC_ANCHOR_WORDS = {"terrain", "involvement", "why_meet", "meet"}
+_GENERIC_FACET_WORDS = {"terrain", "involvement", "why_meet", "meet"}
 
 
-def test_every_beat_carries_real_content_anchors():
+def test_every_beat_carries_real_facets():
     for seat in SEAT_IDS:
         for beat in TB.beats_for(seat):
-            assert len(beat.anchors) >= 2, beat.id
-            for anchor in beat.anchors:
-                assert beat.id not in anchor, beat.id
-                assert anchor.lower() not in _GENERIC_ANCHOR_WORDS, beat.id
-            # The frame's own teaching substance passes its own guard:
-            # anchors and teaching cannot drift apart unnoticed.
-            assert TB.beat_content_covered(beat, beat.teaching), beat.id
+            assert len(beat.facets) >= 1, beat.id
+            for facet in beat.facets:
+                assert facet.name and facet.substance, beat.id
+                assert facet.name not in _GENERIC_FACET_WORDS, beat.id
+                for term_set in facet.term_sets:
+                    assert len(term_set) >= 1, beat.id
+                    for term in term_set:
+                        assert beat.id not in term, beat.id
+                        assert term.lower() not in _GENERIC_FACET_WORDS, \
+                            beat.id
+            # The frame's own teaching substance satisfies every
+            # facet of its own beat: facets and teaching cannot
+            # drift apart unnoticed.
+            for facet in beat.facets:
+                assert TB.facet_satisfied(facet, beat.teaching), beat.id
 
 
-def test_anchor_matching_is_word_bounded_and_case_insensitive():
-    beat = TB.beats_for("conductor")[0]  # terrain: council, tree, ...
-    assert TB.beat_content_covered(beat, "MY GROUND IS THE COUNCIL.")
-    assert not TB.beat_content_covered(beat, "Back to the street.")
-    assert not TB.beat_content_covered(beat, "The council")
-    assert not TB.beat_content_covered(beat, "")
+def test_facet_matching_is_word_bounded_and_case_insensitive():
+    places, _func = TB.beats_for("conductor")[0].facets
+    assert TB.facet_satisfied(places, "MY GROUND IS THE COUNCIL.")
+    assert not TB.facet_satisfied(places, "Back to the street.")
+    assert not TB.facet_satisfied(places, "The council")
+    assert not TB.facet_satisfied(places, "")
+
+
+def test_disconnected_mentions_satisfy_nothing():
+    # A place named in one turn and a capability word in another,
+    # never joined, satisfy no functionality facet — even though
+    # both words appear across the meeting.
+    runtime, _ = _weaver_runtime()
+    host = _FakeHost()
+    state = ENC.EncounterState()
+
+    host.gen_output = "Let me tell you about the council."
+    runtime.handle_turn(host, state, "What is this place?", 0)
+    assert state.tutorial_facets == {"conductor:terrain": ["places"]}
+
+    host.gen_output = "I can show you many things."
+    runtime.handle_turn(host, state, "So what can you show?", 0)
+    assert state.tutorial_facets == {"conductor:terrain": ["places"]}
+    assert state.tutorial_covered == []
+
+
+def test_superficial_explanation_satisfies_no_functionality():
+    # Naming a place without any capability language is not
+    # functionality understood: places hit, functionality unhit,
+    # terrain uncovered.
+    _places, func = TB.beats_for("conductor")[0].facets
+    assert not TB.facet_satisfied(func, "The council exists.")
+    assert not TB.facet_satisfied(func, "The council is a place.")
+
+
+def test_invented_capability_satisfies_nothing():
+    # A capability claim outside the seat's approved vocabulary
+    # shares no terms with the functionality facet — places hit,
+    # functionality unhit, terrain uncovered.
+    _places, func = TB.beats_for("conductor")[0].facets
+    assert not TB.facet_satisfied(
+        func, "The council lets you rewrite other people's voices.")
+    assert not TB.facet_satisfied(
+        func, "The council deletes whatever you dislike.")
+
+
+def test_facets_accumulate_across_turns_in_any_order():
+    # Different facets may land on different turns: terrain on turn
+    # one, why-meet on turn two, involvement on turn three — and
+    # the gate opens only once every facet of every beat is hit.
+    runtime, definition = _weaver_runtime()
+    host = _FakeHost()
+    state = ENC.EncounterState()
+
+    host.gen_output = (
+        "My ground is the council and the tree — let me show you "
+        "how the council works.")
+    runtime.handle_turn(host, state, "What is this place?", 0)
+    assert state.tutorial_covered == ["conductor:terrain"]
+
+    host.gen_output = (
+        "Every new voice changes what the whole orchestra can play.")
+    runtime.handle_turn(host, state, "Why meet at all?", 0)
+    assert set(state.tutorial_covered) == {
+        "conductor:terrain", "conductor:why_meet",
+    }
+
+    host.gen_output = (
+        "Bring me the competing priorities that will not sit "
+        "together, whenever they need hearing together.")
+    runtime.handle_turn(host, state, "What do I do with you?", 0)
+    assert set(state.tutorial_covered) == {
+        "conductor:terrain", "conductor:involvement",
+        "conductor:why_meet",
+    }
+    state.impression_answered = True
+    state.satisfied = {"own_undertaking_engaged": True}
+    runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
+    assert state.closed is True
 
 
 def test_announced_but_unexplained_beat_is_not_counted():
@@ -442,28 +600,23 @@ def test_announced_but_unexplained_beat_is_not_counted():
     # first announces the terrain beat, then mentions it generically,
     # then actually explains it. Only the third turn counts — and
     # the close stays shut throughout on the uncovered beats.
-    # (The announcement-only turns are exactly the failure the
-    # self-reported-marker design allowed before this correction.)
     runtime, definition = _weaver_runtime()
     host = _FakeHost()
     state = ENC.EncounterState()
 
     host.gen_output = (
-        "Let me tell you about my terrain now — it's very important. "
-        "[[beat:conductor:terrain]]")
+        "Let me tell you about my terrain now — it's very important.")
     runtime.handle_turn(host, state, "What is this place?", 0)
     assert state.tutorial_covered == []
 
     host.gen_output = (
-        "My terrain is important to me, it matters a lot, really. "
-        "[[beat:conductor:terrain]]")
+        "My terrain is important to me, it matters a lot, really.")
     runtime.handle_turn(host, state, "So what is your terrain?", 0)
     assert state.tutorial_covered == []
 
     host.gen_output = (
         "My ground is the council and the tree — anywhere parts of "
-        "your life need hearing together. "
-        "[[beat:conductor:terrain]]")
+        "your life need hearing together.")
     runtime.handle_turn(host, state, "Say more about that.", 0)
     assert state.tutorial_covered == ["conductor:terrain"]
 
@@ -475,3 +628,89 @@ def test_announced_but_unexplained_beat_is_not_counted():
     runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
     assert state.closed is False
     assert host.close_calls == 0
+
+
+def test_playtest_terrain_would_not_have_counted():
+    # The 2026-10-24 video: "need hearing together" with no council
+    # or tree connected to any capability satisfies neither facet —
+    # the old anchor rule counted it, the facet rule does not.
+    _places, func = TB.beats_for("conductor")[0].facets
+    assert not TB.facet_satisfied(
+        func,
+        "My ground is anywhere parts of a life pull apart and "
+        "need hearing together.")
+    assert not TB.facet_satisfied(
+        _places,
+        "My ground is anywhere parts of a life pull apart and "
+        "need hearing together.")
+
+
+# ---------------------------------------------------------------------------
+# Amendments C, D, E, F: standing notes, conductor frame, naming,
+# user-experience jurisdictions.
+# ---------------------------------------------------------------------------
+
+def test_turn_frame_carries_zenaf_note_and_naming_note():
+    runtime, definition = _weaver_runtime()
+    frame, _cue = runtime._turn_frame(
+        ENC.EncounterState(), "What is this app?")
+    assert "answer concretely and directly first" in frame
+    assert "planned or not built" in frame
+    assert "never as available" in frame
+    assert "refer to every other seat by its seat role" in frame
+    assert "Meeting a character is not developing" in frame
+    # The safety net reinforces only on an unmistakable question.
+    assert "Note: this message asks directly about Zenaf" in frame
+
+
+def test_zenaf_detector_is_a_safety_net_not_the_mechanism():
+    assert ENC._asks_about_zenaf("What is this app?")
+    assert ENC._asks_about_zenaf("What do you do here? On this site?")
+    assert ENC._asks_about_zenaf("How does this work?")
+    assert ENC._asks_about_zenaf("What is Zenaf, exactly?")
+    assert not ENC._asks_about_zenaf(
+        "What's pulling against what for you right now?")
+    assert not ENC._asks_about_zenaf(
+        "I have a lot of things going on.")
+    # The standing note is in frame whether or not the detector
+    # fires: a visitor may ask in words no small vocabulary knows.
+    runtime, _ = _weaver_runtime()
+    frame, _cue = runtime._turn_frame(
+        ENC.EncounterState(), "So what actually is all of this?")
+    assert "answer concretely and directly first" in frame
+    assert "Note: this message asks directly about Zenaf" not in frame
+
+
+def test_naming_note_is_two_tier_and_per_seat():
+    base = ENC.get_definition(MT.get_script("conductor", 1))
+    note = ENC._naming_note(base)
+    assert "has not met any other seat yet" in note
+    assert "mentor, champion, guardian" in note
+    assert "Meeting a character is not developing" in note
+
+    import dataclasses
+    met = dataclasses.replace(base, met_seats=("champion",))
+    note = ENC._naming_note(met)
+    assert "Firebrand (champion)" in note
+    assert "has not met any other seat yet" not in note
+
+
+def test_weaver_turn_frame_is_conductor_not_coach():
+    frame = ENC.WEAVER_TURN_FRAME
+    assert "relationship seen" in frame
+    assert "never the default move" in frame
+    assert "third thing" in frame
+    assert "no required words, no required frequency" in frame
+    assert "move their material one real step" not in frame
+    assert "Progress they can use" not in frame
+    assert "Never name or describe the other council members" not in frame
+
+
+def test_feature_focus_states_primary_ux_and_shared_creation():
+    focus = MT.SEAT_FEATURE_FOCUS["conductor"]
+    assert "relationship genuinely heard" in focus
+    assert "primary" in focus
+    assert "shared creative system" in focus
+    assert "Narrative Steward" in focus
+    assert "one real step forward" not in focus
+    assert "genuinely advanced" not in focus

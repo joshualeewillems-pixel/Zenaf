@@ -59,6 +59,7 @@ canonical character; the user's echo is a different side of the switch).
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import re
@@ -224,6 +225,20 @@ class MeetingStore:
                 (user_id, archetype_id, keystone_index),
             )
             self._conn.commit()
+
+    def met_seats(self, user_id: str) -> list[str]:
+        """Archetype ids whose FIRST meeting (keystone 1) is complete
+        for this user — the naming rule's met set (amendment E):
+        character names may be used for these seats, roles for all
+        others. A begun-but-incomplete meeting does not count: the
+        name unlocks at completion, when the card says so."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT archetype_id FROM meetings WHERE user_id = ? "
+                "AND keystone_index = 1 AND status = 'complete'",
+                (user_id,),
+            ).fetchall()
+        return [row[0] for row in rows]
 
     # -- archives (prior runs, preserved verbatim) ------------------------------
 
@@ -529,6 +544,11 @@ class MeetingService:
         if enc_state.closed:
             raise MeetingError("This meeting has already reached its close.")
         definition = ENC.get_definition(script)
+        # The naming rule needs the met set: completed first meetings
+        # only (see MeetingStore.met_seats). The definition is frozen,
+        # so replace rather than mutate.
+        definition = dataclasses.replace(
+            definition, met_seats=tuple(self.meetings.met_seats(user_id)))
         host = _MeetingHost(self, user_id, arch_id, keystone_index, script)
         new_q_idx = EncounterRuntime(definition).handle_turn(
             host, enc_state, message, int(row["question_idx"])

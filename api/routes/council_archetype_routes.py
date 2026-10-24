@@ -1,7 +1,11 @@
 """Council archetype naming unlocks + seat avatars.
 
-GET /council/archetypes/status — per-archetype training depth, rename
+GET /council/archetypes/naming-status — per-archetype training depth, rename
 unlock state, avatar unlock state, and custom-archetype milestone progress.
+(This used to live at /council/archetypes/status, where it shadowed the
+Living Tree's full archetype-status handler in council_routes.py — the
+naming router registers first, so the rename shape won the path and the
+tree handler was unreachable over HTTP. The paths are now separate.)
 PUT /council/archetypes/{id}/name — rename a seat. 404 for unknown ids,
 403 when the rename milestone is not yet unlocked (with signals_to_unlock),
 422 for invalid names.
@@ -69,7 +73,7 @@ def _uid(current_user: dict) -> str | None:
     return (current_user or {}).get("id") or (current_user or {}).get("user_id")
 
 
-@router.get("/status")
+@router.get("/naming-status")
 def get_archetype_status(current_user: dict = Depends(get_current_user)):
     """Naming unlock status for every council archetype.
 

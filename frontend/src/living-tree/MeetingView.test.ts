@@ -194,3 +194,55 @@ describe('MeetingView closing batch', () => {
     expect(container.textContent).toContain('finished before you come back')
   })
 })
+
+describe('MeetingView user completion', () => {
+  it('completes an active meeting at the visitor’s word and shows the card once the closing words drain', async () => {
+    const COMPLETE_MSGS = [
+      ...OPENING,
+      u('u9', 'Just poking around — a friend said to look in.'),
+      v('v6', "Well. I think we've actually met now — which is rarer than people think."),
+      v('v7', "I'm the Weaver. I hear how parts fit, and I cannot leave a loose thread."),
+      v('v8', "Don't wait for the instrument to be finished before you come back."),
+    ]
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = String(url)
+      const payload = path.includes('/meeting/complete')
+        ? state('complete', COMPLETE_MSGS)
+        : state('active', OPENING)
+      return {
+        ok: true,
+        status: 200,
+        json: async () => payload,
+      } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await act(async () => {
+      root.render(React.createElement(MeetingView, { archetypeId: 'conductor', onClose: () => {} }))
+    })
+    await flush(30000)
+    // The active footer is showing, so the active meeting state applied.
+    // (The opening bubbles themselves only paint on the next render —
+    // first-hydration priming marks them seen without a state change to
+    // re-render on; a pre-existing quirk, out of this fix's scope.)
+    const completeBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Complete this meeting'),
+    )
+    expect(completeBtn).toBeTruthy()
+    await act(async () => {
+      completeBtn!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    // The complete state is applied but her closing words are still
+    // behind the typewriter queue: no completion presentation yet.
+    expect(container.textContent).not.toContain('FIRST MEETING — COMPLETE')
+    expect(container.textContent).not.toContain("You've met the Weaver")
+    await flush(60000)
+    // The queue has drained: the card, the title, and her closing
+    // words are all present — and Meet again is now available.
+    expect(container.textContent).toContain('FIRST MEETING — COMPLETE')
+    expect(container.textContent).toContain("You've met the Weaver")
+    expect(container.textContent).toContain('Seven parts on this bench')
+    expect(container.textContent).toContain("we've actually met now")
+    expect(container.textContent).toContain('Meet again')
+  })
+})

@@ -641,6 +641,99 @@ def test_restart_api_mapping(ve_ctx, tmp_path, monkeypatch):
     assert _conductor_k1_status(uid) == "Todo"
 
 
+# -- Visitor-initiated completion (the close fix, 2026-10-24) ---------------
+# A meeting could only reach its close through the runtime's own verdict:
+# a visitor who said "we're done here" and was answered "Done" could still
+# find the meeting sitting active, with no way to complete it and therefore
+# no way to meet again. complete() is the visitor's own close action.
+
+def test_complete_refusals(ve_ctx, tmp_path):
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+
+    # No meeting on record at all.
+    with pytest.raises(MeetingError, match="no meeting in progress"):
+        svc.complete(uid, "conductor")
+    # A seat whose meeting isn't written yet — same honest gate as start.
+    with pytest.raises(MeetingError, match="isn't written yet"):
+        svc.complete(uid, "mentor")
+    with pytest.raises(ValueError, match="Unknown seat"):
+        svc.complete(uid, "not-a-seat")
+
+
+def test_complete_active_meeting_without_recognition(ve_ctx, tmp_path):
+    """The stuck case: a short exchange that never produced an impression
+    still completes cleanly — reveal spoken, task Done, turns refused,
+    restart unlocked. Nothing is filed without a read-back."""
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+    svc.start(uid, "conductor")
+    svc.turn(uid, "conductor", "Just poking around — a friend said to look in.")
+
+    state = svc.complete(uid, "conductor")
+
+    assert state["status"] == "complete"
+    assert _conductor_k1_status(uid) == "Done"
+    script = MT.get_script("conductor", 1)
+    bodies = [m["body"] for m in state["messages"]]
+    assert bodies[-len(script.reveal):] == list(script.reveal)
+
+    # A completed meeting takes no more turns, and Meet again is open.
+    with pytest.raises(MeetingError, match="No meeting is in progress"):
+        svc.turn(uid, "conductor", "One more thing.")
+    state = svc.restart(uid, "conductor")
+    assert state["status"] == "not_started"
+    assert _conductor_k1_status(uid) == "Todo"
+
+
+def test_complete_paused_meeting(ve_ctx, tmp_path):
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+    svc.start(uid, "conductor")
+    svc.pause(uid, "conductor")
+    assert svc.state(uid, "conductor")["status"] == "paused"
+
+    state = svc.complete(uid, "conductor")
+
+    assert state["status"] == "complete"
+    assert _conductor_k1_status(uid) == "Done"
+
+
+def test_complete_is_idempotent(ve_ctx, tmp_path):
+    """Completing twice speaks the reveal exactly once — the second call
+    returns the completed state unchanged."""
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+    svc.start(uid, "conductor")
+    first = svc.complete(uid, "conductor")
+    script = MT.get_script("conductor", 1)
+    assert [m["body"] for m in first["messages"]].count(script.reveal[0]) == 1
+
+    second = svc.complete(uid, "conductor")
+
+    assert second["status"] == "complete"
+    assert [m["body"] for m in second["messages"]] == [m["body"] for m in first["messages"]]
+
+
+def test_complete_api_mapping(ve_ctx, tmp_path, monkeypatch):
+    import api.routes.conversation_routes as routes
+
+    uid = _seeded_user("complete-api@example.com")
+    svc = _svc(tmp_path)
+    monkeypatch.setattr(routes, "_meeting_service", lambda: svc)
+    user = {"id": uid}
+
+    # Nothing in progress → the refusal maps to 409.
+    with pytest.raises(HTTPException) as exc:
+        routes.meeting_complete(routes.MeetingCompleteBody(archetype_id="conductor"), user)
+    assert exc.value.status_code == 409
+
+    svc.start(uid, "conductor")
+    state = routes.meeting_complete(routes.MeetingCompleteBody(archetype_id="conductor"), user)
+    assert state["status"] == "complete"
+    assert _conductor_k1_status(uid) == "Done"
+
+
 # -- The feel fixes (Joshua's first live run, 2026-10-23) ---------------------
 
 def test_acknowledgment_detection_is_human_shaped():

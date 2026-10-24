@@ -280,6 +280,16 @@ export function MeetingView({
     onClose()
   }
 
+  // The visitor's own close action: complete the meeting at their word,
+  // whether or not the runtime's close verdict fired. The returned state
+  // carries the character's closing words, which type in through the
+  // same queue — so the completion card appears only once they have
+  // all been delivered, exactly as after a runtime closing turn.
+  const completeMeeting = async () => {
+    const s = await call('/complete', { archetype_id: archetypeId, keystone_index: 1 })
+    if (s) apply(s)
+  }
+
   const color = voiceColor(archetypeId)
   const complete = state?.status === 'complete'
   // The meeting is complete in the record as soon as the closing
@@ -419,19 +429,37 @@ export function MeetingView({
             >
               Pause the meeting — it will wait at this exact point
             </button>
+            <button
+              type="button"
+              onClick={() => void completeMeeting()}
+              disabled={busy}
+              className="mt-2 min-h-[44px] px-2 text-sm text-stone-400 underline underline-offset-4 disabled:opacity-40"
+            >
+              Complete this meeting — we’re done here
+            </button>
           </div>
         )}
 
         {inRoom && state.status === 'paused' && (
           <div className="mtg-foot">
-            <button
-              type="button"
-              onClick={begin}
-              disabled={busy}
-              className="min-h-[44px] px-5 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
-            >
-              {busy ? 'Resuming…' : 'Resume the meeting →'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={begin}
+                disabled={busy}
+                className="min-h-[44px] px-5 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
+              >
+                {busy ? 'Resuming…' : 'Resume the meeting →'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void completeMeeting()}
+                disabled={busy}
+                className="min-h-[44px] px-5 rounded-full border border-stone-600 text-stone-200 text-sm font-semibold disabled:opacity-40"
+              >
+                Complete this meeting
+              </button>
+            </div>
           </div>
         )}
 

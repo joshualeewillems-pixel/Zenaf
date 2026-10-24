@@ -863,3 +863,51 @@ class MeetingService:
         if row is not None and row["status"] == "active":
             self.meetings.update(user_id, arch_id, keystone_index, status="paused")
         return self.state(user_id, arch_id, keystone_index)
+
+    def complete(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
+        """Complete the meeting at the visitor's word.
+
+        Until now a meeting could only reach its close through the
+        encounter runtime's own verdict — a visitor who said "we're
+        done here" and was answered "Done" could still find the meeting
+        sitting active, with no way to complete it and therefore no way
+        to meet again (restart refuses anything not complete). This is
+        the visitor's own close action: it funnels through the same
+        completion chokepoint as the runtime's close (_do_reveal), so
+        the character's authored closing words are spoken, the keystone
+        task marks Done, the completed-meeting event emits, and any
+        read-back impression files — exactly as a runtime close would.
+
+        Deliberately NOT gated on recognition: a meeting that never
+        produced an impression (a poking-around visitor, a short
+        exchange) still ends cleanly, filing nothing — _file_impression
+        is a no-op without a read-back. Completing an already-complete
+        meeting returns its state unchanged (the reveal is never
+        spoken twice). Nothing here trains — same invariant as the
+        rest of the engine.
+        """
+        arch_id = (archetype_id or "").strip().lower()
+        if arch_id not in stock_archetype_ids():
+            raise ValueError(f"Unknown seat: {archetype_id!r}")
+        script = MT.get_script(arch_id, keystone_index)
+        if script is None:
+            raise MeetingError(
+                "That meeting isn't written yet. It will get its own "
+                "conversation when its turn comes — nothing improvised."
+            )
+        row = self.meetings.get(user_id, arch_id, keystone_index)
+        if row is None:
+            if self._keystone_done(user_id, arch_id, keystone_index):
+                return self.state(user_id, arch_id, keystone_index)
+            raise MeetingError(
+                "There's no meeting in progress to complete — this seat "
+                "hasn't been met yet."
+            )
+        if row["status"] == "complete":
+            return self.state(user_id, arch_id, keystone_index)
+        if row["status"] not in ("active", "paused"):
+            raise MeetingError(
+                "This meeting can't be completed from where it stands."
+            )
+        self._do_reveal(user_id, arch_id, keystone_index, script)
+        return self.state(user_id, arch_id, keystone_index)

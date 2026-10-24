@@ -462,8 +462,9 @@ class MeetingService:
 
     def start(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         """Begin (or resume) a meeting. A fresh start delivers the
-        encounter's opening — character, environment, invitation, in
-        at most three bubbles — and the encounter begins. A resume
+        encounter's opening — the script's authored introduction
+        (the Weaver's is four bubbles, delivered verbatim) — and
+        the encounter begins. A resume
         returns current state: the transcript carries what was already
         said, nothing repeats."""
         arch_id = (archetype_id or "").strip().lower()

@@ -790,7 +790,7 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
         ),
         appears_in="Conductor keystone 1, context paragraphs (workshop notes)",
         payoff=(
-            "The Bridge's first meeting: she carries words between "
+            "The Crane's first meeting: she carries words between "
             "rooms and people, and the rephrasing is her craft, done "
             "in the open."
         ),
@@ -803,7 +803,7 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
         ),
         appears_in="Conductor keystone 1, context paragraphs (workshop notes)",
         payoff=(
-            "The Neighbor's first meeting: the margins of the user's "
+            "The Raven's first meeting: the margins of the user's "
             "own record carry his marks, and he owns the habit "
             "plainly."
         ),

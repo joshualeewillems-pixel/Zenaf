@@ -51,7 +51,7 @@ export const SEAT_REVIEW_GROUPS: Array<{ key: string; name: string }> = [
   { key: 'mentor', name: 'The Gardener' },
   { key: 'champion', name: 'The Firebrand' },
   { key: 'guardian', name: 'The Bear' },
-  { key: 'ambassador', name: 'The Bridge' },
+  { key: 'ambassador', name: 'The Crane' },
   { key: 'conductor', name: 'The Weaver' },
   { key: 'maverick', name: 'The Fox' },
 ]

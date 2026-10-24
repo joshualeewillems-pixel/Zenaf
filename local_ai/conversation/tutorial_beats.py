@@ -28,9 +28,29 @@ Mechanism (the runtime in encounter.py consumes this module):
   honest pivot — "let's set that aside for now, why I wanted to
   talk was…" — which OWNS the direction change instead of faking
   a natural segue.
-- Close gating: a meeting closes only when recognition conditions
-  are met AND (all beats covered OR the pivot delivered). The
+- Close gating (corrected 2026-10-24, Joshua): a meeting closes
+  only when recognition conditions are met AND every beat is
+  COVERED — covered meaning the beat's essential information was
+  actually communicated in a spoken turn. The pivot is a
+  redirection mechanism only: it steers toward uncovered beats,
+  and after a pivot the steering stays at maximum until the beats
+  are covered. A pivot NEVER satisfies the gate on its own; a
+  pivot response can satisfy it only by covering beats with
+  content, under the same coverage rule as any other turn. The
   ceiling wrap bypasses the gate by design (a rescue, not a close).
+
+- Content guard (same correction): a ``[[beat:<id>]]`` trailer is
+  the generating model's own claim, so a claim alone never counts.
+  Coverage requires the trailer AND content: the stripped spoken
+  body must hit one of the beat's content anchors — distinctive
+  topical terms for that beat, never the beat id, never generic
+  words an empty announcement could hit ("let me cover my
+  terrain" matches nothing; "my ground is the council and the
+  tree" matches). The check runs on the body AFTER trailer
+  stripping, so trailer text can never self-satisfy. Anchors block
+  announcement-only and generic claims; they do not grade
+  explanatory depth — that judgment stays with the user at the
+  review surface, like every other claim in the system.
 
 This module is pure data + pure functions. It imports nothing from
 the encounter runtime, so it can never create a cycle.
@@ -46,17 +66,57 @@ from dataclasses import dataclass
 class TutorialBeat:
     """One thing a first meeting must teach. `teaching` is plain
     substance for the frame — the character renders it in its own
-    voice; the frame never scripts its words."""
+    voice; the frame never scripts its words. `anchors` are the
+    beat's content anchors for the coverage guard (see
+    beat_content_covered): distinctive topical terms the spoken
+    body must contain before a claimed beat counts as covered."""
 
     id: str
     kind: str  # "terrain" | "involvement" | "why_meet"
     title: str
     teaching: str
+    anchors: tuple[str, ...] = ()
+
+
+#: Content anchors per beat, keyed by (seat, kind). Chosen so an
+#: empty announcement ("let me cover my terrain", "my terrain is
+#: important to me") matches NOTHING, while a body that actually
+#: explains the beat matches: the anchors are the beat's own
+#: topical vocabulary — council, tree, rentals, zones, redaction —
+#: never the beat id, never generic words. Every beat's teaching
+#: text itself passes its own anchors (pinned by test). Single
+#: words and phrases both allowed; matching is case-insensitive
+#: with word boundaries, on the stripped spoken body.
+_BEAT_ANCHORS: dict[tuple[str, str], tuple[str, ...]] = {
+    ("conductor", "terrain"): ("council", "tree", "hearing together"),
+    ("conductor", "involvement"): (
+        "competing priorities", "sit together", "hearing together"),
+    ("conductor", "why_meet"): ("new voice", "in ear", "whole orchestra"),
+    ("mentor", "terrain"): ("snapshots", "eras", "tending", "uploads"),
+    ("mentor", "involvement"): ("set aside", "uploads", "grown"),
+    ("mentor", "why_meet"): ("untended", "tending", "better shape"),
+    ("champion", "terrain"): ("follow-through", "commitments", "projects"),
+    ("champion", "involvement"): ("hill", "next step", "commitment"),
+    ("champion", "why_meet"): ("unkept", "weather"),
+    ("guardian", "terrain"): ("consent scopes", "redaction", "never observed"),
+    ("guardian", "involvement"): ("consent scopes", "boundaries", "observed"),
+    ("guardian", "why_meet"): ("trust", "nothing to protect"),
+    ("ambassador", "terrain"): ("rentals", "zones", "disclosures"),
+    ("ambassador", "involvement"): ("represented", "travel", "elsewhere"),
+    ("ambassador", "why_meet"): ("betrayed", "faithfully"),
+    ("skeptic", "terrain"): ("review queue", "anchored evidence", "blend"),
+    ("skeptic", "involvement"): ("contests", "unresolved", "claims"),
+    ("skeptic", "why_meet"): ("say-so", "check its work"),
+    ("maverick", "terrain"): ("own key", "importing", "exports", "reshaping"),
+    ("maverick", "involvement"): ("own key", "reshapes", "takes everything"),
+    ("maverick", "why_meet"): ("another way", "has to be this way"),
+}
 
 
 def _beat(seat: str, kind: str, title: str, teaching: str) -> TutorialBeat:
     return TutorialBeat(id=f"{seat}:{kind}", kind=kind, title=title,
-                        teaching=teaching)
+                        teaching=teaching,
+                        anchors=_BEAT_ANCHORS[(seat, kind)])
 
 
 #: The seven checklists, keyed by archetype id. Derived from each
@@ -267,6 +327,36 @@ def all_beats_covered(beats: tuple[TutorialBeat, ...],
     return bool(beats) and all(b.id in covered for b in beats)
 
 
+#: Minimal substance floor for the content guard: a body of fewer
+#: than this many words cannot cover a beat, however anchor-rich
+#: it looks. A backstop only — the anchors do the real work; this
+#: exists to block degenerate fragments, not to grade depth.
+_MIN_BODY_WORDS = 3
+
+
+def _anchor_hit(anchor: str, body: str) -> bool:
+    """Case-insensitive whole-word/phrase match. Word boundaries
+    keep "tree" from matching "street" and keep the pivot's "set
+    that aside" from matching the mentor's "set aside" anchor."""
+    return re.search(r"\b" + re.escape(anchor.lower()) + r"\b",
+                     body.lower()) is not None
+
+
+def beat_content_covered(beat: TutorialBeat, spoken_body: str) -> bool:
+    """True when a stripped spoken body actually communicates the
+    beat: it hits at least one of the beat's content anchors and
+    clears the substance floor. `spoken_body` must already be
+    trailer-stripped — trailer text can never self-satisfy, and
+    the beat id itself is never an anchor. Deterministic string
+    matching only: no model call, no fuzzy matching, no
+    embeddings. A claim without content (announcement-only, or a
+    generic mention with no anchor) returns False."""
+    body = spoken_body or ""
+    if len(body.split()) < _MIN_BODY_WORDS:
+        return False
+    return any(_anchor_hit(a, body) for a in beat.anchors)
+
+
 def extract_beat_markers(raw: str) -> list[str]:
     """Beat ids a generated reply claims to have taught, in order.
     Validation against the definition's beats happens in the
@@ -304,10 +394,11 @@ def tutorial_guidance(beats: tuple[TutorialBeat, ...],
                       patience: int,
                       pivot_delivered: bool) -> str:
     """Frame instruction for this turn's steering pressure. "" when
-    there is nothing to teach (no beats, all covered, or the pivot
-    already delivered — the gate is satisfied and the frame stays
-    clean). Otherwise one of three tiers, scaling with turn count
-    against the seat's patience:
+    there is nothing to teach (no beats, or all covered). The
+    pivot does NOT empty the guidance: after a pivot, steering
+    stays at maximum until the beats are covered — the pivot
+    redirects, it does not satisfy. Otherwise one of four tiers,
+    scaling with turn count against the seat's patience:
 
     - light (early): follow the conversation; the beats may surface
       when the conversation passes near them.
@@ -316,14 +407,24 @@ def tutorial_guidance(beats: tuple[TutorialBeat, ...],
     - pivot (at patience): set the thread aside EXPLICITLY with the
       set-aside line and deliver the uncovered beats in your own
       voice. Never fake a natural segue at this tier.
+    - post-pivot (pivot delivered, beats still uncovered): the
+      thread is already set aside — deliver what is still untaught
+      directly, in your own voice. No re-set-aside, no relaxation.
     """
-    if not beats or patience <= 0 or pivot_delivered:
+    if not beats or patience <= 0:
         return ""
     uncovered = uncovered_beats(beats, covered)
     if not uncovered:
         return ""
     titles = "; ".join(f"{b.title}: {b.teaching}" for b in uncovered)
     marker = _marker_instruction(beats)
+    if pivot_delivered:
+        return (
+            "The thread is already set aside to make room for this "
+            "teaching — now deliver what is still untaught, "
+            f"directly, in your own voice: {titles} "
+            + marker
+        )
     if user_turns >= patience:
         return (
             "Now: the conversation has run long enough that the "

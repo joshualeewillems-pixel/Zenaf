@@ -101,11 +101,18 @@ The rules the runtime runs by:
     now, why I wanted to talk was…") that OWNS the direction
     change instead of faking a natural segue. Beat coverage rides
     the generation call the meeting already makes, as stripped
-    bookkeeping trailers ([[beat:<id>]]); the close additionally
-    requires all beats covered OR the pivot delivered. The ceiling
-    wrap bypasses the tutorial gate by design — a rescue, not a
-    recognition claim, and by then the pivot has had every chance
-    to fire.
+    bookkeeping trailers ([[beat:<id>]]) — but a trailer is the
+    model's own claim, so coverage ALSO requires content: the
+    stripped spoken body must hit one of the beat's anchors
+    (tutorial_beats.beat_content_covered), or the claim does not
+    count. The close additionally requires every beat covered.
+    The pivot NEVER satisfies the gate on its own — it redirects
+    toward uncovered beats, and steering stays at maximum after
+    it until they are covered; a pivot response can satisfy the
+    gate only by covering beats with content, under the same rule
+    as any other turn. The ceiling wrap bypasses the tutorial gate
+    by design — a rescue, not a recognition claim, and by then the
+    pivot has had every chance to fire.
   - Evidence and expression are separate layers (Joshua's ruling,
     2026-10-23): the user's exact words live in the evidence —
     stored verbatim, filed with the claim, shown in review with
@@ -759,23 +766,33 @@ def _apply_tutorial_markers(definition: EncounterDefinition,
                             raw: str) -> str:
     """Read a generated reply's tutorial bookkeeping, then strip it.
 
-    ``[[beat:<id>]]`` trailers mark beats the reply taught —
-    validated against the definition's beats, so an unknown id never
-    satisfies anything. A spoken set-aside marker marks the honest
-    pivot delivered. Returns the raw reply with beat trailers
-    removed, so downstream trailer parsing (thread verdict, strands)
-    never sees them; _spoken strips them again as a backstop, so
-    they can never reach the user by any path. Recording is
-    conditional on the definition carrying beats, but stripping is
-    unconditional: a trailer trailing a Strands line would otherwise
-    break strand parsing even for definitions without a tutorial
-    gate (split_strands_trailer reads from the end)."""
+    ``[[beat:<id>]]`` trailers mark beats the reply claims to have
+    taught — validated against the definition's beats, so an unknown
+    id never satisfies anything, AND content-checked against the
+    stripped spoken body (tutorial_beats.beat_content_covered), so
+    an announcement-only claim never satisfies anything either. The
+    pivot flag records a spoken set-aside marker for frame behavior
+    (steering stays at maximum after a pivot) — it is NOT a gate
+    condition. Returns the raw reply with beat trailers removed, so
+    downstream trailer parsing (thread verdict, strands) never sees
+    them; _spoken strips them again as a backstop, so they can
+    never reach the user by any path. Recording is conditional on
+    the definition carrying beats, but stripping is unconditional:
+    a trailer trailing a Strands line would otherwise break strand
+    parsing even for definitions without a tutorial gate
+    (split_strands_trailer reads from the end)."""
     if definition.tutorial_beats:
-        known = {b.id for b in definition.tutorial_beats}
+        known = {b.id: b for b in definition.tutorial_beats}
+        spoken_body = _spoken(raw or "")
         for beat_id in TB.extract_beat_markers(raw or ""):
-            if beat_id in known and beat_id not in state.tutorial_covered:
-                state.tutorial_covered.append(beat_id)
-        if TB.pivot_delivered_in(_spoken(raw or "")):
+            beat = known.get(beat_id)
+            if (
+                beat is not None
+                and beat.id not in state.tutorial_covered
+                and TB.beat_content_covered(beat, spoken_body)
+            ):
+                state.tutorial_covered.append(beat.id)
+        if TB.pivot_delivered_in(spoken_body):
             state.tutorial_pivot_delivered = True
     return TB.strip_beat_markers(raw or "")
 
@@ -1189,13 +1206,18 @@ class EncounterRuntime:
         it. Legacy-waived states complete under their original
         contract instead. A definition carrying TUTORIAL BEATS adds
         one more condition still (the tutorial-beat mechanism,
-        2026-10-24): the meeting's teaching must be done — every
-        beat covered, or the honest pivot delivered — before a
-        settled verdict may close. A meeting that would otherwise
-        close tutorial-less instead continues, and the pivot
-        instruction fires once its patience is reached. The
-        ceiling wrap bypasses this gate by design (a rescue, not
-        a recognition claim)."""
+        2026-10-24, corrected the same day): the meeting's teaching
+        must be done — EVERY beat covered, where covered means the
+        beat's essential information was actually communicated in a
+        spoken turn — before a settled verdict may close. The honest
+        pivot NEVER satisfies this gate on its own: it redirects
+        toward uncovered beats, and a pivot response satisfies it
+        only by covering beats with content, under the same rule as
+        any other turn. A meeting that would otherwise close
+        tutorial-less instead continues, and the pivot instruction
+        fires once its patience is reached. The ceiling wrap
+        bypasses this gate by design (a rescue, not a recognition
+        claim)."""
         d = self.definition
         if verdict is None:
             verdict = _fallback_thread_verdict(message)
@@ -1209,9 +1231,7 @@ class EncounterRuntime:
                 return
             if d.tutorial_beats and d.tutorial_patience > 0:
                 covered = set(state.tutorial_covered)
-                if not state.tutorial_pivot_delivered and not all(
-                    b.id in covered for b in d.tutorial_beats
-                ):
+                if not all(b.id in covered for b in d.tutorial_beats):
                     return
             state.closed = True
             host.close("")

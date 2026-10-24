@@ -7,10 +7,17 @@ The beats ride the conversational frame as standing hopes (never a
 lecture block); steering pressure grows with the turns; after the
 seat's own patience of exchanges the frame instructs an honest pivot
 ("let's set that aside for now, why I wanted to talk was…") that
-OWNS the direction change; and the close requires beats covered OR
-the pivot delivered. The Weaver playtest of 2026-10-24 closed
-tutorial-less after ~3 user turns; under this mechanism it extends
-with the pivot instead.
+OWNS the direction change; and the close requires every beat
+COVERED — covered meaning the beat's essential information was
+actually communicated in a spoken turn. The pivot NEVER satisfies
+the gate on its own: it redirects toward uncovered beats, and a
+pivot response satisfies the gate only by covering beats with
+content, under the same rule as any other turn. Beat markers are
+the model's own claims, so a claim counts only with content: the
+stripped spoken body must hit one of the beat's content anchors.
+The Weaver playtest of 2026-10-24 closed tutorial-less after ~3
+user turns; under this mechanism it extends with the pivot instead
+— and still does not close until the teaching is actually done.
 
 Constraints pinned here alongside the mechanism: no new LLM call
 per turn (the gradient is frame instruction; beat recognition rides
@@ -122,11 +129,23 @@ def test_guidance_tiers_scale_with_turn_count():
 
 def test_guidance_is_empty_when_there_is_nothing_to_teach():
     beats = _weaver_beats()
-    assert TB.tutorial_guidance(beats, set(), 1, 5, True) == ""
     covered = {b.id for b in beats}
     assert TB.tutorial_guidance(beats, covered, 9, 5, False) == ""
+    assert TB.tutorial_guidance(beats, covered, 9, 5, True) == ""
     assert TB.tutorial_guidance((), set(), 9, 5, False) == ""
     assert TB.tutorial_guidance(beats, set(), 9, 0, False) == ""
+
+
+def test_guidance_stays_at_maximum_after_a_pivot():
+    # Correction 2026-10-24: a pivot redirects, it does not satisfy.
+    # Steering must NOT relax once the pivot is delivered — it stays
+    # at maximum until the beats are covered, and it must not
+    # re-instruct a set-aside that already happened.
+    beats = _weaver_beats()
+    guide = TB.tutorial_guidance(beats, set(), 6, 5, True)
+    assert guide != ""
+    assert "deliver what is still untaught" in guide
+    assert "set that aside" not in guide
 
 
 @pytest.mark.parametrize("seat,patience", sorted(EXPECTED_PATIENCE.items()))
@@ -300,13 +319,62 @@ def test_close_permitted_once_beats_covered():
     assert host.close_calls == 1
 
 
-def test_close_permitted_once_pivot_delivered():
+def test_close_refused_on_pivot_alone():
+    # Correction 2026-10-24: the pivot NEVER satisfies the gate on
+    # its own. Pivot delivered, beats uncovered, no covering content
+    # in any body — the gate stays shut.
     runtime, definition = _weaver_runtime()
     host = _FakeHost()
     state = _settled_state(definition, pivot=True)
     runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
+    assert state.closed is False
+    assert host.close_calls == 0
+
+
+def test_close_permitted_when_pivot_response_communicates_essentials():
+    # The pivot response CAN satisfy the gate — but only by covering
+    # beats with content, under the same rule as any other turn.
+    runtime, _ = _weaver_runtime()
+    host = _FakeHost(
+        gen_output="Let's set that aside for now, why I wanted to "
+        "talk was this: my ground is the council and the tree — "
+        "anywhere parts of your life need hearing together. Bring "
+        "me the competing priorities that will not sit together, "
+        "whenever they need hearing together. And every new voice "
+        "changes what the whole orchestra can play — I keep the "
+        "whole of it in ear. "
+        "[[beat:conductor:terrain]] [[beat:conductor:involvement]] "
+        "[[beat:conductor:why_meet]]")
+    state = ENC.EncounterState()
+    runtime.handle_turn(host, state, "What is this place?", 0)
+    assert state.tutorial_pivot_delivered is True
+    assert set(state.tutorial_covered) == {
+        "conductor:terrain", "conductor:involvement", "conductor:why_meet",
+    }
+    state.impression_answered = True
+    state.satisfied = {"own_undertaking_engaged": True}
+    runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
     assert state.closed is True
     assert host.close_calls == 1
+
+
+def test_close_refused_when_pivot_response_covers_only_some_beats():
+    # Pivot + partial content is still not the gate: every beat
+    # must be communicated, not just the pivoted-to one.
+    runtime, _ = _weaver_runtime()
+    host = _FakeHost(
+        gen_output="Let's set that aside for now, why I wanted to "
+        "talk was this: my ground is the council and the tree. "
+        "[[beat:conductor:terrain]]")
+    state = ENC.EncounterState()
+    runtime.handle_turn(host, state, "What is this place?", 0)
+    assert state.tutorial_pivot_delivered is True
+    assert state.tutorial_covered == ["conductor:terrain"]
+    state.impression_answered = True
+    state.satisfied = {"own_undertaking_engaged": True}
+    runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
+    assert state.closed is False
+    assert host.close_calls == 0
 
 
 def test_tutorial_gate_does_not_weaken_the_recognition_floor():
@@ -339,3 +407,71 @@ def test_tutorial_state_round_trips_through_json():
     legacy = ENC.EncounterState.from_json('{"user_turns": 3}')
     assert legacy.tutorial_covered == []
     assert legacy.tutorial_pivot_delivered is False
+
+
+# ---------------------------------------------------------------------------
+# Correction 2026-10-24: markers are self-reported, so a claim counts
+# only with content. Anchors are the guard; the floor is a backstop.
+# ---------------------------------------------------------------------------
+
+_GENERIC_ANCHOR_WORDS = {"terrain", "involvement", "why_meet", "meet"}
+
+
+def test_every_beat_carries_real_content_anchors():
+    for seat in SEAT_IDS:
+        for beat in TB.beats_for(seat):
+            assert len(beat.anchors) >= 2, beat.id
+            for anchor in beat.anchors:
+                assert beat.id not in anchor, beat.id
+                assert anchor.lower() not in _GENERIC_ANCHOR_WORDS, beat.id
+            # The frame's own teaching substance passes its own guard:
+            # anchors and teaching cannot drift apart unnoticed.
+            assert TB.beat_content_covered(beat, beat.teaching), beat.id
+
+
+def test_anchor_matching_is_word_bounded_and_case_insensitive():
+    beat = TB.beats_for("conductor")[0]  # terrain: council, tree, ...
+    assert TB.beat_content_covered(beat, "MY GROUND IS THE COUNCIL.")
+    assert not TB.beat_content_covered(beat, "Back to the street.")
+    assert not TB.beat_content_covered(beat, "The council")
+    assert not TB.beat_content_covered(beat, "")
+
+
+def test_announced_but_unexplained_beat_is_not_counted():
+    # Realistic dialogue, not a toy: over three turns the character
+    # first announces the terrain beat, then mentions it generically,
+    # then actually explains it. Only the third turn counts — and
+    # the close stays shut throughout on the uncovered beats.
+    # (The announcement-only turns are exactly the failure the
+    # self-reported-marker design allowed before this correction.)
+    runtime, definition = _weaver_runtime()
+    host = _FakeHost()
+    state = ENC.EncounterState()
+
+    host.gen_output = (
+        "Let me tell you about my terrain now — it's very important. "
+        "[[beat:conductor:terrain]]")
+    runtime.handle_turn(host, state, "What is this place?", 0)
+    assert state.tutorial_covered == []
+
+    host.gen_output = (
+        "My terrain is important to me, it matters a lot, really. "
+        "[[beat:conductor:terrain]]")
+    runtime.handle_turn(host, state, "So what is your terrain?", 0)
+    assert state.tutorial_covered == []
+
+    host.gen_output = (
+        "My ground is the council and the tree — anywhere parts of "
+        "your life need hearing together. "
+        "[[beat:conductor:terrain]]")
+    runtime.handle_turn(host, state, "Say more about that.", 0)
+    assert state.tutorial_covered == ["conductor:terrain"]
+
+    # Positive control in the same script: the explained beat counts.
+    # But one beat is not the gate — involvement and why-meet are
+    # still uncovered, so a settled verdict must not close.
+    state.impression_answered = True
+    state.satisfied = {"own_undertaking_engaged": True}
+    runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
+    assert state.closed is False
+    assert host.close_calls == 0

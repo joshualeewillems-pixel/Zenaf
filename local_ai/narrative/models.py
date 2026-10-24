@@ -281,6 +281,12 @@ class ThreadEvidence:
     evidence_kind: str = "entity_ref"
     note: str = ""
     created_at: str = ""
+    #: The "<type>:<id>" identity of the thing this record is about,
+    #: when known (S1 derivation maintains it for evidence it
+    #: attaches; rows from other writers carry NULL — honest
+    #: unknown, never inferred). It is a derivation index, not a
+    #: second identity: the row's identity stays (ref_kind, ref_id).
+    entity_ref: str | None = None
 
     @property
     def key(self) -> tuple[str, str]:
@@ -296,6 +302,7 @@ class ThreadEvidence:
             "evidence_kind": self.evidence_kind,
             "note": self.note,
             "created_at": self.created_at,
+            "entity_ref": self.entity_ref,
         }
 
 
@@ -462,4 +469,42 @@ class InvolvementMeasure:
             "note": self.note,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+        }
+
+
+#: What a dismissal dismissal-memory row can dismiss (S1, audit
+#: Part II §5 birth durability + Part IV test S1-5): a proposed
+#: thread birth, or a proposed extension (reading update + change)
+#: for one thread. The signature is content-addressed (sorted
+#: evidence keys, plus the thread id for extensions), so new
+#: evidence produces a new signature and may be proposed again,
+#: while the same evidence is never re-proposed after dismissal.
+DISMISSAL_KINDS: tuple[str, ...] = ("thread_birth", "extension")
+
+
+@dataclass(frozen=True)
+class StewardDismissal:
+    """One remembered dismissal of a steward proposal (S1).
+
+    Dismissal memory is what makes "decline" durable: derivation
+    consults these rows before proposing, so a dismissed cluster is
+    not re-proposed when the same evidence is re-analyzed. The row
+    records the user's act, not a judgment about the evidence — a
+    dismissal never deletes the thread, reading, or change it
+    dismissed; those rows keep their own lifecycles.
+    """
+
+    id: str
+    user_id: str
+    kind: str  # one of DISMISSAL_KINDS
+    signature: str
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "kind": self.kind,
+            "signature": self.signature,
+            "created_at": self.created_at,
         }

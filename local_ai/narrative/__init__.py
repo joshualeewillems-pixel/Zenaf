@@ -40,6 +40,19 @@ any prepared context for surfaces (S2), any HTTP route, and any
 change to an existing surface's behavior. The Steward has no
 user-facing prose voice at any phase; seats speak, the Steward
 keeps the story straight.
+
+Phase S1 (derivation.py, added after S0's merge) keeps that
+separation and adds exactly one thing: slow-path analysis. It
+consumes evidence items (fellowship events, claims, journal
+entries), clusters them deterministically, and spends at most one
+generation per candidate cluster/thread through an injectable
+``generate_fn`` seam (defaulting, lazily, to the codebase's usual
+backend — the same seam fellowship/derivation.py uses). Proposals
+land as nascent/proposed rows in the S0 store only. S1 does not
+install its pipeline at app assembly, does not traverse containment
+links, does not propose lens fittings, and does not touch any
+turn path — the foreground generation counts are unchanged by
+construction, and a test pins that.
 """
 
 from .lenses import LENSES, NarrativeLens, LensPhase, get_lens, lens_ids

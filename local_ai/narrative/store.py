@@ -291,6 +291,28 @@ CREATE TABLE IF NOT EXISTS steward_processing_position (
   file_identity TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
 );
+
+-- Increment D: delivery state for steward signals (the read
+-- model's delivery axis, kept separate from verdict state).
+-- signal_id is the reading id for readings, the observable
+-- signal_key for observables (stable across recompute). Only
+-- participating kinds ever get rows (steward/seat-authored
+-- readings + observables); set_signal_delivery refuses the rest.
+-- Rows for vanished signals are orphans: the read ignores them
+-- (delivery state joins to existing signals only); thread
+-- deletion cascades its signals' rows, and clear flows delete
+-- directly-deleted readings'/observables' rows with them.
+CREATE TABLE IF NOT EXISTS steward_signal_states (
+  user_id TEXT NOT NULL,
+  signal_kind TEXT NOT NULL,
+  signal_id TEXT NOT NULL,
+  delivery_status TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL DEFAULT 'visitor',
+  PRIMARY KEY (user_id, signal_kind, signal_id)
+);
+CREATE INDEX IF NOT EXISTS idx_signal_states_user
+  ON steward_signal_states (user_id, signal_kind);
 """
 
 
@@ -573,6 +595,28 @@ def _row_to_dismissal(row: sqlite3.Row) -> StewardDismissal:
         signature=row["signature"],
         created_at=row["created_at"],
     )
+
+
+#: Increment D delivery lifecycle (proposal §3.7). Verdict state
+#: lives on readings; delivery state lives here, never the twain
+#: confused. ``not_applicable`` is not a stored value: it is what
+#: the read model reports for kinds that do not participate.
+DELIVERY_STATUSES: tuple[str, ...] = (
+    "pending",
+    "surfaced",
+    "discussed",
+    "dismissed",
+)
+
+#: Allowed delivery transitions (proposal §3.7). Same-state sets
+#: are no-ops (idempotent re-mark). No transition out of
+#: ``dismissed``; no backward transitions.
+_DELIVERY_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "pending": ("surfaced", "discussed", "dismissed"),
+    "surfaced": ("discussed", "dismissed"),
+    "discussed": ("dismissed",),
+    "dismissed": (),
+}
 
 
 class NarrativeStore:
@@ -2536,6 +2580,20 @@ class NarrativeStore:
                 self._require_thread(user_id, thread_id)
             except ValueError:
                 return False
+            # Increment D cascade contract (§3.7): delivery rows for
+            # this thread's readings + observables go with the
+            # thread. Runs BEFORE the owned-row deletes below, so
+            # the subqueries still see them. Meeting-scoped (NULL
+            # thread) observables are untouched here.
+            self._conn.execute(
+                "DELETE FROM steward_signal_states WHERE user_id = ? "
+                "AND ((signal_kind = 'reading' AND signal_id IN "
+                "(SELECT id FROM thread_readings WHERE thread_id = ?)) "
+                "OR (signal_kind = 'observable' AND signal_id IN "
+                "(SELECT signal_key FROM steward_observables "
+                "WHERE thread_id = ?)))",
+                (user_id, thread_id, thread_id),
+            )
             for table, clause in (
                 ("thread_evidence", "thread_id = ?"),
                 ("thread_readings", "thread_id = ?"),
@@ -2732,6 +2790,19 @@ class NarrativeStore:
             if self.delete_thread(user_id, thread_id):
                 deleted_threads.append(thread_id)
         deleted_observables = self.delete_observables_for_user(user_id)
+        # Increment D: readings deleted directly here (not via
+        # delete_thread) and observables deleted wholesale above
+        # leave orphan delivery rows unless cleaned with them.
+        # Delivery rows for recomputed-away observables are the
+        # remaining orphan source (tracked cleanup, §8.3); the
+        # read ignores orphans.
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM steward_signal_states WHERE user_id = ? "
+                "AND signal_kind = 'observable'",
+                (user_id,),
+            )
+            self._conn.commit()
         with self._lock:
             proposed_ids = preview.get(
                 "preserved_proposed_reading_ids", []
@@ -2746,6 +2817,12 @@ class NarrativeStore:
                     (*proposed_ids, user_id),
                 )
                 deleted_proposed = cursor.rowcount
+                self._conn.execute(
+                    "DELETE FROM steward_signal_states "
+                    "WHERE user_id = ? AND signal_kind = 'reading' "
+                    f"AND signal_id IN ({placeholders})",
+                    (user_id, *proposed_ids),
+                )
             deleted_verdict = 0
             if operation == "full_delete":
                 verdict_ids = preview.get(
@@ -2760,6 +2837,12 @@ class NarrativeStore:
                         (*verdict_ids, user_id),
                     )
                     deleted_verdict = cursor.rowcount
+                    self._conn.execute(
+                        "DELETE FROM steward_signal_states "
+                        "WHERE user_id = ? AND signal_kind = 'reading' "
+                        f"AND signal_id IN ({placeholders})",
+                        (user_id, *verdict_ids),
+                    )
             self._conn.commit()
         deleted_declines = 0
         if operation == "full_delete":
@@ -2779,3 +2862,181 @@ class NarrativeStore:
             "deleted_verdict_reading_count": deleted_verdict,
             "deleted_decline_count": deleted_declines,
         }
+
+    # -- increment D: snapshot read + delivery state ------------------------
+
+    def snapshot_for_read(self, user_id: str) -> dict:
+        """One consistent read of everything the D read model serves.
+
+        Increment D (proposal §4.6): ALL narrative-store reads for
+        one response happen under ONE acquisition of the store lock,
+        via raw SELECTs here — never by calling the lock-acquiring
+        list methods (the lock is a plain non-reentrant
+        threading.Lock; re-entering it would deadlock). The caller
+        (read_model) assembles envelopes from this snapshot with
+        pure Python: no further store calls, so consultation,
+        content, and totals cohere. The snapshot is detached rows,
+        safe to use after the connection closes. No writes of any
+        kind: no clock touches, no cursor moves, no delivery
+        transitions.
+
+        Returns a dict with keys: threads, evidence, readings,
+        changes, observables, dismissals, suppressed (deferred-prose
+        rows settled as suppressed_by_decline), delivery
+        ({(kind, signal_id): status}).
+        """
+        with self._lock:
+            thread_rows = self._conn.execute(
+                "SELECT * FROM narrative_threads WHERE user_id = ? "
+                "ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+            thread_ids = [r["id"] for r in thread_rows]
+            if thread_ids:
+                placeholders = ", ".join("?" for _ in thread_ids)
+                evidence_rows = self._conn.execute(
+                    "SELECT * FROM thread_evidence WHERE thread_id IN "
+                    f"({placeholders}) ORDER BY created_at, id",
+                    thread_ids,
+                ).fetchall()
+                reading_rows = self._conn.execute(
+                    "SELECT * FROM thread_readings WHERE thread_id IN "
+                    f"({placeholders}) ORDER BY created_at, id",
+                    thread_ids,
+                ).fetchall()
+                change_rows = self._conn.execute(
+                    "SELECT * FROM thread_changes WHERE thread_id IN "
+                    f"({placeholders}) ORDER BY created_at, id",
+                    thread_ids,
+                ).fetchall()
+            else:
+                evidence_rows = []
+                reading_rows = []
+                change_rows = []
+            observable_rows = self._conn.execute(
+                "SELECT * FROM steward_observables WHERE user_id = ? "
+                "ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+            dismissal_rows = self._conn.execute(
+                "SELECT * FROM steward_dismissals WHERE user_id = ? "
+                "ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+            suppressed_rows = self._conn.execute(
+                "SELECT * FROM steward_deferred_prose WHERE user_id = ? "
+                "AND status = 'suppressed_by_decline' "
+                "ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+            delivery_rows = self._conn.execute(
+                "SELECT * FROM steward_signal_states WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        return {
+            "threads": [_row_to_thread(r) for r in thread_rows],
+            "evidence": [_row_to_evidence(r) for r in evidence_rows],
+            "readings": [_row_to_reading(r) for r in reading_rows],
+            "changes": [_row_to_change(r) for r in change_rows],
+            "observables": [_row_to_observable(r) for r in observable_rows],
+            "dismissals": [_row_to_dismissal(r) for r in dismissal_rows],
+            "suppressed": [dict(r) for r in suppressed_rows],
+            "delivery": {
+                (r["signal_kind"], r["signal_id"]): r["delivery_status"]
+                for r in delivery_rows
+            },
+        }
+
+    def set_signal_delivery(
+        self,
+        user_id: str,
+        *,
+        signal_kind: str,
+        signal_id: str,
+        delivery_status: str,
+        updated_by: str = "visitor",
+    ) -> dict:
+        """Record one delivery transition (increment D §3.7).
+
+        This is the ONLY writer of delivery state, and it is NOT
+        called by the read model or the route — E's actions (and
+        later H's dialogue markers) call it. Participation is
+        enforced: readings participate only when steward- or
+        seat-authored (user-authored readings have nothing to
+        deliver to their author); observables always participate;
+        every other kind raises ValueError, as do unknown signals,
+        cross-user signals, unknown statuses, backward transitions,
+        and any transition out of dismissed. Same-state sets are
+        idempotent no-ops. Returns the stored row as a dict.
+        """
+        if delivery_status not in DELIVERY_STATUSES:
+            raise ValueError(f"unknown delivery status: {delivery_status!r}")
+        with self._lock:
+            if signal_kind == "reading":
+                row = self._conn.execute(
+                    "SELECT r.* FROM thread_readings r JOIN "
+                    "narrative_threads t ON t.id = r.thread_id "
+                    "WHERE r.id = ? AND t.user_id = ?",
+                    (signal_id, user_id),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"unknown reading: {signal_id!r}")
+                if row["author"] == "user":
+                    raise ValueError(
+                        "user-authored readings do not participate "
+                        "in delivery tracking"
+                    )
+            elif signal_kind == "observable":
+                row = self._conn.execute(
+                    "SELECT * FROM steward_observables "
+                    "WHERE signal_key = ? AND user_id = ?",
+                    (signal_id, user_id),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"unknown observable: {signal_id!r}")
+            else:
+                raise ValueError(
+                    f"signal kind does not participate in delivery "
+                    f"tracking: {signal_kind!r}"
+                )
+            existing = self._conn.execute(
+                "SELECT delivery_status FROM steward_signal_states "
+                "WHERE user_id = ? AND signal_kind = ? AND signal_id = ?",
+                (user_id, signal_kind, signal_id),
+            ).fetchone()
+            if existing is not None:
+                current = existing["delivery_status"]
+                if (
+                    delivery_status != current
+                    and delivery_status
+                    not in _DELIVERY_TRANSITIONS[current]
+                ):
+                    raise ValueError(
+                        f"illegal delivery transition: {current!r} -> "
+                        f"{delivery_status!r}"
+                    )
+            now = _utcnow()
+            self._conn.execute(
+                "INSERT INTO steward_signal_states "
+                "(user_id, signal_kind, signal_id, delivery_status, "
+                "updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(user_id, signal_kind, signal_id) DO UPDATE "
+                "SET delivery_status = excluded.delivery_status, "
+                "updated_at = excluded.updated_at, "
+                "updated_by = excluded.updated_by",
+                (
+                    user_id,
+                    signal_kind,
+                    signal_id,
+                    delivery_status,
+                    now,
+                    updated_by,
+                ),
+            )
+            self._conn.commit()
+            stored = self._conn.execute(
+                "SELECT * FROM steward_signal_states "
+                "WHERE user_id = ? AND signal_kind = ? AND signal_id = ?",
+                (user_id, signal_kind, signal_id),
+            ).fetchone()
+        return dict(stored)

@@ -30,7 +30,10 @@ def _synthetic_app(prefixes) -> FastAPI:
 def test_real_app_has_all_expected_routers_mounted():
     from api.main import EXPECTED_ROUTER_PREFIXES, app, assert_routers_registered
 
-    assert len(EXPECTED_ROUTER_PREFIXES) == 12
+    # 13 with steward increment D's /steward router (was 12 before D).
+    # This count is a tripwire: any router added or removed must
+    # update it deliberately, never silently.
+    assert len(EXPECTED_ROUTER_PREFIXES) == 13
     # Must not raise: every router the app expects is actually mounted.
     assert_routers_registered(app)
     assert_routers_registered()  # default-arg form checks the module app too

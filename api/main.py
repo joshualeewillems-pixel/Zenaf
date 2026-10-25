@@ -93,12 +93,46 @@ except Exception as e:  # noqa: BLE001 — app boot outranks derivation
 # (proposal §1.8); the sweep loop shares the pipeline's store
 # instance (proposal §3.3) and runs once immediately at start
 # (startup-after-crash recovery) and then on its interval.
+def _steward_meeting_provider(user_id):
+    """Friction-pass meeting rows for one user (increment C, O1).
+
+    Constructs, queries, and closes a MeetingStore per call: the
+    sweep loop runs every 60s, so a shared never-closed handle
+    would leak connections.
+    """
+    from local_ai.conversation.meeting import MeetingStore
+
+    meetings = MeetingStore()
+    try:
+        return meetings.meetings_for(user_id)
+    finally:
+        meetings.close()
+
+
+def _steward_claims_provider(user_id):
+    """Friction-pass claim rows for one user (increment C, O2).
+
+    Same open-query-close discipline as the meeting provider.
+    """
+    from local_ai.agent_intake.store import AgentStore
+
+    agents = AgentStore(user_id=user_id)
+    try:
+        return agents.claims_for_user(user_id)
+    finally:
+        agents.close()
+
+
 try:
     from local_ai.narrative.derivation import install_default_pipeline as _install_steward
     from local_ai.narrative.sweep import start_sweep_loop as _start_steward_sweep
 
     _steward_pipeline = _install_steward()
-    _start_steward_sweep(store=_steward_pipeline.store)
+    _start_steward_sweep(
+        store=_steward_pipeline.store,
+        meeting_provider=_steward_meeting_provider,
+        claims_provider=_steward_claims_provider,
+    )
 except Exception as e:  # noqa: BLE001 — app boot outranks derivation
     print(f"Steward pipeline/sweep not installed: {e}")
 

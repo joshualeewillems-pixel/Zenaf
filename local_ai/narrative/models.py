@@ -118,6 +118,20 @@ PROGRESSION_STATES: tuple[str, ...] = ("positioned", "unknown", "inapplicable")
 #: add kinds without a schema change; S0 defines no others.
 THREAD_LINK_RELATIONS: tuple[str, ...] = ("contains",)
 
+#: Observable kinds (steward increment C). An observable is a FACT
+#: about recorded rows — never an interpretation, never a verdict:
+#: it carries no status field, no author field, and no delivery
+#: fields. Judgments are deferred with increment C's narrowed scope
+#: (no judgment rows exist in C); when they return they are
+#: ThreadReadings with author="steward" and a judgment_kind label,
+#: not observables.
+OBSERVABLE_KINDS: tuple[str, ...] = (
+    "impression_unanswered",
+    "correction_no_subsequent_activity",
+    "thread_quiet",
+    "divergent_reading_positions",
+)
+
 
 @dataclass(frozen=True)
 class ProgressionPosition:
@@ -517,5 +531,50 @@ class StewardDismissal:
             "user_id": self.user_id,
             "kind": self.kind,
             "signature": self.signature,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class StewardObservable:
+    """One steward observation: a FACT about recorded rows (C).
+
+    Deliberately NOT a reading: no status (a fact is true or it
+    is not — there is nothing to rule on), no author (facts have
+    no author), no delivery fields (nothing here means delivered,
+    seen, or invited). ``thread_id`` is NULL for meeting-scoped
+    observations (O1), which carry their meeting identity in
+    ``detail``. ``signal_key`` is the recompute identity: the
+    natural key (scope + kind + identity fields) materialized so
+    an upsert can preserve ``first_seen_at`` across passes.
+    ``evidence_refs`` is non-empty by construction: thread_evidence
+    row ids for thread-scoped rows; for O1 the meeting key (+ the
+    filed claim id when one exists); for O3 the thread id itself
+    (the thread row's clock IS the fact quiet observes — a thread
+    with no evidence rows at all is still quiet by the rule).
+    """
+
+    id: str
+    user_id: str
+    thread_id: str | None
+    kind: str  # one of OBSERVABLE_KINDS
+    signal_key: str
+    evidence_refs: list[str] = field(default_factory=list)
+    detail: dict[str, Any] = field(default_factory=dict)
+    first_seen_at: str = ""
+    last_seen_at: str = ""
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "thread_id": self.thread_id,
+            "kind": self.kind,
+            "signal_key": self.signal_key,
+            "evidence_refs": list(self.evidence_refs),
+            "detail": dict(self.detail),
+            "first_seen_at": self.first_seen_at,
+            "last_seen_at": self.last_seen_at,
             "created_at": self.created_at,
         }

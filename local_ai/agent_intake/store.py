@@ -349,6 +349,22 @@ class AgentStore:
             for r in rows
         ]
 
+    def claims_for_user(self, user_id: str) -> list[dict]:
+        """All review-claim rows owned by the user, oldest first —
+        as plain dicts INCLUDING created_at/updated_at (increment
+        C's O2 rule compares a correction's verdict time against
+        thread rows, and the ReviewClaim model drops both clocks).
+        Scoped by the review_claims user_id column, never by agent.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT claim_id, agent_id, claim_type, status, "
+                "user_note, created_at, updated_at FROM review_claims "
+                "WHERE user_id = ? ORDER BY created_at ASC",
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def update_claim(self, claim_id: str, status: str, user_note: str = "") -> bool:
         """Set a claim's review status and the user's note."""
         from datetime import datetime, timezone

@@ -67,6 +67,7 @@ from .derivation import (
     event_to_item,
     work_deferred_prose,
 )
+from .friction import run_friction_pass
 from .store import NarrativeStore
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,7 @@ class SweepResult:
     has_partial_trailing_line: bool = False
     log_missing: bool = False
     deferred: dict | None = None
+    friction: dict | None = None
     pruned: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -171,6 +173,7 @@ class SweepResult:
             "has_partial_trailing_line": self.has_partial_trailing_line,
             "log_missing": self.log_missing,
             "deferred": self.deferred,
+            "friction": self.friction,
             "pruned": list(self.pruned),
             "error": self.error,
         }
@@ -235,18 +238,27 @@ def run_sweep_for_user(
     generate_fn: Callable | None = None,
     consent_reader: Callable[[str], bool] | None = None,
     batch_max: int = STEWARD_SWEEP_BATCH_MAX,
+    meeting_provider: Callable[[str], Any] | None = None,
+    claims_provider: Callable[[str], Any] | None = None,
 ) -> SweepResult:
     """Sweep the activity log for one user (increment A §3.2/§4).
 
     Reads from the user's stored byte offset, derives
     meeting_completed events in batches of ≤ ``batch_max``, advances
     the offset only past successfully consumed batches (cursor-last,
-    §7), runs the deferred worker, and prunes ignored threads.
+    §7), runs the deferred worker, runs the friction pass
+    (increment C: after the deferred worker so it sees freshly
+    rendered readings, before prune so it can observe quiet threads
+    before they die), and prunes ignored threads.
     A failed batch leaves the offset unmoved so the next pass
     retries the same segment; reprocessing is a no-op by attach /
     coverage / dismissal idempotency, and deferred-row dedup
     prevents a second owed-prose row. Never raises for a single
     user's failure (the error is recorded on the result).
+    ``meeting_provider`` / ``claims_provider`` supply the friction
+    pass's meeting and claim rows for the user (callables taking
+    user_id); when absent, O1/O2 have no source rows and only
+    O3/O4 derive — the app assembly wires the real stores.
     """
     result = SweepResult(user_id=user_id)
     path = Path(log_path) if log_path is not None else _activity_log_path()
@@ -347,6 +359,33 @@ def run_sweep_for_user(
                     "deferred work paused",
                     user_id,
                 )
+            # Friction pass (increment C, gated per thread inside
+            # the pass — withdrawal pauses at the next thread
+            # boundary, committed thread transactions stand).
+            try:
+                result.friction = run_friction_pass(
+                    store,
+                    user_id,
+                    meetings=(
+                        meeting_provider(user_id)
+                        if meeting_provider is not None
+                        else None
+                    ),
+                    claims=(
+                        claims_provider(user_id)
+                        if claims_provider is not None
+                        else None
+                    ),
+                    gate_open=lambda: _gate_open(
+                        user_id, consent_reader
+                    ),
+                ).to_dict()
+            except Exception:
+                logger.exception(
+                    "steward sweep: friction pass failed for %r",
+                    user_id,
+                )
+                result.friction = {"error": "friction pass failed"}
             # Ignored-retention prune (standing policy, ungated).
             try:
                 result.pruned = prune_ignored_threads(store, user_id)
@@ -482,6 +521,8 @@ def run_sweep(
     generate_fn: Callable | None = None,
     consent_reader: Callable[[str], bool] | None = None,
     batch_max: int = STEWARD_SWEEP_BATCH_MAX,
+    meeting_provider: Callable[[str], Any] | None = None,
+    claims_provider: Callable[[str], Any] | None = None,
 ) -> dict[str, SweepResult]:
     """One sweep pass over users (shared store instance, §3.3)."""
     if user_ids is None:
@@ -495,6 +536,8 @@ def run_sweep(
             generate_fn=generate_fn,
             consent_reader=consent_reader,
             batch_max=batch_max,
+            meeting_provider=meeting_provider,
+            claims_provider=claims_provider,
         )
     return results
 
@@ -507,6 +550,8 @@ def start_sweep_loop(
     generate_fn: Callable | None = None,
     consent_reader: Callable[[str], bool] | None = None,
     batch_max: int = STEWARD_SWEEP_BATCH_MAX,
+    meeting_provider: Callable[[str], Any] | None = None,
+    claims_provider: Callable[[str], Any] | None = None,
 ) -> tuple[threading.Thread, threading.Event]:
     """Start the daemon sweep loop (app assembly, guarded).
 
@@ -526,6 +571,8 @@ def start_sweep_loop(
                     generate_fn=generate_fn,
                     consent_reader=consent_reader,
                     batch_max=batch_max,
+                    meeting_provider=meeting_provider,
+                    claims_provider=claims_provider,
                 )
             except Exception:
                 logger.exception("steward sweep: pass failed")

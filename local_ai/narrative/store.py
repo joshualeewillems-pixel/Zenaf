@@ -57,6 +57,7 @@ from .models import (
     FITTING_PROPOSERS,
     FITTING_STATUSES,
     INVOLVEMENT_SUBJECT_KINDS,
+    OBSERVABLE_KINDS,
     PROGRESSION_STATES,
     READING_STATUSES,
     RETIREMENT_REASONS,
@@ -68,6 +69,7 @@ from .models import (
     NarrativeThread,
     ProgressionPosition,
     StewardDismissal,
+    StewardObservable,
     ThreadChange,
     ThreadEvidence,
     ThreadLink,
@@ -251,6 +253,32 @@ CREATE INDEX IF NOT EXISTS idx_deferred_user_status
   ON steward_deferred_prose (user_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_deferred_thread
   ON steward_deferred_prose (thread_id, status);
+
+-- Increment C: steward observables (facts about recorded rows).
+-- No status, no author, no delivery fields by construction: a row
+-- here is true while its fact holds and is deleted by recompute
+-- when the fact stops holding. signal_key is the recompute
+-- identity (scope + kind + identity fields), unique per user, so
+-- an upsert preserves first_seen_at across passes. thread_id is
+-- NULL for meeting-scoped rows (O1), which carry their meeting
+-- identity in detail_json.
+CREATE TABLE IF NOT EXISTS steward_observables (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  thread_id TEXT,
+  kind TEXT NOT NULL,
+  signal_key TEXT NOT NULL,
+  evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  first_seen_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, signal_key)
+);
+CREATE INDEX IF NOT EXISTS idx_observables_user_thread
+  ON steward_observables (user_id, thread_id, kind);
+CREATE INDEX IF NOT EXISTS idx_observables_user_kind
+  ON steward_observables (user_id, kind);
 
 -- Increment A: per-user byte-offset read position into the
 -- append-only activity log (see local_ai/narrative/sweep.py).
@@ -519,6 +547,21 @@ def _row_to_involvement(row: sqlite3.Row) -> InvolvementMeasure:
         note=row["note"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+    )
+
+
+def _row_to_observable(row: sqlite3.Row) -> StewardObservable:
+    return StewardObservable(
+        id=row["id"],
+        user_id=row["user_id"],
+        thread_id=row["thread_id"],
+        kind=row["kind"],
+        signal_key=row["signal_key"],
+        evidence_refs=_loads(row["evidence_refs_json"], []),
+        detail=_loads(row["detail_json"], {}),
+        first_seen_at=row["first_seen_at"],
+        last_seen_at=row["last_seen_at"],
+        created_at=row["created_at"],
     )
 
 
@@ -909,11 +952,15 @@ class NarrativeStore:
         *,
         seat: str | None = None,
         status: str | None = None,
-        limit: int = 100,
+        limit: int | None = 100,
     ) -> list[NarrativeThread]:
         """The user's threads, oldest first. ``seat`` filters by cast
         standing (a seat in the thread's cast), in Python — thread
-        counts per user are small and cast is JSON by design."""
+        counts per user are small and cast is JSON by design.
+        ``limit=None`` is the explicit unbounded path (increment C's
+        state scan uses it): the scan must never silently cap at
+        100 threads, which would be a correctness bug, not a
+        performance tradeoff."""
         if status is not None and status not in THREAD_STATUSES:
             raise ValueError(f"unknown thread status: {status!r}")
         if seat is not None and seat not in SEAT_JURISDICTIONS:
@@ -936,7 +983,7 @@ class NarrativeStore:
                 t for t in threads
                 if any(c.get("seat") == seat for c in (t.cast or []))
             ]
-        return threads[:limit]
+        return threads if limit is None else threads[:limit]
 
     def update_title(
         self, user_id: str, thread_id: str, title: str
@@ -1261,6 +1308,7 @@ class NarrativeStore:
         scales: Iterable[str] | None = None,
         primary_scale: str | None = None,
         progression: ProgressionPosition | dict | None = None,
+        touch: bool = True,
     ) -> ThreadReading:
         """Store a proposed reading of a thread.
 
@@ -1268,6 +1316,12 @@ class NarrativeStore:
         empty refs raise, and every ref resolves through the tier
         gate, so 'evidence' here always means evidence-tier records
         actually attached to this thread.
+
+        ``touch`` (increment C §7.4, specified but unexercised by
+        narrowed C, which makes no propose_reading calls): when
+        False, the thread's updated_at is left alone, so a
+        steward-noticing reading neither delays prune nor breaks
+        quiet. Default True preserves every existing caller.
         """
         if author not in SEAT_JURISDICTIONS and author not in READING_AUTHORS:
             raise ValueError(f"unknown reading author: {author!r}")
@@ -1310,7 +1364,8 @@ class NarrativeStore:
                     record.status, record.created_at,
                 ),
             )
-            self._touch_thread(thread_id)
+            if touch:
+                self._touch_thread(thread_id)
             self._conn.commit()
         return record
 
@@ -1923,6 +1978,186 @@ class NarrativeStore:
 
     # -- deferred prose (increment A) ----------------------------------------
 
+    # -- observables (increment C) --------------------------------------
+
+    def observables_for(
+        self, user_id: str, *, kind: str | None = None
+    ) -> list[StewardObservable]:
+        """All of the user's observable rows, oldest first."""
+        if kind is not None and kind not in OBSERVABLE_KINDS:
+            raise ValueError(f"unknown observable kind: {kind!r}")
+        with self._lock:
+            if kind is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM steward_observables WHERE user_id = ? "
+                    "ORDER BY created_at, id",
+                    (user_id,),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM steward_observables WHERE user_id = ? "
+                    "AND kind = ? ORDER BY created_at, id",
+                    (user_id, kind),
+                ).fetchall()
+        return [_row_to_observable(r) for r in rows]
+
+    def observables_for_thread(
+        self, user_id: str, thread_id: str
+    ) -> list[StewardObservable]:
+        """The thread's observable rows (thread-scoped only)."""
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            rows = self._conn.execute(
+                "SELECT * FROM steward_observables WHERE user_id = ? "
+                "AND thread_id = ? ORDER BY created_at, id",
+                (user_id, thread_id),
+            ).fetchall()
+        return [_row_to_observable(r) for r in rows]
+
+    def meeting_observables_for(
+        self, user_id: str
+    ) -> list[StewardObservable]:
+        """The user's meeting-scoped (NULL thread) observable rows."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_observables WHERE user_id = ? "
+                "AND thread_id IS NULL ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+        return [_row_to_observable(r) for r in rows]
+
+    def _sync_observables_locked(
+        self,
+        user_id: str,
+        desired: list[dict],
+        *,
+        thread_id: str | None,
+        meeting_scoped: bool,
+    ) -> tuple[int, int, int]:
+        """Recompute-sync one scope's observables, one transaction.
+
+        ``desired`` rows are dicts with kind, signal_key,
+        evidence_refs (non-empty), and detail. Rows whose fact
+        still holds keep their id and first_seen_at and refresh
+        last_seen_at; new facts insert; facts that stopped holding
+        delete. Writes touch ONLY the observables table — never a
+        thread clock, so C observing quiet cannot break quiet.
+        Returns (written, refreshed, removed). Caller holds the lock.
+        """
+        for row in desired:
+            if row["kind"] not in OBSERVABLE_KINDS:
+                raise ValueError(f"unknown observable kind: {row['kind']!r}")
+            if not row.get("evidence_refs"):
+                raise ValueError(
+                    "an observable cannot be stored without evidence refs "
+                    "(invariant: no observable without evidence)"
+                )
+            if meeting_scoped and row.get("thread_id") is not None:
+                raise ValueError(
+                    "meeting-scoped sync takes NULL-thread rows only"
+                )
+            if not meeting_scoped and row.get("thread_id") != thread_id:
+                raise ValueError(
+                    "thread sync rows must carry the synced thread_id"
+                )
+        if meeting_scoped:
+            existing = self._conn.execute(
+                "SELECT * FROM steward_observables WHERE user_id = ? "
+                "AND thread_id IS NULL",
+                (user_id,),
+            ).fetchall()
+        else:
+            existing = self._conn.execute(
+                "SELECT * FROM steward_observables WHERE user_id = ? "
+                "AND thread_id = ?",
+                (user_id, thread_id),
+            ).fetchall()
+        by_key = {(r["kind"], r["signal_key"]): r for r in existing}
+        wanted_keys = set()
+        written = refreshed = 0
+        now = _utcnow()
+        for row in desired:
+            key = (row["kind"], row["signal_key"])
+            wanted_keys.add(key)
+            if key in by_key:
+                old = by_key[key]
+                self._conn.execute(
+                    "UPDATE steward_observables SET evidence_refs_json = ?, "
+                    "detail_json = ?, last_seen_at = ? WHERE id = ?",
+                    (
+                        json.dumps(list(row["evidence_refs"]), ensure_ascii=False),
+                        json.dumps(row.get("detail") or {}, ensure_ascii=False),
+                        now,
+                        old["id"],
+                    ),
+                )
+                refreshed += 1
+            else:
+                self._conn.execute(
+                    "INSERT INTO steward_observables (id, user_id, "
+                    "thread_id, kind, signal_key, evidence_refs_json, "
+                    "detail_json, first_seen_at, last_seen_at, "
+                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        _new_id("obs"),
+                        user_id,
+                        row.get("thread_id"),
+                        row["kind"],
+                        row["signal_key"],
+                        json.dumps(list(row["evidence_refs"]), ensure_ascii=False),
+                        json.dumps(row.get("detail") or {}, ensure_ascii=False),
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+                written += 1
+        removed = 0
+        for key, old in by_key.items():
+            if key not in wanted_keys:
+                self._conn.execute(
+                    "DELETE FROM steward_observables WHERE id = ?",
+                    (old["id"],),
+                )
+                removed += 1
+        return written, refreshed, removed
+
+    def sync_thread_observables(
+        self,
+        user_id: str,
+        thread_id: str,
+        desired: list[dict],
+    ) -> tuple[int, int, int]:
+        """Recompute-sync one thread's observables (one transaction)."""
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            out = self._sync_observables_locked(
+                user_id, desired, thread_id=thread_id, meeting_scoped=False
+            )
+            self._conn.commit()
+        return out
+
+    def sync_meeting_observables(
+        self, user_id: str, desired: list[dict]
+    ) -> tuple[int, int, int]:
+        """Recompute-sync the user's meeting-scoped observables (O1)."""
+        with self._lock:
+            out = self._sync_observables_locked(
+                user_id, desired, thread_id=None, meeting_scoped=True
+            )
+            self._conn.commit()
+        return out
+
+    def delete_observables_for_user(self, user_id: str) -> int:
+        """Hard-delete ALL of the user's observable rows (clear path)."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM steward_observables WHERE user_id = ?",
+                (user_id,),
+            )
+            self._conn.commit()
+        return cursor.rowcount
+
     def _insert_deferred_prose_locked(
         self,
         user_id: str,
@@ -2287,9 +2522,13 @@ class NarrativeStore:
         DELETE means real removal, not retire-and-hide).
 
         Removes the thread row, its evidence, readings, changes,
-        deferred-prose rows, lens fittings, and containment links
-        on either side. Involvement measures are measures ABOUT a
-        subject, not the subject's records, and are left untouched.
+        deferred-prose rows, lens fittings, observables, and
+        containment links on either side. Involvement measures are
+        measures ABOUT a subject, not the subject's records, and
+        are left untouched. Meeting-scoped (NULL thread)
+        observables do NOT cascade here — every clause is
+        thread_id = ?, so O1 rows are deleted directly by the
+        clear operations, never by thread deletion.
         Returns False when the thread does not belong to this user.
         """
         with self._lock:
@@ -2303,6 +2542,7 @@ class NarrativeStore:
                 ("thread_changes", "thread_id = ?"),
                 ("steward_deferred_prose", "thread_id = ?"),
                 ("lens_fittings", "thread_id = ?"),
+                ("steward_observables", "thread_id = ?"),
             ):
                 self._conn.execute(
                     f"DELETE FROM {table} WHERE {clause}",
@@ -2326,26 +2566,46 @@ class NarrativeStore:
         self, user_id: str, *, operation: str
     ) -> dict:
         """Compute, BEFORE any deletion, exactly what an operation
-        would remove — the warn-first content (increment B §9).
+        would remove — the warn-first content (increments B §9,
+        C §8.4).
 
         ``operation`` is "routine_clear" or "full_delete". Both
         cover the user's steward-proposal threads (origin
         steward_proposal, any status) and their owned rows
-        (readings, changes, deferred prose, containment links on
-        either side). They differ ONLY on decline rows: a routine
-        clear PRESERVES them (deleting a no would silently
-        re-enable declined offers); a full deletion REMOVES them
-        (hard removal throughout — "delete = gone"). Involvement
-        measures are left untouched by both (they are measures
-        ABOUT a subject, per delete_thread). The preview names
-        thread ids + titles, reading/change/deferred counts,
-        links touched, and — for full deletion — the decline
-        rows by kind, or an explicit preserved statement for
-        routine clear. E renders this preview as the warning and
-        gates confirmation on it; the content requirements here
-        are B's, the rendering is E's work. The preview is a
-        point-in-time inventory, not a lock: material added
-        between preview and clear is not covered by it.
+        (readings, changes, deferred prose, observables,
+        containment links on either side), PLUS all of the user's
+        observable rows (thread-scoped rows on preserved threads
+        and meeting-scoped O1 rows, deleted directly) and the
+        proposed readings on preserved (non-steward-proposal)
+        threads. They differ on verdict-state readings on
+        preserved threads and on decline rows: a routine clear
+        PRESERVES both (rule A, Joshua's ruling: a verdict is a
+        visitor act, and routine clear clears steward material,
+        not visitor acts; deleting a no would silently re-enable
+        declined offers); a full deletion REMOVES both (hard
+        removal throughout — "delete = gone"). Verdict-state
+        readings on wholesale-deleted threads cascade with their
+        thread under EITHER operation and are counted separately
+        (``accepted_readings_on_deleted_threads`` — the name is
+        the proposal's; the count covers every verdict state),
+        so that loss is named, not hidden in a thread count.
+        Involvement measures are left untouched by both (they
+        are measures ABOUT a subject, per delete_thread).
+        Meetings and claims are never deleted by either
+        operation (O1's provenance survives; only the O1
+        derivation row goes). The preview names thread ids +
+        titles, reading/change/deferred counts, links touched,
+        observable counts split thread-scoped / meeting-scoped,
+        proposed vs verdict-state reading counts on preserved
+        threads (with the preserved reading ids, so clear acts
+        on exactly what was previewed), and — for full deletion
+        — the decline rows by kind, or an explicit preserved
+        statement for routine clear. E renders this preview as
+        the warning and gates confirmation on it; the content
+        requirements here are B's + C's, the rendering is E's
+        work. The preview is a point-in-time inventory, not a
+        lock: material added between preview and clear is not
+        covered by it.
         """
         if operation not in ("routine_clear", "full_delete"):
             raise ValueError(f"unknown deletion operation: {operation!r}")
@@ -2353,12 +2613,18 @@ class NarrativeStore:
             t for t in self.threads_for(user_id)
             if t.origin == "steward_proposal"
         ]
+        wholesale_ids = {t.id for t in threads}
         reading_count = 0
         change_count = 0
         deferred_count = 0
         links: dict[str, dict] = {}
+        verdict_on_deleted = 0
         for thread in threads:
-            reading_count += len(self.readings_for(user_id, thread.id))
+            readings = self.readings_for(user_id, thread.id)
+            reading_count += len(readings)
+            verdict_on_deleted += sum(
+                1 for r in readings if r.status != "proposed"
+            )
             change_count += len(self.changes_for(user_id, thread.id))
             deferred_count += len(
                 self.deferred_prose_for_thread(user_id, thread.id)
@@ -2369,6 +2635,32 @@ class NarrativeStore:
                     "parent_thread_id": link.parent_thread_id,
                     "child_thread_id": link.child_thread_id,
                 }
+        preserved_proposed_ids: list[str] = []
+        preserved_verdict_ids: list[str] = []
+        judgment_proposed = 0
+        judgment_verdict = 0
+        for thread in self.threads_for(user_id):
+            if thread.id in wholesale_ids:
+                continue
+            for reading in self.readings_for(user_id, thread.id):
+                if reading.status == "proposed":
+                    preserved_proposed_ids.append(reading.id)
+                else:
+                    preserved_verdict_ids.append(reading.id)
+                if isinstance(reading.reading, dict) and (
+                    "judgment_kind" in reading.reading
+                ):
+                    if reading.status == "proposed":
+                        judgment_proposed += 1
+                    else:
+                        judgment_verdict += 1
+        observables = self.observables_for(user_id)
+        observable_thread_scoped = sum(
+            1 for o in observables if o.thread_id is not None
+        )
+        observable_meeting_scoped = sum(
+            1 for o in observables if o.thread_id is None
+        )
         declines = self.dismissals_for(user_id)
         by_kind: dict[str, int] = {}
         for row in declines:
@@ -2381,6 +2673,21 @@ class NarrativeStore:
             "change_count": change_count,
             "deferred_count": deferred_count,
             "links_touched": sorted(links.values(), key=lambda d: d["id"]),
+            "observable_count": len(observables),
+            "observable_thread_scoped_count": observable_thread_scoped,
+            "observable_meeting_scoped_count": observable_meeting_scoped,
+            "observable_ids": [o.id for o in observables],
+            "proposed_readings_on_preserved_count": len(
+                preserved_proposed_ids
+            ),
+            "verdict_readings_on_preserved_count": len(
+                preserved_verdict_ids
+            ),
+            "preserved_proposed_reading_ids": preserved_proposed_ids,
+            "preserved_verdict_reading_ids": preserved_verdict_ids,
+            "judgment_readings_proposed": judgment_proposed,
+            "judgment_readings_verdict_state": judgment_verdict,
+            "accepted_readings_on_deleted_threads": verdict_on_deleted,
             "declines": {
                 "preserved": operation == "routine_clear",
                 "total": len(declines),
@@ -2395,18 +2702,26 @@ class NarrativeStore:
         operation: str,
         preview: dict | None = None,
     ) -> dict:
-        """Perform a routine clear or a full deletion (increment B
-        §9) — storage-level only; no UI lives here.
+        """Perform a routine clear or a full deletion (increments
+        B §9, C §8.4 + rule A) — storage-level only; no UI here.
 
         Takes the preview it acts on (computed here when not
         supplied), so the warning shown is the warning acted on.
         Routine clear deletes the preview's steward-proposal
         threads (via delete_thread, so owned rows and links go
-        with them) and PRESERVES decline rows. Full deletion
-        deletes the same threads AND the user's decline rows
-        (both regimes, hard removal). Returns a report with the
-        operation, the preview acted on, deleted thread ids, and
-        the decline-row count removed (0 for routine clear).
+        with them), ALL of the user's observable rows (directly —
+        thread-scoped rows on preserved threads and meeting-scoped
+        O1 rows; rows on wholesale threads already cascaded),
+        and the preview's proposed readings on preserved threads,
+        and PRESERVES verdict-state readings on preserved threads
+        and decline rows (rule A). Full deletion deletes the
+        same, PLUS the preview's verdict-state readings on
+        preserved threads, PLUS the user's decline rows (both
+        regimes, hard removal). Clear is NOT suppression: cleared
+        observables may be re-derived on the next pass if their
+        facts still hold. Returns a report with the operation,
+        the preview acted on, deleted thread ids, and the
+        deleted observable / reading / decline counts.
         """
         if operation not in ("routine_clear", "full_delete"):
             raise ValueError(f"unknown deletion operation: {operation!r}")
@@ -2416,6 +2731,36 @@ class NarrativeStore:
         for thread_id in preview.get("thread_ids", []):
             if self.delete_thread(user_id, thread_id):
                 deleted_threads.append(thread_id)
+        deleted_observables = self.delete_observables_for_user(user_id)
+        with self._lock:
+            proposed_ids = preview.get(
+                "preserved_proposed_reading_ids", []
+            )
+            deleted_proposed = 0
+            if proposed_ids:
+                placeholders = ", ".join("?" for _ in proposed_ids)
+                cursor = self._conn.execute(
+                    "DELETE FROM thread_readings WHERE id IN "
+                    f"({placeholders}) AND thread_id IN (SELECT id "
+                    "FROM narrative_threads WHERE user_id = ?)",
+                    (*proposed_ids, user_id),
+                )
+                deleted_proposed = cursor.rowcount
+            deleted_verdict = 0
+            if operation == "full_delete":
+                verdict_ids = preview.get(
+                    "preserved_verdict_reading_ids", []
+                )
+                if verdict_ids:
+                    placeholders = ", ".join("?" for _ in verdict_ids)
+                    cursor = self._conn.execute(
+                        "DELETE FROM thread_readings WHERE id IN "
+                        f"({placeholders}) AND thread_id IN (SELECT id "
+                        "FROM narrative_threads WHERE user_id = ?)",
+                        (*verdict_ids, user_id),
+                    )
+                    deleted_verdict = cursor.rowcount
+            self._conn.commit()
         deleted_declines = 0
         if operation == "full_delete":
             with self._lock:
@@ -2429,5 +2774,8 @@ class NarrativeStore:
             "operation": operation,
             "preview": preview,
             "deleted_thread_ids": deleted_threads,
+            "deleted_observable_count": deleted_observables,
+            "deleted_proposed_reading_count": deleted_proposed,
+            "deleted_verdict_reading_count": deleted_verdict,
             "deleted_decline_count": deleted_declines,
         }

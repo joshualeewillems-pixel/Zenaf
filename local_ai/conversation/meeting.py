@@ -241,6 +241,19 @@ class MeetingStore:
             ).fetchall()
         return [row[0] for row in rows]
 
+    def meetings_for(self, user_id: str) -> list[dict[str, Any]]:
+        """All live meeting rows for the user (increment C's O1
+        scan reads stage/status/readback fields from these dicts;
+        archived runs are separate records and are not scanned —
+        O1 is about the live meeting's recorded response field)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM meetings WHERE user_id = ? "
+                "ORDER BY created_at, archetype_id, keystone_index",
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     # -- archives (prior runs, preserved verbatim) ------------------------------
 
     def archive_run(

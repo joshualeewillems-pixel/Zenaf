@@ -149,6 +149,44 @@ def _validate_filters(
         raise ValueError(f"unknown seat: {seat!r}")
 
 
+def validate_request_params(
+    *,
+    kind: str | None = None,
+    delivery_status: str | None = None,
+    decline_result: str | None = None,
+    unconsulted_scope: str | None = None,
+    seat: str | None = None,
+    limit: int | None = None,
+    limit_default: int = GROUP_LIMIT_DEFAULT,
+    limit_max: int = GROUP_LIMIT_MAX,
+    cursor: str | None = None,
+) -> None:
+    """Validate request values BEFORE any store read (proposal §4.4).
+
+    The route calls this before acquiring a snapshot so an invalid
+    filter/limit/cursor is a 400 without a database read. The
+    builders repeat the same checks on the snapshot path (defense
+    in depth for direct callers); the ValueError messages are
+    identical, so 400 details are unchanged either way. Ids
+    (thread_id, meeting_key, group_id, signal_id) are NOT validated
+    here: existence can only be checked against data, so id
+    lookup still happens after the snapshot (unknown ids are 404s,
+    never 400s).
+    """
+    _validate_filters(
+        kind=kind,
+        delivery_status=delivery_status,
+        decline_result=decline_result,
+        unconsulted_scope=unconsulted_scope,
+        seat=seat,
+    )
+    _validate_limit(limit, limit_default, limit_max)
+    if cursor is not None:
+        decoded = _b64_decode(cursor)
+        if "c" not in decoded or "g" not in decoded:
+            raise ValueError(f"malformed cursor: {cursor!r}")
+
+
 def _ref_tier(ref_kind: str) -> str | None:
     """A ref's tier, or None for an unknown kind (defensive: an
     unknown kind labels the ref, never drops the signal)."""

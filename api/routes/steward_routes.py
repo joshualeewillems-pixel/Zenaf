@@ -23,6 +23,12 @@ indistinguishable (both 404); there is no 403 variant and no
 admin view. ``get_narrative_store`` is the injection point tests
 use to substitute a tmp store (mirroring the attention route's
 pattern).
+
+Validation precedes reads (proposal §4.4): every endpoint
+validates its filter/limit/cursor values BEFORE acquiring a
+snapshot, so an invalid value is a 400 without a database read.
+Only id-existence lookup happens after the snapshot, because
+existence cannot be checked without data.
 """
 
 from __future__ import annotations
@@ -32,11 +38,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from api.routes.auth_routes import get_current_user
 from local_ai.narrative.consent import steward_consent_allowed
 from local_ai.narrative.read_model import (
-    GROUP_LIMIT_MAX,
+    MEMBER_LIMIT_DEFAULT,
     MEMBER_LIMIT_MAX,
     build_signals_response,
     get_group_members,
     get_signal_detail,
+    validate_request_params,
 )
 from local_ai.narrative.store import NarrativeStore
 
@@ -73,6 +80,18 @@ def list_signals(
     cursor: str | None = Query(default=None),
 ):
     user_id = current_user["id"]
+    try:
+        validate_request_params(
+            kind=kind,
+            delivery_status=delivery_status,
+            decline_result=decline_result,
+            unconsulted_scope=unconsulted_scope,
+            seat=seat,
+            limit=limit,
+            cursor=cursor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = get_narrative_store()
     try:
         snapshot = _build_snapshot(store, user_id)
@@ -105,6 +124,10 @@ def signal_detail(
     current_user: dict = Depends(get_current_user),
 ):
     user_id = current_user["id"]
+    try:
+        validate_request_params(kind=kind)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = get_narrative_store()
     try:
         snapshot = _build_snapshot(store, user_id)
@@ -129,6 +152,19 @@ def group_members(
     cursor: str | None = Query(default=None),
 ):
     user_id = current_user["id"]
+    try:
+        validate_request_params(
+            kind=kind,
+            delivery_status=delivery_status,
+            decline_result=decline_result,
+            unconsulted_scope=unconsulted_scope,
+            limit=limit,
+            limit_default=MEMBER_LIMIT_DEFAULT,
+            limit_max=MEMBER_LIMIT_MAX,
+            cursor=cursor,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     store = get_narrative_store()
     try:
         snapshot = _build_snapshot(store, user_id)

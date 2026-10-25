@@ -1183,3 +1183,143 @@ def test_clarification_e_malformed_records_stay_inspectable(tmp_path):
     assert signal["provenance"]["ref_state"] == "expected_but_missing"
     assert signal["provenance"]["provenance_resolved"] is False
     assert signal["content"]["detail"] == {"claim_id": None}
+
+
+# ---------------------------------------------------------------------------
+# Follow-up fixes on PR #216 (GPT review of the PR, authorized by
+# Joshua 2026-10-25): (a) filter validation precedes any store read
+# (proposal §4.4); (b) large-history snapshot behavior.
+# ---------------------------------------------------------------------------
+
+
+def test_route_validation_precedes_snapshot_read(tmp_path, monkeypatch):
+    """Invalid filter/limit/cursor values are 400s WITHOUT a store
+    read (proposal §4.4). Proved by booming the snapshot loader:
+    if the route touched the snapshot first, the boom would turn
+    these requests into 500s instead of 400s."""
+    store = _store(tmp_path)
+    thread, ev, reading = _basic_fixture(store)
+    client, steward_routes = _route_app(store)
+    monkeypatch.setattr(steward_routes, "get_narrative_store",
+                        lambda: NarrativeStore(
+                            db_path=tmp_path / "narrative.db"))
+    monkeypatch.setattr(steward_routes, "steward_consent_allowed",
+                        lambda user_id: True)
+    orig_snapshot = steward_routes._build_snapshot
+
+    def _boom(store_handle, user_id):
+        raise AssertionError("snapshot must not load on invalid input")
+
+    monkeypatch.setattr(steward_routes, "_build_snapshot", _boom)
+    # List endpoint: every value-validated filter, plus limits
+    # and cursor shape (list max is 200).
+    bad_list = [
+        "/steward/signals?kind=bogus",
+        "/steward/signals?delivery_status=bogus",
+        "/steward/signals?decline_result=bogus",
+        "/steward/signals?unconsulted_scope=bogus",
+        "/steward/signals?seat=bogus",
+        "/steward/signals?limit=0",
+        "/steward/signals?limit=201",
+        "/steward/signals?cursor=!!!",
+    ]
+    for url in bad_list:
+        resp = client.get(url)
+        assert resp.status_code == 400, url
+    # Detail endpoint: the kind value validates before the snapshot;
+    # the id lookup still needs data (and stays a 404).
+    assert client.get("/steward/signals/bogus/x").status_code == 400
+    # Members endpoint: filters, limits (members max is 500),
+    # cursor shape.
+    bad_members = [
+        f"/steward/groups/{thread.id}/members?kind=bogus",
+        f"/steward/groups/{thread.id}/members?delivery_status=bogus",
+        f"/steward/groups/{thread.id}/members?limit=0",
+        f"/steward/groups/{thread.id}/members?limit=501",
+        f"/steward/groups/{thread.id}/members?cursor=!!!",
+    ]
+    for url in bad_members:
+        resp = client.get(url)
+        assert resp.status_code == 400, url
+    # Positive control with the snapshot restored: valid requests
+    # still work, and id-existence lookup still 404s (it needs
+    # data, so it runs after the snapshot by design).
+    monkeypatch.setattr(steward_routes, "_build_snapshot", orig_snapshot)
+    assert client.get("/steward/signals").status_code == 200
+    assert client.get("/steward/signals/thread/nope").status_code == 404
+    assert client.get(
+        f"/steward/groups/{thread.id}/members"
+    ).status_code == 200
+
+
+def _large_history(store, user, threads=200, readings_per_thread=25):
+    """200 threads x 25 readings = 5,000 readings + 200 thread
+    headers = 5,200 signals, via bulk SQL per thread (the test is
+    about D's snapshot/read costs, not derivation)."""
+    last_thread = None
+    last_reading_id = None
+    for t in range(threads):
+        thread = _thread(store, user, title=f"bulk-{t:03d}")
+        ev = _evidence(store, user, thread.id, f"ev-{t:03d}")
+        values = ",".join(
+            f"('rd-bulk-{t:03d}-{i:03d}', '{thread.id}', 'steward', "
+            f"'{{\"tensions\": []}}', '[\"{ev.id}\"]', 'proposed', '{T1}')"
+            for i in range(readings_per_thread)
+        )
+        _sql(store,
+             "INSERT INTO thread_readings (id, thread_id, author, "
+             "reading_json, evidence_refs_json, status, created_at) "
+             f"VALUES {values}")
+        last_thread = thread
+        last_reading_id = f"rd-bulk-{t:03d}-{readings_per_thread - 1:03d}"
+    return last_thread, last_reading_id
+
+
+def test_large_history_snapshot_behavior(tmp_path):
+    """Snapshot cost on a large history: the snapshot runs a
+    FIXED number of SELECTs (one per table) no matter how large
+    the history is — it never issues one query per thread or per
+    signal (no N+1). List, drill-down, and member pages stay
+    correct across the whole history. No wall-time assertion: CI
+    timing is not a behavior guarantee; observed time/memory for
+    this history size is reported in the PR body instead."""
+    store = _store(tmp_path)
+    last_thread, last_reading_id = _large_history(store, USER)
+    # Query-count proof: trace the store connection during one
+    # snapshot and assert the fixed SELECT set.
+    seen: list[str] = []
+    store._conn.set_trace_callback(seen.append)
+    try:
+        snap = _snapshot(store, USER)
+    finally:
+        store._conn.set_trace_callback(None)
+    selects = [s for s in seen if s.strip().upper().startswith("SELECT")]
+    assert len(selects) == 8, selects
+    # Totals describe the whole history, not just the first page.
+    resp = build_signals_response(
+        snap, user_id=USER, derivation_active=True)
+    assert resp["totals"]["group_count"] == 200
+    assert resp["totals"]["signal_count"] == 5200
+    assert len(resp["groups"]) == 50  # default group page
+    assert resp["pagination"]["cursor"] is not None
+    assert resp["pagination"]["truncated"] is False
+    # Walking every page yields every group and every signal.
+    groups_seen = list(resp["groups"])
+    cursor = resp["pagination"]["cursor"]
+    while cursor is not None:
+        page = build_signals_response(
+            _snapshot(store, USER), user_id=USER,
+            derivation_active=True, cursor=cursor)
+        groups_seen.extend(page["groups"])
+        cursor = page["pagination"]["cursor"]
+    assert len(groups_seen) == 200
+    assert sum(g["signal_count"] for g in groups_seen) == 5200
+    # Drill-down into the last thread's last reading, and a member
+    # page for that thread, both against the full history.
+    detail = get_signal_detail(_snapshot(store, USER), kind="reading",
+                               signal_id=last_reading_id)
+    assert detail["id"] == last_reading_id
+    members = get_group_members(_snapshot(store, USER),
+                                group_id=last_thread.id)
+    assert members["signal_count"] == 26  # header + 25 readings
+    assert len(members["signals"]) == 26

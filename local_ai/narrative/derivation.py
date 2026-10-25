@@ -472,7 +472,11 @@ def _dominant_entity_ref(refs: Iterable[str | None]) -> str | None:
 
 
 def subject_key_for_thread(
-    store: NarrativeStore, user_id: str, thread: NarrativeThread
+    store: NarrativeStore,
+    user_id: str,
+    thread: NarrativeThread,
+    *,
+    evidence_rows: Any = None,
 ) -> tuple[str | None, str]:
     """An offer's subject key for a thread + its precision tag
     (proposal §4.2, revised order: precision first).
@@ -484,10 +488,15 @@ def subject_key_for_thread(
     classification, never the primary identity). UNKNOWN: else —
     no entity, no scope. Title fallback is deliberately NOT used:
     titles are unstable working text.
+
+    ``evidence_rows`` (increment D): when the caller already holds
+    the thread's evidence rows (e.g. from a single-acquisition
+    snapshot), pass them to avoid a second store read; the
+    computation is identical either way.
     """
-    entity = _dominant_entity_ref(
-        row.entity_ref for row in store.evidence_for(user_id, thread.id)
-    )
+    if evidence_rows is None:
+        evidence_rows = store.evidence_for(user_id, thread.id)
+    entity = _dominant_entity_ref(row.entity_ref for row in evidence_rows)
     if entity is not None:
         return entity, "precise"
     if thread.scope and thread.scope.strip():
@@ -552,6 +561,62 @@ def record_offer_decline(
     )
 
 
+def consult_offer_declines(
+    *,
+    dismissed_pairs: Any,
+    has_subject_dismissal: bool,
+    invitation_key: str | None = None,
+    subject_key: str | None = None,
+    subject_precision: str | None = None,
+    class_label: str | None = None,
+) -> str | None:
+    """Pure offer-decline consultation over an already-fetched set.
+
+    Increment D: the read model consults over a single-acquisition
+    snapshot's dismissal rows (no store calls mid-response, so
+    consultation coheres with content and totals). ``dismissed_pairs``
+    is the set of (kind, signature) dismissal rows standing for the
+    user; ``has_subject_dismissal`` is whether any offer_subject
+    row stands. The matching logic is identical to
+    :func:`is_offer_declined` — that function is now a thin wrapper
+    over this one, so the two can never drift apart.
+    """
+    dismissed = set(dismissed_pairs)
+    if invitation_key and ("offer_invitation", invitation_key) in dismissed:
+        return "invitation"
+    subject_ambiguous_candidate = False
+    if subject_key is not None:
+        sig = (
+            subject_key
+            if subject_key.startswith("subj:")
+            else f"subj:{subject_key}"
+        )
+        if ("offer_subject", sig) in dismissed:
+            return "subject"
+        prec = (
+            subject_precision
+            if subject_precision in ("precise", "coarse", "unknown")
+            else "unknown"
+        )
+        if prec != "precise":
+            subject_ambiguous_candidate = True
+    elif subject_precision is not None:
+        # No key, but a precision was computed: never assume a
+        # precise clearance without a key to match on.
+        subject_ambiguous_candidate = True
+    if class_label:
+        sig = (
+            class_label
+            if class_label.startswith("class:")
+            else f"class:{class_label}"
+        )
+        if ("offer_class", sig) in dismissed:
+            return "class"
+    if subject_ambiguous_candidate and has_subject_dismissal:
+        return "ambiguous"
+    return None
+
+
 def is_offer_declined(
     store: NarrativeStore,
     user_id: str,
@@ -582,47 +647,17 @@ def is_offer_declined(
     is treated as unknown, and an unknown class label simply does
     not match.
     """
-    if invitation_key and store.is_dismissed(
-        user_id, kind="offer_invitation", signature=invitation_key
-    ):
-        return "invitation"
-    subject_ambiguous_candidate = False
-    if subject_key is not None:
-        sig = (
-            subject_key
-            if subject_key.startswith("subj:")
-            else f"subj:{subject_key}"
-        )
-        if store.is_dismissed(
-            user_id, kind="offer_subject", signature=sig
-        ):
-            return "subject"
-        prec = (
-            subject_precision
-            if subject_precision in ("precise", "coarse", "unknown")
-            else "unknown"
-        )
-        if prec != "precise":
-            subject_ambiguous_candidate = True
-    elif subject_precision is not None:
-        # No key, but a precision was computed: never assume a
-        # precise clearance without a key to match on.
-        subject_ambiguous_candidate = True
-    if class_label:
-        sig = (
-            class_label
-            if class_label.startswith("class:")
-            else f"class:{class_label}"
-        )
-        if store.is_dismissed(
-            user_id, kind="offer_class", signature=sig
-        ):
-            return "class"
-    if subject_ambiguous_candidate and store.has_dismissal_kind(
-        user_id, kind="offer_subject"
-    ):
-        return "ambiguous"
-    return None
+    rows = store.dismissals_for(user_id)
+    return consult_offer_declines(
+        dismissed_pairs={(r.kind, r.signature) for r in rows},
+        has_subject_dismissal=any(
+            r.kind == "offer_subject" for r in rows
+        ),
+        invitation_key=invitation_key,
+        subject_key=subject_key,
+        subject_precision=subject_precision,
+        class_label=class_label,
+    )
 
 
 def clear_offer_decline(

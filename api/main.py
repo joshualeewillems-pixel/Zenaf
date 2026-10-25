@@ -361,6 +361,18 @@ except Exception as e:
     print(f"You-profile routes not loaded: {e}")
     _router_load_errors.append(f"you_profile: {e}")
 
+# Steward inspectable surface (increment D) — pure read model over
+# everything the steward stored, served for the current user only.
+# GET /steward/signals, GET /steward/signals/{kind}/{id},
+# GET /steward/groups/{group_id}/members. Read-only: no dialogue,
+# no frontend UI, no actions (those belong to increment E).
+try:
+    from api.routes.steward_routes import router as steward_router
+    app.include_router(steward_router)
+except Exception as e:
+    print(f"Steward routes not loaded: {e}")
+    _router_load_errors.append(f"steward: {e}")
+
 
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the
@@ -381,6 +393,7 @@ EXPECTED_ROUTER_PREFIXES = (
     "/api",  # transcribe_routes mounts at /api
     "/provenance",
     "/pipeline",
+    "/steward",
 )
 
 

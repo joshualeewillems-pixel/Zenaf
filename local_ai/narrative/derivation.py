@@ -82,6 +82,7 @@ import logging
 import math
 import re
 import threading
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
@@ -405,6 +406,254 @@ def birth_signature(items: Iterable[EvidenceItem]) -> str:
 def extension_signature(thread_id: str, items: Iterable[EvidenceItem]) -> str:
     keys = sorted(item.evidence_key() for item in items)
     return f"extension:{thread_id}:" + "|".join(keys)
+
+
+# ---------------------------------------------------------------------------
+# Offer identities + decline consultation (increment B, proposal §§4–7)
+# ---------------------------------------------------------------------------
+# An offer is a steward proposal put to the visitor for verdict: a
+# proposed birth or a proposed extension. A decline attaches at a
+# scope — one proposal (invitation), everything about X (subject),
+# or a kind of invitation (class) — and is stored as a dismissal
+# row whose signature is the scoped key, not a content signature.
+# The two dismissal regimes are independent: thread-candidate
+# dismissal stays per-signature/content-addressed (new evidence may
+# propose a NEW candidate), while offer decline is semantic/scoped
+# (new evidence never reopens it, rewording never resurrects it).
+# Only an explicit visitor lift, respecting scope, clears a decline.
+
+#: Offer scope → dismissal kind (proposal §7).
+OFFER_KIND_BY_SCOPE: dict[str, str] = {
+    "invitation": "offer_invitation",
+    "subject": "offer_subject",
+    "class": "offer_class",
+}
+
+#: Closed class vocabulary (proposal §4.3): proposal kinds plus
+#: generation change kinds, plus the reading slot so the vocabulary
+#: is exhaustive over what derivation proposes. Classes are
+#: boundaries on OFFERS (presentation), never permission to
+#: process data (proposal §6.4).
+CLASS_LABELS: tuple[str, ...] = (
+    "birth",
+    "extension:reading",
+    "extension:extended",
+    "extension:contradicted",
+    "extension:milestone",
+    "extension:reopened",
+)
+
+
+def invitation_key(
+    thread_ref: str, kind: str, slot: str, evidence_keys: Iterable[str]
+) -> str:
+    """One proposal's invitation identity (proposal §4.1).
+
+    ``thread_ref`` is the thread id for extensions, the literal
+    "birth" for births. The identity is derived from provenance
+    (which evidence, which thread, which slot), never from prose —
+    so rewording alone never evades it, and genuinely new evidence
+    (or a different slot) is a new invitation.
+    """
+    return f"inv:{thread_ref}:{kind}:{slot}:" + "|".join(sorted(evidence_keys))
+
+
+def _dominant_entity_ref(refs: Iterable[str | None]) -> str | None:
+    """Most frequent entity ref; ties break lexicographically first.
+
+    Deterministic: the same evidence always yields the same subject
+    key, so a decline recorded for it keeps matching.
+    """
+    counts: Counter[str] = Counter(r for r in refs if r)
+    if not counts:
+        return None
+    top = max(counts.values())
+    return sorted(r for r, n in counts.items() if n == top)[0]
+
+
+def subject_key_for_thread(
+    store: NarrativeStore, user_id: str, thread: NarrativeThread
+) -> tuple[str | None, str]:
+    """An offer's subject key for a thread + its precision tag
+    (proposal §4.2, revised order: precision first).
+
+    PRECISE: the thread's dominant entity_ref across annotated
+    evidence (rows without annotations read NULL and don't
+    participate — honest unknown, never inferred). COARSE: else
+    the thread's scope label when set and non-empty (a broad
+    classification, never the primary identity). UNKNOWN: else —
+    no entity, no scope. Title fallback is deliberately NOT used:
+    titles are unstable working text.
+    """
+    entity = _dominant_entity_ref(
+        row.entity_ref for row in store.evidence_for(user_id, thread.id)
+    )
+    if entity is not None:
+        return entity, "precise"
+    if thread.scope and thread.scope.strip():
+        return thread.scope, "coarse"
+    return None, "unknown"
+
+
+def subject_key_for_cluster(
+    cluster: Cluster,
+) -> tuple[str | None, str]:
+    """An offer's subject key for a birth cluster + precision tag.
+
+    Clusters carry no scope label (scope is a thread field), so a
+    birth subject is either PRECISE (dominant entity_ref across
+    the cluster's items) or UNKNOWN.
+    """
+    entity = _dominant_entity_ref(i.entity_ref for i in cluster.items)
+    if entity is not None:
+        return entity, "precise"
+    return None, "unknown"
+
+
+def class_key(label: str) -> str:
+    """A class scope's stored key for a class label."""
+    return f"class:{label}"
+
+
+def record_offer_decline(
+    store: NarrativeStore, user_id: str, *, scope: str, key: str
+) -> Any:
+    """Record a visitor's refusal of an offer at a scope.
+
+    A user act (called by E/H surfaces, never by derivation).
+    ``key`` is the §4 key: a full invitation key for scope
+    "invitation"; a raw subject key (or a full "subj:" key) for
+    "subject"; a raw class label (or a full "class:" key) for
+    "class". Recording the same decline twice returns the existing
+    row (the generic path dedupes). Recording never deletes or
+    alters the thread, reading, or change that was declined.
+    """
+    if scope not in OFFER_KIND_BY_SCOPE:
+        raise ValueError(f"unknown offer scope: {scope!r}")
+    if not str(key or "").strip():
+        raise ValueError("an offer decline needs a non-empty key")
+    if scope == "invitation":
+        if not str(key).startswith("inv:"):
+            raise ValueError("an invitation key starts with 'inv:'")
+        signature = str(key)
+    elif scope == "subject":
+        signature = (
+            str(key) if str(key).startswith("subj:") else f"subj:{key}"
+        )
+    else:
+        label = str(key)
+        if label.startswith("class:"):
+            label = label[len("class:"):]
+        if label not in CLASS_LABELS:
+            raise ValueError(f"unknown offer class: {label!r}")
+        signature = f"class:{label}"
+    return store.record_dismissal(
+        user_id, kind=OFFER_KIND_BY_SCOPE[scope], signature=signature
+    )
+
+
+def is_offer_declined(
+    store: NarrativeStore,
+    user_id: str,
+    *,
+    invitation_key: str | None = None,
+    subject_key: str | None = None,
+    subject_precision: str | None = None,
+    class_label: str | None = None,
+) -> str | None:
+    """Consult offer declines: matched scope, "ambiguous", or None.
+
+    This is the H seam (proposal §6.5): H calls it before voicing
+    any UNSOLICITED offer, never for visitor-initiated discussion
+    (which is not an offer and is never consulted). Consultation
+    is a pure query: it creates no rows and blocks nothing by
+    itself — callers decide what a match or an ambiguous result
+    does. Exact equality first: a key literally equal to a declined
+    key matches, whatever its precision. Ambiguity (proposal
+    §4.5): a coarse or unknown subject key is AMBIGUOUS exactly
+    when at least one subject decline stands — never a silent
+    clearance, never a false match. A precise mismatch proceeds.
+    A call with no subject key AND no precision skips the subject
+    check (the caller did not compute a subject — distinct from
+    unknown). Matches beat ambiguity: a definite block names the
+    reason; ambiguity only withholds when nothing matched. This
+    function never raises for consultation inputs (derivation
+    must never break on a bad label): an unrecognized precision
+    is treated as unknown, and an unknown class label simply does
+    not match.
+    """
+    if invitation_key and store.is_dismissed(
+        user_id, kind="offer_invitation", signature=invitation_key
+    ):
+        return "invitation"
+    subject_ambiguous_candidate = False
+    if subject_key is not None:
+        sig = (
+            subject_key
+            if subject_key.startswith("subj:")
+            else f"subj:{subject_key}"
+        )
+        if store.is_dismissed(
+            user_id, kind="offer_subject", signature=sig
+        ):
+            return "subject"
+        prec = (
+            subject_precision
+            if subject_precision in ("precise", "coarse", "unknown")
+            else "unknown"
+        )
+        if prec != "precise":
+            subject_ambiguous_candidate = True
+    elif subject_precision is not None:
+        # No key, but a precision was computed: never assume a
+        # precise clearance without a key to match on.
+        subject_ambiguous_candidate = True
+    if class_label:
+        sig = (
+            class_label
+            if class_label.startswith("class:")
+            else f"class:{class_label}"
+        )
+        if store.is_dismissed(
+            user_id, kind="offer_class", signature=sig
+        ):
+            return "class"
+    if subject_ambiguous_candidate and store.has_dismissal_kind(
+        user_id, kind="offer_subject"
+    ):
+        return "ambiguous"
+    return None
+
+
+def clear_offer_decline(
+    store: NarrativeStore, user_id: str, *, scope: str, key: str
+) -> bool:
+    """Clear exactly one offer decline (a visitor lift).
+
+    Clearing is a user act and is never performed by derivation.
+    Deletes exactly the matching row; True if a row was deleted.
+    Scoped exactly: clearing one scope never clears another, and
+    never clears the thread-candidate regime's rows.
+    """
+    if scope not in OFFER_KIND_BY_SCOPE:
+        raise ValueError(f"unknown offer scope: {scope!r}")
+    if not str(key or "").strip():
+        raise ValueError("clearing a decline needs a non-empty key")
+    if scope == "invitation":
+        signature = str(key)
+    elif scope == "subject":
+        signature = (
+            str(key) if str(key).startswith("subj:") else f"subj:{key}"
+        )
+    else:
+        signature = (
+            str(key)
+            if str(key).startswith("class:")
+            else f"class:{key}"
+        )
+    return store.clear_dismissal(
+        user_id, kind=OFFER_KIND_BY_SCOPE[scope], signature=signature
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -913,6 +1162,27 @@ def _propose_extension(
     if proposal is None:
         result.declines += 1
         return
+    # Increment B §6.4: post-generation class check. The change kind
+    # is known only after generation, so a change-kind class decline
+    # (e.g. extension:reopened) cannot be consulted pre-generation.
+    # On match, DISCARD the whole proposal: no reading, no change
+    # stored. The generation is already spent (calls incremented
+    # above) — correctness over cost, and change-kind class declines
+    # are expected to be rare. This is an OFFER boundary (enforced
+    # before surfacing/storing), NOT a processing ban: a ban on
+    # analyzing material in a way must be enforced BEFORE generation,
+    # which B does not implement — B claims nothing about it.
+    if proposal["change_kind"] and is_offer_declined(
+        store, user_id, class_label=f"extension:{proposal['change_kind']}"
+    ) == "class":
+        logger.info(
+            "narrative: extension change_kind %r declined by class; "
+            "discarding proposal for thread %s",
+            proposal["change_kind"],
+            thread.id,
+        )
+        result.skipped.append("offer declined (class)")
+        return
     refs = [item.ref for item in new_items]
     change_kind = proposal["change_kind"]
     if change_kind:
@@ -1007,6 +1277,41 @@ def derive_batch(
                 )
                 handled_as_extension = True
                 continue
+            # Increment B §6.2: offer declines first (the stronger,
+            # semantic refusal), then the per-signature check —
+            # both before records-first and before any generation.
+            # Slot is "reading" pre-generation: the change kind (if
+            # any) is not known until generation (§6.4 checks it
+            # after parsing). A skipped extension attaches nothing.
+            offer_inv = invitation_key(
+                thread.id,
+                "extension",
+                "reading",
+                [item.evidence_key() for item in new_items],
+            )
+            offer_subj, offer_prec = subject_key_for_thread(
+                store, user_id, thread
+            )
+            offer = is_offer_declined(
+                store,
+                user_id,
+                invitation_key=offer_inv,
+                subject_key=offer_subj,
+                subject_precision=offer_prec,
+                class_label="extension:reading",
+            )
+            if offer == "ambiguous":
+                result.skipped.append(
+                    f"thread {thread.id}: offer ambiguous (subject)"
+                )
+                handled_as_extension = True
+                continue
+            if offer is not None:
+                result.skipped.append(
+                    f"thread {thread.id}: offer declined ({offer})"
+                )
+                handled_as_extension = True
+                continue
             sig = extension_signature(thread.id, new_items)
             if store.is_dismissed(user_id, kind="extension", signature=sig):
                 result.skipped.append(
@@ -1048,6 +1353,27 @@ def derive_batch(
             continue
         if not _has_jurisdiction_candidacy(cluster):
             result.skipped.append("cluster on nobody's ground")
+            continue
+        # Increment B §6.1: offer declines first, then the
+        # per-signature check — both before records-first and
+        # before any generation is spent.
+        offer_inv = invitation_key(
+            "birth", "birth", "birth", cluster.evidence_keys()
+        )
+        offer_subj, offer_prec = subject_key_for_cluster(cluster)
+        offer = is_offer_declined(
+            store,
+            user_id,
+            invitation_key=offer_inv,
+            subject_key=offer_subj,
+            subject_precision=offer_prec,
+            class_label="birth",
+        )
+        if offer == "ambiguous":
+            result.skipped.append("offer ambiguous (subject)")
+            continue
+        if offer is not None:
+            result.skipped.append(f"offer declined ({offer})")
             continue
         sig = birth_signature(cluster.items)
         if store.is_dismissed(user_id, kind="thread_birth", signature=sig):
@@ -1129,13 +1455,17 @@ class DeferredWorkResult:
     render attempt failed this pass: a caught generation raise
     releases the row to pending for retry on the next pass, while
     a transient store error leaves it rendering for lease-expiry
-    retry.
+    retry; ``suppressed`` (increment B §6.3) holds one dict per
+    deferred row settled as suppressed_by_decline (row id +
+    matched refusal scope + key) — a distinct terminal outcome,
+    never a completed render and never a deletion.
     """
 
     rendered: list[str] = field(default_factory=list)
     already_covered: list[str] = field(default_factory=list)
     settled_without_prose: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
+    suppressed: list[dict] = field(default_factory=list)
     skipped_no_backend: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -1144,6 +1474,7 @@ class DeferredWorkResult:
             "already_covered": list(self.already_covered),
             "settled_without_prose": list(self.settled_without_prose),
             "failed": list(self.failed),
+            "suppressed": [dict(s) for s in self.suppressed],
             "skipped_no_backend": self.skipped_no_backend,
         }
 
@@ -1238,6 +1569,108 @@ def _render_deferred_row(
         store.mark_deferred_prose_done(user_id, row["id"])
         result.already_covered.append(row["id"])
         return
+    if row["kind"] in ("birth", "extension"):
+        # Increment B §6.3: consult dismissals BEFORE any
+        # generation — the gap this increment closes. Per-signature
+        # first (the row's evidence_signature IS the birth /
+        # extension signature), then offer declines. A match settles
+        # the row as suppressed_by_decline WITHOUT a reading; an
+        # ambiguous subject leaves the row pending (lease released)
+        # for re-check next pass — ambiguity can resolve if the
+        # thread's subject becomes computable, and until then the
+        # owed row pins its thread from pruning.
+        per_sig_kind = (
+            "thread_birth" if row["kind"] == "birth" else "extension"
+        )
+        if store.is_dismissed(
+            user_id, kind=per_sig_kind, signature=row["evidence_signature"]
+        ):
+            store.mark_deferred_prose_suppressed(
+                user_id,
+                row["id"],
+                scope=per_sig_kind,
+                key=row["evidence_signature"],
+            )
+            result.suppressed.append(
+                {
+                    "row_id": row["id"],
+                    "scope": per_sig_kind,
+                    "key": row["evidence_signature"],
+                }
+            )
+            logger.info(
+                "narrative: deferred row %s suppressed by %s "
+                "dismissal; not rendered",
+                row["id"],
+                per_sig_kind,
+            )
+            return
+        if row["kind"] == "birth":
+            sig_keys = (
+                row["evidence_signature"][len("birth:"):]
+                if row["evidence_signature"].startswith("birth:")
+                else ""
+            )
+            offer_inv = invitation_key(
+                "birth",
+                "birth",
+                "birth",
+                sig_keys.split("|") if sig_keys else [],
+            )
+            offer_class = "birth"
+        else:
+            prefix = f"extension:{thread.id}:"
+            sig_keys = (
+                row["evidence_signature"][len(prefix):]
+                if row["evidence_signature"].startswith(prefix)
+                else ""
+            )
+            offer_inv = invitation_key(
+                thread.id,
+                "extension",
+                "reading",
+                sig_keys.split("|") if sig_keys else [],
+            )
+            offer_class = "extension:reading"
+        offer_subj, offer_prec = subject_key_for_thread(
+            store, user_id, thread
+        )
+        offer = is_offer_declined(
+            store,
+            user_id,
+            invitation_key=offer_inv,
+            subject_key=offer_subj,
+            subject_precision=offer_prec,
+            class_label=offer_class,
+        )
+        if offer == "ambiguous":
+            logger.info(
+                "narrative: deferred row %s ambiguous (subject); "
+                "released to pending for re-check",
+                row["id"],
+            )
+            store.release_deferred_prose(user_id, row["id"])
+            return
+        if offer is not None:
+            if offer == "invitation":
+                matched_key = offer_inv
+            elif offer == "subject":
+                matched_key = f"subj:{offer_subj}"
+            else:
+                matched_key = f"class:{offer_class}"
+            store.mark_deferred_prose_suppressed(
+                user_id, row["id"], scope=offer, key=matched_key
+            )
+            result.suppressed.append(
+                {"row_id": row["id"], "scope": offer, "key": matched_key}
+            )
+            logger.info(
+                "narrative: deferred row %s suppressed by offer "
+                "decline (%s); not rendered",
+                row["id"],
+                offer,
+            )
+            return
     if row["kind"] == "birth":
         prompt = _BIRTH_PROMPT.format(
             evidence=_render_deferred_texts(evidence_texts)

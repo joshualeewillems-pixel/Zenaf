@@ -479,7 +479,18 @@ class InvolvementMeasure:
 #: evidence keys, plus the thread id for extensions), so new
 #: evidence produces a new signature and may be proposed again,
 #: while the same evidence is never re-proposed after dismissal.
-DISMISSAL_KINDS: tuple[str, ...] = ("thread_birth", "extension")
+#: Increment B adds the offer kinds: for those rows the signature
+#: column holds a semantic scoped key (inv:/subj:/class: grammar,
+#: proposal §4), not a content signature — a declined offer, subject,
+#: or class, not a declined evidence cluster. The two regimes are
+#: consulted and cleared independently (proposal §5.4).
+DISMISSAL_KINDS: tuple[str, ...] = (
+    "thread_birth",
+    "extension",
+    "offer_invitation",
+    "offer_subject",
+    "offer_class",
+)
 
 
 @dataclass(frozen=True)

@@ -573,6 +573,29 @@ class NarrativeStore:
                     "ALTER TABLE thread_evidence "
                     "ADD COLUMN entity_ref TEXT"
                 )
+            # Increment B migration: databases created before B have
+            # no suppression-provenance columns on the deferred-prose
+            # table (CREATE TABLE IF NOT EXISTS does not add them).
+            # Additive only; NULL reads back as "not suppressed" for
+            # older rows. The suppressed row keeps its scope + key
+            # on the row itself (Joshua's ruling: keep the why on
+            # the note), never only in a run report.
+            dfp_columns = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(steward_deferred_prose)"
+                ).fetchall()
+            }
+            if "suppressed_scope" not in dfp_columns:
+                self._conn.execute(
+                    "ALTER TABLE steward_deferred_prose "
+                    "ADD COLUMN suppressed_scope TEXT"
+                )
+            if "suppressed_key" not in dfp_columns:
+                self._conn.execute(
+                    "ALTER TABLE steward_deferred_prose "
+                    "ADD COLUMN suppressed_key TEXT"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -1859,6 +1882,45 @@ class NarrativeStore:
             ).fetchall()
         return [_row_to_dismissal(r) for r in rows]
 
+    def has_dismissal_kind(self, user_id: str, *, kind: str) -> bool:
+        """Does the user have any dismissal row of this kind standing?
+
+        Increment B: the ambiguity existence check — one indexed
+        SELECT, used when an offer's subject key is unknown or
+        coarse and a subject decline would make it ambiguous.
+        """
+        if kind not in DISMISSAL_KINDS:
+            raise ValueError(f"unknown dismissal kind: {kind!r}")
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM steward_dismissals WHERE user_id = ? "
+                "AND kind = ? LIMIT 1",
+                (user_id, kind),
+            ).fetchone()
+        return row is not None
+
+    def clear_dismissal(
+        self, user_id: str, *, kind: str, signature: str
+    ) -> bool:
+        """Clear exactly one dismissal row (a visitor lift).
+
+        Clearing is a user act and is never performed by
+        derivation (derivation only consults). Deletes exactly
+        the matching row; True if a row was deleted. Scoped
+        exactly: clearing one kind + signature never clears
+        another regime or scope.
+        """
+        if kind not in DISMISSAL_KINDS:
+            raise ValueError(f"unknown dismissal kind: {kind!r}")
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM steward_dismissals WHERE user_id = ? "
+                "AND kind = ? AND signature = ?",
+                (user_id, kind, signature),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
     # -- deferred prose (increment A) ----------------------------------------
 
     def _insert_deferred_prose_locked(
@@ -2037,6 +2099,40 @@ class NarrativeStore:
                 "UPDATE steward_deferred_prose SET status = 'done' "
                 "WHERE id = ? AND user_id = ? AND status = 'rendering'",
                 (row_id, user_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def mark_deferred_prose_suppressed(
+        self,
+        user_id: str,
+        row_id: str,
+        *,
+        scope: str,
+        key: str,
+    ) -> bool:
+        """Settle a claimed (rendering) row as suppressed by decline
+        (increment B §6.3) — a distinct terminal outcome, NOT done
+        and NOT deleted.
+
+        In ONE transaction for a rendering row: status →
+        'suppressed_by_decline'; evidence_texts_json → cleared
+        (verbatim prompt copies no longer serve a purpose once the
+        proposal will never render); evidence_refs_json RETAINED
+        (refs are provenance keys, not verbatim text); and the
+        matched refusal scope + key recorded on the row itself
+        (suppressed_scope / suppressed_key), so the why stays
+        queryable on the note rather than only in a run report.
+        The thread + evidence already landed STAY landed.
+        Returns False when the row is not rendering for this user.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE steward_deferred_prose SET status = "
+                "'suppressed_by_decline', evidence_texts_json = '[]', "
+                "suppressed_scope = ?, suppressed_key = ? "
+                "WHERE id = ? AND user_id = ? AND status = 'rendering'",
+                (scope, key, row_id, user_id),
             )
             self._conn.commit()
         return cursor.rowcount == 1
@@ -2223,3 +2319,115 @@ class NarrativeStore:
             )
             self._conn.commit()
         return True
+
+    # -- deletion preview + user-material clearing (increment B §9) -----
+
+    def deletion_preview(
+        self, user_id: str, *, operation: str
+    ) -> dict:
+        """Compute, BEFORE any deletion, exactly what an operation
+        would remove — the warn-first content (increment B §9).
+
+        ``operation`` is "routine_clear" or "full_delete". Both
+        cover the user's steward-proposal threads (origin
+        steward_proposal, any status) and their owned rows
+        (readings, changes, deferred prose, containment links on
+        either side). They differ ONLY on decline rows: a routine
+        clear PRESERVES them (deleting a no would silently
+        re-enable declined offers); a full deletion REMOVES them
+        (hard removal throughout — "delete = gone"). Involvement
+        measures are left untouched by both (they are measures
+        ABOUT a subject, per delete_thread). The preview names
+        thread ids + titles, reading/change/deferred counts,
+        links touched, and — for full deletion — the decline
+        rows by kind, or an explicit preserved statement for
+        routine clear. E renders this preview as the warning and
+        gates confirmation on it; the content requirements here
+        are B's, the rendering is E's work. The preview is a
+        point-in-time inventory, not a lock: material added
+        between preview and clear is not covered by it.
+        """
+        if operation not in ("routine_clear", "full_delete"):
+            raise ValueError(f"unknown deletion operation: {operation!r}")
+        threads = [
+            t for t in self.threads_for(user_id)
+            if t.origin == "steward_proposal"
+        ]
+        reading_count = 0
+        change_count = 0
+        deferred_count = 0
+        links: dict[str, dict] = {}
+        for thread in threads:
+            reading_count += len(self.readings_for(user_id, thread.id))
+            change_count += len(self.changes_for(user_id, thread.id))
+            deferred_count += len(
+                self.deferred_prose_for_thread(user_id, thread.id)
+            )
+            for link in self.links_for(user_id, thread.id):
+                links[link.id] = {
+                    "id": link.id,
+                    "parent_thread_id": link.parent_thread_id,
+                    "child_thread_id": link.child_thread_id,
+                }
+        declines = self.dismissals_for(user_id)
+        by_kind: dict[str, int] = {}
+        for row in declines:
+            by_kind[row.kind] = by_kind.get(row.kind, 0) + 1
+        return {
+            "operation": operation,
+            "thread_ids": [t.id for t in threads],
+            "threads": [{"id": t.id, "title": t.title} for t in threads],
+            "reading_count": reading_count,
+            "change_count": change_count,
+            "deferred_count": deferred_count,
+            "links_touched": sorted(links.values(), key=lambda d: d["id"]),
+            "declines": {
+                "preserved": operation == "routine_clear",
+                "total": len(declines),
+                "by_kind": by_kind,
+            },
+        }
+
+    def clear_user_material(
+        self,
+        user_id: str,
+        *,
+        operation: str,
+        preview: dict | None = None,
+    ) -> dict:
+        """Perform a routine clear or a full deletion (increment B
+        §9) — storage-level only; no UI lives here.
+
+        Takes the preview it acts on (computed here when not
+        supplied), so the warning shown is the warning acted on.
+        Routine clear deletes the preview's steward-proposal
+        threads (via delete_thread, so owned rows and links go
+        with them) and PRESERVES decline rows. Full deletion
+        deletes the same threads AND the user's decline rows
+        (both regimes, hard removal). Returns a report with the
+        operation, the preview acted on, deleted thread ids, and
+        the decline-row count removed (0 for routine clear).
+        """
+        if operation not in ("routine_clear", "full_delete"):
+            raise ValueError(f"unknown deletion operation: {operation!r}")
+        if preview is None:
+            preview = self.deletion_preview(user_id, operation=operation)
+        deleted_threads: list[str] = []
+        for thread_id in preview.get("thread_ids", []):
+            if self.delete_thread(user_id, thread_id):
+                deleted_threads.append(thread_id)
+        deleted_declines = 0
+        if operation == "full_delete":
+            with self._lock:
+                cursor = self._conn.execute(
+                    "DELETE FROM steward_dismissals WHERE user_id = ?",
+                    (user_id,),
+                )
+                self._conn.commit()
+            deleted_declines = cursor.rowcount
+        return {
+            "operation": operation,
+            "preview": preview,
+            "deleted_thread_ids": deleted_threads,
+            "deleted_decline_count": deleted_declines,
+        }

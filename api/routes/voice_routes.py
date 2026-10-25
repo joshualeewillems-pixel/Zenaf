@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 from api.routes.auth_routes import get_current_user
 from local_ai.conversation.reply import generate_voice_reply
 from local_ai.conversation.store import ConversationStore
+from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 
 router = APIRouter(prefix="/voice", tags=["voice"])
@@ -116,6 +117,11 @@ def voice_chat(
             mode=body.mode,
             question=body.question,
             thread_summary=thread_summary,
+            # Continuation background knowledge (demonstration spec
+            # §6): this seat's slice, resolved from the visitor's
+            # actual state — no intention line, no offer instruction.
+            capability_context=CAP.continuation_block(
+                arch_id, CAP.resolve_visitor_state(user_id)),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

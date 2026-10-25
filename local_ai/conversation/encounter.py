@@ -125,6 +125,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from local_ai.council import capabilities as CAP
 from local_ai.council import jurisdictions as JX
 from local_ai.council import meetings as MT
 
@@ -558,6 +559,16 @@ class EncounterDefinition:
     #: name after, seat by seat) reads this list; empty means no
     #: other seat has been met yet, so every reference uses a role.
     met_seats: tuple[str, ...] = ()
+    #: Capability context for this seat's first meeting
+    #: (demonstration spec §6): the seat's own registry slice plus
+    #: the one shared intention line, rendered from
+    #: local_ai/council/capabilities.py — never hardcoded here. Set
+    #: at definition build; the meeting service re-resolves it per
+    #: turn from the visitor's actual state, like met_seats. "" =
+    #: no slice (unknown seat). Impression, correction, reply, and
+    #: orientation frames never carry it: the read-back grounds only
+    #: in the user's substantive material.
+    capability_context: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -876,6 +887,8 @@ class EncounterRuntime:
             )
         parts.append(_ZENAF_QUESTION_NOTE)
         parts.append(_naming_note(d))
+        if d.capability_context:
+            parts.append(d.capability_context)
         cue = self._nearby_allusion(state, message)
         if cue is not None:
             if cue.fixture:
@@ -1009,6 +1022,8 @@ class EncounterRuntime:
         frame = d.engage_frame
         frame += "\n\n" + _ZENAF_QUESTION_NOTE
         frame += "\n\n" + _naming_note(d)
+        if d.capability_context:
+            frame += "\n\n" + d.capability_context
         raw = host.generate(frame)
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
@@ -1452,6 +1467,13 @@ def build_definition(script: MT.MeetingScript) -> EncounterDefinition:
         fallback_line="",
         allusion_pool=_pause_context_cues(
             script.orientation, script.archetype_id),
+        # First-meeting capability context (demonstration spec §6):
+        # this seat's own slice + the one shared intention line,
+        # rendered from the registry. The default visitor state
+        # (consent unknown) fails closed for consent-gated items;
+        # the meeting service re-resolves it per turn.
+        capability_context=CAP.first_meeting_block(
+            script.archetype_id, CAP.VisitorState()),
     )
 
 
@@ -1636,6 +1658,7 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         wrap_line=_WEAVER_WRAP_LINE,
         fallback_line=_WEAVER_FALLBACK_LINE,
         allusion_pool=_weaver_allusion_pool(script),
+        capability_context=base.capability_context,
         impression_gate_objective="shared_work_exchange",
         close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),
     )

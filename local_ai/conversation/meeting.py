@@ -69,6 +69,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from local_ai.council import capabilities as CAP
 from local_ai.council import meetings as MT
 from local_ai.council.archetypes import PLAIN_TO_KEY, stock_archetype_ids
 from local_ai.vision_execution import keystone_seeding
@@ -546,9 +547,16 @@ class MeetingService:
         definition = ENC.get_definition(script)
         # The naming rule needs the met set: completed first meetings
         # only (see MeetingStore.met_seats). The definition is frozen,
-        # so replace rather than mutate.
+        # so replace rather than mutate. Same pattern for capability
+        # context (demonstration spec §6): re-resolved per turn from
+        # the visitor's actual state, so a consent-gated capability
+        # is never implied usable to a visitor who has not consented.
         definition = dataclasses.replace(
-            definition, met_seats=tuple(self.meetings.met_seats(user_id)))
+            definition,
+            met_seats=tuple(self.meetings.met_seats(user_id)),
+            capability_context=CAP.first_meeting_block(
+                arch_id, CAP.resolve_visitor_state(user_id)),
+        )
         host = _MeetingHost(self, user_id, arch_id, keystone_index, script)
         new_q_idx = EncounterRuntime(definition).handle_turn(
             host, enc_state, message, int(row["question_idx"])

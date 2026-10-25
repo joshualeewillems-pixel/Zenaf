@@ -17,6 +17,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype
 from local_ai.council.naming import get_display_name
 from local_ai.fellowship import events as fellowship_events
@@ -122,6 +123,11 @@ class ConversationService:
             context_hint=context_hint_for(context),
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,
+            # Continuation background knowledge (demonstration spec
+            # §6): this seat's slice, resolved from the visitor's
+            # actual state — no intention line, no offer instruction.
+            capability_context=CAP.continuation_block(
+                arch_id, CAP.resolve_visitor_state(user_id)),
         )
 
         assistant_msg = self.store.append_message(

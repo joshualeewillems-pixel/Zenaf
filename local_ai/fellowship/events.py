@@ -147,6 +147,7 @@ def emit_event(
     )
     if schedule:
         _schedule_derivation(event)
+        _schedule_steward(event)
     return event
 
 
@@ -164,3 +165,28 @@ def _schedule_derivation(event: FellowshipEvent) -> None:
             pipeline.schedule(event)
     except Exception:
         logger.exception("fellowship: derivation scheduling failed for %s", event.id)
+
+
+def _schedule_steward(event: FellowshipEvent) -> None:
+    """Hand a meeting completion to the steward pipeline, if installed.
+
+    Increment A install path (proposal §3.1): mirrors
+    _schedule_derivation at this same emit_event chokepoint, guarded
+    the same way — the emitting operation never breaks. Meeting
+    completions ONLY: the install path is prompt extension of live
+    threads, and the rollout derives other kinds via the sweep only
+    after the initial path passes tests. The import is function-
+    local on purpose: this module sits on turn paths, and a
+    top-level narrative import would put narrative derivation on
+    the reply path (pinned by test).
+    """
+    if event.kind != MEETING_COMPLETED:
+        return
+    try:
+        from local_ai.narrative import derivation as steward_derivation
+
+        pipeline = steward_derivation.get_pipeline()
+        if pipeline is not None:
+            pipeline.schedule_event(event)
+    except Exception:
+        logger.exception("steward: scheduling failed for %s", event.id)

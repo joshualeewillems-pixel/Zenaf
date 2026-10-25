@@ -44,6 +44,11 @@ const OPTIONAL_TOGGLES: { key: keyof UserPermissionFlags; label: string; hint: s
     label: 'Use aspirations in guidance',
     hint: 'Include compact aspiration orientation in guidance when enabled in Foundation.',
   },
+  {
+    key: 'steward_derivation',
+    label: 'Narrative Steward derivation',
+    hint: 'Can Zenaf connect our talks into ongoing threads, note what they might mean, and keep those notes where you can review/delete them?',
+  },
 ]
 
 export function ConsentOnboardingGate({

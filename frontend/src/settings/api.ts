@@ -255,6 +255,7 @@ export type UserPermissionFlags = {
   aspiration_store_explicit: boolean
   aspiration_infer_suggestions: boolean
   aspiration_use_in_guidance: boolean
+  steward_derivation: boolean
 }
 
 export const USER_PERMISSION_DEFAULTS: UserPermissionFlags = {
@@ -266,6 +267,12 @@ export const USER_PERMISSION_DEFAULTS: UserPermissionFlags = {
   aspiration_store_explicit: false,
   aspiration_infer_suggestions: false,
   aspiration_use_in_guidance: false,
+  // Increment A: Narrative Steward derivation (proposal §1.8).
+  // Default off; normalizeUserPermissionFlags fills false for
+  // stored rows that lack the key, so existing users are NOT
+  // opted in by the addition (permissions-v1 kept, no forced
+  // re-acknowledgement).
+  steward_derivation: false,
 }
 
 export type UserPermissionsSettings = {

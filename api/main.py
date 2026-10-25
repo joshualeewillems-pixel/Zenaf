@@ -84,6 +84,24 @@ try:
 except Exception as e:  # noqa: BLE001 — app boot outranks derivation
     print(f"Fellowship derivation pipeline not installed: {e}")
 
+# Narrative Steward increment A: install the steward pipeline
+# (meeting-completion install path) and the sweep loop (recovery +
+# births from the activity log). Guarded like fellowship: the app
+# must boot even if the steward layer cannot — without a pipeline,
+# events are still recorded, derivation just doesn't run. The
+# installed pipeline always gates on the steward consent flag
+# (proposal §1.8); the sweep loop shares the pipeline's store
+# instance (proposal §3.3) and runs once immediately at start
+# (startup-after-crash recovery) and then on its interval.
+try:
+    from local_ai.narrative.derivation import install_default_pipeline as _install_steward
+    from local_ai.narrative.sweep import start_sweep_loop as _start_steward_sweep
+
+    _steward_pipeline = _install_steward()
+    _start_steward_sweep(store=_steward_pipeline.store)
+except Exception as e:  # noqa: BLE001 — app boot outranks derivation
+    print(f"Steward pipeline/sweep not installed: {e}")
+
 # Vision → Execution Engine: separate domain (ideas, initiatives, projects, tasks, people, assets). Not part of /run or file sorter.
 try:
     from api.routes.vision_execution import router as vision_execution_router

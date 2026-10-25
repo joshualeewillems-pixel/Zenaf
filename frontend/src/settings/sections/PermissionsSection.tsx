@@ -55,6 +55,11 @@ const OPTIONAL_PERMISSION_ROWS: PermissionRow[] = [
     label: 'Use aspirations in guidance',
     hint: 'Allow compact aspiration blocks in council / core-profile guidance when you opt in per profile.',
   },
+  {
+    key: 'steward_derivation',
+    label: 'Narrative Steward derivation',
+    hint: 'Can Zenaf connect our talks into ongoing threads, note what they might mean, and keep those notes where you can review/delete them?',
+  },
 ]
 
 export function PermissionsSection() {

@@ -42,7 +42,7 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -224,6 +224,45 @@ CREATE TABLE IF NOT EXISTS steward_dismissals (
 );
 CREATE INDEX IF NOT EXISTS idx_dismissals_user
   ON steward_dismissals (user_id, kind);
+
+-- Increment A: prose owed by records-first derivation. A deferred
+-- row is written atomically WITH the thread/evidence rows it owes
+-- prose for (see create_thread_with_deferred_prose /
+-- attach_evidence_with_deferred_prose); the worker renders the
+-- reading later and marks the row done in the same transaction as
+-- the reading. evidence_texts_json carries the verbatim texts the
+-- worker needs for its prompt: prompt inputs, not evidence rows —
+-- deleted with the row on completion or thread deletion.
+CREATE TABLE IF NOT EXISTS steward_deferred_prose (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  evidence_signature TEXT NOT NULL,
+  evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+  evidence_texts_json TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  UNIQUE (user_id, thread_id, evidence_signature)
+);
+CREATE INDEX IF NOT EXISTS idx_deferred_user_status
+  ON steward_deferred_prose (user_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_deferred_thread
+  ON steward_deferred_prose (thread_id, status);
+
+-- Increment A: per-user byte-offset read position into the
+-- append-only activity log (see local_ai/narrative/sweep.py).
+-- file_identity is "<st_dev>:<st_ino>"; a changed identity or a
+-- file smaller than the stored offset invalidates the position
+-- and forces a bounded full rescan.
+CREATE TABLE IF NOT EXISTS steward_processing_position (
+  user_id TEXT PRIMARY KEY,
+  byte_offset INTEGER NOT NULL DEFAULT 0,
+  file_identity TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
 """
 
 
@@ -674,33 +713,163 @@ class NarrativeStore:
             updated_at=now,
         )
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO narrative_threads (id, user_id, title, "
-                "status, retirement_reason, successor_thread_id, "
-                "scope, progression_json, strand_weights_json, "
-                "cast_json, aspiration_refs_json, "
-                "standing_reading_id, lens_fitting_id, origin, "
-                "created_at, updated_at, last_change_at) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    thread.id, thread.user_id, thread.title,
-                    thread.status, None, None, thread.scope,
-                    json.dumps(local_pos.to_dict(), ensure_ascii=False)
-                    if local_pos is not None else None,
-                    json.dumps(weights, ensure_ascii=False),
-                    json.dumps(cast_rows, ensure_ascii=False),
-                    json.dumps(thread.aspiration_refs, ensure_ascii=False),
-                    None, None, thread.origin, now, now, None,
-                ),
-            )
-            if evidence_refs:
-                self._attach_evidence(thread.id, evidence_refs)
+            self._write_thread_rows(thread, local_pos, weights, cast_rows,
+                                    evidence_refs, None, now)
             self._conn.commit()
             row = self._conn.execute(
                 "SELECT * FROM narrative_threads WHERE id = ?",
                 (thread.id,),
             ).fetchone()
         return _row_to_thread(row)
+
+    def _write_thread_rows(
+        self,
+        thread: NarrativeThread,
+        local_pos,
+        weights: dict,
+        cast_rows: list,
+        evidence_refs: Iterable[SourceRef | str],
+        deferred: dict | None,
+        now: str,
+    ) -> None:
+        """Insert a thread row + founding evidence (+ deferred row).
+
+        Caller holds the lock; this does NOT commit, so callers can
+        bundle the thread, its evidence, and a deferred-prose row
+        into one atomic commit (increment A §7: records + deferred
+        row must land together, or neither does). ``deferred`` is
+        None for a plain birth, else a dict with kind,
+        evidence_signature, evidence_refs (keys), evidence_texts.
+        """
+        self._conn.execute(
+            "INSERT INTO narrative_threads (id, user_id, title, "
+            "status, retirement_reason, successor_thread_id, "
+            "scope, progression_json, strand_weights_json, "
+            "cast_json, aspiration_refs_json, "
+            "standing_reading_id, lens_fitting_id, origin, "
+            "created_at, updated_at, last_change_at) VALUES "
+            "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                thread.id, thread.user_id, thread.title,
+                thread.status, None, None, thread.scope,
+                json.dumps(local_pos.to_dict(), ensure_ascii=False)
+                if local_pos is not None else None,
+                json.dumps(weights, ensure_ascii=False),
+                json.dumps(cast_rows, ensure_ascii=False),
+                json.dumps(thread.aspiration_refs, ensure_ascii=False),
+                None, None, thread.origin, now, now, None,
+            ),
+        )
+        if evidence_refs:
+            self._attach_evidence(thread.id, evidence_refs)
+        if deferred is not None:
+            self._insert_deferred_prose_locked(
+                thread.user_id,
+                thread.id,
+                deferred["kind"],
+                deferred["evidence_signature"],
+                deferred["evidence_refs"],
+                deferred["evidence_texts"],
+            )
+
+    def create_thread_with_deferred_prose(
+        self,
+        user_id: str,
+        *,
+        origin: str = "steward_proposal",
+        title: str = "Untitled thread",
+        evidence_refs: Iterable[SourceRef | str] = (),
+        deferred_kind: str,
+        evidence_signature: str,
+        evidence_texts: list[dict] | None = None,
+    ) -> NarrativeThread:
+        """Records-first birth (increment A §6): create a nascent
+        thread, attach its founding evidence, and record the owed
+        prose — all in ONE commit. The title is a working title:
+        with no generation to propose one, the thread is born
+        untitled and the deferred worker proposes a reading, not a
+        retitle (retitling on prose completion is later work).
+        ``evidence_texts`` are the verbatim texts the worker needs
+        for its prompt (prompt inputs, not evidence rows).
+        """
+        if origin not in THREAD_ORIGINS:
+            raise ValueError(f"unknown thread origin: {origin!r}")
+        if deferred_kind not in ("birth", "extension"):
+            raise ValueError(f"unknown deferred kind: {deferred_kind!r}")
+        weights = _validate_strand_weights(None)
+        cast_rows = _validate_cast(None)
+        now = _utcnow()
+        thread = NarrativeThread(
+            id=_new_id("thr"),
+            user_id=user_id,
+            title=title,
+            status="nascent",
+            scope=None,
+            progression=None,
+            strand_weights=weights,
+            cast=cast_rows,
+            aspiration_refs=[],
+            origin=origin,
+            created_at=now,
+            updated_at=now,
+        )
+        evidence_refs = list(evidence_refs or ())
+        evidence_keys = [
+            f"{ref.kind}:{ref.ref_id}" if isinstance(ref, SourceRef) else str(ref)
+            for ref in evidence_refs
+        ]
+        deferred = {
+            "kind": deferred_kind,
+            "evidence_signature": evidence_signature,
+            "evidence_refs": evidence_keys,
+            "evidence_texts": evidence_texts or [],
+        }
+        with self._lock:
+            self._write_thread_rows(thread, None, weights, cast_rows,
+                                    evidence_refs, deferred, now)
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM narrative_threads WHERE id = ?",
+                (thread.id,),
+            ).fetchone()
+        return _row_to_thread(row)
+
+    def attach_evidence_with_deferred_prose(
+        self,
+        user_id: str,
+        thread_id: str,
+        evidence_refs: Iterable[SourceRef],
+        *,
+        deferred_kind: str = "extension",
+        evidence_signature: str,
+        evidence_texts: list[dict] | None = None,
+    ) -> tuple[list[str], str]:
+        """Records-first extension (increment A §6): attach new
+        evidence to a live thread and record the owed prose — one
+        commit. Returns (resolved evidence row ids, deferred row
+        id). Dedup: if a deferred row already exists for this
+        (user, thread, signature), no second row is created and the
+        existing id is returned. The thread's updated_at is touched
+        so the ignored-retention clock tracks last activity.
+        """
+        if deferred_kind not in ("birth", "extension"):
+            raise ValueError(f"unknown deferred kind: {deferred_kind!r}")
+        evidence_refs = list(evidence_refs)
+        evidence_keys = [f"{ref.kind}:{ref.ref_id}" for ref in evidence_refs]
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            resolved, _ = self._attach_evidence(thread_id, evidence_refs)
+            deferred_id = self._insert_deferred_prose_locked(
+                user_id,
+                thread_id,
+                deferred_kind,
+                evidence_signature,
+                evidence_keys,
+                evidence_texts or [],
+            )
+            self._touch_thread(thread_id)
+            self._conn.commit()
+        return resolved, deferred_id
 
     def get_thread(self, user_id: str, thread_id: str) -> NarrativeThread | None:
         with self._lock:
@@ -1689,3 +1858,368 @@ class NarrativeStore:
                 (user_id,),
             ).fetchall()
         return [_row_to_dismissal(r) for r in rows]
+
+    # -- deferred prose (increment A) ----------------------------------------
+
+    def _insert_deferred_prose_locked(
+        self,
+        user_id: str,
+        thread_id: str,
+        kind: str,
+        evidence_signature: str,
+        evidence_refs: list[str],
+        evidence_texts: list[dict],
+    ) -> str:
+        """Insert a deferred-prose row, or return the existing one.
+
+        Caller holds the lock and owns the commit: this is always
+        part of a combined write (records + deferred row, one
+        commit), never a standalone write. Dedup is by
+        (user, thread, evidence signature); the UNIQUE constraint
+        backs the check. ``evidence_texts`` are prompt inputs
+        (verbatim texts), not evidence rows.
+        """
+        existing = self._conn.execute(
+            "SELECT id FROM steward_deferred_prose WHERE user_id = ? "
+            "AND thread_id = ? AND evidence_signature = ?",
+            (user_id, thread_id, evidence_signature),
+        ).fetchone()
+        if existing is not None:
+            return existing["id"]
+        row_id = _new_id("dfp")
+        self._conn.execute(
+            "INSERT INTO steward_deferred_prose (id, user_id, "
+            "thread_id, kind, evidence_signature, evidence_refs_json, "
+            "evidence_texts_json, created_at, attempts, last_attempt_at, "
+            "status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, NULL, 'pending')",
+            (
+                row_id, user_id, thread_id, kind, evidence_signature,
+                json.dumps(evidence_refs, ensure_ascii=False),
+                json.dumps(evidence_texts, ensure_ascii=False),
+                _utcnow(),
+            ),
+        )
+        return row_id
+
+    def deferred_prose_for(
+        self,
+        user_id: str,
+        *,
+        status: str | None = None,
+    ) -> list[dict]:
+        """Deferred-prose rows for a user, optionally filtered."""
+        with self._lock:
+            if status is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM steward_deferred_prose "
+                    "WHERE user_id = ? ORDER BY created_at, id",
+                    (user_id,),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM steward_deferred_prose "
+                    "WHERE user_id = ? AND status = ? "
+                    "ORDER BY created_at, id",
+                    (user_id, status),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def deferred_prose_for_thread(
+        self,
+        user_id: str,
+        thread_id: str,
+        *,
+        statuses: tuple[str, ...] | None = None,
+    ) -> list[dict]:
+        """Deferred-prose rows for one thread, optionally filtered."""
+        with self._lock:
+            if statuses is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM steward_deferred_prose "
+                    "WHERE user_id = ? AND thread_id = ? "
+                    "ORDER BY created_at, id",
+                    (user_id, thread_id),
+                ).fetchall()
+            else:
+                placeholders = ",".join("?" for _ in statuses)
+                rows = self._conn.execute(
+                    "SELECT * FROM steward_deferred_prose "
+                    "WHERE user_id = ? AND thread_id = ? AND status IN "
+                    f"({placeholders}) ORDER BY created_at, id",
+                    (user_id, thread_id, *statuses),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def claim_deferred_prose(
+        self,
+        user_id: str,
+        row_id: str,
+    ) -> dict | None:
+        """Claim a pending row for rendering (a lease, not a state).
+
+        pending → rendering, attempts +1, last_attempt_at = now, in
+        one commit. Returns the claimed row, or None when the row
+        is not pending (already claimed, done, or gone). The lease
+        is released by release_stale_deferred_prose after
+        STEWARD_DEFERRED_LEASE_SECONDS; a crashed render therefore
+        returns to pending instead of being lost.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE steward_deferred_prose SET status = 'rendering', "
+                "attempts = attempts + 1, last_attempt_at = ? "
+                "WHERE id = ? AND user_id = ? AND status = 'pending'",
+                (_utcnow(), row_id, user_id),
+            )
+            if cursor.rowcount != 1:
+                self._conn.commit()
+                return None
+            row = self._conn.execute(
+                "SELECT * FROM steward_deferred_prose WHERE id = ?",
+                (row_id,),
+            ).fetchone()
+            self._conn.commit()
+        return dict(row) if row is not None else None
+
+    def release_stale_deferred_prose(self, lease_seconds: int) -> int:
+        """Return rendering rows past their lease to pending."""
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(seconds=lease_seconds)
+        ).isoformat()
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE steward_deferred_prose SET status = 'pending' "
+                "WHERE status = 'rendering' AND last_attempt_at IS NOT "
+                "NULL AND last_attempt_at < ?",
+                (cutoff,),
+            )
+            self._conn.commit()
+        return cursor.rowcount
+
+    def release_deferred_prose(
+        self,
+        user_id: str,
+        row_id: str,
+    ) -> bool:
+        """Release a claimed (rendering) row back to pending.
+
+        Used when a render attempt fails cleanly (generation
+        raised and was caught): the worker knows the attempt is
+        over, so the row retries on the next pass instead of
+        waiting out the lease. Only a process crash mid-render —
+        where no one releases — holds the lease until expiry.
+        Returns False when the row is not rendering for this user.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE steward_deferred_prose SET status = 'pending' "
+                "WHERE id = ? AND user_id = ? AND status = 'rendering'",
+                (row_id, user_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def mark_deferred_prose_done(
+        self,
+        user_id: str,
+        row_id: str,
+    ) -> bool:
+        """Mark a claimed (rendering) row done without a reading.
+
+        Used when the worker's render yields no usable prose (a
+        NONE judgment or malformed output): the attempt is settled
+        rather than retried forever, and the thread + evidence
+        persist — a later extension may still propose a reading.
+        Returns False when the row is not rendering for this user.
+        """
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE steward_deferred_prose SET status = 'done' "
+                "WHERE id = ? AND user_id = ? AND status = 'rendering'",
+                (row_id, user_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def propose_reading_and_complete_deferred(
+        self,
+        user_id: str,
+        thread_id: str,
+        deferred_id: str,
+        *,
+        author: str,
+        reading: dict | None = None,
+        evidence_refs: Iterable[SourceRef | str] = (),
+        scales: Iterable[str] | None = None,
+        primary_scale: str | None = None,
+        progression: ProgressionPosition | dict | None = None,
+    ) -> ThreadReading | None:
+        """Worker completion (increment A §6.2): propose a reading
+        AND mark the deferred row done — in ONE transaction.
+
+        Completion guard: if a reading already covers the deferred
+        evidence (crash between reading commit and row-done commit
+        in an older layout, or a double claim), the row is marked
+        done WITHOUT rendering a duplicate — reading existence is
+        the idempotency guard on the completion side. Returns the
+        new reading, or None when the row was already covered (or
+        the deferred row is gone / not rendering for this user).
+        """
+        if author not in SEAT_JURISDICTIONS and author not in READING_AUTHORS:
+            raise ValueError(f"unknown reading author: {author!r}")
+        reading_data = _validate_reading(reading)
+        scale_list, primary = _validate_scales(scales, primary_scale)
+        pos = _validate_progression(progression)
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            deferred = self._conn.execute(
+                "SELECT * FROM steward_deferred_prose WHERE id = ? "
+                "AND user_id = ? AND thread_id = ?",
+                (deferred_id, user_id, thread_id),
+            ).fetchone()
+            if deferred is None or deferred["status"] != "rendering":
+                return None
+            resolved, _ = self._attach_evidence(thread_id, evidence_refs)
+            if not resolved:
+                raise ValueError(
+                    "a reading cannot be stored without evidence refs "
+                    "(invariant: no reading without at least one "
+                    "evidence-tier reference)"
+                )
+            resolved_set = set(resolved)
+            for existing in self._conn.execute(
+                "SELECT evidence_refs_json FROM thread_readings "
+                "WHERE thread_id = ?",
+                (thread_id,),
+            ).fetchall():
+                try:
+                    covered = set(json.loads(existing["evidence_refs_json"]))
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                if resolved_set <= covered:
+                    self._conn.execute(
+                        "UPDATE steward_deferred_prose SET status = 'done' "
+                        "WHERE id = ?",
+                        (deferred_id,),
+                    )
+                    self._conn.commit()
+                    return None
+            record = ThreadReading(
+                id=_new_id("rdg"),
+                thread_id=thread_id,
+                author=author,
+                reading=reading_data,
+                scales=scale_list,
+                primary_scale=primary,
+                progression=pos,
+                evidence_refs=resolved,
+                status="proposed",
+                created_at=_utcnow(),
+            )
+            self._conn.execute(
+                "INSERT INTO thread_readings (id, thread_id, author, "
+                "reading_json, scales_json, primary_scale, "
+                "progression_json, evidence_refs_json, status, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.id, record.thread_id, record.author,
+                    json.dumps(reading_data, ensure_ascii=False),
+                    json.dumps(scale_list, ensure_ascii=False),
+                    primary,
+                    json.dumps(pos.to_dict(), ensure_ascii=False),
+                    json.dumps(resolved, ensure_ascii=False),
+                    record.status, record.created_at,
+                ),
+            )
+            self._conn.execute(
+                "UPDATE steward_deferred_prose SET status = 'done' "
+                "WHERE id = ?",
+                (deferred_id,),
+            )
+            self._touch_thread(thread_id)
+            self._conn.commit()
+        return record
+
+    # -- sweep cursor (increment A) ------------------------------------------
+
+    def get_processing_position(self, user_id: str) -> dict | None:
+        """A user's byte-offset read position, or None (never swept)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT user_id, byte_offset, file_identity, updated_at "
+                "FROM steward_processing_position WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def set_processing_position(
+        self,
+        user_id: str,
+        byte_offset: int,
+        file_identity: str,
+    ) -> None:
+        """Advance a user's read position (its own later commit).
+
+        Cursor-last (§7): this is NEVER bundled into a record
+        commit, so a cursor commit failure cannot roll back records
+        and a record commit failure cannot advance the cursor.
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO steward_processing_position (user_id, "
+                "byte_offset, file_identity, updated_at) VALUES "
+                "(?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET "
+                "byte_offset = excluded.byte_offset, "
+                "file_identity = excluded.file_identity, "
+                "updated_at = excluded.updated_at",
+                (user_id, int(byte_offset), file_identity, _utcnow()),
+            )
+            self._conn.commit()
+
+    def processing_position_users(self) -> list[str]:
+        """User ids with a stored read position (sweep enumeration)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT user_id FROM steward_processing_position"
+            ).fetchall()
+        return [row["user_id"] for row in rows]
+
+    # -- hard deletion (increment A retention) -------------------------------
+
+    def delete_thread(self, user_id: str, thread_id: str) -> bool:
+        """Hard-delete a thread and its owned rows (increment A §1.8:
+        DELETE means real removal, not retire-and-hide).
+
+        Removes the thread row, its evidence, readings, changes,
+        deferred-prose rows, lens fittings, and containment links
+        on either side. Involvement measures are measures ABOUT a
+        subject, not the subject's records, and are left untouched.
+        Returns False when the thread does not belong to this user.
+        """
+        with self._lock:
+            try:
+                self._require_thread(user_id, thread_id)
+            except ValueError:
+                return False
+            for table, clause in (
+                ("thread_evidence", "thread_id = ?"),
+                ("thread_readings", "thread_id = ?"),
+                ("thread_changes", "thread_id = ?"),
+                ("steward_deferred_prose", "thread_id = ?"),
+                ("lens_fittings", "thread_id = ?"),
+            ):
+                self._conn.execute(
+                    f"DELETE FROM {table} WHERE {clause}",
+                    (thread_id,),
+                )
+            self._conn.execute(
+                "DELETE FROM thread_links WHERE parent_thread_id = ? "
+                "OR child_thread_id = ?",
+                (thread_id, thread_id),
+            )
+            self._conn.execute(
+                "DELETE FROM narrative_threads WHERE id = ? AND user_id = ?",
+                (thread_id, user_id),
+            )
+            self._conn.commit()
+        return True

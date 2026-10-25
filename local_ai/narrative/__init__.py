@@ -57,11 +57,13 @@ construction, and a test pins that.
 
 from .lenses import LENSES, NarrativeLens, LensPhase, get_lens, lens_ids
 from .models import (
+    OBSERVABLE_KINDS,
     THREAD_LINK_RELATIONS,
     InvolvementMeasure,
     LensFitting,
     NarrativeThread,
     ProgressionPosition,
+    StewardObservable,
     ThreadChange,
     ThreadEvidence,
     ThreadLink,
@@ -77,6 +79,7 @@ from .store import NarrativeStore
 
 __all__ = [
     "LENSES",
+    "OBSERVABLE_KINDS",
     "THREAD_LINK_RELATIONS",
     "InadmissibleEvidenceError",
     "InvolvementMeasure",
@@ -88,6 +91,7 @@ __all__ = [
     "ProgressionPosition",
     "RefTier",
     "SourceRef",
+    "StewardObservable",
     "ThreadChange",
     "ThreadEvidence",
     "ThreadLink",

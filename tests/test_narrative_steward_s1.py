@@ -244,6 +244,12 @@ def test_dismissed_birth_cluster_not_reproposed(tmp_path):
     assert any("dismissed" in s for s in result.skipped)
 
 
+# Increment B §10: this test covers THREAD CANDIDATES ONLY. A
+# dismissed candidate cluster is reopened by genuinely new
+# evidence (new signature). That rule does NOT generalize to
+# offers: an offer decline at subject/class scope is semantic and
+# scoped, and new evidence never reopens it (see
+# tests/test_steward_increment_b.py).
 def test_new_evidence_reopens_dismissed_cluster(tmp_path):
     """Dismissal is content-addressed, not a ban: genuinely new
     evidence produces a new signature and may be proposed again."""

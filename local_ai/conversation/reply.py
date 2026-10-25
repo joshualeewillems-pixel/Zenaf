@@ -113,10 +113,18 @@ def build_voice_prompt(
     thread_summary: str | None = None,
     extra_instructions: str | None = None,
     weave: bool = True,
+    capability_context: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
 
     Raises ValueError on unknown archetype or empty message (and not question).
+
+    `capability_context` is a pre-rendered continuation block from
+    local_ai/council/capabilities.py (this seat's slice as background
+    knowledge ONLY — no intention line, no offer instruction). It is
+    supplied by the continuation call sites (conversation service,
+    voice route); first meetings never pass it, because their frames
+    already carry the first-meeting block via the encounter runtime.
 
     `weave=False` omits the [[u]] quote-weaving instruction: the
     encounter runtime (keystone meetings) runs under the
@@ -184,6 +192,12 @@ def build_voice_prompt(
             "you are the aspirational base voice. Be honest about that if it matters; "
             "never invent training they don't have.",
         ]
+    if capability_context:
+        # Continuation background knowledge (demonstration spec §6):
+        # the slice, rendered by the registry — never a per-turn
+        # instruction to offer a feature, and never the first-meeting
+        # intention line.
+        prompt += ["", capability_context.strip()]
     if weave:
         prompt += ["", _WEAVE_INSTRUCTION]
     prompt += ["", "Keep replies conversational (2-5 sentences)."]
@@ -250,6 +264,7 @@ def generate_voice_reply(
     generate_fn: GenerateFn | None = None,
     extra_instructions: str | None = None,
     weave: bool = True,
+    capability_context: str | None = None,
 ) -> VoiceReply:
     """One exchange with a single council voice. Raises RuntimeError on LLM failure."""
     prompt, meta = build_voice_prompt(
@@ -263,6 +278,7 @@ def generate_voice_reply(
         thread_summary=thread_summary,
         extra_instructions=extra_instructions,
         weave=weave,
+        capability_context=capability_context,
     )
     gen = generate_fn or _default_generate
     reply = sanitize_weave(

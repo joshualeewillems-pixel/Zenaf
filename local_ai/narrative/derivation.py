@@ -87,7 +87,7 @@ from typing import Any, Callable, Iterable
 
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 from local_ai.council.jurisdictions import get_jurisdiction
-from local_ai.fellowship.events import FellowshipEvent
+from local_ai.fellowship.events import MEETING_COMPLETED, FellowshipEvent
 
 from .models import NarrativeThread
 from .refs import RefTier, SourceRef
@@ -665,8 +665,15 @@ def _resolve_generate_fn(generate_fn: GenerateFn | None) -> GenerateFn | None:
         from local_ai.agent_intake.llm_keys import generate as _gen
 
         return _gen
-    except Exception:
-        logger.exception("narrative: no generation backend available")
+    except Exception as e:
+        # Records-first (increment A) makes no-backend routine, not
+        # exceptional: records land and prose is deferred. Log the
+        # reason once per resolution at warning, without a traceback.
+        logger.warning(
+            "narrative: no generation backend available (%s); "
+            "records-first will defer prose",
+            e,
+        )
         return None
 
 
@@ -691,6 +698,11 @@ class DerivationResult:
     declines: int = 0
     calls: int = 0
     skipped: list[str] = field(default_factory=list)
+    #: Thread ids whose records landed while prose is still owed
+    #: (records-first, increment A §6). Deferred is not success and
+    #: not decline: the ledger holds the evidence, the deferred row
+    #: holds the obligation, and the worker settles it later.
+    deferred: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -700,7 +712,86 @@ class DerivationResult:
             "declines": self.declines,
             "calls": self.calls,
             "skipped": list(self.skipped),
+            "deferred": list(self.deferred),
         }
+
+
+def _deferred_texts(items: list[EvidenceItem]) -> list[dict]:
+    """Verbatim prompt inputs for a deferred row (parallel to refs).
+
+    The worker cannot re-derive prompt text from evidence rows:
+    text is prompt context, never stored as evidence. The deferred
+    row therefore carries the texts so rendering never depends on
+    the activity log surviving. Deleted with the row on completion
+    or thread deletion.
+    """
+    return [{"key": item.evidence_key(), "text": item.text or ""} for item in items]
+
+
+def _birth_records_first(
+    user_id: str,
+    cluster: Cluster,
+    store: NarrativeStore,
+    result: DerivationResult,
+) -> None:
+    """Records-first birth (increment A §6): thread + founding
+    evidence + deferred-prose row in ONE commit, prose owed.
+
+    The thread is born with a working title ("Untitled thread"):
+    with no generation to propose one, retitling on prose
+    completion is later work. The run reports deferred, never
+    success and never decline: the ledger holds the evidence, the
+    deferred row holds the obligation.
+    """
+    try:
+        thread = store.create_thread_with_deferred_prose(
+            user_id,
+            origin="steward_proposal",
+            title="Untitled thread",
+            evidence_refs=[item.ref for item in cluster.items],
+            deferred_kind="birth",
+            evidence_signature=birth_signature(cluster.items),
+            evidence_texts=_deferred_texts(cluster.items),
+        )
+    except Exception:
+        logger.exception("narrative: records-first birth failed")
+        result.declines += 1
+        return
+    _annotate_entities(store, user_id, thread.id, cluster.items)
+    result.births.append(thread.id)
+    result.deferred.append(thread.id)
+
+
+def _extension_records_first(
+    user_id: str,
+    thread: NarrativeThread,
+    new_items: list[EvidenceItem],
+    store: NarrativeStore,
+    result: DerivationResult,
+) -> None:
+    """Records-first extension (increment A §6): attach the new
+    evidence + deferred-prose row in ONE commit, prose owed.
+
+    No change is recorded here: a change kind comes from a
+    proposal, and with no generation there is no proposal. (The
+    worker likewise renders readings only — invariant 2 forbids
+    recording a change on already-attached evidence.)
+    """
+    try:
+        store.attach_evidence_with_deferred_prose(
+            user_id,
+            thread.id,
+            [item.ref for item in new_items],
+            deferred_kind="extension",
+            evidence_signature=extension_signature(thread.id, new_items),
+            evidence_texts=_deferred_texts(new_items),
+        )
+    except Exception:
+        logger.exception("narrative: records-first extension failed")
+        result.declines += 1
+        return
+    _annotate_entities(store, user_id, thread.id, new_items)
+    result.deferred.append(thread.id)
 
 
 def _propose_birth(
@@ -715,6 +806,10 @@ def _propose_birth(
     The thread is a proposal in the store's own terms: status
     nascent, origin steward_proposal, user-editable working title.
     Nothing about it is accepted, surfaced, or trained on by S1.
+    A generation FAILURE (raise) is not a decline: records-first
+    lands the thread + evidence + deferred row instead. A NONE
+    judgment or unparseable output IS a decline and lands nothing
+    (re-derivation can retry it later, since nothing landed).
     """
     prompt = _BIRTH_PROMPT.format(evidence=_render_evidence(cluster.items))
     try:
@@ -726,8 +821,10 @@ def _propose_birth(
             timeout=60,
         )
     except Exception:
-        logger.exception("narrative: birth generation failed")
-        result.declines += 1
+        logger.exception(
+            "narrative: birth generation failed; records-first"
+        )
+        _birth_records_first(user_id, cluster, store, result)
         return
     result.calls += 1
     proposal = _parse_proposal(raw)
@@ -788,6 +885,10 @@ def _propose_extension(
     the evidence's newness. A change the store refuses (evidence
     already attached, unknown kind) is skipped while the reading is
     still proposed — the reading is the durable half of the pair.
+    A generation FAILURE (raise) is not a decline: records-first
+    attaches the evidence + deferred row instead (no change — see
+    _extension_records_first). A NONE judgment or unparseable
+    output IS a decline and lands nothing.
     """
     prompt = _EXTENSION_PROMPT.format(
         standing=_render_standing(thread, store),
@@ -802,8 +903,10 @@ def _propose_extension(
             timeout=60,
         )
     except Exception:
-        logger.exception("narrative: extension generation failed")
-        result.declines += 1
+        logger.exception(
+            "narrative: extension generation failed; records-first"
+        )
+        _extension_records_first(user_id, thread, new_items, store, result)
         return
     result.calls += 1
     proposal = _parse_proposal(raw)
@@ -918,8 +1021,10 @@ def derive_batch(
             # above. Idempotency comes from the attach, not from a
             # second bookkeeping rule.
             if gen is None:
-                result.skipped.append(
-                    f"thread {thread.id}: no generation backend"
+                # Records-first (§6): no backend is not a skip —
+                # the evidence lands and the prose is owed.
+                _extension_records_first(
+                    user_id, thread, new_items, store, result
                 )
                 handled_as_extension = True
                 continue
@@ -952,7 +1057,9 @@ def derive_batch(
             result.skipped.append("cluster already covered by a thread")
             continue
         if gen is None:
-            result.skipped.append("birth: no generation backend")
+            # Records-first (§6): no backend is not a skip — the
+            # thread + evidence land and the prose is owed.
+            _birth_records_first(user_id, cluster, store, result)
             continue
         try:
             _propose_birth(user_id, cluster, store, gen, result)
@@ -1001,6 +1108,288 @@ def analyze_for_threads(
     return derive_batch(event.user_id, [item], store, generate_fn=generate_fn)
 
 
+#: Lease for a deferred-prose render claim: comfortably longer than
+#: the 60s generation timeout, so a slow render is never mistaken
+#: for a dead one (increment A §6.2).
+STEWARD_DEFERRED_LEASE_SECONDS = 300
+
+
+@dataclass
+class DeferredWorkResult:
+    """What one deferred-prose worker pass did.
+
+    ``rendered`` holds new reading ids; ``already_covered`` holds
+    deferred row ids settled because a reading already covered the
+    evidence (no duplicate rendered); ``settled_without_prose``
+    holds row ids settled because the render yielded no usable
+    prose (a NONE judgment or unparseable output — _parse_proposal
+    cannot distinguish them, so both settle rather than retrying
+    forever; the thread + evidence persist and a later extension
+    may still propose a reading); ``failed`` holds row ids whose
+    render attempt failed this pass: a caught generation raise
+    releases the row to pending for retry on the next pass, while
+    a transient store error leaves it rendering for lease-expiry
+    retry.
+    """
+
+    rendered: list[str] = field(default_factory=list)
+    already_covered: list[str] = field(default_factory=list)
+    settled_without_prose: list[str] = field(default_factory=list)
+    failed: list[str] = field(default_factory=list)
+    skipped_no_backend: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "rendered": list(self.rendered),
+            "already_covered": list(self.already_covered),
+            "settled_without_prose": list(self.settled_without_prose),
+            "failed": list(self.failed),
+            "skipped_no_backend": self.skipped_no_backend,
+        }
+
+
+def _render_deferred_texts(evidence_texts: list[dict]) -> str:
+    """Deferred prompt evidence, in _render_evidence's shape."""
+    lines = []
+    for i, entry in enumerate(evidence_texts, 1):
+        key = str(entry.get("key", ""))
+        text = (str(entry.get("text", "")) or "").strip() or "(record with no words)"
+        lines.append(f"{i}. [{key}] {text[:600]}")
+    return "\n".join(lines)
+
+
+def _already_covered(
+    store: NarrativeStore,
+    user_id: str,
+    thread_id: str,
+    refs: list[SourceRef],
+) -> bool:
+    """Does a reading on this thread already cover these refs?
+
+    Resolves refs to thread-evidence row ids and checks every
+    reading's evidence set. Missing evidence rows mean not covered
+    (the completion path re-resolves and would re-attach them).
+    """
+    try:
+        attached = {
+            (row.ref_kind, row.ref_id): row.id
+            for row in store.evidence_for(user_id, thread_id)
+        }
+        wanted: set[str] = set()
+        for ref in refs:
+            row_id = attached.get((ref.kind, ref.ref_id))
+            if row_id is None:
+                return False
+            wanted.add(row_id)
+        for reading in store.readings_for(user_id, thread_id):
+            if wanted <= set(reading.evidence_refs or []):
+                return True
+    except Exception:
+        logger.exception("narrative: coverage pre-check failed")
+        return False
+    return False
+
+
+def _render_deferred_row(
+    store: NarrativeStore,
+    user_id: str,
+    row: dict,
+    gen: GenerateFn,
+    result: DeferredWorkResult,
+) -> None:
+    """Render one claimed deferred row. Never raises for a settled
+    outcome; generation/store-transient failures leave the row in
+    rendering for lease-expiry retry (recorded in failed)."""
+    thread = store.get_thread(user_id, row["thread_id"])
+    if thread is None:
+        # Orphaned row (thread gone by another path): settle it.
+        logger.warning(
+            "narrative: deferred row %s has no thread; settling",
+            row["id"],
+        )
+        store.mark_deferred_prose_done(user_id, row["id"])
+        result.settled_without_prose.append(row["id"])
+        return
+    try:
+        evidence_texts = json.loads(row["evidence_texts_json"] or "[]")
+        evidence_refs = json.loads(row["evidence_refs_json"] or "[]")
+    except (json.JSONDecodeError, TypeError):
+        logger.exception(
+            "narrative: deferred row %s has unusable payload; settling",
+            row["id"],
+        )
+        store.mark_deferred_prose_done(user_id, row["id"])
+        result.settled_without_prose.append(row["id"])
+        return
+    refs = []
+    for key in evidence_refs:
+        kind, _, ref_id = str(key).partition(":")
+        refs.append(SourceRef(kind=kind, ref_id=ref_id))
+    if _already_covered(store, user_id, thread.id, refs):
+        # Completion guard, checked BEFORE rendering (§6.2): a
+        # reading already covers this evidence, so the row is done
+        # WITHOUT spending a generation. The completion method
+        # re-checks inside its transaction as backstop.
+        logger.info(
+            "narrative: deferred row %s already covered; settling "
+            "without render",
+            row["id"],
+        )
+        store.mark_deferred_prose_done(user_id, row["id"])
+        result.already_covered.append(row["id"])
+        return
+    if row["kind"] == "birth":
+        prompt = _BIRTH_PROMPT.format(
+            evidence=_render_deferred_texts(evidence_texts)
+        )
+    elif row["kind"] == "extension":
+        prompt = _EXTENSION_PROMPT.format(
+            standing=_render_standing(thread, store),
+            evidence=_render_deferred_texts(evidence_texts),
+        )
+    else:
+        logger.warning(
+            "narrative: deferred row %s has unknown kind %r; settling",
+            row["id"],
+            row["kind"],
+        )
+        store.mark_deferred_prose_done(user_id, row["id"])
+        result.settled_without_prose.append(row["id"])
+        return
+    try:
+        raw = gen(
+            prompt,
+            provider_id="meta",
+            user_id=user_id or None,
+            operation="narrative-derivation",
+            timeout=60,
+        )
+    except Exception:
+        # Caught failure, not a crash: the attempt is over, so
+        # release the row to pending for retry on the next pass
+        # instead of holding the lease. Only a process crash
+        # mid-render (no release possible) waits out the lease.
+        logger.exception(
+            "narrative: deferred render failed for row %s; "
+            "released to pending for retry",
+            row["id"],
+        )
+        store.release_deferred_prose(user_id, row["id"])
+        result.failed.append(row["id"])
+        return
+    proposal = _parse_proposal(raw)
+    if proposal is None:
+        # NONE judgment or unparseable output: settle, do not spin.
+        # The thread + evidence persist; a later extension may
+        # still propose a reading for them.
+        logger.info(
+            "narrative: deferred row %s yielded no usable prose; settling",
+            row["id"],
+        )
+        store.mark_deferred_prose_done(user_id, row["id"])
+        result.settled_without_prose.append(row["id"])
+        return
+    if row["kind"] == "extension" and proposal.get("change_kind"):
+        # A change cannot be recorded retroactively: invariant 2
+        # requires new evidence, and this evidence was attached
+        # records-first. The reading is the durable half; the
+        # change-kind is dropped and logged, not forced.
+        logger.info(
+            "narrative: deferred extension %s proposed change_kind %r; "
+            "dropped (evidence already attached)",
+            row["id"],
+            proposal["change_kind"],
+        )
+    try:
+        reading = store.propose_reading_and_complete_deferred(
+            user_id,
+            thread.id,
+            row["id"],
+            author="steward",
+            reading={
+                "tensions": proposal["tensions"],
+                "open_questions": proposal["open_questions"],
+                "milestones": proposal["milestones"],
+                "cast_notes": {},
+            },
+            evidence_refs=refs,
+            scales=proposal["scales"],
+            primary_scale=proposal["primary_scale"],
+        )
+    except ValueError:
+        # Deterministic validation failure (not transient): settle
+        # rather than retrying the same failure after every lease.
+        logger.exception(
+            "narrative: deferred row %s refused by store; settling",
+            row["id"],
+        )
+        store.mark_deferred_prose_done(user_id, row["id"])
+        result.settled_without_prose.append(row["id"])
+        return
+    if reading is None:
+        # Already covered: a reading covers this evidence, so the
+        # row is done without a duplicate render.
+        result.already_covered.append(row["id"])
+        return
+    result.rendered.append(reading.id)
+
+
+def work_deferred_prose(
+    store: NarrativeStore,
+    user_id: str,
+    *,
+    generate_fn: GenerateFn | None = None,
+    lease_seconds: int = STEWARD_DEFERRED_LEASE_SECONDS,
+    limit: int = 50,
+) -> DeferredWorkResult:
+    """Render owed prose for a user's pending deferred rows.
+
+    Lease-claimed, exactly-once by construction: a row is claimed
+    pending → rendering, rendered + marked done in ONE transaction
+    with its reading, and a row whose evidence is already covered
+    by a reading is marked done without duplicating. No backend
+    means no row churn: pending rows simply wait, and no attempt
+    is counted for backend absence. Never raises for a single
+    row's failure; a caught render failure releases the row to
+    pending for the next pass, and only a process crash mid-render
+    holds the lease until expiry.
+    """
+    result = DeferredWorkResult()
+    gen = _resolve_generate_fn(generate_fn)
+    if gen is None:
+        result.skipped_no_backend = True
+        return result
+    try:
+        store.release_stale_deferred_prose(lease_seconds)
+    except Exception:
+        logger.exception("narrative: stale-deferred release failed")
+    try:
+        rows = store.deferred_prose_for(user_id, status="pending")[:limit]
+    except Exception:
+        logger.exception("narrative: deferred listing failed")
+        return result
+    for row in rows:
+        try:
+            claimed = store.claim_deferred_prose(user_id, row["id"])
+        except Exception:
+            logger.exception(
+                "narrative: deferred claim failed for row %s", row["id"]
+            )
+            continue
+        if claimed is None:
+            continue
+        try:
+            _render_deferred_row(store, user_id, claimed, gen, result)
+        except Exception:
+            logger.exception(
+                "narrative: deferred render failed for row %s; "
+                "lease expiry will retry",
+                row["id"],
+            )
+            result.failed.append(row["id"])
+    return result
+
+
 def dismiss_proposal(
     store: NarrativeStore,
     user_id: str,
@@ -1029,10 +1418,16 @@ class StewardPipeline:
     Mirrors fellowship's DerivationPipeline: the default scheduler
     spawns a daemon thread; tests and tools may inject a synchronous
     scheduler (``lambda fn: fn()``) for determinism. Scheduling
-    itself never raises. NOTE: this phase defines the pipeline but
-    does not install it — production wiring is a review-time
-    decision at app assembly, and until then derivation runs only
-    when a caller (test, tool, later phase) drives it directly.
+    itself never raises.
+
+    Consent gating (increment A §1.8): when ``consent_reader`` is
+    set, every run checks it first — a closed gate means no
+    derivation, on the install path and the sweep path alike. A
+    pipeline built WITHOUT a reader derives ungated: that is the
+    direct-drive mode for tests and tools only. The production
+    install (``install_default_pipeline``) always gates, using
+    the production reader by default — pass an explicit reader
+    there only to override it in tests.
     """
 
     def __init__(
@@ -1040,10 +1435,12 @@ class StewardPipeline:
         store: NarrativeStore | None = None,
         generate_fn: GenerateFn | None = None,
         scheduler: Callable[[Callable[[], None]], None] | None = None,
+        consent_reader: Callable[[str], bool] | None = None,
     ) -> None:
         self._store = store
         self._generate_fn = generate_fn
         self._scheduler = scheduler or self._thread_scheduler
+        self._consent_reader = consent_reader
 
     @staticmethod
     def _thread_scheduler(fn: Callable[[], None]) -> None:
@@ -1054,6 +1451,19 @@ class StewardPipeline:
         if self._store is None:
             self._store = NarrativeStore()
         return self._store
+
+    def _gate_open(self, user_id: str) -> bool:
+        """True when this pipeline may derive for this user."""
+        if self._consent_reader is None:
+            return True
+        try:
+            return bool(self._consent_reader(user_id))
+        except Exception:
+            logger.exception(
+                "narrative: consent read failed for user %r; failing closed",
+                user_id,
+            )
+            return False
 
     def schedule_batch(
         self, user_id: str, items: list[EvidenceItem]
@@ -1073,12 +1483,32 @@ class StewardPipeline:
 
     def _run_batch(self, user_id: str, items: list[EvidenceItem]) -> None:
         try:
+            if not self._gate_open(user_id):
+                logger.info(
+                    "narrative: steward consent closed for user %r; "
+                    "batch skipped",
+                    user_id,
+                )
+                return
             derive_batch(user_id, items, self.store, generate_fn=self._generate_fn)
         except Exception:
             logger.exception("narrative: derivation run failed")
 
     def _run_event(self, event: FellowshipEvent) -> None:
         try:
+            # Increment A rollout: the install path derives
+            # meeting completions only; other kinds arrive via the
+            # sweep only after the initial path passes tests.
+            if event.kind != MEETING_COMPLETED:
+                return
+            if not self._gate_open(event.user_id):
+                logger.info(
+                    "narrative: steward consent closed for user %r; "
+                    "event %s skipped",
+                    event.user_id,
+                    event.id,
+                )
+                return
             analyze_for_threads(event, self.store, generate_fn=self._generate_fn)
         except Exception:
             logger.exception("narrative: derivation run failed")
@@ -1092,17 +1522,28 @@ def install_default_pipeline(
     store: NarrativeStore | None = None,
     generate_fn: GenerateFn | None = None,
     scheduler: Callable[[Callable[[], None]], None] | None = None,
+    consent_reader: Callable[[str], bool] | None = None,
 ) -> StewardPipeline:
     """Install the process-wide steward pipeline (app assembly).
 
     Idempotent-ish: re-installing replaces the pipeline (tests use
-    this to install a synchronous one; production installs once, at
-    a review-time decision this phase deliberately does not make).
+    this to install a synchronous one; production installs once).
+    Unlike a directly constructed StewardPipeline, the installed
+    pipeline ALWAYS gates: with no explicit reader it uses the
+    production consent reader (increment A §1.8). Pass an explicit
+    reader only to override it in tests.
     """
     global _PIPELINE
+    if consent_reader is None:
+        from local_ai.narrative.consent import steward_consent_allowed
+
+        consent_reader = steward_consent_allowed
     with _PIPELINE_LOCK:
         _PIPELINE = StewardPipeline(
-            store=store, generate_fn=generate_fn, scheduler=scheduler
+            store=store,
+            generate_fn=generate_fn,
+            scheduler=scheduler,
+            consent_reader=consent_reader,
         )
         return _PIPELINE
 

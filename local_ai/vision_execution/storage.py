@@ -1355,6 +1355,13 @@ _USER_PERMISSION_DEFAULTS: dict[str, bool] = {
     "aspiration_store_explicit": False,
     "aspiration_infer_suggestions": False,
     "aspiration_use_in_guidance": False,
+    # Increment A: Narrative Steward derivation (proposal §1.8).
+    # Default off; existing rows read False for it until the
+    # visitor turns it on — nobody is opted in by the addition.
+    # NOTE: the upsert needs no logic change, but this key-list
+    # entry IS required — normalize_user_permission_prefs filters
+    # to these keys and would otherwise drop the flag on write.
+    "steward_derivation": False,
 }
 
 _USER_PERMISSION_KEYS = tuple(_USER_PERMISSION_DEFAULTS.keys())

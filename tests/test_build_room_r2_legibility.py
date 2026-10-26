@@ -446,7 +446,8 @@ def _derived_fixture():
         fixture["contributions"], fixture["historical_claims"],
         meeting_id="derived-test",
         historical_meeting_id=fixture["meeting_id"],
-        work_item=fixture["work_item"], question=fixture["question"]), fixture
+        work_item=fixture["work_item"], question=fixture["question"],
+        historical_objections=fixture["original_unresolved_objections"]), fixture
 
 
 def test_derived_replay_recovers_claude_preserving_history():
@@ -582,3 +583,69 @@ def test_regression_replay_r2_acceptance_unchanged():
                if i["participant"] == "GPT" and i["phase"] == "revision"][0]
     assert gpt_rev["relationship"] == "endorses"
     assert gpt_rev["relationship_target"] == "C58"
+
+
+# --- PR follow-ups: strict contract keys + both objection counts --------
+
+def _block_with_extra_key() -> str:
+    block = json.loads(_valid_block().split("```json\n", 1)[1].rsplit("\n```", 1)[0])
+    block["verdict"] = "The council should do X."
+    return "Narrative synthesis here.\n```json\n" + json.dumps(block) + "\n```\n"
+
+
+def test_b_contract_rejects_unexpected_top_level_keys():
+    structured, evals, rejected, found = parse_synthesis_contract(
+        _block_with_extra_key(), _contract_registry(), [], "GPT")
+    assert found is True
+    assert evals == {
+        "positions": "unparseable",
+        "disagreements": "unparseable",
+        "recommendations": "unparseable",
+        "limitations": "unparseable",
+    }
+    assert all(structured[f] == [] for f in structured)
+    assert len(rejected) == 1
+    assert rejected[0]["field"] == "contract"
+    assert "verdict" in rejected[0]["reason"]
+
+
+def test_b_contract_extra_key_never_salvages_valid_fields():
+    # The four fields are valid, but an unexpected top-level key
+    # rejects the whole block: no partial salvage across fields.
+    structured, evals, rejected, found = parse_synthesis_contract(
+        _block_with_extra_key(), _contract_registry(), [], "GPT")
+    assert found is True
+    assert rejected != []
+    assert all(v == "unparseable" for v in evals.values())
+    assert all(structured[f] == [] for f in structured)
+
+
+def test_derived_objection_counts_preserve_both():
+    art, fixture = _derived_fixture()
+    assert art["objection_counts"] == {
+        "historical": 3,
+        "recovered_sourced": 1,
+        "derived": 4,
+    }
+    disclosure = art["retrospective_recovery_disclosure"]
+    assert "3 historical" in disclosure
+    assert "4 in this derived artifact" in disclosure
+    assert "1 sourced from recovered claims" in disclosure
+
+
+def test_derived_objection_counts_without_historical_input():
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures"
+         / "r2_correction_rerun_derived.json").read_text())
+    art = replay_derived_r2_transcript(
+        fixture["contributions"], fixture["historical_claims"],
+        meeting_id="derived-test",
+        historical_meeting_id=fixture["meeting_id"],
+        work_item=fixture["work_item"], question=fixture["question"])
+    # Fallback derivation (no historical list supplied): objections not
+    # sourced from recovered claims count as historical.
+    assert art["objection_counts"] == {
+        "historical": 3,
+        "recovered_sourced": 1,
+        "derived": 4,
+    }

@@ -1497,8 +1497,10 @@ def parse_synthesis_contract(text: str, registry: Any,
     invented. ``block_found`` is False when no ```json block exists
     (the caller falls back to legacy section parsing); a present but
     invalid block yields all-unparseable, never a section fallback.
-    Extra keys are ignored: only the four contract keys are
-    validated, and ignoring extras invents nothing. Structured fields
+    Unexpected top-level keys reject the whole block (all fields
+    unparseable, keys named in the rejection): the contract is exactly
+    four keys, so silently ignoring extras would make it
+    unenforceable. Structured fields
     are the synthesizer's interpretation, never mechanical evidence,
     and never mutate the registry.
     """
@@ -1518,6 +1520,12 @@ def parse_synthesis_contract(text: str, registry: Any,
         return empty, all_unparseable, [
             {"field": "contract", "index": None,
              "reason": "contract block is not a JSON object"}], True
+    unexpected = sorted(set(block) - set(_CONTRACT_FIELDS))
+    if unexpected:
+        return empty, all_unparseable, [
+            {"field": "contract", "index": None,
+             "reason": "unexpected top-level keys: "
+                       + ", ".join(unexpected)}], True
     structured: dict[str, list] = {}
     evaluations: dict[str, str] = {}
     rejected: list[dict] = []
@@ -2265,7 +2273,8 @@ def replay_derived_r2_transcript(contributions: list[dict[str, str]],
                                  *, meeting_id: str = "derived-replay",
                                  historical_meeting_id: str = "",
                                  work_item: str = "",
-                                 question: str = "") -> dict[str, Any]:
+                                 question: str = "",
+                                 historical_objections: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Re-run the corrected parser over a stored transcript, DERIVED (A5).
 
     No live generation. ``contributions`` are dicts with
@@ -2288,6 +2297,15 @@ def replay_derived_r2_transcript(contributions: list[dict[str, str]],
     empty: derived ids cannot be cited, since citations match the
     ``C\\d+`` pattern), unmatched historical ids (expected empty),
     and a diff summary. The original artifact is never mutated.
+    ``objection_counts`` preserves BOTH counts instead of replacing
+    the historical count with the derived total: ``historical`` is
+    the live-record objection count (the length of
+    ``historical_objections`` when supplied, else the number of
+    derived-list objections not sourced from recovered claims),
+    ``derived`` is the total in this derived artifact, and
+    ``recovered_sourced`` counts derived-list objections whose source
+    is a recovered claim. The disclosure states the counts in prose
+    as well as the structured field.
     """
     from types import SimpleNamespace
 
@@ -2483,8 +2501,23 @@ def replay_derived_r2_transcript(contributions: list[dict[str, str]],
     )
     artifact["derived_from_meeting_id"] = historical_meeting_id
     artifact["historical_derived_mapping"] = mapping
+    recovered_sourced = sum(
+        1 for o in unresolved_objections
+        if o.get("source_claim_id") in derived_ids)
+    if historical_objections is not None:
+        historical_count = len(historical_objections)
+    else:
+        historical_count = len(unresolved_objections) - recovered_sourced
+    artifact["objection_counts"] = {
+        "historical": historical_count,
+        "recovered_sourced": recovered_sourced,
+        "derived": len(unresolved_objections),
+    }
     artifact["retrospective_recovery_disclosure"] = (
-        RETROSPECTIVE_RECOVERY_DISCLOSURE)
+        RETROSPECTIVE_RECOVERY_DISCLOSURE
+        + f" Objections: {historical_count} historical, "
+        + f"{len(unresolved_objections)} in this derived artifact "
+        + f"({recovered_sourced} sourced from recovered claims).")
     artifact["recovered_claims"] = recovered
     artifact["manufactured_interaction_flags"] = manufactured_flags
     artifact["unmatched_historical_ids"] = unmatched_historical

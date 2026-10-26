@@ -20,9 +20,8 @@ from local_ai.providers import openai as _openai
 
 
 class OpenAIParticipant:
-    """GPT (Weaver seat, provisional) via the openai provider module."""
+    """GPT via the openai provider module."""
 
-    seat = "weaver"
     name = "GPT"
     provider_id = "openai"
 

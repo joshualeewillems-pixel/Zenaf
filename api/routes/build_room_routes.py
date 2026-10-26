@@ -66,6 +66,7 @@ class RunMeetingBody(BaseModel):
     excerpts: list[str] = []
     constraints: list[str] = []
     source_refs: list[str] = []
+    context: list[str] = []
 
     @field_validator("work_item", "question")
     @classmethod
@@ -94,6 +95,7 @@ def run_meeting(
         excerpts=tuple(body.excerpts),
         constraints=tuple(body.constraints),
         source_refs=tuple(body.source_refs),
+        context=tuple(body.context),
     )
     result = run_single_model_meeting(
         packet, store_dir=get_build_room_store_dir(), principal=principal

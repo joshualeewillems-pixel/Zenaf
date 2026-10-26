@@ -1229,12 +1229,26 @@ def _local_settings_encryption_key_path() -> Path:
 
 def _settings_encryption_key_paths() -> list[Path]:
     """
-    Order: user home (typical), then repo data dir next to the SQLite DB (reliable on Windows / OneDrive).
+    Order: on server deployments the persistent data dir comes first; local dev keeps the
+    historical home-first order.
+
+    Why: on Fly the persistent volume IS the repo data dir (WORKDIR /app + volume at
+    /app/data, so ``_DB_DIR`` survives redeploys), while home is ephemeral. A key file
+    created under home is lost on redeploy, a new key is generated, and every
+    previously saved credential becomes undecryptable — while the rows (and the
+    "Configured" display, which checks row presence only) survive. NOTE: this prevents
+    future orphans only; rows orphaned by an already-lost key cannot be recovered
+    without that key and must be re-saved in Settings.
     """
-    return [
-        Path.home() / ".zenaf" / _SETTINGS_KEY_LOCAL_FILE,
-        _DB_DIR / _SETTINGS_KEY_LOCAL_FILE,
-    ]
+    home_path = Path.home() / ".zenaf" / _SETTINGS_KEY_LOCAL_FILE
+    data_path = _DB_DIR / _SETTINGS_KEY_LOCAL_FILE
+    if (
+        _is_prod()
+        or os.environ.get("ZENAF_DATA_DIR")
+        or os.environ.get("ZENAF_DB_DIR")
+    ):
+        return [data_path, home_path]
+    return [home_path, data_path]
 
 
 def _get_settings_encryption_key_raw() -> str | None:

@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from typing import Literal, Tuple
 
-OpenAiKeySource = Literal["env", "settings", "none", "system_env", "anonymous_blocked"]
+OpenAiKeySource = Literal["env", "settings", "none", "system_env", "anonymous_blocked", "undecryptable"]
 
 
 def openai_env_key_present() -> bool:
@@ -48,6 +48,10 @@ def resolve_openai_api_key(user_id: str | None) -> Tuple[str | None, OpenAiKeySo
     stored = St.get_decrypted_llm_api_key(user_id, "openai")
     if stored and stored.strip():
         return stored.strip(), "settings"
+    if St.llm_credential_row_exists(user_id, "openai"):
+        # Row present but undecryptable (e.g. the settings encryption key was lost
+        # on a redeploy): distinguishable from "no row" so diagnosis is immediate.
+        return None, "undecryptable"
     return None, "none"
 
 

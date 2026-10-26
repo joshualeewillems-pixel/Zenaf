@@ -57,6 +57,8 @@ def get_llm_settings(current_user: dict = Depends(get_current_user)):
         openai_status = "no_key_configured"
     elif effective_src == "env":
         openai_status = "env_override_active"
+    elif effective_src == "undecryptable":
+        openai_status = "saved_key_undecryptable"
     else:
         openai_status = "saved_key_available"
     providers = build_provider_status_rows_for_principal(account_principal, profile, creds)

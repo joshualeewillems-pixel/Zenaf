@@ -1,8 +1,9 @@
-"""Build-Council Room runner (R1 invocation surface).
+"""Build-Council Room runner (R1 + R2 invocation surfaces).
 
-One endpoint: POST /build-room/meetings runs a single-model (R1)
-meeting for the signed-in OWNER account and returns its transcript
-plus the draft artifact.
+Two endpoints: POST /build-room/meetings runs a single-model (R1)
+meeting, and POST /build-room/meetings/r2 runs a multi-participant
+(R2) meeting — both for the signed-in OWNER account, returning the
+transcript plus the draft artifact.
 
 Owner-gating is load-bearing: a meeting spends the owner's OpenAI
 credit, so the endpoint requires the bootstrapped owner account —
@@ -30,6 +31,7 @@ from pydantic import BaseModel, field_validator
 from api.routes.auth_routes import get_current_user
 from local_ai.build_room.meeting import (
     EvidencePacket,
+    run_multi_model_meeting,
     run_single_model_meeting,
 )
 from local_ai.llm.execution_principal import authenticated_account_principal
@@ -98,6 +100,38 @@ def run_meeting(
         context=tuple(body.context),
     )
     result = run_single_model_meeting(
+        packet, store_dir=get_build_room_store_dir(), principal=principal
+    )
+    return {
+        "meeting_id": result.meeting_id,
+        "ok": result.ok,
+        "transcript": result.transcript.to_dict(),
+        "artifact": result.artifact,
+    }
+
+
+@router.post("/meetings/r2")
+def run_meeting_r2(
+    body: RunMeetingBody, current_user: dict = Depends(get_current_owner_user)
+):
+    """Run one R2 multi-participant meeting for the caller.
+
+    Same owner gate, caller-principal key resolution, store dir, and
+    no-key-values rules as R1. The meeting stays synchronous; no
+    async job queue (a follow-up slice only if sync proves too slow).
+    The artifact RECOMMENDS only.
+    """
+    uid = current_user["id"]
+    principal = authenticated_account_principal(uid)
+    packet = EvidencePacket(
+        work_item=body.work_item,
+        question=body.question,
+        excerpts=tuple(body.excerpts),
+        constraints=tuple(body.constraints),
+        source_refs=tuple(body.source_refs),
+        context=tuple(body.context),
+    )
+    result = run_multi_model_meeting(
         packet, store_dir=get_build_room_store_dir(), principal=principal
     )
     return {

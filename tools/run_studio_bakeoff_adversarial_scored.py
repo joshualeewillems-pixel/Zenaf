@@ -54,7 +54,7 @@ def main() -> int:
         AttachmentLaneBakeoffProviderSpec(provider="ollama", model=dm.get("ollama", "qwen3:8b")),
         AttachmentLaneBakeoffProviderSpec(provider="openai", model=dm.get("openai", "gpt-4o-mini")),
         AttachmentLaneBakeoffProviderSpec(provider="anthropic", model=dm.get("anthropic", "claude-haiku-4-5")),
-        AttachmentLaneBakeoffProviderSpec(provider="google", model=dm.get("google", "gemini-2.5-flash")),
+        AttachmentLaneBakeoffProviderSpec(provider="google", model=dm.get("google", "gemini-3.8-flash")),
         AttachmentLaneBakeoffProviderSpec(provider="xai", model=dm.get("xai", "grok-4-1-fast-reasoning")),
     ]
     providers = [s.provider for s in specs]

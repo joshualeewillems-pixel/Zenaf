@@ -2259,7 +2259,7 @@ _STUDIO_COUNCIL_TEACHER_DEFAULTS: dict[str, Any] = {
     "local_attachment_provider": "ollama",
     "local_attachment_model": "qwen3:8b",
     "experimental_google_provider": "google",
-    "experimental_google_model": "gemini-2.5-flash",
+    "experimental_google_model": "gemini-3.8-flash",
     "experimental_xai_provider": "xai",
     "experimental_xai_model": "grok-4-1-fast-reasoning",
     "capability_teacher_modes": {},

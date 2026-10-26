@@ -1144,6 +1144,21 @@ def is_admin_user(user_id: str) -> bool:
     return bool(row and row["is_admin"])
 
 
+def get_owner_user_id() -> str | None:
+    """Id of the bootstrapped owner account, or None if absent.
+
+    The owner is the user created by _ensure_default_owner_and_backfill
+    (owner@local.zenaf). The build-room runner gates on this id so only
+    the account whose OpenAI credit is spent can invoke a meeting.
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT id FROM users WHERE email = ?",
+        (_DEFAULT_OWNER_EMAIL,),
+    ).fetchone()
+    return str(row["id"]) if row else None
+
+
 def revoke_session(session_token: str) -> None:
     conn = get_connection()
     conn.execute(

@@ -31,6 +31,7 @@ from local_ai.build_room.meeting import (
     MeetingResult,
     Transcript,
     TranscriptEntry,
+    replay_r2_transcript,
     run_multi_model_meeting,
     run_single_model_meeting,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "build_draft_artifact",
     "build_draft_artifact_r2",
     "check_openai_key_present",
+    "replay_r2_transcript",
     "resolve_openai_participant",
     "resolve_seat_participants",
     "resolve_seat_participant",

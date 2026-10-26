@@ -116,7 +116,7 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
         "Claude": FakeParticipant(
             "Claude",
             opening="1. Inferred: Parallel monologues are a failure mode.",
-            response="In response to C1, I object: authorization alone does not "
+            response="1. Objection to C1: authorization alone does not "
                      "prevent a synthesis from misrepresenting choices.",
         ),
         "Gemini": FakeParticipant("Gemini", opening="1. Proposed: Add addressable claims."),
@@ -134,7 +134,8 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
         "GPT", "GPT", "Claude", "Gemini", "Grok", "Muse"]
     assert "convene" == _kinds(result)[0]
     assert result.transcript.entries[0].participant == "Reynard (convener)"
-    # Response interaction: Claude objected to C1 with a citation.
+    # Response interaction: Claude's numbered, explicitly targeted
+    # objection to C1 (C6: other-author citation + targeted move).
     claude_resp = [i for i in result.artifact["interactions"]
                    if i["participant"] == "Claude" and i["phase"] == "response"][0]
     assert claude_resp["cited_claim_ids"] == ["C1"]
@@ -277,11 +278,18 @@ def test_revision_relationships_revised_defended_withdrawn(tmp_path):
     assert revs["Gemini"]["withdraws"] == "C3"
     # Originals stay in the registry, untouched.
     assert reg[0]["id"] == "C1" and reg[1]["id"] == "C2" and reg[2]["id"] == "C3"
-    # C4 drew an objection (Claude) but Grok's follow-up related to
-    # nothing, so C4 is unresolved.
+    # C4 drew a prose objection (Claude) with no parseable numbered
+    # spans, so under C5 it is an unclassified interaction — recorded
+    # with its citations, never promoted into unresolved_objections —
+    # even though Grok's follow-up related to nothing. Same for C1.
     unresolved = {u["claim_id"] for u in result.artifact["unresolved_objections"]}
-    assert "C4" in unresolved
-    assert "C1" not in unresolved  # GPT defended it
+    assert "C4" not in unresolved
+    assert "C1" not in unresolved
+    claude_resp = [i for i in result.artifact["interactions"]
+                   if i["participant"] == "Claude" and i["phase"] == "response"][0]
+    assert claude_resp["classification"] == "unclassified"
+    assert claude_resp["cited_claim_ids"] == ["C1", "C4"]
+    assert "objection" in claude_resp["stated_moves"]
 
 
 def test_disagreement_preservation_no_collapse(tmp_path):
@@ -382,7 +390,9 @@ def test_all_absent_meeting_fails_cleanly(tmp_path):
     assert result.ok is False
     assert result.artifact["synthesis"] is None
     assert "no opening contributions" in (result.artifact["synthesis_failure"] or "")
-    assert all(e.kind in ("convene", "absence", "failure")
+    # No contributions beyond absences/failures; the convenor's
+    # telemetry note (C8) is metadata, not a contribution.
+    assert all(e.kind in ("convene", "absence", "failure", "note")
                for e in result.transcript.entries)
 
 

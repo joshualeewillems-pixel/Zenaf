@@ -79,7 +79,10 @@ def build_draft_artifact_r2(
     synthesis_failure: str | None = None,
     positions: list[dict] | None = None,
     disagreements: list[dict] | None = None,
+    positions_evaluation: str | None = None,
+    disagreements_evaluation: str | None = None,
     unresolved_objections: list[dict] | None = None,
+    delta_report: dict[str, Any] | None = None,
     generation_timestamps: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict.
@@ -91,6 +94,11 @@ def build_draft_artifact_r2(
     attributed positions/disagreements (model-authored annotations,
     never runner facts), and the labeled synthesis. Nothing here is
     marked resolved by the room; resolution is Joshua's verdict.
+    Per-field evaluation status (C7): when synthesis did not run,
+    positions and disagreements are None with ``not_evaluated`` —
+    never an empty list masquerading as a finding. Unresolved
+    objections are mechanical pre-synthesis derivations, labeled as
+    such, never synthesis results.
     """
     provenance = []
     for seat in seats:
@@ -106,6 +114,19 @@ def build_draft_artifact_r2(
                 "key_source": seat.participant.key_source,
                 "status": "present",
             })
+    synthesis_ran = synthesis is not None and synthesis.get("status") == "complete"
+    if not synthesis_ran:
+        positions_out = None
+        disagreements_out = None
+        positions_evaluation_out = "not_evaluated"
+        disagreements_evaluation_out = "not_evaluated"
+    else:
+        positions_out = positions if positions is not None else []
+        disagreements_out = disagreements if disagreements is not None else []
+        positions_evaluation_out = positions_evaluation or (
+            "evaluated_with_results" if positions_out else "evaluated_empty")
+        disagreements_evaluation_out = disagreements_evaluation or (
+            "evaluated_with_results" if disagreements_out else "evaluated_empty")
     return {
         "status": "DRAFT_EXPERIMENTAL",
         "is_review_item": False,
@@ -118,9 +139,17 @@ def build_draft_artifact_r2(
         "question": packet.question,
         "claim_registry": [c.to_dict() for c in registry.claims],
         "interactions": interactions or [],
-        "positions": positions or [],
-        "disagreements": disagreements or [],
+        "positions": positions_out,
+        "positions_evaluation": positions_evaluation_out,
+        "disagreements": disagreements_out,
+        "disagreements_evaluation": disagreements_evaluation_out,
         "unresolved_objections": unresolved_objections or [],
+        "unresolved_objections_evaluation": "mechanical_pre_synthesis",
+        "delta_report": delta_report or {
+            "revision_chains": [],
+            "synthesis_elements_from_later_phases": [],
+            "unclassified_candidates": [],
+        },
         "synthesis": synthesis,
         "synthesis_failure": synthesis_failure,
         "provenance": provenance,

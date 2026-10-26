@@ -223,12 +223,59 @@ from local_ai.build_room.participants import (
 R2_MAX_GENERATIONS = 16
 
 _NUMBERED_CLAIM_RE = re.compile(r"^\s*(\d+)[.)]\s+(.*\S)\s*$")
+# C1: a model-written "C60." line is a claim boundary too, but the
+# number is NEVER an identifier — the system assigns the next ID and
+# the model-written number is recorded as disregarded.
+_MODEL_NUMBER_RE = re.compile(r"^\s*C(\d+)[.)]\s+(.*\S)\s*$")
 _CITATION_RE = re.compile(r"\b(C\d+)\b")
 _STATUS_PREFIX_RE = re.compile(
     r"^(Observed|Inferred|Proposed|Speculative|Contested)\s*:\s*",
     re.IGNORECASE,
 )
+# C2: the status formats the R2 participants actually used.
+_STATUS_BOLD_PREFIX_RE = re.compile(
+    r"^\*\*\s*(Observed|Inferred|Proposed|Speculative|Contested)\s*:\s*\*\*",
+    re.IGNORECASE,
+)
+_STATUS_BRACKET_RE = re.compile(
+    r"^\[\s*(Observed|Inferred|Proposed|Speculative|Contested)\s*\]",
+    re.IGNORECASE,
+)
+# A whole-line section heading ("## Observed", "**Observed**",
+# "Observed:"). Headings end the previous claim's span and set the
+# inherited status for following claims without their own prefix.
+_SECTION_HEADER_RE = re.compile(
+    r"^(?:#{1,6}\s*|\*\*)?\s*(Observed|Inferred|Proposed|Speculative|Contested)"
+    r"\s*(?::\s*)?(?:\*\*)?\s*$",
+    re.IGNORECASE,
+)
 _RELATIONSHIP_RE = re.compile(r"\b(revised|defended|withdrawn)\b", re.IGNORECASE)
+# C5 explicit targeting: a move is VERIFIED as targeted only when the
+# text syntactically associates it with its claim id. Same-span
+# proximity without one of these patterns is a candidate, never a
+# verified objection/correction/evidence request.
+_TARGET_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("objection", r"\b(?:objection|object)\s+(?:to|regarding|against|on)\s+(C\d+)"),
+    ("evidence_request",
+     r"\b(?:evidence request|request for evidence|requesting evidence|request evidence)"
+     r"\s+(?:regarding|for|on|about)\s+(C\d+)"),
+    ("correction", r"\b(?:correction|correct)\s+(?:of|to)\s+(C\d+)"),
+    ("agreement", r"\b(?:agreement|agree)\s+(?:with|to)\s+(C\d+)"),
+    ("extension", r"\b(?:extension|extend)\s+(?:of|to)\s+(C\d+)"),
+)
+_TARGET_RES = tuple((name, re.compile(p, re.IGNORECASE)) for name, p in _TARGET_PATTERNS)
+_IN_RESPONSE_TO_RE = re.compile(
+    r"\bin response to\s+((?:C\d+\s*(?:,|and)?\s*)+)", re.IGNORECASE)
+_MOVE_DECL_RE = re.compile(r"\bMove:\s*([A-Za-z,\s]+)", re.IGNORECASE)
+# C4 relationship targeting, in precedence order: bracket annotation,
+# "revised C18", "C59 is withdrawn", "defend C12", then fallbacks.
+_REL_BRACKET_RE = re.compile(
+    r"\b(C\d+)\s*\[\s*(revised|defended|withdrawn)\b", re.IGNORECASE)
+_REL_VERB_TARGET_RE = re.compile(
+    r"\b(revised|revise|revising|defended|defend|defending|withdrawn|withdraw|withdraws|withdrawing)"
+    r"\s+(?:my\s+)?(C\d+)",
+    re.IGNORECASE)
+_REL_IS_WITHDRAWN_RE = re.compile(r"\b(C\d+)\s+is\s+withdrawn\b", re.IGNORECASE)
 
 # The five response moves (design §2B). Patterns match the move WORDS
 # as stated by the participant; stating a word is not proof of
@@ -248,7 +295,22 @@ _CLAIM_NUMBERING_INSTRUCTION = (
     "Number each substantive claim in your contribution (\"1. ...\", "
     "\"2. ...\"), each with its epistemic status (Observed, Inferred, "
     "Proposed, Speculative, Contested). Numbering is a formatting "
-    "instruction only; it says nothing about what to conclude."
+    "instruction only; it says nothing about what to conclude. "
+    "Claim IDs are assigned by the system; do not invent, renumber, or "
+    "reuse C-numbers; cite existing IDs to reference, and number new "
+    "claims with plain digits only."
+)
+
+# C10: contribution discipline — a soft target, not a hard cap.
+_CONTRIBUTION_DISCIPLINE = (
+    "Contribution discipline: target 3–6 substantive claims per "
+    "contribution. You may exceed the target when additional claims "
+    "introduce genuinely distinct reasoning; there is no hard cap and "
+    "no rejection for exceeding it. Identify the most consequential "
+    "issues; explain why those issues matter; avoid restating "
+    "established architectural constraints unless challenging their "
+    "interpretation; prefer developing an existing argument over "
+    "generating another redundant claim."
 )
 
 _LANGUAGE_LINE = (
@@ -288,33 +350,133 @@ _SYNTHESIS_INSTRUCTION = (
     "must not resolve it, and you must not merge positions unless "
     "both participants agreed to the merge in a revision. Carry "
     "forward every unresolved disagreement without inventing "
-    "agreement. Write the synthesis in English."
+    "agreement. Write the synthesis in English. If a position, "
+    "objection, or revision in the state packet lacks a transcript "
+    "citation, treat it as unevidenced and say so; never present "
+    "state contents as transcript."
 )
 
 
 @dataclass
 class Claim:
-    """One mechanically registered claim (design §2A).
+    """One mechanically registered claim (design §2A, correction C1–C4).
 
-    ``text`` is verbatim. ``status`` is the epistemic label prefix
-    when the participant wrote one, else "". ``relationship`` /
-    ``relates_to`` / ``supersedes`` / ``withdraws`` describe a
-    follow-up's link to earlier claims (design §2C); they are None /
-    empty for openings and responses.
+    ``text`` is verbatim (preamble lines excluded — see
+    :func:`_parse_claim_spans`). ``status`` is the epistemic label when
+    the participant wrote one in a recognized format, inherited from a
+    section heading, else ``"unknown"`` — never blank. ``relationship``
+    / ``relates_to`` / ``supersedes`` / ``withdraws`` /
+    ``relationship_target`` describe a follow-up's link to earlier
+    claims; they are None / empty for openings and responses.
+    ``disposition`` / ``disposition_by`` live on ORIGINAL claims and
+    change only on their own author's revision (C4): ``revised`` /
+    ``withdrawn`` / ``maintained`` plus the revision claim id that set
+    it. ``epistemic_assessment`` is independent of disposition (C4):
+    ``challenged`` when a verified objection/evidence request targets
+    the claim, ``supported`` when a verified agreement does and nothing
+    challenges it, else ``unresolved``; ``contradicted`` is never set
+    mechanically — a participant asserting a contradiction does not
+    establish one, and an independently verified contradiction is a
+    review judgment. ``assessment_sources`` preserves the source claim
+    ids behind every assessment, so no assessment is false authority.
     """
 
     id: str
     participant: str
     phase: str
     text: str
-    status: str = ""
+    status: str = "unknown"
     relationship: str | None = None
     relates_to: list[str] = field(default_factory=list)
     supersedes: str | None = None
     withdraws: str | None = None
+    relationship_target: str | None = None
+    disposition: str | None = None
+    disposition_by: str | None = None
+    epistemic_assessment: str = "unresolved"
+    assessment_sources: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class ClaimSpan:
+    """One parsed claim span.
+
+    ``text`` is the claim's own lines joined (verbatim, preamble
+    excluded). ``preamble`` holds the non-numbered lines that preceded
+    this span's numbered line since the previous span or section
+    header — e.g. "Relationship: defended." — kept separate so
+    relationship/target analysis can use it without it becoming part
+    of the claim text. ``used_model_number`` is True when the span
+    started with a model-written ``C\d+.`` boundary (C1).
+    """
+
+    text: str
+    status: str
+    preamble: str = ""
+    used_model_number: bool = False
+    model_number: str | None = None
+
+
+def _parse_claim_spans(text: str) -> list[ClaimSpan]:
+    """Split a contribution into claim spans (C1, C2, C3).
+
+    A numbered line (``1.``, ``2.``) or a model-written ``C60.`` line
+    starts a span; following non-blank lines extend it until the next
+    numbered line or section heading. A section heading ends the
+    previous span and sets the inherited status. Non-numbered lines
+    before the first span (or after a heading, before the next span)
+    become that span's preamble. Nothing here judges content.
+    """
+    spans: list[ClaimSpan] = []
+    current: list[str] | None = None
+    current_model_number = False
+    current_model_number_value: str | None = None
+    preamble: list[str] = []
+    span_preamble = ""
+    inherited = ""
+
+    def flush() -> None:
+        nonlocal current, current_model_number, current_model_number_value
+        if current is not None:
+            spans.append(ClaimSpan(
+                text=" ".join(current),
+                status=_claim_status(current[0], inherited),
+                preamble=span_preamble,
+                used_model_number=current_model_number,
+                model_number=current_model_number_value,
+            ))
+            current = None
+            current_model_number = False
+            current_model_number_value = None
+
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        header = _SECTION_HEADER_RE.match(line)
+        if header:
+            flush()
+            inherited = header.group(1).capitalize()
+            preamble = []
+            continue
+        m = _NUMBERED_CLAIM_RE.match(line)
+        model_m = None if m else _MODEL_NUMBER_RE.match(line)
+        if m or model_m:
+            flush()
+            span_preamble = " ".join(preamble)
+            preamble = []
+            current = [(m or model_m).group(2).strip()]
+            current_model_number = model_m is not None
+            current_model_number_value = model_m.group(1) if model_m else None
+        elif current is not None:
+            current.append(line)
+        else:
+            preamble.append(line)
+    flush()
+    return spans
 
 
 class ClaimRegistry:
@@ -322,6 +484,9 @@ class ClaimRegistry:
 
     def __init__(self) -> None:
         self.claims: list[Claim] = []
+        # Model-written numbers seen in the most recent register call
+        # (C1); the caller turns these into a transcript note.
+        self.last_disregarded_model_numbers: list[str] = []
 
     def ids(self) -> set[str]:
         return {c.id for c in self.claims}
@@ -339,34 +504,48 @@ class ClaimRegistry:
                  withdraws: str | None = None) -> list[Claim]:
         """Parse numbered claims structurally and append them.
 
-        A numbered line starts a claim; following non-blank lines
-        extend it until the next numbered line. Nothing here judges
-        content: no extraction model, no grouping, no interpretation.
+        Kept for openings/responses (no links). Revision claims use
+        :meth:`register_spans` for per-span links (C3).
         """
-        parsed: list[tuple[str, str]] = []  # (text, status)
-        current: list[str] | None = None
-        for line in (text or "").splitlines():
-            m = _NUMBERED_CLAIM_RE.match(line)
-            if m:
-                if current is not None:
-                    parsed.append((" ".join(current), _claim_status(current[0])))
-                current = [m.group(2).strip()]
-            elif line.strip() and current is not None:
-                current.append(line.strip())
-        if current is not None:
-            parsed.append((" ".join(current), _claim_status(current[0])))
+        spans = _parse_claim_spans(text)
+        links = [{
+            "relationship": relationship,
+            "relationship_target": None,
+            "relates_to": list(relates_to or []),
+            "supersedes": supersedes,
+            "withdraws": withdraws,
+        } for _ in spans]
+        return self.register_spans(participant, phase, spans, links)
+
+    def register_spans(self, participant: str, phase: str,
+                       spans: list[ClaimSpan],
+                       links: list[dict[str, Any]] | None = None) -> list[Claim]:
+        """Append pre-parsed spans with per-span links (C3).
+
+        ``links[i]`` (when given) carries that span's relationship,
+        relationship_target, relates_to, supersedes, and withdraws.
+        System IDs are assigned sequentially; model-written numbers
+        are never stored (C1).
+        """
+        self.last_disregarded_model_numbers = []
         registered: list[Claim] = []
-        for claim_text, status in parsed:
+        for i, span in enumerate(spans):
+            link = (links or [{}] * len(spans))[i] if links else {}
+            if span.used_model_number:
+                # Recover the model-written number for the note.
+                self.last_disregarded_model_numbers.append(
+                    f"C{span.model_number}" if span.model_number else "C?")
             claim = Claim(
                 id=f"C{len(self.claims) + 1}",
                 participant=participant,
                 phase=phase,
-                text=claim_text,
-                status=status,
-                relationship=relationship,
-                relates_to=list(relates_to or []),
-                supersedes=supersedes,
-                withdraws=withdraws,
+                text=span.text,
+                status=span.status,
+                relationship=link.get("relationship"),
+                relates_to=list(link.get("relates_to") or []),
+                supersedes=link.get("supersedes"),
+                withdraws=link.get("withdraws"),
+                relationship_target=link.get("relationship_target"),
             )
             self.claims.append(claim)
             registered.append(claim)
@@ -375,14 +554,24 @@ class ClaimRegistry:
     def render(self) -> str:
         lines = ["Claim registry (meeting-local IDs):"]
         for c in self.claims:
-            status = f", {c.status}" if c.status else ""
-            lines.append(f"{c.id} [{c.participant}{status}]: {c.text}")
+            lines.append(f"{c.id} [{c.participant}, {c.status}]: {c.text}")
         return "\n".join(lines)
 
 
-def _claim_status(first_line: str) -> str:
-    m = _STATUS_PREFIX_RE.match(first_line.strip())
-    return m.group(1).capitalize() if m else ""
+def _claim_status(first_line: str, inherited: str = "") -> str:
+    """Epistemic status for a claim's first line (C2).
+
+    Recognized formats, in order: bare prefix (``Observed:``), bold
+    prefix (``**Observed:**``), bracket prefix (``[Observed]``), then
+    the section-heading inheritance. Anything else is explicitly
+    ``"unknown"`` — never blank.
+    """
+    line = first_line.strip()
+    for rx in (_STATUS_PREFIX_RE, _STATUS_BOLD_PREFIX_RE, _STATUS_BRACKET_RE):
+        m = rx.match(line)
+        if m:
+            return m.group(1).capitalize()
+    return inherited or "unknown"
 
 
 def _find_citations(text: str) -> list[str]:
@@ -402,6 +591,619 @@ def _stated_moves(text: str) -> list[str]:
         if m:
             found.append((m.start(), name))
     return [name for _, name in sorted(found)]
+
+
+def _explicit_targets(scope: str) -> dict[str, list[str]]:
+    """Verified move→claim targets in a scope (C5).
+
+    A move counts as explicitly targeted only when the text
+    syntactically associates it with its claim id:
+    - a direct pattern ("Objection to C29", "Evidence request
+      regarding C59", "Correction of C18", "Agreement with C4");
+    - a "Move:" declaration together with an "in response to" id list
+      ("In response to C14, C26 — Move: agreement and extension");
+    - a single move word together with an "in response to" id list
+      ("In response to C14, agreement: ...").
+    Same-span proximity without one of these is a candidate only and
+    yields nothing here. Returns {move: [claim ids in order]}.
+    """
+    found: dict[str, list[str]] = {}
+
+    def add(move: str, cid: str) -> None:
+        found.setdefault(move, [])
+        if cid not in found[move]:
+            found[move].append(cid)
+
+    for move, rx in _TARGET_RES:
+        for m in rx.finditer(scope or ""):
+            add(move, m.group(1))
+    resp = _IN_RESPONSE_TO_RE.search(scope or "")
+    if resp:
+        ids = _find_citations(resp.group(1))
+        decl = _MOVE_DECL_RE.search(scope or "")
+        if decl:
+            for move, _ in _MOVE_PATTERNS:
+                if re.search(r"\b" + move.replace("_", r"\s+") + r"\b",
+                             decl.group(1), re.IGNORECASE):
+                    for cid in ids:
+                        add(move, cid)
+            # "request for evidence" spelled out in a Move: declaration.
+            if re.search(r"request for evidence", decl.group(1), re.IGNORECASE):
+                for cid in ids:
+                    add("evidence_request", cid)
+        else:
+            moves_here = _stated_moves(scope or "")
+            if len(set(moves_here)) == 1:
+                for cid in ids:
+                    add(moves_here[0], cid)
+    return found
+
+
+def _relationship_in_scope(scope: str) -> tuple[str | None, str | None]:
+    """Relationship word + target claim in a scope (C4), by precedence.
+
+    Returns (word, target_id) where word is revised/defended/withdrawn
+    (normalized to the base form) and target_id is the claim the word
+    applies to, or (word, None) when the word appears without an
+    identifiable target, or (None, None) when no word appears. The
+    fallbacks — "in response to" list first id, then "my claim" first
+    citation — are documented heuristics: they identify what the text
+    points at, not whether the link is valid (authorship decides that
+    in :func:`_map_relationship`).
+    """
+    m = _REL_BRACKET_RE.search(scope or "")
+    if m:
+        return m.group(2).lower(), m.group(1)
+    m = _REL_VERB_TARGET_RE.search(scope or "")
+    if m:
+        word = m.group(1).lower()
+        base = {"revise": "revised", "revising": "revised",
+                "defend": "defended", "defending": "defended",
+                "withdraw": "withdrawn", "withdraws": "withdrawn",
+                "withdrawing": "withdrawn"}.get(word, word)
+        return base, m.group(2)
+    m = _REL_IS_WITHDRAWN_RE.search(scope or "")
+    if m:
+        return "withdrawn", m.group(1)
+    word_m = _RELATIONSHIP_RE.search(scope or "")
+    if not word_m:
+        return None, None
+    word = word_m.group(1).lower()
+    resp = _IN_RESPONSE_TO_RE.search(scope or "")
+    if resp:
+        ids = _find_citations(resp.group(1))
+        if ids:
+            return word, ids[0]
+    if re.search(r"\bmy claim\b", scope or "", re.IGNORECASE):
+        ids = _find_citations(scope or "")
+        if ids:
+            return word, ids[0]
+    return word, None
+
+
+def _map_relationship(word: str | None, target: str | None, author: str,
+                      registry: "ClaimRegistry") -> tuple[str, str | None, str | None, str | None]:
+    """Map a stated relationship through the authorship rule (C4).
+
+    Returns (relationship, relationship_target, supersedes, withdraws).
+    Self-targets keep revised/defended/withdrawn and set supersedes /
+    withdraws. Cross-author targets map to proposes_revision_of /
+    supports_withdrawal_of / endorses and never change the target's
+    disposition. No target → ("unstated" or the bare word, None, None,
+    None): the word is recorded, no link is invented.
+    """
+    if word is None:
+        return "unstated", None, None, None
+    if target is None:
+        return word, "unstated", None, None
+    original = registry.by_id(target) if registry is not None else None
+    if original is not None and original.participant == author:
+        if word == "revised":
+            return "revised", target, target, None
+        if word == "withdrawn":
+            return "withdrawn", target, None, target
+        return "defended", target, None, None
+    mapped = {"revised": "proposes_revision_of",
+              "withdrawn": "supports_withdrawal_of",
+              "defended": "endorses"}.get(word, word)
+    return mapped, target, None, None
+
+
+def _analyze_span(span: ClaimSpan, *, author: str, registry: "ClaimRegistry",
+                  frozen_ids: set[str] | None) -> dict[str, Any]:
+    """Per-span mechanical analysis (C3, C5, C6).
+
+    Scope = preamble + text (preamble lines like "Relationship:
+    defended." belong to the span for relationship purposes, but are
+    not part of the claim text). Citations are validated against
+    ``frozen_ids``; authorship is looked up in the registry.
+    """
+    scope = f"{span.preamble} {span.text}".strip()
+    cited = _find_citations(scope)
+    valid = [c for c in cited if frozen_ids is None or c in frozen_ids]
+    dead = [c for c in cited if frozen_ids is not None and c not in frozen_ids]
+    self_cites: list[str] = []
+    other_cites: list[str] = []
+    for cid in valid:
+        original = registry.by_id(cid) if registry is not None else None
+        if original is not None and original.participant == author:
+            self_cites.append(cid)
+        else:
+            other_cites.append(cid)
+    targets = _explicit_targets(scope)
+    word, target = _relationship_in_scope(scope)
+    return {
+        "span": span,
+        "citations_valid": valid,
+        "citations_dead": dead,
+        "self_citations": self_cites,
+        "other_citations": other_cites,
+        "moves": _stated_moves(scope),
+        "explicit_targets": targets,
+        "relationship_word": word,
+        "relationship_target_raw": target,
+    }
+
+
+def _analyze_contribution(text: str, *, author: str, registry: "ClaimRegistry",
+                          frozen_ids: set[str] | None) -> dict[str, Any]:
+    """Analyze a whole contribution via its spans (C3, C5, C6).
+
+    Returns spans, per-span analyses, contribution aggregates, the
+    contribution-level relationship (first explicit pattern in the
+    full text, mapped through authorship), and classification:
+    "classified" when spans exist, else "unclassified" — unclassified
+    interactions are recorded but never promoted into objections.
+    """
+    spans = _parse_claim_spans(text)
+    per_span = [_analyze_span(s, author=author, registry=registry,
+                              frozen_ids=frozen_ids) for s in spans]
+    cited: list[str] = []
+    dead: list[str] = []
+    self_cites: list[str] = []
+    other_cites: list[str] = []
+    moves = _stated_moves(text or "")
+    for a in per_span:
+        for cid in a["citations_valid"]:
+            if cid not in cited:
+                cited.append(cid)
+        for cid in a["citations_dead"]:
+            if cid not in dead:
+                dead.append(cid)
+        for cid in a["self_citations"]:
+            if cid not in self_cites:
+                self_cites.append(cid)
+        for cid in a["other_citations"]:
+            if cid not in other_cites:
+                other_cites.append(cid)
+    if not spans:
+        # Unclassified: no parseable spans. Contribution-level
+        # citations are preserved for legibility, labeled
+        # unclassified — they are never promoted into claim-level
+        # links, objections, or addressability targets (no spans
+        # means no explicit targets, so move_targeted stays False).
+        for cid in _find_citations(text or ""):
+            if frozen_ids is not None and cid not in frozen_ids:
+                if cid not in dead:
+                    dead.append(cid)
+            else:
+                if cid not in cited:
+                    cited.append(cid)
+                original = registry.by_id(cid)
+                if original is not None:
+                    if original.participant == author:
+                        if cid not in self_cites:
+                            self_cites.append(cid)
+                    else:
+                        if cid not in other_cites:
+                            other_cites.append(cid)
+    word, target = _relationship_in_scope(text or "")
+    mapped, mapped_target, _, _ = _map_relationship(word, target, author, registry)
+    return {
+        "spans": spans,
+        "per_span": per_span,
+        "cited_claim_ids": cited,
+        "dead_citations": dead,
+        "self_citations": self_cites,
+        "other_citations": other_cites,
+        "stated_moves": moves,
+        "classification": "classified" if spans else "unclassified",
+        "relationship": mapped if word else "unstated",
+        "relationship_target": mapped_target if word else "unstated",
+    }
+
+
+def _verified_targets_from_spans(analysis: dict[str, Any],
+                                 registered: list["Claim"],
+                                 author: str,
+                                 registry: "ClaimRegistry") -> tuple[list[dict], list[dict]]:
+    """Verified challenges/supports from per-span explicit targets (C5).
+
+    Only explicitly targeted moves at other-author claims count, and
+    only when the target is a valid citation. Same-span proximity
+    alone yields nothing here — those citations stay candidates.
+    """
+    challenges: list[dict] = []
+    supports: list[dict] = []
+    for span_analysis, claim in zip(analysis["per_span"], registered):
+        for move, targets in span_analysis["explicit_targets"].items():
+            for target_id in targets:
+                if target_id not in analysis["cited_claim_ids"]:
+                    continue
+                original = registry.by_id(target_id)
+                if original is None or original.participant == author:
+                    continue
+                if move in _OBJECTION_MOVES:
+                    challenges.append({
+                        "source_claim_id": claim.id,
+                        "challenger": author,
+                        "target_claim_id": target_id,
+                        "move": move,
+                    })
+                elif move == "agreement":
+                    supports.append({
+                        "source_claim_id": claim.id,
+                        "supporter": author,
+                        "target_claim_id": target_id,
+                        "move": move,
+                    })
+    return challenges, supports
+
+
+def _move_targeted(analysis: dict[str, Any], author: str,
+                   registry: "ClaimRegistry") -> bool:
+    """True when any span explicitly targets another author's claim (C6)."""
+    for span_analysis in analysis["per_span"]:
+        for move, targets in span_analysis["explicit_targets"].items():
+            for target_id in targets:
+                if target_id not in analysis["cited_claim_ids"]:
+                    continue
+                original = registry.by_id(target_id)
+                if original is not None and original.participant != author:
+                    return True
+    return False
+
+
+def _revision_links(analysis: dict[str, Any], author: str,
+                    registry: "ClaimRegistry") -> list[dict[str, Any]]:
+    """Per-span relationship links for a revision contribution (C3, C4)."""
+    links: list[dict[str, Any]] = []
+    for span_analysis in analysis["per_span"]:
+        word = span_analysis["relationship_word"]
+        target = span_analysis["relationship_target_raw"]
+        mapped, mapped_target, supersedes, withdraws = _map_relationship(
+            word, target, author, registry)
+        links.append({
+            "relationship": mapped if word else "unstated",
+            "relationship_target": mapped_target if word else "unstated",
+            "relates_to": [c for c in span_analysis["citations_valid"]],
+            "supersedes": supersedes,
+            "withdraws": withdraws,
+        })
+    return links
+
+
+def _apply_dispositions(registry: "ClaimRegistry",
+                        registered: list["Claim"],
+                        links: list[dict[str, Any]]) -> None:
+    """Authorial disposition updates from a revision (C4).
+
+    Only the author's own revision changes an original claim's
+    disposition; first revision wins. Cross-author revision language
+    never changes disposition (it maps to proposes_revision_of /
+    supports_withdrawal_of / endorses in the links).
+    """
+    for claim, link in zip(registered, links):
+        target_id = link["supersedes"] or link["withdraws"]
+        if target_id is None:
+            continue
+        original = registry.by_id(target_id)
+        if original is None or original.disposition is not None:
+            continue
+        if link["supersedes"]:
+            original.disposition = "revised"
+        elif link["withdraws"]:
+            original.disposition = "withdrawn"
+        original.disposition_by = claim.id
+    for claim in registered:
+        if claim.relationship == "defended":
+            original = registry.by_id(claim.relationship_target or "")
+            if (original is not None
+                    and original.participant == claim.participant
+                    and original.disposition is None):
+                original.disposition = "maintained"
+                original.disposition_by = claim.id
+
+
+def _telemetry_block(*, phase: str, max_generations: int, completed: int,
+                     allocated: int, reserved: dict[str, str]) -> str:
+    """Parallel-safe orchestrator telemetry (C8).
+
+    Distinguishes completed, allocated (this phase's jobs), and
+    reserved (planned, not yet completed) generations, because phases
+    run in parallel and no participant-specific "generation N of 16"
+    is meaningful. ``reserved`` maps slot labels to display values
+    like "up to 5" or "1".
+    """
+    reserved_text = ". ".join(
+        f"{label} reserved: {value}" for label, value in reserved.items())
+    allocated_text = f"Slots allocated this phase: {allocated}."
+    if reserved_text:
+        allocated_text += f" {reserved_text}."
+    return (
+        f"Orchestrator state — Phase: {phase}. Maximum generations: "
+        f"{max_generations}. Generations completed: {completed}. "
+        f"{allocated_text} This block "
+        "describes completed, allocated, and planned execution; planned "
+        "slots are not yet completed generations. Do not infer remaining "
+        "capacity from a number that ignores concurrent calls, and do "
+        "not assert any other operational fact (remaining capacity, "
+        "token counts, other participants' state)."
+    )
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate for state-packet diagnostics (C9).
+
+    Labeled estimate only (chars / 4) — it is NOT a provider token
+    measurement. True provider token measurement (tokenizers or API
+    usage fields) is still open; no cap value in this change depends
+    on it, and usage rows keep ``token_usage: "unavailable"`` for
+    actuals rather than dressing an estimate up as a measurement.
+    """
+    return max(1, len(text or "") // 4)
+
+
+def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
+                          unresolved_objections: list[dict],
+                          revision_chains: list[dict],
+                          *, cap_chars: int) -> dict[str, Any]:
+    """Assemble the bounded synthesis input (C9).
+
+    Mandatory state — packet, active claims, unresolved targeted
+    objections, authorial revision chains — is never silently
+    removed; if it alone exceeds the cap, synthesis reports
+    INCOMPLETE. Optional context — superseded/withdrawn claim texts,
+    responded-to objection details — is dropped in a deterministic
+    order (superseded texts, then responded-to details) with links
+    retained and the omission disclosed in the prompt itself.
+    Eviction uses ONLY explicit relationships (disposition links,
+    responded_to state): no semantic classifier, no model-based
+    redundancy judgment. The spec's third eviction step (response
+    prose restating openings) is not implemented as an eviction at
+    all — full response prose is never part of this state packet in
+    the first place, and the disclosure says so.
+    """
+    active_lines: list[str] = []
+    superseded_lines: list[str] = []
+    superseded_links: list[str] = []
+    for c in registry.claims:
+        line = f"{c.id} [{c.participant}, {c.status}]: {c.text}"
+        if c.disposition in ("revised", "withdrawn"):
+            superseded_lines.append(line)
+            superseded_links.append(
+                f"{c.id} ({c.disposition} by {c.disposition_by})")
+        else:
+            active_lines.append(line)
+    unresolved_lines = [
+        f"{u['claim_id']} challenged by {u['cited_by']} via {u.get('source_claim_id')}: "
+        f"{', '.join(u['moves'])}"
+        for u in unresolved_objections if u.get("state") == "unresolved"
+    ]
+    responded_lines = [
+        f"{u['claim_id']} challenged by {u['cited_by']} via {u.get('source_claim_id')}: "
+        f"{', '.join(u['moves'])} (responded_to by {u.get('responded_by')})"
+        for u in unresolved_objections if u.get("state") == "responded_to"
+    ]
+    chain_lines = [
+        f"{ch['original_claim_id']} -> challenged by {ch['challenge_claim_id']} "
+        f"({ch['challenge_move']}, {ch['challenger']}) -> {ch['revision_claim_id']} "
+        f"({ch['revision_relationship']}, {ch['author']})"
+        for ch in revision_chains
+    ]
+    mandatory = "\n\n".join([
+        packet.render_prompt(),
+        "Active claims (registry):\n" + ("\n".join(active_lines) if active_lines else "(none)"),
+        "Unresolved targeted objections:\n" + ("\n".join(unresolved_lines) if unresolved_lines else "(none)"),
+        "Authorial revision chains:\n" + ("\n".join(chain_lines) if chain_lines else "(none)"),
+    ])
+    optional_full = "\n\n".join([
+        "Superseded/withdrawn claim texts:\n" + ("\n".join(superseded_lines) if superseded_lines else "(none)"),
+        "Responded-to objections:\n" + ("\n".join(responded_lines) if responded_lines else "(none)"),
+    ])
+    instruction = _SYNTHESIS_INSTRUCTION
+    disclosure_none = (
+        "Historical context omitted: none. Full response prose is "
+        "not part of this state packet; it contains claims, "
+        "targeted objections, and revision chains only.")
+    # Mandatory alone must fit, or synthesis cannot run honestly.
+    if len(mandatory) + len(disclosure_none) + len(instruction) > cap_chars:
+        return {
+            "prompt": None,
+            "omitted": {"superseded_texts": len(superseded_lines),
+                        "responded_to_details": len(responded_lines)},
+            "mandatory_chars": len(mandatory),
+            "reason": (
+                f"budget_exceeded: mandatory synthesis state of "
+                f"{len(mandatory)} chars exceeds cap={cap_chars}; no "
+                "synthesis attempted and nothing was truncated to fit"),
+        }
+    omitted_texts = 0
+    omitted_details = 0
+    optional = optional_full
+    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) > cap_chars:
+        # Drop superseded texts first (links retained).
+        omitted_texts = len(superseded_lines)
+        optional = "\n\n".join([
+            "Superseded/withdrawn claims (texts omitted): "
+            + (", ".join(superseded_links) if superseded_links else "(none)"),
+            "Responded-to objections:\n" + ("\n".join(responded_lines) if responded_lines else "(none)"),
+        ])
+    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) > cap_chars:
+        # Then drop responded-to details (counts retained).
+        omitted_details = len(responded_lines)
+        optional = "\n\n".join([
+            "Superseded/withdrawn claims (texts omitted): "
+            + (", ".join(superseded_links) if superseded_links else "(none)"),
+            f"Responded-to objections (details omitted): {len(responded_lines)} entries.",
+        ])
+    if omitted_texts or omitted_details:
+        disclosure = (
+            f"Historical context omitted: {omitted_texts} superseded claim "
+            f"texts and {omitted_details} responded-to objection details. "
+            "Full records remain available in the transcript. A bounded "
+            "synthesis input is not a complete transcript; do not treat "
+            "it as one. Full response prose is not part of this state "
+            "packet; it contains claims, targeted objections, and "
+            "revision chains only.")
+    else:
+        disclosure = disclosure_none
+    prompt = "\n\n".join([mandatory, optional, disclosure, instruction])
+    return {
+        "prompt": prompt,
+        "omitted": {"superseded_texts": omitted_texts,
+                    "responded_to_details": omitted_details},
+        "mandatory_chars": len(mandatory),
+        "input_chars": len(prompt),
+        "input_tokens_estimate": estimate_tokens(prompt),
+        "reason": None,
+    }
+
+
+def compute_unresolved_objections(
+        verified_challenges: list[dict], registry: "ClaimRegistry",
+        revision_claims: list["Claim"]) -> list[dict]:
+    """Verified, claim-specific objections with response state (C5).
+
+    Only explicitly targeted objection/evidence-request moves become
+    entries — never contribution-level citations, never same-span
+    proximity alone. An entry is ``responded_to`` when the target
+    claim's author later revised that claim (relationship_target ==
+    target, or a revision span citing the objection's source claim);
+    ``resolved`` is never set mechanically.
+    """
+    entries: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for ch in verified_challenges:
+        key = (ch["target_claim_id"], ch["source_claim_id"])
+        if key in seen:
+            continue
+        seen.add(key)
+        target = registry.by_id(ch["target_claim_id"])
+        if target is None:
+            continue
+        responded_by: str | None = None
+        for rev in revision_claims:
+            if rev.participant != target.participant:
+                continue
+            if rev.relationship_target == target.id or ch["source_claim_id"] in rev.relates_to:
+                responded_by = rev.id
+                break
+        entries.append({
+            "claim_id": ch["target_claim_id"],
+            "originator": target.participant,
+            "cited_by": ch["challenger"],
+            "moves": [ch["move"]],
+            "source_claim_id": ch["source_claim_id"],
+            "state": "responded_to" if responded_by else "unresolved",
+            "responded_by": responded_by,
+        })
+    return entries
+
+
+def compute_epistemic_assessments(verified_challenges: list[dict],
+                                  verified_supports: list[dict],
+                                  registry: "ClaimRegistry") -> None:
+    """Set per-claim epistemic assessment from verified targets (C4).
+
+    Challenged wins over supported; anything else stays unresolved.
+    ``contradicted`` is never set mechanically (review judgment: a
+    participant asserting a contradiction does not establish one).
+    Every assessment records its source claim ids in
+    ``assessment_sources`` — no assessment without provenance.
+    """
+    challenged: dict[str, list[str]] = {}
+    supported: dict[str, list[str]] = {}
+    for ch in verified_challenges:
+        challenged.setdefault(ch["target_claim_id"], []).append(ch["source_claim_id"])
+    for sup in verified_supports:
+        if sup["target_claim_id"] not in challenged:
+            supported.setdefault(sup["target_claim_id"], []).append(sup["source_claim_id"])
+    for claim in registry.claims:
+        if claim.id in challenged:
+            claim.epistemic_assessment = "challenged"
+            claim.assessment_sources = challenged[claim.id]
+        elif claim.id in supported:
+            claim.epistemic_assessment = "supported"
+            claim.assessment_sources = supported[claim.id]
+
+
+def build_delta_report(registry: "ClaimRegistry",
+                       verified_challenges: list[dict],
+                       synthesis_elements: list[dict] | None = None,
+                       unclassified_interactions: list[dict] | None = None) -> dict[str, Any]:
+    """Candidate delta report (§4, mechanical parts only).
+
+    Revision chains link original claim → verified challenge → the
+    author's later revision (by registry order, citing the challenge
+    or targeting the claim). Novelty and improvement are NOT computed
+    here — the runner proposes candidates; the acceptance review
+    judges value. A chain proves responsiveness, never improvement.
+    Unclassified candidates: interactions the parser could not
+    mechanically verify (no parseable claim spans) that still cite
+    claims are listed here, labeled as requiring review — a
+    relationship a human can plainly recognize in the transcript must
+    never disappear from the artifact merely because the parser could
+    not verify it. Legibility, not parser-satisfying output.
+    """
+    order = {c.id: i for i, c in enumerate(registry.claims)}
+    chains: list[dict] = []
+    for ch in verified_challenges:
+        target = registry.by_id(ch["target_claim_id"])
+        if target is None:
+            continue
+        for rev in registry.claims:
+            if rev.phase != "revision" or rev.participant != target.participant:
+                continue
+            if order.get(rev.id, -1) <= order.get(ch["source_claim_id"], -1):
+                continue
+            if (ch["source_claim_id"] in rev.relates_to
+                    or rev.relationship_target == target.id):
+                chains.append({
+                    "original_claim_id": target.id,
+                    "challenge_claim_id": ch["source_claim_id"],
+                    "challenge_move": ch["move"],
+                    "challenger": ch["challenger"],
+                    "revision_claim_id": rev.id,
+                    "revision_relationship": rev.relationship,
+                    "author": target.participant,
+                    "state": "responded_to",
+                })
+                break
+    later: list[dict] = []
+    for el in synthesis_elements or []:
+        phases = [registry.by_id(cid).phase for cid in el.get("claim_ids", [])
+                  if registry.by_id(cid) is not None]
+        if any(p in ("response", "revision") for p in phases):
+            later.append(el)
+    candidates: list[dict] = []
+    for inter in unclassified_interactions or []:
+        if not inter.get("cited_claim_ids"):
+            continue
+        candidates.append({
+            "participant": inter["participant"],
+            "phase": inter["phase"],
+            "cited_claim_ids": inter["cited_claim_ids"],
+            "stated_moves": inter.get("stated_moves", []),
+            "contribution_relationship": inter.get("relationship", "unstated"),
+            "contribution_relationship_target": inter.get("relationship_target"),
+            "classification": "unclassified",
+            "note": ("Relationship not mechanically verified; requires "
+                     "review. Do not treat as an established chain."),
+        })
+    return {"revision_chains": chains,
+            "synthesis_elements_from_later_phases": later,
+            "unclassified_candidates": candidates}
 
 
 def _render_transcript(transcript: Transcript) -> str:
@@ -509,6 +1311,11 @@ def run_multi_model_meeting(
     transcript = Transcript()
     registry = ClaimRegistry()
     interactions: list[dict[str, Any]] = []
+    # Verified, claim-specific response-phase targets (C5/C6): challenges
+    # (objection/evidence-request) and supports (agreement) with explicit
+    # syntax. Collected during _record_phase("response", ...).
+    verified_challenges: list[dict] = []
+    verified_supports: list[dict] = []
     generation_timestamps: dict[str, dict[str, float]] = {}
     attempts = 0
 
@@ -549,6 +1356,12 @@ def run_multi_model_meeting(
         contributions. ``frozen_ids`` is the registry snapshot the
         phase's prompts were built from: citations are validated
         against it, and unknown IDs become dead-citation notes.
+        Interactions now carry the C5/C6 evaluations: other-author
+        citation, explicitly targeted moves, mechanical addressability
+        (those two only), substantive engagement always "unassessed",
+        and classification (classified vs unclassified). Verified
+        response-phase challenges/supports are collected for the
+        objections pass and the delta report.
         """
         generated: list[tuple[str, str]] = []
         generation_timestamps.setdefault(phase, {})
@@ -566,20 +1379,28 @@ def run_multi_model_meeting(
                 continue
             transcript.append("contribution", name, text or "")
             generated.append((name, text or ""))
-            cited = _find_citations(text or "")
-            valid = [c for c in cited if frozen_ids is None or c in frozen_ids]
-            dead = [c for c in cited if frozen_ids is not None and c not in frozen_ids]
-            moves = _stated_moves(text or "")
+            analysis = _analyze_contribution(text or "", author=name,
+                                             registry=registry,
+                                             frozen_ids=frozen_ids)
+            valid = analysis["cited_claim_ids"]
+            dead = analysis["dead_citations"]
+            moves = analysis["stated_moves"]
             if dead:
                 transcript.append(
                     "note", name,
                     f"Dead citation: {', '.join(dead)} cited by {name} "
                     "does not exist; it counts for nothing.")
+            registered: list[Claim] = []
             if register:
-                registered = registry.register(name, phase, text or "")
+                registered = registry.register_spans(
+                    name, phase, analysis["spans"])
+                if registry.last_disregarded_model_numbers:
+                    transcript.append(
+                        "note", name,
+                        "model-written number disregarded; system ID assigned "
+                        f"(model numbers: {', '.join(registry.last_disregarded_model_numbers)}).")
                 listing = "\n".join(
-                    f"{c.id} [{c.participant}"
-                    f"{', ' + c.status if c.status else ''}]: {c.text}"
+                    f"{c.id} [{c.participant}, {c.status}]: {c.text}"
                     for c in registered
                 )
                 transcript.append(
@@ -590,14 +1411,32 @@ def run_multi_model_meeting(
                     transcript.append(
                         "note", name,
                         f"No numbered claims registered from {name}'s {phase}; "
-                        "recorded with zero claims.")
+                        "recorded with zero claims. Reason: no parseable "
+                        "claim boundaries found.")
+            # Verified targets (C5/C6): explicit syntax only, per span.
+            if phase == "response":
+                challenges, supports = _verified_targets_from_spans(
+                    analysis, registered, name, registry)
+                verified_challenges.extend(challenges)
+                verified_supports.extend(supports)
+            move_targeted = _move_targeted(analysis, name, registry)
+            cited_other = bool(analysis["other_citations"])
             interactions.append({
                 "participant": name, "phase": phase,
                 "cited_claim_ids": valid, "dead_citations": dead,
+                "self_citations": analysis["self_citations"],
+                "other_author_citations": analysis["other_citations"],
                 "stated_moves": moves,
-                # Mechanical addressability only, NOT a genuineness
-                # score: substance is Joshua's judgment.
-                "addressable": bool(valid and moves),
+                # Mechanical addressability only (C6): other-author
+                # citation AND an explicitly targeted move at such a
+                # claim. NOT a genuineness score: substance is
+                # Joshua's judgment; substantive_engagement stays
+                # "unassessed" unless a review sets it.
+                "cited_other_author": cited_other,
+                "move_targeted": move_targeted,
+                "addressable": cited_other and move_targeted,
+                "substantive_engagement": "unassessed",
+                "classification": analysis["classification"],
             })
             _log_usage(store, meeting_id=meeting_id, participant=name,
                        provider=seat.provider_id,
@@ -642,9 +1481,17 @@ def run_multi_model_meeting(
 
     # -- Phase 1: independent openings (baseline control). Each
     # participant receives ONLY the packet; no other contribution.
+    opening_telemetry = _telemetry_block(
+        phase="opening", max_generations=budget.max_contributions,
+        completed=0, allocated=len(present),
+        reserved={"Response slots": "up to 5", "Revision slots": "up to 5",
+                  "Synthesis slots": "1"})
+    transcript.append("note", "Reynard (convener)", opening_telemetry)
     opening_prompt = (
         packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
+        + "\n\n" + _CONTRIBUTION_DISCIPLINE
         + "\n\n" + _LANGUAGE_LINE
+        + "\n\n" + opening_telemetry
     )
     opening_jobs = _generate_jobs("opening", opening_prompt,
                                   budget.max_prompt_chars, present)
@@ -656,6 +1503,13 @@ def run_multi_model_meeting(
     positions: list[dict] = []
     disagreements: list[dict] = []
     unresolved_objections: list[dict] = []
+    # Per-field evaluation status (C7): synthesis-derived fields are
+    # not_evaluated until synthesis actually runs.
+    positions_evaluation: str = "not_evaluated"
+    disagreements_evaluation: str = "not_evaluated"
+    unclassified: list[dict] = []
+    delta_report: dict[str, Any] = build_delta_report(
+        registry, verified_challenges)
 
     if not openings:
         transcript.append(
@@ -669,11 +1523,18 @@ def run_multi_model_meeting(
         # same frozen opening registry (one cross-examination round,
         # not an open conversation).
         frozen_ids = registry.ids()
+        response_telemetry = _telemetry_block(
+            phase="response", max_generations=budget.max_contributions,
+            completed=len(openings), allocated=len(present),
+            reserved={"Revision slots": "up to 5", "Synthesis slots": "1"})
+        transcript.append("note", "Reynard (convener)", response_telemetry)
         response_prompt = (
             packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
+            + "\n\n" + _CONTRIBUTION_DISCIPLINE
             + "\n\n" + registry.render()
             + "\n\n" + _RESPONSE_INSTRUCTION
             + "\n\n" + _LANGUAGE_LINE
+            + "\n\n" + response_telemetry
         )
         for seat in seats:
             if seat.participant is None:
@@ -683,7 +1544,7 @@ def run_multi_model_meeting(
         response_jobs = _generate_jobs("response", response_prompt,
                                        budget.max_response_prompt_chars, present)
         response_results = _run_phase_parallel(response_jobs, budget)
-        _record_phase("response", response_results, frozen_ids=frozen_ids)
+        responses = _record_phase("response", response_results, frozen_ids=frozen_ids)
 
         # -- Phase 3: optional revision. Invited = originators of
         # claims cited with an objection or evidence request.
@@ -702,18 +1563,26 @@ def run_multi_model_meeting(
         # Stable order, not invitation order.
         invited.sort(key=lambda s: order.index(s.name))
         if invited:
+            revision_telemetry = _telemetry_block(
+                phase="revision", max_generations=budget.max_contributions,
+                completed=len(openings) + len(responses), allocated=len(invited),
+                reserved={"Synthesis slots": "1"})
+            transcript.append("note", "Reynard (convener)", revision_telemetry)
             revision_prompt = (
                 packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
+                + "\n\n" + _CONTRIBUTION_DISCIPLINE
                 + "\n\n" + registry.render()
                 + "\n\n" + _FOLLOWUP_INSTRUCTION
                 + "\n\n" + _LANGUAGE_LINE
+                + "\n\n" + revision_telemetry
             )
             revision_frozen = registry.ids()
             revision_jobs = _generate_jobs(
                 "revision", revision_prompt,
                 budget.max_response_prompt_chars, invited)
             revision_results = _run_phase_parallel(revision_jobs, budget)
-            # Follow-ups register with relationship links, not plain claims.
+            # Follow-ups register with per-span relationship links (C3,
+            # C4), not one contribution-wide link.
             rev_generated: list[tuple[str, str]] = []
             generation_timestamps.setdefault("revision", {})
             for name, text, error, completed_ts in revision_results:
@@ -730,33 +1599,35 @@ def run_multi_model_meeting(
                     continue
                 transcript.append("contribution", name, text or "")
                 rev_generated.append((name, text or ""))
-                cited = _find_citations(text or "")
-                valid = [c for c in cited if c in revision_frozen]
-                dead = [c for c in cited if c not in revision_frozen]
-                moves = _stated_moves(text or "")
+                analysis = _analyze_contribution(
+                    text or "", author=name, registry=registry,
+                    frozen_ids=revision_frozen)
+                valid = analysis["cited_claim_ids"]
+                dead = analysis["dead_citations"]
+                moves = analysis["stated_moves"]
                 if dead:
                     transcript.append(
                         "note", name,
                         f"Dead citation: {', '.join(dead)} cited by {name} "
                         "does not exist; it counts for nothing.")
-                rel_match = _RELATIONSHIP_RE.search(text or "")
-                relationship = rel_match.group(1).lower() if rel_match else "unstated"
-                if relationship == "unstated":
+                if analysis["relationship"] == "unstated":
                     transcript.append(
                         "note", name,
                         f"No relationship stated in {name}'s follow-up; "
                         "recorded as unstated.")
-                own_ids = [c for c in valid
-                           if registry.by_id(c) is not None
-                           and registry.by_id(c).participant == name]
-                supersedes = own_ids[0] if relationship == "revised" and own_ids else None
-                withdraws = own_ids[0] if relationship == "withdrawn" and own_ids else None
-                registered = registry.register(
-                    name, "revision", text or "", relationship=relationship,
-                    relates_to=valid, supersedes=supersedes, withdraws=withdraws)
+                links = _revision_links(analysis, name, registry)
+                registered = registry.register_spans(
+                    name, "revision", analysis["spans"], links)
+                # Authorial disposition (C4): only the author's own
+                # revision changes the original claim, first wins.
+                _apply_dispositions(registry, registered, links)
+                if registry.last_disregarded_model_numbers:
+                    transcript.append(
+                        "note", name,
+                        "model-written number disregarded; system ID assigned "
+                        f"(model numbers: {', '.join(registry.last_disregarded_model_numbers)}).")
                 listing = "\n".join(
-                    f"{c.id} [{c.participant}"
-                    f"{', ' + c.status if c.status else ''}]: {c.text}"
+                    f"{c.id} [{c.participant}, {c.status}]: {c.text}"
                     for c in registered
                 )
                 transcript.append(
@@ -767,13 +1638,23 @@ def run_multi_model_meeting(
                     transcript.append(
                         "note", name,
                         f"No numbered claims registered from {name}'s revision; "
-                        "recorded with zero claims.")
+                        "recorded with zero claims. Reason: no parseable "
+                        "claim boundaries found.")
+                move_targeted = _move_targeted(analysis, name, registry)
+                cited_other = bool(analysis["other_citations"])
                 interactions.append({
                     "participant": name, "phase": "revision",
                     "cited_claim_ids": valid, "dead_citations": dead,
+                    "self_citations": analysis["self_citations"],
+                    "other_author_citations": analysis["other_citations"],
                     "stated_moves": moves,
-                    "addressable": bool(valid and moves),
-                    "relationship": relationship,
+                    "cited_other_author": cited_other,
+                    "move_targeted": move_targeted,
+                    "addressable": cited_other and move_targeted,
+                    "substantive_engagement": "unassessed",
+                    "classification": analysis["classification"],
+                    "relationship": analysis["relationship"],
+                    "relationship_target": analysis["relationship_target"],
                 })
                 _log_usage(store, meeting_id=meeting_id, participant=name,
                            provider=seat.provider_id,
@@ -782,32 +1663,26 @@ def run_multi_model_meeting(
                            outcome="generated", phase="revision",
                            cited_claim_ids=valid, token_usage="unavailable")
 
-        # Unresolved objections: objection/evidence-request citations
-        # no follow-up related to.
-        related: set[str] = set()
-        for inter in interactions:
-            if inter["phase"] == "revision":
-                related.update(inter["cited_claim_ids"])
-        for inter in interactions:
-            if inter["phase"] != "response":
-                continue
-            if not any(m in _OBJECTION_MOVES for m in inter["stated_moves"]):
-                continue
-            for cid in inter["cited_claim_ids"]:
-                if cid in related:
-                    continue
-                claim = registry.by_id(cid)
-                if claim is None:
-                    continue
-                if not any(u["claim_id"] == cid for u in unresolved_objections):
-                    unresolved_objections.append({
-                        "claim_id": cid, "originator": claim.participant,
-                        "cited_by": inter["participant"],
-                        "moves": [m for m in inter["stated_moves"]
-                                  if m in _OBJECTION_MOVES],
-                    })
+        # Verified, claim-specific objections (C5) and epistemic
+        # assessments (C4), computed AFTER the revision phase so
+        # responded_to can be established mechanically. Unclassified
+        # interactions are never promoted into objections — they
+        # stay visible in the interactions record and as delta
+        # candidates requiring review.
+        revision_claims = [c for c in registry.claims if c.phase == "revision"]
+        unresolved_objections = compute_unresolved_objections(
+            verified_challenges, registry, revision_claims)
+        compute_epistemic_assessments(
+            verified_challenges, verified_supports, registry)
+        unclassified = [i for i in interactions
+                        if i.get("classification") == "unclassified"]
+        delta_report = build_delta_report(
+            registry, verified_challenges,
+            unclassified_interactions=unclassified)
 
         # -- Phase 4: synthesis (test parameter: GPT, design §5).
+        # Input is the bounded state packet (C9), never the full
+        # transcript; the transcript file is still written complete.
         synth_seat = next((s for s in seats if s.name == SYNTHESIZER_NAME), None)
         if synth_seat is None or synth_seat.participant is None:
             synthesis_failure = (
@@ -815,12 +1690,14 @@ def run_multi_model_meeting(
             transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
             ok = False
         else:
-            synthesis_prompt = (
-                packet.render_prompt() + "\n\n" + registry.render()
-                + "\n\nFull transcript (verbatim):\n"
-                + _render_transcript(transcript)
-                + "\n\n" + _SYNTHESIS_INSTRUCTION
-            )
+            state = build_synthesis_state(
+                packet, registry, unresolved_objections,
+                delta_report["revision_chains"],
+                cap_chars=budget.max_response_prompt_chars)
+            synthesis_telemetry = _telemetry_block(
+                phase="synthesis", max_generations=budget.max_contributions,
+                completed=attempts, allocated=1, reserved={})
+            transcript.append("note", "Reynard (convener)", synthesis_telemetry)
             blocked = _budget_blocked()
             if blocked is not None:
                 synthesis_failure = blocked
@@ -829,21 +1706,18 @@ def run_multi_model_meeting(
                              "reason": blocked,
                              "attributed_to": SYNTHESIZER_NAME}
                 ok = False
-            elif len(synthesis_prompt) > budget.max_response_prompt_chars:
+            elif state["prompt"] is None:
                 # Never silently truncate: the complete transcript is
                 # preserved in the transcript file regardless, and the
                 # artifact says INCOMPLETE out loud.
-                synthesis_failure = (
-                    f"budget_exceeded: synthesis input of "
-                    f"{len(synthesis_prompt)} chars exceeds "
-                    f"cap={budget.max_response_prompt_chars}; no synthesis "
-                    "attempted and nothing was truncated to fit")
+                synthesis_failure = state["reason"]
                 transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
                 synthesis = {"status": "INCOMPLETE", "text": None,
                              "reason": synthesis_failure,
                              "attributed_to": SYNTHESIZER_NAME}
                 ok = False
             else:
+                synthesis_prompt = state["prompt"] + "\n\n" + synthesis_telemetry
                 attempts += 1
                 try:
                     synth_text = synth_seat.participant.generate(
@@ -858,6 +1732,15 @@ def run_multi_model_meeting(
                             "Synthesis did not list positions/disagreements in "
                             "parseable form; positions and disagreements are "
                             "empty, not inferred.")
+                        positions_evaluation = "unparseable"
+                        disagreements_evaluation = "unparseable"
+                    else:
+                        positions_evaluation = (
+                            "evaluated_with_results" if positions
+                            else "evaluated_empty")
+                        disagreements_evaluation = (
+                            "evaluated_with_results" if disagreements
+                            else "evaluated_empty")
                     synthesis = {
                         "status": "complete",
                         "text": synth_text,
@@ -882,13 +1765,21 @@ def run_multi_model_meeting(
                     transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
                     synthesis = None
                     ok = False
+        # Final delta report with synthesis elements (§4).
+        delta_report = build_delta_report(
+            registry, verified_challenges,
+            synthesis_elements=positions + disagreements,
+            unclassified_interactions=unclassified)
 
     artifact = build_draft_artifact_r2(
         meeting_id, packet, transcript, seats, registry,
         interactions=interactions,
         synthesis=synthesis, synthesis_failure=synthesis_failure,
         positions=positions, disagreements=disagreements,
+        positions_evaluation=positions_evaluation,
+        disagreements_evaluation=disagreements_evaluation,
         unresolved_objections=unresolved_objections,
+        delta_report=delta_report,
         generation_timestamps=generation_timestamps,
     )
     t_path = store / f"meeting_{meeting_id}.transcript.json"
@@ -896,3 +1787,121 @@ def run_multi_model_meeting(
     _write_json(t_path, {"meeting_id": meeting_id, **transcript.to_dict()})
     _write_json(a_path, artifact)
     return MeetingResult(meeting_id, transcript, artifact, ok, t_path, a_path)
+
+
+def replay_r2_transcript(contributions: list[dict[str, str]],
+                         *, meeting_id: str = "replay",
+                         work_item: str = "", question: str = "",
+                         synthesis_failure: str | None = None) -> dict[str, Any]:
+    """Re-run corrected parsing over stored contributions (§6 fixture).
+
+    No live generation. ``contributions`` are dicts with
+    ``participant``, ``phase`` (opening/response/revision), and
+    ``text``, in phase order (openings, then responses, then
+    revisions). Frozen citation sets follow the runner: openings
+    freeze on nothing, responses on the opening registry, revisions
+    on openings + responses. Returns the artifact dict built by
+    :func:`build_draft_artifact_r2` with synthesis INCOMPLETE
+    (positions/disagreements ``not_evaluated``) unless the caller
+    supplies a synthesis failure string, which is carried verbatim.
+    Provenance is empty: a replay has no live participants.
+    """
+    from types import SimpleNamespace
+
+    registry = ClaimRegistry()
+    transcript = Transcript()
+    interactions: list[dict[str, Any]] = []
+    verified_challenges: list[dict] = []
+    verified_supports: list[dict] = []
+    frozen_ids: set[str] = set()
+    seen_phase: str | None = None
+    for contrib in contributions:
+        name = contrib["participant"]
+        phase = contrib["phase"]
+        text = contrib["text"]
+        if phase != seen_phase:
+            if phase in ("response", "revision"):
+                frozen_ids = registry.ids()
+            elif phase == "opening":
+                frozen_ids = set()
+            seen_phase = phase
+        transcript.append("contribution", name, text)
+        analysis = _analyze_contribution(text, author=name,
+                                         registry=registry,
+                                         frozen_ids=frozen_ids)
+        if phase == "revision":
+            links = _revision_links(analysis, name, registry)
+            registered = registry.register_spans(
+                name, "revision", analysis["spans"], links)
+            _apply_dispositions(registry, registered, links)
+        else:
+            registered = registry.register_spans(
+                name, phase, analysis["spans"])
+        if registry.last_disregarded_model_numbers:
+            transcript.append(
+                "note", name,
+                "model-written number disregarded; system ID assigned "
+                f"(model numbers: {', '.join(registry.last_disregarded_model_numbers)}).")
+        listing = "\n".join(
+            f"{c.id} [{c.participant}, {c.status}]: {c.text}"
+            for c in registered
+        )
+        transcript.append(
+            "claims", name,
+            "Registered claims:\n" + listing if registered
+            else "Registered claims: none.")
+        if not registered:
+            transcript.append(
+                "note", name,
+                f"No numbered claims registered from {name}'s {phase}; "
+                "recorded with zero claims. Reason: no parseable "
+                "claim boundaries found.")
+        if phase == "response":
+            challenges, supports = _verified_targets_from_spans(
+                analysis, registered, name, registry)
+            verified_challenges.extend(challenges)
+            verified_supports.extend(supports)
+        move_targeted = _move_targeted(analysis, name, registry)
+        cited_other = bool(analysis["other_citations"])
+        entry: dict[str, Any] = {
+            "participant": name, "phase": phase,
+            "cited_claim_ids": analysis["cited_claim_ids"],
+            "dead_citations": analysis["dead_citations"],
+            "self_citations": analysis["self_citations"],
+            "other_author_citations": analysis["other_citations"],
+            "stated_moves": analysis["stated_moves"],
+            "cited_other_author": cited_other,
+            "move_targeted": move_targeted,
+            "addressable": cited_other and move_targeted,
+            "substantive_engagement": "unassessed",
+            "classification": analysis["classification"],
+        }
+        if phase == "revision":
+            entry["relationship"] = analysis["relationship"]
+            entry["relationship_target"] = analysis["relationship_target"]
+        interactions.append(entry)
+    revision_claims = [c for c in registry.claims if c.phase == "revision"]
+    unresolved_objections = compute_unresolved_objections(
+        verified_challenges, registry, revision_claims)
+    compute_epistemic_assessments(
+        verified_challenges, verified_supports, registry)
+    unclassified = [i for i in interactions
+                    if i.get("classification") == "unclassified"]
+    delta_report = build_delta_report(
+        registry, verified_challenges,
+        unclassified_interactions=unclassified)
+    synthesis = {"status": "INCOMPLETE", "text": None,
+                 "reason": synthesis_failure,
+                 "attributed_to": SYNTHESIZER_NAME}
+    packet = SimpleNamespace(work_item=work_item, question=question)
+    return build_draft_artifact_r2(
+        meeting_id, packet, transcript, [], registry,
+        interactions=interactions,
+        synthesis=synthesis, synthesis_failure=synthesis_failure,
+        positions=[], disagreements=[],
+        positions_evaluation="not_evaluated",
+        disagreements_evaluation="not_evaluated",
+        unresolved_objections=unresolved_objections,
+        delta_report=delta_report,
+        generation_timestamps={},
+    )

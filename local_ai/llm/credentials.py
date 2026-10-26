@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from local_ai.llm.execution_principal import ExecutionPrincipal
 
-CredentialSource = Literal["none", "system_env", "env", "settings", "account_storage"]
+CredentialSource = Literal["none", "system_env", "env", "settings", "account_storage", "undecryptable"]
 
 # Authenticated account: same resolution order as OpenAI (env first, then Settings). Anonymous skips env (Option B).
 _ACCOUNT_CLOUD_ENV_KEYS: dict[str, tuple[str, ...]] = {
@@ -72,6 +72,8 @@ def resolve_cloud_api_key(principal: ExecutionPrincipal, provider_id: str) -> tu
         from local_ai.execution_policy.openai_credentials import resolve_openai_api_key_for_principal
 
         key, src = resolve_openai_api_key_for_principal(principal)
+        if src == "undecryptable":
+            return None, "undecryptable"
         if not key:
             return None, "none"
         if src == "env":
@@ -95,4 +97,6 @@ def resolve_cloud_api_key(principal: ExecutionPrincipal, provider_id: str) -> tu
     raw = St.get_decrypted_llm_api_key(uid, pid)
     if raw and str(raw).strip():
         return str(raw).strip(), "account_storage"
+    if St.llm_credential_row_exists(uid, pid):
+        return None, "undecryptable"
     return None, "none"

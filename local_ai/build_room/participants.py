@@ -57,5 +57,11 @@ def resolve_openai_participant(
     principal = principal or system_principal()
     key, src = resolve_cloud_api_key(principal, "openai")
     if not key or not key.strip():
+        if str(src) == "undecryptable":
+            return (
+                None,
+                "present but undecryptable: a saved openai key exists for this principal "
+                "but cannot be decrypted with the current settings key (re-save the key in Settings)",
+            )
         return None, "absent: no openai api key present for this principal"
     return OpenAIParticipant(key.strip(), model=model, key_source=str(src)), ""

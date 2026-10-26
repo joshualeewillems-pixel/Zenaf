@@ -81,6 +81,11 @@ def build_draft_artifact_r2(
     disagreements: list[dict] | None = None,
     positions_evaluation: str | None = None,
     disagreements_evaluation: str | None = None,
+    recommendations: list[dict] | None = None,
+    limitations: list[dict] | None = None,
+    recommendations_evaluation: str | None = None,
+    limitations_evaluation: str | None = None,
+    rejected_entries: list[dict] | None = None,
     unresolved_objections: list[dict] | None = None,
     delta_report: dict[str, Any] | None = None,
     generation_timestamps: dict[str, dict[str, float]] | None = None,
@@ -99,6 +104,15 @@ def build_draft_artifact_r2(
     never an empty list masquerading as a finding. Unresolved
     objections are mechanical pre-synthesis derivations, labeled as
     such, never synthesis results.
+    Legibility B adds the synthesis contract fields: recommendations
+    and limitations with their own evaluation fields (same
+    vocabulary: synthesized_complete / synthesized_partial /
+    unparseable / not_evaluated, plus the legacy evaluated_* values
+    for section-parsed output), and rejected_entries — contract
+    entries excluded during per-entry salvage, each with field,
+    index, and reason. Structured synthesis fields are the
+    synthesizer's interpretation, never mechanical evidence, and
+    never override registry mechanics.
     """
     provenance = []
     for seat in seats:
@@ -120,6 +134,10 @@ def build_draft_artifact_r2(
         disagreements_out = None
         positions_evaluation_out = "not_evaluated"
         disagreements_evaluation_out = "not_evaluated"
+        recommendations_out = None
+        limitations_out = None
+        recommendations_evaluation_out = "not_evaluated"
+        limitations_evaluation_out = "not_evaluated"
     else:
         positions_out = positions if positions is not None else []
         disagreements_out = disagreements if disagreements is not None else []
@@ -127,6 +145,12 @@ def build_draft_artifact_r2(
             "evaluated_with_results" if positions_out else "evaluated_empty")
         disagreements_evaluation_out = disagreements_evaluation or (
             "evaluated_with_results" if disagreements_out else "evaluated_empty")
+        recommendations_out = recommendations if recommendations is not None else []
+        limitations_out = limitations if limitations is not None else []
+        recommendations_evaluation_out = recommendations_evaluation or (
+            "evaluated_with_results" if recommendations_out else "evaluated_empty")
+        limitations_evaluation_out = limitations_evaluation or (
+            "evaluated_with_results" if limitations_out else "evaluated_empty")
     return {
         "status": "DRAFT_EXPERIMENTAL",
         "is_review_item": False,
@@ -143,6 +167,11 @@ def build_draft_artifact_r2(
         "positions_evaluation": positions_evaluation_out,
         "disagreements": disagreements_out,
         "disagreements_evaluation": disagreements_evaluation_out,
+        "recommendations": recommendations_out,
+        "recommendations_evaluation": recommendations_evaluation_out,
+        "limitations": limitations_out,
+        "limitations_evaluation": limitations_evaluation_out,
+        "rejected_entries": rejected_entries or [],
         "unresolved_objections": unresolved_objections or [],
         "unresolved_objections_evaluation": "mechanical_pre_synthesis",
         "delta_report": delta_report or {

@@ -374,6 +374,17 @@ except Exception as e:
     _router_load_errors.append(f"steward: {e}")
 
 
+# Build-Council Room runner: POST /build-room/meetings — owner-only
+# invocation of a single-model (R1) meeting for the owner account
+# (the saved OpenAI key lives under the caller principal).
+try:
+    from api.routes.build_room_routes import router as build_room_router
+    app.include_router(build_room_router)
+except Exception as e:
+    print(f"Build-room routes not loaded: {e}")
+    _router_load_errors.append(f"build-room: {e}")
+
+
 # --- Router registration check (owed follow-up to PR #34) ---
 # A broken import inside any router module used to be swallowed by the
 # try/except blocks above, silently killing the whole router (the dangling

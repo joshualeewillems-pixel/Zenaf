@@ -40,6 +40,7 @@ class EvidencePacket:
     excerpts: tuple[str, ...] = ()
     constraints: tuple[str, ...] = ()
     source_refs: tuple[str, ...] = ()
+    context: tuple[str, ...] = ()
 
     def render_prompt(self) -> str:
         parts = [f"Work item:\n{self.work_item}", f"Question:\n{self.question}"]
@@ -49,10 +50,20 @@ class EvidencePacket:
             parts.append("Constraints:\n" + "\n".join(f"- {c}" for c in self.constraints))
         if self.source_refs:
             parts.append("Source references:\n" + "\n".join(f"- {r}" for r in self.source_refs))
+        if self.context:
+            parts.append("Architectural context:\n" + "\n---\n".join(self.context))
         parts.append(
-            "Respond as a single deliberation contribution. State what is "
-            "observed from the packet, what is inferred, and what you propose, "
-            "keeping those distinct."
+            "Respond as a single deliberation contribution, keeping these "
+            "distinct:\n"
+            "- Observed: only statements directly supported by the supplied "
+            "evidence above.\n"
+            "- Inferred: conclusions reached by reasoning from identified "
+            "evidence above.\n"
+            "- Proposed: a suggested intervention.\n"
+            "- Speculative: an exploratory possibility.\n"
+            "- Contested: an unresolved objection, not merely uncertainty.\n"
+            "If no observations are warranted, omit the Observed category "
+            "rather than filling it."
         )
         return "\n\n".join(parts)
 
@@ -120,7 +131,7 @@ def run_single_model_meeting(
     store.mkdir(parents=True, exist_ok=True)
     meeting_id = uuid.uuid4().hex[:12]
     transcript = Transcript()
-    transcript.append("convene", "Reynard (Firebrand, convener)",
+    transcript.append("convene", "Reynard (convener)",
                       f"Work item: {packet.work_item}\nQuestion: {packet.question}")
 
     if participant is None:

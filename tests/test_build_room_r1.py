@@ -146,3 +146,46 @@ def test_participant_repr_hides_key(monkeypatch):
     assert FAKE_KEY not in repr(participant)
     present, source = part_mod.check_openai_key_present()
     assert present is True and source == "system_env"
+
+
+def test_packet_context_section_rendered_and_omitted_when_empty():
+    packet = EvidencePacket(
+        work_item="Test work item",
+        question="Is this sound?",
+        context=("The room deliberates and recommends; it never authorizes.",),
+    )
+    rendered = packet.render_prompt()
+    assert "Architectural context:" in rendered
+    assert "The room deliberates and recommends; it never authorizes." in rendered
+    assert "Architectural context:" not in _packet().render_prompt()
+
+
+def test_epistemic_definitions_and_omit_rule_in_prompt():
+    rendered = _packet().render_prompt()
+    for needle in (
+        "directly supported by the supplied evidence",
+        "reasoning from identified evidence",
+        "a suggested intervention",
+        "an exploratory possibility",
+        "an unresolved objection, not merely uncertainty",
+        "omit the Observed category",
+    ):
+        assert needle in rendered
+    # No assigned roles are asserted in the prompt.
+    assert "Weaver" not in rendered
+    assert "Firebrand" not in rendered
+
+
+def test_artifact_carries_claims_note(monkeypatch, tmp_path):
+    monkeypatch.setattr(part_mod, "resolve_cloud_api_key", _fake_resolve_ok)
+
+    def fake_generate(api_key, prompt, *, model=None, timeout=120):
+        return "Canned deliberation: observed X, proposed Y."
+
+    monkeypatch.setattr(part_mod._openai, "generate", fake_generate)
+    result = run_single_model_meeting(_packet(), store_dir=tmp_path)
+    artifact = json.loads(_read(result.artifact_path))
+    note = artifact["claims_note"]
+    assert "model-authored" in note
+    assert "experimental" in note
+    assert "not verified" in note

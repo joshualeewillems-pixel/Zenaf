@@ -20,6 +20,11 @@ AUTHORIZATION_TEXT = (
     "any approval of the design elements discussed here."
 )
 
+CLAIMS_NOTE = (
+    "Substantive claims in this artifact are model-authored and "
+    "experimental, not verified metadata."
+)
+
 
 def build_draft_artifact(
     meeting_id: str,
@@ -44,6 +49,7 @@ def build_draft_artifact(
         "is_review_item": False,
         "experimental_area": True,
         "authorization": AUTHORIZATION_TEXT,
+        "claims_note": CLAIMS_NOTE,
         "meeting_id": meeting_id,
         "work_item": packet.work_item,
         "question": packet.question,

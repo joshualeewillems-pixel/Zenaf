@@ -188,3 +188,28 @@ def test_caller_account_principal_is_used(app, tmp_path, monkeypatch):
     assert principal.scope == "account"
     assert seen["store_dir"] == str(tmp_path / "store")
     assert seen["work_item"] == "Test work item"
+
+
+def test_endpoint_passes_context_through(app, tmp_path, monkeypatch):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    seen: dict = {}
+
+    def fake_run(packet, *, store_dir, budget=None, principal=None, participant=None):
+        seen["context"] = packet.context
+        return MeetingResult(
+            meeting_id="m1",
+            transcript=Transcript(),
+            artifact={"status": "DRAFT_EXPERIMENTAL"},
+            ok=True,
+            transcript_path=tmp_path / "t.json",
+            artifact_path=tmp_path / "a.json",
+        )
+
+    monkeypatch.setattr(br_routes, "run_single_model_meeting", fake_run)
+    payload = _body()
+    payload["context"] = ["The room deliberates and recommends; it never authorizes."]
+    status, body = _call_post(app, "/build-room/meetings", payload)
+    assert status == 200, body
+    assert seen["context"] == (
+        "The room deliberates and recommends; it never authorizes.",
+    )

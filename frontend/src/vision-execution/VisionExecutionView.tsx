@@ -74,7 +74,7 @@ function fallbackMeetingExternalEngineOptions(): { value: string; label: string 
     { value: 'openai:gpt-4o-mini', label: 'OpenAI — gpt-4o-mini' },
     { value: 'openai:gpt-4.1-mini', label: 'OpenAI — gpt-4.1-mini' },
     { value: 'anthropic:claude-haiku-4-5', label: 'Anthropic — claude-haiku-4-5' },
-    { value: 'google:gemini-2.5-flash', label: 'Google (Gemini) — gemini-2.5-flash' },
+    { value: 'google:gemini-3.8-flash', label: 'Google (Gemini) — gemini-3.8-flash' },
     { value: 'xai:grok-4-1-fast-reasoning', label: 'xAI — grok-4-1-fast-reasoning' },
   ]
   const firstVal = out[0]?.value

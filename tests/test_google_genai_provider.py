@@ -9,15 +9,15 @@ import pytest
 def test_default_model_is_current_generation() -> None:
     from local_ai.providers import google_genai as g
 
-    assert g.DEFAULT_MODEL == "gemini-2.5-flash"
+    assert g.DEFAULT_MODEL == "gemini-3.8-flash"
     assert "gemini-1.5" not in g.DEFAULT_MODEL
 
 
 def test_normalize_model_id_strips_models_prefix() -> None:
     from local_ai.providers.google_genai import _normalize_model_id
 
-    assert _normalize_model_id("models/gemini-2.5-flash") == "gemini-2.5-flash"
-    assert _normalize_model_id(None) == "gemini-2.5-flash"
+    assert _normalize_model_id("models/gemini-3.8-flash") == "gemini-3.8-flash"
+    assert _normalize_model_id(None) == "gemini-3.8-flash"
 
 
 def test_format_gemini_http_error_surfaces_not_found() -> None:
@@ -50,6 +50,6 @@ def test_test_connection_logs_and_returns_false_on_http_error(mock_post: MagicMo
     }
     mock_post.return_value.text = ""
 
-    ok, err = g.test_connection("fake-key", model="gemini-2.5-flash")
+    ok, err = g.test_connection("fake-key", model="gemini-3.8-flash")
     assert ok is False
     assert err

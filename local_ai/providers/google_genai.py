@@ -5,9 +5,7 @@ Uses the REST endpoint ``POST .../v1beta/models/{model}:generateContent`` (same 
 Default model id is centralized in ``DEFAULT_MODEL`` — update when Google deprecates names.
 
 Supported text defaults (verify in Google AI Studio / Cloud console):
-- gemini-2.5-flash (default)
-- gemini-2.5-flash-lite
-- gemini-2.5-pro
+- gemini-3.8-flash (default; Google's named replacement for the retired gemini-2.5-flash)
 """
 
 from __future__ import annotations
@@ -23,14 +21,12 @@ API_VERSION = "v1beta"
 BASE = f"https://generativelanguage.googleapis.com/{API_VERSION}"
 
 # Default for Settings test + resolver when profile model is empty.
-# Was gemini-1.5-flash (removed from many API versions — use current generation).
-DEFAULT_MODEL = "gemini-2.5-flash"
+# Was gemini-2.5-flash (retired by Google for new keys/projects — Google's error names gemini-3.8-flash as the replacement).
+DEFAULT_MODEL = "gemini-3.8-flash"
 
 # Optional aliases for docs / UI hints only (not enforced here).
 SUGGESTED_TEXT_MODELS = (
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.5-pro",
+    "gemini-3.8-flash",
 )
 
 

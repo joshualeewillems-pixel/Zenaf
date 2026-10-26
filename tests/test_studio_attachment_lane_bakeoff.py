@@ -101,7 +101,7 @@ def test_provider_default_models_endpoint(admin_client):
     r = admin_client.get("/studio/provider-default-models")
     assert r.status_code == 200
     j = r.json()
-    assert j.get("google") == "gemini-2.5-flash"
+    assert j.get("google") == "gemini-3.8-flash"
     assert j.get("xai") == "grok-4-1-fast-reasoning"
     assert "source" in j
 
@@ -133,7 +133,7 @@ def test_bakeoff_suggested_model_on_generation_404(admin_client, monkeypatch):
     assert r.status_code == 200
     row = r.json()["results"][0]
     assert row["ok"] is False
-    assert row.get("suggested_default_model") == "gemini-2.5-flash"
+    assert row.get("suggested_default_model") == "gemini-3.8-flash"
 
 
 def test_bakeoff_scoring_mocked_judge(admin_client, monkeypatch):

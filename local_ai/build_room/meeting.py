@@ -237,6 +237,17 @@ _STATUS_BOLD_PREFIX_RE = re.compile(
     r"^\*\*\s*(Observed|Inferred|Proposed|Speculative|Contested)\s*:\s*\*\*",
     re.IGNORECASE,
 )
+# Same bold prefix with the colon outside the bold markers
+# ("**Observed**:") — the status word is bolded either way.
+_STATUS_BOLD_COLON_OUT_RE = re.compile(
+    r"^\*\*\s*(Observed|Inferred|Proposed|Speculative|Contested)\s*\*\*\s*:\s*",
+    re.IGNORECASE,
+)
+# Same bracket prefix wrapped in bold ("**[Inferred]**").
+_STATUS_BOLD_BRACKET_RE = re.compile(
+    r"^\*\*\s*\[\s*(Observed|Inferred|Proposed|Speculative|Contested)\s*\]\s*\*\*",
+    re.IGNORECASE,
+)
 _STATUS_BRACKET_RE = re.compile(
     r"^\[\s*(Observed|Inferred|Proposed|Speculative|Contested)\s*\]",
     re.IGNORECASE,
@@ -562,12 +573,15 @@ def _claim_status(first_line: str, inherited: str = "") -> str:
     """Epistemic status for a claim's first line (C2).
 
     Recognized formats, in order: bare prefix (``Observed:``), bold
-    prefix (``**Observed:**``), bracket prefix (``[Observed]``), then
-    the section-heading inheritance. Anything else is explicitly
-    ``"unknown"`` — never blank.
+    prefix (``**Observed:**``, colon inside or outside the bold
+    markers), bracket prefix (``[Observed]``, optionally bold-wrapped
+    as ``**[Observed]**``), then the section-heading inheritance.
+    Anything else is explicitly ``"unknown"`` — never blank.
     """
     line = first_line.strip()
-    for rx in (_STATUS_PREFIX_RE, _STATUS_BOLD_PREFIX_RE, _STATUS_BRACKET_RE):
+    for rx in (_STATUS_PREFIX_RE, _STATUS_BOLD_PREFIX_RE,
+               _STATUS_BOLD_COLON_OUT_RE, _STATUS_BOLD_BRACKET_RE,
+               _STATUS_BRACKET_RE):
         m = rx.match(line)
         if m:
             return m.group(1).capitalize()

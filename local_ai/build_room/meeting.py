@@ -12,7 +12,9 @@ and no generation — never a silent overrun.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
 import time
 import uuid
@@ -84,6 +86,57 @@ class Budget:
     # registry, so they get a separate, higher cap (provisional;
     # actual usage is measured in the acceptance test).
     max_response_prompt_chars: int = 40000
+
+
+def current_code_version() -> dict[str, Any]:
+    """Identify the deployed code for a synthesis-gate record, honestly.
+
+    The shipped image records no commit: the Dockerfile copies
+    ``api/``, ``local_ai/`` and ``config/`` without ``.git``, and
+    the API version (``0.1.0``) is static — it does not identify a
+    deploy. The only commit signal available from inside the
+    artifact path is the optional ``ZENAF_CODE_VERSION``
+    environment variable, which no deploy sets today. Until a
+    deploy sets it, ``commit`` records as None with source
+    ``"unavailable"`` — a stated gap, never a fabricated value.
+    Recording the static API version here would mislead (it is
+    identical across deploys), so it is deliberately not recorded
+    as a code version.
+    """
+    commit = os.environ.get("ZENAF_CODE_VERSION") or None
+    return {
+        "commit": commit,
+        "source": ("environment:ZENAF_CODE_VERSION" if commit is not None
+                   else "unavailable"),
+    }
+
+
+def synthesis_gate_record(
+        *, gate: str, cap_chars: int | None, cap_tokens: int | None,
+        total_chars: int | None, total_tokens: int | None,
+        prompt_sha256: str | None, admitted: bool,
+        reason: str | None) -> dict[str, Any]:
+    """Build the artifact's synthesis-gate record (Phase C spec §5.5(d)).
+
+    ``gate`` is ``"production_chars"`` or ``"candidate_tokens"``.
+    ``total_tokens`` is the exact assembled-prompt count when
+    measured, else None (never an estimate). ``code_version`` is
+    whatever :func:`current_code_version` can honestly report.
+    The record describes the gate; it never changes the gate
+    decision, and it is recorded on refusal exactly as on
+    admission so a refused synthesis stays visible.
+    """
+    return {
+        "gate": gate,
+        "cap_chars": cap_chars,
+        "cap_tokens": cap_tokens,
+        "total_chars": total_chars,
+        "total_tokens": total_tokens,
+        "prompt_sha256": prompt_sha256,
+        "admitted": admitted,
+        "reason": reason,
+        "code_version": current_code_version(),
+    }
 
 
 @dataclass
@@ -1768,6 +1821,7 @@ def run_multi_model_meeting(
     budget: Budget | None = None,
     principal: ExecutionPrincipal | None = None,
     seats: list[Seat] | None = None,
+    experimental_candidate_gate: bool = False,
 ) -> MeetingResult:
     """Run one R2 meeting. Never raises for participant/generation
     failure: failures are recorded in the transcript and reflected
@@ -1776,6 +1830,16 @@ def run_multi_model_meeting(
     ``seats`` overrides resolution (tests inject fake participants);
     otherwise all five seats resolve under the caller's principal in
     stable SEAT_SPECS order.
+
+    ``experimental_candidate_gate`` is the Phase C experimental
+    selection (spec §5.5): when True, this meeting's synthesis is
+    gated at 12,500 exact tokens via the B2 candidate machinery
+    instead of the 40,000-character production gate. Default False:
+    ordinary meetings can never accidentally use the candidate gate
+    — selection requires this explicit opt-in, and it changes ONLY
+    the synthesis prompt gate (validation, coverage, latency/cost
+    instrumentation, and the instruction are untouched). It adopts
+    nothing; production default stays 40,000 characters.
     """
     budget = budget or Budget(
         max_contributions=R2_MAX_GENERATIONS,
@@ -1803,7 +1867,11 @@ def run_multi_model_meeting(
         f"Budget: max {budget.max_contributions} generations, "
         f"{budget.timeout_seconds}s per call, openings capped at "
         f"{budget.max_prompt_chars} chars, response/synthesis prompts capped at "
-        f"{budget.max_response_prompt_chars} chars.")
+        f"{budget.max_response_prompt_chars} chars."
+        + (" Synthesis gate: EXPERIMENTAL candidate token gate, 12,500 tokens "
+           "(production default 40,000 chars unchanged; selection explicit "
+           "to this meeting only)."
+           if experimental_candidate_gate else ""))
 
     if seats is None:
         seats = resolve_seat_participants(principal)
@@ -1996,6 +2064,10 @@ def run_multi_model_meeting(
     synthesis_generation_cost: dict[str, Any] | None = None
     synthesis_coverage: dict[str, Any] | None = None
     synthesis_coverage_accepted: bool = False
+    # Synthesis-gate record (Phase C spec §5.5(d)): set when a gate
+    # evaluation runs in Phase 4 (admission or refusal); None means
+    # Phase 4 never ran (e.g. synthesizer absent, no openings).
+    synthesis_gate: dict[str, Any] | None = None
     unclassified: list[dict] = []
     delta_report: dict[str, Any] = build_delta_report(
         registry, verified_challenges)
@@ -2187,13 +2259,93 @@ def run_multi_model_meeting(
             synthesis_telemetry = _telemetry_block(
                 phase="synthesis", max_generations=budget.max_contributions,
                 completed=attempts, allocated=1, reserved={})
-            state = build_synthesis_state(
-                packet, registry, unresolved_objections,
-                delta_report["revision_chains"],
-                cap_chars=budget.max_response_prompt_chars,
-                telemetry=synthesis_telemetry)
             transcript.append("note", "Reynard (convener)", synthesis_telemetry)
             blocked = _budget_blocked()
+            # Gate evaluation (production default, or the explicit
+            # experimental candidate gate): produces either a
+            # synthesis prompt or an honest refusal. Nothing is
+            # truncated to fit in either branch. When the generation
+            # cap already blocks synthesis, no gate runs (the gate
+            # record stays None: no gate was evaluated).
+            synthesis_prompt: str | None = None
+            gate_failure: str | None = None
+            state: dict = {}
+            if blocked is None:
+                if experimental_candidate_gate:
+                    # Lazy import: candidate_cap imports from this
+                    # module (instruction, token counting), so a
+                    # top-level import would be circular.
+                    from local_ai.build_room import candidate_cap
+                    transcript.append(
+                        "note", "Reynard (convener)",
+                        "Experimental candidate token gate selected for "
+                        "this meeting's synthesis (production default "
+                        "40,000 chars unchanged).")
+                    agreement = candidate_cap.verify_model_tokenizer_agreement()
+                    if not agreement["agrees"]:
+                        gate_failure = (
+                            "candidate_gate_unavailable: "
+                            + (agreement["reason"] or
+                               "model/tokenizer disagreement"))
+                        synthesis_gate = synthesis_gate_record(
+                            gate="candidate_tokens",
+                            cap_chars=None,
+                            cap_tokens=candidate_cap.CANDIDATE_SYNTHESIS_PROMPT_TOKENS,
+                            total_chars=None, total_tokens=None,
+                            prompt_sha256=None, admitted=False,
+                            reason=gate_failure)
+                    else:
+                        state = build_synthesis_state(
+                            packet, registry, unresolved_objections,
+                            delta_report["revision_chains"],
+                            cap_chars=candidate_cap.VERIFICATION_BUILD_CHAR_CAP,
+                            telemetry=synthesis_telemetry)
+                        gate = candidate_cap.evaluate_candidate_gate(
+                            state, synthesis_telemetry)
+                        synthesis_gate = synthesis_gate_record(
+                            gate="candidate_tokens",
+                            cap_chars=None,
+                            cap_tokens=gate["cap_tokens"],
+                            total_chars=gate["total_chars"],
+                            total_tokens=gate["total_tokens"],
+                            prompt_sha256=gate["prompt_sha256"],
+                            admitted=gate["admitted"],
+                            reason=gate["reason"])
+                        if gate["admitted"]:
+                            synthesis_prompt = (state["prompt"] + "\n\n"
+                                                + synthesis_telemetry)
+                        else:
+                            gate_failure = (
+                                gate["reason"] or
+                                "candidate gate refused the synthesis prompt")
+                else:
+                    state = build_synthesis_state(
+                        packet, registry, unresolved_objections,
+                        delta_report["revision_chains"],
+                        cap_chars=budget.max_response_prompt_chars,
+                        telemetry=synthesis_telemetry)
+                    if state["prompt"] is None:
+                        gate_failure = state["reason"]
+                        synthesis_gate = synthesis_gate_record(
+                            gate="production_chars",
+                            cap_chars=budget.max_response_prompt_chars,
+                            cap_tokens=None,
+                            total_chars=state.get("total_chars"),
+                            total_tokens=None,
+                            prompt_sha256=None, admitted=False,
+                            reason=gate_failure)
+                    else:
+                        synthesis_prompt = (state["prompt"] + "\n\n"
+                                            + synthesis_telemetry)
+                        synthesis_gate = synthesis_gate_record(
+                            gate="production_chars",
+                            cap_chars=budget.max_response_prompt_chars,
+                            cap_tokens=None,
+                            total_chars=len(synthesis_prompt),
+                            total_tokens=state.get("assembled_tokens"),
+                            prompt_sha256=hashlib.sha256(
+                                synthesis_prompt.encode()).hexdigest(),
+                            admitted=True, reason=None)
             if blocked is not None:
                 synthesis_failure = blocked
                 transcript.append("failure", SYNTHESIZER_NAME, blocked)
@@ -2201,18 +2353,17 @@ def run_multi_model_meeting(
                              "reason": blocked,
                              "attributed_to": SYNTHESIZER_NAME}
                 ok = False
-            elif state["prompt"] is None:
+            elif gate_failure is not None:
                 # Never silently truncate: the complete transcript is
                 # preserved in the transcript file regardless, and the
                 # artifact says INCOMPLETE out loud.
-                synthesis_failure = state["reason"]
+                synthesis_failure = gate_failure
                 transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
                 synthesis = {"status": "INCOMPLETE", "text": None,
                              "reason": synthesis_failure,
                              "attributed_to": SYNTHESIZER_NAME}
                 ok = False
             else:
-                synthesis_prompt = state["prompt"] + "\n\n" + synthesis_telemetry
                 attempts += 1
                 try:
                     # Coverage design §E/§F: one measured call —
@@ -2416,6 +2567,7 @@ def run_multi_model_meeting(
         synthesis_coverage_accepted=synthesis_coverage_accepted,
         synthesis_generation=synthesis_generation,
         synthesis_generation_cost=synthesis_generation_cost,
+        synthesis_gate=synthesis_gate,
     )
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"

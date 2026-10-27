@@ -526,10 +526,12 @@ def test_r2_caller_account_principal_is_used(app, tmp_path, monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: OWNER
     seen: dict = {}
 
-    def fake_run(packet, *, store_dir, budget=None, principal=None, seats=None):
+    def fake_run(packet, *, store_dir, budget=None, principal=None, seats=None,
+                 experimental_candidate_gate=False):
         from local_ai.build_room.meeting import MeetingResult, Transcript
         seen["principal"] = principal
         seen["store_dir"] = str(store_dir)
+        seen["experimental_candidate_gate"] = experimental_candidate_gate
         return MeetingResult(meeting_id="m1", transcript=Transcript(),
                              artifact={"status": "DRAFT_EXPERIMENTAL"}, ok=True,
                              transcript_path=tmp_path / "t.json",
@@ -542,3 +544,5 @@ def test_r2_caller_account_principal_is_used(app, tmp_path, monkeypatch):
     assert principal.account_user_id == OWNER["id"]
     assert principal.scope == "account"
     assert seen["store_dir"] == str(tmp_path / "store")
+    # Default body carries no flag: the route must pass False.
+    assert seen["experimental_candidate_gate"] is False

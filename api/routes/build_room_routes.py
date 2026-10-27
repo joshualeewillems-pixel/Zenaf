@@ -134,9 +134,26 @@ def run_meeting(
     }
 
 
+class RunMeetingR2Body(RunMeetingBody):
+    """Work item + question for one R2 meeting, plus the Phase C
+    experimental gate selection (spec §5.5).
+
+    ``experimental_candidate_gate`` is an explicit opt-in ONLY,
+    on the R2 route alone (the R1 body has no such field, so an
+    R1 meeting cannot select the gate at all). Default False:
+    ordinary meetings always use the 40,000-character production
+    gate. Setting this True selects the 12,500-token candidate
+    gate for THIS meeting's synthesis only; it adopts nothing
+    and is meaningful only for the authorized experimental
+    meeting (owner-only route).
+    """
+
+    experimental_candidate_gate: bool = False
+
+
 @router.post("/meetings/r2")
 def run_meeting_r2(
-    body: RunMeetingBody, current_user: dict = Depends(get_current_owner_user)
+    body: RunMeetingR2Body, current_user: dict = Depends(get_current_owner_user)
 ):
     """Run one R2 multi-participant meeting for the caller.
 
@@ -144,6 +161,9 @@ def run_meeting_r2(
     no-key-values rules as R1. The meeting stays synchronous; no
     async job queue (a follow-up slice only if sync proves too slow).
     The artifact RECOMMENDS only.
+    ``experimental_candidate_gate`` selects the candidate token
+    gate for this meeting's synthesis (Phase C experimental
+    selection); default off means the production character gate.
     """
     uid = current_user["id"]
     principal = authenticated_account_principal(uid)
@@ -156,7 +176,8 @@ def run_meeting_r2(
         context=tuple(body.context),
     )
     result = run_multi_model_meeting(
-        packet, store_dir=get_build_room_store_dir(), principal=principal
+        packet, store_dir=get_build_room_store_dir(), principal=principal,
+        experimental_candidate_gate=body.experimental_candidate_gate,
     )
     return {
         "meeting_id": result.meeting_id,

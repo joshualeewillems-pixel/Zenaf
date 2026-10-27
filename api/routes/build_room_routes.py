@@ -31,6 +31,11 @@ from pydantic import BaseModel, field_validator
 
 from api.routes.auth_routes import get_current_user
 from local_ai.build_room import candidate_cap
+from local_ai.build_room.coverage import artifact_accepted, check_coverage
+from local_ai.build_room.measurement import (
+    compute_generation_cost,
+    measure_generation,
+)
 from local_ai.build_room.harness_fixtures import (
     TELEMETRY,
     fixture_d_state,
@@ -213,6 +218,22 @@ def run_meeting_r2(
 # decision switches it — this route does not switch anything.
 # Zero-contestation is deliberately NOT a route fixture (Tier 1
 # deterministic only): requesting it is refused with 422.
+#
+# Coverage extension (coverage-assurance design, amended 2026-10-26):
+# success responses additionally carry the coverage verdict object
+# (registry-derived demands, both-IDs objection rule, declared
+# consolidation, provenance failures), the coverage_accepted flag
+# (design §C.3 acceptance rule), a server-side generation object
+# (monotonic duration, derived 0.8 × timeout margin threshold),
+# and a generation_cost object (measured tokens when the provider
+# reports usage, exact-tokenizer estimates otherwise, charge null
+# until a verified price table is recorded — prices are never
+# invented). Refusal paths (gate, agreement, absence) carry none
+# of these objects: no synthesis ran, so there is nothing to check
+# and no duration to report. Generation-failure paths carry the
+# generation + cost objects (duration up to failure) but no
+# coverage object. Exactly one generation per request is preserved
+# by the measurement wrapper on every path.
 # ---------------------------------------------------------------------------
 
 HARNESS_FIXTURE_BUILDERS = {
@@ -387,9 +408,15 @@ def _harness_b2_call(fixture_id: str, principal, budget: Budget) -> dict:
             "absence": absence,
             **sizes,
         }
-    try:
-        text = participant.generate(prompt, timeout=budget.timeout_seconds)
-    except Exception as exc:  # generation failure is visible, not a crash
+    # Coverage design §E/§F: one measured call — monotonic duration
+    # around the actual generate call, provider usage when offered,
+    # estimated cost otherwise, never a second call. No verified
+    # price table is recorded in code (prices are never invented),
+    # so production charges stay unassessable until one is recorded
+    # with official provenance + date; tokens are still reported.
+    measured = measure_generation(
+        participant, prompt, timeout=budget.timeout_seconds)
+    if measured["error"] is not None:
         return {
             "fixture_id": fixture_id,
             "ok": False,
@@ -397,12 +424,20 @@ def _harness_b2_call(fixture_id: str, principal, budget: Budget) -> dict:
             "candidate_gate_enabled": True,
             "model_tokenizer_agreement": agreement,
             "candidate_gate": gate,
-            "generation_error": str(exc),
+            "generation_error": measured["error"],
+            "generation": measured["generation"],
+            "generation_cost": compute_generation_cost(
+                prompt, None, None, None),
             **sizes,
         }
+    text = measured["text"]
     structured, evaluations, rejected, block_found = (
         parse_synthesis_contract(text, registry, unresolved,
                                  SYNTHESIZER_NAME))
+    coverage = check_coverage(registry, unresolved, structured)
+    active_empty = not any(
+        c.disposition not in ("revised", "withdrawn")
+        for c in registry.claims)
     return {
         "fixture_id": fixture_id,
         "ok": True,
@@ -420,6 +455,12 @@ def _harness_b2_call(fixture_id: str, principal, budget: Budget) -> dict:
         "block_found": block_found,
         "disclosure_notes": _harness_disclosure_notes(
             evaluations, unresolved, state.get("omitted")),
+        "generation": measured["generation"],
+        "generation_cost": compute_generation_cost(
+            prompt, text, measured["usage"], None),
+        "coverage": coverage,
+        "coverage_accepted": artifact_accepted(
+            evaluations, coverage, active_claims_empty=active_empty),
     }
 
 
@@ -473,19 +514,27 @@ def harness_synthesis_call(
             "absence": absence,
             **sizes,
         }
-    try:
-        text = participant.generate(prompt, timeout=budget.timeout_seconds)
-    except Exception as exc:  # generation failure is visible, not a crash
+    measured = measure_generation(
+        participant, prompt, timeout=budget.timeout_seconds)
+    if measured["error"] is not None:
         return {
             "fixture_id": body.fixture,
             "ok": False,
             "generated": False,
-            "generation_error": str(exc),
+            "generation_error": measured["error"],
+            "generation": measured["generation"],
+            "generation_cost": compute_generation_cost(
+                prompt, None, None, None),
             **sizes,
         }
+    text = measured["text"]
     structured, evaluations, rejected, block_found = (
         parse_synthesis_contract(text, registry, unresolved,
                                  SYNTHESIZER_NAME))
+    coverage = check_coverage(registry, unresolved, structured)
+    active_empty = not any(
+        c.disposition not in ("revised", "withdrawn")
+        for c in registry.claims)
     return {
         "fixture_id": body.fixture,
         "ok": True,
@@ -500,4 +549,10 @@ def harness_synthesis_call(
         "block_found": block_found,
         "disclosure_notes": _harness_disclosure_notes(
             evaluations, unresolved, state.get("omitted")),
+        "generation": measured["generation"],
+        "generation_cost": compute_generation_cost(
+            prompt, text, measured["usage"], None),
+        "coverage": coverage,
+        "coverage_accepted": artifact_accepted(
+            evaluations, coverage, active_claims_empty=active_empty),
     }

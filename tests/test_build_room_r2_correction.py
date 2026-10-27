@@ -26,7 +26,6 @@ from local_ai.build_room.meeting import (
     _revision_links,
     _telemetry_block,
     build_delta_report,
-    build_synthesis_state,
     compute_epistemic_assessments,
     compute_unresolved_objections,
     estimate_tokens,
@@ -271,35 +270,6 @@ def test_c8_telemetry_distinguishes_completed_allocated_reserved():
 
 
 # --- C9: bounded state, mandatory vs optional ------------------------------
-
-def test_c9_mandatory_overflow_reports_incomplete():
-    reg = _register_openings()
-    state = build_synthesis_state(_packet(), reg, [], [], cap_chars=10)
-    assert state["prompt"] is None
-    assert state["reason"].startswith("budget_exceeded")
-    assert "nothing was truncated" in state["reason"]
-
-
-def test_c9_optional_eviction_is_deterministic_and_disclosed():
-    reg = _register_openings()
-    original = reg.by_id("C5")
-    original.disposition = "revised"
-    original.disposition_by = "C9"
-    responded = [{"claim_id": "C1", "originator": "GPT", "cited_by": "Gemini",
-                  "moves": ["objection"], "source_claim_id": "C9",
-                  "state": "responded_to", "responded_by": "C9"}]
-    full = build_synthesis_state(_packet(), reg, responded, [], cap_chars=100000)
-    assert full["prompt"] is not None
-    assert "Historical context omitted: none" in full["prompt"]
-    assert "Full response prose is not part of this state packet" in full["prompt"]
-    # Tight cap: superseded texts drop first, links retained, disclosed.
-    tight = build_synthesis_state(_packet(), reg, responded, [],
-                                  cap_chars=len(full["prompt"]) - 10)
-    assert tight["prompt"] is not None
-    assert "Historical context omitted: 1 superseded claim texts" in tight["prompt"]
-    assert "C5 (revised by C9)" in tight["prompt"]
-    assert tight["input_tokens_estimate"] == estimate_tokens(tight["prompt"])
-    assert tight["input_tokens_estimate"] > 0
 
 
 # --- C10: soft target, not a hard cap ---------------------------------------

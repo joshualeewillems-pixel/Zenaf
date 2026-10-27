@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any
 
 from local_ai.build_room.artifact import build_draft_artifact
-from local_ai.build_room.coverage import artifact_accepted, check_coverage
 from local_ai.build_room.measurement import (
     compute_generation_cost,
     measure_generation,
@@ -82,61 +81,10 @@ class Budget:
     max_contributions: int = 1
     timeout_seconds: int = 120
     max_prompt_chars: int = 20000
-    # R2: response/synthesis prompts carry the packet plus the claim
+    # R2: response/revision prompts carry the packet plus the claim
     # registry, so they get a separate, higher cap (provisional;
     # actual usage is measured in the acceptance test).
     max_response_prompt_chars: int = 40000
-
-
-def current_code_version() -> dict[str, Any]:
-    """Identify the deployed code for a synthesis-gate record, honestly.
-
-    The shipped image records no commit: the Dockerfile copies
-    ``api/``, ``local_ai/`` and ``config/`` without ``.git``, and
-    the API version (``0.1.0``) is static — it does not identify a
-    deploy. The only commit signal available from inside the
-    artifact path is the optional ``ZENAF_CODE_VERSION``
-    environment variable, which no deploy sets today. Until a
-    deploy sets it, ``commit`` records as None with source
-    ``"unavailable"`` — a stated gap, never a fabricated value.
-    Recording the static API version here would mislead (it is
-    identical across deploys), so it is deliberately not recorded
-    as a code version.
-    """
-    commit = os.environ.get("ZENAF_CODE_VERSION") or None
-    return {
-        "commit": commit,
-        "source": ("environment:ZENAF_CODE_VERSION" if commit is not None
-                   else "unavailable"),
-    }
-
-
-def synthesis_gate_record(
-        *, gate: str, cap_chars: int | None, cap_tokens: int | None,
-        total_chars: int | None, total_tokens: int | None,
-        prompt_sha256: str | None, admitted: bool,
-        reason: str | None) -> dict[str, Any]:
-    """Build the artifact's synthesis-gate record (Phase C spec §5.5(d)).
-
-    ``gate`` is ``"production_chars"`` or ``"candidate_tokens"``.
-    ``total_tokens`` is the exact assembled-prompt count when
-    measured, else None (never an estimate). ``code_version`` is
-    whatever :func:`current_code_version` can honestly report.
-    The record describes the gate; it never changes the gate
-    decision, and it is recorded on refusal exactly as on
-    admission so a refused synthesis stays visible.
-    """
-    return {
-        "gate": gate,
-        "cap_chars": cap_chars,
-        "cap_tokens": cap_tokens,
-        "total_chars": total_chars,
-        "total_tokens": total_tokens,
-        "prompt_sha256": prompt_sha256,
-        "admitted": admitted,
-        "reason": reason,
-        "code_version": current_code_version(),
-    }
 
 
 @dataclass
@@ -251,22 +199,24 @@ def run_single_model_meeting(
 # R2: multi-participant deliberation (approved design, 2026-10-26).
 #
 # Shape: convene -> independent openings (baseline) -> one response
-# round -> optional revision -> synthesis. The transcript stays
-# append-only and verbatim; failures are recorded, never raised.
+# round -> optional revision. The transcript stays append-only and
+# verbatim; failures are recorded, never raised. No synthesis phase
+# (removed by design 2026-10-27, Joshua: drop synthesis entirely):
+# the registry + transcript are the meeting output.
 #
 # Load-bearing distinctions (approved design §2 + review amendments):
 # - The claim registry is MECHANICALLY derived from numbered claims
 #   in contributions. No LLM extraction, ever.
 # - Position grouping and disagreement identification are ATTRIBUTED,
-#   model-authored annotations (the synthesizer, named) with direct
-#   claim references — never objective facts, never inferred by the
-#   runner. The runner groups nothing itself.
+#   model-authored annotations with direct claim references — never
+#   objective facts, never inferred by the runner. The runner groups
+#   nothing itself.
 # - "Addressable" is a mechanical check (existing claim cited AND a
 #   move word stated). It is NOT a genuineness score: whether the
 #   reasoning is good is Joshua's judgment from the transcript.
 # - The collapse rule is enforced by preservation, not by runner
-#   judgment: positions and disagreements survive alongside the
-#   synthesis, so invented agreement is visible.
+#   judgment: positions and disagreements survive in the registry +
+#   transcript, so invented agreement is visible.
 # ---------------------------------------------------------------------------
 
 from local_ai.build_room.artifact import build_draft_artifact_r2
@@ -421,80 +371,6 @@ _FOLLOWUP_INSTRUCTION = (
     "as before. A defense links to the original claim without replacing "
     "it; a revision may supersede it."
 )
-
-_SYNTHESIS_INSTRUCTION = (
-    "Write the synthesis, labeled as synthesis (not as your own "
-    "position). Under a 'Positions:' heading list the positions you "
-    "identify, one per line, each with the claim IDs it groups "
-    "(e.g. '- C1, C2: ...'). Under a 'Disagreements:' heading list "
-    "the live tensions, one per line, each with the claim IDs in "
-    "tension. Disagreements stay unresolved: you may explain a "
-    "disagreement or recommend how Joshua could resolve it, but you "
-    "must not resolve it, and you must not merge positions unless "
-    "both participants agreed to the merge in a revision. Carry "
-    "forward every unresolved disagreement without inventing "
-    "agreement. Write the synthesis in English. If a position, "
-    "objection, or revision in the state packet lacks a transcript "
-    "citation, treat it as unevidenced and say so; never present "
-    "state contents as transcript. "
-    "Synthesis structure contract (legibility B): in addition to the "
-    "narrative synthesis, emit ONE fenced ```json block with exactly "
-    "four keys: \"positions\" (list of {claim_ids, position, "
-    "supporting_reasoning}), \"disagreements\" (list of "
-    "{opposing_positions, supporting_claims, unresolved_status}), "
-    "\"recommendations\" (list of {proposed_action, supporting_claims}), "
-    "\"limitations\" (list of {missing_evidence_or_omission, note}). "
-    "Claim identifiers are strings. Every claim ID must be enclosed in "
-    "double quotation marks. The fenced block must contain valid JSON, "
-    "not merely JSON-shaped text: unquoted IDs are invalid and the "
-    "block will be marked unparseable, never repaired. Format example "
-    "— this shows format only; use the actual claims from this "
-    "meeting's registry, not the example IDs: ```json {\"positions\": "
-    "[{\"claim_ids\": [\"C2\", \"C6\", \"C12\"], \"position\": \"A concise "
-    "statement of the position.\", \"supporting_reasoning\": \"Reasoning "
-    "grounded in the cited claims.\"}], \"disagreements\": [], "
-    "\"recommendations\": [], \"limitations\": []} ``` "
-    "Disagreement example — this shows format only, with the same "
-    "format-only rule as above: ```json {\"disagreements\": "
-    "[{\"opposing_positions\": [\"Assigned roles improve accountability.\", "
-    "\"Open roles permit more substantive deliberation.\"], "
-    "\"supporting_claims\": [\"C6\", \"C21\"], \"unresolved_status\": "
-    "\"unresolved\"}]} ``` unresolved_status must contain exactly one "
-    "of the three permitted strings — unresolved, responded_to, or "
-    "resolved — never an explanation. If you want to explain why a "
-    "disagreement remains unresolved, put that explanation in the "
-    "narrative synthesis or another already-permitted descriptive "
-    "field, not in unresolved_status. "
-    "Every claim ID referenced must exist in the registry. The "
-    "structured fields are your interpretation, labeled as such; they "
-    "never override the registry — a disagreement you label resolved "
-    "does not resolve a registry objection, and a position does not "
-    "create a registry relationship. If you cannot produce a valid "
-    "block, write the narrative alone; the structured output will be "
-    "marked unparseable, never repaired. "
-    "Accounting obligation: every proposal with status Proposed whose "
-    "disposition is neither revised nor withdrawn, and every unresolved "
-    "objection, must be accounted for in the structured fields, "
-    "including contributions you consider redundant, weak, or "
-    "inconvenient. Account for a proposal by citing it in a "
-    "recommendation's supporting_claims, or by naming it in a "
-    "recommendation's consolidates_claim_ids when that recommendation "
-    "genuinely carries its distinctive contribution. Account for an "
-    "objection by citing both its target claim and its challenging "
-    "claim in the same disagreement entry's supporting_claims. "
-    "Consolidation is permitted only when the distinctive contribution "
-    "survives in the entry that carries it; grouping distinct tensions "
-    "into one entry does not satisfy the obligation for any of them "
-    "unless the entry states each one. Representing a proposal is not "
-    "endorsing it: a recommendation may preserve a proposal as "
-    "conditional, contested, or not yet supported, and its inclusion "
-    "does not imply adoption by the council or by Joshua. Anything not "
-    "cited or consolidated will be listed as omitted and the artifact "
-    "will fail acceptance. Do not declare coverage you have not "
-    "provided: a citation or consolidation claim is checked "
-    "mechanically, and its substance is judged in review."
-)
-
 
 @dataclass
 class Claim:
@@ -1180,7 +1056,7 @@ def count_tokens_exact(text: str) -> int | None:
     Returns None when tiktoken is unavailable instead of falling
     back to the chars/4 estimate — a missing measurement is
     reported as missing, never disguised as an estimate, and
-    never breaks synthesis: production paths must not fail
+    never breaks a meeting: production paths must not fail
     because a measurement dependency is absent.
     """
     try:
@@ -1193,211 +1069,6 @@ def count_tokens_exact(text: str) -> int | None:
         # tiktoken missing at call time (tokenizer raises loudly
         # for direct measurement use; here it degrades to None).
         return None
-
-
-def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
-                          unresolved_objections: list[dict],
-                          revision_chains: list[dict],
-                          *, cap_chars: int,
-                          telemetry: str | None = None) -> dict[str, Any]:
-    """Assemble the bounded synthesis input (C9).
-
-    Mandatory state — packet, active claims, unresolved targeted
-    objections, authorial revision chains — is never silently
-    removed; if it alone exceeds the cap, synthesis reports
-    INCOMPLETE. Optional context — superseded/withdrawn claim texts,
-    responded-to objection details — is dropped in a deterministic
-    order (superseded texts, then responded-to details) with links
-    retained and the omission disclosed in the prompt itself.
-    Eviction uses ONLY explicit relationships (disposition links,
-    responded_to state): no semantic classifier, no model-based
-    redundancy judgment. The spec's third eviction step (response
-    prose restating openings) is not implemented as an eviction at
-    all — full response prose is never part of this state packet in
-    the first place, and the disclosure says so.
-
-    B1 telemetry-inclusive gating: production callers pass the
-    telemetry block they will append, so the gate compares the
-    ASSEMBLED prompt length (mandatory + optional + disclosure +
-    instruction + separators + telemetry) against the cap — the
-    previous gate ignored telemetry (~421 chars) and the join
-    separators, so a state could "fit" the gate yet assemble over
-    the cap. Callers that do not pass telemetry keep the previous
-    state-prompt gate exactly (mandatory + disclosure + instruction
-    vs cap); their assembled length is their own responsibility.
-    """
-    active_lines: list[str] = []
-    superseded_lines: list[str] = []
-    superseded_links: list[str] = []
-    for c in registry.claims:
-        line = f"{c.id} [{c.participant}, {c.status}]: {c.text}"
-        if c.disposition in ("revised", "withdrawn"):
-            superseded_lines.append(line)
-            superseded_links.append(
-                f"{c.id} ({c.disposition} by {c.disposition_by})")
-        else:
-            active_lines.append(line)
-    unresolved_lines = [
-        f"{u['claim_id']} challenged by {u['cited_by']} via {u.get('source_claim_id')}: "
-        f"{', '.join(u['moves'])}"
-        for u in unresolved_objections if u.get("state") == "unresolved"
-    ]
-    responded_lines = [
-        f"{u['claim_id']} challenged by {u['cited_by']} via {u.get('source_claim_id')}: "
-        f"{', '.join(u['moves'])} (responded_to by {u.get('responded_by')})"
-        for u in unresolved_objections if u.get("state") == "responded_to"
-    ]
-    chain_lines = [
-        f"{ch['original_claim_id']} -> challenged by {ch['challenge_claim_id']} "
-        f"({ch['challenge_move']}, {ch['challenger']}) -> {ch['revision_claim_id']} "
-        f"({ch['revision_relationship']}, {ch['author']})"
-        for ch in revision_chains
-    ]
-    mandatory = "\n\n".join([
-        packet.render_prompt(),
-        "Active claims (registry):\n" + ("\n".join(active_lines) if active_lines else "(none)"),
-        "Unresolved targeted objections:\n" + ("\n".join(unresolved_lines) if unresolved_lines else "(none)"),
-        "Authorial revision chains:\n" + ("\n".join(chain_lines) if chain_lines else "(none)"),
-    ])
-    optional_full = "\n\n".join([
-        "Superseded/withdrawn claim texts:\n" + ("\n".join(superseded_lines) if superseded_lines else "(none)"),
-        "Responded-to objections:\n" + ("\n".join(responded_lines) if responded_lines else "(none)"),
-    ])
-    instruction = _SYNTHESIS_INSTRUCTION
-    disclosure_none = (
-        "Historical context omitted: none. Full response prose is "
-        "not part of this state packet; it contains claims, "
-        "targeted objections, and revision chains only.")
-    # B1: when the caller passes telemetry, the gate counts it plus
-    # every "\n\n" join (6 inside the state prompt, 2 before
-    # telemetry). Without telemetry, the previous gate is preserved
-    # exactly so legacy callers keep the #227 arithmetic.
-    telemetry_chars = len(telemetry) if telemetry is not None else 0
-    gate_extra = telemetry_chars + 8 if telemetry is not None else 0
-    if telemetry is not None:
-        # Minimal-state check: even with no optional content, the
-        # assembled prompt does not fit.
-        minimal_total = (len(mandatory) + len(disclosure_none)
-                         + len(instruction) + gate_extra)
-        if minimal_total > cap_chars:
-            return {
-                "prompt": None,
-                "omitted": {"superseded_texts": len(superseded_lines),
-                            "responded_to_details": len(responded_lines)},
-                "mandatory_chars": len(mandatory),
-                "optional_chars": 0,
-                "instruction_chars": len(instruction),
-                "disclosure_chars": len(disclosure_none),
-                "telemetry_chars": telemetry_chars,
-                "separator_chars": 8,
-                "total_chars": minimal_total,
-                "excess_chars": minimal_total - cap_chars,
-                "reason": (
-                    f"budget_exceeded: synthesis input exceeds cap={cap_chars}: "
-                    f"mandatory={len(mandatory)} chars, "
-                    f"optional=0 chars, "
-                    f"instruction={len(instruction)} chars, "
-                    f"disclosure={len(disclosure_none)} chars, "
-                    f"telemetry={telemetry_chars} chars, "
-                    f"separators=8 chars, "
-                    f"total={minimal_total} chars, "
-                    f"excess={minimal_total - cap_chars} chars; "
-                    f"no synthesis attempted and nothing was truncated to fit"),
-            }
-    # Mandatory + disclosure + instruction must fit, or synthesis cannot run honestly.
-    if len(mandatory) + len(disclosure_none) + len(instruction) > cap_chars:
-        total = len(mandatory) + len(disclosure_none) + len(instruction)
-        return {
-            "prompt": None,
-            "omitted": {"superseded_texts": len(superseded_lines),
-                        "responded_to_details": len(responded_lines)},
-            "mandatory_chars": len(mandatory),
-            "reason": (
-                f"budget_exceeded: synthesis input exceeds cap={cap_chars}: "
-                f"mandatory={len(mandatory)} chars, "
-                f"instruction={len(instruction)} chars, "
-                f"disclosure={len(disclosure_none)} chars, "
-                f"total={total} chars, "
-                f"excess={total - cap_chars} chars; "
-                f"no synthesis attempted and nothing was truncated to fit"),
-        }
-    omitted_texts = 0
-    omitted_details = 0
-    optional = optional_full
-    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) + gate_extra > cap_chars:
-        # Drop superseded texts first (links retained).
-        omitted_texts = len(superseded_lines)
-        optional = "\n\n".join([
-            "Superseded/withdrawn claims (texts omitted): "
-            + (", ".join(superseded_links) if superseded_links else "(none)"),
-            "Responded-to objections:\n" + ("\n".join(responded_lines) if responded_lines else "(none)"),
-        ])
-    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) + gate_extra > cap_chars:
-        # Then drop responded-to details (counts retained).
-        omitted_details = len(responded_lines)
-        optional = "\n\n".join([
-            "Superseded/withdrawn claims (texts omitted): "
-            + (", ".join(superseded_links) if superseded_links else "(none)"),
-            f"Responded-to objections (details omitted): {len(responded_lines)} entries.",
-        ])
-    if omitted_texts or omitted_details:
-        disclosure = (
-            f"Historical context omitted: {omitted_texts} superseded claim "
-            f"texts and {omitted_details} responded-to objection details. "
-            "Full records remain available in the transcript. A bounded "
-            "synthesis input is not a complete transcript; do not treat "
-            "it as one. Full response prose is not part of this state "
-            "packet; it contains claims, targeted objections, and "
-            "revision chains only.")
-    else:
-        disclosure = disclosure_none
-    if telemetry is not None:
-        # Final assembled-length check: the omission disclosure is
-        # longer than disclosure_none, so a state that fit the
-        # eviction loop can still assemble over the cap. Refuse
-        # honestly rather than assembling over it.
-        total = (len(mandatory) + len(optional) + len(disclosure)
-                 + len(instruction) + gate_extra)
-        if total > cap_chars:
-            return {
-                "prompt": None,
-                "omitted": {"superseded_texts": omitted_texts,
-                            "responded_to_details": omitted_details},
-                "mandatory_chars": len(mandatory),
-                "optional_chars": len(optional),
-                "instruction_chars": len(instruction),
-                "disclosure_chars": len(disclosure),
-                "telemetry_chars": telemetry_chars,
-                "separator_chars": 8,
-                "total_chars": total,
-                "excess_chars": total - cap_chars,
-                "reason": (
-                    f"budget_exceeded: synthesis input exceeds cap={cap_chars}: "
-                    f"mandatory={len(mandatory)} chars, "
-                    f"optional={len(optional)} chars, "
-                    f"instruction={len(instruction)} chars, "
-                    f"disclosure={len(disclosure)} chars, "
-                    f"telemetry={telemetry_chars} chars, "
-                    f"separators=8 chars, "
-                    f"total={total} chars, "
-                    f"excess={total - cap_chars} chars; "
-                    f"no synthesis attempted and nothing was truncated to fit"),
-            }
-    prompt = "\n\n".join([mandatory, optional, disclosure, instruction])
-    return {
-        "prompt": prompt,
-        "omitted": {"superseded_texts": omitted_texts,
-                    "responded_to_details": omitted_details},
-        "mandatory_chars": len(mandatory),
-        "input_chars": len(prompt),
-        "input_tokens_estimate": estimate_tokens(prompt),
-        "telemetry_chars": telemetry_chars,
-        "assembled_chars": len(prompt) + (telemetry_chars + 2 if telemetry is not None else 0),
-        "input_tokens": count_tokens_exact(prompt),
-        "assembled_tokens": count_tokens_exact(
-            prompt + ("\n\n" + telemetry if telemetry is not None else "")),
-        "reason": None,
-    }
 
 
 def compute_unresolved_objections(
@@ -1543,270 +1214,6 @@ def _render_transcript(transcript: Transcript) -> str:
     return "\n".join(lines)
 
 
-def _parse_synthesis_sections(text: str, attributed_to: str) -> tuple[list[dict], list[dict], bool]:
-    """Mechanically parse the synthesizer's Positions/Disagreements lists.
-
-    Returns (positions, disagreements, sections_found). Entries are
-    attributed annotations carrying verbatim lines + claim refs; the
-    runner never groups claims itself. Unparseable or absent sections
-    yield empty lists, not inferred content.
-    """
-    positions: list[dict] = []
-    disagreements: list[dict] = []
-    section: str | None = None
-    found = False
-    for line in (text or "").splitlines():
-        stripped = line.strip()
-        if re.match(r"^Positions:\s*$", stripped, re.IGNORECASE):
-            section = "positions"
-            found = True
-            continue
-        if re.match(r"^Disagreements:\s*$", stripped, re.IGNORECASE):
-            section = "disagreements"
-            found = True
-            continue
-        if section == "positions" and stripped.startswith(("-", "*")):
-            ids = _find_citations(stripped)
-            if ids:
-                positions.append({"claim_ids": ids, "attributed_to": attributed_to,
-                                  "verbatim": stripped})
-        elif section == "disagreements" and stripped.startswith(("-", "*")):
-            ids = _find_citations(stripped)
-            if ids:
-                disagreements.append({"claim_ids": ids, "status": "unresolved",
-                                      "attributed_to": attributed_to,
-                                      "verbatim": stripped})
-        elif section and stripped and not stripped.startswith(("-", "*")):
-            # A non-list line outside a list item keeps the section only
-            # if it looks like a continuation; otherwise close it.
-            if re.match(r"^[A-Z][A-Za-z ]*:\s*$", stripped):
-                section = None
-    return positions, disagreements, found
-
-
-_SYNTHESIS_CONTRACT_RE = re.compile(r"```json\s*(.*?)\s*```",
-                                    re.DOTALL | re.IGNORECASE)
-
-
-def _contract_check_claim_ids(ids: Any, valid_ids: set[str]) -> str | None:
-    """Error string when a claim-id list is invalid, else None."""
-    if not isinstance(ids, list) or not ids:
-        return "claim ids missing or empty"
-    if not all(isinstance(i, str) for i in ids):
-        return "claim ids must be strings"
-    unknown = [i for i in ids if i not in valid_ids]
-    if unknown:
-        return f"unknown claim ids: {', '.join(unknown)}"
-    return None
-
-
-def _contract_entry_positions(entry: Any, valid_ids: set[str],
-                              unresolved_objections: list[dict]) -> tuple[dict | None, str | None]:
-    if not isinstance(entry, dict):
-        return None, "entry is not a JSON object"
-    err = _contract_check_claim_ids(entry.get("claim_ids"), valid_ids)
-    if err:
-        return None, err
-    if not isinstance(entry.get("position"), str) or not entry["position"].strip():
-        return None, "position missing or empty"
-    if not isinstance(entry.get("supporting_reasoning"), str):
-        return None, "supporting_reasoning missing or not a string"
-    return {"claim_ids": list(entry["claim_ids"]),
-            "position": entry["position"],
-            "supporting_reasoning": entry["supporting_reasoning"]}, None
-
-
-def _contract_entry_disagreements(entry: Any, valid_ids: set[str],
-                                  unresolved_objections: list[dict]) -> tuple[dict | None, str | None]:
-    if not isinstance(entry, dict):
-        return None, "entry is not a JSON object"
-    opp = entry.get("opposing_positions")
-    if (not isinstance(opp, list) or len(opp) < 2
-            or not all(isinstance(s, str) and s.strip() for s in opp)):
-        return None, "opposing_positions must be a list of at least two positions"
-    err = _contract_check_claim_ids(entry.get("supporting_claims"), valid_ids)
-    if err:
-        return None, err
-    status = entry.get("unresolved_status")
-    if status not in ("unresolved", "responded_to", "resolved"):
-        return None, "unresolved_status must be unresolved, responded_to, or resolved"
-    # Registry state, mechanical only: unresolved wins if any
-    # supporting claim is the target of an unresolved objection; else
-    # responded_to if any is the target of a responded_to objection;
-    # else not_established. The registry never sets "resolved"
-    # mechanically, so any synthesis "resolved" diverges by
-    # construction — and both values are shown, labeled by source.
-    states = {u["claim_id"]: u["state"] for u in unresolved_objections}
-    reg_states = [states[c] for c in entry["supporting_claims"] if c in states]
-    if "unresolved" in reg_states:
-        reg_status = "unresolved"
-    elif "responded_to" in reg_states:
-        reg_status = "responded_to"
-    else:
-        reg_status = "not_established"
-    divergence = reg_status in ("unresolved", "responded_to") and status != reg_status
-    return {
-        "opposing_positions": list(opp),
-        "supporting_claims": list(entry["supporting_claims"]),
-        # Downstream compat: delta synthesis elements read claim_ids.
-        "claim_ids": list(entry["supporting_claims"]),
-        "unresolved_status": status,
-        "registry_unresolved_status": reg_status,
-        "resolution_divergence": divergence,
-    }, None
-
-
-def _contract_entry_recommendations(entry: Any, valid_ids: set[str],
-                                    unresolved_objections: list[dict]) -> tuple[dict | None, str | None]:
-    if not isinstance(entry, dict):
-        return None, "entry is not a JSON object"
-    if not isinstance(entry.get("proposed_action"), str) or not entry["proposed_action"].strip():
-        return None, "proposed_action missing or empty"
-    err = _contract_check_claim_ids(entry.get("supporting_claims"), valid_ids)
-    if err:
-        return None, err
-    parsed: dict[str, Any] = {"proposed_action": entry["proposed_action"],
-                              "supporting_claims": list(entry["supporting_claims"])}
-    # Optional declared consolidation (coverage design §B.3): the
-    # model declares which proposals this recommendation consolidates;
-    # the validator verifies the IDs exist (mechanical) and review
-    # judges substance. Broken provenance is a COVERAGE FAILURE, not
-    # a warning (amended rule): the entry itself stays valid and
-    # retained, the consolidates list is IGNORED, and a marker is
-    # carried on the kept entry for the coverage check to record
-    # in provenance_failures. Nothing here invents or repairs
-    # synthesis content; the marker is validator metadata, like
-    # resolution_divergence on disagreements.
-    cons = entry.get("consolidates_claim_ids")
-    if cons is not None:
-        if not isinstance(cons, list) or not all(isinstance(i, str) for i in cons):
-            parsed["consolidates_provenance_failure"] = {
-                "kind": "consolidates_malformed",
-                "detail": "consolidates_claim_ids must be a list of claim-id strings",
-            }
-        else:
-            unknown = [i for i in cons if i not in valid_ids]
-            if unknown:
-                parsed["consolidates_provenance_failure"] = {
-                    "kind": "consolidates_unknown_ids",
-                    "detail": unknown,
-                }
-            else:
-                parsed["consolidates_claim_ids"] = list(cons)
-    return parsed, None
-
-
-def _contract_entry_limitations(entry: Any, valid_ids: set[str],
-                                unresolved_objections: list[dict]) -> tuple[dict | None, str | None]:
-    if not isinstance(entry, dict):
-        return None, "entry is not a JSON object"
-    if (not isinstance(entry.get("missing_evidence_or_omission"), str)
-            or not entry["missing_evidence_or_omission"].strip()):
-        return None, "missing_evidence_or_omission missing or empty"
-    if not isinstance(entry.get("note"), str):
-        return None, "note missing or not a string"
-    return {"missing_evidence_or_omission": entry["missing_evidence_or_omission"],
-            "note": entry["note"]}, None
-
-
-_CONTRACT_VALIDATORS = {
-    "positions": _contract_entry_positions,
-    "disagreements": _contract_entry_disagreements,
-    "recommendations": _contract_entry_recommendations,
-    "limitations": _contract_entry_limitations,
-}
-_CONTRACT_FIELDS = tuple(_CONTRACT_VALIDATORS.keys())
-
-
-def parse_synthesis_contract(text: str, registry: Any,
-                             unresolved_objections: list[dict],
-                             attributed_to: str) -> tuple[dict[str, list], dict[str, str], list[dict], bool]:
-    """Parse + validate the fenced JSON synthesis contract (Scope B).
-
-    Returns (structured, evaluations, rejected_entries, block_found).
-    ``structured`` carries the four contract fields; ``evaluations``
-    maps each field to synthesized_complete / synthesized_partial /
-    synthesized_empty / unparseable (per field: complete = all entries
-    accepted; partial = some entries rejected and disclosed;
-    synthesized_empty = a valid empty list: the synthesizer returned
-    no entries for this field, which never means none objectively
-    exist; unparseable = field missing, not a list, or nonempty with
-    no valid entries). Per-entry salvage: entries failing validation
-    are excluded and listed in ``rejected_entries`` as {field, index,
-    reason}; retained entries keep their original supporting claim
-    ids; nothing is repaired or invented. ``block_found`` is False when no ```json block exists
-    (the caller falls back to legacy section parsing); a present but
-    invalid block yields all-unparseable, never a section fallback.
-    Unexpected top-level keys reject the whole block (all fields
-    unparseable, keys named in the rejection): the contract is exactly
-    four keys, so silently ignoring extras would make it
-    unenforceable. Structured fields
-    are the synthesizer's interpretation, never mechanical evidence,
-    and never mutate the registry.
-    """
-    valid_ids = registry.ids() if registry is not None else set()
-    empty = {f: [] for f in _CONTRACT_FIELDS}
-    all_unparseable = {f: "unparseable" for f in _CONTRACT_FIELDS}
-    match = _SYNTHESIS_CONTRACT_RE.search(text or "")
-    if not match:
-        return empty, all_unparseable, [], False
-    try:
-        block = json.loads(match.group(1))
-    except Exception as exc:  # malformed JSON: whole block unparseable
-        return empty, all_unparseable, [
-            {"field": "contract", "index": None,
-             "reason": f"invalid JSON: {type(exc).__name__}"}], True
-    if not isinstance(block, dict):
-        return empty, all_unparseable, [
-            {"field": "contract", "index": None,
-             "reason": "contract block is not a JSON object"}], True
-    unexpected = sorted(set(block) - set(_CONTRACT_FIELDS))
-    if unexpected:
-        return empty, all_unparseable, [
-            {"field": "contract", "index": None,
-             "reason": "unexpected top-level keys: "
-                       + ", ".join(unexpected)}], True
-    structured: dict[str, list] = {}
-    evaluations: dict[str, str] = {}
-    rejected: list[dict] = []
-    for field in _CONTRACT_FIELDS:
-        value = block.get(field)
-        if not isinstance(value, list):
-            # Missing key or non-list field: this field is
-            # unparseable; other fields are still evaluated.
-            structured[field] = []
-            evaluations[field] = "unparseable"
-            continue
-        if len(value) == 0:
-            # Valid empty collection: the synthesizer returned no
-            # entries for this field. This is synthesized_empty, not
-            # a parse failure — and it never means none objectively
-            # exist, only that no entries were returned.
-            structured[field] = []
-            evaluations[field] = "synthesized_empty"
-            continue
-        kept: list[dict] = []
-        field_rejected = 0
-        validator = _CONTRACT_VALIDATORS[field]
-        for idx, entry in enumerate(value):
-            parsed, reason = validator(entry, valid_ids, unresolved_objections)
-            if parsed is None:
-                rejected.append({"field": field, "index": idx,
-                                 "reason": reason})
-                field_rejected += 1
-            else:
-                parsed["attributed_to"] = attributed_to
-                kept.append(parsed)
-        structured[field] = kept
-        if not kept:
-            evaluations[field] = "unparseable"
-        elif field_rejected:
-            evaluations[field] = "synthesized_partial"
-        else:
-            evaluations[field] = "synthesized_complete"
-    return structured, evaluations, rejected, True
-
-
 def _run_phase_parallel(
     jobs: list[tuple[str, Any, str]],
     budget: Budget,
@@ -1843,7 +1250,6 @@ def run_multi_model_meeting(
     budget: Budget | None = None,
     principal: ExecutionPrincipal | None = None,
     seats: list[Seat] | None = None,
-    experimental_candidate_gate: bool = False,
 ) -> MeetingResult:
     """Run one R2 meeting. Never raises for participant/generation
     failure: failures are recorded in the transcript and reflected
@@ -1852,12 +1258,6 @@ def run_multi_model_meeting(
     ``seats`` overrides resolution (tests inject fake participants);
     otherwise all five seats resolve under the caller's principal in
     stable SEAT_SPECS order.
-
-    ``experimental_candidate_gate`` is INERT since synthesis
-    removal stage 1 (2026-10-27): no synthesis runs, so no
-    synthesis gate is evaluated. The parameter is accepted for
-    API compatibility and removed in stage 3 with the gate
-    machinery. It has no effect on deliberation.
     """
     budget = budget or Budget(
         max_contributions=R2_MAX_GENERATIONS,

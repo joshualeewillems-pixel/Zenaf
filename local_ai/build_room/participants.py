@@ -103,11 +103,6 @@ SEAT_SPECS: tuple[tuple[str, str, str], ...] = (
     ("Muse", "meta", "muse-spark-1.3"),
 )
 
-# Claude performs the synthesis function (owner direction 2026-10-27,
-# replacing GPT). This is a test parameter, not a role ruling, not an
-# identity, and not a permanent assignment.
-SYNTHESIZER_NAME = "Claude"
-
 _PROVIDER_GENERATE = {
     "openai": _openai.generate,
     "anthropic": _anthropic.generate,

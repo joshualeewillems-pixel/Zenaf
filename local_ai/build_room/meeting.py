@@ -2262,7 +2262,7 @@ def run_multi_model_meeting(
             registry, verified_challenges,
             unclassified_interactions=unclassified)
 
-        # -- Phase 4: synthesis (test parameter: GPT, design §5).
+        # -- Phase 4: synthesis (test parameter: Claude, design §5).
         # Input is the bounded state packet (C9), never the full
         # transcript; the transcript file is still written complete.
         synth_seat = next((s for s in seats if s.name == SYNTHESIZER_NAME), None)

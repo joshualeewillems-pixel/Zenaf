@@ -105,6 +105,12 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
             response="In response to C3, I agree: the registry point stands.",
             revision="Relationship: defended.\nIn response to C1, I defend my claim:\n"
                      "1. Inferred: Authority confusion remains the top risk.",
+        ),
+        "Claude": FakeParticipant(
+            "Claude",
+            opening="1. Inferred: Parallel monologues are a failure mode.",
+            response="1. Objection to C1: authorization alone does not "
+                     "prevent a synthesis from misrepresenting choices.",
             synthesis=(
                 "Synthesis of the deliberation.\n"
                 "Positions:\n"
@@ -112,12 +118,6 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
                 "Disagreements:\n"
                 "- C1 vs C3: whether the registry alone prevents confusion.\n"
             ),
-        ),
-        "Claude": FakeParticipant(
-            "Claude",
-            opening="1. Inferred: Parallel monologues are a failure mode.",
-            response="1. Objection to C1: authorization alone does not "
-                     "prevent a synthesis from misrepresenting choices.",
         ),
         "Gemini": FakeParticipant("Gemini", opening="1. Proposed: Add addressable claims."),
         "Grok": FakeParticipant("Grok", opening="1. Speculative: The room may perform deliberation."),
@@ -149,15 +149,15 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
     assert reg[0]["text"] == "Inferred: Authority confusion is a failure mode."
     # Synthesis: attributed positions/disagreements, unresolved, verbatim text.
     assert result.artifact["synthesis"]["status"] == "complete"
-    assert result.artifact["synthesis"]["attributed_to"] == "GPT"
+    assert result.artifact["synthesis"]["attributed_to"] == "Claude"
     assert "Synthesis of the deliberation." in result.artifact["synthesis"]["text"]
     pos = result.artifact["positions"]
-    assert pos and pos[0]["attributed_to"] == "GPT"
+    assert pos and pos[0]["attributed_to"] == "Claude"
     assert pos[0]["claim_ids"] == ["C1", "C2"]
     dis = result.artifact["disagreements"]
     assert dis and dis[0]["status"] == "unresolved"
     assert dis[0]["claim_ids"] == ["C1", "C3"]
-    assert dis[0]["attributed_to"] == "GPT"
+    assert dis[0]["attributed_to"] == "Claude"
     # Artifact boundaries kept.
     assert result.artifact["status"] == "DRAFT_EXPERIMENTAL"
     assert result.artifact["is_review_item"] is False
@@ -189,7 +189,7 @@ def test_deterministic_order_under_parallel_completion(tmp_path):
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Fifth claim."),
     }
     # Synthesis must exist for ok, but ordering is decided at openings.
-    fakes["GPT"]._texts["synthesis"] = "Synthesis.\nPositions:\n- C1: first.\n"
+    fakes["Claude"]._texts["synthesis"] = "Synthesis.\nPositions:\n- C1: first.\n"
     started = time.time()
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
     elapsed = time.time() - started
@@ -202,11 +202,11 @@ def test_deterministic_order_under_parallel_completion(tmp_path):
 
 def test_dead_citation_and_zero_claims_noted(tmp_path):
     fakes = {
-        "GPT": FakeParticipant("GPT", opening="1. Inferred: Real claim.",
-                               synthesis="Synthesis."),
+        "GPT": FakeParticipant("GPT", opening="1. Inferred: Real claim."),
         "Claude": FakeParticipant(
             "Claude", opening="1. Inferred: Another claim.",
-            response="In response to C999, I object: this ID does not exist."),
+            response="In response to C999, I object: this ID does not exist.",
+            synthesis="Synthesis."),
         "Gemini": FakeParticipant("Gemini", opening="No numbered claims here."),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Third."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Fourth."),
@@ -224,11 +224,11 @@ def test_dead_citation_and_zero_claims_noted(tmp_path):
 
 def test_name_mention_without_citation_not_addressable(tmp_path):
     fakes = {
-        "GPT": FakeParticipant("GPT", opening="1. Inferred: Real claim.",
-                               synthesis="Synthesis."),
+        "GPT": FakeParticipant("GPT", opening="1. Inferred: Real claim."),
         "Claude": FakeParticipant(
             "Claude", opening="1. Inferred: Another claim.",
-            response="As GPT noted, I agree with the general direction."),
+            response="As GPT noted, I agree with the general direction.",
+            synthesis="Synthesis."),
         "Gemini": FakeParticipant("Gemini", opening="1. Inferred: Third."),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Fourth."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Fifth."),
@@ -247,10 +247,10 @@ def test_revision_relationships_revised_defended_withdrawn(tmp_path):
         "GPT": FakeParticipant(
             "GPT", opening="1. Inferred: Alpha.",
             revision="Relationship: defended.\nIn response to C1, I defend:\n"
-                     "1. Inferred: Alpha stands.",
-            synthesis="Synthesis."),
+                     "1. Inferred: Alpha stands."),
         "Claude": FakeParticipant(
             "Claude", opening="1. Inferred: Beta.",
+            synthesis="Synthesis.",
             response="In response to C1, I object: alpha is overstated. "
                      "In response to C4, I object: delta is unproven.",
             revision="Relationship: revised.\nIn response to C2, I revise:\n"
@@ -295,7 +295,10 @@ def test_revision_relationships_revised_defended_withdrawn(tmp_path):
 def test_disagreement_preservation_no_collapse(tmp_path):
     fakes = {
         "GPT": FakeParticipant(
-            "GPT", opening="1. Inferred: Alpha.",
+            "GPT", opening="1. Inferred: Alpha."),
+        "Claude": FakeParticipant(
+            "Claude", opening="1. Inferred: Beta.",
+            response="In response to C1, I object: alpha conflicts with beta.",
             synthesis=(
                 "Synthesis.\n"
                 "Positions:\n"
@@ -304,9 +307,6 @@ def test_disagreement_preservation_no_collapse(tmp_path):
                 "Disagreements:\n"
                 "- C1 vs C2: alpha and beta conflict.\n"
             )),
-        "Claude": FakeParticipant(
-            "Claude", opening="1. Inferred: Beta.",
-            response="In response to C1, I object: alpha conflicts with beta."),
         "Gemini": FakeParticipant("Gemini", opening="1. Inferred: Gamma."),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Delta."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Epsilon."),
@@ -344,11 +344,14 @@ def test_synthesis_overflow_visible_not_truncated(tmp_path):
 
 
 def test_failure_isolation_one_provider_down(tmp_path):
+    # The failing seat must not be the synthesizer seat: with Claude
+    # synthesizing, a down Claude takes synthesis down with it, so
+    # isolation is demonstrated with Gemini down instead.
     fakes = {
-        "GPT": FakeParticipant("GPT", opening="1. Inferred: Alpha.",
-                               synthesis="Synthesis."),
-        "Claude": FakeParticipant("Claude", opening="", boom=True),
-        "Gemini": FakeParticipant("Gemini", opening="1. Inferred: Gamma."),
+        "GPT": FakeParticipant("GPT", opening="1. Inferred: Alpha."),
+        "Claude": FakeParticipant("Claude", opening="1. Inferred: Beta.",
+                                   synthesis="Synthesis."),
+        "Gemini": FakeParticipant("Gemini", opening="", boom=True),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Delta."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Epsilon."),
     }
@@ -356,31 +359,33 @@ def test_failure_isolation_one_provider_down(tmp_path):
     assert result.ok is True
     failures = [(e.participant, e.text) for e in result.transcript.entries
                 if e.kind == "failure"]
-    # Claude fails in every phase it is called in; no other participant
+    # Gemini fails in every phase it is called in; no other participant
     # is affected — that is failure isolation.
-    assert failures and all(p == "Claude" for p, _ in failures)
+    assert failures and all(p == "Gemini" for p, _ in failures)
     assert all("RuntimeError" in text for _, text in failures)
     assert any(c["participant"] == "GPT" for c in _registry(result))
-    assert not any(c["participant"] == "Claude" for c in _registry(result))
+    assert not any(c["participant"] == "Gemini" for c in _registry(result))
 
 
 def test_absence_recorded_meeting_continues(tmp_path):
+    # The absent seat must not be the synthesizer seat: with Claude
+    # synthesizing, an absent Claude means no synthesis runs.
     fakes = {
-        "GPT": FakeParticipant("GPT", opening="1. Inferred: Alpha.",
-                               synthesis="Synthesis."),
-        "Claude": None,  # absent
-        "Gemini": FakeParticipant("Gemini", opening="1. Inferred: Gamma."),
+        "GPT": FakeParticipant("GPT", opening="1. Inferred: Alpha."),
+        "Claude": FakeParticipant("Claude", opening="1. Inferred: Beta.",
+                                   synthesis="Synthesis."),
+        "Gemini": None,  # absent
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Delta."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Epsilon."),
     }
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
     assert result.ok is True
-    assert any(e.kind == "absence" and e.participant == "Claude"
+    assert any(e.kind == "absence" and e.participant == "Gemini"
                for e in result.transcript.entries)
     assert any(e.kind == "note" and "did not respond" in e.text
-               and e.participant == "Claude" for e in result.transcript.entries)
+               and e.participant == "Gemini" for e in result.transcript.entries)
     prov = {p["participant"]: p for p in result.artifact["provenance"]}
-    assert prov["Claude"]["status"] == "absent"
+    assert prov["Gemini"]["status"] == "absent"
     assert prov["GPT"]["status"] == "present"
 
 
@@ -432,8 +437,8 @@ def test_synthesis_prompt_requires_english(tmp_path):
                                     synthesis="Synthesis.")
              for name in NAMES}
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
-    gpt = fakes["GPT"]
-    synth_prompts = [p for p in gpt.prompts if "Write the synthesis" in p]
+    claude = fakes["Claude"]
+    synth_prompts = [p for p in claude.prompts if "Write the synthesis" in p]
     assert len(synth_prompts) == 1
     assert "Write the synthesis in English" in synth_prompts[0]
 

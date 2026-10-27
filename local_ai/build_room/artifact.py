@@ -107,8 +107,8 @@ def build_draft_artifact_r2(
     Legibility B adds the synthesis contract fields: recommendations
     and limitations with their own evaluation fields (same
     vocabulary: synthesized_complete / synthesized_partial /
-    unparseable / not_evaluated, plus the legacy evaluated_* values
-    for section-parsed output), and rejected_entries — contract
+    synthesized_empty / unparseable / not_evaluated, plus the legacy
+    evaluated_* values for section-parsed output), and rejected_entries — contract
     entries excluded during per-entry salvage, each with field,
     index, and reason. Structured synthesis fields are the
     synthesizer's interpretation, never mechanical evidence, and

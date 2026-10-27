@@ -228,38 +228,26 @@ def test_c6_addressable_needs_other_author_citation_and_targeted_move():
 
 # --- C7: per-field evaluation status -------------------------------------
 
-def test_c7_positions_null_not_evaluated_when_synthesis_absent():
+def test_c7_synthesis_fields_absent_and_marker_present():
+    # Synthesis removal stage 1: the builder takes no synthesis
+    # params and emits no synthesis fields (absent, not failed).
     packet = _packet()
     artifact = build_draft_artifact_r2(
-        "m", packet, _FakeTranscript(), [], ClaimRegistry(),
-        synthesis=None, synthesis_failure="no synthesis")
-    assert artifact["positions"] is None
-    assert artifact["positions_evaluation"] == "not_evaluated"
-    assert artifact["disagreements"] is None
-    assert artifact["disagreements_evaluation"] == "not_evaluated"
-    assert artifact["unresolved_objections_evaluation"] == "mechanical_pre_synthesis"
-
-
-def test_c7_evaluated_empty_vs_with_results_vs_unparseable():
-    packet = _packet()
-    complete = {"status": "complete", "text": "Synthesis.", "attributed_to": "GPT"}
-    empty = build_draft_artifact_r2(
-        "m", packet, _FakeTranscript(), [], ClaimRegistry(),
-        synthesis=complete, positions=[], disagreements=[])
-    assert empty["positions_evaluation"] == "evaluated_empty"
-    results = build_draft_artifact_r2(
-        "m", packet, _FakeTranscript(), [], ClaimRegistry(),
-        synthesis=complete,
-        positions=[{"claim_ids": ["C1"]}],
-        disagreements=[],
-        positions_evaluation="evaluated_with_results")
-    assert results["positions_evaluation"] == "evaluated_with_results"
-    unparseable = build_draft_artifact_r2(
-        "m", packet, _FakeTranscript(), [], ClaimRegistry(),
-        synthesis=complete, positions=[], disagreements=[],
-        positions_evaluation="unparseable",
-        disagreements_evaluation="unparseable")
-    assert unparseable["positions_evaluation"] == "unparseable"
+        "m", packet, _FakeTranscript(), [], ClaimRegistry())
+    assert artifact["synthesis_removed"] is True
+    for key in ("synthesis", "synthesis_failure", "positions",
+                "positions_evaluation", "disagreements",
+                "disagreements_evaluation", "recommendations",
+                "recommendations_evaluation", "limitations",
+                "limitations_evaluation", "rejected_entries",
+                "synthesis_coverage", "synthesis_coverage_accepted",
+                "synthesis_generation", "synthesis_generation_cost",
+                "synthesis_gate"):
+        assert key not in artifact
+    assert artifact["unresolved_objections_evaluation"] == "mechanical"
+    assert artifact["record_complete"] is False
+    assert artifact["deliberation_complete"] is False
+    assert artifact["ok"] is False
 
 
 class _FakeTranscript:
@@ -365,8 +353,7 @@ def _fixture_artifact():
     fixture = json.loads(path.read_text())
     return replay_r2_transcript(
         fixture["contributions"], meeting_id=fixture["meeting_id"],
-        work_item=fixture["work_item"], question=fixture["question"],
-        synthesis_failure=fixture["synthesis_failure"])
+        work_item=fixture["work_item"], question=fixture["question"])
 
 
 def test_fixture_regression_r2_acceptance():
@@ -459,11 +446,11 @@ def test_fixture_regression_r2_acceptance():
     assert cand_by_participant["Grok"]["contribution_relationship"] == \
         "supports_withdrawal_of"
     assert cand_by_participant["GPT"]["contribution_relationship"] == "endorses"
-    # Synthesis failure is not_evaluated, never an empty finding.
-    assert art["synthesis"]["status"] == "INCOMPLETE"
-    assert art["synthesis_failure"].startswith("budget_exceeded")
-    assert art["positions"] is None
-    assert art["positions_evaluation"] == "not_evaluated"
-    assert art["disagreements"] is None
-    assert art["disagreements_evaluation"] == "not_evaluated"
-    assert art["unresolved_objections_evaluation"] == "mechanical_pre_synthesis"
+    # No synthesis fields in the replayed artifact: synthesis is
+    # absent by design, not failed.
+    assert art["synthesis_removed"] is True
+    assert "synthesis" not in art
+    assert "synthesis_failure" not in art
+    assert "positions" not in art
+    assert "disagreements" not in art
+    assert art["unresolved_objections_evaluation"] == "mechanical"

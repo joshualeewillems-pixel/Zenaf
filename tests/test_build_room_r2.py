@@ -2,7 +2,7 @@
 
 Generation is mocked — no live API calls, no real key values anywhere.
 Fake participants branch on prompt markers (the same markers real
-models would see): synthesis / follow-up / registry-bearing response /
+models would see): follow-up / registry-bearing response /
 plain opening. No role labels appear in prompts, code, or tests.
 """
 
@@ -33,13 +33,12 @@ class FakeParticipant:
     """Duck-typed seat participant: generate(prompt, timeout=...)."""
 
     def __init__(self, name, *, opening="", response="", revision="",
-                 synthesis="", delay=0.0, boom=False):
+                 delay=0.0, boom=False):
         self.name = name
         self.provider_id = dict((n, p) for n, p, _ in SEAT_SPECS)[name]
         self.model = "fake-model"
         self.key_source = "settings"
         self._texts = {
-            "synthesis": synthesis,
             "revision": revision,
             "response": response,
             "opening": opening,
@@ -54,8 +53,6 @@ class FakeParticipant:
             time.sleep(self.delay)
         if self.boom:
             raise RuntimeError("provider exploded")
-        if "Write the synthesis" in prompt:
-            return self._texts["synthesis"]
         if "state the relationship explicitly" in prompt:
             return self._texts["revision"]
         if "Claim registry" in prompt:
@@ -111,13 +108,6 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
             opening="1. Inferred: Parallel monologues are a failure mode.",
             response="1. Objection to C1: authorization alone does not "
                      "prevent a synthesis from misrepresenting choices.",
-            synthesis=(
-                "Synthesis of the deliberation.\n"
-                "Positions:\n"
-                "- C1, C2: Authority must stay with Joshua.\n"
-                "Disagreements:\n"
-                "- C1 vs C3: whether the registry alone prevents confusion.\n"
-            ),
         ),
         "Gemini": FakeParticipant("Gemini", opening="1. Proposed: Add addressable claims."),
         "Grok": FakeParticipant("Grok", opening="1. Speculative: The room may perform deliberation."),
@@ -147,17 +137,15 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
     assert rev["supersedes"] is None
     assert "C1" in rev["relates_to"]
     assert reg[0]["text"] == "Inferred: Authority confusion is a failure mode."
-    # Synthesis: attributed positions/disagreements, unresolved, verbatim text.
-    assert result.artifact["synthesis"]["status"] == "complete"
-    assert result.artifact["synthesis"]["attributed_to"] == "Claude"
-    assert "Synthesis of the deliberation." in result.artifact["synthesis"]["text"]
-    pos = result.artifact["positions"]
-    assert pos and pos[0]["attributed_to"] == "Claude"
-    assert pos[0]["claim_ids"] == ["C1", "C2"]
-    dis = result.artifact["disagreements"]
-    assert dis and dis[0]["status"] == "unresolved"
-    assert dis[0]["claim_ids"] == ["C1", "C3"]
-    assert dis[0]["attributed_to"] == "Claude"
+    # Synthesis-less: registry + transcript are the output; no
+    # synthesis fields exist (absent, not failed).
+    assert result.artifact["synthesis_removed"] is True
+    for key in ("synthesis", "synthesis_failure", "positions",
+                "disagreements", "recommendations", "limitations"):
+        assert key not in result.artifact
+    assert result.artifact["record_complete"] is True
+    assert result.artifact["deliberation_complete"] is True
+    assert result.artifact["ok"] is True
     # Artifact boundaries kept.
     assert result.artifact["status"] == "DRAFT_EXPERIMENTAL"
     assert result.artifact["is_review_item"] is False
@@ -172,7 +160,8 @@ def test_full_meeting_registers_claims_in_stable_order(tmp_path):
         assert row["operation"] == "build_room_r2_meeting"
         assert row["token_usage"] == "unavailable"
         by_phase.setdefault(row["phase"], []).append(row)
-    assert set(by_phase) >= {"opening", "response", "revision", "synthesis"}
+    assert set(by_phase) >= {"opening", "response", "revision"}
+    assert "synthesis" not in by_phase
     resp_rows = [r for r in by_phase["response"] if r["participant"] == "Claude"]
     assert resp_rows and resp_rows[0]["cited_claim_ids"] == ["C1"]
     for path in (result.transcript_path, result.artifact_path, tmp_path / "usage.jsonl"):
@@ -188,10 +177,10 @@ def test_deterministic_order_under_parallel_completion(tmp_path):
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Fourth claim."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Fifth claim."),
     }
-    # Synthesis must exist for ok, but ordering is decided at openings.
-    fakes["Claude"]._texts["synthesis"] = "Synthesis.\nPositions:\n- C1: first.\n"
+    # Ordering is decided at openings.
     started = time.time()
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
+    assert result.ok is True
     elapsed = time.time() - started
     reg = [c for c in _registry(result) if c["phase"] == "opening"]
     assert [c["participant"] for c in reg] == NAMES
@@ -205,8 +194,7 @@ def test_dead_citation_and_zero_claims_noted(tmp_path):
         "GPT": FakeParticipant("GPT", opening="1. Inferred: Real claim."),
         "Claude": FakeParticipant(
             "Claude", opening="1. Inferred: Another claim.",
-            response="In response to C999, I object: this ID does not exist.",
-            synthesis="Synthesis."),
+            response="In response to C999, I object: this ID does not exist."),
         "Gemini": FakeParticipant("Gemini", opening="No numbered claims here."),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Third."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Fourth."),
@@ -227,8 +215,7 @@ def test_name_mention_without_citation_not_addressable(tmp_path):
         "GPT": FakeParticipant("GPT", opening="1. Inferred: Real claim."),
         "Claude": FakeParticipant(
             "Claude", opening="1. Inferred: Another claim.",
-            response="As GPT noted, I agree with the general direction.",
-            synthesis="Synthesis."),
+            response="As GPT noted, I agree with the general direction."),
         "Gemini": FakeParticipant("Gemini", opening="1. Inferred: Third."),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Fourth."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Fifth."),
@@ -250,7 +237,6 @@ def test_revision_relationships_revised_defended_withdrawn(tmp_path):
                      "1. Inferred: Alpha stands."),
         "Claude": FakeParticipant(
             "Claude", opening="1. Inferred: Beta.",
-            synthesis="Synthesis.",
             response="In response to C1, I object: alpha is overstated. "
                      "In response to C4, I object: delta is unproven.",
             revision="Relationship: revised.\nIn response to C2, I revise:\n"
@@ -298,45 +284,42 @@ def test_disagreement_preservation_no_collapse(tmp_path):
             "GPT", opening="1. Inferred: Alpha."),
         "Claude": FakeParticipant(
             "Claude", opening="1. Inferred: Beta.",
-            response="In response to C1, I object: alpha conflicts with beta.",
-            synthesis=(
-                "Synthesis.\n"
-                "Positions:\n"
-                "- C1: Alpha position.\n"
-                "- C2: Beta position.\n"
-                "Disagreements:\n"
-                "- C1 vs C2: alpha and beta conflict.\n"
-            )),
+            response="In response to C1, I object: alpha conflicts with beta."),
         "Gemini": FakeParticipant("Gemini", opening="1. Inferred: Gamma."),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Delta."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Epsilon."),
     }
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
-    # Both positions survive alongside the synthesis; nothing resolved.
-    assert len(result.artifact["positions"]) == 2
-    assert len(result.artifact["disagreements"]) == 1
-    assert result.artifact["disagreements"][0]["status"] == "unresolved"
-    assert result.artifact["synthesis"]["text"].startswith("Synthesis.")
-    assert not any(d.get("status") == "resolved"
-                   for d in result.artifact["disagreements"])
+    # Both positions survive in the registry; nothing resolved,
+    # nothing collapsed into a synthesis. The registry IS the record.
+    reg = _registry(result)
+    assert [c["id"] for c in reg if c["phase"] == "opening"] == ["C1", "C2", "C3", "C4", "C5"]
+    assert not any(c.get("status") == "resolved" for c in reg)
+    assert "disagreements" not in result.artifact
+    assert result.artifact["synthesis_removed"] is True
 
 
-def test_synthesis_overflow_visible_not_truncated(tmp_path):
+def test_tight_prompt_cap_fails_deliberation_without_synthesis(tmp_path):
+    # Response prompts exceed the 100-char response cap, so every
+    # response job fails budget_exceeded (recorded, not raised).
+    # There is no synthesis phase to overflow: the meeting ends
+    # synthesis-less, deliberation incomplete, record complete,
+    # with the full transcript preserved.
     fakes = {
-        name: FakeParticipant(name, opening="1. Inferred: Some claim with substance.",
-                              synthesis="Synthesis.")
+        name: FakeParticipant(name, opening="1. Inferred: Some claim with substance.")
         for name in NAMES
     }
-    budget = Budget(max_contributions=16, max_prompt_chars=20000,
+    budget = Budget(max_contributions=15, max_prompt_chars=20000,
                     max_response_prompt_chars=100)
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path,
                                      seats=_seats(fakes), budget=budget)
     assert result.ok is False
-    assert result.artifact["synthesis"]["status"] == "INCOMPLETE"
-    assert result.artifact["synthesis"]["text"] is None
-    assert "budget_exceeded" in result.artifact["synthesis"]["reason"]
+    assert result.artifact["record_complete"] is True
+    assert result.artifact["deliberation_complete"] is False
+    assert "synthesis" not in result.artifact
+    assert result.artifact["synthesis_removed"] is True
     failures = [e.text for e in result.transcript.entries if e.kind == "failure"]
-    assert any("budget_exceeded" in f and "synthesis" in f for f in failures)
+    assert any("budget_exceeded" in f and "response" in f for f in failures)
     # The complete transcript is preserved regardless of prompt limits.
     persisted = json.loads(_read(result.transcript_path))
     assert len(persisted["entries"]) == len(result.transcript.entries)
@@ -344,19 +327,21 @@ def test_synthesis_overflow_visible_not_truncated(tmp_path):
 
 
 def test_failure_isolation_one_provider_down(tmp_path):
-    # The failing seat must not be the synthesizer seat: with Claude
-    # synthesizing, a down Claude takes synthesis down with it, so
-    # isolation is demonstrated with Gemini down instead.
+    # Gemini down: only Gemini's generations fail; no other
+    # participant is affected — that is failure isolation. But
+    # deliberation is NOT complete (a required opening failed),
+    # so ok is False while the record is complete.
     fakes = {
         "GPT": FakeParticipant("GPT", opening="1. Inferred: Alpha."),
-        "Claude": FakeParticipant("Claude", opening="1. Inferred: Beta.",
-                                   synthesis="Synthesis."),
+        "Claude": FakeParticipant("Claude", opening="1. Inferred: Beta."),
         "Gemini": FakeParticipant("Gemini", opening="", boom=True),
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Delta."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Epsilon."),
     }
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
-    assert result.ok is True
+    assert result.ok is False
+    assert result.artifact["record_complete"] is True
+    assert result.artifact["deliberation_complete"] is False
     failures = [(e.participant, e.text) for e in result.transcript.entries
                 if e.kind == "failure"]
     # Gemini fails in every phase it is called in; no other participant
@@ -368,12 +353,11 @@ def test_failure_isolation_one_provider_down(tmp_path):
 
 
 def test_absence_recorded_meeting_continues(tmp_path):
-    # The absent seat must not be the synthesizer seat: with Claude
-    # synthesizing, an absent Claude means no synthesis runs.
+    # Gemini absent: the meeting continues with the present seats,
+    # and deliberation completes over the present set.
     fakes = {
         "GPT": FakeParticipant("GPT", opening="1. Inferred: Alpha."),
-        "Claude": FakeParticipant("Claude", opening="1. Inferred: Beta.",
-                                   synthesis="Synthesis."),
+        "Claude": FakeParticipant("Claude", opening="1. Inferred: Beta."),
         "Gemini": None,  # absent
         "Grok": FakeParticipant("Grok", opening="1. Inferred: Delta."),
         "Muse": FakeParticipant("Muse", opening="1. Inferred: Epsilon."),
@@ -393,8 +377,10 @@ def test_all_absent_meeting_fails_cleanly(tmp_path):
     seats = _seats({name: None for name in NAMES})
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=seats)
     assert result.ok is False
-    assert result.artifact["synthesis"] is None
-    assert "no opening contributions" in (result.artifact["synthesis_failure"] or "")
+    assert "synthesis" not in result.artifact
+    assert result.artifact["synthesis_removed"] is True
+    assert any("no opening contributions" in e.text
+               for e in result.transcript.entries if e.kind == "failure")
     # No contributions beyond absences/failures; the convenor's
     # telemetry note (C8) is metadata, not a contribution.
     assert all(e.kind in ("convene", "absence", "failure", "note")
@@ -402,8 +388,7 @@ def test_all_absent_meeting_fails_cleanly(tmp_path):
 
 
 def test_generation_budget_cap_respected(tmp_path):
-    fakes = {name: FakeParticipant(name, opening="1. Inferred: Claim.",
-                                    synthesis="Synthesis.")
+    fakes = {name: FakeParticipant(name, opening="1. Inferred: Claim.")
              for name in NAMES}
     budget = Budget(max_contributions=2, max_prompt_chars=20000,
                     max_response_prompt_chars=40000)
@@ -419,8 +404,7 @@ def test_generation_budget_cap_respected(tmp_path):
 def test_no_role_labels_in_prompts(tmp_path):
     fakes = {name: FakeParticipant(name, opening="1. Inferred: Claim.",
                                     response="In response to C1, I agree.",
-                                    revision="Relationship: defended. In response to C1, I defend: 1. Inferred: stands.",
-                                    synthesis="Synthesis.")
+                                    revision="Relationship: defended. In response to C1, I defend: 1. Inferred: stands.")
              for name in NAMES}
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
     banned = ("Weaver", "Firebrand", "Champion", "Guardian", "Ambassador",
@@ -430,17 +414,6 @@ def test_no_role_labels_in_prompts(tmp_path):
             for label in banned:
                 assert label not in prompt
     assert result.transcript.entries[0].participant == "Reynard (convener)"
-
-
-def test_synthesis_prompt_requires_english(tmp_path):
-    fakes = {name: FakeParticipant(name, opening="1. Inferred: Claim.",
-                                    synthesis="Synthesis.")
-             for name in NAMES}
-    result = run_multi_model_meeting(_packet(), store_dir=tmp_path, seats=_seats(fakes))
-    claude = fakes["Claude"]
-    synth_prompts = [p for p in claude.prompts if "Write the synthesis" in p]
-    assert len(synth_prompts) == 1
-    assert "Write the synthesis in English" in synth_prompts[0]
 
 
 # --- Endpoint: POST /build-room/meetings/r2 ---
@@ -509,8 +482,7 @@ def test_r2_non_owner_is_403(app):
 
 def test_r2_owner_runs_meeting_persists_files(app, tmp_path, monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: OWNER
-    fakes = {name: FakeParticipant(name, opening="1. Inferred: Claim.",
-                                    synthesis="Synthesis.")
+    fakes = {name: FakeParticipant(name, opening="1. Inferred: Claim.")
              for name in NAMES}
     monkeypatch.setattr(meeting_mod, "resolve_seat_participants",
                         lambda principal: _seats(fakes))
@@ -520,7 +492,8 @@ def test_r2_owner_runs_meeting_persists_files(app, tmp_path, monkeypatch):
     assert body["artifact"]["status"] == "DRAFT_EXPERIMENTAL"
     assert body["artifact"]["is_review_item"] is False
     assert len(body["artifact"]["claim_registry"]) == 5
-    assert body["artifact"]["synthesis"]["status"] == "complete"
+    assert body["artifact"]["synthesis_removed"] is True
+    assert "synthesis" not in body["artifact"]
     assert FAKE_KEY not in json.dumps(body)
     store = tmp_path / "store"
     assert list(store.glob("meeting_*.transcript.json"))

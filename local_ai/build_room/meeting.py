@@ -271,14 +271,14 @@ def run_single_model_meeting(
 
 from local_ai.build_room.artifact import build_draft_artifact_r2
 from local_ai.build_room.participants import (
-    SYNTHESIZER_NAME,
     Seat,
     resolve_seat_participants,
 )
 
 # Default R2 budget: 5 openings + up to 5 responses + up to 5
-# revisions + 1 synthesis = max 16 generations (design §4).
-R2_MAX_GENERATIONS = 16
+# revisions = max 15 generations. No synthesis phase (removed by
+# design 2026-10-27, Joshua: drop synthesis entirely).
+R2_MAX_GENERATIONS = 15
 
 _NUMBERED_CLAIM_RE = re.compile(r"^\s*(?:\*\*)?(\d+)[.)](?:\*\*)?\s+(.*\S)\s*$")
 # C1: a model-written "C60." line is a claim boundary too, but the
@@ -1852,15 +1852,11 @@ def run_multi_model_meeting(
     otherwise all five seats resolve under the caller's principal in
     stable SEAT_SPECS order.
 
-    ``experimental_candidate_gate`` is the Phase C experimental
-    selection (spec §5.5): when True, this meeting's synthesis is
-    gated at 12,500 exact tokens via the B2 candidate machinery
-    instead of the 40,000-character production gate. Default False:
-    ordinary meetings can never accidentally use the candidate gate
-    — selection requires this explicit opt-in, and it changes ONLY
-    the synthesis prompt gate (validation, coverage, latency/cost
-    instrumentation, and the instruction are untouched). It adopts
-    nothing; production default stays 40,000 characters.
+    ``experimental_candidate_gate`` is INERT since synthesis
+    removal stage 1 (2026-10-27): no synthesis runs, so no
+    synthesis gate is evaluated. The parameter is accepted for
+    API compatibility and removed in stage 3 with the gate
+    machinery. It has no effect on deliberation.
     """
     budget = budget or Budget(
         max_contributions=R2_MAX_GENERATIONS,
@@ -1887,12 +1883,9 @@ def run_multi_model_meeting(
         f"Work item: {packet.work_item}\nQuestion: {packet.question}\n"
         f"Budget: max {budget.max_contributions} generations, "
         f"{budget.timeout_seconds}s per call, openings capped at "
-        f"{budget.max_prompt_chars} chars, response/synthesis prompts capped at "
-        f"{budget.max_response_prompt_chars} chars."
-        + (" Synthesis gate: EXPERIMENTAL candidate token gate, 12,500 tokens "
-           "(production default 40,000 chars unchanged; selection explicit "
-           "to this meeting only)."
-           if experimental_candidate_gate else ""))
+        f"{budget.max_prompt_chars} chars, response/revision prompts capped at "
+        f"{budget.max_response_prompt_chars} chars. No synthesis phase "
+        f"(removed by design 2026-10-27).")
 
     if seats is None:
         seats = resolve_seat_participants(principal)
@@ -2051,8 +2044,7 @@ def run_multi_model_meeting(
     opening_telemetry = _telemetry_block(
         phase="opening", max_generations=budget.max_contributions,
         completed=0, allocated=len(present),
-        reserved={"Response slots": "up to 5", "Revision slots": "up to 5",
-                  "Synthesis slots": "1"})
+        reserved={"Response slots": "up to 5", "Revision slots": "up to 5"})
     transcript.append("note", "Reynard (convener)", opening_telemetry)
     opening_prompt = (
         packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
@@ -2065,30 +2057,16 @@ def run_multi_model_meeting(
     opening_results = _run_phase_parallel(opening_jobs, budget)
     openings = _record_phase("opening", opening_results, frozen_ids=set())
 
-    synthesis_failure: str | None = None
-    synthesis: dict[str, Any] | None = None
-    positions: list[dict] = []
-    disagreements: list[dict] = []
-    recommendations: list[dict] = []
-    limitations: list[dict] = []
-    rejected_entries: list[dict] = []
     unresolved_objections: list[dict] = []
-    # Per-field evaluation status (C7): synthesis-derived fields are
-    # not_evaluated until synthesis actually runs.
-    positions_evaluation: str = "not_evaluated"
-    disagreements_evaluation: str = "not_evaluated"
-    recommendations_evaluation: str = "not_evaluated"
-    limitations_evaluation: str = "not_evaluated"
-    # Coverage-assurance instruments (design §C/§E/§F): set only when
-    # synthesis actually runs; None means no synthesis to check.
-    synthesis_generation: dict[str, Any] | None = None
-    synthesis_generation_cost: dict[str, Any] | None = None
-    synthesis_coverage: dict[str, Any] | None = None
-    synthesis_coverage_accepted: bool = False
-    # Synthesis-gate record (Phase C spec §5.5(d)): set when a gate
-    # evaluation runs in Phase 4 (admission or refusal); None means
-    # Phase 4 never ran (e.g. synthesizer absent, no openings).
-    synthesis_gate: dict[str, Any] | None = None
+    # Synthesis-removal stage 1 (2026-10-27): no synthesis phase, so
+    # no synthesis variables. Status fields for the synthesis-less
+    # artifact (design §3B): record_complete is set when the run
+    # reaches artifact writing (all phase results processed — every
+    # result is recorded as a contribution or a failure by the phase
+    # loops, and a raise before this point produces no result);
+    # deliberation_complete is set in the deliberation branch below.
+    record_complete: bool = False
+    deliberation_complete: bool = False
     unclassified: list[dict] = []
     delta_report: dict[str, Any] = build_delta_report(
         registry, verified_challenges)
@@ -2096,9 +2074,8 @@ def run_multi_model_meeting(
     if not openings:
         transcript.append(
             "failure", "Reynard (convener)",
-            "no opening contributions; response, revision, and synthesis "
+            "no opening contributions; response and revision "
             "phases skipped")
-        synthesis_failure = "no opening contributions; synthesis skipped"
         ok = False
     else:
         # -- Phase 2: one response round. All responders share the
@@ -2108,7 +2085,7 @@ def run_multi_model_meeting(
         response_telemetry = _telemetry_block(
             phase="response", max_generations=budget.max_contributions,
             completed=len(openings), allocated=len(present),
-            reserved={"Revision slots": "up to 5", "Synthesis slots": "1"})
+            reserved={"Revision slots": "up to 5"})
         transcript.append("note", "Reynard (convener)", response_telemetry)
         response_prompt = (
             packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
@@ -2148,7 +2125,7 @@ def run_multi_model_meeting(
             revision_telemetry = _telemetry_block(
                 phase="revision", max_generations=budget.max_contributions,
                 completed=len(openings) + len(responses), allocated=len(invited),
-                reserved={"Synthesis slots": "1"})
+                reserved={})
             transcript.append("note", "Reynard (convener)", revision_telemetry)
             revision_prompt = (
                 packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
@@ -2262,333 +2239,38 @@ def run_multi_model_meeting(
             registry, verified_challenges,
             unclassified_interactions=unclassified)
 
-        # -- Phase 4: synthesis (test parameter: Claude, design §5).
-        # Input is the bounded state packet (C9), never the full
-        # transcript; the transcript file is still written complete.
-        synth_seat = next((s for s in seats if s.name == SYNTHESIZER_NAME), None)
-        if synth_seat is None or synth_seat.participant is None:
-            synthesis_failure = (
-                f"synthesizer {SYNTHESIZER_NAME} absent; synthesis skipped")
-            transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
-            ok = False
-        else:
-            # B1: telemetry is computed BEFORE the state so the gate
-            # compares the assembled prompt length (telemetry
-            # included). Telemetry inputs do not depend on the state
-            # (attempts is unchanged by building it), so reordering
-            # is safe; the transcript note keeps its position.
-            synthesis_telemetry = _telemetry_block(
-                phase="synthesis", max_generations=budget.max_contributions,
-                completed=attempts, allocated=1, reserved={})
-            transcript.append("note", "Reynard (convener)", synthesis_telemetry)
-            blocked = _budget_blocked()
-            # Gate evaluation (production default, or the explicit
-            # experimental candidate gate): produces either a
-            # synthesis prompt or an honest refusal. Nothing is
-            # truncated to fit in either branch. When the generation
-            # cap already blocks synthesis, no gate runs (the gate
-            # record stays None: no gate was evaluated).
-            synthesis_prompt: str | None = None
-            gate_failure: str | None = None
-            state: dict = {}
-            if blocked is None:
-                if experimental_candidate_gate:
-                    # Lazy import: candidate_cap imports from this
-                    # module (instruction, token counting), so a
-                    # top-level import would be circular.
-                    from local_ai.build_room import candidate_cap
-                    transcript.append(
-                        "note", "Reynard (convener)",
-                        "Experimental candidate token gate selected for "
-                        "this meeting's synthesis (production default "
-                        "40,000 chars unchanged).")
-                    agreement = candidate_cap.verify_model_tokenizer_agreement()
-                    if not agreement["agrees"]:
-                        gate_failure = (
-                            "candidate_gate_unavailable: "
-                            + (agreement["reason"] or
-                               "model/tokenizer disagreement"))
-                        synthesis_gate = synthesis_gate_record(
-                            gate="candidate_tokens",
-                            cap_chars=None,
-                            cap_tokens=candidate_cap.CANDIDATE_SYNTHESIS_PROMPT_TOKENS,
-                            total_chars=None, total_tokens=None,
-                            prompt_sha256=None, admitted=False,
-                            reason=gate_failure)
-                    else:
-                        state = build_synthesis_state(
-                            packet, registry, unresolved_objections,
-                            delta_report["revision_chains"],
-                            cap_chars=candidate_cap.VERIFICATION_BUILD_CHAR_CAP,
-                            telemetry=synthesis_telemetry)
-                        gate = candidate_cap.evaluate_candidate_gate(
-                            state, synthesis_telemetry)
-                        synthesis_gate = synthesis_gate_record(
-                            gate="candidate_tokens",
-                            cap_chars=None,
-                            cap_tokens=gate["cap_tokens"],
-                            total_chars=gate["total_chars"],
-                            total_tokens=gate["total_tokens"],
-                            prompt_sha256=gate["prompt_sha256"],
-                            admitted=gate["admitted"],
-                            reason=gate["reason"])
-                        if gate["admitted"]:
-                            synthesis_prompt = (state["prompt"] + "\n\n"
-                                                + synthesis_telemetry)
-                        else:
-                            gate_failure = (
-                                gate["reason"] or
-                                "candidate gate refused the synthesis prompt")
-                else:
-                    state = build_synthesis_state(
-                        packet, registry, unresolved_objections,
-                        delta_report["revision_chains"],
-                        cap_chars=budget.max_response_prompt_chars,
-                        telemetry=synthesis_telemetry)
-                    if state["prompt"] is None:
-                        gate_failure = state["reason"]
-                        synthesis_gate = synthesis_gate_record(
-                            gate="production_chars",
-                            cap_chars=budget.max_response_prompt_chars,
-                            cap_tokens=None,
-                            total_chars=state.get("total_chars"),
-                            total_tokens=None,
-                            prompt_sha256=None, admitted=False,
-                            reason=gate_failure)
-                    else:
-                        synthesis_prompt = (state["prompt"] + "\n\n"
-                                            + synthesis_telemetry)
-                        synthesis_gate = synthesis_gate_record(
-                            gate="production_chars",
-                            cap_chars=budget.max_response_prompt_chars,
-                            cap_tokens=None,
-                            total_chars=len(synthesis_prompt),
-                            total_tokens=state.get("assembled_tokens"),
-                            prompt_sha256=hashlib.sha256(
-                                synthesis_prompt.encode()).hexdigest(),
-                            admitted=True, reason=None)
-            if blocked is not None:
-                synthesis_failure = blocked
-                transcript.append("failure", SYNTHESIZER_NAME, blocked)
-                synthesis = {"status": "INCOMPLETE", "text": None,
-                             "reason": blocked,
-                             "attributed_to": SYNTHESIZER_NAME}
-                ok = False
-            elif gate_failure is not None:
-                # Never silently truncate: the complete transcript is
-                # preserved in the transcript file regardless, and the
-                # artifact says INCOMPLETE out loud.
-                synthesis_failure = gate_failure
-                transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
-                synthesis = {"status": "INCOMPLETE", "text": None,
-                             "reason": synthesis_failure,
-                             "attributed_to": SYNTHESIZER_NAME}
-                ok = False
-            else:
-                attempts += 1
-                try:
-                    # Coverage design §E/§F: one measured call —
-                    # monotonic duration around the actual generate
-                    # call, provider usage when the seat offers it,
-                    # estimated cost otherwise, never a second call.
-                    measured = measure_generation(
-                        synth_seat.participant, synthesis_prompt,
-                        timeout=budget.timeout_seconds)
-                    synthesis_generation = measured["generation"]
-                    synthesis_generation_cost = compute_generation_cost(
-                        synthesis_prompt, measured["text"],
-                        measured["usage"], None)
-                    if measured["error"] is not None:
-                        raise RuntimeError(measured["error"])
-                    synth_text = measured["text"]
-                    generation_timestamps.setdefault("synthesis", {})[SYNTHESIZER_NAME] = time.time()
-                    transcript.append("contribution", SYNTHESIZER_NAME, synth_text)
-                    # Scope B: the fenced JSON contract takes
-                    # precedence when present; a present-but-invalid
-                    # block is unparseable, never repaired and never
-                    # rescued by section parsing. No block at all
-                    # falls back to the legacy section parser.
-                    contract, contract_evals, rejected_entries, block_found = (
-                        parse_synthesis_contract(
-                            synth_text, registry, unresolved_objections,
-                            SYNTHESIZER_NAME))
-                    if block_found:
-                        positions = contract["positions"]
-                        disagreements = contract["disagreements"]
-                        recommendations = contract["recommendations"]
-                        limitations = contract["limitations"]
-                        positions_evaluation = contract_evals["positions"]
-                        disagreements_evaluation = contract_evals["disagreements"]
-                        recommendations_evaluation = contract_evals["recommendations"]
-                        limitations_evaluation = contract_evals["limitations"]
-                        if all(v == "unparseable"
-                               for v in contract_evals.values()):
-                            transcript.append(
-                                "note", SYNTHESIZER_NAME,
-                                "Synthesis structured output unparseable; "
-                                "raw synthesis preserved, not repaired.")
-                        elif rejected_entries:
-                            transcript.append(
-                                "note", SYNTHESIZER_NAME,
-                                "Synthesis structured output partially "
-                                f"salvaged; {len(rejected_entries)} entries "
-                                "rejected and disclosed.")
-                        # Empty-field disclosure (text only: no status
-                        # change, no reclassification). An empty field
-                        # means the synthesizer returned no entries,
-                        # never that none objectively exist. Flag it
-                        # when state material exists that the empty
-                        # field does not account for.
-                        if (contract_evals["disagreements"] == "synthesized_empty"
-                                and unresolved_objections):
-                            transcript.append(
-                                "note", SYNTHESIZER_NAME,
-                                "Synthesis disagreements field is empty "
-                                "although unresolved objections exist in "
-                                "the registry; empty means the synthesizer "
-                                "returned no disagreement entries, not that "
-                                "no disagreements exist. Registry "
-                                "objections are unchanged.")
-                        omitted = state.get("omitted") or {}
-                        omitted_total = (omitted.get("superseded_texts", 0)
-                                         + omitted.get("responded_to_details", 0))
-                        had_failures = any(
-                            e.kind == "failure" for e in transcript.entries)
-                        if (contract_evals["limitations"] == "synthesized_empty"
-                                and (omitted_total or had_failures)):
-                            transcript.append(
-                                "note", SYNTHESIZER_NAME,
-                                "Synthesis limitations field is empty "
-                                "although omitted context or failed "
-                                "contributions exist in this meeting; empty "
-                                "means the synthesizer returned no limitation "
-                                "entries, not that no limitations exist.")
-                    else:
-                        positions, disagreements, sections_found = _parse_synthesis_sections(
-                            synth_text, SYNTHESIZER_NAME)
-                        recommendations = []
-                        limitations = []
-                        recommendations_evaluation = "unparseable"
-                        limitations_evaluation = "unparseable"
-                        if not sections_found:
-                            transcript.append(
-                                "note", SYNTHESIZER_NAME,
-                                "Synthesis did not list positions/disagreements in "
-                                "parseable form; positions and disagreements are "
-                                "empty, not inferred.")
-                            positions_evaluation = "unparseable"
-                            disagreements_evaluation = "unparseable"
-                        else:
-                            positions_evaluation = (
-                                "evaluated_with_results" if positions
-                                else "evaluated_empty")
-                            disagreements_evaluation = (
-                                "evaluated_with_results" if disagreements
-                                else "evaluated_empty")
-                    # Coverage check (design §A–§C): detection-only,
-                    # on the KEPT structured output. It never mutates
-                    # the output, never rewrites an evaluation, and
-                    # never injects synthesis text. A failure stays
-                    # visible here (transcript note) and on the
-                    # artifact (coverage verdict field) — the
-                    # Phase C prerequisite.
-                    synthesis_coverage = check_coverage(
-                        registry, unresolved_objections, {
-                            "positions": positions,
-                            "disagreements": disagreements,
-                            "recommendations": recommendations,
-                            "limitations": limitations,
-                        })
-                    active_empty = not any(
-                        c.disposition not in ("revised", "withdrawn")
-                        for c in registry.claims)
-                    synthesis_coverage_accepted = artifact_accepted(
-                        {"positions": positions_evaluation,
-                         "disagreements": disagreements_evaluation,
-                         "recommendations": recommendations_evaluation,
-                         "limitations": limitations_evaluation},
-                        synthesis_coverage, active_claims_empty=active_empty)
-                    if synthesis_coverage["verdict"] == "fail":
-                        fail_parts = []
-                        omitted_obj = synthesis_coverage["objections"]["omitted"]
-                        if omitted_obj:
-                            fail_parts.append(
-                                "objections omitted: " + ", ".join(
-                                    f"{o['target_claim_id']}/{o['challenger_claim_id']}"
-                                    for o in omitted_obj))
-                        omitted_prop = synthesis_coverage["proposals"]["omitted"]
-                        if omitted_prop:
-                            fail_parts.append(
-                                "proposals omitted: " + ", ".join(
-                                    o["proposal_claim_id"] for o in omitted_prop))
-                        if synthesis_coverage["provenance_failures"]:
-                            fail_parts.append(
-                                "provenance failures: "
-                                f"{len(synthesis_coverage['provenance_failures'])}")
-                        transcript.append(
-                            "note", SYNTHESIZER_NAME,
-                            "Synthesis coverage FAIL (mechanical, "
-                            "detection-only): " + "; ".join(fail_parts)
-                            + ". The structured output is unchanged; "
-                            "coverage failure is a verdict on the "
-                            "artifact, not a repair.")
-                    synthesis = {
-                        "status": "complete",
-                        "text": synth_text,
-                        "attributed_to": SYNTHESIZER_NAME,
-                        "generation": synthesis_generation,
-                        "generation_cost": synthesis_generation_cost,
-                        "coverage": synthesis_coverage,
-                        "coverage_accepted": synthesis_coverage_accepted,
-                        "positions_represented": [
-                            cid for p in positions for cid in p["claim_ids"]],
-                        "disagreements_carried": [
-                            cid for d in disagreements for cid in d["claim_ids"]],
-                    }
-                    _log_usage(store, meeting_id=meeting_id,
-                               participant=SYNTHESIZER_NAME,
-                               provider=synth_seat.provider_id,
-                               key_source=synth_seat.participant.key_source,
-                               operation="build_room_r2_meeting",
-                               outcome="generated", phase="synthesis",
-                               cited_claim_ids=synthesis["positions_represented"]
-                               + synthesis["disagreements_carried"],
-                               token_usage=(
-                                   measured["usage"].get("total_tokens")
-                                   if isinstance(measured["usage"], dict)
-                                   and isinstance(measured["usage"].get("total_tokens"), int)
-                                   else "unavailable"))
-                    ok = True
-                except Exception as exc:  # recorded, not raised
-                    synthesis_failure = f"{type(exc).__name__}: {str(exc)[:200]}"
-                    transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
-                    synthesis = None
-                    ok = False
-        # Final delta report with synthesis elements (§4).
+        # Synthesis-less status (design §3B): required phases are
+        # opening + response; revision is invited, not required, so
+        # a recorded revision failure does not block this.
+        deliberation_complete = (len(openings) == len(present)
+                                 and len(responses) == len(present))
+
+        # No synthesis phase (removed by design 2026-10-27,
+        # Joshua: drop synthesis entirely). The registry +
+        # transcript are the meeting output; nothing is
+        # compressed, so there is no synthesis to gate, parse,
+        # or coverage-check. Deliberation ends at revision.
+        # Final delta report (no synthesis elements: synthesis removed).
         delta_report = build_delta_report(
             registry, verified_challenges,
-            synthesis_elements=positions + disagreements,
             unclassified_interactions=unclassified)
+
+    # Reached artifact writing: every phase result was processed
+    # (contribution or recorded failure); see the record_complete
+    # note at initialization. ok is NOT synthesis success — there
+    # is no synthesis — it is record + deliberation completeness.
+    record_complete = True
+    ok = record_complete and deliberation_complete
 
     artifact = build_draft_artifact_r2(
         meeting_id, packet, transcript, seats, registry,
         interactions=interactions,
-        synthesis=synthesis, synthesis_failure=synthesis_failure,
-        positions=positions, disagreements=disagreements,
-        positions_evaluation=positions_evaluation,
-        disagreements_evaluation=disagreements_evaluation,
-        recommendations=recommendations, limitations=limitations,
-        recommendations_evaluation=recommendations_evaluation,
-        limitations_evaluation=limitations_evaluation,
-        rejected_entries=rejected_entries,
         unresolved_objections=unresolved_objections,
         delta_report=delta_report,
         generation_timestamps=generation_timestamps,
-        synthesis_coverage=synthesis_coverage,
-        synthesis_coverage_accepted=synthesis_coverage_accepted,
-        synthesis_generation=synthesis_generation,
-        synthesis_generation_cost=synthesis_generation_cost,
-        synthesis_gate=synthesis_gate,
+        record_complete=record_complete,
+        deliberation_complete=deliberation_complete,
+        ok=ok,
     )
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"
@@ -2599,8 +2281,7 @@ def run_multi_model_meeting(
 
 def replay_r2_transcript(contributions: list[dict[str, str]],
                          *, meeting_id: str = "replay",
-                         work_item: str = "", question: str = "",
-                         synthesis_failure: str | None = None) -> dict[str, Any]:
+                         work_item: str = "", question: str = "") -> dict[str, Any]:
     """Re-run corrected parsing over stored contributions (§6 fixture).
 
     No live generation. ``contributions`` are dicts with
@@ -2608,10 +2289,9 @@ def replay_r2_transcript(contributions: list[dict[str, str]],
     ``text``, in phase order (openings, then responses, then
     revisions). Frozen citation sets follow the runner: openings
     freeze on nothing, responses on the opening registry, revisions
-    on openings + responses. Returns the artifact dict built by
-    :func:`build_draft_artifact_r2` with synthesis INCOMPLETE
-    (positions/disagreements ``not_evaluated``) unless the caller
-    supplies a synthesis failure string, which is carried verbatim.
+    on openings + responses. Returns the synthesis-less artifact
+    dict built by :func:`build_draft_artifact_r2` (synthesis fields
+    absent by design; see ``synthesis_removed``).
     Provenance is empty: a replay has no live participants.
     """
     from types import SimpleNamespace
@@ -2698,17 +2378,10 @@ def replay_r2_transcript(contributions: list[dict[str, str]],
     delta_report = build_delta_report(
         registry, verified_challenges,
         unclassified_interactions=unclassified)
-    synthesis = {"status": "INCOMPLETE", "text": None,
-                 "reason": synthesis_failure,
-                 "attributed_to": SYNTHESIZER_NAME}
     packet = SimpleNamespace(work_item=work_item, question=question)
     return build_draft_artifact_r2(
         meeting_id, packet, transcript, [], registry,
         interactions=interactions,
-        synthesis=synthesis, synthesis_failure=synthesis_failure,
-        positions=[], disagreements=[],
-        positions_evaluation="not_evaluated",
-        disagreements_evaluation="not_evaluated",
         unresolved_objections=unresolved_objections,
         delta_report=delta_report,
         generation_timestamps={},
@@ -2943,17 +2616,10 @@ def replay_derived_r2_transcript(contributions: list[dict[str, str]],
             })
     unmatched_historical = [
         c["id"] for c in historical_claims if c["id"] not in matched_historical]
-    synthesis = {"status": "INCOMPLETE", "text": None,
-                 "reason": "derived replay; synthesis not re-run",
-                 "attributed_to": SYNTHESIZER_NAME}
     packet = SimpleNamespace(work_item=work_item, question=question)
     artifact = build_draft_artifact_r2(
         meeting_id, packet, transcript, [], registry,
         interactions=interactions,
-        synthesis=synthesis, synthesis_failure="derived replay",
-        positions=[], disagreements=[],
-        positions_evaluation="not_evaluated",
-        disagreements_evaluation="not_evaluated",
         unresolved_objections=unresolved_objections,
         delta_report=delta_report,
         generation_timestamps={},

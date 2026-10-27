@@ -190,7 +190,7 @@ def run_meeting_r2(
 # ---------------------------------------------------------------------------
 # Synthesis-harness route (test-only staging surface, NOT a meeting).
 #
-# POST /build-room/harness/synthesis-call runs exactly ONE GPT
+# POST /build-room/harness/synthesis-call runs exactly ONE Claude
 # generation per request against a bounded fixture state (D or E) and
 # returns the verbatim output plus the production validator's
 # evaluation. It exists because the test environment cannot resolve
@@ -362,7 +362,7 @@ def _harness_b2_sizes(state: dict, prompt: str, gate: dict) -> dict:
 
 
 def _harness_b2_call(fixture_id: str, principal, budget: Budget) -> dict:
-    """One GPT synthesis generation against a B2 fixture, evaluated.
+    """One Claude synthesis generation against a B2 fixture, evaluated.
 
     Candidate-token-gate path (proposal Section 2.4): verify
     model/tokenizer agreement, then apply the token gate to the
@@ -490,7 +490,7 @@ def harness_synthesis_call(
     body: HarnessSynthesisBody,
     current_user: dict = Depends(get_current_owner_user),
 ):
-    """One GPT synthesis generation against a fixture, evaluated.
+    """One Claude synthesis generation against a fixture, evaluated.
 
     Owner-only; fixture selector only; exactly one generation, no
     retries; no persistence; no credentials or prompt text returned.

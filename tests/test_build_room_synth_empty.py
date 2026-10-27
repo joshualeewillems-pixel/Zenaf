@@ -275,10 +275,10 @@ def _note_texts(result) -> list[str]:
 def test_live_empty_disagreements_note_fires_with_unresolved_objections(tmp_path):
     from local_ai.build_room.meeting import run_multi_model_meeting
     fakes = {
-        "GPT": _FakeSeat("GPT", opening="1. Observed: Alpha.",
-                         synthesis=_empty_block()),
+        "GPT": _FakeSeat("GPT", opening="1. Observed: Alpha."),
         "Claude": _FakeSeat(
             "Claude", opening="1. Inferred: Beta.",
+            synthesis=_empty_block(),
             response="1. Inferred: In response to C1: Objection to C1: "
                      "the recommendation-only framing is insufficient."),
         "Gemini": _FakeSeat("Gemini", opening="1. Proposed: Gamma."),
@@ -305,9 +305,9 @@ def test_live_empty_disagreements_note_fires_with_unresolved_objections(tmp_path
 def test_live_empty_limitations_note_fires_on_failed_contribution(tmp_path):
     from local_ai.build_room.meeting import run_multi_model_meeting
     fakes = {
-        "GPT": _FakeSeat("GPT", opening="1. Observed: Alpha.",
-                         synthesis=_empty_block()),
-        "Claude": _FakeSeat("Claude", opening="1. Inferred: Beta."),
+        "GPT": _FakeSeat("GPT", opening="1. Observed: Alpha."),
+        "Claude": _FakeSeat("Claude", opening="1. Inferred: Beta.",
+                            synthesis=_empty_block()),
         "Gemini": _FakeSeat("Gemini", opening="1. Proposed: Gamma."),
         "Grok": _RaisingSeat("Grok"),
         "Muse": _FakeSeat("Muse", opening="1. Observed: Epsilon."),

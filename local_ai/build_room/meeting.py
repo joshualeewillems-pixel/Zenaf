@@ -270,6 +270,7 @@ def run_single_model_meeting(
 # ---------------------------------------------------------------------------
 
 from local_ai.build_room.artifact import build_draft_artifact_r2
+from local_ai.build_room.record_completeness import check_record_completeness
 from local_ai.build_room.participants import (
     Seat,
     resolve_seat_participants,
@@ -1876,6 +1877,14 @@ def run_multi_model_meeting(
     verified_challenges: list[dict] = []
     verified_supports: list[dict] = []
     generation_timestamps: dict[str, dict[str, float]] = {}
+    # Synthesis-removal stage 2 (2026-10-27): record-completeness
+    # inputs. _generate_jobs records every invitation (including
+    # budget/cap-blocked generations, which never become jobs);
+    # _record_phase and the revision loop record every attempted
+    # generation's outcome. The four checks run over these lists
+    # before the artifact is written.
+    invited_generations: list[dict[str, str]] = []
+    generation_outcomes: list[dict[str, Any]] = []
     attempts = 0
 
     transcript.append(
@@ -1927,6 +1936,11 @@ def run_multi_model_meeting(
         generation_timestamps.setdefault(phase, {})
         for name, text, error, completed_ts in results:
             generation_timestamps[phase][name] = completed_ts
+            generation_outcomes.append({
+                "phase": phase, "participant": name,
+                "status": "failed" if error is not None else "completed",
+                "reason": error,
+            })
             seat = next(s for s in seats if s.name == name)
             if error is not None:
                 transcript.append("failure", name, error)
@@ -2013,9 +2027,17 @@ def run_multi_model_meeting(
         jobs: list[tuple[str, Any, str]] = []
         for seat in members:
             assert seat.participant is not None
+            # Stage 2: every invitation is recorded, including
+            # generations that never become jobs (blocked below) —
+            # otherwise check (a) could not see them.
+            invited_generations.append({"phase": phase, "participant": seat.name})
             blocked = _budget_blocked()
             if blocked is not None:
                 transcript.append("failure", seat.name, blocked)
+                generation_outcomes.append({
+                    "phase": phase, "participant": seat.name,
+                    "status": "failed", "reason": blocked,
+                })
                 _log_usage(store, meeting_id=meeting_id, participant=seat.name,
                            provider=seat.provider_id,
                            key_source=seat.participant.key_source,
@@ -2024,10 +2046,13 @@ def run_multi_model_meeting(
                            cited_claim_ids=[], token_usage="unavailable")
                 continue
             if len(prompt) > cap:
-                transcript.append(
-                    "failure", seat.name,
-                    f"budget_exceeded: prompt of {len(prompt)} chars exceeds "
-                    f"cap={cap} for {phase}; no generation attempted")
+                reason = (f"budget_exceeded: prompt of {len(prompt)} chars exceeds "
+                          f"cap={cap} for {phase}; no generation attempted")
+                transcript.append("failure", seat.name, reason)
+                generation_outcomes.append({
+                    "phase": phase, "participant": seat.name,
+                    "status": "failed", "reason": reason,
+                })
                 _log_usage(store, meeting_id=meeting_id, participant=seat.name,
                            provider=seat.provider_id,
                            key_source=seat.participant.key_source,
@@ -2058,6 +2083,10 @@ def run_multi_model_meeting(
     openings = _record_phase("opening", opening_results, frozen_ids=set())
 
     unresolved_objections: list[dict] = []
+    # Stage 2: initialized here (not only in the deliberation branch)
+    # so the record-completeness check below always has a value,
+    # including the no-openings path where no revision claims exist.
+    revision_claims: list = []
     # Synthesis-removal stage 1 (2026-10-27): no synthesis phase, so
     # no synthesis variables. Status fields for the synthesis-less
     # artifact (design §3B): record_complete is set when the run
@@ -2146,6 +2175,11 @@ def run_multi_model_meeting(
             generation_timestamps.setdefault("revision", {})
             for name, text, error, completed_ts in revision_results:
                 generation_timestamps["revision"][name] = completed_ts
+                generation_outcomes.append({
+                    "phase": "revision", "participant": name,
+                    "status": "failed" if error is not None else "completed",
+                    "reason": error,
+                })
                 seat = next(s for s in seats if s.name == name)
                 if error is not None:
                     transcript.append("failure", name, error)
@@ -2255,11 +2289,47 @@ def run_multi_model_meeting(
             registry, verified_challenges,
             unclassified_interactions=unclassified)
 
+    # Synthesis-removal stage 2 (2026-10-27): the four
+    # record-completeness checks run over the record just built
+    # (design §4). A check failure never raises out of the runner:
+    # it is reported on the artifact itself and flips
+    # record_complete False, so ok cannot claim a whole record the
+    # checks found broken. The artifact is still written either way.
+    try:
+        record_completeness = check_record_completeness(
+            invited_generations=invited_generations,
+            generation_outcomes=generation_outcomes,
+            transcript_entries=[
+                {"kind": e.kind, "participant": e.participant}
+                for e in transcript.entries
+            ],
+            claims=[
+                {"id": c.id, "participant": c.participant, "phase": c.phase}
+                for c in registry.claims
+            ],
+            verified_challenges=verified_challenges,
+            revision_claims=[
+                {"id": c.id, "participant": c.participant,
+                 "relationship_target": c.relationship_target,
+                 "relates_to": list(c.relates_to)}
+                for c in revision_claims
+            ],
+            unresolved_objections=unresolved_objections,
+        )
+    except Exception as exc:  # check bug, not meeting failure: report it
+        record_completeness = {
+            "passed": False, "checks": {},
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
     # Reached artifact writing: every phase result was processed
     # (contribution or recorded failure); see the record_complete
-    # note at initialization. ok is NOT synthesis success — there
-    # is no synthesis — it is record + deliberation completeness.
-    record_complete = True
+    # note at initialization. Stage 2 makes record_complete
+    # VERIFIED, not just asserted: reaching this point is necessary
+    # but the four checks must also pass. ok is NOT synthesis
+    # success — there is no synthesis — it is record +
+    # deliberation completeness.
+    record_complete = bool(record_completeness.get("passed"))
     ok = record_complete and deliberation_complete
 
     artifact = build_draft_artifact_r2(
@@ -2271,6 +2341,7 @@ def run_multi_model_meeting(
         record_complete=record_complete,
         deliberation_complete=deliberation_complete,
         ok=ok,
+        record_completeness=record_completeness,
     )
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"

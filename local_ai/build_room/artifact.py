@@ -81,6 +81,7 @@ def build_draft_artifact_r2(
     record_complete: bool = False,
     deliberation_complete: bool = False,
     ok: bool = False,
+    record_completeness: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict (synthesis-less).
 
@@ -97,6 +98,13 @@ def build_draft_artifact_r2(
     generation accounted for), ``deliberation_complete`` (required
     phases actually completed), ``ok`` (both). Unresolved
     objections are mechanical derivations, labeled as such.
+    ``record_completeness`` (stage 2, design §4) is the runner's
+    four mechanical checks over the record itself — invited
+    generations accounted for, claim IDs sequential, transcript /
+    generation parity, unresolved-objection derivation — reported
+    as ``{"passed": bool, "checks": {...}}``. Replay paths pass
+    nothing (no live generation records exist to check) and get
+    the ``not_checked`` placeholder below instead of a fake pass.
     """
     provenance = []
     for seat in seats:
@@ -140,6 +148,13 @@ def build_draft_artifact_r2(
         "record_complete": record_complete,
         "deliberation_complete": deliberation_complete,
         "ok": ok,
+        # Stage 2: always present. Live meetings carry the computed
+        # checks; replays (no generation records) carry an honest
+        # not_checked marker, never a fabricated pass.
+        "record_completeness": record_completeness if record_completeness is not None else {
+            "status": "not_checked",
+            "reason": "replay reconstruction: no live generation records to check",
+        },
         "provenance": provenance,
         "generation_timestamps": generation_timestamps or {},
         "transcript_entries": len(transcript.entries),

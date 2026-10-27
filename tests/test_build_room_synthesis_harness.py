@@ -126,8 +126,12 @@ def run_harness(fixture_id: str, packet, registry, unresolved_objections,
     When the state prompt is None (over budget), evaluation is
     skipped and the budget reason is reported instead.
     """
+    # B1: pass the production telemetry so the harness gate matches
+    # production's assembled-length gate.
+    telemetry = _telemetry_block(**TELEMETRY)
     state = build_synthesis_state(packet, registry, unresolved_objections,
-                                  revision_chains, cap_chars=CAP)
+                                  revision_chains, cap_chars=CAP,
+                                  telemetry=telemetry)
     report: dict = {
         "fixture_id": fixture_id,
         "cap": CAP,

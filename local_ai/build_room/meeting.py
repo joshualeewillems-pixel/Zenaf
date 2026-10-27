@@ -1094,10 +1094,32 @@ def estimate_tokens(text: str) -> int:
     return max(1, len(text or "") // 4)
 
 
+def count_tokens_exact(text: str) -> int | None:
+    """Exact token count via ``local_ai.llm.tokenizer`` (B1).
+
+    Returns None when tiktoken is unavailable instead of falling
+    back to the chars/4 estimate — a missing measurement is
+    reported as missing, never disguised as an estimate, and
+    never breaks synthesis: production paths must not fail
+    because a measurement dependency is absent.
+    """
+    try:
+        from local_ai.llm.tokenizer import count_tokens
+    except ImportError:
+        return None
+    try:
+        return count_tokens(text)
+    except RuntimeError:
+        # tiktoken missing at call time (tokenizer raises loudly
+        # for direct measurement use; here it degrades to None).
+        return None
+
+
 def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
                           unresolved_objections: list[dict],
                           revision_chains: list[dict],
-                          *, cap_chars: int) -> dict[str, Any]:
+                          *, cap_chars: int,
+                          telemetry: str | None = None) -> dict[str, Any]:
     """Assemble the bounded synthesis input (C9).
 
     Mandatory state — packet, active claims, unresolved targeted
@@ -1113,6 +1135,16 @@ def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
     prose restating openings) is not implemented as an eviction at
     all — full response prose is never part of this state packet in
     the first place, and the disclosure says so.
+
+    B1 telemetry-inclusive gating: production callers pass the
+    telemetry block they will append, so the gate compares the
+    ASSEMBLED prompt length (mandatory + optional + disclosure +
+    instruction + separators + telemetry) against the cap — the
+    previous gate ignored telemetry (~421 chars) and the join
+    separators, so a state could "fit" the gate yet assemble over
+    the cap. Callers that do not pass telemetry keep the previous
+    state-prompt gate exactly (mandatory + disclosure + instruction
+    vs cap); their assembled length is their own responsibility.
     """
     active_lines: list[str] = []
     superseded_lines: list[str] = []
@@ -1156,6 +1188,42 @@ def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
         "Historical context omitted: none. Full response prose is "
         "not part of this state packet; it contains claims, "
         "targeted objections, and revision chains only.")
+    # B1: when the caller passes telemetry, the gate counts it plus
+    # every "\n\n" join (6 inside the state prompt, 2 before
+    # telemetry). Without telemetry, the previous gate is preserved
+    # exactly so legacy callers keep the #227 arithmetic.
+    telemetry_chars = len(telemetry) if telemetry is not None else 0
+    gate_extra = telemetry_chars + 8 if telemetry is not None else 0
+    if telemetry is not None:
+        # Minimal-state check: even with no optional content, the
+        # assembled prompt does not fit.
+        minimal_total = (len(mandatory) + len(disclosure_none)
+                         + len(instruction) + gate_extra)
+        if minimal_total > cap_chars:
+            return {
+                "prompt": None,
+                "omitted": {"superseded_texts": len(superseded_lines),
+                            "responded_to_details": len(responded_lines)},
+                "mandatory_chars": len(mandatory),
+                "optional_chars": 0,
+                "instruction_chars": len(instruction),
+                "disclosure_chars": len(disclosure_none),
+                "telemetry_chars": telemetry_chars,
+                "separator_chars": 8,
+                "total_chars": minimal_total,
+                "excess_chars": minimal_total - cap_chars,
+                "reason": (
+                    f"budget_exceeded: synthesis input exceeds cap={cap_chars}: "
+                    f"mandatory={len(mandatory)} chars, "
+                    f"optional=0 chars, "
+                    f"instruction={len(instruction)} chars, "
+                    f"disclosure={len(disclosure_none)} chars, "
+                    f"telemetry={telemetry_chars} chars, "
+                    f"separators=8 chars, "
+                    f"total={minimal_total} chars, "
+                    f"excess={minimal_total - cap_chars} chars; "
+                    f"no synthesis attempted and nothing was truncated to fit"),
+            }
     # Mandatory + disclosure + instruction must fit, or synthesis cannot run honestly.
     if len(mandatory) + len(disclosure_none) + len(instruction) > cap_chars:
         total = len(mandatory) + len(disclosure_none) + len(instruction)
@@ -1176,7 +1244,7 @@ def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
     omitted_texts = 0
     omitted_details = 0
     optional = optional_full
-    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) > cap_chars:
+    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) + gate_extra > cap_chars:
         # Drop superseded texts first (links retained).
         omitted_texts = len(superseded_lines)
         optional = "\n\n".join([
@@ -1184,7 +1252,7 @@ def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
             + (", ".join(superseded_links) if superseded_links else "(none)"),
             "Responded-to objections:\n" + ("\n".join(responded_lines) if responded_lines else "(none)"),
         ])
-    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) > cap_chars:
+    if len(mandatory) + len(optional) + len(disclosure_none) + len(instruction) + gate_extra > cap_chars:
         # Then drop responded-to details (counts retained).
         omitted_details = len(responded_lines)
         optional = "\n\n".join([
@@ -1203,6 +1271,38 @@ def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
             "revision chains only.")
     else:
         disclosure = disclosure_none
+    if telemetry is not None:
+        # Final assembled-length check: the omission disclosure is
+        # longer than disclosure_none, so a state that fit the
+        # eviction loop can still assemble over the cap. Refuse
+        # honestly rather than assembling over it.
+        total = (len(mandatory) + len(optional) + len(disclosure)
+                 + len(instruction) + gate_extra)
+        if total > cap_chars:
+            return {
+                "prompt": None,
+                "omitted": {"superseded_texts": omitted_texts,
+                            "responded_to_details": omitted_details},
+                "mandatory_chars": len(mandatory),
+                "optional_chars": len(optional),
+                "instruction_chars": len(instruction),
+                "disclosure_chars": len(disclosure),
+                "telemetry_chars": telemetry_chars,
+                "separator_chars": 8,
+                "total_chars": total,
+                "excess_chars": total - cap_chars,
+                "reason": (
+                    f"budget_exceeded: synthesis input exceeds cap={cap_chars}: "
+                    f"mandatory={len(mandatory)} chars, "
+                    f"optional={len(optional)} chars, "
+                    f"instruction={len(instruction)} chars, "
+                    f"disclosure={len(disclosure)} chars, "
+                    f"telemetry={telemetry_chars} chars, "
+                    f"separators=8 chars, "
+                    f"total={total} chars, "
+                    f"excess={total - cap_chars} chars; "
+                    f"no synthesis attempted and nothing was truncated to fit"),
+            }
     prompt = "\n\n".join([mandatory, optional, disclosure, instruction])
     return {
         "prompt": prompt,
@@ -1211,6 +1311,11 @@ def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
         "mandatory_chars": len(mandatory),
         "input_chars": len(prompt),
         "input_tokens_estimate": estimate_tokens(prompt),
+        "telemetry_chars": telemetry_chars,
+        "assembled_chars": len(prompt) + (telemetry_chars + 2 if telemetry is not None else 0),
+        "input_tokens": count_tokens_exact(prompt),
+        "assembled_tokens": count_tokens_exact(
+            prompt + ("\n\n" + telemetry if telemetry is not None else "")),
         "reason": None,
     }
 
@@ -2036,13 +2141,19 @@ def run_multi_model_meeting(
             transcript.append("failure", SYNTHESIZER_NAME, synthesis_failure)
             ok = False
         else:
-            state = build_synthesis_state(
-                packet, registry, unresolved_objections,
-                delta_report["revision_chains"],
-                cap_chars=budget.max_response_prompt_chars)
+            # B1: telemetry is computed BEFORE the state so the gate
+            # compares the assembled prompt length (telemetry
+            # included). Telemetry inputs do not depend on the state
+            # (attempts is unchanged by building it), so reordering
+            # is safe; the transcript note keeps its position.
             synthesis_telemetry = _telemetry_block(
                 phase="synthesis", max_generations=budget.max_contributions,
                 completed=attempts, allocated=1, reserved={})
+            state = build_synthesis_state(
+                packet, registry, unresolved_objections,
+                delta_report["revision_chains"],
+                cap_chars=budget.max_response_prompt_chars,
+                telemetry=synthesis_telemetry)
             transcript.append("note", "Reynard (convener)", synthesis_telemetry)
             blocked = _budget_blocked()
             if blocked is not None:

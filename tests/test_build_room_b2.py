@@ -36,9 +36,9 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 RECORDED_DIR = Path(hf.__file__).resolve().parent
 
 INSTRUCTION_SHA256 = (
-    "5e987f26296abf7af87578b143d3a1ef99ed740e2481116e6f74ce9c36e24ecd")
+    "41925066d601380a3fd35e29a6232a22ef4fdcfc1006ed4d8e77d905e163b177")
 STRESS_SHA256 = (
-    "ca9c54f747ef26e338243aa7eea3b10df1a3c0aab8811962ad189352166dce48")
+    "a8093c6ee28481f6f8a5db7ad29c51d8ec8d226263e786a96e3b41d4305cf65e")
 
 
 def _telemetry():
@@ -111,14 +111,14 @@ def test_gate_admits_at_and_below_cap_refuses_above():
     state, tel, assembled = _assembled(hf.fixture_fitting_state)
     gate = candidate_cap.evaluate_candidate_gate(state, tel)
     assert gate["admitted"] is True
-    assert gate["total_tokens"] == 6705
-    assert gate["total_chars"] == 35289
+    assert gate["total_tokens"] == 6928
+    assert gate["total_chars"] == 36577
     assert gate["excess_tokens"] == 0
     # Exact boundary: at-cap admits, one token over refuses.
     assert candidate_cap.evaluate_candidate_gate(
-        state, tel, cap_tokens=6705)["admitted"] is True
+        state, tel, cap_tokens=6928)["admitted"] is True
     over = candidate_cap.evaluate_candidate_gate(
-        state, tel, cap_tokens=6704)
+        state, tel, cap_tokens=6927)
     assert over["admitted"] is False
     assert over["excess_tokens"] == 1
     assert "candidate_cap_exceeded" in over["reason"]
@@ -131,8 +131,8 @@ def test_gate_governs_assembled_prompt_including_telemetry_and_separators():
     state, tel, assembled = _assembled(hf.fixture_failed_state)
     gate = candidate_cap.evaluate_candidate_gate(state, tel)
     assert gate["admitted"] is True
-    assert gate["total_tokens"] == 8187
-    assert gate["total_chars"] == 42770
+    assert gate["total_tokens"] == 8410
+    assert gate["total_chars"] == 44058
     comps = gate["components"]
     assert set(comps) == {"mandatory", "optional", "disclosure",
                           "instruction", "telemetry", "separators"}
@@ -140,10 +140,10 @@ def test_gate_governs_assembled_prompt_including_telemetry_and_separators():
     assert sum(c["chars"] for c in comps.values()) == len(assembled)
     assert comps["telemetry"]["chars"] == 421
     assert comps["separators"]["chars"] == 8
-    assert comps["instruction"]["chars"] == 2877
+    assert comps["instruction"]["chars"] == 4165
     # Token total is the exact count of the assembled string itself.
     assert gate["total_tokens"] == count_tokens(assembled)
-    assert comps["instruction"]["tokens"] == 601
+    assert comps["instruction"]["tokens"] == 824
     assert comps["telemetry"]["tokens"] == 82
 
 
@@ -153,8 +153,8 @@ def test_diagnostic_reports_chars_and_tokens_tokens_enforce():
     state, tel, _ = _assembled(hf.fixture_stress_state)
     gate = candidate_cap.evaluate_candidate_gate(state, tel)
     assert gate["enforcement_unit"] == "tokens"
-    assert gate["total_chars"] == 59689
-    assert gate["total_tokens"] == 11712
+    assert gate["total_chars"] == 60977
+    assert gate["total_tokens"] == 11935
     assert gate["prompt_sha256"] == STRESS_SHA256
     for comp in gate["components"].values():
         assert comp["chars"] is not None and comp["tokens"] is not None
@@ -207,9 +207,13 @@ def test_other_character_budgets_untouched():
 # Instruction byte-identity (refinement deferred; Section 3.3)
 # ---------------------------------------------------------------------------
 
-def test_instruction_byte_identical():
-    assert len(_SYNTHESIS_INSTRUCTION) == 2877
-    assert count_tokens(_SYNTHESIS_INSTRUCTION) == 601
+def test_instruction_pinned_fidelity_revision():
+    # Pinned to the fidelity-correction revision (design:
+    # zenaf-build-council-fidelity-correction-design.md), not to the
+    # pre-correction text. Any future instruction change must
+    # re-pin these values deliberately, never silently.
+    assert len(_SYNTHESIS_INSTRUCTION) == 4165
+    assert count_tokens(_SYNTHESIS_INSTRUCTION) == 824
     assert hashlib.sha256(
         _SYNTHESIS_INSTRUCTION.encode()).hexdigest() == INSTRUCTION_SHA256
 
@@ -227,21 +231,21 @@ def test_packaged_recorded_fixtures_identical_to_test_fixtures():
 
 def test_replay_fixtures_pinned():
     state, tel, assembled = _assembled(hf.fixture_fitting_state)
-    assert len(assembled) == 35289
-    assert count_tokens(assembled) == 6705
-    assert hashlib.sha256(assembled.encode()).hexdigest()[:16] == "6f390db52be9cfab"
+    assert len(assembled) == 36577
+    assert count_tokens(assembled) == 6928
+    assert hashlib.sha256(assembled.encode()).hexdigest()[:16] == "ed0d28b45cc896e3"
     state, tel, assembled = _assembled(hf.fixture_failed_state)
-    assert len(assembled) == 42770
-    assert count_tokens(assembled) == 8187
+    assert len(assembled) == 44058
+    assert count_tokens(assembled) == 8410
 
 
 def test_zero_contestation_assembly_tier1_only():
     # Full-state assembly, hash recorded, no generation: the builder
     # exists but is deliberately NOT in the route's fixture map.
     state, tel, assembled = _assembled(hf.fixture_zero_contestation_state)
-    assert len(assembled) == 4982
-    assert count_tokens(assembled) == 1033
-    assert hashlib.sha256(assembled.encode()).hexdigest()[:16] == "20317760cc71dd1c"
+    assert len(assembled) == 6270
+    assert count_tokens(assembled) == 1256
+    assert hashlib.sha256(assembled.encode()).hexdigest()[:16] == "c5e59bc3da82b566"
     assert "zero" not in br_routes.HARNESS_FIXTURE_BUILDERS
     assert "zero_contestation" not in br_routes.HARNESS_FIXTURE_BUILDERS
 
@@ -270,8 +274,8 @@ def test_stress_fixture_in_band_and_genuine():
     # Token band: the point of the fixture.
     state, tel, assembled = _assembled(hf.fixture_stress_state)
     assert 11500 <= count_tokens(assembled) <= 12500
-    assert count_tokens(assembled) == 11712
-    assert len(assembled) == 59689
+    assert count_tokens(assembled) == 11935
+    assert len(assembled) == 60977
     assert hashlib.sha256(assembled.encode()).hexdigest() == STRESS_SHA256
     # And the candidate gate admits it.
     gate = candidate_cap.evaluate_candidate_gate(state, tel)
@@ -406,7 +410,7 @@ def test_b2_non_owner_is_403_and_no_generation(app, monkeypatch):
 
 
 @pytest.mark.parametrize("fixture,tokens", [
-    ("fitting", 6705), ("failed", 8187), ("stress", 11712)])
+    ("fitting", 6928), ("failed", 8410), ("stress", 11935)])
 def test_b2_fixture_single_generation_through_candidate_gate(
         app, monkeypatch, tmp_path, fixture, tokens):
     app.dependency_overrides[get_current_user] = lambda: OWNER
@@ -459,8 +463,8 @@ def test_b2_over_cap_refused_and_no_generation(app, monkeypatch):
     assert body["ok"] is False
     assert body["generated"] is False
     assert body["candidate_gate"]["admitted"] is False
-    assert body["candidate_gate"]["total_tokens"] == 11712
-    assert body["candidate_gate"]["excess_tokens"] == 11712 - 1000
+    assert body["candidate_gate"]["total_tokens"] == 11935
+    assert body["candidate_gate"]["excess_tokens"] == 11935 - 1000
     assert fake.calls == []
 
 

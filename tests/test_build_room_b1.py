@@ -76,12 +76,19 @@ def test_token_counts_deterministic_and_pinned():
     assert count_tokens(text) == count_tokens(text)
 
 
-def test_fixture_prompts_tokens_alongside_chars_and_hashes_unchanged():
-    # Phase A prompt hashes must survive the gate change byte-for-byte.
-    cases = [("D", fixture_d_state, 4803, 1001,
-              "fc12eb57beff46bf27b763629460695fd143e8e10a424e3d234a2e5c42d69319"),
-             ("E", fixture_e_state, 4376, 901,
-              "241d012b85776f8aa009dc1eb50e0a8b7d0ebbe8425cf3ddc955ea48f83c1b13")]
+def test_fixture_prompts_pinned_after_fidelity_instruction_revision():
+    # Phase A prompt hashes, re-pinned for the fidelity-correction
+    # instruction revision (design: zenaf-build-council-fidelity-
+    # correction-design.md). The ONLY delta vs the Phase A pins is
+    # the appended instruction paragraph (+1288 chars / +223 tokens).
+    # NOTE: these deterministic prompts now differ from the
+    # live-verified D/E prompt hashes of 2026-10-26 (fc12eb57...,
+    # 241d012b...); live harness equivalence would need fresh
+    # authorization to re-verify, and is NOT claimed here.
+    cases = [("D", fixture_d_state, 6091, 1224,
+              "5dfb71128a61d607bb1ee72f3bb93b02bca3359c60eec3955f1305946ba21f06"),
+             ("E", fixture_e_state, 5664, 1124,
+              "b21b5fe82117348a840bbe253d7a901d0570ec31c31f0c00187cf23371c5d331")]
     for fid, builder, chars, toks, digest in cases:
         packet, reg, unres, chains = builder()
         tel = _telemetry()
@@ -129,8 +136,11 @@ def test_gate_telemetry_path_refuses_old_fitting_state():
     probe.register("GPT", "opening", "1. Observed: " + "y" * 100)
     base = build_synthesis_state(packet, probe, [], [],
                                  cap_chars=10 ** 9)["mandatory_chars"]
-    # Target mandatory so mandatory + 154 + 2877 lands in (39571, 40000].
-    target_mandatory = 36900
+    # Target mandatory so mandatory + 154 + 4165 lands in (39571, 40000].
+    # Re-targeted by exactly the instruction delta (4165 - 2877 = 1288)
+    # so the test's intent is unchanged: fits the legacy gate, refuses
+    # once telemetry + joins are counted.
+    target_mandatory = 35612
     pad = target_mandatory - base + 100  # +100 offsets the probe text
     reg = ClaimRegistry()
     reg.register("GPT", "opening", "1. Observed: " + "y" * pad)
@@ -189,8 +199,8 @@ def test_failed_run_fixture_refuses_under_both_gates():
     assert parts["mandatory"] == 38986
     assert parts["telemetry"] == 421
     assert parts["separators"] == 8
-    assert parts["total"] == 42446
-    assert parts["excess"] == 2446
+    assert parts["total"] == 43734
+    assert parts["excess"] == 3734
     # The old gate already undercounted by telemetry + joins (429).
     assert parts["total"] - (38986 + 154 + len(_SYNTHESIS_INSTRUCTION)) == 429
 
@@ -203,12 +213,12 @@ def test_fitting_run_fixture_fits_with_telemetry_and_tokens_pinned():
                                   telemetry=tel)
     assert state["prompt"] is not None
     assembled = state["prompt"] + "\n\n" + tel
-    assert len(assembled) == 35289
-    assert count_tokens(assembled) == 6705
-    assert state["assembled_chars"] == 35289
-    assert state["assembled_tokens"] == 6705
-    assert hashlib.sha256(assembled.encode()).hexdigest()[:16] == "6f390db52be9cfab"
-    assert CAP - len(assembled) == 4711
+    assert len(assembled) == 36577
+    assert count_tokens(assembled) == 6928
+    assert state["assembled_chars"] == 36577
+    assert state["assembled_tokens"] == 6928
+    assert hashlib.sha256(assembled.encode()).hexdigest()[:16] == "ed0d28b45cc896e3"
+    assert CAP - len(assembled) == 3423
 
 
 def test_failed_run_would_be_tokens_measured_not_estimated():
@@ -218,11 +228,11 @@ def test_failed_run_would_be_tokens_measured_not_estimated():
                                 cap_chars=10 ** 9, telemetry=tel)
     assert big["prompt"] is not None
     would = big["prompt"] + "\n\n" + tel
-    assert len(would) == 42770
-    assert count_tokens(would) == 8187
+    assert len(would) == 44058
+    assert count_tokens(would) == 8410
     # chars/4 overestimates the exact count by ~31% on this prompt:
     # it must never be used to derive a cap.
-    assert len(would) // 4 == 10692
+    assert len(would) // 4 == 11014
     assert count_tokens(would) < len(would) // 4
 
 

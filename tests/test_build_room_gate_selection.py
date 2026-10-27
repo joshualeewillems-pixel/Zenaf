@@ -42,7 +42,7 @@ from local_ai.build_room.participants import SEAT_SPECS, Seat
 
 OWNER = {"id": "owner-id", "email": "owner@local.zenaf"}
 INSTRUCTION_SHA256 = (
-    "5e987f26296abf7af87578b143d3a1ef99ed740e2481116e6f74ce9c36e24ecd")
+    "41925066d601380a3fd35e29a6232a22ef4fdcfc1006ed4d8e77d905e163b177")
 
 
 def _synth_block():
@@ -398,8 +398,8 @@ def test_route_flag_passthrough(app, monkeypatch):
 # Pins: instruction byte-identity + unchanged caps
 # ---------------------------------------------------------------------------
 
-def test_instruction_byte_identical_and_caps_unchanged():
-    assert len(_SYNTHESIS_INSTRUCTION) == 2877
+def test_instruction_pinned_fidelity_revision_and_caps_unchanged():
+    assert len(_SYNTHESIS_INSTRUCTION) == 4165  # fidelity-correction revision pin
     assert hashlib.sha256(_SYNTHESIS_INSTRUCTION.encode()).hexdigest() == (
         INSTRUCTION_SHA256)
     assert Budget().max_response_prompt_chars == 40000

@@ -44,7 +44,7 @@ jobs:
             ARGS="$ARGS ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
           fi
           # shellcheck disable=SC2086
-     - name: Verify checkout commit
+      - name: Verify checkout commit
         run: |
           HEAD="$(git rev-parse HEAD)"
           if [ "$HEAD" != "${{ github.sha }}" ]; then

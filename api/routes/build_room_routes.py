@@ -30,10 +30,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
 from api.routes.auth_routes import get_current_user
+from local_ai.build_room import candidate_cap
 from local_ai.build_room.harness_fixtures import (
     TELEMETRY,
     fixture_d_state,
     fixture_e_state,
+    fixture_failed_state,
+    fixture_fitting_state,
+    fixture_stress_state,
 )
 from local_ai.build_room.meeting import (
     Budget,
@@ -193,12 +197,34 @@ def run_meeting_r2(
 # - This route does NOT authorize model calls by itself: each
 #   fixture call needs Joshua's separate explicit word, and calls
 #   run only after this route is merged and the deploy confirmed.
+#
+# B2 extension (build-room-b2): the fixture set grows to D, E,
+# fitting, failed, stress. D/E keep the exact pre-B2 behavior
+# (40,000-char production cap). The B2 fixtures use the CANDIDATE
+# token gate instead (candidate_cap, 12,500 tokens): the state is
+# built with the character gate suspended on this verification path
+# only (VERIFICATION_BUILD_CHAR_CAP), model/tokenizer agreement is
+# verified first, and the token gate governs the actual assembled
+# prompt including telemetry and separators. If agreement fails or
+# the gate refuses, no generation is attempted and the diagnostic
+# is returned verbatim. Production meetings are untouched by this
+# route: they still enforce the 40,000-char gate. The candidate
+# gate becomes the production gate only if a future adoption
+# decision switches it — this route does not switch anything.
+# Zero-contestation is deliberately NOT a route fixture (Tier 1
+# deterministic only): requesting it is refused with 422.
 # ---------------------------------------------------------------------------
 
 HARNESS_FIXTURE_BUILDERS = {
     "D": fixture_d_state,
     "E": fixture_e_state,
+    "fitting": fixture_fitting_state,
+    "failed": fixture_failed_state,
+    "stress": fixture_stress_state,
 }
+
+# B2 fixtures: governed by the candidate token gate, not the char cap.
+B2_FIXTURES = frozenset({"fitting", "failed", "stress"})
 
 
 class HarnessSynthesisBody(BaseModel):
@@ -208,9 +234,11 @@ class HarnessSynthesisBody(BaseModel):
 
     @field_validator("fixture")
     @classmethod
-    def _only_d_or_e(cls, v: str) -> str:
-        if v not in ("D", "E"):
-            raise ValueError("fixture must be exactly 'D' or 'E'")
+    def _only_known_fixtures(cls, v: str) -> str:
+        if v not in HARNESS_FIXTURE_BUILDERS:
+            raise ValueError(
+                "fixture must be exactly one of 'D', 'E', 'fitting', "
+                "'failed', 'stress'")
         return v
 
 
@@ -270,19 +298,148 @@ def _harness_report_sizes(state: dict, prompt: str) -> dict:
     }
 
 
+def _harness_b2_sizes(state: dict, prompt: str, gate: dict) -> dict:
+    """Hash + sizes for a B2 fixture call (chars AND tokens).
+
+    Tokens are the enforcement unit; chars are reported for log
+    readability and cross-checking, never as the gate.
+    """
+    return {
+        "prompt_sha256": gate["prompt_sha256"],
+        "mandatory_chars": state.get("mandatory_chars"),
+        "instruction_chars": len(_SYNTHESIS_INSTRUCTION),
+        "disclosure_chars": _disclosure_chars(state["prompt"]),
+        "state_prompt_chars": len(state["prompt"]),
+        "assembled_prompt_chars": len(prompt),
+        "telemetry_chars": len(prompt) - len(state["prompt"]),
+        "assembled_prompt_tokens": gate["total_tokens"],
+        "candidate_cap_tokens": gate["cap_tokens"],
+        "production_cap_chars": candidate_cap.PRODUCTION_SYNTHESIS_PROMPT_CHARS,
+        "enforcement_unit": "tokens",
+    }
+
+
+def _harness_b2_call(fixture_id: str, principal, budget: Budget) -> dict:
+    """One GPT synthesis generation against a B2 fixture, evaluated.
+
+    Candidate-token-gate path (proposal Section 2.4): verify
+    model/tokenizer agreement, then apply the token gate to the
+    actual assembled prompt. Any refusal — disagreement, missing
+    measurement, over-cap — returns the diagnostic verbatim with
+    no generation. Exactly one generation when admitted, no
+    retries, production validator, no persistence, no prompt text.
+    """
+    packet, registry, unresolved, chains = HARNESS_FIXTURE_BUILDERS[
+        fixture_id]()
+    # Character gate suspended on this verification path ONLY, so
+    # the token gate is the sole gate here. Production meetings
+    # never take this branch.
+    telemetry = _telemetry_block(**TELEMETRY)
+    state = build_synthesis_state(
+        packet, registry, unresolved, chains,
+        cap_chars=candidate_cap.VERIFICATION_BUILD_CHAR_CAP,
+        telemetry=telemetry,
+    )
+    agreement = candidate_cap.verify_model_tokenizer_agreement()
+    if not agreement["agrees"]:
+        # Gate not enabled: fail closed, no generation.
+        base = {
+            "fixture_id": fixture_id,
+            "ok": False,
+            "generated": False,
+            "candidate_gate_enabled": False,
+            "model_tokenizer_agreement": agreement,
+        }
+        if state["prompt"] is not None:
+            prompt = state["prompt"] + "\n\n" + telemetry
+            base["prompt_sha256"] = hashlib.sha256(
+                prompt.encode()).hexdigest()
+            base["assembled_prompt_chars"] = len(prompt)
+        return base
+    gate = candidate_cap.evaluate_candidate_gate(
+        state, telemetry,
+        cap_tokens=candidate_cap.CANDIDATE_SYNTHESIS_PROMPT_TOKENS)
+    if state["prompt"] is None or not gate["admitted"]:
+        base = {
+            "fixture_id": fixture_id,
+            "ok": False,
+            "generated": False,
+            "candidate_gate_enabled": True,
+            "model_tokenizer_agreement": agreement,
+            "candidate_gate": gate,
+            "budget_reason": gate["reason"],
+        }
+        if state["prompt"] is not None:
+            prompt = state["prompt"] + "\n\n" + telemetry
+            base.update(_harness_b2_sizes(state, prompt, gate))
+        return base
+    prompt = state["prompt"] + "\n\n" + telemetry
+    sizes = _harness_b2_sizes(state, prompt, gate)
+    participant, absence = resolve_openai_participant(principal)
+    if participant is None:
+        return {
+            "fixture_id": fixture_id,
+            "ok": False,
+            "generated": False,
+            "candidate_gate_enabled": True,
+            "model_tokenizer_agreement": agreement,
+            "candidate_gate": gate,
+            "absence": absence,
+            **sizes,
+        }
+    try:
+        text = participant.generate(prompt, timeout=budget.timeout_seconds)
+    except Exception as exc:  # generation failure is visible, not a crash
+        return {
+            "fixture_id": fixture_id,
+            "ok": False,
+            "generated": False,
+            "candidate_gate_enabled": True,
+            "model_tokenizer_agreement": agreement,
+            "candidate_gate": gate,
+            "generation_error": str(exc),
+            **sizes,
+        }
+    structured, evaluations, rejected, block_found = (
+        parse_synthesis_contract(text, registry, unresolved,
+                                 SYNTHESIZER_NAME))
+    return {
+        "fixture_id": fixture_id,
+        "ok": True,
+        "generated": True,
+        "generations_used": 1,
+        "synthesizer": SYNTHESIZER_NAME,
+        "candidate_gate_enabled": True,
+        "model_tokenizer_agreement": agreement,
+        "candidate_gate": gate,
+        **sizes,
+        "raw": text,
+        "structured": structured,
+        "evaluations": evaluations,
+        "rejected_entries": rejected,
+        "block_found": block_found,
+        "disclosure_notes": _harness_disclosure_notes(
+            evaluations, unresolved, state.get("omitted")),
+    }
+
+
 @router.post("/harness/synthesis-call")
 def harness_synthesis_call(
     body: HarnessSynthesisBody,
     current_user: dict = Depends(get_current_owner_user),
 ):
-    """One GPT synthesis generation against fixture D or E, evaluated.
+    """One GPT synthesis generation against a fixture, evaluated.
 
     Owner-only; fixture selector only; exactly one generation, no
     retries; no persistence; no credentials or prompt text returned.
+    B2 fixtures dispatch to the candidate-token-gate path; D/E keep
+    the pre-B2 character-cap path.
     """
     uid = current_user["id"]
     principal = authenticated_account_principal(uid)
     budget = Budget()
+    if body.fixture in B2_FIXTURES:
+        return _harness_b2_call(body.fixture, principal, budget)
     packet, registry, unresolved, chains = HARNESS_FIXTURE_BUILDERS[
         body.fixture]()
     # B1: telemetry is passed so the gate compares the assembled

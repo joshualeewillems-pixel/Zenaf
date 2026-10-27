@@ -44,15 +44,14 @@ jobs:
             ARGS="$ARGS ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
           fi
           # shellcheck disable=SC2086
-          flyctl secrets set --app zenaf-staging $ARGS
                 - name: Verify checkout commit
         run: |
           HEAD="$(git rev-parse HEAD)"
           if [ "$HEAD" != "${{ github.sha }}" ]; then
-            echo "::error::checkout $HEAD != push ${{ github.sha }}; refusing deploy."
+          echo "::error::checkout $HEAD != push ${{ github.sha }}; refusing deploy."
             exit 1
           fi
           echo "checkout matches push SHA: $HEAD"
-
       - name: Deploy
-        run: flyctl deploy --remote-only --app zenaf-staging
+        run: flyctl deploy --remote-only --build-arg ZENAF_CODE_VERSION=${{ github.sha }} --app zenaf-staging
+

@@ -220,6 +220,8 @@ def run_single_model_meeting(
 # ---------------------------------------------------------------------------
 
 from local_ai.build_room.artifact import build_draft_artifact_r2
+from local_ai.build_room.citation_validation import validate_tool_citations
+from local_ai.build_room.measurement import summarize_tool_round_usage
 from local_ai.build_room.record_completeness import check_record_completeness
 from local_ai.build_room.tool_access import (
     ToolLoopContext,
@@ -1380,6 +1382,12 @@ def run_multi_model_meeting(
     tool_contexts: dict[str, ToolLoopContext] = {}
     tool_log_sink: list[dict[str, Any]] = []
     tool_log_all: list[dict[str, Any]] = []
+    # Increment C: per-generation tool usage records (drained per
+    # phase like the tool log) and a (phase, participant) index so
+    # a generation's usage row can carry its tool record.
+    tool_usage_sink: list[dict[str, Any]] = []
+    tool_usage_all: list[dict[str, Any]] = []
+    tool_usage_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     if tools_enabled:
         tool_nominated = sorted({
             normalize_snapshot_path(p)
@@ -1418,6 +1426,7 @@ def run_multi_model_meeting(
                     revision=tool_revision,
                 )
                 tool_contexts = {name: ctx for name in tool_capable_names}
+                ctx.usage_sink = tool_usage_sink
                 tool_enabled_for_meeting = True
                 packet_only_names = [
                     s.name for s in present if s.name not in tool_capable_names
@@ -1469,6 +1478,35 @@ def run_multi_model_meeting(
             tool_log_all.append(entry)
         del tool_log_sink[:]
 
+    def _drain_tool_usage() -> None:
+        """Move one phase's per-generation usage records to the index.
+
+        Runs after _drain_tool_log and before _record_phase, so a
+        generation's usage row can carry its tool record (keyed by
+        phase + participant) instead of "unavailable".
+        """
+        if not tool_usage_sink:
+            return
+        for record in tool_usage_sink:
+            tool_usage_all.append(record)
+            tool_usage_by_key[(record["phase"], record["participant"])] = record
+        del tool_usage_sink[:]
+
+    def _tool_citation_annotations(phase: str, name: str, text: str) -> list[dict[str, Any]]:
+        """Validate one contribution's tool citations at ingestion.
+
+        The validation source is THIS generation's runner-recorded
+        tool-call log (same participant, same phase) from
+        tool_log_all, which _drain_tool_log has already populated
+        for the phase. Claim text is never modified: the returned
+        annotations only mark. See citation_validation.py.
+        """
+        entries = [
+            e for e in tool_log_all
+            if e.get("phase") == phase and e.get("participant") == name
+        ]
+        return validate_tool_citations(text or "", entries)
+
     def _budget_blocked() -> str | None:
         if attempts >= budget.max_contributions:
             return (f"budget_exceeded: generation cap of "
@@ -1518,6 +1556,24 @@ def run_multi_model_meeting(
             valid = analysis["cited_claim_ids"]
             dead = analysis["dead_citations"]
             moves = analysis["stated_moves"]
+            # Increment C: ingestion-time tool-citation validation
+            # (correction §5, mark never strip). The claim text
+            # above is preserved verbatim; only this annotation
+            # marks grounded vs unverified.
+            tool_citations = _tool_citation_annotations(phase, name, text or "")
+            grounded_tool = sum(
+                1 for a in tool_citations if a["status"] == "grounded")
+            unverified_tool = sum(
+                1 for a in tool_citations if a["status"] == "unverified")
+            if tool_citations:
+                detail = "; ".join(
+                    f"{a['citation']} {a['status']}"
+                    + (f" ({a['reason']})" if a["reason"] else "")
+                    for a in tool_citations)
+                transcript.append(
+                    "note", name,
+                    f"Tool citations: {detail}. Claim text preserved "
+                    "verbatim; unverified marks are visible, not removals.")
             if dead:
                 transcript.append(
                     "note", name,
@@ -1570,13 +1626,21 @@ def run_multi_model_meeting(
                 "addressable": cited_other and move_targeted,
                 "substantive_engagement": "unassessed",
                 "classification": analysis["classification"],
+                # Increment C: tool-citation validation (mark, never
+                # strip) and grounded/unverified counts. No grounding
+                # score exists: unverified citations are excluded
+                # from grounded counts, never deleted.
+                "tool_citations": tool_citations,
+                "grounded_tool_citations": grounded_tool,
+                "unverified_tool_citations": unverified_tool,
             })
             _log_usage(store, meeting_id=meeting_id, participant=name,
                        provider=seat.provider_id,
                        key_source=seat.participant.key_source,
                        operation="build_room_r2_meeting", outcome="generated",
                        phase=phase, cited_claim_ids=valid,
-                       token_usage="unavailable")
+                       token_usage=tool_usage_by_key.get(
+                           (phase, name), "unavailable"))
         return generated
 
     def _generate_jobs(phase: str, prompt: str, cap: int,
@@ -1653,6 +1717,7 @@ def run_multi_model_meeting(
         tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
         tool_phase="opening", tool_log_sink=tool_log_sink)
     _drain_tool_log()
+    _drain_tool_usage()
     openings = _record_phase("opening", opening_results, frozen_ids=set())
 
     unresolved_objections: list[dict] = []
@@ -1710,6 +1775,7 @@ def run_multi_model_meeting(
             tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
             tool_phase="response", tool_log_sink=tool_log_sink)
         _drain_tool_log()
+        _drain_tool_usage()
         responses = _record_phase("response", response_results, frozen_ids=frozen_ids)
 
         # -- Phase 3: optional revision. Invited = originators of
@@ -1752,6 +1818,7 @@ def run_multi_model_meeting(
                 tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
                 tool_phase="revision", tool_log_sink=tool_log_sink)
             _drain_tool_log()
+            _drain_tool_usage()
             # Follow-ups register with per-span relationship links (C3,
             # C4), not one contribution-wide link.
             rev_generated: list[tuple[str, str]] = []
@@ -1781,6 +1848,23 @@ def run_multi_model_meeting(
                 valid = analysis["cited_claim_ids"]
                 dead = analysis["dead_citations"]
                 moves = analysis["stated_moves"]
+                # Increment C: same ingestion-time tool-citation
+                # validation as _record_phase (mark, never strip).
+                tool_citations = _tool_citation_annotations(
+                    "revision", name, text or "")
+                grounded_tool = sum(
+                    1 for a in tool_citations if a["status"] == "grounded")
+                unverified_tool = sum(
+                    1 for a in tool_citations if a["status"] == "unverified")
+                if tool_citations:
+                    detail = "; ".join(
+                        f"{a['citation']} {a['status']}"
+                        + (f" ({a['reason']})" if a["reason"] else "")
+                        for a in tool_citations)
+                    transcript.append(
+                        "note", name,
+                        f"Tool citations: {detail}. Claim text preserved "
+                        "verbatim; unverified marks are visible, not removals.")
                 if dead:
                     transcript.append(
                         "note", name,
@@ -1831,13 +1915,18 @@ def run_multi_model_meeting(
                     "classification": analysis["classification"],
                     "relationship": analysis["relationship"],
                     "relationship_target": analysis["relationship_target"],
+                    "tool_citations": tool_citations,
+                    "grounded_tool_citations": grounded_tool,
+                    "unverified_tool_citations": unverified_tool,
                 })
                 _log_usage(store, meeting_id=meeting_id, participant=name,
                            provider=seat.provider_id,
                            key_source=seat.participant.key_source,
                            operation="build_room_r2_meeting",
                            outcome="generated", phase="revision",
-                           cited_claim_ids=valid, token_usage="unavailable")
+                           cited_claim_ids=valid,
+                           token_usage=tool_usage_by_key.get(
+                               ("revision", name), "unavailable"))
 
         # Verified, claim-specific objections (C5) and epistemic
         # assessments (C4), computed AFTER the revision phase so
@@ -1922,6 +2011,16 @@ def run_multi_model_meeting(
     # packet-only; a snapshot failure records its reason. The log
     # is what lets a reviewer distinguish "the model inspected X"
     # from "the model said it inspected X".
+    # Increment C: citation-validation totals (grounded vs unverified
+    # across all recorded interactions; no grounding score exists)
+    # and the tool usage summary (generations AND tool-round calls
+    # stated separately, never blended).
+    citation_totals = {
+        "grounded": sum(
+            i.get("grounded_tool_citations", 0) for i in interactions),
+        "unverified": sum(
+            i.get("unverified_tool_citations", 0) for i in interactions),
+    }
     if tools_enabled:
         tool_access_record = {
             "enabled": tool_enabled_for_meeting,
@@ -1933,6 +2032,8 @@ def run_multi_model_meeting(
             ],
             "nominated_paths": tool_nominated,
             "tool_calls": tool_log_all,
+            "usage": summarize_tool_round_usage(tool_usage_all),
+            "citation_validation": citation_totals,
         }
     else:
         tool_access_record = {
@@ -1943,6 +2044,8 @@ def run_multi_model_meeting(
             "packet_only_seats": [s.name for s in present],
             "nominated_paths": [],
             "tool_calls": [],
+            "usage": summarize_tool_round_usage([]),
+            "citation_validation": {"grounded": 0, "unverified": 0},
         }
 
     artifact = build_draft_artifact_r2(

@@ -188,6 +188,68 @@ def compute_generation_cost(prompt_text: str, response_text: str | None,
     }
 
 
+def count_text_tokens(text: str) -> tuple[int, str]:
+    """Count tokens in ``text`` for tool-loop budget accounting.
+
+    Returns (tokens, source): "exact" from the o200k_base tokenizer
+    when available, else a chars//4 estimate labeled "chars_estimate"
+    — never silently presented as exact. Tool-loop output tokens
+    are always this kind of count: ``generate_structured`` returns
+    no provider usage block, so cumulative output is tokenizer-
+    counted, never provider-reported, until a usage-carrying
+    structured channel exists (future work, flagged in the
+    increment-C PR).
+    """
+    exact = _count_tokens_exact(text)
+    if exact is not None:
+        return exact, "exact"
+    return max(0, len(text) // 4), "chars_estimate"
+
+
+def summarize_tool_round_usage(records: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Aggregate per-generation tool-loop usage records (increment C).
+
+    Each record is keyed by generation (phase + participant) and
+    carries structured-request counts, tool-invocation outcomes,
+    and token totals. The summary states generations AND tool-round
+    calls SEPARATELY: a meeting's generation count and its tool
+    usage are different quantities and must never be blended into
+    one number. Pure function; an empty record list summarizes to
+    zeros, never to an absent or fabricated report.
+    """
+    records = records or []
+    summary: dict[str, Any] = {
+        "generations_with_tool_loops": len(records),
+        "structured_requests": 0,
+        "tool_invocations": 0,
+        "tool_calls_returned": 0,
+        "tool_calls_refused": 0,
+        "tool_calls_capped": 0,
+        "cumulative_input_tokens": 0,
+        "cumulative_output_tokens": 0,
+        "max_single_request_input_tokens": 0,
+        "aggregate_result_tokens": 0,
+        "tripwire_fired_count": 0,
+    }
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        summary["structured_requests"] += int(record.get("structured_requests") or 0)
+        summary["tool_invocations"] += int(record.get("tool_invocations") or 0)
+        summary["tool_calls_returned"] += int(record.get("tool_calls_returned") or 0)
+        summary["tool_calls_refused"] += int(record.get("tool_calls_refused") or 0)
+        summary["tool_calls_capped"] += int(record.get("tool_calls_capped") or 0)
+        summary["cumulative_input_tokens"] += int(record.get("cumulative_input_tokens") or 0)
+        summary["cumulative_output_tokens"] += int(record.get("cumulative_output_tokens") or 0)
+        summary["max_single_request_input_tokens"] = max(
+            summary["max_single_request_input_tokens"],
+            int(record.get("max_single_request_input_tokens") or 0))
+        summary["aggregate_result_tokens"] += int(record.get("aggregate_result_tokens") or 0)
+        if record.get("tripwire_fired"):
+            summary["tripwire_fired_count"] += 1
+    return summary
+
+
 def evaluate_tripwire(cost: dict[str, Any] | None) -> dict[str, Any]:
     """Evaluate the $0.05 tripwire (S4) against a cost object.
 

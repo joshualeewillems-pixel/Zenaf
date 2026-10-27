@@ -46,6 +46,12 @@ import hashlib
 import json
 import re
 
+from local_ai.build_room.harness_fixtures import (
+    QUESTION,
+    TELEMETRY,
+    fixture_d_state,
+    fixture_e_state,
+)
 from local_ai.build_room.meeting import (
     ClaimRegistry,
     EvidencePacket,
@@ -57,21 +63,6 @@ from local_ai.build_room.meeting import (
 
 CAP = 40000
 SYNTHESIZER = "GPT"
-
-# Fixed, disclosed telemetry inputs. completed=15 mirrors a full
-# meeting's synthesis slot (15 generations completed before synthesis).
-TELEMETRY = {
-    "phase": "synthesis",
-    "max_generations": 16,
-    "completed": 15,
-    "allocated": 1,
-    "reserved": {},
-}
-
-QUESTION = (
-    "What would make the Build-Council Room fail to function as a "
-    "genuine deliberative council?"
-)
 
 
 # --- Harness helpers (the harness itself; no model calls here) --------
@@ -158,46 +149,6 @@ def run_harness(fixture_id: str, packet, registry, unresolved_objections,
         synthesizer_text, registry, unresolved_objections,
         omitted=state.get("omitted"), had_failures=had_failures))
     return report
-
-
-def fixture_d_state():
-    """Fixture D: opposing claims + unresolved objection + response chain."""
-    reg = ClaimRegistry()
-    reg.register("GPT", "opening",
-                 "1. Observed: Assigned roles improve accountability.")
-    reg.register("Muse", "opening",
-                 "1. Observed: Open roles permit more substantive deliberation.")
-    reg.register("Gemini", "response",
-                 "1. Inferred: In response to C1, assigned roles risk "
-                 "entrenching the convener's framing.")
-    reg.register("GPT", "revision",
-                 "1. Inferred: Assigned roles improve accountability when "
-                 "the role description is itself revisable by the council.")
-    packet = EvidencePacket(
-        work_item="Harness fixture D",
-        question=QUESTION,
-        constraints=("The room deliberates and recommends only.",
-                     "Roles and jurisdictions are NOT assigned."),
-    )
-    unresolved = [{"claim_id": "C1", "cited_by": "Gemini",
-                   "source_claim_id": "C3", "moves": ["objection"],
-                   "state": "unresolved", "responded_by": None}]
-    chains = [{"original_claim_id": "C1", "challenge_claim_id": "C3",
-               "challenge_move": "objection", "challenger": "Gemini",
-               "revision_claim_id": "C4", "revision_relationship": "unstated",
-               "author": "GPT"}]
-    return packet, reg, unresolved, chains
-
-
-def fixture_e_state():
-    """Fixture E: small state, honestly no recommendations/limitations."""
-    reg = ClaimRegistry()
-    reg.register("GPT", "opening",
-                 "1. Observed: The council recommends only; Joshua decides.")
-    reg.register("Muse", "opening",
-                 "1. Inferred: Open roles permit more substantive deliberation.")
-    packet = EvidencePacket(work_item="Harness fixture E", question=QUESTION)
-    return packet, reg, [], []
 
 
 def fixture_d_assertion(report: dict, opposing_claim_ids=("C1", "C2")) -> bool:

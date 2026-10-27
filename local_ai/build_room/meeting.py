@@ -1156,17 +1156,22 @@ def build_synthesis_state(packet: "EvidencePacket", registry: "ClaimRegistry",
         "Historical context omitted: none. Full response prose is "
         "not part of this state packet; it contains claims, "
         "targeted objections, and revision chains only.")
-    # Mandatory alone must fit, or synthesis cannot run honestly.
+    # Mandatory + disclosure + instruction must fit, or synthesis cannot run honestly.
     if len(mandatory) + len(disclosure_none) + len(instruction) > cap_chars:
+        total = len(mandatory) + len(disclosure_none) + len(instruction)
         return {
             "prompt": None,
             "omitted": {"superseded_texts": len(superseded_lines),
                         "responded_to_details": len(responded_lines)},
             "mandatory_chars": len(mandatory),
             "reason": (
-                f"budget_exceeded: mandatory synthesis state of "
-                f"{len(mandatory)} chars exceeds cap={cap_chars}; no "
-                "synthesis attempted and nothing was truncated to fit"),
+                f"budget_exceeded: synthesis input exceeds cap={cap_chars}: "
+                f"mandatory={len(mandatory)} chars, "
+                f"instruction={len(instruction)} chars, "
+                f"disclosure={len(disclosure_none)} chars, "
+                f"total={total} chars, "
+                f"excess={total - cap_chars} chars; "
+                f"no synthesis attempted and nothing was truncated to fit"),
         }
     omitted_texts = 0
     omitted_details = 0

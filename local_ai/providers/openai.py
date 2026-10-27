@@ -29,7 +29,7 @@ class OpenAIProvider:
         self.api_key = (api_key or os.environ.get("OPENAI_API_KEY") or "").strip()
         self.timeout = int(timeout if timeout is not None else os.environ.get("OPENAI_TIMEOUT", "120"))
 
-    def generate(self, prompt: str, *, timeout: int | None = None) -> str:
+    def _post(self, prompt: str, *, timeout: int | None = None) -> dict:
         if not self.api_key:
             raise RuntimeError("OpenAI API key is not configured. Set OPENAI_API_KEY.")
         payload: dict[str, Any] = {
@@ -58,7 +58,10 @@ class OpenAIProvider:
             except Exception:
                 pass
             raise RuntimeError(detail)
-        data = r.json()
+        return r.json()
+
+    def generate(self, prompt: str, *, timeout: int | None = None) -> str:
+        data = self._post(prompt, timeout=timeout)
         choices = data.get("choices") or []
         if not choices:
             raise RuntimeError("OpenAI response missing choices")
@@ -68,11 +71,38 @@ class OpenAIProvider:
             raise RuntimeError("OpenAI response missing message content")
         return str(content).strip()
 
+    def generate_with_usage(self, prompt: str, *,
+                            timeout: int | None = None) -> tuple[str, dict | None]:
+        """Parallel to generate(): identical POST, plus the usage block.
+
+        Returns (text, usage-dict-or-None). The existing generate()
+        is untouched and still returns text only. Usage carries
+        tokens, never dollars — any charge is calculated from a
+        price table by the caller, never read from the provider.
+        """
+        data = self._post(prompt, timeout=timeout)
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("OpenAI response missing choices")
+        msg = choices[0].get("message") or {}
+        content = msg.get("content")
+        if content is None:
+            raise RuntimeError("OpenAI response missing message content")
+        usage = data.get("usage")
+        return str(content).strip(), usage if isinstance(usage, dict) else None
+
 
 def generate(api_key: str, prompt: str, *, model: str | None = None, timeout: int = 120) -> str:
     """Module-level API matching other cloud providers (used by ``_CloudLLMAdapter``)."""
     prov = OpenAIProvider(model or "gpt-4o-mini", api_key=api_key)
     return prov.generate(prompt, timeout=timeout)
+
+
+def generate_with_usage(api_key: str, prompt: str, *, model: str | None = None,
+                        timeout: int = 120) -> tuple[str, dict | None]:
+    """Module-level parallel to generate(): (text, usage-dict-or-None)."""
+    prov = OpenAIProvider(model or "gpt-4o-mini", api_key=api_key)
+    return prov.generate_with_usage(prompt, timeout=timeout)
 
 
 def test_connection(api_key: str, model: str | None = None) -> tuple[bool, str]:

@@ -22,6 +22,11 @@ from pathlib import Path
 from typing import Any
 
 from local_ai.build_room.artifact import build_draft_artifact
+from local_ai.build_room.coverage import artifact_accepted, check_coverage
+from local_ai.build_room.measurement import (
+    compute_generation_cost,
+    measure_generation,
+)
 from local_ai.build_room.participants import (
     OpenAIParticipant,
     resolve_openai_participant,
@@ -1585,8 +1590,35 @@ def _contract_entry_recommendations(entry: Any, valid_ids: set[str],
     err = _contract_check_claim_ids(entry.get("supporting_claims"), valid_ids)
     if err:
         return None, err
-    return {"proposed_action": entry["proposed_action"],
-            "supporting_claims": list(entry["supporting_claims"])}, None
+    parsed: dict[str, Any] = {"proposed_action": entry["proposed_action"],
+                              "supporting_claims": list(entry["supporting_claims"])}
+    # Optional declared consolidation (coverage design §B.3): the
+    # model declares which proposals this recommendation consolidates;
+    # the validator verifies the IDs exist (mechanical) and review
+    # judges substance. Broken provenance is a COVERAGE FAILURE, not
+    # a warning (amended rule): the entry itself stays valid and
+    # retained, the consolidates list is IGNORED, and a marker is
+    # carried on the kept entry for the coverage check to record
+    # in provenance_failures. Nothing here invents or repairs
+    # synthesis content; the marker is validator metadata, like
+    # resolution_divergence on disagreements.
+    cons = entry.get("consolidates_claim_ids")
+    if cons is not None:
+        if not isinstance(cons, list) or not all(isinstance(i, str) for i in cons):
+            parsed["consolidates_provenance_failure"] = {
+                "kind": "consolidates_malformed",
+                "detail": "consolidates_claim_ids must be a list of claim-id strings",
+            }
+        else:
+            unknown = [i for i in cons if i not in valid_ids]
+            if unknown:
+                parsed["consolidates_provenance_failure"] = {
+                    "kind": "consolidates_unknown_ids",
+                    "detail": unknown,
+                }
+            else:
+                parsed["consolidates_claim_ids"] = list(cons)
+    return parsed, None
 
 
 def _contract_entry_limitations(entry: Any, valid_ids: set[str],
@@ -1958,6 +1990,12 @@ def run_multi_model_meeting(
     disagreements_evaluation: str = "not_evaluated"
     recommendations_evaluation: str = "not_evaluated"
     limitations_evaluation: str = "not_evaluated"
+    # Coverage-assurance instruments (design §C/§E/§F): set only when
+    # synthesis actually runs; None means no synthesis to check.
+    synthesis_generation: dict[str, Any] | None = None
+    synthesis_generation_cost: dict[str, Any] | None = None
+    synthesis_coverage: dict[str, Any] | None = None
+    synthesis_coverage_accepted: bool = False
     unclassified: list[dict] = []
     delta_report: dict[str, Any] = build_delta_report(
         registry, verified_challenges)
@@ -2177,8 +2215,20 @@ def run_multi_model_meeting(
                 synthesis_prompt = state["prompt"] + "\n\n" + synthesis_telemetry
                 attempts += 1
                 try:
-                    synth_text = synth_seat.participant.generate(
-                        synthesis_prompt, timeout=budget.timeout_seconds)
+                    # Coverage design §E/§F: one measured call —
+                    # monotonic duration around the actual generate
+                    # call, provider usage when the seat offers it,
+                    # estimated cost otherwise, never a second call.
+                    measured = measure_generation(
+                        synth_seat.participant, synthesis_prompt,
+                        timeout=budget.timeout_seconds)
+                    synthesis_generation = measured["generation"]
+                    synthesis_generation_cost = compute_generation_cost(
+                        synthesis_prompt, measured["text"],
+                        measured["usage"], None)
+                    if measured["error"] is not None:
+                        raise RuntimeError(measured["error"])
+                    synth_text = measured["text"]
                     generation_timestamps.setdefault("synthesis", {})[SYNTHESIZER_NAME] = time.time()
                     transcript.append("contribution", SYNTHESIZER_NAME, synth_text)
                     # Scope B: the fenced JSON contract takes
@@ -2263,10 +2313,61 @@ def run_multi_model_meeting(
                             disagreements_evaluation = (
                                 "evaluated_with_results" if disagreements
                                 else "evaluated_empty")
+                    # Coverage check (design §A–§C): detection-only,
+                    # on the KEPT structured output. It never mutates
+                    # the output, never rewrites an evaluation, and
+                    # never injects synthesis text. A failure stays
+                    # visible here (transcript note) and on the
+                    # artifact (coverage verdict field) — the
+                    # Phase C prerequisite.
+                    synthesis_coverage = check_coverage(
+                        registry, unresolved_objections, {
+                            "positions": positions,
+                            "disagreements": disagreements,
+                            "recommendations": recommendations,
+                            "limitations": limitations,
+                        })
+                    active_empty = not any(
+                        c.disposition not in ("revised", "withdrawn")
+                        for c in registry.claims)
+                    synthesis_coverage_accepted = artifact_accepted(
+                        {"positions": positions_evaluation,
+                         "disagreements": disagreements_evaluation,
+                         "recommendations": recommendations_evaluation,
+                         "limitations": limitations_evaluation},
+                        synthesis_coverage, active_claims_empty=active_empty)
+                    if synthesis_coverage["verdict"] == "fail":
+                        fail_parts = []
+                        omitted_obj = synthesis_coverage["objections"]["omitted"]
+                        if omitted_obj:
+                            fail_parts.append(
+                                "objections omitted: " + ", ".join(
+                                    f"{o['target_claim_id']}/{o['challenger_claim_id']}"
+                                    for o in omitted_obj))
+                        omitted_prop = synthesis_coverage["proposals"]["omitted"]
+                        if omitted_prop:
+                            fail_parts.append(
+                                "proposals omitted: " + ", ".join(
+                                    o["proposal_claim_id"] for o in omitted_prop))
+                        if synthesis_coverage["provenance_failures"]:
+                            fail_parts.append(
+                                "provenance failures: "
+                                f"{len(synthesis_coverage['provenance_failures'])}")
+                        transcript.append(
+                            "note", SYNTHESIZER_NAME,
+                            "Synthesis coverage FAIL (mechanical, "
+                            "detection-only): " + "; ".join(fail_parts)
+                            + ". The structured output is unchanged; "
+                            "coverage failure is a verdict on the "
+                            "artifact, not a repair.")
                     synthesis = {
                         "status": "complete",
                         "text": synth_text,
                         "attributed_to": SYNTHESIZER_NAME,
+                        "generation": synthesis_generation,
+                        "generation_cost": synthesis_generation_cost,
+                        "coverage": synthesis_coverage,
+                        "coverage_accepted": synthesis_coverage_accepted,
                         "positions_represented": [
                             cid for p in positions for cid in p["claim_ids"]],
                         "disagreements_carried": [
@@ -2280,7 +2381,11 @@ def run_multi_model_meeting(
                                outcome="generated", phase="synthesis",
                                cited_claim_ids=synthesis["positions_represented"]
                                + synthesis["disagreements_carried"],
-                               token_usage="unavailable")
+                               token_usage=(
+                                   measured["usage"].get("total_tokens")
+                                   if isinstance(measured["usage"], dict)
+                                   and isinstance(measured["usage"].get("total_tokens"), int)
+                                   else "unavailable"))
                     ok = True
                 except Exception as exc:  # recorded, not raised
                     synthesis_failure = f"{type(exc).__name__}: {str(exc)[:200]}"
@@ -2307,6 +2412,10 @@ def run_multi_model_meeting(
         unresolved_objections=unresolved_objections,
         delta_report=delta_report,
         generation_timestamps=generation_timestamps,
+        synthesis_coverage=synthesis_coverage,
+        synthesis_coverage_accepted=synthesis_coverage_accepted,
+        synthesis_generation=synthesis_generation,
+        synthesis_generation_cost=synthesis_generation_cost,
     )
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"

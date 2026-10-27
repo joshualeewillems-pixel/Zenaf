@@ -37,6 +37,15 @@ class OpenAIParticipant:
     def generate(self, prompt: str, *, timeout: int = 120) -> str:
         return _openai.generate(self._api_key, prompt, model=self.model, timeout=timeout)
 
+    def generate_with_usage(self, prompt: str, *,
+                            timeout: int = 120) -> tuple[str, dict | None]:
+        """Parallel to generate(): (text, provider usage dict or None).
+
+        generate() is untouched and still returns text only.
+        """
+        return _openai.generate_with_usage(
+            self._api_key, prompt, model=self.model, timeout=timeout)
+
 
 def check_openai_key_present(principal: ExecutionPrincipal | None = None) -> tuple[bool, str]:
     """Presence check only. Returns (present, source-label); the value is discarded."""
@@ -133,6 +142,21 @@ class SeatParticipant:
     def generate(self, prompt: str, *, timeout: int = 120) -> str:
         fn = _PROVIDER_GENERATE[self.provider_id]
         return fn(self._api_key, prompt, model=self.model, timeout=timeout)
+
+    def __getattr__(self, name: str):
+        # Usage capture exists ONLY for the openai seat in v1: other
+        # providers have no usage path, so the attribute genuinely
+        # does not exist for them — measurement's hasattr check then
+        # falls back to a single generate() call (estimated cost),
+        # never a second generation. (A class-level method raising
+        # AttributeError would instead be misread as a generation
+        # failure by the measurement wrapper.)
+        if name == "generate_with_usage" and self.provider_id == "openai":
+            def _with_usage(prompt: str, *, timeout: int = 120):
+                return _openai.generate_with_usage(
+                    self._api_key, prompt, model=self.model, timeout=timeout)
+            return _with_usage
+        raise AttributeError(name)
 
 
 @dataclass(frozen=True)

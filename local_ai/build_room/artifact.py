@@ -156,11 +156,15 @@ def build_draft_artifact_r2(
             "status": "not_checked",
             "reason": "replay reconstruction: no live generation records to check",
         },
-        # Tool access (stage-1 increment B): always present. Live
-        # meetings carry the flag state, the capable/packet-only
+        # Tool access (stage-1 increments B + C): always present.
+        # Live meetings carry the flag state, the capable/packet-only
         # split, the nominated set, the snapshot revision, and the
-        # full runner-kept tool-call log. Replays (no live
-        # generations) carry an honest note, never a fabricated log.
+        # full runner-kept tool-call log, plus (increment C) the
+        # tool usage summary (generations and tool-round calls
+        # stated separately) and citation-validation totals
+        # (grounded vs unverified; no grounding score exists).
+        # Replays (no live generations) carry an honest note, never
+        # a fabricated log.
         "tool_access": tool_access if tool_access is not None else {
             "enabled": False,
             "note": "no tool-enabled generations in this record",

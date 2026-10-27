@@ -488,3 +488,316 @@ def test_participant_structured_channel_only_for_openai_seat():
     other = SeatParticipant("Claude", "anthropic", "key", model="claude-haiku-4-5")
     assert hasattr(gpt, "generate_structured")
     assert not hasattr(other, "generate_structured")
+
+
+# ---------------------------------------------------------------------------
+# Increment C: citation validation (mark, never strip)
+# ---------------------------------------------------------------------------
+
+from local_ai.build_room.citation_validation import (
+    find_tool_citations,
+    validate_tool_citations,
+)
+from local_ai.build_room.measurement import summarize_tool_round_usage
+from local_ai.build_room.tool_access import ToolLoopBudgets
+
+
+def _returned_entry(path, revision, lines):
+    return {
+        "phase": "opening", "participant": "GPT", "tool": "read_file",
+        "requested_path": path, "resolved_path": path, "revision": revision,
+        "lines": lines, "chars": 10, "truncated": False, "duration_s": 0.01,
+        "outcome": "returned", "reason": None,
+    }
+
+
+def test_find_tool_citations_parses_range_and_single_line():
+    found = find_tool_citations(
+        "see build_room/target.py@abc123:2-4 and other.py@abc123:7.")
+    assert [(f["path"], f["line_start"], f["line_end"]) for f in found] == [
+        ("build_room/target.py", 2, 4), ("other.py", 7, 7)]
+    assert find_tool_citations("no citations here") == []
+    # Email-like text is not a citation: the revision group is
+    # alphanumeric-only, so a dotted domain cannot match.
+    assert find_tool_citations("mail me at joe@example.com:9") == []
+
+
+def test_citation_grounded_on_subset_and_repo_prefixed_path():
+    entries = [_returned_entry("build_room/target.py", COMMIT, "1-10")]
+    anns = validate_tool_citations(
+        "per local_ai/build_room/target.py@" + COMMIT + ":2-4.", entries)
+    assert len(anns) == 1
+    assert anns[0]["status"] == "grounded" and anns[0]["reason"] is None
+
+
+def test_citation_over_range_wrong_revision_refused_unverified():
+    entries = [_returned_entry("build_room/target.py", COMMIT, "1-3")]
+    anns = validate_tool_citations(
+        "a build_room/target.py@" + COMMIT + ":2-9 "
+        "b build_room/target.py@" + "b" * 40 + ":1-2 "
+        "c build_room/other.py@" + COMMIT + ":1-1.", entries)
+    assert [a["status"] for a in anns] == ["unverified"] * 3
+    assert [a["reason"] for a in anns] == [
+        "range_not_covered", "revision_mismatch", "no_matching_returned_read"]
+
+
+def test_citation_refused_or_capped_entries_never_ground():
+    refused = dict(_returned_entry("build_room/target.py", COMMIT, "1-3"))
+    refused["outcome"] = "refused"
+    refused["reason"] = "not_nominated: path is outside the nominated set"
+    refused["resolved_path"] = None
+    capped = dict(_returned_entry("build_room/target.py", COMMIT, "1-3"))
+    capped["outcome"] = "capped"
+    anns = validate_tool_citations(
+        "x build_room/target.py@" + COMMIT + ":1-2.", [refused, capped])
+    assert anns[0]["status"] == "unverified"
+    assert anns[0]["reason"] == "no_matching_returned_read"
+    assert validate_tool_citations(
+        "x build_room/target.py@" + COMMIT + ":1-2.", [])[0]["status"] == "unverified"
+
+
+# ---------------------------------------------------------------------------
+# Increment C: cumulative budgets (pure accounting)
+# ---------------------------------------------------------------------------
+
+def test_budgets_reserve_and_result_and_tripwire_boundaries():
+    budgets = ToolLoopBudgets(
+        turn_input_token_budget=60000, reserve_fraction=0.75,
+        aggregate_result_token_budget=2000, round_token_tripwire=6000)
+    assert budgets.reserve_limit == 45000
+    assert budgets.request_fits(45000) is True
+    assert budgets.request_fits(45001) is False
+    budgets.record_request(45000)
+    assert budgets.request_fits(1) is False
+    assert budgets.result_fits(2000) is True
+    assert budgets.result_fits(2001) is False
+    assert budgets.round_tripwire_hit(3000, 3000) is False
+    assert budgets.round_tripwire_hit(3000, 3001) is True
+
+
+def _len_counter(text: str):
+    return len(text), "test"
+
+
+def _ctx_with(ctx: ToolLoopContext, **overrides) -> ToolLoopContext:
+    import dataclasses
+
+    return dataclasses.replace(ctx, **overrides)
+
+
+def test_loop_aggregate_result_token_budget_withholds_delivery(
+        ctx: ToolLoopContext):
+    ctx2 = _ctx_with(
+        ctx, aggregate_result_token_budget=50, token_counter=_len_counter)
+    seat = ScriptedToolSeat([
+        {"content": None, "tool_calls": [
+            _tool_call("c1", "build_room/target.py", 1, 3)]},
+        {"content": "1. Observed: delivery withheld, still final.",
+         "tool_calls": []},
+    ])
+    text, error, entries = run_tool_loop(
+        seat, "prompt", ctx2, phase="opening", participant_name="GPT")
+    assert error is None
+    assert text is not None and "still final" in text
+    assert entries[0]["outcome"] == "refused"
+    assert "aggregate_token_budget_exceeded" in (entries[0]["reason"] or "")
+
+
+def test_loop_per_call_timeout_refuses_pathological_read(
+        ctx: ToolLoopContext):
+    ctx2 = _ctx_with(ctx, per_call_timeout_seconds=0)
+    seat = ScriptedToolSeat([
+        {"content": None, "tool_calls": [
+            _tool_call("c1", "build_room/target.py", 1, 1)]},
+        {"content": "1. Observed: read refused on time, still final.",
+         "tool_calls": []},
+    ])
+    text, error, entries = run_tool_loop(
+        seat, "prompt", ctx2, phase="opening", participant_name="GPT")
+    assert error is None
+    assert entries[0]["outcome"] == "refused"
+    assert "tool_call_timeout" in (entries[0]["reason"] or "")
+
+
+def test_loop_reserve_forces_final_text(ctx: ToolLoopContext):
+    ctx2 = _ctx_with(
+        ctx, turn_input_token_budget=60, reserve_fraction=0.75,
+        token_counter=_len_counter)
+    seat = ScriptedToolSeat([
+        {"content": "draft final", "tool_calls": [
+            _tool_call("c1", "build_room/target.py", 1, 1)]},
+        {"content": "1. Observed: should never be reached.", "tool_calls": []},
+    ])
+    text, error, entries = run_tool_loop(
+        seat, "prompt", ctx2, phase="opening", participant_name="GPT")
+    assert error is None
+    assert text == "draft final"
+    assert len(seat.calls) == 1  # second request never sent
+
+
+def test_loop_reserve_without_final_text_is_budget_failure(
+        ctx: ToolLoopContext):
+    ctx2 = _ctx_with(
+        ctx, turn_input_token_budget=60, reserve_fraction=0.75,
+        token_counter=_len_counter)
+    seat = ScriptedToolSeat([
+        {"content": None, "tool_calls": [
+            _tool_call("c1", "build_room/target.py", 1, 1)]},
+    ])
+    text, error, entries = run_tool_loop(
+        seat, "prompt", ctx2, phase="opening", participant_name="GPT")
+    assert text is None
+    assert error is not None and "participant_turn_input_budget_exceeded" in error
+
+
+def test_loop_round_tripwire_fires_and_records(ctx: ToolLoopContext):
+    sink: list = []
+    ctx2 = _ctx_with(
+        ctx, round_token_tripwire=10, token_counter=_len_counter,
+        usage_sink=sink)
+    seat = ScriptedToolSeat([
+        {"content": "short", "tool_calls": [
+            _tool_call("c1", "build_room/target.py", 1, 1)]},
+        {"content": "1. Observed: should never be reached.", "tool_calls": []},
+    ])
+    text, error, entries = run_tool_loop(
+        seat, "prompt", ctx2, phase="opening", participant_name="GPT")
+    assert error is None
+    assert text == "short"
+    assert len(sink) == 1
+    assert sink[0]["tripwire_fired"] is True
+    assert sink[0]["tripwire"]["round_total_tokens"] > 10
+
+
+def test_loop_wall_clock_ceiling_binds_tighter_than_timeout(
+        ctx: ToolLoopContext):
+    class SlowSeat:
+        def generate_structured(self, messages, *, tools, timeout: int = 120):
+            time.sleep(1.2)
+            return {"content": None, "tool_calls": [
+                _tool_call("c1", "build_room/target.py", 1, 1)]}
+
+    ctx2 = _ctx_with(ctx, wall_clock_ceiling_seconds=1)
+    text, error, entries = run_tool_loop(
+        SlowSeat(), "prompt", ctx2, phase="opening", participant_name="GPT",
+        timeout_seconds=120)
+    assert text is None
+    assert error is not None and "timeout" in error
+
+
+def test_loop_usage_record_keyed_by_generation(ctx: ToolLoopContext):
+    sink: list = []
+    ctx2 = _ctx_with(ctx, usage_sink=sink, token_counter=_len_counter)
+    seat = ScriptedToolSeat([
+        {"content": None, "tool_calls": [
+            _tool_call("c1", "build_room/target.py", 1, 3)]},
+        {"content": "1. Observed: done.", "tool_calls": []},
+    ])
+    text, error, entries = run_tool_loop(
+        seat, "prompt", ctx2, phase="opening", participant_name="GPT")
+    assert error is None
+    assert len(sink) == 1
+    record = sink[0]
+    assert (record["phase"], record["participant"]) == ("opening", "GPT")
+    assert record["generations"] == 1
+    assert record["structured_requests"] == 2
+    assert record["tool_invocations"] == 1
+    assert record["tool_calls_returned"] == 1
+    assert record["cumulative_input_tokens"] > 0
+    assert record["max_single_request_input_tokens"] > 0
+    assert record["outcome"] == "final_text"
+
+
+def test_summarize_tool_round_usage_states_separately():
+    summary = summarize_tool_round_usage([
+        {"structured_requests": 2, "tool_invocations": 1,
+         "tool_calls_returned": 1, "tool_calls_refused": 0,
+         "tool_calls_capped": 0, "cumulative_input_tokens": 100,
+         "cumulative_output_tokens": 50, "max_single_request_input_tokens": 80,
+         "aggregate_result_tokens": 40, "tripwire_fired": True},
+        {"structured_requests": 1, "tool_invocations": 0,
+         "tool_calls_returned": 0, "tool_calls_refused": 0,
+         "tool_calls_capped": 0, "cumulative_input_tokens": 30,
+         "cumulative_output_tokens": 10, "max_single_request_input_tokens": 30,
+         "aggregate_result_tokens": 0, "tripwire_fired": False},
+    ])
+    assert summary["generations_with_tool_loops"] == 2
+    assert summary["structured_requests"] == 3
+    assert summary["tool_invocations"] == 1
+    assert summary["cumulative_input_tokens"] == 130
+    assert summary["max_single_request_input_tokens"] == 80
+    assert summary["tripwire_fired_count"] == 1
+    assert summarize_tool_round_usage([])["generations_with_tool_loops"] == 0
+
+
+def test_tools_prompt_section_states_narrow_guarantee_and_scope_rule(
+        ctx: ToolLoopContext):
+    section = tools_prompt_section(sorted(ctx.nominated_paths), COMMIT)
+    assert "stops the runner mistaking text for a request" in section
+    assert "does NOT stop" in section
+    assert "verified_present" in section
+    assert "not_found_within_scope" in section
+    assert "without its cited scope is not_inspected" in section
+    assert "checked against the tool-call log" in section
+    assert "marked unverified" in section
+    assert "4 tool rounds" in section
+
+
+# ---------------------------------------------------------------------------
+# Increment C: meeting-level citation validation + usage reporting
+# ---------------------------------------------------------------------------
+
+def test_meeting_citation_validation_marks_not_strips(
+        snap_dir: Path, tmp_path: Path):
+    grounded = f"build_room/target.py@{COMMIT}:1-2"
+    over_range = f"build_room/target.py@{COMMIT}:4-5"
+    gpt = FakeToolSeat([
+        {"content": None, "tool_calls": [
+            _tool_call("c1", "build_room/target.py", 1, 3)]},
+        {"content": "1. Observed: lines 1-2 per " + grounded
+                    + ", and lines 4-5 per " + over_range + ".",
+         "tool_calls": []},
+    ])
+    result = run_multi_model_meeting(
+        _packet(), store_dir=tmp_path / "store", seats=_seats(gpt),
+        tools_enabled=True,
+        nominated_paths=["build_room/target.py"],
+        snapshot_dir=snap_dir,
+        deployed_version=COMMIT,
+    )
+    opening = [i for i in result.artifact["interactions"]
+               if i["participant"] == "GPT" and i["phase"] == "opening"][0]
+    statuses = {a["citation"]: a["status"]
+                for a in opening["tool_citations"]}
+    assert statuses[grounded] == "grounded"
+    assert statuses[over_range] == "unverified"
+    assert opening["grounded_tool_citations"] == 1
+    assert opening["unverified_tool_citations"] == 1
+    totals = result.artifact["tool_access"]["citation_validation"]
+    assert totals["grounded"] == 1 and totals["unverified"] == 1
+    # Mark, never strip: the registry claim text still carries BOTH
+    # citations verbatim.
+    claim_texts = [c["text"] for c in result.artifact["claim_registry"]
+                   if c["participant"] == "GPT" and c["phase"] == "opening"]
+    assert claim_texts and grounded in claim_texts[0]
+    assert over_range in claim_texts[0]
+    notes = [e.text for e in result.transcript.entries
+             if e.kind == "note" and "Tool citations:" in e.text]
+    assert notes and "grounded" in notes[0] and "unverified" in notes[0]
+    # Usage states generations and tool-round calls separately.
+    usage = result.artifact["tool_access"]["usage"]
+    assert usage["generations_with_tool_loops"] == 2  # opening + response
+    assert usage["structured_requests"] >= 3
+    assert usage["tool_invocations"] >= 1
+    assert result.artifact["record_completeness"]["passed"] is True
+    assert result.ok is True
+    # The generation's usage.jsonl row carries its tool record,
+    # keyed by generation — not "unavailable".
+    rows = [json.loads(line) for line in
+            (tmp_path / "store" / "usage.jsonl").read_text(
+                encoding="utf-8").splitlines()]
+    gpt_opening = [r for r in rows if r["participant"] == "GPT"
+                   and r["phase"] == "opening"
+                   and r["outcome"] == "generated"]
+    assert gpt_opening and isinstance(gpt_opening[0]["token_usage"], dict)
+    assert gpt_opening[0]["token_usage"]["tool_calls_returned"] == 1

@@ -221,6 +221,18 @@ def run_single_model_meeting(
 
 from local_ai.build_room.artifact import build_draft_artifact_r2
 from local_ai.build_room.record_completeness import check_record_completeness
+from local_ai.build_room.tool_access import (
+    ToolLoopContext,
+    normalize_snapshot_path,
+    run_tool_loop,
+    tools_prompt_section,
+)
+from local_ai.build_room.tool_snapshot import (
+    ManifestError,
+    default_snapshot_dir,
+    load_manifest,
+    snapshot_status,
+)
 from local_ai.build_room.participants import (
     Seat,
     resolve_seat_participants,
@@ -1217,6 +1229,10 @@ def _render_transcript(transcript: Transcript) -> str:
 def _run_phase_parallel(
     jobs: list[tuple[str, Any, str]],
     budget: Budget,
+    *,
+    tool_contexts: dict[str, Any] | None = None,
+    tool_phase: str = "",
+    tool_log_sink: list | None = None,
 ) -> list[tuple[str, str | None, str | None, float]]:
     """Run one phase's generations in parallel (design §4).
 
@@ -1224,6 +1240,15 @@ def _run_phase_parallel(
     order. Returns (name, text_or_None, error_or_None, completed_ts)
     IN STABLE ORDER, never completion order. One participant's
     failure never affects another's result.
+
+    Tool-access stage-1 increment B: when ``tool_contexts`` maps a
+    participant name to a ToolLoopContext AND that participant has a
+    structured channel (``generate_structured``), its generation
+    runs the bounded tool loop instead of a single generate() call.
+    The loop's log entries are appended to ``tool_log_sink`` (in
+    thread-completion order; the caller re-sorts them into stable
+    seat order before appending them to the transcript). A loop
+    error is a recorded generation failure, never a raise.
     """
     if not jobs:
         return []
@@ -1231,6 +1256,18 @@ def _run_phase_parallel(
     def work(job: tuple[str, Any, str]) -> tuple[str, str | None, str | None, float]:
         name, participant, _prompt = job
         try:
+            if (
+                tool_contexts is not None
+                and name in tool_contexts
+                and hasattr(participant, "generate_structured")
+            ):
+                text, error, entries = run_tool_loop(
+                    participant, _prompt, tool_contexts[name],
+                    phase=tool_phase, participant_name=name,
+                    timeout_seconds=budget.timeout_seconds)
+                if tool_log_sink is not None:
+                    tool_log_sink.extend(entries)
+                return name, text, error, time.time()
             text = participant.generate(_prompt, timeout=budget.timeout_seconds)
             return name, text, None, time.time()
         except Exception as exc:  # recorded per participant, not raised
@@ -1250,6 +1287,10 @@ def run_multi_model_meeting(
     budget: Budget | None = None,
     principal: ExecutionPrincipal | None = None,
     seats: list[Seat] | None = None,
+    tools_enabled: bool = False,
+    nominated_paths: list[str] | None = None,
+    snapshot_dir: Path | str | None = None,
+    deployed_version: str | None = None,
 ) -> MeetingResult:
     """Run one R2 meeting. Never raises for participant/generation
     failure: failures are recorded in the transcript and reflected
@@ -1258,6 +1299,19 @@ def run_multi_model_meeting(
     ``seats`` overrides resolution (tests inject fake participants);
     otherwise all five seats resolve under the caller's principal in
     stable SEAT_SPECS order.
+
+    Tool-access stage-1 increment B: ``tools_enabled`` turns on the
+    per-meeting tool flag (default OFF, never default-on). When on,
+    only seats with a structured channel (the GPT seat in stage 1)
+    run the bounded read_file loop, and only over
+    ``nominated_paths`` that are also in the snapshot manifest;
+    every other seat deliberates packet-only, and the asymmetry is
+    disclosed in the transcript and the artifact. The snapshot is
+    verified once, before the first tool invocation; any failure
+    disables tools for the whole meeting and the meeting proceeds
+    packet-only. ``snapshot_dir`` / ``deployed_version`` default to
+    the increment-A runtime values (image snapshot dir /
+    ZENAF_CODE_VERSION); tests pass explicit values.
     """
     budget = budget or Budget(
         max_contributions=R2_MAX_GENERATIONS,
@@ -1309,6 +1363,111 @@ def run_multi_model_meeting(
                        operation="build_room_r2_meeting", outcome="absent",
                        phase="convene", cited_claim_ids=[],
                        token_usage="unavailable")
+
+    # Tool-access stage-1 increment B: per-meeting flag, default OFF.
+    # The snapshot is verified ONCE here, before the first tool
+    # invocation; a failure disables tools for the whole meeting
+    # (never per-call retries) and the meeting proceeds packet-only.
+    # A tools-disabled note uses kind "note", never "failure": it is
+    # not a failed generation and must not break the
+    # record-completeness transcript/generation parity check (which
+    # counts only contribution/failure kinds).
+    tool_enabled_for_meeting = False
+    tool_revision: str | None = None
+    tool_capable_names: list[str] = []
+    tool_disabled_reason: str | None = None
+    tool_nominated: list[str] = []
+    tool_contexts: dict[str, ToolLoopContext] = {}
+    tool_log_sink: list[dict[str, Any]] = []
+    tool_log_all: list[dict[str, Any]] = []
+    if tools_enabled:
+        tool_nominated = sorted({
+            normalize_snapshot_path(p)
+            for p in (nominated_paths or [])
+            if p and p.strip()
+        })
+        tool_capable_names = [
+            s.name for s in present
+            if hasattr(s.participant, "generate_structured")
+        ]
+        snap_dir = Path(snapshot_dir) if snapshot_dir is not None else default_snapshot_dir()
+        snap_ok, snap_reason, _snap_details = snapshot_status(snap_dir, deployed_version)
+        if not snap_ok:
+            tool_disabled_reason = snap_reason
+            transcript.append(
+                "note", "Reynard (convener)",
+                f"Tool access disabled for this meeting: snapshot "
+                f"verification failed ({snap_reason}). The meeting "
+                f"proceeds packet-only; no file was read as evidence.")
+        else:
+            try:
+                tool_manifest = load_manifest(snap_dir)
+                tool_revision = tool_manifest["commit"]
+            except ManifestError as exc:
+                tool_disabled_reason = f"manifest-unusable: {exc}"
+                transcript.append(
+                    "note", "Reynard (convener)",
+                    f"Tool access disabled for this meeting: {tool_disabled_reason}. "
+                    f"The meeting proceeds packet-only; no file was read "
+                    f"as evidence.")
+            else:
+                ctx = ToolLoopContext(
+                    nominated_paths=frozenset(tool_nominated),
+                    snapshot_dir=snap_dir,
+                    manifest=tool_manifest,
+                    revision=tool_revision,
+                )
+                tool_contexts = {name: ctx for name in tool_capable_names}
+                tool_enabled_for_meeting = True
+                packet_only_names = [
+                    s.name for s in present if s.name not in tool_capable_names
+                ]
+                transcript.append(
+                    "note", "Reynard (convener)",
+                    f"Tool access enabled (stage-1 packet-named-path mode): "
+                    f"tool-capable seats: {', '.join(tool_capable_names) or 'none'}; "
+                    f"packet-only seats: {', '.join(packet_only_names) or 'none'}; "
+                    f"nominated paths: {len(tool_nominated)}; "
+                    f"snapshot revision: {tool_revision}. Other seats "
+                    f"deliberate packet-only; outside the nominated set "
+                    f"is not_inspected, never absence.")
+    tool_prompt_extras: dict[str, str] = {}
+    if tool_enabled_for_meeting and tool_revision is not None:
+        section = tools_prompt_section(tool_nominated, tool_revision)
+        tool_prompt_extras = {name: "\n\n" + section for name in tool_capable_names}
+
+    def _drain_tool_log() -> None:
+        """Append one phase's tool entries to the transcript.
+
+        Entries are re-sorted into stable seat order (the sink
+        collects them in thread-completion order) and appended with
+        kind "tool_call", which the record-completeness check
+        ignores (it counts only contribution/failure kinds). The
+        full entry dicts accumulate in ``tool_log_all`` for the
+        artifact's tool_access record.
+        """
+        if not tool_log_sink:
+            return
+        ordered = sorted(
+            enumerate(tool_log_sink),
+            key=lambda pair: (
+                order.index(pair[1]["participant"])
+                if pair[1]["participant"] in order else len(order),
+                pair[0],
+            ),
+        )
+        for _, entry in ordered:
+            line = (
+                f"{entry['outcome']}: read_file "
+                f"{entry.get('requested_path') or '?'} -> "
+                f"{entry.get('resolved_path') or '-'} "
+                f"({entry.get('lines') or '-'}, {entry.get('chars', 0)} chars)"
+            )
+            if entry.get("reason"):
+                line += f" reason: {entry['reason']}"
+            transcript.append("tool_call", entry["participant"], line)
+            tool_log_all.append(entry)
+        del tool_log_sink[:]
 
     def _budget_blocked() -> str | None:
         if attempts >= budget.max_contributions:
@@ -1421,8 +1580,16 @@ def run_multi_model_meeting(
         return generated
 
     def _generate_jobs(phase: str, prompt: str, cap: int,
-                       members: list[Seat]) -> list[tuple[str, Any, str]]:
-        """Build parallel jobs, enforcing caps and the generation budget."""
+                       members: list[Seat],
+                       prompt_extras: dict[str, str] | None = None,
+                       ) -> list[tuple[str, Any, str]]:
+        """Build parallel jobs, enforcing caps and the generation budget.
+
+        ``prompt_extras`` maps a participant name to a section
+        appended ONLY to that participant's prompt (tool-access
+        stage-1 increment B: the tools section goes to tool-capable
+        seats only; packet-only seats never see it).
+        """
         nonlocal attempts
         jobs: list[tuple[str, Any, str]] = []
         for seat in members:
@@ -1461,7 +1628,8 @@ def run_multi_model_meeting(
                            cited_claim_ids=[], token_usage="unavailable")
                 continue
             attempts += 1
-            jobs.append((seat.name, seat.participant, prompt))
+            extra = (prompt_extras or {}).get(seat.name, "")
+            jobs.append((seat.name, seat.participant, prompt + extra))
         return jobs
 
     # -- Phase 1: independent openings (baseline control). Each
@@ -1478,8 +1646,13 @@ def run_multi_model_meeting(
         + "\n\n" + opening_telemetry
     )
     opening_jobs = _generate_jobs("opening", opening_prompt,
-                                  budget.max_prompt_chars, present)
-    opening_results = _run_phase_parallel(opening_jobs, budget)
+                                  budget.max_prompt_chars, present,
+                                  prompt_extras=tool_prompt_extras)
+    opening_results = _run_phase_parallel(
+        opening_jobs, budget,
+        tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
+        tool_phase="opening", tool_log_sink=tool_log_sink)
+    _drain_tool_log()
     openings = _record_phase("opening", opening_results, frozen_ids=set())
 
     unresolved_objections: list[dict] = []
@@ -1530,8 +1703,13 @@ def run_multi_model_meeting(
                     "note", seat.name,
                     f"{seat.name} did not respond: absent from openings.")
         response_jobs = _generate_jobs("response", response_prompt,
-                                       budget.max_response_prompt_chars, present)
-        response_results = _run_phase_parallel(response_jobs, budget)
+                                       budget.max_response_prompt_chars, present,
+                                       prompt_extras=tool_prompt_extras)
+        response_results = _run_phase_parallel(
+            response_jobs, budget,
+            tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
+            tool_phase="response", tool_log_sink=tool_log_sink)
+        _drain_tool_log()
         responses = _record_phase("response", response_results, frozen_ids=frozen_ids)
 
         # -- Phase 3: optional revision. Invited = originators of
@@ -1567,8 +1745,13 @@ def run_multi_model_meeting(
             revision_frozen = registry.ids()
             revision_jobs = _generate_jobs(
                 "revision", revision_prompt,
-                budget.max_response_prompt_chars, invited)
-            revision_results = _run_phase_parallel(revision_jobs, budget)
+                budget.max_response_prompt_chars, invited,
+                prompt_extras=tool_prompt_extras)
+            revision_results = _run_phase_parallel(
+                revision_jobs, budget,
+                tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
+                tool_phase="revision", tool_log_sink=tool_log_sink)
+            _drain_tool_log()
             # Follow-ups register with per-span relationship links (C3,
             # C4), not one contribution-wide link.
             rev_generated: list[tuple[str, str]] = []
@@ -1732,6 +1915,36 @@ def run_multi_model_meeting(
     record_complete = bool(record_completeness.get("passed"))
     ok = record_complete and deliberation_complete
 
+    # Tool-access stage-1 increment B: the artifact discloses the
+    # tool asymmetry (capable vs packet-only seats), the nominated
+    # set, the snapshot revision, and the full tool-call log. A
+    # flag-off meeting records enabled False with all seats
+    # packet-only; a snapshot failure records its reason. The log
+    # is what lets a reviewer distinguish "the model inspected X"
+    # from "the model said it inspected X".
+    if tools_enabled:
+        tool_access_record = {
+            "enabled": tool_enabled_for_meeting,
+            "reason": tool_disabled_reason,
+            "revision": tool_revision,
+            "tool_capable_seats": tool_capable_names,
+            "packet_only_seats": [
+                s.name for s in present if s.name not in tool_capable_names
+            ],
+            "nominated_paths": tool_nominated,
+            "tool_calls": tool_log_all,
+        }
+    else:
+        tool_access_record = {
+            "enabled": False,
+            "reason": None,
+            "revision": None,
+            "tool_capable_seats": [],
+            "packet_only_seats": [s.name for s in present],
+            "nominated_paths": [],
+            "tool_calls": [],
+        }
+
     artifact = build_draft_artifact_r2(
         meeting_id, packet, transcript, seats, registry,
         interactions=interactions,
@@ -1742,6 +1955,7 @@ def run_multi_model_meeting(
         deliberation_complete=deliberation_complete,
         ok=ok,
         record_completeness=record_completeness,
+        tool_access=tool_access_record,
     )
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"

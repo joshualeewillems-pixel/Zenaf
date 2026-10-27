@@ -151,6 +151,17 @@ class SeatParticipant:
                 return _openai.generate_with_usage(
                     self._api_key, prompt, model=self.model, timeout=timeout)
             return _with_usage
+        # Structured tool-call channel exists ONLY for the openai seat
+        # in tool-access stage 1 (increment B): other seats have no
+        # structured channel, so the runner's hasattr check keeps
+        # them packet-only and discloses the asymmetry. This mirrors
+        # the generate_with_usage pattern above exactly.
+        if name == "generate_structured" and self.provider_id == "openai":
+            def _structured(messages, *, tools, timeout: int = 120):
+                return _openai.generate_structured(
+                    self._api_key, messages, model=self.model,
+                    tools=tools, timeout=timeout)
+            return _structured
         raise AttributeError(name)
 
 

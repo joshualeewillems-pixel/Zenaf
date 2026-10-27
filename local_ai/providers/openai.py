@@ -71,6 +71,77 @@ class OpenAIProvider:
             raise RuntimeError("OpenAI response missing message content")
         return str(content).strip()
 
+    def generate_structured(self, messages: list, *, tools: list,
+                            timeout: int | None = None) -> dict:
+        """Structured tool-call channel (tool-access stage-1 increment B).
+
+        POSTs the full message list with a tools schema and returns
+        the model's reply as structured data — content text (or
+        None) plus a ``tool_calls`` list — separate from model text.
+        The runner NEVER parses model text for tool calls; it reads
+        only this structured object. Arguments arrive as a JSON
+        string from the API and are parsed here into a dict; an
+        unparseable arguments string is returned with
+        ``arguments=None`` and the raw string preserved, so the
+        runner refuses it as malformed instead of guessing.
+        """
+        if not self.api_key:
+            raise RuntimeError("OpenAI API key is not configured. Set OPENAI_API_KEY.")
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": "auto",
+            "temperature": 0.7,
+        }
+        r = requests.post(
+            self.CHAT_COMPLETIONS_URL,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            data=json.dumps(payload),
+            timeout=timeout if timeout is not None else self.timeout,
+        )
+        if not r.ok:
+            from local_ai.execution_policy.openai_credentials import classify_openai_http_error
+
+            detail = classify_openai_http_error(r.status_code, r.text or "")
+            try:
+                j = r.json()
+                err = j.get("error")
+                if isinstance(err, dict) and err.get("message"):
+                    detail = f"{detail} ({err['message']})"[:1200]
+            except Exception:
+                pass
+            raise RuntimeError(detail)
+        data = r.json()
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError("OpenAI response missing choices")
+        msg = choices[0].get("message") or {}
+        content = msg.get("content")
+        tool_calls: list[dict[str, Any]] = []
+        for raw in msg.get("tool_calls") or []:
+            fn = raw.get("function") or {}
+            arguments_raw = fn.get("arguments")
+            arguments = None
+            if isinstance(arguments_raw, str):
+                try:
+                    arguments = json.loads(arguments_raw)
+                except (json.JSONDecodeError, ValueError):
+                    arguments = None
+            tool_calls.append({
+                "id": raw.get("id") or "",
+                "name": fn.get("name") or "",
+                "arguments": arguments,
+                "arguments_raw": arguments_raw if isinstance(arguments_raw, str) else None,
+            })
+        return {
+            "content": str(content).strip() if isinstance(content, str) else None,
+            "tool_calls": tool_calls,
+        }
+
     def generate_with_usage(self, prompt: str, *,
                             timeout: int | None = None) -> tuple[str, dict | None]:
         """Parallel to generate(): identical POST, plus the usage block.
@@ -96,6 +167,13 @@ def generate(api_key: str, prompt: str, *, model: str | None = None, timeout: in
     """Module-level API matching other cloud providers (used by ``_CloudLLMAdapter``)."""
     prov = OpenAIProvider(model or "gpt-4o-mini", api_key=api_key)
     return prov.generate(prompt, timeout=timeout)
+
+
+def generate_structured(api_key: str, messages: list, *, model: str | None = None,
+                        tools: list | None = None, timeout: int = 120) -> dict:
+    """Module-level parallel to generate(): structured tool-call channel."""
+    prov = OpenAIProvider(model or "gpt-4o-mini", api_key=api_key)
+    return prov.generate_structured(messages, tools=tools or [], timeout=timeout)
 
 
 def generate_with_usage(api_key: str, prompt: str, *, model: str | None = None,

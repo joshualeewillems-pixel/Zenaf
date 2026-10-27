@@ -111,7 +111,17 @@ def run_meeting(
 
 
 class RunMeetingR2Body(RunMeetingBody):
-    """Work item + question for one R2 meeting."""
+    """Work item + question for one R2 meeting.
+
+    Tool-access stage-1 increment B: ``tools_enabled`` turns on the
+    per-meeting tool flag (default OFF, never default-on) and
+    ``nominated_paths`` names the packet-nominated set the GPT seat
+    may read. Both are inert unless the snapshot verifies: a failed
+    verification disables tools and the meeting runs packet-only.
+    """
+
+    tools_enabled: bool = False
+    nominated_paths: list[str] = []
 
 
 @router.post("/meetings/r2")
@@ -137,6 +147,8 @@ def run_meeting_r2(
     )
     result = run_multi_model_meeting(
         packet, store_dir=get_build_room_store_dir(), principal=principal,
+        tools_enabled=body.tools_enabled,
+        nominated_paths=body.nominated_paths,
     )
     return {
         "meeting_id": result.meeting_id,

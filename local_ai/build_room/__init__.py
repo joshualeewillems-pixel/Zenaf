@@ -4,11 +4,11 @@ R1 scope: one participant (GPT via the openai provider module),
 one work item in, a persisted verbatim transcript out, plus an
 inspectable DRAFT artifact in a clearly marked experimental area.
 
-R2 scope (approved design, 2026-10-26): five participants, convene
--> independent openings -> one response round -> optional revision
--> synthesis, with a mechanical claim registry, attributed
-positions/disagreements, and preserved disagreement. No role labels
-anywhere, not even labeled provisional.
+R2 scope (approved design, 2026-10-26; synthesis removed 2026-10-27):
+five participants, convene -> independent openings -> one response
+round -> optional revision, with a mechanical claim registry,
+attributed positions/disagreements, and preserved disagreement.
+No role labels anywhere, not even labeled provisional.
 
 Load-bearing boundaries (spec §4/§5):
 - The artifact RECOMMENDS. It never authorizes execution. This package
@@ -38,7 +38,6 @@ from local_ai.build_room.meeting import (
 )
 from local_ai.build_room.participants import (
     SEAT_SPECS,
-    SYNTHESIZER_NAME,
     OpenAIParticipant,
     Seat,
     SeatParticipant,
@@ -56,7 +55,6 @@ __all__ = [
     "MeetingResult",
     "OpenAIParticipant",
     "SEAT_SPECS",
-    "SYNTHESIZER_NAME",
     "Seat",
     "SeatParticipant",
     "Transcript",

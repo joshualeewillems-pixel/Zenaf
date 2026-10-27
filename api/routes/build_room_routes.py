@@ -111,17 +111,7 @@ def run_meeting(
 
 
 class RunMeetingR2Body(RunMeetingBody):
-    """Work item + question for one R2 meeting, plus the Phase C
-    experimental gate selection (spec §5.5).
-
-    NOTE (synthesis removal stage 1, 2026-10-27):
-    ``experimental_candidate_gate`` is INERT — no synthesis runs,
-    so no synthesis gate is evaluated. The field is accepted for
-    API compatibility and removed in stage 3 with the gate
-    machinery. It has no effect on deliberation.
-    """
-
-    experimental_candidate_gate: bool = False
+    """Work item + question for one R2 meeting."""
 
 
 @router.post("/meetings/r2")
@@ -134,8 +124,6 @@ def run_meeting_r2(
     no-key-values rules as R1. The meeting stays synchronous; no
     async job queue (a follow-up slice only if sync proves too slow).
     The artifact RECOMMENDS only.
-    ``experimental_candidate_gate`` is accepted but INERT since
-    synthesis removal stage 1 (no synthesis gate runs).
     """
     uid = current_user["id"]
     principal = authenticated_account_principal(uid)
@@ -149,7 +137,6 @@ def run_meeting_r2(
     )
     result = run_multi_model_meeting(
         packet, store_dir=get_build_room_store_dir(), principal=principal,
-        experimental_candidate_gate=body.experimental_candidate_gate,
     )
     return {
         "meeting_id": result.meeting_id,

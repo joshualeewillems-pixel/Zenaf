@@ -504,12 +504,10 @@ def test_r2_caller_account_principal_is_used(app, tmp_path, monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: OWNER
     seen: dict = {}
 
-    def fake_run(packet, *, store_dir, budget=None, principal=None, seats=None,
-                 experimental_candidate_gate=False):
+    def fake_run(packet, *, store_dir, budget=None, principal=None, seats=None):
         from local_ai.build_room.meeting import MeetingResult, Transcript
         seen["principal"] = principal
         seen["store_dir"] = str(store_dir)
-        seen["experimental_candidate_gate"] = experimental_candidate_gate
         return MeetingResult(meeting_id="m1", transcript=Transcript(),
                              artifact={"status": "DRAFT_EXPERIMENTAL"}, ok=True,
                              transcript_path=tmp_path / "t.json",
@@ -522,5 +520,77 @@ def test_r2_caller_account_principal_is_used(app, tmp_path, monkeypatch):
     assert principal.account_user_id == OWNER["id"]
     assert principal.scope == "account"
     assert seen["store_dir"] == str(tmp_path / "store")
-    # Default body carries no flag: the route must pass False.
-    assert seen["experimental_candidate_gate"] is False
+
+
+class _MeetingFake:
+    """Duck-typed seat participant for meeting-path tests."""
+
+    def __init__(self, name, *, opening="", response="", revision=""):
+        self.name = name
+        self.model = "fake-model"
+        self.key_source = "settings"
+        self._texts = {"revision": revision, "response": response,
+                       "opening": opening}
+
+    def generate(self, prompt, *, timeout=120):
+        if "state the relationship explicitly" in prompt:
+            return self._texts["revision"]
+        if "Claim registry" in prompt:
+            return self._texts["response"]
+        return self._texts["opening"]
+
+
+def _meeting_seats(gpt_opening):
+    fakes = {}
+    for name, _pid, _model in SEAT_SPECS:
+        opening = gpt_opening if name == "GPT" else "1. Observed: A stable fact."
+        fakes[name] = _MeetingFake(
+            name, opening=opening, response="No further comment.",
+            revision="No revision.")
+    return [Seat(name, pid, model, fakes[name])
+            for name, pid, model in SEAT_SPECS]
+
+
+def test_meeting_artifact_carries_no_coverage_fields(tmp_path):
+    # Synthesis removal stage 1: meeting artifacts carry NO
+    # coverage verdict, generation record, or synthesis fields —
+    # those belonged to the removed synthesis phase. The registry
+    # and transcript are the record.
+    packet = EvidencePacket(work_item="W", question="Q")
+    result = run_multi_model_meeting(
+        packet, store_dir=tmp_path / "store",
+        seats=_meeting_seats("1. Observed: A stable fact."))
+    artifact = result.artifact
+    assert artifact["synthesis_removed"] is True
+    for key in ("synthesis", "synthesis_failure", "synthesis_coverage",
+                "synthesis_coverage_accepted", "synthesis_generation",
+                "synthesis_generation_cost", "synthesis_gate",
+                "recommendations", "limitations"):
+        assert key not in artifact
+    assert artifact["record_complete"] is True
+    assert artifact["deliberation_complete"] is True
+    assert artifact["ok"] is True
+    # No coverage-failure note: there is no coverage check at all.
+    assert not any(e.kind == "note" and "coverage FAIL" in e.text
+                   for e in result.transcript.entries)
+
+
+def test_meeting_proposed_claims_visible_in_registry_without_coverage(tmp_path):
+    packet = EvidencePacket(work_item="W", question="Q")
+    result = run_multi_model_meeting(
+        packet, store_dir=tmp_path / "store",
+        seats=_meeting_seats(
+            "1. Observed: A stable fact.\n2. Proposed: Do the thing."))
+    artifact = result.artifact
+    registry = artifact["claim_registry"]
+    proposed = [c["id"] for c in registry if c["status"] == "Proposed"]
+    assert proposed, "test setup must register a Proposed claim"
+    # Proposed claims are visible in the registry itself — no
+    # coverage verdict interprets them anymore.
+    assert "synthesis_coverage" not in artifact
+    assert artifact["synthesis_removed"] is True
+    assert not any(e.kind == "note" and "coverage FAIL" in e.text
+                   for e in result.transcript.entries)
+
+
+# ---------------------------------------------------------------------------

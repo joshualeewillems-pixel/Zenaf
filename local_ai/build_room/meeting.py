@@ -395,6 +395,17 @@ _SYNTHESIS_INSTRUCTION = (
     "statement of the position.\", \"supporting_reasoning\": \"Reasoning "
     "grounded in the cited claims.\"}], \"disagreements\": [], "
     "\"recommendations\": [], \"limitations\": []} ``` "
+    "Disagreement example — this shows format only, with the same "
+    "format-only rule as above: ```json {\"disagreements\": "
+    "[{\"opposing_positions\": [\"Assigned roles improve accountability.\", "
+    "\"Open roles permit more substantive deliberation.\"], "
+    "\"supporting_claims\": [\"C6\", \"C21\"], \"unresolved_status\": "
+    "\"unresolved\"}]} ``` unresolved_status must contain exactly one "
+    "of the three permitted strings — unresolved, responded_to, or "
+    "resolved — never an explanation. If you want to explain why a "
+    "disagreement remains unresolved, put that explanation in the "
+    "narrative synthesis or another already-permitted descriptive "
+    "field, not in unresolved_status. "
     "Every claim ID referenced must exist in the registry. The "
     "structured fields are your interpretation, labeled as such; they "
     "never override the registry — a disagreement you label resolved "
@@ -1498,13 +1509,15 @@ def parse_synthesis_contract(text: str, registry: Any,
     Returns (structured, evaluations, rejected_entries, block_found).
     ``structured`` carries the four contract fields; ``evaluations``
     maps each field to synthesized_complete / synthesized_partial /
-    unparseable (per field: complete = all entries accepted;
-    partial = some entries rejected and disclosed; unparseable =
-    field missing, not a list, or no valid entries). Per-entry
-    salvage: entries failing validation are excluded and listed in
-    ``rejected_entries`` as {field, index, reason}; retained entries
-    keep their original supporting claim ids; nothing is repaired or
-    invented. ``block_found`` is False when no ```json block exists
+    synthesized_empty / unparseable (per field: complete = all entries
+    accepted; partial = some entries rejected and disclosed;
+    synthesized_empty = a valid empty list: the synthesizer returned
+    no entries for this field, which never means none objectively
+    exist; unparseable = field missing, not a list, or nonempty with
+    no valid entries). Per-entry salvage: entries failing validation
+    are excluded and listed in ``rejected_entries`` as {field, index,
+    reason}; retained entries keep their original supporting claim
+    ids; nothing is repaired or invented. ``block_found`` is False when no ```json block exists
     (the caller falls back to legacy section parsing); a present but
     invalid block yields all-unparseable, never a section fallback.
     Unexpected top-level keys reject the whole block (all fields
@@ -1546,6 +1559,14 @@ def parse_synthesis_contract(text: str, registry: Any,
             # unparseable; other fields are still evaluated.
             structured[field] = []
             evaluations[field] = "unparseable"
+            continue
+        if len(value) == 0:
+            # Valid empty collection: the synthesizer returned no
+            # entries for this field. This is synthesized_empty, not
+            # a parse failure — and it never means none objectively
+            # exist, only that no entries were returned.
+            structured[field] = []
+            evaluations[field] = "synthesized_empty"
             continue
         kept: list[dict] = []
         field_rejected = 0
@@ -2074,6 +2095,36 @@ def run_multi_model_meeting(
                                 "Synthesis structured output partially "
                                 f"salvaged; {len(rejected_entries)} entries "
                                 "rejected and disclosed.")
+                        # Empty-field disclosure (text only: no status
+                        # change, no reclassification). An empty field
+                        # means the synthesizer returned no entries,
+                        # never that none objectively exist. Flag it
+                        # when state material exists that the empty
+                        # field does not account for.
+                        if (contract_evals["disagreements"] == "synthesized_empty"
+                                and unresolved_objections):
+                            transcript.append(
+                                "note", SYNTHESIZER_NAME,
+                                "Synthesis disagreements field is empty "
+                                "although unresolved objections exist in "
+                                "the registry; empty means the synthesizer "
+                                "returned no disagreement entries, not that "
+                                "no disagreements exist. Registry "
+                                "objections are unchanged.")
+                        omitted = state.get("omitted") or {}
+                        omitted_total = (omitted.get("superseded_texts", 0)
+                                         + omitted.get("responded_to_details", 0))
+                        had_failures = any(
+                            e.kind == "failure" for e in transcript.entries)
+                        if (contract_evals["limitations"] == "synthesized_empty"
+                                and (omitted_total or had_failures)):
+                            transcript.append(
+                                "note", SYNTHESIZER_NAME,
+                                "Synthesis limitations field is empty "
+                                "although omitted context or failed "
+                                "contributions exist in this meeting; empty "
+                                "means the synthesizer returned no limitation "
+                                "entries, not that no limitations exist.")
                     else:
                         positions, disagreements, sections_found = _parse_synthesis_sections(
                             synth_text, SYNTHESIZER_NAME)

@@ -103,8 +103,9 @@ def test_unquoted_ids_block_rejected_as_unparseable():
 
 def test_example_shape_block_parses_positions_complete():
     # The instruction's example block verbatim in shape: one position
-    # with quoted IDs, three empty fields (empty fields stay unparseable
-    # by design — no entries, nothing rejected, nothing invented).
+    # with quoted IDs, three empty fields. A valid empty list is
+    # synthesized_empty, not a parse failure: no entries, nothing
+    # rejected, nothing invented, and empty never means none exist.
     example_block = (
         "Narrative synthesis here.\n"
         "```json\n"
@@ -127,9 +128,9 @@ def test_example_shape_block_parses_positions_complete():
     assert rejected == []
     assert evals["positions"] == "synthesized_complete"
     assert structured["positions"][0]["claim_ids"] == ["C2", "C6", "C12"]
-    assert evals["disagreements"] == "unparseable"
-    assert evals["recommendations"] == "unparseable"
-    assert evals["limitations"] == "unparseable"
+    assert evals["disagreements"] == "synthesized_empty"
+    assert evals["recommendations"] == "synthesized_empty"
+    assert evals["limitations"] == "synthesized_empty"
 
 
 def test_full_block_with_one_entry_per_field_all_complete():

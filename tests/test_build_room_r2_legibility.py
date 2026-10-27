@@ -276,13 +276,13 @@ def test_b_per_entry_salvage_partial_with_disclosure():
     assert len(structured["positions"]) == 1
     assert structured["positions"][0]["claim_ids"] == ["C1"]
     assert evals["positions"] == "synthesized_partial"
-    assert evals["disagreements"] == "unparseable"
+    assert evals["disagreements"] == "synthesized_empty"
     assert [(r["field"], r["index"]) for r in rejected] == [
         ("positions", 1), ("positions", 2)]
     assert all(r["reason"] for r in rejected)
 
 
-def test_b_missing_key_and_empty_list_are_unparseable_per_field():
+def test_b_missing_key_unparseable_empty_list_synthesized_empty():
     block = (
         "```json\n"
         + json.dumps({
@@ -303,7 +303,7 @@ def test_b_missing_key_and_empty_list_are_unparseable_per_field():
         block, _contract_registry(), [], "GPT")
     assert found is True
     assert evals["positions"] == "synthesized_complete"
-    assert evals["recommendations"] == "unparseable"
+    assert evals["recommendations"] == "synthesized_empty"
     assert evals["limitations"] == "unparseable"
     assert structured["limitations"] == []
 

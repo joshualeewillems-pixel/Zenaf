@@ -93,6 +93,7 @@ def build_draft_artifact_r2(
     synthesis_coverage_accepted: bool = False,
     synthesis_generation: dict[str, Any] | None = None,
     synthesis_generation_cost: dict[str, Any] | None = None,
+    synthesis_gate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict.
 
@@ -195,6 +196,11 @@ def build_draft_artifact_r2(
         "synthesis_coverage_accepted": synthesis_coverage_accepted,
         "synthesis_generation": synthesis_generation,
         "synthesis_generation_cost": synthesis_generation_cost,
+        # Synthesis-gate record (Phase C spec §5.5(d)): which gate
+        # governed synthesis, the measured prompt size, and the
+        # deployed code version as honestly reportable. None when
+        # Phase 4 never ran (no gate was evaluated).
+        "synthesis_gate": synthesis_gate,
         "provenance": provenance,
         "generation_timestamps": generation_timestamps or {},
         "transcript_entries": len(transcript.entries),

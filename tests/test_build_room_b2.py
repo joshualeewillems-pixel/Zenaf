@@ -71,11 +71,36 @@ def test_production_cap_unchanged_and_candidate_distinct():
     assert Budget().max_response_prompt_chars == 40000
     assert candidate_cap.PRODUCTION_SYNTHESIS_PROMPT_CHARS == (
         Budget().max_response_prompt_chars)
-    # And the candidate gate lives outside the production path: the
-    # meeting module never imports it, so no production call can
-    # reach the candidate gate by accident.
+    # Phase C spec §5.5 (authorized experimental selection) REFINES
+    # the B2 boundary rather than removing it: the meeting module
+    # may reach the candidate gate ONLY under the explicit
+    # experimental flag — never by default, never by import. So
+    # this pin now asserts: no top-level candidate import, exactly
+    # one lazy import, and that import (plus every candidate_cap
+    # use) sits inside the experimental-flag branch. Behavioral
+    # tests (gate_selection: default meetings never produce a
+    # candidate record) prove the same boundary at runtime.
     meeting_src = (Path(hf.__file__).resolve().parent / "meeting.py").read_text()
-    assert "candidate_cap" not in meeting_src
+    lines = meeting_src.splitlines()
+    for line in lines:
+        stripped = line.strip()
+        assert not stripped.startswith("import candidate_cap")
+        assert not stripped.startswith(
+            "from local_ai.build_room.candidate_cap import")
+    import_lines = [i for i, line in enumerate(lines)
+                    if line.strip().startswith(
+                        "from local_ai.build_room import candidate_cap")]
+    assert len(import_lines) == 1
+    flag_line = next(i for i, line in enumerate(lines)
+                     if "if experimental_candidate_gate:" in line)
+    assert flag_line < import_lines[0]
+    flag_indent = len(lines[flag_line]) - len(lines[flag_line].lstrip())
+    for i in range(flag_line + 1, import_lines[0] + 1):
+        if lines[i].strip():
+            assert len(lines[i]) - len(lines[i].lstrip()) > flag_indent
+    for i, line in enumerate(lines):
+        if "candidate_cap." in line:
+            assert i > flag_line
 
 
 # ---------------------------------------------------------------------------

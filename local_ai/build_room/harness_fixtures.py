@@ -1300,9 +1300,11 @@ def fixture_stress_state():
 
     114 claims, 5 seats, opening/response/revision phases across
     three rounds, 9 unresolved objections, 12 revision chains.
-    Assembled prompt (with harness telemetry): 59,689 chars /
-    11,712 tokens, inside the 11,500-12,500 band, sha256
-    ca9c54f747ef26e338243aa7eea3b10df1a3c0aab8811962ad189352166dce48.
+    Assembled prompt (with harness telemetry): 60,977 chars /
+    11,935 tokens, inside the 11,500-12,500 band, sha256
+    a8093c6ee28481f6f8a5db7ad29c51d8ec8d226263e786a96e3b41d4305cf65e.
+    (Re-pinned for the fidelity-correction instruction revision;
+    the pre-revision values were 59,689 chars / 11,712 tokens.)
     Size comes from distinct claims, never repeated filler (a test
     asserts unique claim bodies).
     """

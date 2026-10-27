@@ -504,10 +504,13 @@ def test_r2_caller_account_principal_is_used(app, tmp_path, monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: OWNER
     seen: dict = {}
 
-    def fake_run(packet, *, store_dir, budget=None, principal=None, seats=None):
+    def fake_run(packet, *, store_dir, budget=None, principal=None, seats=None,
+                 tools_enabled=False, nominated_paths=None):
         from local_ai.build_room.meeting import MeetingResult, Transcript
         seen["principal"] = principal
         seen["store_dir"] = str(store_dir)
+        seen["tools_enabled"] = tools_enabled
+        seen["nominated_paths"] = nominated_paths
         return MeetingResult(meeting_id="m1", transcript=Transcript(),
                              artifact={"status": "DRAFT_EXPERIMENTAL"}, ok=True,
                              transcript_path=tmp_path / "t.json",
@@ -520,6 +523,9 @@ def test_r2_caller_account_principal_is_used(app, tmp_path, monkeypatch):
     assert principal.account_user_id == OWNER["id"]
     assert principal.scope == "account"
     assert seen["store_dir"] == str(tmp_path / "store")
+    # Tool flag defaults OFF through the route (increment B wiring).
+    assert seen["tools_enabled"] is False
+    assert seen["nominated_paths"] == []
 
 
 class _MeetingFake:

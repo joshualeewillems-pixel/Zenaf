@@ -82,6 +82,7 @@ def build_draft_artifact_r2(
     deliberation_complete: bool = False,
     ok: bool = False,
     record_completeness: dict[str, Any] | None = None,
+    tool_access: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict (synthesis-less).
 
@@ -154,6 +155,15 @@ def build_draft_artifact_r2(
         "record_completeness": record_completeness if record_completeness is not None else {
             "status": "not_checked",
             "reason": "replay reconstruction: no live generation records to check",
+        },
+        # Tool access (stage-1 increment B): always present. Live
+        # meetings carry the flag state, the capable/packet-only
+        # split, the nominated set, the snapshot revision, and the
+        # full runner-kept tool-call log. Replays (no live
+        # generations) carry an honest note, never a fabricated log.
+        "tool_access": tool_access if tool_access is not None else {
+            "enabled": False,
+            "note": "no tool-enabled generations in this record",
         },
         "provenance": provenance,
         "generation_timestamps": generation_timestamps or {},

@@ -285,9 +285,13 @@ def harness_synthesis_call(
     budget = Budget()
     packet, registry, unresolved, chains = HARNESS_FIXTURE_BUILDERS[
         body.fixture]()
+    # B1: telemetry is passed so the gate compares the assembled
+    # prompt length, exactly as the production meeting path does.
+    telemetry = _telemetry_block(**TELEMETRY)
     state = build_synthesis_state(
         packet, registry, unresolved, chains,
         cap_chars=budget.max_response_prompt_chars,
+        telemetry=telemetry,
     )
     if state["prompt"] is None:
         # Budget behavior unchanged: diagnostic verbatim, no generation.
@@ -299,7 +303,7 @@ def harness_synthesis_call(
             "mandatory_chars": state.get("mandatory_chars"),
             "cap": budget.max_response_prompt_chars,
         }
-    prompt = state["prompt"] + "\n\n" + _telemetry_block(**TELEMETRY)
+    prompt = state["prompt"] + "\n\n" + telemetry
     sizes = _harness_report_sizes(state, prompt)
     participant, absence = resolve_openai_participant(principal)
     if participant is None:

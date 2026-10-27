@@ -71,36 +71,14 @@ def test_production_cap_unchanged_and_candidate_distinct():
     assert Budget().max_response_prompt_chars == 40000
     assert candidate_cap.PRODUCTION_SYNTHESIS_PROMPT_CHARS == (
         Budget().max_response_prompt_chars)
-    # Phase C spec §5.5 (authorized experimental selection) REFINES
-    # the B2 boundary rather than removing it: the meeting module
-    # may reach the candidate gate ONLY under the explicit
-    # experimental flag — never by default, never by import. So
-    # this pin now asserts: no top-level candidate import, exactly
-    # one lazy import, and that import (plus every candidate_cap
-    # use) sits inside the experimental-flag branch. Behavioral
-    # tests (gate_selection: default meetings never produce a
-    # candidate record) prove the same boundary at runtime.
+    # Synthesis removal stage 1: the meeting no longer reaches
+    # the candidate gate by ANY path — the experimental-flag
+    # branch lived in the removed synthesis phase, and the
+    # parameter is now inert. Pin: no candidate_cap reference
+    # in meeting.py at all (the gate machinery itself stays
+    # until stage 3, but the meeting path cannot reach it).
     meeting_src = (Path(hf.__file__).resolve().parent / "meeting.py").read_text()
-    lines = meeting_src.splitlines()
-    for line in lines:
-        stripped = line.strip()
-        assert not stripped.startswith("import candidate_cap")
-        assert not stripped.startswith(
-            "from local_ai.build_room.candidate_cap import")
-    import_lines = [i for i, line in enumerate(lines)
-                    if line.strip().startswith(
-                        "from local_ai.build_room import candidate_cap")]
-    assert len(import_lines) == 1
-    flag_line = next(i for i, line in enumerate(lines)
-                     if "if experimental_candidate_gate:" in line)
-    assert flag_line < import_lines[0]
-    flag_indent = len(lines[flag_line]) - len(lines[flag_line].lstrip())
-    for i in range(flag_line + 1, import_lines[0] + 1):
-        if lines[i].strip():
-            assert len(lines[i]) - len(lines[i].lstrip()) > flag_indent
-    for i, line in enumerate(lines):
-        if "candidate_cap." in line:
-            assert i > flag_line
+    assert "candidate_cap" not in meeting_src
 
 
 # ---------------------------------------------------------------------------
@@ -241,13 +219,13 @@ def test_replay_fixtures_pinned():
 
 def test_zero_contestation_assembly_tier1_only():
     # Full-state assembly, hash recorded, no generation: the builder
-    # exists but is deliberately NOT in the route's fixture map.
+    # exists but is deliberately NOT routable — and since stage 1
+    # there is no harness route at all.
     state, tel, assembled = _assembled(hf.fixture_zero_contestation_state)
     assert len(assembled) == 6270
     assert count_tokens(assembled) == 1256
     assert hashlib.sha256(assembled.encode()).hexdigest()[:16] == "c5e59bc3da82b566"
-    assert "zero" not in br_routes.HARNESS_FIXTURE_BUILDERS
-    assert "zero_contestation" not in br_routes.HARNESS_FIXTURE_BUILDERS
+    assert not hasattr(br_routes, "harness_synthesis_call")
 
 
 def test_stress_fixture_in_band_and_genuine():
@@ -280,229 +258,3 @@ def test_stress_fixture_in_band_and_genuine():
     # And the candidate gate admits it.
     gate = candidate_cap.evaluate_candidate_gate(state, tel)
     assert gate["admitted"] is True
-
-
-def test_route_fixtures_are_the_harness_fixtures():
-    for fid, builder in (("fitting", hf.fixture_fitting_state),
-                         ("failed", hf.fixture_failed_state),
-                         ("stress", hf.fixture_stress_state)):
-        assert br_routes.HARNESS_FIXTURE_BUILDERS[fid] is builder
-
-
-# ---------------------------------------------------------------------------
-# Route: B2 fixtures through the candidate gate (mocked generation)
-# ---------------------------------------------------------------------------
-
-OWNER = {"id": "owner-id", "email": "owner@local.zenaf"}
-OTHER = {"id": "someone-else"}
-FAKE_KEY = "FAKE-KEY-VALUE-67890"
-
-FIT_BLOCK = (
-    "Narrative synthesis here.\n```json\n"
-    + json.dumps({
-        "positions": [{"claim_ids": ["C1"], "position": "Cap adopted.",
-                       "supporting_reasoning": "Grounded in C1."}],
-        "disagreements": [],
-        "recommendations": [],
-        "limitations": []})
-    + "\n```\n")
-
-
-def _call_post(app, path: str, payload: dict) -> tuple[int, dict]:
-    raw = json.dumps(payload).encode()
-    scope = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "path": path,
-        "raw_path": path.encode(),
-        "query_string": b"",
-        "headers": [
-            (b"content-type", b"application/json"),
-            (b"content-length", str(len(raw)).encode()),
-        ],
-        "client": ("testclient", 50000),
-        "server": ("testserver", 80),
-    }
-    messages: list[dict] = []
-    sent_request = False
-
-    async def receive():
-        nonlocal sent_request
-        if not sent_request:
-            sent_request = True
-            return {"type": "http.request", "body": raw, "more_body": False}
-        return {"type": "http.disconnect"}
-
-    async def send(message: dict) -> None:
-        messages.append(message)
-
-    asyncio.run(app(scope, receive, send))
-    start = next(m for m in messages if m["type"] == "http.response.start")
-    body = b"".join(
-        m.get("body", b"") for m in messages if m["type"] == "http.response.body"
-    )
-    return start["status"], json.loads(body.decode() or "{}")
-
-
-@pytest.fixture()
-def app(tmp_path, monkeypatch):
-    import local_ai.vision_execution.storage as ve_store_mod
-
-    monkeypatch.setattr(
-        br_routes, "get_build_room_store_dir", lambda: tmp_path / "store"
-    )
-    monkeypatch.setattr(ve_store_mod, "get_owner_user_id", lambda: OWNER["id"])
-    application = FastAPI()
-    application.include_router(br_routes.router)
-    return application
-
-
-class _FakeParticipant:
-    def __init__(self, text: str):
-        self.text = text
-        self.calls: list[tuple[str, int]] = []
-
-    def generate(self, prompt: str, *, timeout: int = 120) -> str:
-        self.calls.append((prompt, timeout))
-        return self.text
-
-
-def _mock_participant(monkeypatch, fake):
-    monkeypatch.setattr(
-        br_routes, "resolve_openai_participant",
-        lambda principal: (fake, ""),
-    )
-
-
-def _expected_b2_prompt(fixture: str) -> str:
-    packet, reg, unresolved, chains = br_routes.HARNESS_FIXTURE_BUILDERS[
-        fixture]()
-    state = build_synthesis_state(
-        packet, reg, unresolved, chains,
-        cap_chars=candidate_cap.VERIFICATION_BUILD_CHAR_CAP,
-        telemetry=_telemetry())
-    assert state["prompt"] is not None
-    return state["prompt"] + "\n\n" + _telemetry()
-
-
-@pytest.mark.parametrize("bad", ["X", "zero", "zero_contestation", "FITTING", ""])
-def test_b2_invalid_fixture_refused_and_no_generation(
-        app, monkeypatch, bad):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    fake = _FakeParticipant(FIT_BLOCK)
-    _mock_participant(monkeypatch, fake)
-    status, _ = _call_post(app, "/build-room/harness/synthesis-call",
-                           {"fixture": bad})
-    assert status == 422
-    assert fake.calls == []
-
-
-def test_b2_non_owner_is_403_and_no_generation(app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OTHER
-    fake = _FakeParticipant(FIT_BLOCK)
-    _mock_participant(monkeypatch, fake)
-    status, _ = _call_post(app, "/build-room/harness/synthesis-call",
-                           {"fixture": "stress"})
-    assert status == 403
-    assert fake.calls == []
-
-
-@pytest.mark.parametrize("fixture,tokens", [
-    ("fitting", 6928), ("failed", 8410), ("stress", 11935)])
-def test_b2_fixture_single_generation_through_candidate_gate(
-        app, monkeypatch, tmp_path, fixture, tokens):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    fake = _FakeParticipant(FIT_BLOCK)
-    _mock_participant(monkeypatch, fake)
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": fixture})
-    assert status == 200, body
-    assert body["fixture_id"] == fixture
-    assert body["ok"] is True
-    assert body["generated"] is True
-    assert body["generations_used"] == 1
-    assert len(fake.calls) == 1
-    sent_prompt, sent_timeout = fake.calls[0]
-    assert sent_timeout == 120
-    assert sent_prompt == _expected_b2_prompt(fixture)
-    # Candidate gate, not char cap, governed admission.
-    assert body["candidate_gate_enabled"] is True
-    assert body["candidate_gate"]["admitted"] is True
-    assert body["candidate_gate"]["total_tokens"] == tokens
-    assert body["candidate_gate"]["enforcement_unit"] == "tokens"
-    assert body["assembled_prompt_tokens"] == tokens
-    assert body["candidate_cap_tokens"] == 12500
-    assert body["production_cap_chars"] == 40000
-    assert body["enforcement_unit"] == "tokens"
-    assert body["model_tokenizer_agreement"]["agrees"] is True
-    assert body["prompt_sha256"] == hashlib.sha256(
-        sent_prompt.encode()).hexdigest()
-    # Verbatim output + production evaluation, kept separate.
-    assert body["raw"] == FIT_BLOCK
-    # No prompt text, no credentials, no credential-shaped keys.
-    assert "prompt" not in body
-    assert _SYNTHESIS_INSTRUCTION not in json.dumps(body)
-    assert FAKE_KEY not in json.dumps(body)
-    assert not any(k in ("api_key", "password", "token", "secret")
-                   for k in body)
-    # No persistence.
-    assert list((tmp_path / "store").glob("meeting_*.transcript.json")) == []
-
-
-def test_b2_over_cap_refused_and_no_generation(app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    fake = _FakeParticipant(FIT_BLOCK)
-    _mock_participant(monkeypatch, fake)
-    monkeypatch.setattr(candidate_cap, "CANDIDATE_SYNTHESIS_PROMPT_TOKENS",
-                        1000)
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "stress"})
-    assert status == 200, body
-    assert body["ok"] is False
-    assert body["generated"] is False
-    assert body["candidate_gate"]["admitted"] is False
-    assert body["candidate_gate"]["total_tokens"] == 11935
-    assert body["candidate_gate"]["excess_tokens"] == 11935 - 1000
-    assert fake.calls == []
-
-
-def test_b2_agreement_failure_disables_gate_and_no_generation(
-        app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    fake = _FakeParticipant(FIT_BLOCK)
-    _mock_participant(monkeypatch, fake)
-    monkeypatch.setattr(
-        candidate_cap, "verify_model_tokenizer_agreement",
-        lambda **kw: {"agrees": False,
-                      "tokenizer_model": "gpt-4o-mini",
-                      "synthesizer_model": "gpt-4o",
-                      "encoding": "o200k_base",
-                      "expected_encoding": "o200k_base",
-                      "tiktoken_available": True,
-                      "reason": "test disagreement"})
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "fitting"})
-    assert status == 200, body
-    assert body["ok"] is False
-    assert body["generated"] is False
-    assert body["candidate_gate_enabled"] is False
-    assert body["model_tokenizer_agreement"]["agrees"] is False
-    assert fake.calls == []
-
-
-def test_b2_absent_key_visible_and_no_generation(app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    monkeypatch.setattr(
-        br_routes, "resolve_openai_participant",
-        lambda principal: (None, "absent: no openai api key present for this principal"),
-    )
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "fitting"})
-    assert status == 200, body
-    assert body["ok"] is False
-    assert body["generated"] is False
-    assert "absent" in body["absence"]
-    assert body["candidate_gate"]["admitted"] is True
-    assert "generations_used" not in body

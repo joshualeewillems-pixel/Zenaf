@@ -50,7 +50,6 @@ from local_ai.build_room.participants import SEAT_SPECS, Seat
 from local_ai.llm.tokenizer import count_tokens
 
 YOUR_FILES = Path.home() / "workspace" / "your_files"
-OWNER = {"id": "owner-id", "email": "owner@local.zenaf"}
 
 INSTRUCTION_SHA256 = (
     "41925066d601380a3fd35e29a6232a22ef4fdcfc1006ed4d8e77d905e163b177")
@@ -709,196 +708,17 @@ def test_no_second_generation_on_any_fallback_path():
     assert out3["used_generate_with_usage"] is True
 
 
-# ---------------------------------------------------------------------------
-# §G.7 Route-level tests (ASGI, stubbed participants)
-# ---------------------------------------------------------------------------
-
-def _call_post(app, path: str, payload: dict) -> tuple[int, dict]:
-    raw = json.dumps(payload).encode()
-    scope = {
-        "type": "http", "http_version": "1.1", "method": "POST",
-        "scheme": "http", "path": path, "raw_path": path.encode(),
-        "query_string": b"",
-        "headers": [(b"content-type", b"application/json"),
-                    (b"content-length", str(len(raw)).encode())],
-        "client": ("testclient", 50000), "server": ("testserver", 80),
-    }
-    messages: list[dict] = []
-    sent = False
-
-    async def receive():
-        nonlocal sent
-        if not sent:
-            sent = True
-            return {"type": "http.request", "body": raw, "more_body": False}
-        return {"type": "http.disconnect"}
-
-    async def send(message: dict) -> None:
-        messages.append(message)
-
-    asyncio.run(app(scope, receive, send))
-    start = next(m for m in messages if m["type"] == "http.response.start")
-    body = b"".join(
-        m.get("body", b"") for m in messages if m["type"] == "http.response.body")
-    return start["status"], json.loads(body.decode() or "{}")
-
-
-@pytest.fixture()
-def app(tmp_path, monkeypatch):
-    import local_ai.vision_execution.storage as ve_store_mod
-    monkeypatch.setattr(
-        br_routes, "get_build_room_store_dir", lambda: tmp_path / "store")
-    monkeypatch.setattr(ve_store_mod, "get_owner_user_id", lambda: OWNER["id"])
-    application = FastAPI()
-    application.include_router(br_routes.router)
-    return application
-
-
-def _mock_participant(monkeypatch, fake):
-    monkeypatch.setattr(
-        br_routes, "resolve_openai_participant",
-        lambda principal: (fake, ""))
-
-
-_FITTING_PASS_BLOCK = (
-    "Synthesis.\n```json\n" + json.dumps({
-        "positions": [{"claim_ids": ["C1"], "position": "P",
-                       "supporting_reasoning": "R"}],
-        "disagreements": [{"opposing_positions": ["A", "B"],
-                           "supporting_claims": ["C15", "C32"],
-                           "unresolved_status": "unresolved"}],
-        "recommendations": [{"proposed_action": "Do all twelve.",
-                             "supporting_claims": [
-                                 "C3", "C10", "C15", "C20", "C23", "C34",
-                                 "C40", "C46", "C49", "C54", "C61", "C68"]}],
-        "limitations": [{"missing_evidence_or_omission": "M",
-                         "note": "N"}]}) + "\n```\n")
-
-
-def test_route_b2_success_carries_coverage_generation_cost(app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    fake = _StubParticipant(text=_FITTING_PASS_BLOCK)
-    _mock_participant(monkeypatch, fake)
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "fitting"})
-    assert status == 200, body
-    assert body["ok"] is True
-    assert fake.generate_calls == 1
-    # Coverage: fully covering block over the fitting registry.
-    assert body["coverage"]["verdict"] == "pass"
-    assert body["coverage"]["objections"]["omitted"] == []
-    assert body["coverage"]["proposals"]["omitted"] == []
-    assert body["coverage"]["provenance_failures"] == []
-    assert body["coverage_accepted"] is True
-    # Generation: server-side object with derived threshold.
-    assert body["generation"]["timeout_seconds"] == 120
-    assert body["generation"]["margin_threshold_seconds"] == 96.0
-    assert body["generation"]["timed_out"] is False
-    # Cost: fake has no generate_with_usage -> estimated from text;
-    # no verified price table in code -> charge unassessable, labeled.
-    assert body["generation_cost"]["source"] == "estimated"
-    assert body["generation_cost"]["charge_usd"] is None
-    assert "price table" in body["generation_cost"]["reason"]
-    # No prompt text, no credentials.
-    assert "prompt" not in body
-    assert _SYNTHESIS_INSTRUCTION not in json.dumps(body)
-
-
-def test_route_refusal_carries_no_generation_cost_or_coverage(
-        app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    fake = _StubParticipant(text=_FITTING_PASS_BLOCK)
-    _mock_participant(monkeypatch, fake)
-    monkeypatch.setattr(candidate_cap, "CANDIDATE_SYNTHESIS_PROMPT_TOKENS",
-                        1000)
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "stress"})
-    assert status == 200, body
-    assert body["ok"] is False
-    assert fake.generate_calls == 0
-    assert "generation" not in body
-    assert "generation_cost" not in body
-    assert "coverage" not in body
-    assert "coverage_accepted" not in body
-
-
-def test_route_absence_carries_no_generation_cost_or_coverage(
-        app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    monkeypatch.setattr(
-        br_routes, "resolve_openai_participant",
-        lambda principal: (None, "absent: no openai api key present"))
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "fitting"})
-    assert status == 200, body
-    assert body["ok"] is False
-    assert "generation" not in body
-    assert "generation_cost" not in body
-    assert "coverage" not in body
-
-
-def test_route_generation_failure_carries_generation_but_no_coverage(
-        app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-
-    class _Failing:
-        def generate(self, prompt, *, timeout=120):
-            raise RuntimeError("provider unavailable")
-
-    monkeypatch.setattr(
-        br_routes, "resolve_openai_participant",
-        lambda principal: (_Failing(), ""))
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "E"})
-    assert status == 200, body
-    assert body["ok"] is False
-    assert "provider unavailable" in body["generation_error"]
-    assert "generation" in body
-    assert body["generation"]["timed_out"] is False
-    assert "generation_cost" in body
-    assert body["generation_cost"]["source"] == "unavailable"
-    assert "coverage" not in body  # no synthesis to check
-
-
-def test_route_de_fixture_success_carries_new_objects(app, monkeypatch):
-    app.dependency_overrides[get_current_user] = lambda: OWNER
-    block = ("Synthesis.\n```json\n" + json.dumps({
-        "positions": [{"claim_ids": ["C1"], "position": "P",
-                       "supporting_reasoning": "R"}],
-        "disagreements": [{"opposing_positions": ["A", "B"],
-                           "supporting_claims": ["C1", "C2"],
-                           "unresolved_status": "unresolved"}],
-        "recommendations": [], "limitations": []}) + "\n```\n")
-    fake = _StubParticipant(text=block)
-    _mock_participant(monkeypatch, fake)
-    status, body = _call_post(app, "/build-room/harness/synthesis-call",
-                              {"fixture": "D"})
-    assert status == 200, body
-    assert body["ok"] is True
-    assert "coverage" in body and "coverage_accepted" in body
-    assert "generation" in body and "generation_cost" in body
-    assert body["generation"]["margin_threshold_seconds"] == 96.0
-
-
-# ---------------------------------------------------------------------------
-# Meeting-phase wiring (Phase C prerequisite surface)
-# ---------------------------------------------------------------------------
-
 class _MeetingFake:
-    """Duck-typed seat participant branching on prompt markers."""
+    """Duck-typed seat participant for meeting-path tests."""
 
-    def __init__(self, name, *, opening="", response="", revision="",
-                 synthesis=""):
+    def __init__(self, name, *, opening="", response="", revision=""):
         self.name = name
-        self.provider_id = dict((n, p) for n, p, _ in SEAT_SPECS)[name]
         self.model = "fake-model"
         self.key_source = "settings"
-        self._texts = {"synthesis": synthesis, "revision": revision,
-                       "response": response, "opening": opening}
+        self._texts = {"revision": revision, "response": response,
+                       "opening": opening}
 
     def generate(self, prompt, *, timeout=120):
-        if "Write the synthesis" in prompt:
-            return self._texts["synthesis"]
         if "state the relationship explicitly" in prompt:
             return self._texts["revision"]
         if "Claim registry" in prompt:
@@ -906,68 +726,57 @@ class _MeetingFake:
         return self._texts["opening"]
 
 
-def _meeting_seats(synthesis_text, gpt_opening):
+def _meeting_seats(gpt_opening):
     fakes = {}
     for name, _pid, _model in SEAT_SPECS:
         opening = gpt_opening if name == "GPT" else "1. Observed: A stable fact."
         fakes[name] = _MeetingFake(
             name, opening=opening, response="No further comment.",
-            revision="No revision.", synthesis=synthesis_text)
+            revision="No revision.")
     return [Seat(name, pid, model, fakes[name])
             for name, pid, model in SEAT_SPECS]
 
 
-def _meeting_synthesis_block():
-    return ("Synthesis.\n```json\n" + json.dumps({
-        "positions": [{"claim_ids": ["C1"], "position": "P",
-                       "supporting_reasoning": "R"}],
-        "disagreements": [],
-        "recommendations": [],
-        "limitations": [{"missing_evidence_or_omission": "M",
-                         "note": "N"}]}) + "\n```\n")
-
-
-def test_meeting_artifact_carries_coverage_and_pass(tmp_path):
+def test_meeting_artifact_carries_no_coverage_fields(tmp_path):
+    # Synthesis removal stage 1: meeting artifacts carry NO
+    # coverage verdict, generation record, or synthesis fields —
+    # those belonged to the removed synthesis phase. The registry
+    # and transcript are the record.
     packet = EvidencePacket(work_item="W", question="Q")
     result = run_multi_model_meeting(
         packet, store_dir=tmp_path / "store",
-        seats=_meeting_seats(_meeting_synthesis_block(),
-                             "1. Observed: A stable fact."))
+        seats=_meeting_seats("1. Observed: A stable fact."))
     artifact = result.artifact
-    assert artifact["synthesis_coverage"]["verdict"] == "pass"
-    assert artifact["synthesis_coverage_accepted"] is True
-    assert artifact["synthesis"]["coverage"]["verdict"] == "pass"
-    assert artifact["synthesis_generation"]["timed_out"] is False
-    assert artifact["synthesis_generation"]["margin_threshold_seconds"] == 96.0
-    assert artifact["synthesis_generation_cost"]["source"] == "estimated"
-    # No coverage-failure note on a passing artifact.
+    assert artifact["synthesis_removed"] is True
+    for key in ("synthesis", "synthesis_failure", "synthesis_coverage",
+                "synthesis_coverage_accepted", "synthesis_generation",
+                "synthesis_generation_cost", "synthesis_gate",
+                "recommendations", "limitations"):
+        assert key not in artifact
+    assert artifact["record_complete"] is True
+    assert artifact["deliberation_complete"] is True
+    assert artifact["ok"] is True
+    # No coverage-failure note: there is no coverage check at all.
     assert not any(e.kind == "note" and "coverage FAIL" in e.text
                    for e in result.transcript.entries)
 
 
-def test_meeting_coverage_failure_visible_on_artifact_and_transcript(tmp_path):
+def test_meeting_proposed_claims_visible_in_registry_without_coverage(tmp_path):
     packet = EvidencePacket(work_item="W", question="Q")
     result = run_multi_model_meeting(
         packet, store_dir=tmp_path / "store",
         seats=_meeting_seats(
-            _meeting_synthesis_block(),
             "1. Observed: A stable fact.\n2. Proposed: Do the thing."))
     artifact = result.artifact
     registry = artifact["claim_registry"]
     proposed = [c["id"] for c in registry if c["status"] == "Proposed"]
     assert proposed, "test setup must register a Proposed claim"
-    cov = artifact["synthesis_coverage"]
-    assert cov["verdict"] == "fail"
-    assert [o["proposal_claim_id"] for o in cov["proposals"]["omitted"]] == proposed
-    assert artifact["synthesis_coverage_accepted"] is False
-    # Failure visible in the transcript (text only, no injected content).
-    notes = [e.text for e in result.transcript.entries
-             if e.kind == "note" and "coverage FAIL" in e.text]
-    assert len(notes) == 1
-    for pid in proposed:
-        assert pid in notes[0]
-    # The structured output itself is unchanged by the check.
-    assert artifact["recommendations"] == []
+    # Proposed claims are visible in the registry itself — no
+    # coverage verdict interprets them anymore.
+    assert "synthesis_coverage" not in artifact
+    assert artifact["synthesis_removed"] is True
+    assert not any(e.kind == "note" and "coverage FAIL" in e.text
+                   for e in result.transcript.entries)
 
 
 # ---------------------------------------------------------------------------

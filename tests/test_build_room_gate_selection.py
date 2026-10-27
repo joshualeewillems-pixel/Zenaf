@@ -124,47 +124,6 @@ def _sha(value):
 # (a) Production default unchanged
 # ---------------------------------------------------------------------------
 
-def test_default_meeting_uses_production_gate(tmp_path):
-    seats, fakes = _seats()
-    result = _run(tmp_path, seats)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["gate"] == "production_chars"
-    assert gate["cap_chars"] == 40000
-    assert gate["cap_tokens"] is None
-    assert gate["admitted"] is True
-    assert gate["reason"] is None
-    assert isinstance(gate["total_chars"], int) and gate["total_chars"] <= 40000
-    assert isinstance(gate["total_tokens"], int) and gate["total_tokens"] > 0
-    _sha(gate["prompt_sha256"])
-    assert result.artifact["synthesis"]["status"] == "complete"
-    assert _synth_calls(fakes) == 1
-    # Coverage, latency, cost behavior unchanged (same shape as #231).
-    assert result.artifact["synthesis_coverage"]["verdict"] == "pass"
-    assert result.artifact["synthesis_coverage_accepted"] is True
-    assert result.artifact["synthesis_generation"]["timed_out"] is False
-    assert result.artifact["synthesis_generation"]["margin_threshold_seconds"] == 96.0
-    assert result.artifact["synthesis_generation_cost"]["source"] == "estimated"
-    # No experimental-selection note on an ordinary meeting.
-    assert not any(e.kind == "note" and "Experimental candidate token gate"
-                   in e.text for e in result.transcript.entries)
-
-
-def test_production_gate_refuses_over_char_cap(tmp_path):
-    # 40 lines/seat: 56,422 assembled chars (> 40,000) at ~11,564
-    # tokens (< 12,500) — the discriminating fixture: production
-    # refuses, candidate admits (see candidate test below).
-    seats, fakes = _seats(lines_per_seat=40)
-    result = _run(tmp_path, seats)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["gate"] == "production_chars"
-    assert gate["admitted"] is False
-    assert gate["total_chars"] > 40000
-    assert gate["total_tokens"] is None
-    assert gate["prompt_sha256"] is None
-    assert "budget_exceeded" in (gate["reason"] or "")
-    assert result.artifact["synthesis"]["status"] == "INCOMPLETE"
-    assert _synth_calls(fakes) == 0
-
 
 # ---------------------------------------------------------------------------
 # (b) Candidate gate ONLY via the explicit flag
@@ -183,87 +142,9 @@ def RunMeetingBody_has_no_flag():
     return True
 
 
-def test_explicit_false_still_uses_production_gate(tmp_path):
-    seats, fakes = _seats(lines_per_seat=40)
-    result = _run(tmp_path, seats, experimental_candidate_gate=False)
-    assert result.artifact["synthesis_gate"]["gate"] == "production_chars"
-    assert result.artifact["synthesis"]["status"] == "INCOMPLETE"
-    assert _synth_calls(fakes) == 0
-
-
 # ---------------------------------------------------------------------------
 # (c) Candidate token gating at 12,500 (telemetry + separators incl.)
 # ---------------------------------------------------------------------------
-
-def test_candidate_gate_admits_medium_meeting(tmp_path):
-    seats, fakes = _seats(lines_per_seat=40)
-    result = _run(tmp_path, seats, experimental_candidate_gate=True)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["gate"] == "candidate_tokens"
-    assert gate["cap_tokens"] == 12500
-    assert gate["cap_chars"] is None
-    assert gate["admitted"] is True
-    assert gate["reason"] is None
-    # The discriminating band: over the production char cap, under
-    # the candidate token cap. Asserted, not assumed, so a
-    # tokenizer or fixture drift fails loudly here, not downstream.
-    assert gate["total_chars"] > 40000
-    assert gate["total_tokens"] <= 12500
-    _sha(gate["prompt_sha256"])
-    assert result.artifact["synthesis"]["status"] == "complete"
-    assert _synth_calls(fakes) == 1
-    # Selection is visible in the transcript (convene + Phase 4 note).
-    assert any(e.kind == "note" and "Experimental candidate token gate"
-               in e.text for e in result.transcript.entries)
-    assert any(e.kind == "convene" and "EXPERIMENTAL candidate token gate"
-               in e.text for e in result.transcript.entries)
-
-
-def test_candidate_gate_refuses_over_token_cap(tmp_path):
-    # 50 lines/seat: ~69,582 chars / ~14,244 tokens — over the
-    # candidate cap. Refusal must be honest: no generation, no
-    # truncation, sizes recorded.
-    seats, fakes = _seats(lines_per_seat=50)
-    result = _run(tmp_path, seats, experimental_candidate_gate=True)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["gate"] == "candidate_tokens"
-    assert gate["admitted"] is False
-    assert gate["total_tokens"] > 12500
-    assert isinstance(gate["total_chars"], int) and gate["total_chars"] > 40000
-    _sha(gate["prompt_sha256"])
-    assert "candidate_cap_exceeded" in (gate["reason"] or "")
-    assert result.artifact["synthesis"]["status"] == "INCOMPLETE"
-    assert "candidate_cap_exceeded" in (result.artifact["synthesis_failure"] or "")
-    assert _synth_calls(fakes) == 0
-
-
-def test_agreement_failure_fails_closed(tmp_path, monkeypatch):
-    seats, fakes = _seats()
-    monkeypatch.setattr(
-        candidate_cap, "verify_model_tokenizer_agreement",
-        lambda **kwargs: {"agrees": False,
-                          "reason": "test disagreement"})
-    result = _run(tmp_path, seats, experimental_candidate_gate=True)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["gate"] == "candidate_tokens"
-    assert gate["admitted"] is False
-    assert "candidate_gate_unavailable" in (gate["reason"] or "")
-    assert result.artifact["synthesis"]["status"] == "INCOMPLETE"
-    assert _synth_calls(fakes) == 0
-
-
-def test_measurement_unavailable_fails_closed(tmp_path, monkeypatch):
-    seats, fakes = _seats()
-    monkeypatch.setattr(candidate_cap, "count_tokens_exact",
-                        lambda text: None)
-    result = _run(tmp_path, seats, experimental_candidate_gate=True)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["gate"] == "candidate_tokens"
-    assert gate["admitted"] is False
-    assert "measurement unavailable" in (gate["reason"] or "").lower() \
-        or "exact token measurement unavailable" in (gate["reason"] or "")
-    assert result.artifact["synthesis"]["status"] == "INCOMPLETE"
-    assert _synth_calls(fakes) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -280,51 +161,9 @@ def test_code_version_gap_and_env_hook(monkeypatch):
                        "source": "environment:ZENAF_CODE_VERSION"}
 
 
-def test_artifact_gate_record_carries_code_version(tmp_path, monkeypatch):
-    monkeypatch.delenv("ZENAF_CODE_VERSION", raising=False)
-    seats, _fakes = _seats()
-    result = _run(tmp_path, seats, experimental_candidate_gate=True)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["code_version"] == {"commit": None, "source": "unavailable"}
-    monkeypatch.setenv("ZENAF_CODE_VERSION", "deadbeef01")
-    seats, _fakes = _seats()
-    result = _run(tmp_path, seats, experimental_candidate_gate=True)
-    gate = result.artifact["synthesis_gate"]
-    assert gate["code_version"]["commit"] == "deadbeef01"
-
-
-def test_gate_record_shape_is_complete(tmp_path):
-    # Every gate record — admission or refusal, either gate —
-    # carries the full §5.5(d) shape (code version honestly None
-    # until a deploy sets ZENAF_CODE_VERSION).
-    for kwargs, lines in (({}, None), ({"experimental_candidate_gate": True}, 50)):
-        seats, _fakes = _seats(lines_per_seat=lines) if lines else _seats()
-        result = _run(tmp_path, seats, **kwargs)
-        gate = result.artifact["synthesis_gate"]
-        assert set(gate.keys()) == {
-            "gate", "cap_chars", "cap_tokens", "total_chars",
-            "total_tokens", "prompt_sha256", "admitted", "reason",
-            "code_version"}
-        assert set(gate["code_version"].keys()) == {"commit", "source"}
-
-
 # ---------------------------------------------------------------------------
 # (e) Coverage / latency / cost unchanged under the candidate gate
 # ---------------------------------------------------------------------------
-
-def test_candidate_meeting_keeps_coverage_latency_cost(tmp_path):
-    seats, _fakes = _seats()
-    result = _run(tmp_path, seats, experimental_candidate_gate=True)
-    artifact = result.artifact
-    assert artifact["synthesis_coverage"]["verdict"] == "pass"
-    assert artifact["synthesis_coverage_accepted"] is True
-    assert artifact["synthesis_generation"]["timed_out"] is False
-    assert artifact["synthesis_generation"]["margin_threshold_seconds"] == 96.0
-    assert artifact["synthesis_generation_cost"]["source"] == "estimated"
-    # Same structured-output handling as production: no coverage
-    # failure note, recommendations unchanged by the check.
-    assert not any(e.kind == "note" and "coverage FAIL" in e.text
-                   for e in result.transcript.entries)
 
 
 # ---------------------------------------------------------------------------

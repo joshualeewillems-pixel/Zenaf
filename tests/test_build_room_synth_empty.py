@@ -213,111 +213,14 @@ def test_synthesis_never_reclassifies_registry_objections():
     assert objections == before
 
 
-# --- C. Live path: empty-field disclosure notes ---------------------------
 
-class _FakeSeat:
-    """Minimal duck-typed seat participant for live-path tests."""
-
-    def __init__(self, name, *, opening="", response="", revision="",
-                 synthesis=""):
-        self.name = name
-        self.provider_id = "fake"
-        self.model = "fake-model"
-        self.key_source = "settings"
-        self._texts = {"synthesis": synthesis, "revision": revision,
-                       "response": response, "opening": opening}
-
-    def generate(self, prompt, *, timeout=120):
-        if "Write the synthesis" in prompt:
-            return self._texts["synthesis"]
-        if "state the relationship explicitly" in prompt:
-            return self._texts["revision"]
-        if "Claim registry" in prompt:
-            return self._texts["response"]
-        return self._texts["opening"]
-
-
-class _RaisingSeat(_FakeSeat):
-    """A seat whose generation fails, to exercise failure handling."""
-
-    def generate(self, prompt, *, timeout=120):
-        raise RuntimeError("simulated generation failure")
-
-
-def _live_seats(fakes):
-    from local_ai.build_room.participants import SEAT_SPECS, Seat
-    seats = []
-    for name, provider_id, model in SEAT_SPECS:
-        fake = fakes.get(name)
-        if fake is None:
-            seats.append(Seat(name, provider_id, model, None,
-                              absence_note="absent"))
-        else:
-            seats.append(Seat(name, provider_id, model, fake))
-    return seats
-
-
-def _packet() -> EvidencePacket:
-    return EvidencePacket(
-        work_item="Test work item",
-        question="What would make the Build-Council Room fail?")
+# NOTE (synthesis removal stage 1, 2026-10-27): the live-path
+# disclosure-note tests and their fake seats were removed here.
+# They asserted synthesis-evaluation notes, which no longer exist.
+# The parser tests above (still valid until stage 3) keep using
+# _empty_block, retained below.
 
 
 def _empty_block() -> str:
     return _block(positions=[], disagreements=[], recommendations=[],
                   limitations=[])
-
-
-def _note_texts(result) -> list[str]:
-    return [e.text for e in result.transcript.entries if e.kind == "note"]
-
-
-def test_live_empty_disagreements_note_fires_with_unresolved_objections(tmp_path):
-    from local_ai.build_room.meeting import run_multi_model_meeting
-    fakes = {
-        "GPT": _FakeSeat("GPT", opening="1. Observed: Alpha."),
-        "Claude": _FakeSeat(
-            "Claude", opening="1. Inferred: Beta.",
-            synthesis=_empty_block(),
-            response="1. Inferred: In response to C1: Objection to C1: "
-                     "the recommendation-only framing is insufficient."),
-        "Gemini": _FakeSeat("Gemini", opening="1. Proposed: Gamma."),
-        "Grok": _FakeSeat("Grok", opening="1. Speculative: Delta."),
-        "Muse": _FakeSeat("Muse", opening="1. Observed: Epsilon."),
-    }
-    result = run_multi_model_meeting(
-        _packet(), store_dir=tmp_path, seats=_live_seats(fakes))
-    art = result.artifact
-    assert art["disagreements"] == []
-    assert art["disagreements_evaluation"] == "synthesized_empty"
-    # The registry holds an unresolved objection the empty field does
-    # not account for — disclosed, not erased or reclassified.
-    assert art["unresolved_objections"] != []
-    assert art["unresolved_objections"][0]["state"] == "unresolved"
-    notes = _note_texts(result)
-    assert any("disagreements field is empty" in n
-               and "unresolved objections exist in the registry" in n
-               and "not that no disagreements exist" in n for n in notes)
-    # No omitted context and no failures here, so no limitations note.
-    assert not any("limitations field is empty" in n for n in notes)
-
-
-def test_live_empty_limitations_note_fires_on_failed_contribution(tmp_path):
-    from local_ai.build_room.meeting import run_multi_model_meeting
-    fakes = {
-        "GPT": _FakeSeat("GPT", opening="1. Observed: Alpha."),
-        "Claude": _FakeSeat("Claude", opening="1. Inferred: Beta.",
-                            synthesis=_empty_block()),
-        "Gemini": _FakeSeat("Gemini", opening="1. Proposed: Gamma."),
-        "Grok": _RaisingSeat("Grok"),
-        "Muse": _FakeSeat("Muse", opening="1. Observed: Epsilon."),
-    }
-    result = run_multi_model_meeting(
-        _packet(), store_dir=tmp_path, seats=_live_seats(fakes))
-    art = result.artifact
-    assert art["limitations"] == []
-    assert art["limitations_evaluation"] == "synthesized_empty"
-    notes = _note_texts(result)
-    assert any("limitations field is empty" in n
-               and "omitted context or failed contributions" in n
-               and "not that no limitations exist" in n for n in notes)

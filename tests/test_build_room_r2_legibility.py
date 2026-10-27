@@ -27,13 +27,6 @@ from local_ai.build_room.meeting import (
 )
 
 
-def _packet() -> EvidencePacket:
-    return EvidencePacket(
-        work_item="Test work item",
-        question="What would make the Build-Council Room fail?",
-    )
-
-
 def _openings() -> ClaimRegistry:
     """Registry with GPT=C1, Claude=C2, Gemini=C3, Grok=C4, Muse=C5."""
     reg = ClaimRegistry()
@@ -351,91 +344,6 @@ def test_b_stored_synthesis_has_no_contract_block():
 
 # --- Scope B: live path through run_multi_model_meeting -------------------
 
-class _FakeSeat:
-    """Minimal duck-typed seat participant for live-path tests."""
-
-    def __init__(self, name, *, opening="", response="", revision="",
-                 synthesis=""):
-        self.name = name
-        self.provider_id = "fake"
-        self.model = "fake-model"
-        self.key_source = "settings"
-        self._texts = {"synthesis": synthesis, "revision": revision,
-                       "response": response, "opening": opening}
-
-    def generate(self, prompt, *, timeout=120):
-        if "Write the synthesis" in prompt:
-            return self._texts["synthesis"]
-        if "state the relationship explicitly" in prompt:
-            return self._texts["revision"]
-        if "Claim registry" in prompt:
-            return self._texts["response"]
-        return self._texts["opening"]
-
-
-def _live_seats(fakes):
-    from local_ai.build_room.participants import SEAT_SPECS, Seat
-    seats = []
-    for name, provider_id, model in SEAT_SPECS:
-        fake = fakes.get(name)
-        if fake is None:
-            seats.append(Seat(name, provider_id, model, None,
-                              absence_note="absent"))
-        else:
-            seats.append(Seat(name, provider_id, model, fake))
-    return seats
-
-
-def test_b_live_path_valid_contract_parsed(tmp_path):
-    from local_ai.build_room.meeting import run_multi_model_meeting
-    block = _valid_block()
-    fakes = {
-        "GPT": _FakeSeat(
-            "GPT",
-            opening="1. Observed: Alpha.",
-            response="1. Agreement with C2: beta stands.",
-            synthesis=block),
-        "Claude": _FakeSeat("Claude", opening="1. Inferred: Beta."),
-        "Gemini": _FakeSeat("Gemini", opening="1. Proposed: Gamma."),
-        "Grok": _FakeSeat("Grok", opening="1. Speculative: Delta."),
-        "Muse": _FakeSeat("Muse", opening="1. Observed: Epsilon."),
-    }
-    result = run_multi_model_meeting(
-        _packet(), store_dir=tmp_path, seats=_live_seats(fakes))
-    assert result.ok is True
-    art = result.artifact
-    assert art["positions_evaluation"] == "synthesized_complete"
-    assert art["disagreements_evaluation"] == "synthesized_complete"
-    assert art["recommendations_evaluation"] == "synthesized_complete"
-    assert art["limitations_evaluation"] == "synthesized_complete"
-    assert art["rejected_entries"] == []
-    assert art["positions"][0]["claim_ids"] == ["C1", "C2"]
-    assert art["recommendations"][0]["proposed_action"] == "Ask Joshua."
-
-
-def test_b_live_path_malformed_contract_unparseable_raw_preserved(tmp_path):
-    from local_ai.build_room.meeting import run_multi_model_meeting
-    fakes = {
-        "GPT": _FakeSeat(
-            "GPT",
-            opening="1. Observed: Alpha.",
-            synthesis="Narrative only, plus a broken block.\n```json\n{broken\n```\n"),
-        "Claude": _FakeSeat("Claude", opening="1. Inferred: Beta."),
-        "Gemini": _FakeSeat("Gemini", opening="1. Proposed: Gamma."),
-        "Grok": _FakeSeat("Grok", opening="1. Speculative: Delta."),
-        "Muse": _FakeSeat("Muse", opening="1. Observed: Epsilon."),
-    }
-    result = run_multi_model_meeting(
-        _packet(), store_dir=tmp_path, seats=_live_seats(fakes))
-    assert result.ok is True
-    art = result.artifact
-    assert art["positions_evaluation"] == "unparseable"
-    assert art["disagreements_evaluation"] == "unparseable"
-    assert art["positions"] == []
-    assert "broken block" in art["synthesis"]["text"]
-    assert len(art["rejected_entries"]) == 1
-
-
 # --- Replay: derived 8cce24eb4226 ------------------------------------------
 
 def _derived_fixture():
@@ -563,8 +471,7 @@ def test_regression_replay_r2_acceptance_unchanged():
          / "r2_acceptance_contributions.json").read_text())
     art = replay_r2_transcript(
         fixture["contributions"], meeting_id=fixture["meeting_id"],
-        work_item=fixture["work_item"], question=fixture["question"],
-        synthesis_failure=fixture["synthesis_failure"])
+        work_item=fixture["work_item"], question=fixture["question"])
     reg = art["claim_registry"]
     assert len(reg) == 115
     assert len(art["unresolved_objections"]) == 8

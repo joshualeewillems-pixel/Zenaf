@@ -1011,8 +1011,13 @@ def _analyze_span(span: ClaimSpan, *, author: str, registry: "ClaimRegistry",
     text is consulted first — a contribution header ("Defending
     C6–C13") must not override the span's own stance ("(Revised)").
     Only when the span's own text carries no stance word does the
-    preamble fall back apply. Citations are validated against
-    ``frozen_ids``; authorship is looked up in the registry.
+    preamble fall back apply. Exception: when the span's own stance
+    word carries no target, the preamble may still supply the target
+    for the SAME stance ("Relationship: withdrawn. In response to
+    C3, I withdraw it:" above "Withdrawn: Gamma is retracted.") —
+    a different preamble stance never overrides the span's own word.
+    Citations are validated against ``frozen_ids``; authorship is
+    looked up in the registry.
     """
     scope = f"{span.preamble} {span.text}".strip()
     cited = _find_citations(scope)
@@ -1035,21 +1040,28 @@ def _analyze_span(span: ClaimSpan, *, author: str, registry: "ClaimRegistry",
         word, target = _relationship_in_scope(scope)
         move_targets = [target] if target else []
         source = "single" if target else None
-    elif move_targets:
-        if move_scope == "citations":
-            # The stance is over evidence, not content. A citation
-            # withdrawal is recorded as its own non-move link
-            # ("withdraws_citations"); a citation-scope revision or
-            # defense moves no claim at all, so the stance is
-            # neutralized rather than misread as a content move.
-            if word == "withdrawn":
-                citation_withdrawal = True
-                source = "citation"
-            else:
-                word = None
-                move_targets = []
+    elif not move_targets:
+        # Span stance without a target: the preamble may supply the
+        # target for the SAME stance only. A different preamble
+        # stance never overrides the span's own word.
+        p_word, p_target = _relationship_in_scope(scope)
+        if p_word == word and p_target:
+            move_targets = [p_target]
+            source = "single"
+    elif move_scope == "citations":
+        # The stance is over evidence, not content. A citation
+        # withdrawal is recorded as its own non-move link
+        # ("withdraws_citations"); a citation-scope revision or
+        # defense moves no claim at all, so the stance is
+        # neutralized rather than misread as a content move.
+        if word == "withdrawn":
+            citation_withdrawal = True
+            source = "citation"
         else:
-            source = "list"
+            word = None
+            move_targets = []
+    else:
+        source = "list"
     reclassification = _reclassification_in_span(span.text, word, move_targets)
     return {
         "span": span,

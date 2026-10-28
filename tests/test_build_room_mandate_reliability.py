@@ -217,6 +217,36 @@ def test_parser_list_grammar_terminates_and_cross_author_proposes():
     assert registered[0].relationship == "proposes_revision_of"
     assert registered[0].relationship_targets == ["C4"]
 
+
+def test_parser_preamble_supplies_target_for_same_stance():
+    """Span stance without a target takes the preamble's target for
+    the SAME stance only (regression guard for the r2 suite's
+    revised/defended/withdrawn revision test)."""
+    priors = [("C3", "Gemini")]
+    text = (
+        "Relationship: withdrawn.\n"
+        "In response to C3, I withdraw it:\n"
+        "1. Withdrawn: Gamma is retracted."
+    )
+    registered, _, _ = _revision(text, "Gemini", priors)
+    assert registered[0].relationship == "withdrawn"
+    assert registered[0].relationship_target == "C3"
+    assert registered[0].withdraws == "C3"
+
+
+def test_parser_preamble_different_stance_never_overrides_span():
+    """A different preamble stance never supplies a target for the
+    span's own word (C54 shape: header 'Defended' vs span
+    '(Revised)' — here with no span target at all)."""
+    priors = [("C3", "Gemini")]
+    text = (
+        "Relationship: withdrawn.\n"
+        "In response to C3, I withdraw it:\n"
+        "1. (Revised) Gamma is updated."
+    )
+    registered, _, _ = _revision(text, "Gemini", priors)
+    assert registered[0].relationship == "unstated"
+
 # ------------------------------------------------------------- derivation
 
 

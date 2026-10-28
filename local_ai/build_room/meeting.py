@@ -384,7 +384,20 @@ _FOLLOWUP_INSTRUCTION = (
     "reasoning), or withdrawn (you retract it) — and cite your own claim "
     "ID and the objection's claim ID. Number any new substantive claims "
     "as before. A defense links to the original claim without replacing "
-    "it; a revision may supersede it."
+    "it; a revision may supersede it. "
+    # Registry standing stage 3 (design v2): the input contract for
+    # standing moves — what the model is ASKED to emit. Acceptance
+    # rules are unchanged (stage 1): only a structured same-author
+    # link to one earlier claim moves standing.
+    "Standing moves — how a revision changes a claim's standing: "
+    "one numbered span per move, naming exactly one earlier claim ID "
+    "of your own (a range such as C6–C9 is not a move and moves "
+    "nothing; a stance word with no claim ID is not a move). You can "
+    "only move your own claims — a link to another participant's "
+    "claim stays a proposal and never changes that claim's standing. "
+    "A defense is not a move: defending a claim never reactivates it "
+    "and never changes its standing. To move four claims, write four "
+    "spans."
 )
 
 @dataclass

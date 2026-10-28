@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from local_ai.council import steward_records as _steward_records
 from local_ai.council.jurisdictions import jurisdiction_prompt_lines
 
 
@@ -191,8 +192,22 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
 
     Returns [] for unknown archetype ids. Woven into every council prompt —
     demo, base, and trained voices alike: the archetype layer underneath the persona.
+
+    Weaver consolidation (mandate P2–P3): when the steward read path is
+    active, the conductor's philosophy lines come from the steward record
+    source instead of ARCHETYPE_PHILOSOPHY; the text is identical
+    (module == Phase 1 JSON, checked mechanically), only the source
+    changes. The old table stays as the rollback source.
     """
-    phil = ARCHETYPE_PHILOSOPHY.get((archetype_id or "").strip().lower())
+    key = (archetype_id or "").strip().lower()
+    if key == "conductor" and _steward_records.weaver_steward_active():
+        return [
+            f"Foundational ideal: {_steward_records.PHILOSOPHY_IDEAL}",
+            f"Defining question (your instinctive first move on any problem): \"{_steward_records.PHILOSOPHY_QUESTION}\"",
+            f"Shadow — your characteristic failure mode, which the Skeptic may name: {_steward_records.PHILOSOPHY_SHADOW}",
+            f"Live tension with the other seats: {_steward_records.PHILOSOPHY_TENSION}",
+        ]
+    phil = ARCHETYPE_PHILOSOPHY.get(key)
     if not phil:
         return []
     return [
@@ -387,8 +402,26 @@ _BY_ID: dict[str, CouncilArchetype] = {a.id: a for a in STOCK_ARCHETYPES}
 
 
 def get_archetype(archetype_id: str) -> CouncilArchetype | None:
-    """Look up a stock archetype by id. Returns None for unknown ids."""
-    return _BY_ID.get((archetype_id or "").strip().lower())
+    """Look up a stock archetype by id. Returns None for unknown ids.
+
+    Weaver consolidation (mandate P2–P3): when the steward read path is
+    active, the conductor entry is built from the steward record source
+    instead of the stock table — a fresh object per call, so toggling
+    the read path never leaves stale state behind. Values are identical
+    (module == Phase 1 JSON, checked mechanically); the stock table
+    stays as the rollback source. Every downstream reader of the
+    conductor archetype (prompt weaving, story prompts, avatar prompts,
+    twig parent frames, display) follows this single switch point.
+    """
+    key = (archetype_id or "").strip().lower()
+    if key == "conductor" and _steward_records.weaver_steward_active():
+        return CouncilArchetype(
+            id=_steward_records.ARCHETYPE_ID,
+            display_name=_steward_records.ARCHETYPE_DISPLAY_NAME,
+            strand_weights=dict(_steward_records.ARCHETYPE_WEIGHTS),
+            prompt_frame=_steward_records.ARCHETYPE_PROMPT_FRAME,
+        )
+    return _BY_ID.get(key)
 
 
 def stock_archetype_ids() -> tuple[str, ...]:

@@ -128,6 +128,7 @@ from typing import Protocol
 from local_ai.council import capabilities as CAP
 from local_ai.council import jurisdictions as JX
 from local_ai.council import meetings as MT
+from local_ai.council import steward_records as _steward_records
 
 from .weave import strip_weave_markers
 
@@ -1623,6 +1624,32 @@ def _weaver_allusion_pool(script: MT.MeetingScript) -> tuple[AllusionCue, ...]:
     return tuple(cues)
 
 
+def _steward_meeting_script() -> MT.MeetingScript:
+    """The Weaver K1 script with every field from the steward record
+    source (mandate P2–P3). Values are identical to CONDUCTOR_FIRST_MEETING
+    (module == Phase 1 JSON, checked mechanically); the script object in
+    meetings.py stays as the rollback source."""
+    return MT.MeetingScript(
+        archetype_id="conductor",
+        keystone_index=1,
+        character=_steward_records.SCRIPT_CHARACTER,
+        demeanor=_steward_records.SCRIPT_DEMEANOR,
+        opening=tuple(_steward_records.SCRIPT_OPENING),
+        questions=tuple(_steward_records.SCRIPT_QUESTIONS),
+        encounter_frame=_steward_records.SCRIPT_ENCOUNTER_FRAME,
+        readback_frame=_steward_records.SCRIPT_READBACK_FRAME,
+        reveal=tuple(_steward_records.SCRIPT_REVEAL),
+        correction_frame=_steward_records.SCRIPT_CORRECTION_FRAME,
+        readback_reply_frame=_steward_records.SCRIPT_READBACK_REPLY_FRAME,
+        orientation_intro=tuple(_steward_records.SCRIPT_ORIENTATION_INTRO),
+        pulled_item_template=_steward_records.SCRIPT_PULLED_ITEM_TEMPLATE,
+        pulled_where_template=_steward_records.SCRIPT_PULLED_WHERE_TEMPLATE,
+        orientation=tuple(_steward_records.SCRIPT_ORIENTATION),
+        orientation_frame=_steward_records.SCRIPT_ORIENTATION_FRAME,
+        orientation_facts=_steward_records.SCRIPT_ORIENTATION_FACTS,
+    )
+
+
 def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Weaver's first meeting as an authored encounter (the
     Weaver pattern, Joshua 2026-10-23, corrected the same evening
@@ -1634,17 +1661,37 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     question bank (the dilemma is retired; the user's own material
     is the subject); the collaboration is intellectual, never mime
     (the no-pretend law); the impression gated on the shared-work
-    exchange; the close floored on meaningful recognition."""
-    base = build_definition(script)
+    exchange; the close floored on meaningful recognition.
+
+    Weaver consolidation (mandate P2–P3): when the steward read path
+    is active, the script fields, objectives, turn frame, and wrap /
+    fallback lines below come from the steward record source instead
+    of the script object and module constants; the values are
+    identical, only the source changes. The allusion pool is built
+    from the effective script, so its pause cues follow the same
+    switch while the fellowship trace texts (not in the Phase 1
+    inventory) stay exactly as written.
+    """
+    use_steward = _steward_records.weaver_steward_active()
+    eff = _steward_meeting_script() if use_steward else script
+    base = build_definition(eff)
+    objectives = (
+        tuple(
+            Objective(id=oid, description=desc, satisfied_when=when)
+            for oid, desc, when in _steward_records.OBJECTIVES
+        )
+        if use_steward
+        else _WEAVER_OBJECTIVES
+    )
     return EncounterDefinition(
         archetype_id=base.archetype_id,
         keystone_index=base.keystone_index,
         character=base.character,
-        opening=tuple(script.opening),
+        opening=tuple(eff.opening),
         question_bank=(),
-        objectives=_WEAVER_OBJECTIVES,
+        objectives=objectives,
         engage_frame=base.engage_frame,
-        turn_frame=WEAVER_TURN_FRAME,
+        turn_frame=_steward_records.TURN_FRAME if use_steward else WEAVER_TURN_FRAME,
         impression_frame=base.impression_frame,
         correction_frame=base.correction_frame,
         impression_reply_frame=base.impression_reply_frame,
@@ -1655,9 +1702,9 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         pulled_item_template=base.pulled_item_template,
         pulled_where_template=base.pulled_where_template,
         reveal=base.reveal,
-        wrap_line=_WEAVER_WRAP_LINE,
-        fallback_line=_WEAVER_FALLBACK_LINE,
-        allusion_pool=_weaver_allusion_pool(script),
+        wrap_line=_steward_records.WRAP_LINE if use_steward else _WEAVER_WRAP_LINE,
+        fallback_line=_steward_records.FALLBACK_LINE if use_steward else _WEAVER_FALLBACK_LINE,
+        allusion_pool=_weaver_allusion_pool(eff),
         capability_context=base.capability_context,
         impression_gate_objective="shared_work_exchange",
         close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),

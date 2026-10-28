@@ -47,6 +47,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from local_ai.council import steward_records as _steward_records
+
 #: Canonical seat order (archetype ids, matching
 #: local_ai/council/jurisdictions.py and archetypes.stock_archetype_ids()).
 SEAT_IDS = (
@@ -716,8 +718,36 @@ def _status_text(cap: Capability, state: VisitorState) -> str:
 
 
 def _render_lines(seat: str | None, state: VisitorState) -> list[str]:
+    """Render one seat's capability lines for a prompt frame.
+
+    Weaver consolidation (mandate P2–P3): when the steward read path is
+    active, the conductor slice is built from the steward record source
+    instead of the registry table; the rendering logic (status text,
+    prerequisite gating) is unchanged shared code, and the values are
+    identical (module == Phase 1 JSON, checked mechanically). The
+    registry table stays as the rollback source. Other seats never
+    consult the steward module.
+    """
     lines: list[str] = []
-    for cap in seat_slice(seat):
+    if (normalize_seat(seat) == "conductor"
+            and _steward_records.weaver_steward_active()):
+        caps: tuple[Capability, ...] = tuple(
+            Capability(
+                id=c["id"],
+                name=c["name"],
+                detail=c.get("detail") or "",
+                primary_seat="conductor",
+                implementation=c["implementation"],
+                verification=c["verification"],
+                evidence=c.get("evidence") or "",
+                prerequisites=tuple(c.get("prerequisites") or ()),
+                prerequisite_note=c.get("prerequisite_note") or "",
+            )
+            for c in _steward_records.CAPABILITIES
+        )
+    else:
+        caps = seat_slice(seat)
+    for cap in caps:
         head = f"- {cap.name}"
         if cap.detail:
             head += f" ({cap.detail})"

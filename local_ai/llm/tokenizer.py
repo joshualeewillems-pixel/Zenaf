@@ -11,8 +11,13 @@ estimate. That estimate lives in
 ``local_ai.build_room.meeting.estimate_tokens`` and is labeled
 NOT a provider token measurement; the two must never be confused.
 
-This module is test/dev measurement only. No cap value, gate, or
-validator depends on it.
+Admission role (cap-replacement gates, 2026-10-28): this module
+is the token counter for the R2 admission gates in
+``local_ai.build_room.meeting.evaluate_admission``. The encoding
+is exact for gpt-4o-mini only; every other seat counts under
+``o200k_base`` with a provisional +20% margin, and the fallback
+estimate is never represented as an exact provider count. The
+chars/4 estimate stays OUT of admission.
 """
 
 from __future__ import annotations

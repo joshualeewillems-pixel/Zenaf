@@ -76,15 +76,315 @@ class EvidencePacket:
         return "\n\n".join(parts)
 
 
+# Cap-replacement gates (folded design 2026-10-28, implemented
+# 2026-10-28). R2 admission operates on counted tokens, declared
+# windows, a conservative cost estimate, and an authorized meeting
+# budget — never on character counts. The legacy char-cap fields
+# below stay on Budget for the untouched R1 path only.
+#
+# Declared context windows, with sources. Gemini declared
+# 2026-10-28 from Google Cloud docs (model page + developer guide
+# agree; max output 65,536). Other windows per the cap report.
+CAP_MODEL_WINDOWS: dict[str, int] = {
+    "gpt-4o-mini": 128_000,
+    "claude-haiku-4-5": 200_000,
+    "gemini-3.8-flash": 1_048_576,
+    "grok-4-1-fast-reasoning": 2_000_000,
+    "muse-spark-1.3": 1_000_000,
+}
+CAP_MODEL_WINDOW_SOURCES: dict[str, str] = {
+    "gpt-4o-mini": "OpenAI model docs (128K context)",
+    "claude-haiku-4-5": "Anthropic model docs (200K context)",
+    "gemini-3.8-flash": "Google Cloud docs, model page + developer guide (2026-10-28)",
+    "grok-4-1-fast-reasoning": "xAI model docs (2M context)",
+    "muse-spark-1.3": "Meta model docs (1M context)",
+}
+# Pricing per 1M tokens, standard (non-batch, non-cached) rates:
+# (input, output). Source + date recorded; expiry enforced (see
+# evaluate_admission): past expiry, admission fails closed until
+# the table is refreshed. 2027-01-01 is when Gemini's standard
+# pricing ($1.50/$7.50) replaces its introductory pricing.
+CAP_PRICING: dict[str, tuple[float, float]] = {
+    "gpt-4o-mini": (0.15, 0.60),
+    "claude-haiku-4-5": (1.00, 5.00),
+    "gemini-3.8-flash": (0.75, 3.75),
+    "grok-4-1-fast-reasoning": (0.20, 0.50),
+    "muse-spark-1.3": (1.25, 4.25),
+}
+CAP_PRICING_SOURCE = "cap report 2026-10-28 (public per-1M pricing pages)"
+CAP_PRICING_DATE = "2026-10-28"
+CAP_PRICING_DEFAULT_EXPIRY = "2027-01-01"
+# Output reservation R, PROVISIONAL (B2's figure). R is a COST
+# RESERVATION plus a budget hard stop, NOT a provider-enforced
+# limit: no provider client enforces 4,000 (Anthropic/xAI hardcode
+# 4096, the rest set nothing client-side; only OpenAI surfaces
+# usage; no client surfaces a finish/stop reason). Never claim
+# otherwise; see the implementation evidence file.
+CAP_OUTPUT_RESERVATION_TOKENS = 4000
+# Fleet-wide safety ceiling (smallest confirmed window): a REPORTED
+# secondary check only. The declared window governs admission; the
+# ceiling is checked and reported, never refusing on its own.
+# (Fork, flagged for Joshua: GPT's correction left binding vs
+# reported unsettled; reported is adopted because a binding ceiling
+# would reintroduce an arbitrary cap and make the Gemini
+# declaration pointless. Joshua may overrule to binding.)
+CAP_FLEET_CEILING_TOKENS = 128_000
+# Non-native tokenizer margin, PROVISIONAL starting assumption, not
+# a verified upper bound. o200k_base is exact for gpt-4o-mini only;
+# every other seat counts under it with this margin, and the
+# fallback estimate is never represented as an exact provider count.
+CAP_NON_NATIVE_TOKEN_MARGIN_NUM = 1  # margin = ceil(counted / 5) = ceil(20%)
+CAP_NATIVE_TOKENIZER_MODEL = "gpt-4o-mini"
+CAP_DEFAULT_MAX_COST_USD = 0.50
+
+
 @dataclass(frozen=True)
 class Budget:
     max_contributions: int = 1
     timeout_seconds: int = 120
+    # Legacy char caps: R1-only (run_single_model_meeting) and
+    # deprecated for R2. R2 admission NEVER consults them; the
+    # gates below are the only R2 admission authority.
     max_prompt_chars: int = 20000
-    # R2: response/revision prompts carry the packet plus the claim
-    # registry, so they get a separate, higher cap (provisional;
-    # actual usage is measured in the acceptance test).
     max_response_prompt_chars: int = 40000
+    # Cap-replacement gates (R2 only). max_cost_usd None means
+    # explicitly NO authorized budget -> every generation refused
+    # before any provider call. The $0.50 default IS the
+    # authorization; a plain Budget() never triggers the
+    # missing-budget refusal.
+    max_cost_usd: float | None = CAP_DEFAULT_MAX_COST_USD
+    output_reservation_tokens: int = CAP_OUTPUT_RESERVATION_TOKENS
+    pricing_expiry: str = CAP_PRICING_DEFAULT_EXPIRY
+
+
+@dataclass
+class GateDecision:
+    """One generation's admission verdict under the cap gates.
+
+    ``code`` is "" when admitted, else one structured gate code:
+    capacity | reservation | budget | configuration | tokenizer.
+    The generic outer label in recorded refusals stays
+    "budget_exceeded" (existing accounting); the code is what
+    distinguishes a capacity restriction from a missing
+    configuration from a monetary limit.
+    """
+
+    admitted: bool
+    code: str
+    reason: str
+    prompt_chars: int
+    prompt_tokens: int | None  # counted, before margin; None when counting failed
+    margin_tokens: int
+    counted_tokens: int  # prompt_tokens + margin (0 when counting failed)
+    reservation_tokens: int
+    window: int | None
+    estimated_cost_usd: float | None
+    fleet_ceiling_exceeded: bool
+
+
+def _today_iso() -> str:
+    return time.strftime("%Y-%m-%d", time.localtime())
+
+
+def evaluate_admission(
+    *,
+    model: str,
+    prompt: str,
+    budget: Budget,
+    remaining_budget: float,
+) -> GateDecision:
+    """Evaluate gates §1–§4 for one generation, pre-generation.
+
+    Pure (no I/O beyond the local tokenizer): safe to unit-test
+    with mocks/fixtures, no provider call. Order: budget presence
+    -> declared window/pricing -> pricing expiry -> counter ->
+    capacity -> estimate vs remaining budget. The fleet ceiling is
+    computed and REPORTED, never refusing on its own.
+    """
+    prompt_chars = len(prompt)
+    reservation = budget.output_reservation_tokens
+    base = dict(
+        prompt_chars=prompt_chars,
+        prompt_tokens=None,
+        margin_tokens=0,
+        counted_tokens=0,
+        reservation_tokens=reservation,
+        window=None,
+        estimated_cost_usd=None,
+        fleet_ceiling_exceeded=False,
+    )
+    # 1. Budget presence: explicit None = no authorized budget.
+    if budget.max_cost_usd is None:
+        return GateDecision(
+            False, "budget",
+            "no authorized budget: max_cost_usd is None (explicit opt-out); "
+            "no generation attempted",
+            **base,
+        )
+    # 2. Declared window + pricing for this model.
+    window = CAP_MODEL_WINDOWS.get(model)
+    pricing = CAP_PRICING.get(model)
+    if window is None or pricing is None:
+        return GateDecision(
+            False, "configuration",
+            f"no declared window/pricing for model {model!r}; "
+            "no generation attempted",
+            **base,
+        )
+    base["window"] = window
+    # 3. Pricing expiry: stale/unverifiable pricing never silently
+    # authorizes spending.
+    if budget.pricing_expiry < _today_iso():
+        return GateDecision(
+            False, "configuration",
+            f"pricing table expired {budget.pricing_expiry} "
+            f"(source {CAP_PRICING_SOURCE}, dated {CAP_PRICING_DATE}); "
+            "refresh required; no generation attempted",
+            **base,
+        )
+    # 4. Counter: o200k_base exact for the GPT model; every other
+    # seat counts under it with a provisional +20% margin (ceiling,
+    # so the margin never under-counts).
+    counted = count_tokens_exact(prompt)
+    if counted is None:
+        return GateDecision(
+            False, "tokenizer",
+            "no usable token counter (tiktoken unavailable); "
+            "no generation attempted",
+            **base,
+        )
+    if model == CAP_NATIVE_TOKENIZER_MODEL:
+        margin = 0
+    else:
+        margin = -(-counted // 5)  # ceil(counted * 20%)
+    total = counted + margin
+    base.update(prompt_tokens=counted, margin_tokens=margin, counted_tokens=total)
+    # 5. Capacity: counted (+ margin) + reservation <= window.
+    if total + reservation > window:
+        return GateDecision(
+            False, "capacity",
+            f"prompt {total} tokens + {reservation} reservation exceeds "
+            f"window {window} for {model}; no generation attempted "
+            "(never truncated)",
+            **base,
+        )
+    # 6. Fleet ceiling: reported only, never refusing alone.
+    base["fleet_ceiling_exceeded"] = (total + reservation > CAP_FLEET_CEILING_TOKENS)
+    # 7. Estimate vs remaining budget (conservative: full
+    # reservation charged at standard rates).
+    in_price, out_price = pricing
+    estimate = (total * in_price + reservation * out_price) / 1_000_000
+    base["estimated_cost_usd"] = estimate
+    if estimate > remaining_budget:
+        if remaining_budget <= 0:
+            reason = (
+                f"meeting budget exhausted (remaining ${remaining_budget:.4f}); "
+                "no generation attempted"
+            )
+        else:
+            reason = (
+                f"estimate ${estimate:.4f} exceeds remaining budget "
+                f"${remaining_budget:.4f}; no generation attempted"
+            )
+        return GateDecision(False, "budget", reason, **base)
+    return GateDecision(True, "", "admitted", **base)
+
+
+class CapBudgetLedger:
+    """Per-meeting dollar ledger for the cap gates (§4).
+
+    ceiling: authorized max_cost_usd (None = no budget; available
+    is then 0). settled: provider-reported usage reconciled to
+    dollars. outstanding: active reservations. retained_unverified:
+    calls that occurred without usage (estimated expenditure, never
+    $0). retained_uncertain: call status uncertain (e.g. timeout
+    after dispatch). available = ceiling - settled - outstanding -
+    retained_unverified - retained_uncertain. A reservation that
+    settles to reported usage frees (reserved - actual) when actual
+    is smaller; an overrun (actual > reserved) is recorded and
+    reduces available accordingly.
+    """
+
+    def __init__(self, ceiling: float | None):
+        self.ceiling = ceiling
+        self.settled_usd = 0.0
+        self.reservations: dict[tuple[str, str], float] = {}
+        self.retained_unverified_usd = 0.0
+        self.retained_uncertain_usd = 0.0
+        self.overruns: list[dict[str, Any]] = []
+
+    @property
+    def outstanding_usd(self) -> float:
+        return sum(self.reservations.values())
+
+    @property
+    def available_usd(self) -> float:
+        if self.ceiling is None:
+            return 0.0
+        return (
+            self.ceiling
+            - self.settled_usd
+            - self.outstanding_usd
+            - self.retained_unverified_usd
+            - self.retained_uncertain_usd
+        )
+
+    @property
+    def estimated_expenditure_usd(self) -> float:
+        """Money spent or assumed spent, excluding outstanding."""
+        return (
+            self.settled_usd
+            + self.retained_unverified_usd
+            + self.retained_uncertain_usd
+        )
+
+    def reserve(self, key: tuple[str, str], amount: float) -> None:
+        self.reservations[key] = amount
+
+    def settle_reported(self, key: tuple[str, str], actual_usd: float) -> float:
+        """Reconcile a reservation to reported usage. Returns the
+        overrun (actual - reserved) when positive, else 0."""
+        reserved = self.reservations.pop(key, 0.0)
+        self.settled_usd += actual_usd
+        overrun = actual_usd - reserved
+        if overrun > 0:
+            self.overruns.append(
+                {"phase": key[0], "participant": key[1],
+                 "reserved_usd": reserved, "actual_usd": actual_usd,
+                 "overrun_usd": overrun}
+            )
+        return max(0.0, overrun)
+
+    def settle_unverified(self, key: tuple[str, str]) -> float:
+        """Call occurred, usage unavailable: retain the reservation
+        as estimated expenditure, marked unverified. Returns the
+        retained amount."""
+        reserved = self.reservations.pop(key, 0.0)
+        self.retained_unverified_usd += reserved
+        return reserved
+
+    def settle_uncertain(self, key: tuple[str, str]) -> float:
+        """Call status uncertain: retain the reservation and report
+        the uncertainty. Returns the retained amount."""
+        reserved = self.reservations.pop(key, 0.0)
+        self.retained_uncertain_usd += reserved
+        return reserved
+
+    def release(self, key: tuple[str, str]) -> float:
+        """Confirmed no provider call: free the reservation."""
+        return self.reservations.pop(key, 0.0)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "ceiling_usd": self.ceiling,
+            "settled_verified_usd": round(self.settled_usd, 6),
+            "outstanding_reserved_usd": round(self.outstanding_usd, 6),
+            "retained_unverified_usd": round(self.retained_unverified_usd, 6),
+            "retained_uncertain_usd": round(self.retained_uncertain_usd, 6),
+            "available_usd": round(self.available_usd, 6),
+            "estimated_expenditure_usd": round(self.estimated_expenditure_usd, 6),
+            "overruns": list(self.overruns),
+        }
 
 
 @dataclass
@@ -1593,9 +1893,14 @@ def _run_phase_parallel(
     """Run one phase's generations in parallel (design §4).
 
     ``jobs`` are (participant_name, participant, prompt) in stable
-    order. Returns (name, text_or_None, error_or_None, completed_ts)
-    IN STABLE ORDER, never completion order. One participant's
-    failure never affects another's result.
+    order. Returns (name, text_or_None, error_or_None, completed_ts,
+    usage_or_None) IN STABLE ORDER, never completion order. One
+    participant's failure never affects another's result.
+    ``usage`` is the provider-reported usage dict when the
+    participant exposes ``generate_with_usage`` (the OpenAI seat
+    only, via participants.py ``__getattr__``); it is None for the
+    tool-loop path (usage arrives via the tool usage sink) and for
+    seats with no usage channel (they settle unverified).
 
     Tool-access stage-1 increment B: when ``tool_contexts`` maps a
     participant name to a ToolLoopContext AND that participant has a
@@ -1609,7 +1914,7 @@ def _run_phase_parallel(
     if not jobs:
         return []
 
-    def work(job: tuple[str, Any, str]) -> tuple[str, str | None, str | None, float]:
+    def work(job: tuple[str, Any, str]) -> tuple[str, str | None, str | None, float, dict | None]:
         name, participant, _prompt = job
         try:
             if (
@@ -1623,11 +1928,20 @@ def _run_phase_parallel(
                     timeout_seconds=budget.timeout_seconds)
                 if tool_log_sink is not None:
                     tool_log_sink.extend(entries)
-                return name, text, error, time.time()
+                return name, text, error, time.time(), None
+            if hasattr(participant, "generate_with_usage"):
+                # Single call: the usage channel REPLACES generate(),
+                # never a second generation. Only the OpenAI seat
+                # exposes it; every other seat falls through to
+                # generate() and settles unverified (hierarchy case 2).
+                text, usage = participant.generate_with_usage(
+                    _prompt, timeout=budget.timeout_seconds)
+                return (name, text, None, time.time(),
+                        usage if isinstance(usage, dict) else None)
             text = participant.generate(_prompt, timeout=budget.timeout_seconds)
-            return name, text, None, time.time()
+            return name, text, None, time.time(), None
         except Exception as exc:  # recorded per participant, not raised
-            return name, None, f"{type(exc).__name__}: {str(exc)[:200]}", time.time()
+            return name, None, f"{type(exc).__name__}: {str(exc)[:200]}", time.time(), None
 
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
         # futures stay in stable order; results are read back in that
@@ -1669,11 +1983,12 @@ def run_multi_model_meeting(
     the increment-A runtime values (image snapshot dir /
     ZENAF_CODE_VERSION); tests pass explicit values.
     """
+    # R2 default: max_cost_usd defaults to $0.50 (the authorization);
+    # legacy char-cap fields keep their defaults but R2 admission
+    # never consults them — the gates are the only authority.
     budget = budget or Budget(
         max_contributions=R2_MAX_GENERATIONS,
         timeout_seconds=120,
-        max_prompt_chars=20000,
-        max_response_prompt_chars=40000,
     )
     store = Path(store_dir)
     store.mkdir(parents=True, exist_ok=True)
@@ -1696,15 +2011,25 @@ def run_multi_model_meeting(
     invited_generations: list[dict[str, str]] = []
     generation_outcomes: list[dict[str, Any]] = []
     attempts = 0
+    # Cap gates (§4): the per-meeting dollar ledger. Reservations
+    # are made in _generate_jobs (before dispatch, single-threaded,
+    # hence batch-atomic); settlement happens in _record_phase and
+    # the revision loop via _settle_generation.
+    ledger = CapBudgetLedger(budget.max_cost_usd)
+    generation_settlements: list[dict[str, Any]] = []
 
+    if budget.max_cost_usd is None:
+        budget_line = "no authorized budget (fail-closed: no generation)"
+    else:
+        budget_line = f"meeting budget ${budget.max_cost_usd:.2f}"
     transcript.append(
         "convene", "Reynard (convener)",
         f"Work item: {packet.work_item}\nQuestion: {packet.question}\n"
         f"Budget: max {budget.max_contributions} generations, "
-        f"{budget.timeout_seconds}s per call, openings capped at "
-        f"{budget.max_prompt_chars} chars, response/revision prompts capped at "
-        f"{budget.max_response_prompt_chars} chars. No synthesis phase "
-        f"(removed by design 2026-10-27).")
+        f"{budget.timeout_seconds}s per call, gates: counted tokens + "
+        f"{budget.output_reservation_tokens} reservation <= declared window, "
+        f"estimates at standard rates, {budget_line}, no silent truncation. "
+        f"No synthesis phase (removed by design 2026-10-27).")
 
     if seats is None:
         seats = resolve_seat_participants(principal)
@@ -1867,7 +2192,60 @@ def run_multi_model_meeting(
                     f"{budget.max_contributions} reached; no generation attempted")
         return None
 
-    def _record_phase(phase: str, results: list[tuple[str, str | None, str | None, float]],
+    def _settle_generation(phase: str, name: str, error: str | None,
+                           usage: dict | None) -> dict[str, Any]:
+        """Settle one dispatched generation against the ledger (§4).
+
+        Returns the settlement record for the usage log + artifact,
+        and appends it to generation_settlements. Error (any
+        exception after dispatch, including timeout): status
+        uncertain -> reservation retained, since no signal
+        positively confirms non-execution (release requires an
+        explicit confirmed-no-call signal, which no current path
+        produces). Success with a usable usage dict: reconcile to
+        reported billable tokens; a finish_reason of "length" marks
+        output-capped (no current provider client surfaces one —
+        documented gap, never inferred from token counts or text
+        length). Success without usage: retain the reservation,
+        marked unverified (never $0).
+        """
+        key = (phase, name)
+        reserved = ledger.reservations.get(key, 0.0)
+        seat = next(s for s in seats if s.name == name)
+        record: dict[str, Any] = {
+            "phase": phase, "participant": name,
+            "reserved_usd": round(reserved, 6),
+        }
+        if error is not None:
+            retained = ledger.settle_uncertain(key)
+            record.update(reservation_status="uncertain",
+                          verified_cost_usd=None,
+                          estimated_cost_usd=round(retained, 6),
+                          output_capped=False)
+        elif (isinstance(usage, dict)
+                and isinstance(usage.get("prompt_tokens"), (int, float))
+                and isinstance(usage.get("completion_tokens"), (int, float))):
+            in_price, out_price = CAP_PRICING.get(seat.model, (0.0, 0.0))
+            actual = (usage["prompt_tokens"] * in_price
+                      + usage["completion_tokens"] * out_price) / 1_000_000
+            overrun = ledger.settle_reported(key, actual)
+            record.update(reservation_status="settled",
+                          verified_cost_usd=round(actual, 6),
+                          estimated_cost_usd=round(reserved, 6),
+                          output_capped=(usage.get("finish_reason") == "length"),
+                          overrun_usd=round(overrun, 6),
+                          reported_prompt_tokens=usage["prompt_tokens"],
+                          reported_completion_tokens=usage["completion_tokens"])
+        else:
+            retained = ledger.settle_unverified(key)
+            record.update(reservation_status="unverified",
+                          verified_cost_usd=None,
+                          estimated_cost_usd=round(retained, 6),
+                          output_capped=False)
+        generation_settlements.append(record)
+        return record
+
+    def _record_phase(phase: str, results: list[tuple[str, str | None, str | None, float, dict | None]],
                       frozen_ids: set[str] | None = None,
                       register: bool = True) -> list[tuple[str, str]]:
         """Append a phase's results to the transcript in stable order.
@@ -1885,7 +2263,7 @@ def run_multi_model_meeting(
         """
         generated: list[tuple[str, str]] = []
         generation_timestamps.setdefault(phase, {})
-        for name, text, error, completed_ts in results:
+        for name, text, error, completed_ts, usage in results:
             generation_timestamps[phase][name] = completed_ts
             generation_outcomes.append({
                 "phase": phase, "participant": name,
@@ -1894,13 +2272,17 @@ def run_multi_model_meeting(
             })
             seat = next(s for s in seats if s.name == name)
             if error is not None:
+                settlement = _settle_generation(phase, name, error, None)
                 transcript.append("failure", name, error)
                 _log_usage(store, meeting_id=meeting_id, participant=name,
                            provider=seat.provider_id,
                            key_source=seat.participant.key_source,
                            operation="build_room_r2_meeting", outcome="failed",
                            phase=phase, cited_claim_ids=[],
-                           token_usage="unavailable")
+                           token_usage="unavailable",
+                           reservation_status=settlement["reservation_status"],
+                           estimated_cost_usd=settlement["estimated_cost_usd"],
+                           verified_cost_usd=None)
                 continue
             transcript.append("contribution", name, text or "")
             generated.append((name, text or ""))
@@ -1988,66 +2370,133 @@ def run_multi_model_meeting(
                 "grounded_tool_citations": grounded_tool,
                 "unverified_tool_citations": unverified_tool,
             })
+            settlement = _settle_generation(phase, name, None, usage)
             _log_usage(store, meeting_id=meeting_id, participant=name,
                        provider=seat.provider_id,
                        key_source=seat.participant.key_source,
                        operation="build_room_r2_meeting", outcome="generated",
                        phase=phase, cited_claim_ids=valid,
-                       token_usage=tool_usage_by_key.get(
-                           (phase, name), "unavailable"))
+                       token_usage=(usage if usage is not None
+                                    else tool_usage_by_key.get(
+                                        (phase, name), "unavailable")),
+                       reservation_status=settlement["reservation_status"],
+                       estimated_cost_usd=settlement["estimated_cost_usd"],
+                       verified_cost_usd=settlement["verified_cost_usd"],
+                       output_capped=settlement["output_capped"])
         return generated
 
-    def _generate_jobs(phase: str, prompt: str, cap: int,
+    def _generate_jobs(phase: str, prompt: str,
                        members: list[Seat],
                        prompt_extras: dict[str, str] | None = None,
                        ) -> list[tuple[str, Any, str]]:
-        """Build parallel jobs, enforcing caps and the generation budget.
+        """Build parallel jobs, enforcing the cap gates + generation budget.
 
+        The single enforcement chokepoint: openings, responses, and
+        revisions all pass through here. Per seat, in stable order:
+        the invitation is recorded (Stage 2: blocked generations
+        stay accounted), then the generation-count cap, then gates
+        §1–§4 on the seat's FULL prompt (base + its extras).
+        Admission is atomic at the batch level: after per-seat
+        gates, the batch's TOTAL reservations must fit the
+        available budget — if not, the WHOLE batch is refused
+        (none reserved, none dispatched), so combined reservations
+        can never exceed the budget. This loop runs
+        single-threaded before _run_phase_parallel dispatches,
+        which is what makes the reservation atomic.
         ``prompt_extras`` maps a participant name to a section
         appended ONLY to that participant's prompt (tool-access
         stage-1 increment B: the tools section goes to tool-capable
         seats only; packet-only seats never see it).
         """
         nonlocal attempts
+
+        def _record_refusal(seat: Seat, reason: str,
+                            decision: GateDecision | None,
+                            code_override: str | None = None) -> None:
+            transcript.append("failure", seat.name, reason)
+            generation_outcomes.append({
+                "phase": phase, "participant": seat.name,
+                "status": "failed", "reason": reason,
+            })
+            _log_usage(store, meeting_id=meeting_id, participant=seat.name,
+                       provider=seat.provider_id,
+                       key_source=seat.participant.key_source,
+                       operation="build_room_r2_meeting",
+                       outcome="failed", phase=phase,
+                       cited_claim_ids=[], token_usage="unavailable",
+                       gate_code=(code_override or (decision.code if decision
+                                                    else "generation_count")),
+                       gate_prompt_tokens=(decision.prompt_tokens
+                                           if decision else None),
+                       gate_estimated_cost_usd=(decision.estimated_cost_usd
+                                                if decision else None),
+                       gate_remaining_budget_usd=round(ledger.available_usd, 6))
+
         jobs: list[tuple[str, Any, str]] = []
+        candidates: list[tuple[Seat, str, GateDecision]] = []
         for seat in members:
             assert seat.participant is not None
             # Stage 2: every invitation is recorded, including
             # generations that never become jobs (blocked below) —
             # otherwise check (a) could not see them.
             invited_generations.append({"phase": phase, "participant": seat.name})
+            # Generation-count cap: _budget_blocked counts attempts
+            # from PRIOR phases; candidates admitted so far in THIS
+            # batch have not incremented attempts yet (reservation
+            # happens after the batch check), so they must count too
+            # — otherwise a max_contributions=2 batch would admit
+            # all five seats instead of the first two.
             blocked = _budget_blocked()
+            if (blocked is None
+                    and attempts + len(candidates) >= budget.max_contributions):
+                blocked = (f"budget_exceeded: generation cap of "
+                           f"{budget.max_contributions} reached; no generation attempted")
             if blocked is not None:
-                transcript.append("failure", seat.name, blocked)
-                generation_outcomes.append({
-                    "phase": phase, "participant": seat.name,
-                    "status": "failed", "reason": blocked,
-                })
-                _log_usage(store, meeting_id=meeting_id, participant=seat.name,
-                           provider=seat.provider_id,
-                           key_source=seat.participant.key_source,
-                           operation="build_room_r2_meeting",
-                           outcome="failed", phase=phase,
-                           cited_claim_ids=[], token_usage="unavailable")
+                _record_refusal(seat, blocked, None)
                 continue
-            if len(prompt) > cap:
-                reason = (f"budget_exceeded: prompt of {len(prompt)} chars exceeds "
-                          f"cap={cap} for {phase}; no generation attempted")
-                transcript.append("failure", seat.name, reason)
-                generation_outcomes.append({
-                    "phase": phase, "participant": seat.name,
-                    "status": "failed", "reason": reason,
-                })
-                _log_usage(store, meeting_id=meeting_id, participant=seat.name,
-                           provider=seat.provider_id,
-                           key_source=seat.participant.key_source,
-                           operation="build_room_r2_meeting",
-                           outcome="failed", phase=phase,
-                           cited_claim_ids=[], token_usage="unavailable")
-                continue
-            attempts += 1
             extra = (prompt_extras or {}).get(seat.name, "")
-            jobs.append((seat.name, seat.participant, prompt + extra))
+            full_prompt = prompt + extra
+            decision = evaluate_admission(
+                model=seat.model, prompt=full_prompt, budget=budget,
+                remaining_budget=ledger.available_usd)
+            if not decision.admitted:
+                if decision.prompt_tokens is None:
+                    tokens_part = "tokens uncounted"
+                else:
+                    tokens_part = f"{decision.prompt_tokens} tokens"
+                    if decision.margin_tokens:
+                        tokens_part += f" + {decision.margin_tokens} margin"
+                detail = (
+                    f"(prompt {decision.prompt_chars} chars, {tokens_part}, "
+                    f"reservation {decision.reservation_tokens}"
+                )
+                if decision.window is not None:
+                    detail += f", window {decision.window}"
+                if decision.estimated_cost_usd is not None:
+                    detail += f", estimate ${decision.estimated_cost_usd:.4f}"
+                detail += f", remaining ${ledger.available_usd:.4f}; no generation attempted)"
+                reason = (
+                    f"budget_exceeded: [gate={decision.code}] {phase} "
+                    f"generation refused: {decision.reason} {detail}"
+                )
+                _record_refusal(seat, reason, decision)
+                continue
+            candidates.append((seat, full_prompt, decision))
+        # Batch budget: the batch's TOTAL reservations must fit.
+        batch_total = sum(d.estimated_cost_usd or 0.0 for _, _, d in candidates)
+        if candidates and batch_total > ledger.available_usd:
+            for seat, _full_prompt, decision in candidates:
+                reason = (
+                    f"budget_exceeded: [gate=budget] {phase} batch refused: "
+                    f"batch estimate ${batch_total:.4f} exceeds remaining "
+                    f"budget ${ledger.available_usd:.4f}; no generation attempted"
+                )
+                _record_refusal(seat, reason, decision, code_override="budget")
+            return jobs
+        for seat, full_prompt, decision in candidates:
+            ledger.reserve((phase, seat.name), decision.estimated_cost_usd or 0.0)
+            attempts += 1
+            jobs.append((seat.name, seat.participant, full_prompt))
         return jobs
 
     # -- Phase 1: independent openings (baseline control). Each
@@ -2063,8 +2512,7 @@ def run_multi_model_meeting(
         + "\n\n" + _LANGUAGE_LINE
         + "\n\n" + opening_telemetry
     )
-    opening_jobs = _generate_jobs("opening", opening_prompt,
-                                  budget.max_prompt_chars, present,
+    opening_jobs = _generate_jobs("opening", opening_prompt, present,
                                   prompt_extras=tool_prompt_extras)
     opening_results = _run_phase_parallel(
         opening_jobs, budget,
@@ -2121,8 +2569,7 @@ def run_multi_model_meeting(
                 transcript.append(
                     "note", seat.name,
                     f"{seat.name} did not respond: absent from openings.")
-        response_jobs = _generate_jobs("response", response_prompt,
-                                       budget.max_response_prompt_chars, present,
+        response_jobs = _generate_jobs("response", response_prompt, present,
                                        prompt_extras=tool_prompt_extras)
         response_results = _run_phase_parallel(
             response_jobs, budget,
@@ -2164,8 +2611,7 @@ def run_multi_model_meeting(
             )
             revision_frozen = registry.ids()
             revision_jobs = _generate_jobs(
-                "revision", revision_prompt,
-                budget.max_response_prompt_chars, invited,
+                "revision", revision_prompt, invited,
                 prompt_extras=tool_prompt_extras)
             revision_results = _run_phase_parallel(
                 revision_jobs, budget,
@@ -2177,7 +2623,7 @@ def run_multi_model_meeting(
             # C4), not one contribution-wide link.
             rev_generated: list[tuple[str, str]] = []
             generation_timestamps.setdefault("revision", {})
-            for name, text, error, completed_ts in revision_results:
+            for name, text, error, completed_ts, usage in revision_results:
                 generation_timestamps["revision"][name] = completed_ts
                 generation_outcomes.append({
                     "phase": "revision", "participant": name,
@@ -2186,13 +2632,17 @@ def run_multi_model_meeting(
                 })
                 seat = next(s for s in seats if s.name == name)
                 if error is not None:
+                    settlement = _settle_generation("revision", name, error, None)
                     transcript.append("failure", name, error)
                     _log_usage(store, meeting_id=meeting_id, participant=name,
                                provider=seat.provider_id,
                                key_source=seat.participant.key_source,
                                operation="build_room_r2_meeting",
                                outcome="failed", phase="revision",
-                               cited_claim_ids=[], token_usage="unavailable")
+                               cited_claim_ids=[], token_usage="unavailable",
+                               reservation_status=settlement["reservation_status"],
+                               estimated_cost_usd=settlement["estimated_cost_usd"],
+                               verified_cost_usd=None)
                     continue
                 transcript.append("contribution", name, text or "")
                 rev_generated.append((name, text or ""))
@@ -2273,14 +2723,20 @@ def run_multi_model_meeting(
                     "grounded_tool_citations": grounded_tool,
                     "unverified_tool_citations": unverified_tool,
                 })
+                settlement = _settle_generation("revision", name, None, usage)
                 _log_usage(store, meeting_id=meeting_id, participant=name,
                            provider=seat.provider_id,
                            key_source=seat.participant.key_source,
                            operation="build_room_r2_meeting",
                            outcome="generated", phase="revision",
                            cited_claim_ids=valid,
-                           token_usage=tool_usage_by_key.get(
-                               ("revision", name), "unavailable"))
+                           token_usage=(usage if usage is not None
+                                        else tool_usage_by_key.get(
+                                            ("revision", name), "unavailable")),
+                           reservation_status=settlement["reservation_status"],
+                           estimated_cost_usd=settlement["estimated_cost_usd"],
+                           verified_cost_usd=settlement["verified_cost_usd"],
+                           output_capped=settlement["output_capped"])
 
         # Verified, claim-specific objections (C5) and epistemic
         # assessments (C4), computed AFTER the revision phase so
@@ -2424,6 +2880,24 @@ def run_multi_model_meeting(
         tool_access=tool_access_record,
         claim_standing=standing_table,
     )
+    # Cap gates (§6): the meeting's budget record — estimated vs
+    # verified expenditure, reservation states, and the pricing
+    # table's provenance. Attached after construction because
+    # build_draft_artifact_r2 takes a fixed kwarg set.
+    artifact["cap_budget"] = {
+        **ledger.to_dict(),
+        "pricing_source": CAP_PRICING_SOURCE,
+        "pricing_date": CAP_PRICING_DATE,
+        "pricing_expiry": budget.pricing_expiry,
+        "reservation_tokens": budget.output_reservation_tokens,
+        "fleet_ceiling_tokens": CAP_FLEET_CEILING_TOKENS,
+        "fleet_ceiling_binding": False,  # reported only; see fork note
+        "settlements": generation_settlements,
+        "output_capped_generations": [
+            {"phase": s["phase"], "participant": s["participant"]}
+            for s in generation_settlements if s.get("output_capped")
+        ],
+    }
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"
     _write_json(t_path, {"meeting_id": meeting_id, **transcript.to_dict()})

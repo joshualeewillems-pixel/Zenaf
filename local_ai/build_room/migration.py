@@ -125,6 +125,104 @@ def _atomic_write(path: Path, payload: dict[str, Any]) -> None:
         raise
 
 
+def _meeting_id_from_filename(name: str) -> str:
+    """Fallback meeting id from an artifact filename.
+
+    ``meeting_<id>.draft_artifact.json`` → ``<id>``; anything else
+    returns the bare stem.
+    """
+    stem = name
+    if stem.startswith("meeting_"):
+        stem = stem[len("meeting_"):]
+    if stem.endswith(".draft_artifact.json"):
+        stem = stem[: -len(".draft_artifact.json")]
+    return stem
+
+
+def inventory_store_dir(store_dir: Path | str) -> dict[str, Any]:
+    """Read-only dry-run inventory of a store directory (design:
+    migration dry-run, Joshua).
+
+    For each stored artifact, runs the pure ``migrate_artifact_standing``
+    in memory and reports what it *would* do — never what it does.
+    This function has NO write code path and takes no ``dry_run``
+    flag: there is nothing in it that opens a file for writing, so
+    it cannot migrate by mistake. It deliberately does not share
+    code with ``migrate_store_dir``'s write path; the read loop is
+    small, and sharing it would put the write path one refactor
+    away from the inventory.
+
+    Response vocabulary mirrors the stage-4 reports: ``would_migrate``
+    (migration reports ``migrated: true``), ``already_present``,
+    ``unmigrated`` (standing "not computed"), ``failed`` (unreadable
+    file). No claim texts, registries, or tables are returned — only
+    counts and verdicts. A missing directory or unreadable file is
+    reported, never raised.
+    """
+    store = Path(store_dir)
+    report: dict[str, Any] = {
+        "store_dir": str(store),
+        "files": [],
+        "totals": {
+            "files": 0,
+            "would_migrate": 0,
+            "already_present": 0,
+            "unmigrated": 0,
+            "failed": 0,
+        },
+    }
+    if not store.is_dir():
+        report["error"] = "store directory does not exist"
+        return report
+    for path in sorted(store.glob(ARTIFACT_GLOB)):
+        entry: dict[str, Any] = {"file": path.name}
+        try:
+            artifact = json.loads(path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            entry.update({
+                "meeting_id": _meeting_id_from_filename(path.name),
+                "claims": 0,
+                "has_claim_standing": False,
+                "verdict": "failed",
+                "reason": f"unreadable: {type(exc).__name__}",
+            })
+            report["files"].append(entry)
+            report["totals"]["files"] += 1
+            report["totals"]["failed"] += 1
+            continue
+        if not isinstance(artifact, dict):
+            entry.update({
+                "meeting_id": _meeting_id_from_filename(path.name),
+                "claims": 0,
+                "has_claim_standing": False,
+                "verdict": "unmigrated",
+                "reason": "artifact is not an object",
+            })
+        else:
+            _, migration_report = migrate_artifact_standing(artifact)
+            if migration_report["migrated"]:
+                verdict = "would_migrate"
+            elif migration_report["reason"] == "claim_standing already present":
+                verdict = "already_present"
+            else:
+                verdict = "unmigrated"
+            meeting_id = artifact.get("meeting_id")
+            registry = artifact.get("claim_registry")
+            entry.update({
+                "meeting_id": meeting_id
+                if isinstance(meeting_id, str) and meeting_id
+                else _meeting_id_from_filename(path.name),
+                "claims": len(registry) if isinstance(registry, list) else 0,
+                "has_claim_standing": "claim_standing" in artifact,
+                "verdict": verdict,
+                "reason": migration_report["reason"],
+            })
+        report["files"].append(entry)
+        report["totals"]["files"] += 1
+        report["totals"][entry["verdict"]] += 1
+    return report
+
+
 def migrate_store_dir(
     store_dir: Path | str,
     *,

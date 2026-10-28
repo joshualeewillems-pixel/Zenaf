@@ -334,6 +334,22 @@ def _check_standing_invariants(
     return (not failures, failures)
 
 
+def check_standing_invariants(
+    claims_full: list[dict[str, Any]],
+    interactions: list[dict[str, Any]],
+    standing_table: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    """Public entry point for the standing-invariants check alone.
+
+    Added for the migration execution route (design v2), which must
+    verify each would-be and persisted table without running the
+    other four record checks (stored artifacts carry no live
+    generation records to check). Delegates to
+    :func:`_check_standing_invariants` without new logic.
+    """
+    return _check_standing_invariants(claims_full, interactions, standing_table)
+
+
 def check_record_completeness(
     *,
     invited_generations: list[dict[str, str]],

@@ -388,22 +388,28 @@ def test_live_meeting_artifact_carries_passing_completeness(tmp_path):
 
 
 def test_blocked_generations_still_accounted(tmp_path):
-    # Response prompts exceed the 100-char response cap, so every
-    # response generation is budget-blocked (recorded, not raised).
-    # Blocked generations are accounted outcomes: the checks pass
-    # even though deliberation is incomplete and ok is False.
+    # Gate equivalent of the retired 100-char response cap (cap
+    # replacement, 2026-10-28): a tight meeting budget admits the
+    # openings (≈ $0.058) but refuses the whole response batch
+    # (≈ $0.059 vs ≈ $0.022 remaining) under the budget gate
+    # (recorded, not raised). Blocked generations are accounted
+    # outcomes: the checks pass even though deliberation is
+    # incomplete and ok is False.
     fakes = {
         name: FakeParticipant(name, opening="1. Inferred: Some claim with substance.")
         for name in NAMES
     }
-    budget = Budget(max_contributions=15, max_prompt_chars=20000,
-                    max_response_prompt_chars=100)
+    budget = Budget(max_contributions=15, max_cost_usd=0.08)
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path,
                                      seats=_seats(fakes), budget=budget)
     assert result.ok is False
     assert result.artifact["deliberation_complete"] is False
     assert result.artifact["record_completeness"]["passed"] is True
     assert result.artifact["record_complete"] is True
+    failures = [e.text for e in result.transcript.entries if e.kind == "failure"]
+    response_failures = [f for f in failures if "response" in f]
+    assert len(response_failures) == 5
+    assert all("[gate=budget]" in f for f in response_failures)
 
 
 def test_generation_budget_cap_still_accounted(tmp_path):

@@ -300,17 +300,20 @@ def test_disagreement_preservation_no_collapse(tmp_path):
 
 
 def test_tight_prompt_cap_fails_deliberation_without_synthesis(tmp_path):
-    # Response prompts exceed the 100-char response cap, so every
-    # response job fails budget_exceeded (recorded, not raised).
-    # There is no synthesis phase to overflow: the meeting ends
-    # synthesis-less, deliberation incomplete, record complete,
-    # with the full transcript preserved.
+    # Gate equivalent of the retired 100-char response cap (cap
+    # replacement, 2026-10-28): a tight meeting budget admits the
+    # openings (5 openings ≈ $0.058, dominated by the 4,000-token
+    # reservation) but the response batch (≈ $0.059) exceeds the
+    # remaining ≈ $0.022, so the WHOLE batch is refused under the
+    # budget gate (recorded, not raised). There is no synthesis
+    # phase to overflow: the meeting ends synthesis-less,
+    # deliberation incomplete, record complete, with the full
+    # transcript preserved.
     fakes = {
         name: FakeParticipant(name, opening="1. Inferred: Some claim with substance.")
         for name in NAMES
     }
-    budget = Budget(max_contributions=15, max_prompt_chars=20000,
-                    max_response_prompt_chars=100)
+    budget = Budget(max_contributions=15, max_cost_usd=0.08)
     result = run_multi_model_meeting(_packet(), store_dir=tmp_path,
                                      seats=_seats(fakes), budget=budget)
     assert result.ok is False
@@ -319,8 +322,15 @@ def test_tight_prompt_cap_fails_deliberation_without_synthesis(tmp_path):
     assert "synthesis" not in result.artifact
     assert result.artifact["synthesis_removed"] is True
     failures = [e.text for e in result.transcript.entries if e.kind == "failure"]
-    assert any("budget_exceeded" in f and "response" in f for f in failures)
-    # The complete transcript is preserved regardless of prompt limits.
+    response_failures = [f for f in failures if "response" in f]
+    assert len(response_failures) == 5
+    assert all("budget_exceeded" in f and "[gate=budget]" in f
+               for f in response_failures)
+    # No response generation was attempted: no fake ever saw a
+    # registry-bearing (response) prompt.
+    assert all("Claim registry" not in p
+               for fake in fakes.values() for p in fake.prompts)
+    # The complete transcript is preserved regardless of budget limits.
     persisted = json.loads(_read(result.transcript_path))
     assert len(persisted["entries"]) == len(result.transcript.entries)
     assert any(e["kind"] == "contribution" for e in persisted["entries"])

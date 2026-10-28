@@ -297,7 +297,11 @@ _SECTION_HEADER_RE = re.compile(
     r"\s*(?::\s*)?(?:\*\*)?\s*$",
     re.IGNORECASE,
 )
-_RELATIONSHIP_RE = re.compile(r"\b(revised|defended|withdrawn)\b", re.IGNORECASE)
+_RELATIONSHIP_RE = re.compile(
+    r"\b(revised|defended|withdrawn|retract\w*)\b", re.IGNORECASE)
+# Mandate reliability (2026-10-28): retract-family words are withdrawal
+# language. A bare stance word is normalized by _normalize_stance_word;
+# retract* always maps to "withdrawn".
 # C5 explicit targeting: a move is VERIFIED as targeted only when the
 # text syntactically associates it with its claim id. Same-span
 # proximity without one of these patterns is a candidate, never a
@@ -320,10 +324,51 @@ _MOVE_DECL_RE = re.compile(r"\bMove:\s*([A-Za-z,\s]+)", re.IGNORECASE)
 _REL_BRACKET_RE = re.compile(
     r"\b(C\d+)\s*\[\s*(revised|defended|withdrawn)\b", re.IGNORECASE)
 _REL_VERB_TARGET_RE = re.compile(
-    r"\b(revised|revise|revising|defended|defend|defending|withdrawn|withdraw|withdraws|withdrawing)"
+    r"\b(revised|revise|revising|defended|defend|defending|withdrawn|withdraw|withdraws|withdrawing|retracted|retract|retracts|retracting)"
     r"\s+(?:my\s+)?(C\d+)",
     re.IGNORECASE)
 _REL_IS_WITHDRAWN_RE = re.compile(r"\b(C\d+)\s+is\s+withdrawn\b", re.IGNORECASE)
+# Mandate reliability: sentence-scoped stance rescue. The tight patterns
+# above miss the forms models actually emit in the historical record:
+# parenthetical markers ("(Withdrawn) ..."), colon lists ("Withdrawn:
+# C27, C28, C29, C30–C44"), object phrasing ("citations in C6–C9"),
+# and anaphoric range retractions ("C27–C44 ... they are retracted").
+# These patterns run ONLY when the tight patterns yield no target, so
+# previously working parses are unchanged. A negated stance ("do not
+# withdraw C6") never yields targets; bare "no" is excluded from the
+# negation set, as in claim_standing's signal detector (too broad).
+_STANCE_WORD_RE = re.compile(
+    r"\b(revised|revise|revising|defended|defend|defending|withdrawn|withdraw|withdraws|withdrawing|retracted|retract|retracts|retracting)\b",
+    re.IGNORECASE)
+_STANCE_NEGATION_RE = re.compile(
+    r"\b(not|never|don't|doesn't|didn't|do not|does not|did not|cannot)\b",
+    re.IGNORECASE)
+_STANCE_NEGATION_WINDOW = 40
+_MOVE_RANGE_CAP = 50
+_LIST_ITEM_RE = re.compile(r"C(\d+)\s*(?:[-–—]\s*C(\d+))?")
+_OBJECT_TARGETS_RE = re.compile(
+    r"\b(citations|claims|statements|values|figures|numbers|read statements|sources|references)\b"
+    r"(?:\s+\w+){0,3}?\s+(?:in|of)\s+"
+    r"((?:C\d+\s*(?:[-–—]\s*C\d+)?)(?:\s*(?:,|and)\s*C\d+\s*(?:[-–—]\s*C\d+)?)*)",
+    re.IGNORECASE)
+
+# P3 nouns that name EVIDENCE, not claim content: a stance over
+# these withdraws/revises the citations, never the claims they point
+# to (A7: withdrawing "the citations in C6–C9" leaves C6–C9 active).
+_CITATION_NOUNS = frozenset(
+    {"citations", "sources", "references", "read statements"})
+_ANAPHOR_RE = re.compile(
+    r"\b(they|these|those)\s+(?:are|were)\s+(?:\w+\s+){0,2}?",
+    re.IGNORECASE)
+# Reclassification: a revised-family span that retracts its framing
+# and reassigns an epistemic status ("are Inferred, not Observed").
+# Markdown bold around the status words is tolerated.
+_STATUS_PAIR_RE = re.compile(
+    r"\b(?:are|were)\s+(?:\*\*)?(Observed|Inferred|Proposed|Speculative|Contested)(?:\*\*)?\b"
+    r"[^.!?\n]{0,80}?\bnot\s+(?:\*\*)?(Observed|Inferred|Proposed|Speculative|Contested)(?:\*\*)?\b",
+    re.IGNORECASE)
+_FRAMING_CUE_RE = re.compile(
+    r"\b(retract\w*|framing|presented as)\b", re.IGNORECASE)
 
 # The five response moves (design §2B). Patterns match the move WORDS
 # as stated by the participant; stating a word is not proof of
@@ -434,6 +479,15 @@ class Claim:
     supersedes: str | None = None
     withdraws: str | None = None
     relationship_target: str | None = None
+    # Mandate reliability: multi-target moves (range/list withdrawals)
+    # carry every target here; relationship_target keeps the first for
+    # backward compatibility. Consumers use this list when non-empty,
+    # else the single fields — never both (no double application).
+    # reclassified_status records a same-author epistemic
+    # reclassification (e.g. Observed → Inferred) on a revision span;
+    # it is a derived-field input, not a new standing dimension.
+    relationship_targets: list[str] = field(default_factory=list)
+    reclassified_status: str | None = None
     disposition: str | None = None
     disposition_by: str | None = None
     epistemic_assessment: str = "unresolved"
@@ -585,7 +639,9 @@ class ClaimRegistry:
         """Append pre-parsed spans with per-span links (C3).
 
         ``links[i]`` (when given) carries that span's relationship,
-        relationship_target, relates_to, supersedes, and withdraws.
+        relationship_target, relates_to, supersedes, and withdraws,
+        plus relationship_targets and reclassified_status for
+        multi-target / reclassification links.
         System IDs are assigned sequentially; model-written numbers
         are never stored (C1).
         """
@@ -608,6 +664,8 @@ class ClaimRegistry:
                 supersedes=link.get("supersedes"),
                 withdraws=link.get("withdraws"),
                 relationship_target=link.get("relationship_target"),
+                relationship_targets=list(link.get("relationship_targets") or []),
+                reclassified_status=link.get("reclassified_status"),
             )
             self.claims.append(claim)
             registered.append(claim)
@@ -720,22 +778,17 @@ def _relationship_in_scope(scope: str) -> tuple[str | None, str | None]:
     """
     m = _REL_BRACKET_RE.search(scope or "")
     if m:
-        return m.group(2).lower(), m.group(1)
+        return _normalize_stance_word(m.group(2)), m.group(1)
     m = _REL_VERB_TARGET_RE.search(scope or "")
     if m:
-        word = m.group(1).lower()
-        base = {"revise": "revised", "revising": "revised",
-                "defend": "defended", "defending": "defended",
-                "withdraw": "withdrawn", "withdraws": "withdrawn",
-                "withdrawing": "withdrawn"}.get(word, word)
-        return base, m.group(2)
+        return _normalize_stance_word(m.group(1)), m.group(2)
     m = _REL_IS_WITHDRAWN_RE.search(scope or "")
     if m:
         return "withdrawn", m.group(1)
     word_m = _RELATIONSHIP_RE.search(scope or "")
     if not word_m:
         return None, None
-    word = word_m.group(1).lower()
+    word = _normalize_stance_word(word_m.group(1))
     resp = _IN_RESPONSE_TO_RE.search(scope or "")
     if resp:
         ids = _find_citations(resp.group(1))
@@ -746,6 +799,153 @@ def _relationship_in_scope(scope: str) -> tuple[str | None, str | None]:
         if ids:
             return word, ids[0]
     return word, None
+
+
+def _normalize_stance_word(word: str | None) -> str | None:
+    """Normalize a stance verb to revised/defended/withdrawn.
+
+    Retract-family verbs are withdrawal language (mandate reliability:
+    "they are retracted" must not parse as no stance at all).
+    """
+    if word is None:
+        return None
+    w = word.lower()
+    if w in ("revise", "revising", "revised"):
+        return "revised"
+    if w in ("defend", "defending", "defended"):
+        return "defended"
+    if w in ("withdraw", "withdraws", "withdrawing", "withdrawn") or w.startswith("retract"):
+        return "withdrawn"
+    return w
+
+
+def _stance_negated(scope: str, pos: int) -> bool:
+    """True when a negation word precedes a stance word in-window.
+
+    Bare "no" is excluded (too broad: "No, I withdraw C6" negates
+    nothing). A negated stance yields no targets anywhere below.
+    """
+    window = scope[max(0, pos - _STANCE_NEGATION_WINDOW):pos]
+    return _STANCE_NEGATION_RE.search(window) is not None
+
+
+def _parse_id_list(fragment: str) -> list[str]:
+    """Claim ids in a list fragment: explicit ids plus range expansion.
+
+    Ranges expand only when the span is within _MOVE_RANGE_CAP; an
+    over-cap range contributes nothing (fail-closed: an absurd range
+    must not withdraw anything). Order preserved, duplicates removed.
+    """
+    targets: list[str] = []
+
+    def add(cid: str) -> None:
+        if cid not in targets:
+            targets.append(cid)
+
+    pos = 0
+    n = len(fragment)
+    while pos < n:
+        m = _LIST_ITEM_RE.match(fragment, pos)
+        if not m:
+            break
+        a, b = int(m.group(1)), m.group(2)
+        if b is None:
+            add(f"C{a}")
+        elif int(b) >= a and (int(b) - a) <= _MOVE_RANGE_CAP:
+            for num in range(a, int(b) + 1):
+                add(f"C{num}")
+        pos = m.end()
+        # Separator: comma or "and", then another item; else done.
+        sep = re.match(r"\s*(?:,|\band\b)\s*", fragment[pos:])
+        if not sep:
+            break
+        pos += sep.end()
+    return targets
+
+
+def _sentences(text: str) -> list[str]:
+    """Split text into sentences on terminators and newlines.
+
+    Over-splitting only risks missing a target (fail-closed), never
+    inventing one.
+    """
+    return [p.strip() for p in re.split(r"(?<=[.!?])\s+|\n+", text or "") if p.strip()]
+
+
+def _sentence_containing(text: str, pos: int) -> str:
+    """The sentence (per _sentences) containing character offset pos."""
+    offset = 0
+    for sentence in _sentences(text):
+        start = text.find(sentence, offset)
+        if start == -1:
+            continue
+        end = start + len(sentence)
+        if start <= pos < end:
+            return sentence
+        offset = end
+    return text
+
+
+def _stance_move_in_scope(scope: str) -> tuple[str | None, list[str], str]:
+    """Stance word + move targets + scope for one span's own text.
+
+    Runs the tight patterns first (unchanged behavior for every form
+    they already handle). When they yield no target, rescues the
+    historical forms, in order, for the first non-negated stance
+    occurrence that yields targets:
+    - P2 immediate list: stance word + punctuation + id list/range
+      ("Withdrawn: C27, C28, C29, C30–C44", "(Revised) C6–C13").
+    - P3 object phrasing: stance word ... <noun> in/of <list>
+      ("citations in C6–C9", "values reported in C6–C13").
+    - P4 anaphoric range: sentence-initial list + "they are retracted"
+      ("C27–C44 ... they are retracted").
+    Returns (word, targets, scope): scope is "citations" when a P3
+    noun names evidence (citations, sources, references, read
+    statements) — the stance then applies to the citations, never to
+    the claim content — and "claims" otherwise. Targets empty means
+    no move was found (the caller falls back to the bare-word /
+    preamble behavior).
+    """
+    word0, target0 = _relationship_in_scope(scope)
+    if target0 is not None:
+        return word0, [target0], "claims"
+    for m in _STANCE_WORD_RE.finditer(scope or ""):
+        if _stance_negated(scope or "", m.start()):
+            continue
+        word = _normalize_stance_word(m.group(1))
+        # P2: list immediately following the stance word.
+        rest = (scope or "")[m.end():]
+        stripped = re.match(r"[\s:\)\-–—*_]*", rest)
+        after = rest[stripped.end():] if stripped else rest
+        targets = _parse_id_list(after)
+        if targets:
+            return word, targets, "claims"
+        # P3/P4 operate on the occurrence's sentence.
+        sentence = _sentence_containing(scope or "", m.start())
+        obj = _OBJECT_TARGETS_RE.search(sentence)
+        if obj:
+            targets = _parse_id_list(obj.group(2))
+            if targets:
+                scope_name = ("citations"
+                              if obj.group(1).lower() in _CITATION_NOUNS
+                              else "claims")
+                return word, targets, scope_name
+        # P4: sentence-initial list + anaphoric stance of this family.
+        head = re.match(
+            r"\s*(?:[-*]\s*)?(?:\*\*)?"
+            r"((?:C\d+\s*(?:[-–—]\s*C\d+)?)(?:\s*(?:,|and)\s*C\d+\s*(?:[-–—]\s*C\d+)?)*)",
+            sentence)
+        if head:
+            tail = sentence[head.end():]
+            fam = {"revised": r"revis\w*",
+                   "defended": r"defend\w*",
+                   "withdrawn": r"(?:withdraw\w*|retract\w*)"}[word or ""]
+            if re.search(r"\b(they|these|those)\s+(?:are|were)\s+(?:\w+\s+){0,2}?" + fam + r"\b",
+                         tail, re.IGNORECASE):
+                targets = _parse_id_list(head.group(1))
+                if targets:
+                    return word, targets, "claims"
+    return word0, [], "claims"
 
 
 def _map_relationship(word: str | None, target: str | None, author: str,
@@ -807,8 +1007,17 @@ def _analyze_span(span: ClaimSpan, *, author: str, registry: "ClaimRegistry",
 
     Scope = preamble + text (preamble lines like "Relationship:
     defended." belong to the span for relationship purposes, but are
-    not part of the claim text). Citations are validated against
-    ``frozen_ids``; authorship is looked up in the registry.
+    not part of the claim text). Mandate reliability: the span's OWN
+    text is consulted first — a contribution header ("Defending
+    C6–C13") must not override the span's own stance ("(Revised)").
+    Only when the span's own text carries no stance word does the
+    preamble fall back apply. Exception: when the span's own stance
+    word carries no target, the preamble may still supply the target
+    for the SAME stance ("Relationship: withdrawn. In response to
+    C3, I withdraw it:" above "Withdrawn: Gamma is retracted.") —
+    a different preamble stance never overrides the span's own word.
+    Citations are validated against ``frozen_ids``; authorship is
+    looked up in the registry.
     """
     scope = f"{span.preamble} {span.text}".strip()
     cited = _find_citations(scope)
@@ -823,7 +1032,37 @@ def _analyze_span(span: ClaimSpan, *, author: str, registry: "ClaimRegistry",
         else:
             other_cites.append(cid)
     targets = _explicit_targets(scope)
-    word, target = _relationship_in_scope(scope)
+    word, move_targets, move_scope = _stance_move_in_scope(span.text)
+    source: str | None = None
+    citation_withdrawal = False
+    if word is None:
+        # No stance word in the span's own text: preamble declares it.
+        word, target = _relationship_in_scope(scope)
+        move_targets = [target] if target else []
+        source = "single" if target else None
+    elif not move_targets:
+        # Span stance without a target: the preamble may supply the
+        # target for the SAME stance only. A different preamble
+        # stance never overrides the span's own word.
+        p_word, p_target = _relationship_in_scope(scope)
+        if p_word == word and p_target:
+            move_targets = [p_target]
+            source = "single"
+    elif move_scope == "citations":
+        # The stance is over evidence, not content. A citation
+        # withdrawal is recorded as its own non-move link
+        # ("withdraws_citations"); a citation-scope revision or
+        # defense moves no claim at all, so the stance is
+        # neutralized rather than misread as a content move.
+        if word == "withdrawn":
+            citation_withdrawal = True
+            source = "citation"
+        else:
+            word = None
+            move_targets = []
+    else:
+        source = "list"
+    reclassification = _reclassification_in_span(span.text, word, move_targets)
     return {
         "span": span,
         "citations_valid": valid,
@@ -833,8 +1072,35 @@ def _analyze_span(span: ClaimSpan, *, author: str, registry: "ClaimRegistry",
         "moves": _stated_moves(scope),
         "explicit_targets": targets,
         "relationship_word": word,
-        "relationship_target_raw": target,
+        "relationship_target_raw": move_targets[0] if move_targets else None,
+        "relationship_targets": move_targets,
+        "relationship_source": source,
+        "citation_withdrawal": citation_withdrawal,
+        "reclassification": reclassification,
     }
+
+
+def _reclassification_in_span(text: str, word: str | None,
+                              targets: list[str]) -> dict[str, Any] | None:
+    """Detect a same-author epistemic reclassification in a span.
+
+    Requires all three: a revised-family stance word, a status-pair
+    reassignment ("are Inferred, not Observed"), and a framing-
+    retraction cue ("I retract ...", "framing", "presented as").
+    Without the cue, a bare status correction stays an ordinary
+    revision (supersession) — the detector is deliberately narrow.
+    Targets are the span's move targets; authorship and ordering are
+    validated in derivation, not here. Returns None when absent.
+    """
+    if word != "revised" or not targets:
+        return None
+    m = _STATUS_PAIR_RE.search(text or "")
+    if not m:
+        return None
+    if not _FRAMING_CUE_RE.search(text or ""):
+        return None
+    return {"targets": list(targets),
+            "new_status": m.group(1).capitalize()}
 
 
 def _analyze_contribution(text: str, *, author: str, registry: "ClaimRegistry",
@@ -977,12 +1243,20 @@ def _revision_links(analysis: dict[str, Any], author: str,
     A span with no revised/defended/withdrawn word but an explicitly
     targeted objection to another author's claim links as
     "challenges" — the disagreement is preserved, not erased and not
-    mislabeled as an authorial revision.
+    mislabeled as an authorial revision. Mandate reliability: spans
+    whose stance attaches to a list/range link every target
+    (relationship_targets); derivation and disposition validate each
+    target's authorship and ordering, so a mixed-authorship list can
+    never move another author's claim. A reclassification span links
+    as "reclassifies" (never as supersession: downgrading Observed to
+    Inferred is not withdrawing or replacing the claim). A
+    citation-scope withdrawal links as "withdraws_citations" (never
+    as withdrawal: withdrawing citations leaves content active).
     """
     links: list[dict[str, Any]] = []
     for span_analysis in analysis["per_span"]:
         word = span_analysis["relationship_word"]
-        target = span_analysis["relationship_target_raw"]
+        targets = span_analysis.get("relationship_targets") or []
         if word is None:
             challenge_target = _explicit_challenge_target(
                 span_analysis, author, registry)
@@ -995,8 +1269,48 @@ def _revision_links(analysis: dict[str, Any], author: str,
                     "withdraws": None,
                 })
                 continue
+        recl = span_analysis.get("reclassification")
+        if recl is not None:
+            links.append({
+                "relationship": "reclassifies",
+                "relationship_target": recl["targets"][0],
+                "relationship_targets": list(recl["targets"]),
+                "reclassified_status": recl["new_status"],
+                "relates_to": [c for c in span_analysis["citations_valid"]],
+                "supersedes": None,
+                "withdraws": None,
+            })
+            continue
+        if span_analysis.get("citation_withdrawal") and targets:
+            # A citation-scope withdrawal (A7): recorded, but never a
+            # content move — derivation and disposition both ignore
+            # this relationship, so the cited claims stay active
+            # while the withdrawal itself is visible in the record.
+            links.append({
+                "relationship": "withdraws_citations",
+                "relationship_target": targets[0],
+                "relationship_targets": list(targets),
+                "relates_to": [c for c in span_analysis["citations_valid"]],
+                "supersedes": None,
+                "withdraws": None,
+            })
+            continue
+        if span_analysis.get("relationship_source") == "list" and targets:
+            # Label follows the first target's mapping (the single-
+            # target convention); effects are per-target downstream.
+            mapped, _, _, _ = _map_relationship(
+                word, targets[0], author, registry)
+            links.append({
+                "relationship": mapped,
+                "relationship_target": targets[0],
+                "relationship_targets": list(targets),
+                "relates_to": [c for c in span_analysis["citations_valid"]],
+                "supersedes": None,
+                "withdraws": None,
+            })
+            continue
         mapped, mapped_target, supersedes, withdraws = _map_relationship(
-            word, target, author, registry)
+            word, span_analysis["relationship_target_raw"], author, registry)
         links.append({
             "relationship": mapped if word else "unstated",
             "relationship_target": mapped_target if word else "unstated",
@@ -1037,6 +1351,32 @@ def _apply_dispositions(registry: "ClaimRegistry",
                     and original.disposition is None):
                 original.disposition = "maintained"
                 original.disposition_by = claim.id
+    # Mandate reliability: multi-target links (relationship_targets)
+    # apply per target with the same first-wins rule. The label family
+    # maps back to the move (proposes_revision_of → revised, and so
+    # on); authorship is checked per target, so a mixed-authorship
+    # list can never set another author's disposition. Reclassifies
+    # links never touch disposition (a downgrade is not a move).
+    _MOVE_FAMILY = {
+        "revised": "revised", "proposes_revision_of": "revised",
+        "withdrawn": "withdrawn", "supports_withdrawal_of": "withdrawn",
+        "defended": "maintained", "endorses": "maintained",
+    }
+    for claim, link in zip(registered, links):
+        targets = link.get("relationship_targets") or []
+        if not targets or link.get("relationship") == "reclassifies":
+            continue
+        disposition = _MOVE_FAMILY.get(link.get("relationship"))
+        if disposition is None:
+            continue
+        for target_id in targets:
+            original = registry.by_id(target_id)
+            if original is None or original.disposition is not None:
+                continue
+            if original.participant != claim.participant:
+                continue
+            original.disposition = disposition
+            original.disposition_by = claim.id
 
 
 def _telemetry_block(*, phase: str, max_generations: int, completed: int,

@@ -15,13 +15,20 @@ Rules (design v2):
   the standing vocabulary; a ``defended`` link is not a move.
 - A standing move exists ONLY as a structured link on a revision
   claim: ``supersedes = X`` (supersession) or ``withdraws = X``
-  (withdrawal). The mover must be X's own author; cross-author
-  links never move standing (they remain proposals and are ignored
-  here — the link itself is preserved in the claim record).
+  (withdrawal), or a multi-target link (``relationship_targets``)
+  whose relationship family is revised-like or withdrawn-like. The
+  mover must be X's own author; cross-author links never move
+  standing (they remain proposals and are ignored here — the link
+  itself is preserved in the claim record). Multi-target links are
+  validated per target: one bad target never poisons the rest.
 - The target must be one existing earlier claim. Position in the
   registry list is transcript order (ids are assigned sequentially).
-  A range is not a move. A bare stance word with no resolvable
-  target is not a move.
+  A range is not a move for the stage-3 input contract (models are
+  asked to name one id per move). Mandate reliability: an explicit
+  same-author range/list withdrawal IS a move once the parser expands
+  it into relationship_targets — the parser must not silently drop
+  explicit withdrawals when models emit ranges anyway. A bare stance
+  word with no resolvable target is not a move.
 - Prohibited moves are never applied but are recorded, on the
   mover's entry, as ``rejected_moves``: ``self_target`` (target is
   the mover itself), ``forward_reference`` (target is not strictly
@@ -33,6 +40,16 @@ Rules (design v2):
   claim. Standing is therefore not claimed to be monotonic: a
   withdrawn claim that later receives a valid supersession move
   becomes ``superseded``.
+- Effective status (mandate reliability): a same-author
+  reclassification link (``relationship = "reclassifies"``,
+  ``relationship_targets``, ``reclassified_status``) sets the
+  target's EFFECTIVE epistemic status (e.g. Observed → Inferred)
+  without moving standing and without overwriting the authored
+  status, which is retained in history. The last valid
+  reclassification wins; the chain is preserved as
+  ``reclassification_chain``. This is a derived field on the entry,
+  not a new standing dimension: standing still has exactly three
+  values, and a downgrade is neither a withdrawal nor a supersession.
 - Retraction-language detection signals (NOT standing changes):
   same-author revision spans only, matching retract/withdraw
   language and referencing an identifiable earlier single claim
@@ -159,11 +176,19 @@ def compute_claim_standing(
             prov_map[key] = "none"
 
     # Collect valid moves and rejected attempts.
+    # Relationship families for multi-target links: the label follows
+    # the first target's mapping (single-target convention), but the
+    # move type is a property of the family, and authorship is
+    # validated per target below.
+    _REVISED_FAMILY = ("revised", "proposes_revision_of")
+    _WITHDRAWN_FAMILY = ("withdrawn", "supports_withdrawal_of")
     moves_by_target: dict[str, list[dict]] = {c.get("id", ""): [] for c in claims}
     rejected_by_mover: dict[str, list[dict]] = {c.get("id", ""): [] for c in claims}
+    recl_by_target: dict[str, list[dict]] = {c.get("id", ""): [] for c in claims}
     for mover in claims:
         mover_id = mover.get("id", "")
         mover_pos = position[mover_id]
+        # Single-target links (all pre-mandate records and tight parses).
         for field, move in (("supersedes", "supersession"), ("withdraws", "withdrawal")):
             target = mover.get(field)
             if not target:
@@ -191,6 +216,61 @@ def compute_claim_standing(
             moves_by_target[target].append(
                 {"move": move, "by": mover_id, "target": target}
             )
+        # Multi-target links (mandate reliability): validated per target.
+        list_targets = mover.get("relationship_targets") or []
+        rel = mover.get("relationship")
+        if list_targets and rel in _REVISED_FAMILY + _WITHDRAWN_FAMILY:
+            move = "supersession" if rel in _REVISED_FAMILY else "withdrawal"
+            for target in list_targets:
+                if target == mover_id:
+                    rejected_by_mover[mover_id].append(
+                        {"target": target, "move": move, "reason": "self_target"}
+                    )
+                    continue
+                original = by_id.get(target)
+                if original is None:
+                    rejected_by_mover[mover_id].append(
+                        {"target": target, "move": move, "reason": "unknown_target"}
+                    )
+                    continue
+                if position[target] >= mover_pos:
+                    rejected_by_mover[mover_id].append(
+                        {"target": target, "move": move, "reason": "forward_reference"}
+                    )
+                    continue
+                if original.get("participant") != mover.get("participant"):
+                    continue
+                moves_by_target[target].append(
+                    {"move": move, "by": mover_id, "target": target}
+                )
+        # Reclassification links: effective status only, never standing.
+        if rel == "reclassifies" and mover.get("reclassified_status"):
+            for target in list_targets:
+                if target == mover_id:
+                    rejected_by_mover[mover_id].append(
+                        {"target": target, "move": "reclassification",
+                         "reason": "self_target"}
+                    )
+                    continue
+                original = by_id.get(target)
+                if original is None:
+                    rejected_by_mover[mover_id].append(
+                        {"target": target, "move": "reclassification",
+                         "reason": "unknown_target"}
+                    )
+                    continue
+                if position[target] >= mover_pos:
+                    rejected_by_mover[mover_id].append(
+                        {"target": target, "move": "reclassification",
+                         "reason": "forward_reference"}
+                    )
+                    continue
+                if original.get("participant") != mover.get("participant"):
+                    continue
+                recl_by_target[target].append(
+                    {"by": mover_id, "target": target,
+                     "new_status": mover.get("reclassified_status")}
+                )
 
     # Retraction-language signals (target entries only, never moves).
     signals_by_target: dict[str, list[dict]] = {c.get("id", ""): [] for c in claims}
@@ -230,15 +310,20 @@ def compute_claim_standing(
             standing = "withdrawn" if last["move"] == "withdrawal" else "superseded"
         else:
             standing = "active"
+        recl_chain = recl_by_target[cid]
+        authored = claim.get("status", "unknown")
+        effective = recl_chain[-1]["new_status"] if recl_chain else authored
         key = (claim.get("participant", ""), claim.get("phase", ""))
         entries.append(
             {
                 "claim_id": cid,
                 "participant": claim.get("participant", ""),
                 "phase": claim.get("phase", ""),
-                "authored_status": claim.get("status", "unknown"),
+                "authored_status": authored,
+                "effective_status": effective,
                 "standing": standing,
                 "standing_chain": chain,
+                "reclassification_chain": recl_chain,
                 "rejected_moves": rejected_by_mover[cid],
                 "assessment": claim.get("epistemic_assessment", "unresolved"),
                 "assessment_sources": list(claim.get("assessment_sources") or []),
@@ -266,9 +351,14 @@ def format_standing_headline(entry: dict) -> str:
         signal_text = "present"
     else:
         signal_text = "present (ambiguous)"
+    authored = entry.get("authored_status", "unknown")
+    effective = entry.get("effective_status", authored)
+    effective_text = (
+        f" | effective: {effective}" if effective != authored else ""
+    )
     return (
         f"{entry.get('claim_id', '?')} [authored: "
-        f"{entry.get('authored_status', 'unknown')} | standing: "
+        f"{authored}{effective_text} | standing: "
         f"{entry.get('standing', 'active')} | assessment: "
         f"{entry.get('assessment', 'unresolved')} | retraction signal: "
         f"{signal_text} | provenance: {entry.get('provenance', 'none')}]"

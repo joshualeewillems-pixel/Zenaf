@@ -305,7 +305,8 @@ def _check_standing_invariants(
                     f"standing move cross-author: {move.get('move', '?')} "
                     f"by {mover_id} on {target_id}")
             field = "withdraws" if move.get("move") == "withdrawal" else "supersedes"
-            if mover.get(field) != target_id:
+            if mover.get(field) != target_id and target_id not in (
+                    mover.get("relationship_targets") or []):
                 failures.append(
                     f"standing move without matching source link: {move.get('move', '?')} "
                     f"by {mover_id} on {target_id}")
@@ -314,6 +315,40 @@ def _check_standing_invariants(
                 failures.append(
                     f"standing chain not deterministically ordered for {target_id}")
             prev_pos = mover_pos
+
+    # Reclassification chains (mandate reliability): same accounting
+    # shape as standing chains — source claim exists, targets an
+    # earlier claim by the same author, and names the target plus the
+    # new status on its link.
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        target_id = entry.get("claim_id", "")
+        target = by_id.get(target_id)
+        for recl in entry.get("reclassification_chain", []) or []:
+            mover_id = recl.get("by", "")
+            mover = by_id.get(mover_id)
+            if mover is None:
+                failures.append(
+                    f"reclassification without source claim: by {mover_id} "
+                    f"on {target_id}")
+                continue
+            if target is None:
+                continue  # already reported under (1)
+            if position[target_id] >= position[mover_id]:
+                failures.append(
+                    f"reclassification not to an earlier claim: by {mover_id} "
+                    f"on {target_id}")
+            if mover.get("participant") != target.get("participant"):
+                failures.append(
+                    f"reclassification cross-author: by {mover_id} "
+                    f"on {target_id}")
+            if (mover.get("relationship") != "reclassifies"
+                    or target_id not in (mover.get("relationship_targets") or [])
+                    or mover.get("reclassified_status") != recl.get("new_status")):
+                failures.append(
+                    f"reclassification without matching source link: by {mover_id} "
+                    f"on {target_id}")
 
     # (6) recomputation from the immutable record must be identical.
     try:

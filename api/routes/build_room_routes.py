@@ -34,6 +34,7 @@ from local_ai.build_room.meeting import (
     run_multi_model_meeting,
     run_single_model_meeting,
 )
+from local_ai.build_room.migration import inventory_store_dir
 from local_ai.llm.execution_principal import authenticated_account_principal
 from local_ai.vision_execution import storage as St
 
@@ -156,4 +157,19 @@ def run_meeting_r2(
         "transcript": result.transcript.to_dict(),
         "artifact": result.artifact,
     }
+
+
+@router.get("/artifacts/inventory")
+def inventory_artifacts(current_user: dict = Depends(get_current_owner_user)):
+    """Read-only dry-run inventory of stored draft artifacts.
+
+    Owner-only, same gate as the meeting endpoints. Reports what the
+    stage-4 migration *would* do per stored artifact (would migrate
+    / already present / unmigrated / failed) with counts only — no
+    claim texts, registries, or tables. This endpoint cannot write:
+    it calls only the pure inventory function, which has no write
+    code path. Migration execution is a separate authorization and
+    never happens through this route.
+    """
+    return inventory_store_dir(get_build_room_store_dir())
 

@@ -78,6 +78,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from local_ai.council import steward_records as _steward_records
+
 
 @dataclass(frozen=True)
 class SeatRegister:
@@ -782,8 +784,81 @@ SEAT_JURISDICTIONS: dict[str, SeatJurisdiction] = {
 
 
 def get_jurisdiction(archetype_id: str) -> SeatJurisdiction | None:
-    """Look up a seat's jurisdiction record. None for unknown ids."""
-    return SEAT_JURISDICTIONS.get((archetype_id or "").strip().lower())
+    """Look up a seat's jurisdiction record. None for unknown ids.
+
+    Weaver consolidation (mandate P2–P3): when the steward read path is
+    active, the conductor record is built from the steward record source
+    instead of the registry table — a fresh (frozen) object per call, so
+    toggling the read path never leaves stale state behind. Values are
+    identical (module == Phase 1 JSON, checked mechanically); the
+    registry table stays as the rollback source. Every downstream reader
+    (prompt lines, the encounter turn frame's ground line, fellowship
+    observation prompts, derivation scoring, the jurisdiction API)
+    follows this single switch point.
+    """
+    key = (archetype_id or "").strip().lower()
+    if key == "conductor" and _steward_records.weaver_steward_active():
+        return _steward_conductor_record()
+    return SEAT_JURISDICTIONS.get(key)
+
+
+#: Cache for the steward-built conductor record, keyed by a fingerprint
+#: of the steward values. The suite asserts record identity across
+#: case variants (get_jurisdiction("Conductor") is
+#: get_jurisdiction("conductor")), so the steward object must be
+#: stable while its values are unchanged; the fingerprint rebuilds it
+#: if a value ever changes, so the cache can never serve stale values.
+_STEWARD_CONDUCTOR_CACHE: tuple[tuple, SeatJurisdiction] | None = None
+
+
+def _steward_conductor_record() -> SeatJurisdiction:
+    """The conductor jurisdiction record from the steward source."""
+    global _STEWARD_CONDUCTOR_CACHE
+    fingerprint = (
+        _steward_records.ARCHETYPE_ID,
+        _steward_records.JURISDICTION_FOCUS,
+        tuple(_steward_records.JURISDICTION_PERIPHERY),
+        tuple(_steward_records.JURISDICTION_OVERLAPS),
+        _steward_records.JURISDICTION_OVERREACH,
+        tuple(_steward_records.JURISDICTION_DEFERS_TO),
+        _steward_records.REGISTER_DICTION,
+        _steward_records.REGISTER_TEMPO,
+        _steward_records.REGISTER_METAPHOR_FAMILY,
+        _steward_records.REGISTER_WARMTH,
+        _steward_records.DICTIONARY_DOMAIN,
+        tuple(_steward_records.DICTIONARY_TRIAD),
+        tuple(_steward_records.DICTIONARY_LEXICON),
+        _steward_records.DICTIONARY_PERSPECTIVE,
+        _steward_records.DICTIONARY_SIGNATURE_LINE,
+    )
+    if (_STEWARD_CONDUCTOR_CACHE is not None
+            and _STEWARD_CONDUCTOR_CACHE[0] == fingerprint):
+        return _STEWARD_CONDUCTOR_CACHE[1]
+    record = SeatJurisdiction(
+        archetype_id=_steward_records.ARCHETYPE_ID,
+        focus=_steward_records.JURISDICTION_FOCUS,
+        periphery=tuple(_steward_records.JURISDICTION_PERIPHERY),
+        conflicts=SeatConflicts(
+            overlaps=tuple(_steward_records.JURISDICTION_OVERLAPS),
+            overreach=_steward_records.JURISDICTION_OVERREACH,
+            defers_to=tuple(_steward_records.JURISDICTION_DEFERS_TO),
+        ),
+        register=SeatRegister(
+            diction=_steward_records.REGISTER_DICTION,
+            tempo=_steward_records.REGISTER_TEMPO,
+            metaphor_family=_steward_records.REGISTER_METAPHOR_FAMILY,
+            warmth=_steward_records.REGISTER_WARMTH,
+        ),
+        dictionary=SeatDictionary(
+            domain=_steward_records.DICTIONARY_DOMAIN,
+            jurisdiction_triad=tuple(_steward_records.DICTIONARY_TRIAD),
+            lexicon=tuple(_steward_records.DICTIONARY_LEXICON),
+            perspective=_steward_records.DICTIONARY_PERSPECTIVE,
+            signature_line=_steward_records.DICTIONARY_SIGNATURE_LINE,
+        ),
+    )
+    _STEWARD_CONDUCTOR_CACHE = (fingerprint, record)
+    return record
 
 
 def jurisdiction_ids() -> tuple[str, ...]:

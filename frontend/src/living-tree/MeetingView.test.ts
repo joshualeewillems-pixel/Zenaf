@@ -195,6 +195,24 @@ describe('MeetingView closing batch', () => {
   })
 })
 
+describe('MeetingView text selection', () => {
+  it('opts the meeting panel back into selectable text under a user-select:none ancestor', async () => {
+    // REGRESSION (2026-10-28, Joshua): the meeting transcript was not
+    // selectable on iOS, so he had to screen-record instead of copying
+    // text. Cause: MeetingView renders inside LivingTree's .ltree div,
+    // which sets user-select:none, and nothing opted the panel back
+    // in. The panel's own rule must beat the inherited none.
+    container.style.userSelect = 'none'
+    await act(async () => {
+      root.render(React.createElement(MeetingView, { archetypeId: 'conductor', onClose: () => {} }))
+    })
+    await flush(100)
+    const panel = container.querySelector('.mtg-panel') as HTMLElement
+    expect(panel).toBeTruthy()
+    expect(window.getComputedStyle(panel).getPropertyValue('user-select')).toBe('text')
+  })
+})
+
 describe('MeetingView user completion', () => {
   it('completes an active meeting at the visitor’s word and shows the card once the closing words drain', async () => {
     const COMPLETE_MSGS = [

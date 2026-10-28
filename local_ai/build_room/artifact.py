@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from local_ai.build_room.claim_standing import compute_claim_standing
 from local_ai.build_room.participants import OpenAIParticipant, Seat
 
 AUTHORIZATION_TEXT = (
@@ -132,6 +133,15 @@ def build_draft_artifact_r2(
         "work_item": packet.work_item,
         "question": packet.question,
         "claim_registry": [c.to_dict() for c in registry.claims],
+        # Registry standing (stage 1, design v2): a derived view over
+        # the append-only registry — effective standing, chain,
+        # assessment, provenance, and retraction signals per claim.
+        # The registry itself is untouched; this section is computed
+        # at build time and recomputable from the stored record.
+        # R1 artifacts (no registry) do not carry it.
+        "claim_standing": compute_claim_standing(
+            [c.to_dict() for c in registry.claims], interactions or []
+        ),
         "interactions": interactions or [],
         "unresolved_objections": unresolved_objections or [],
         "unresolved_objections_evaluation": "mechanical",

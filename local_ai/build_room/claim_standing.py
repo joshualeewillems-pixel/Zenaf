@@ -60,7 +60,11 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["compute_claim_standing"]
+__all__ = [
+    "compute_claim_standing",
+    "format_standing_headline",
+    "render_standing_table",
+]
 
 # Retraction-language patterns (conservative by design: retract /
 # withdraw verb forms only; supersession is a move, not a signal).
@@ -243,3 +247,45 @@ def compute_claim_standing(
             }
         )
     return {"version": 1, "entries": entries}
+
+
+def format_standing_headline(entry: dict) -> str:
+    """One claim's three-dimension headline (reporting contract).
+
+    Standing, assessment, and provenance travel together; standing is
+    never rendered alone. ``active`` here does NOT mean established,
+    verified, or credible — it means only that the claim is still
+    being asserted by its author. Retraction signals render as
+    ``none``, ``present``, or ``present (ambiguous)`` (ambiguous only
+    when every signal is negation-scoped).
+    """
+    signals = entry.get("retraction_signals") or []
+    if not signals:
+        signal_text = "none"
+    elif any(s.get("kind") == "signal" for s in signals):
+        signal_text = "present"
+    else:
+        signal_text = "present (ambiguous)"
+    return (
+        f"{entry.get('claim_id', '?')} [authored: "
+        f"{entry.get('authored_status', 'unknown')} | standing: "
+        f"{entry.get('standing', 'active')} | assessment: "
+        f"{entry.get('assessment', 'unresolved')} | retraction signal: "
+        f"{signal_text} | provenance: {entry.get('provenance', 'none')}]"
+    )
+
+
+def render_standing_table(table: dict) -> str:
+    """Deterministic text rendering of a standing table, in order.
+
+    One headline per entry, in claim order. This is the reporting
+    contract's standing table: a deterministic extraction, not a
+    model-generated summary.
+    """
+    lines = [
+        "Claim standing (derived from the append-only registry; "
+        "the registry itself is untouched):"
+    ]
+    for entry in table.get("entries", []):
+        lines.append(format_standing_headline(entry))
+    return "\n".join(lines)

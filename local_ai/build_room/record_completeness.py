@@ -6,8 +6,10 @@ output there is nothing to compress and no compression verdict to
 compute. Its replacement is a check that the RECORD is whole — the
 registry + transcript + generation records the runner wrote.
 
-Four checks, all mechanical, all over plain data (no model call, no
-judgment of quality):
+Five checks, all mechanical, all over plain data (no model call, no
+judgment of quality). The fifth (standing invariants, registry
+standing stage 2) runs only when the caller supplies a standing
+table; callers without one get the original four checks:
 
 (a) invited_generations_accounted — every invited generation has
     exactly one outcome (completed, or failed with a reason), and no
@@ -31,6 +33,16 @@ judgment of quality):
     deliberately: an independent derivation that disagrees with the
     stored list is exactly the failure this check exists to catch.
     If that function changes, this check must change with it.
+(e) standing_invariants — the supplied standing table is
+    structurally sound against the registry it was derived from:
+    every entry references an existing claim; every claim has
+    exactly one entry; every chain move references an earlier claim
+    by the same author and has a corresponding source claim whose
+    link names the target; every chain is deterministically ordered;
+    and recomputing the table from the immutable record produces
+    identical results. A complete standing table does not imply the
+    claims themselves are correct — this check is about the
+    accounting, never about truth.
 
 The "omitted proposals/objections" concept does not exist here: for
 a synthesis-less meeting nothing is selected down, so there is no
@@ -38,7 +50,8 @@ omitted set — only the full record, checked whole.
 
 The checker is pure (plain dicts in, verdict dict out) and imports
 nothing from meeting.py, so it stays usable from tests and from any
-future artifact reader without pulling in the runner.
+future artifact reader without pulling in the runner. It may import
+the equally pure claim_standing module for the recomputation check.
 """
 
 from __future__ import annotations
@@ -46,6 +59,8 @@ from __future__ import annotations
 import re
 from collections import Counter
 from typing import Any
+
+from local_ai.build_room.claim_standing import compute_claim_standing
 
 _CLAIM_ID_RE = re.compile(r"^C(\d+)$")
 
@@ -231,6 +246,94 @@ def _check_objection_derivation(
     return (not failures, failures)
 
 
+def _check_standing_invariants(
+    claims_full: list[dict[str, Any]],
+    interactions: list[dict[str, Any]],
+    standing_table: dict[str, Any],
+) -> tuple[bool, list[str]]:
+    """Check (e): the standing table is sound against its record.
+
+    Structural invariants (1)–(5) are checked on the supplied table;
+    invariant (6) recomputes the table from the immutable record and
+    requires identical results. Any failure here means the standing
+    accounting cannot be trusted — it never means the underlying
+    claims are true or false.
+    """
+    failures: list[str] = []
+    by_id = {c["id"]: c for c in claims_full}
+    position = {c["id"]: i for i, c in enumerate(claims_full)}
+    entries = standing_table.get("entries", []) if isinstance(standing_table, dict) else []
+    entry_ids = [e.get("claim_id", "") for e in entries if isinstance(e, dict)]
+
+    # (1) every entry references an existing claim.
+    for cid in entry_ids:
+        if cid not in by_id:
+            failures.append(f"standing entry references unknown claim: {cid}")
+    # (4) exactly one entry per claim.
+    counts = Counter(entry_ids)
+    for cid in sorted(set(entry_ids) | set(by_id)):
+        if counts[cid] == 0:
+            failures.append(f"claim without standing entry: {cid}")
+        elif counts[cid] > 1:
+            failures.append(
+                f"duplicate standing entries for claim: {cid} ({counts[cid]} entries)")
+
+    # (2)/(3)/(5) over every chain move.
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        target_id = entry.get("claim_id", "")
+        target = by_id.get(target_id)
+        chain = entry.get("standing_chain", []) or []
+        prev_pos: int | None = None
+        for move in chain:
+            mover_id = move.get("by", "")
+            mover = by_id.get(mover_id)
+            if mover is None:
+                failures.append(
+                    f"standing move without source claim: {move.get('move', '?')} "
+                    f"by {mover_id} on {target_id}")
+                continue
+            if target is None:
+                continue  # already reported under (1)
+            if position[target_id] >= position[mover_id]:
+                failures.append(
+                    f"standing move not to an earlier claim: {move.get('move', '?')} "
+                    f"by {mover_id} on {target_id}")
+            if mover.get("participant") != target.get("participant"):
+                failures.append(
+                    f"standing move cross-author: {move.get('move', '?')} "
+                    f"by {mover_id} on {target_id}")
+            field = "withdraws" if move.get("move") == "withdrawal" else "supersedes"
+            if mover.get(field) != target_id:
+                failures.append(
+                    f"standing move without matching source link: {move.get('move', '?')} "
+                    f"by {mover_id} on {target_id}")
+            mover_pos = position[mover_id]
+            if prev_pos is not None and mover_pos <= prev_pos:
+                failures.append(
+                    f"standing chain not deterministically ordered for {target_id}")
+            prev_pos = mover_pos
+
+    # (6) recomputation from the immutable record must be identical.
+    try:
+        expected = compute_claim_standing(claims_full, interactions)
+    except Exception as exc:  # recomputation bug, not a pass
+        failures.append(f"standing recomputation raised {type(exc).__name__}: {exc}")
+        return (False, failures)
+    if expected != standing_table:
+        exp_by_id = {e.get("claim_id", ""): e for e in expected.get("entries", [])}
+        act_by_id = {e.get("claim_id", ""): e for e in entries}
+        differing = sorted(
+            cid for cid in set(exp_by_id) | set(act_by_id)
+            if exp_by_id.get(cid) != act_by_id.get(cid))
+        shown = ", ".join(differing[:3])
+        failures.append(
+            "standing table differs from recomputation"
+            + (f" (first differing: {shown})" if shown else ""))
+    return (not failures, failures)
+
+
 def check_record_completeness(
     *,
     invited_generations: list[dict[str, str]],
@@ -240,14 +343,20 @@ def check_record_completeness(
     verified_challenges: list[dict[str, Any]],
     revision_claims: list[dict[str, Any]],
     unresolved_objections: list[dict[str, Any]],
+    claims_full: list[dict[str, Any]] | None = None,
+    interactions: list[dict[str, Any]] | None = None,
+    standing_table: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Run all four record-completeness checks over a meeting record.
+    """Run the record-completeness checks over a meeting record.
 
     Inputs are plain data (see module docstring for shapes). Returns
     ``{"passed": bool, "checks": {name: {"passed": bool,
     "failures": [str, ...]}}}``. ``passed`` is True only when all
-    four checks pass. This reports wholeness; it never judges the
-    quality of anything in the record.
+    included checks pass. The standing-invariants check runs only
+    when ``claims_full``, ``interactions``, and ``standing_table``
+    are all supplied; callers without a standing table (older tests,
+    replay paths) get the original four checks. This reports
+    wholeness; it never judges the quality of anything in the record.
     """
     checks = {
         "invited_generations_accounted": _check_invited_accounted(
@@ -258,6 +367,9 @@ def check_record_completeness(
         "unresolved_objection_derivation": _check_objection_derivation(
             verified_challenges, claims, revision_claims, unresolved_objections),
     }
+    if claims_full is not None and interactions is not None and standing_table is not None:
+        checks["standing_invariants"] = _check_standing_invariants(
+            claims_full, interactions, standing_table)
     return {
         "passed": all(passed for passed, _ in checks.values()),
         "checks": {

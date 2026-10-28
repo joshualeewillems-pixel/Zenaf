@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from local_ai.build_room.claim_standing import compute_claim_standing
+from local_ai.build_room.claim_standing import (
+    compute_claim_standing,
+    render_standing_table,
+)
 from local_ai.build_room.participants import OpenAIParticipant, Seat
 
 AUTHORIZATION_TEXT = (
@@ -84,6 +87,7 @@ def build_draft_artifact_r2(
     ok: bool = False,
     record_completeness: dict[str, Any] | None = None,
     tool_access: dict[str, Any] | None = None,
+    claim_standing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict (synthesis-less).
 
@@ -122,6 +126,16 @@ def build_draft_artifact_r2(
                 "key_source": seat.participant.key_source,
                 "status": "present",
             })
+    # Registry standing section: the runner's checked table when
+    # supplied, else a fresh computation (replay paths). Computed
+    # once so the section and its rendering cannot disagree.
+    standing_section = (
+        claim_standing
+        if claim_standing is not None
+        else compute_claim_standing(
+            [c.to_dict() for c in registry.claims], interactions or []
+        )
+    )
     return {
         "status": "DRAFT_EXPERIMENTAL",
         "is_review_item": False,
@@ -138,10 +152,16 @@ def build_draft_artifact_r2(
         # assessment, provenance, and retraction signals per claim.
         # The registry itself is untouched; this section is computed
         # at build time and recomputable from the stored record.
+        # The runner passes the table it already had checked (stage
+        # 2), so the artifact's section and the checked table are
+        # identical; direct callers (replays) get a fresh computation.
         # R1 artifacts (no registry) do not carry it.
-        "claim_standing": compute_claim_standing(
-            [c.to_dict() for c in registry.claims], interactions or []
-        ),
+        "claim_standing": standing_section,
+        # Registry standing stage 2: the reporting contract's
+        # standing table — deterministic rendering of the same
+        # section, one three-dimension headline per claim. Standing
+        # is never rendered without assessment and provenance.
+        "standing_report": render_standing_table(standing_section),
         "interactions": interactions or [],
         "unresolved_objections": unresolved_objections or [],
         "unresolved_objections_evaluation": "mechanical",

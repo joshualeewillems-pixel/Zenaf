@@ -34,7 +34,7 @@ from local_ai.build_room.meeting import (
     run_multi_model_meeting,
     run_single_model_meeting,
 )
-from local_ai.build_room.migration import inventory_store_dir
+from local_ai.build_room.migration import execute_migration, inventory_store_dir
 from local_ai.llm.execution_principal import authenticated_account_principal
 from local_ai.vision_execution import storage as St
 
@@ -172,4 +172,38 @@ def inventory_artifacts(current_user: dict = Depends(get_current_owner_user)):
     never happens through this route.
     """
     return inventory_store_dir(get_build_room_store_dir())
+
+
+class MigrateBody(BaseModel):
+    """Explicit confirmation gate for migration execution."""
+
+    confirm: bool = False
+
+
+@router.post("/artifacts/migrate")
+def migrate_artifacts(
+    body: MigrateBody, current_user: dict = Depends(get_current_owner_user)
+):
+    """Execute the stage-4 migration against stored draft artifacts.
+
+    Owner-only, same gate as the meeting endpoints, plus an
+    explicit ``{"confirm": true}`` body — without it, 400 and
+    nothing happens. The execution itself (design v2) is
+    backup-first with a verified SHA-256 manifest, exclusive
+    lock, pre-write and post-write invariant verification, and
+    collection-level fail-closed reporting; it never touches the
+    feature flag and never deletes anything. A held lock answers
+    409; a completed, aborted, or partially completed run answers
+    200 with its top-level ``status`` carrying the outcome — HTTP
+    200 alone never means every artifact migrated.
+    """
+    if body.confirm is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="migration requires explicit confirmation: {\"confirm\": true}",
+        )
+    report = execute_migration(get_build_room_store_dir())
+    if report.get("lock_held"):
+        raise HTTPException(status_code=409, detail=report)
+    return report
 

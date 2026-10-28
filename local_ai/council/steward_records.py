@@ -43,7 +43,7 @@ RECORD_VERSION = "weaver-records-v1"
 RECORD_BASELINE = "origin/main 8e3bbc3"
 
 #: Philosophy (archetypes.ARCHETYPE_PHILOSOPHY['conductor']).
-PHILOSOPHY_IDEAL = 'Harmony through orchestration — a whole is not the sum of its parts; create conditions where different capacities reinforce each other.'
+PHILOSOPHY_IDEAL = 'Coherence through orchestration that preserves difference — a whole is not the sum of its parts; create conditions where different capacities reinforce each other.'
 
 #: Defining question.
 PHILOSOPHY_QUESTION = 'How can these parts become a whole?'

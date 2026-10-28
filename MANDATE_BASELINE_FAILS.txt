@@ -1,0 +1,32 @@
+BASELINE (pre-change, HEAD 0ba8061, full suite, 2026-10-28):
+20 failed, 1798 passed, 5 errors.
+
+FAILED tests/test_aspiration_layer.py::test_action_directive_injected_for_decisiveness_conflict
+FAILED tests/test_aspiration_layer.py::test_action_directive_soft_exit_override
+FAILED tests/test_council_personality_modes.py::test_mirror_falls_back_gracefully_when_strand_empty
+FAILED tests/test_delegation_workspace_next_step.py::test_post_run_next_step_structured_rejects_line_format
+FAILED tests/test_externalization_next_step.py::test_post_run_next_step_externalization_e2e
+FAILED tests/test_healing_haven_extraction.py::test_healing_haven_extraction_snippet_soft_benchmark
+FAILED tests/test_healing_haven_extraction.py::test_healing_haven_extraction_excerpt_soft_benchmark
+FAILED tests/test_pipeline_api.py::test_quote_card
+FAILED tests/test_pipeline_api.py::test_import_the_result_links_pack
+FAILED tests/test_pipeline_service.py::test_plan_packs_ask_stage
+FAILED tests/test_pipeline_service.py::test_generate_packs_registers_pack_artifacts
+FAILED tests/test_pipeline_service.py::test_regen_pack_variation_of
+FAILED tests/test_pipeline_service.py::test_make_quote_card_auto_mints
+FAILED tests/test_review_claims.py::TestBuildStrandClaims::test_alternative_reading
+FAILED tests/test_strands.py::test_agent_names_warm_and_unique
+FAILED tests/test_strands.py::test_helpers_round_trip
+FAILED tests/test_strands.py::test_council_built_ins_are_the_seven_agents
+FAILED tests/test_workspace_identity_snapshot.py::test_packet_prefers_reasoning_literals_over_surface
+FAILED tests/test_workspace_next_step_cockpit_integration.py::test_cockpit_shaped_openai_activates_structured_cloud_v1
+FAILED tests/test_workspace_next_step_cockpit_integration.py::test_cockpit_shaped_malformed_model_json_fails_cleanly
+ERROR parked/test_soil_api.py
+ERROR parked/test_soil_kernel.py
+ERROR tests/test_intake_quality.py
+ERROR tests/test_intake_synthetic_regression.py
+ERROR tests/test_sqlite_pragmas.py
+
+NOTE: the mandate plan cites "20 failures + 3 errors". This run shows
+5 errors: the 3 tests/ collection errors plus 2 parked/ collection
+errors, all pre-existing. A10 is judged against THIS list (20+5).

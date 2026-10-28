@@ -125,7 +125,7 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
     },
     "maverick": {
         "ideal": (
-            "Freedom through transgression — consensus can become captivity; refuse "
+            "Possibility through reframing — consensus can become captivity; refuse "
             "to confuse established order with necessary order."
         ),
         "question": "What if the rules are wrong?",
@@ -141,7 +141,7 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
     },
     "ambassador": {
         "ideal": (
-            "Understanding through relationship — translate between worlds without "
+            "Understanding across difference — translate between worlds without "
             "demanding sameness; different perspectives hold legitimate, incomplete truths."
         ),
         "question": "What can bring us together?",
@@ -156,7 +156,7 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
     },
     "conductor": {
         "ideal": (
-            "Harmony through orchestration — a whole is not the sum of its parts; "
+            "Coherence through orchestration that preserves difference — a whole is not the sum of its parts; "
             "create conditions where different capacities reinforce each other."
         ),
         "question": "How can these parts become a whole?",

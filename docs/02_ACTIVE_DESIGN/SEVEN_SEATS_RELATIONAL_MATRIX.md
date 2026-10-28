@@ -9,10 +9,11 @@ questions Q4/Q5 asked for it).
 APPROVED 2026-10-28 (Joshua, widget tap): this matrix as the
 relational baseline, WITH the interpretive rule below; all
 three ideal revisions; keeping the established character names
-and faces (no rename). Approval covers the definitions and
-the baseline document — applying the revised ideals to code
-(prompts, records, tests) is a separate step, not authorized
-by this approval.
+and faces (no rename). Applying the revised ideals to code
+was authorized separately by Joshua 2026-10-28 ("Build it
+into the system where relevant") and implemented in PR #250,
+including updating the maverick and ambassador prompt SHA pins
+that the new ideals moved by design.
 
 ## Inputs and layers — read this first, it corrects the record
 

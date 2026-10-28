@@ -53,8 +53,8 @@ _PRE_P0_PROMPT_SHA256 = {
     "mentor": "8b08339e544b4a8dbb200b22051c9c85f2c9c4c5a631c56c7cccf8d13b8ad9d4",
     "champion": "672a62a81d8165fe4571c776882cd86e913c59ceebde10dd0b7a6be88b4b50cc",
     "guardian": "8851068e216606772242bb06f2ae487d4c43fb66a15f8d391391b31dc41e6dcc",
-    "maverick": "265a84292ea5a92900c3abe874dfd2bcc967a03c558a6d94160affb8f18a22ca",
-    "ambassador": "15476eeea27e941876b5d71023419389244963dcc2cc81f6b9f20dcbb29cf219",
+    "maverick": "5f9001341dcf120fd2ff87ae6f063b68e24f4afa29bbb4306f28516a02f1029d",
+    "ambassador": "483b4c3c54748d5b2e5e9a6723edcd42247839bdd55b3deabeb4ace0a53859af",
     "skeptic": "e0447f7ecf33c5f716fffd0ae8374692824ee9f2c002048a3a8b486ccf8ca39d",
 }
 

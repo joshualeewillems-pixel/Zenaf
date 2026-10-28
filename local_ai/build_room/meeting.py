@@ -221,6 +221,7 @@ def run_single_model_meeting(
 
 from local_ai.build_room.artifact import build_draft_artifact_r2
 from local_ai.build_room.citation_validation import validate_tool_citations
+from local_ai.build_room.claim_standing import compute_claim_standing
 from local_ai.build_room.measurement import summarize_tool_round_usage
 from local_ai.build_room.record_completeness import check_record_completeness
 from local_ai.build_room.tool_access import (
@@ -1967,6 +1968,12 @@ def run_multi_model_meeting(
     # it is reported on the artifact itself and flips
     # record_complete False, so ok cannot claim a whole record the
     # checks found broken. The artifact is still written either way.
+    # Registry standing stage 2: the standing table is computed here
+    # (once) from the finished registry, so the completeness check
+    # and the artifact carry the identical table — the check's
+    # recomputation invariant verifies exactly that.
+    standing_table = compute_claim_standing(
+        [c.to_dict() for c in registry.claims], interactions)
     try:
         record_completeness = check_record_completeness(
             invited_generations=invited_generations,
@@ -1987,6 +1994,9 @@ def run_multi_model_meeting(
                 for c in revision_claims
             ],
             unresolved_objections=unresolved_objections,
+            claims_full=[c.to_dict() for c in registry.claims],
+            interactions=interactions,
+            standing_table=standing_table,
         )
     except Exception as exc:  # check bug, not meeting failure: report it
         record_completeness = {
@@ -2059,6 +2069,7 @@ def run_multi_model_meeting(
         ok=ok,
         record_completeness=record_completeness,
         tool_access=tool_access_record,
+        claim_standing=standing_table,
     )
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"

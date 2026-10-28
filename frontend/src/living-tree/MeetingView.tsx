@@ -83,7 +83,7 @@ type MeetingState = {
 const STYLE = `
 .mtg-root{position:fixed;inset:0;z-index:70;font-family:system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
 .mtg-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.6)}
-.mtg-panel{position:absolute;left:0;right:0;bottom:0;top:4vh;display:flex;flex-direction:column;background:#0b0a09;border:1px solid rgba(201,168,106,.3);border-bottom:none;border-radius:20px 20px 0 0;color:#f5f0e8;box-shadow:0 -12px 48px rgba(0,0,0,.5)}
+.mtg-panel{position:absolute;left:0;right:0;bottom:0;top:4vh;display:flex;flex-direction:column;background:#0b0a09;border:1px solid rgba(201,168,106,.3);border-bottom:none;border-radius:20px 20px 0 0;color:#f5f0e8;box-shadow:0 -12px 48px rgba(0,0,0,.5);user-select:text;-webkit-user-select:text}
 .mtg-head{display:flex;align-items:flex-start;gap:10px;padding:16px 18px 10px;border-bottom:1px solid rgba(201,168,106,.18)}
 .mtg-title{margin:0;font-size:17px;font-weight:600}
 .mtg-sub{font-size:12px;color:#a89f8d;letter-spacing:.04em;text-transform:uppercase}

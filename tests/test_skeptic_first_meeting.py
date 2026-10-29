@@ -420,9 +420,14 @@ def test_runtime_composition_carries_standing_notes():
     definition = _definition()
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
-    # Jurisdiction ground line (runtime-appended, from the registry).
-    assert "Your ground — what naturally draws your attention" in turn_frame
-    assert "what the user's beliefs actually rest on" in turn_frame
+    # No registry ground line rides the frame anymore: #262's
+    # Conductor refinement dropped the appended focus line as a
+    # duplication (focus rides the identity block for migrated
+    # seats). The Skeptic is unmigrated, so its frame currently
+    # carries no registry ground line — restore-or-migrate is a
+    # follow-up decision, not settled here.
+    assert "Your ground — what naturally draws your attention" not in turn_frame
+    assert "what the user's beliefs actually rest on" not in turn_frame
     # Standing Zenaf note + naming note ride every turn frame.
     assert ENC._ZENAF_QUESTION_NOTE in turn_frame
     assert "Other seats: roles until met. None met yet." in turn_frame

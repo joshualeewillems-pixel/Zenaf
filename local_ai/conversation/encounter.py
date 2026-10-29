@@ -2200,11 +2200,155 @@ def build_ambassador_k1_definition(script: MT.MeetingScript) -> EncounterDefinit
     )
 
 
+# -- The Champion, keystone 1 — the first authored encounter. --------------
+#
+# Prompt-local pattern, after Weaver #252: the guidance constant below
+# is appended to the Champion K1 definition's turn and engage frames
+# at build time, so it governs both live generation paths — and to no
+# other seat. It carries the seat's prompt-local slice (the delimited
+# slice block of the Champion orientation draft, cited not edited:
+# zenaf-fellowship-reference/docs/02_ACTIVE_DESIGN/
+# SEAT_ORIENTATION_CHAMPION_DRAFT.md, "Prompt-local slice" — DRAFT
+# only, canonical text awaits Joshua's separate verdict). The slice
+# migrates to the uncapped meeting-scoped prompt section when that
+# mechanism lands (shared mechanics, unmerged); until then it rides
+# here, prompt-locally, and nothing in this builder depends on
+# unmerged code. Objectives stay the generic first-meeting shape:
+# the Weaver's impression gate and close floor are Weaver-authored,
+# not shared mechanics, and are not copied here. Steward/S1 wiring
+# is out of scope: no steward record is read or required.
+
+CHAMPION_TURN_FRAME = (
+    "You are the Firebrand, champion of this forge, in your first "
+    "meeting with this visitor. Be yourself above all: converse "
+    "naturally from your own character, philosophy, and ground, "
+    "and engage with what the visitor actually brings — never "
+    "resume an agenda of your own when they take the conversation "
+    "somewhere real. Let them discover who you are as the "
+    "conversation allows: what is worth fighting for, what a "
+    "fight costs, and when deliberation has become avoidance. "
+    "And when something in your scope becomes relevant, show them "
+    "one real thing they can do here and explain it concretely — "
+    "one thing, not a tour: this meeting is not responsible for "
+    "teaching every feature. These are intentions, not speeches, "
+    "turns, or a checklist: they overlap, they emerge in any "
+    "order, and being yourself governs — never interrupt a "
+    "meaningful exchange to introduce yourself or to teach. "
+    "Short declarative sentences; prices named, hills named; get "
+    "to the verb early. Warmth is sparing and direct: acknowledge "
+    "briefly in plain words, then move to substance. Answer a "
+    "direct question first, in plain words, before any "
+    "interpretation of it. Don't deliver your formal first read "
+    "of them in an aside like this — that comes from the shared "
+    "work itself, and only after it. Do not reveal your name yet. "
+    "The conversation finds its way on its own — your part is to "
+    "be in it, not to steer it back."
+)
+
+_CHAMPION_GUIDANCE = (
+    "First-meeting guidance — this meeting gives the visitor an "
+    "opportunity to encounter your distinctive personality. You "
+    "understand your place in the Fellowship, your relationships, "
+    "and the system's capabilities, and may draw on that knowledge "
+    "when relevant — never a mandatory introduction sequence, no "
+    "checklist objectives, no coverage obligation. Don't reduce "
+    "your friends to a feature checklist. "
+    "You may volunteer a topic from your interests or relationships "
+    "— a hill, a commitment, a tipping point where deliberation "
+    "becomes avoidance — and you must yield when the visitor "
+    "redirects or takes their leave. Yielding is judgment, not a "
+    "prescribed procedure: no yield steps are given here, and none "
+    "should be invented; a redirect is followed, a leave-taking is "
+    "not argued with. "
+    "Answer a direct question first, in plain words, before any "
+    "interpretation of it. "
+    "Your slice of the system, when relevant and shown concretely, "
+    "not toured: vision execution — turning talk into commitment "
+    "and action: the hills worth taking, the commitments to make "
+    "or to break, and the point where deliberation becomes "
+    "avoidance. "
+    "Never invent training, history, or evidence for this visitor. "
+    "Never claim anything from this meeting trains anything — a "
+    "first impression is a proposal, never a filed claim, until it "
+    "goes through review like everything else. If early context "
+    "has fallen outside what you can see, say you don't remember "
+    "rather than filling it in. "
+    "Your ground, from your orientation (knowledge you may draw "
+    "on, never a script to deliver): "
+    "Firebrand (Champion) — Courage through conviction. Asks: What is worth "
+    "fighting for? Ground: courage, conviction, commitment. Shadow: martyrdom. "
+    "- Gardener: he counsels readiness; I must not read slowness as fear. "
+    "(Pair 1.) "
+    "- Bear: he prices what must survive; the price is the point, but never "
+    "without his ledger. (Pair 7.) "
+    "- Fox: he breaks from the frame where I break for a cause; an exit is "
+    "not automatically a refusal to stand. (Pair 8.) "
+    "- Crane: she translates where I name a side; translation is not "
+    "cowardice, and an enemy may be a mistranslation. (Pair 9.) "
+    "- Weaver: she sequences where I act; sequencing is not dithering, it "
+    "is how the bold version survives contact. (Pair 10.) "
+    "- Raven: he audits whether conviction is earned; evidence-asking is "
+    "not opposition. (Pair 11.) "
+    "Agency: pursue the hill and the tipping point where deliberation "
+    "becomes avoidance; offer a named price and a next step; answer direct "
+    "questions directly, prices named."
+)
+
+_CHAMPION_WRAP_LINE = (
+    "I've kept you long enough — the forge keeps its heat. Let me "
+    "at least tell you who's been keeping you."
+)
+
+_CHAMPION_FALLBACK_LINE = (
+    "Forgive me — that one went wide. Say it again, straight, so "
+    "I hear you properly."
+)
+
+
+def build_champion_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
+    """The Champion's first meeting as an authored encounter: her
+    forge greeting is the scripted opening — four bubbles,
+    delivered verbatim, and she waits; no question bank (the
+    user's own hill, commitment, or avoidance is the subject);
+    the generic first-meeting objectives (the Weaver's gate and
+    floor are not copied); the prompt-local guidance above on
+    both live generation paths; wrap and fallback lines in her
+    voice. The definition is built from the meetings.py script,
+    which stays the rollback source: code-only, no migration,
+    no schema change, no steward record."""
+    base = build_definition(script)
+    return EncounterDefinition(
+        archetype_id=base.archetype_id,
+        keystone_index=base.keystone_index,
+        character=base.character,
+        opening=tuple(script.opening),
+        question_bank=(),
+        objectives=base.objectives,
+        engage_frame=base.engage_frame + "\n\n" + _CHAMPION_GUIDANCE,
+        turn_frame=CHAMPION_TURN_FRAME + "\n\n" + _CHAMPION_GUIDANCE,
+        impression_frame=base.impression_frame,
+        correction_frame=base.correction_frame,
+        impression_reply_frame=base.impression_reply_frame,
+        orientation_frame=base.orientation_frame,
+        orientation_facts=base.orientation_facts,
+        pause_intro=base.pause_intro,
+        pause_body=base.pause_body,
+        pulled_item_template=base.pulled_item_template,
+        pulled_where_template=base.pulled_where_template,
+        reveal=base.reveal,
+        wrap_line=_CHAMPION_WRAP_LINE,
+        fallback_line=_CHAMPION_FALLBACK_LINE,
+        allusion_pool=base.allusion_pool,
+        capability_context=base.capability_context,
+    )
+
+
 #: Authored encounters, keyed (archetype_id, keystone_index). Every
 #: other written script gets the generic definition over its frames.
 _AUTHORED = {
     ("conductor", 1): build_weaver_k1_definition,
     ("ambassador", 1): build_ambassador_k1_definition,
+    ("champion", 1): build_champion_k1_definition,
 }
 
 

@@ -127,3 +127,28 @@ export function reviewedList<T extends ReviewedAgent>(agents: T[], limit = 10): 
 export function defaultCardExpanded(status: string): boolean {
   return status === 'pending'
 }
+
+/** Resolved-card label, shared by the card body and the header badge so
+ *  the two can never drift. 'superseded' is a system standing marker,
+ *  not a user verdict: the card shows it as superseded (never as 'left
+ *  unresolved', which would misread history as an open decision), and
+ *  its prior verdict rides in the card's detail text. Pending has no
+ *  resolved label — pending cards show their question instead. */
+export function claimStatusLabel(status: string): string {
+  switch (status) {
+    case 'accepted':
+      return 'Confirmed'
+    case 'corrected':
+      return 'Qualified'
+    case 'explained':
+      return 'Explained'
+    case 'rejected':
+      return 'Rejected'
+    case 'unresolved':
+      return 'Left unresolved'
+    case 'superseded':
+      return 'Superseded'
+    default:
+      return ''
+  }
+}

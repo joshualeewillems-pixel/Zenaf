@@ -10,7 +10,10 @@ Semantics under test:
     strands — which is what places it in the seat's review group.
   - Filing is idempotent per run: re-entering a completed meeting never
     duplicates the claim and never resets a verdict. A replay files a
-    NEW claim for the new run; the archived run's claim and verdict stay.
+    NEW claim for the new run, and filing it SUPERSEDES the archived
+    run's claim (2026-10-28 decision): the old row stays in history
+    with its prior verdict recorded, but only the new claim stands.
+    (Full supersede coverage lives in test_meeting_impression_supersede.py.)
   - A verdict on the claim lands training signals through the same
     claim-feedback machinery as every other claim — one signal per
     read-back strand, zoned to that strand.
@@ -225,8 +228,13 @@ def test_replay_files_a_second_distinct_claim(ve_ctx, tmp_path):
     claims = store.get_claims("meeting-conductor-1")
     assert len(claims) == 2
     by_id = {c.id: c for c in claims}
-    assert by_id[first.id].status == "accepted"  # archived run untouched
+    # Supersede (2026-10-28): the archived run's row is retained, its
+    # accepted verdict recorded in its detail — but it no longer
+    # stands. Only the new run's claim is current.
+    assert by_id[first.id].status == "superseded"
+    assert "Prior verdict: accepted." in by_id[first.id].detail
     assert by_id[first.id].evidence == RESPONSE
+    assert by_id[first.id].user_note == ""
     second = next(c for c in claims if c.id != first.id)
     assert second.status == "pending"
     assert second.evidence == "Yes, that's the shape of it."

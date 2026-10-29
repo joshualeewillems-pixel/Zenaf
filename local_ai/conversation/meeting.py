@@ -267,8 +267,10 @@ class MeetingStore:
         """Preserve a completed run before a restart resets it: the full
         transcript plus the read-back impression and the user's response,
         verbatim — exactly as the live record held them. (The run's
-        review claim, filed at completion, is a separate record and
-        keeps its verdict; archiving never touches it.)"""
+        review claim, filed at completion, is a separate record:
+        archiving never touches it. It is superseded only later, when
+        a new run completes and files its own claim — restart and
+        archiving alone supersede nothing.)"""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO meeting_archives (user_id, archetype_id, "
@@ -752,9 +754,17 @@ class MeetingService:
         Idempotent per run: the claim id carries the run's creation
         time, and an existing claim is never re-saved (save_claims is
         INSERT OR REPLACE — re-saving would reset its verdict). A
-        replay is a new run with a new claim; the archived run's claim
-        and verdict stay untouched. Filing must never break a meeting's
-        close, so failures are logged, not raised.
+        replay is a new run with a new claim, and filing that new claim
+        SUPERSEDES every prior meeting_impression claim for the same
+        agent (Fellowship supersede rule, 2026-10-28): the old rows
+        stay in history with their prior verdicts recorded in their
+        detail (review_claims.supersede_claim), but only the new claim
+        stands — exactly one standing meeting_impression claim per
+        seat+visitor. Restart ALONE does not supersede: the prior claim
+        stays standing until a new run completes and files. Re-filing
+        the SAME run (is_new false) supersedes nothing, including
+        itself. Supersede writes no training signal. Filing must never
+        break a meeting's close, so failures are logged, not raised.
         """
         try:
             row = self.meetings.get(user_id, arch_id, keystone_index)
@@ -789,7 +799,8 @@ class MeetingService:
                 strand_keys=strand_keys,
                 run_key=run_key,
             )
-            is_new = claim.id not in {c.id for c in store.get_claims(agent_id)}
+            existing = store.get_claims(agent_id)
+            is_new = claim.id not in {c.id for c in existing}
 
             # The meeting as a reviewable source: its transcript is the
             # agent's material; the read-back's own strand attribution
@@ -850,6 +861,26 @@ class MeetingService:
                 agent.status = "pending_review"
             store.save(agent)
             if is_new:
+                # Supersede (2026-10-28 decision): a genuinely new
+                # filing replaces every prior meeting_impression claim
+                # for this agent as the standing one. Only claims of
+                # this type, only this agent, never the new claim
+                # itself, never an already-superseded row — and never
+                # on a same-run re-filing, which never reaches here.
+                # Other claim types (strand, kind, mined, ...) are
+                # untouched: supersede is scoped to meeting impressions.
+                priors = [
+                    c
+                    for c in existing
+                    if c.claim_type == "meeting_impression"
+                    and c.id != claim.id
+                    and c.status != "superseded"
+                ]
+                superseded = [
+                    review_claims.supersede_claim(c, claim.id) for c in priors
+                ]
+                if superseded:
+                    store.save_claims(agent_id, superseded)
                 store.save_claims(agent_id, [claim])
         except Exception:
             logger.exception("meeting impression filing failed")
@@ -866,8 +897,10 @@ class MeetingService:
 
         Refusals are honest: no meeting on record, a meeting still in
         progress (pause/resume serves that), or a seat whose meeting
-        isn't written yet. Nothing here trains — same invariant as the
-        rest of the engine."""
+        isn't written yet. Restart alone does NOT supersede the prior
+        run's filed claim: it stays standing until a new run completes
+        and files its own impression. Nothing here trains — same
+        invariant as the rest of the engine."""
         arch_id = (archetype_id or "").strip().lower()
         if arch_id not in stock_archetype_ids():
             raise ValueError(f"Unknown seat: {archetype_id!r}")
@@ -945,8 +978,18 @@ class MeetingService:
         explicitly on this voluntary end, with an auditable reason
         logged and recorded on the meeting's state — never spoken,
         never filed, never an accepted claim. If nothing is pending,
-        behavior is unchanged. Restart-claims handling is UNCHANGED
-        (that decision is still open).
+        behavior is unchanged.
+
+        Restart-claims rule (Fellowship supersede decision,
+        2026-10-28 — this REPLACES the shared foundation's open
+        "restart-claims handling is UNCHANGED" note): when a new run
+        completes and files its impression, the filing SUPERSEDES
+        every prior meeting_impression claim for the seat — old rows
+        stay in history with their prior verdicts recorded, only the
+        new claim stands. Restart alone supersedes nothing, and a
+        discarded pending impression is never filed and never
+        supersedes anything: discard and supersede are distinct rules
+        for distinct states (never-delivered vs previously filed).
         """
         arch_id = (archetype_id or "").strip().lower()
         if arch_id not in stock_archetype_ids():

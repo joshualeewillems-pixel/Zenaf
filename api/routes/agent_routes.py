@@ -768,6 +768,18 @@ def _get_claim(store, agent_id: str, claim_id: str):
     raise HTTPException(status_code=404, detail=f"unknown claim: {claim_id}")
 
 
+def _reject_superseded_verdict(claim) -> None:
+    """A superseded claim is history, not a live card: ruling on it
+    would mint fresh training input for an impression a later run
+    already replaced. Supersede is not itself a verdict and writes no
+    signal; verdicts belong to the standing claim only."""
+    if claim.status == "superseded":
+        raise HTTPException(
+            status_code=409,
+            detail="that impression was superseded by a later first meeting — rule on the standing claim instead",
+        )
+
+
 # NOTE: claim review verdicts are written to the canonical TrainingSignal
 # store by local_ai.agent_intake.pipeline.log_claim_feedback (kind=
 # "claim_feedback"). The old _claim_to_signal lived here; it moved there
@@ -895,6 +907,7 @@ def accept_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     uid = _uid(current_user)
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
+    _reject_superseded_verdict(claim)
     store.update_claim(claim.id, "accepted")
     try:
         _pipeline_mod.log_claim_feedback(
@@ -916,6 +929,7 @@ def correct_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     uid = _uid(current_user)
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
+    _reject_superseded_verdict(claim)
     store.update_claim(claim.id, "corrected", body.note)
     try:
         _pipeline_mod.log_claim_feedback(
@@ -938,6 +952,7 @@ def explain_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     uid = _uid(current_user)
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
+    _reject_superseded_verdict(claim)
     store.update_claim(claim.id, "explained", body.note)
     try:
         _pipeline_mod.log_claim_feedback(
@@ -964,6 +979,7 @@ def reject_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     uid = _uid(current_user)
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
+    _reject_superseded_verdict(claim)
     store.update_claim(claim.id, "rejected")
     try:
         _pipeline_mod.log_claim_feedback(
@@ -989,6 +1005,7 @@ def unresolve_claim(agent_id: str, claim_id: str, current_user: dict = Depends(g
     uid = _uid(current_user)
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
+    _reject_superseded_verdict(claim)
     store.update_claim(claim.id, "unresolved")
     try:
         _pipeline_mod.log_claim_feedback(

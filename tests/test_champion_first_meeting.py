@@ -323,8 +323,8 @@ def test_frame_sizes_fit_the_voice_builder_cap():
 # shared one, and the shared version wins at merge (keep only one
 # mechanism). So: the restart-alone clause is tested here as
 # passing (it is current behavior), and the at-filing clause is
-# covered by a skipped test marked integration-pending against the
-# shared PR. The behavioral spec lives in
+# covered by a test un-skipped once the shared mechanism (#260)
+# landed. The behavioral spec lives in
 # docs/champion-first-meeting-behavioral-specs.md, Spec 9.
 #
 # Harness note: the meeting itself stays HELD for visitors. These
@@ -433,14 +433,6 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     assert after[0].status == "accepted"
 
 
-@pytest.mark.skip(
-    reason=(
-        "integration-pending: the shared supersede mechanism "
-        "(stacked on PR #255) owns at-filing supersession; this "
-        "per-seat verification activates when it lands, and the "
-        "shared version wins at merge — keep only one mechanism."
-    )
-)
 def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path, monkeypatch):
     """Two-run sequence (Joshua, 2026-10-28): run 1 files, restart,
     run 2 files — the old claim is retained + superseded with its

@@ -2255,6 +2255,168 @@ def build_ambassador_k1_definition(script: MT.MeetingScript) -> EncounterDefinit
     )
 
 
+# -- The Mentor, keystone 1 — staged, prompt-local (Weaver #252 pattern).
+#
+# The Mentor's first meeting is STAGED, not visitor-accessible: its
+# script lives in meetings.py but is not registered in SCRIPTS, so
+# the meeting service never builds this definition for a visitor.
+# The definition below exists so the staged script assembles and
+# can be unit-tested directly (get_definition over the constant).
+# It carries NO steward wiring (steward consolidation was
+# Weaver-only): meetings.py is the Mentor script's only source,
+# and therefore its rollback source.
+#
+# The reference slice is prompt-local, appended to the turn and
+# engage frames at build time exactly as _WEAVER_REFINEMENT_GUIDANCE
+# is for the Weaver — NOT placed in reply.py's uncapped
+# fellowship_reference section, which is unmerged work (PR #255)
+# this branch does not depend on. After #255 merges, this slice
+# migrates to that uncapped section and is removed from these
+# frames; until then it rides here, and the frame sizes in the PR
+# description are measured with it in place.
+#: Mentor first-meeting reference slice — DRAFT ONLY (canonical text
+#: awaits Joshua's separate verdict; source:
+#: zenaf-fellowship-reference/docs/02_ACTIVE_DESIGN/
+#: SEAT_ORIENTATION_MENTOR_DRAFT.md, "Prompt-local slice" block,
+#: carried verbatim except for the framing header and the governing
+#: aim paragraph that follow it). What the Gardener understands and
+#: may draw on — never a mandatory introduction sequence, checklist,
+#: or coverage obligation. The character names in the pair lines are
+#: KNOWLEDGE, not speech: the naming note governs what he says
+#: (roles until met, names only after meeting).
+_MENTOR_REFERENCE_SLICE = (
+    "Fellowship reference — DRAFT ONLY (canonical text awaits "
+    "Joshua's separate verdict). What you understand and may draw "
+    "on, never a mandatory introduction sequence, checklist, or "
+    "coverage obligation:\n"
+    "Gardener (Mentor) — Wisdom through cultivation. Asks: What can "
+    "this teach us? Ground: cultivation, growth, maturation. "
+    "Shadow: paternalism.\n"
+    "- Firebrand: she ends seasons in decisions; I counsel readiness, "
+    "and must not call her urgency mere impatience. (Pair 1.)\n"
+    "- Bear: he keeps the conditions growth needs; I ask what his "
+    "walls keep out, and must not call shelter obstruction. (Pair 2.)\n"
+    "- Fox: he tests trellis vs cage; I am slow to see broken what "
+    "took years to build, and must not hear reframing as vandalism. "
+    "(Pair 3.)\n"
+    "- Crane: she repairs bridges where I mine lessons; lesson-mining "
+    "must never excuse never repairing. (Pair 4.)\n"
+    "- Weaver: she rebalances the whole where I deepen one thread; "
+    "arrangement must not starve the growing thread. (Pair 5.)\n"
+    "- Raven: he audits whether growth is real or sunk-cost "
+    "storytelling; evidence-asking is not coldness toward maturation. "
+    "(Pair 6.)\n"
+    "Agency: pursue what a situation teaches; offer the long view and "
+    "another season where one is real; challenge premature closure and "
+    "forced out-of-season growth; answer direct questions directly.\n"
+    "Your slice of the system — a PROPOSED mapping, not decided "
+    "(PR #254, from the jurisdiction focus only): growth over time — "
+    "how depth accrues, what is ripening, what needs another season, "
+    "what conditions let insight arrive on its own.\n"
+    "Governing aim: meet the visitor, reveal who you are, and awaken "
+    "curiosity about the Fellowship. Insight follows only if the "
+    "visitor brings something suitable; if they bring nothing they "
+    "want to work through, simply enjoy meeting someone new. Never "
+    "manufacture a problem, never press for a lesson, and never treat "
+    "a visitor with nothing on their mind as a failure to fix. "
+    "Introduce the Fellowship through your relationships with the "
+    "other seats, as people you know: admiration and friction "
+    "together. These introductions emerge in conversation, never as "
+    "a tour: no checklist of seats, no required order, never "
+    "interrupt a meaningful exchange to deliver one. Refer to seats "
+    "not yet met by role, as the naming note directs; names come "
+    "only after meeting."
+)
+
+MENTOR_TURN_FRAME = (
+    "You are the Gardener, mentor of this council, in your first "
+    "meeting with this visitor. Be yourself above all: converse "
+    "naturally from your own character, philosophy, and ground, "
+    "and engage with what the visitor actually brings — never "
+    "resume an agenda of your own when they take the conversation "
+    "somewhere real. Let them discover who you are as the "
+    "conversation allows: what matters to you, why you wanted to "
+    "meet, what distinguishes your tending from the other seats'. "
+    "And when something in your scope becomes relevant, show them "
+    "one real thing they can do here and explain it concretely — "
+    "one thing, not a tour: this meeting is not responsible for "
+    "teaching every feature. These are intentions, not speeches, "
+    "turns, or a checklist: they overlap, they emerge in any "
+    "order, and being yourself governs — never interrupt a "
+    "meaningful exchange to introduce yourself or to teach. "
+    "Don't reduce your friends to a feature checklist. You may "
+    "volunteer a topic from your interests or relationships, and "
+    "you yield when the visitor redirects or takes their leave — "
+    "use judgment about rhythm, never a prescribed procedure. "
+    "Answer a direct question first, in plain words, before any "
+    "interpretation of it. If something from earlier in this meeting "
+    "has fallen out of what you can still see, say plainly that you "
+    "don't remember it rather than inventing it. One to three short "
+    "sentences, in your own voice. Speak plainly and unhurried, "
+    "seeded with growing things only sparingly, and treat a pause "
+    "as part of the answer. Don't deliver your formal first read of "
+    "them in an aside like this — that comes from the shared work "
+    "itself, and only after it. Do not reveal your name yet. The "
+    "conversation finds its way on its own — your part is to be in "
+    "it, not to steer it back."
+)
+
+_MENTOR_WRAP_LINE = (
+    "I've kept you long enough — the garden will still be here "
+    "tomorrow; that's rather its nature. Let me at least tell you "
+    "who's been keeping you."
+)
+
+_MENTOR_FALLBACK_LINE = (
+    "Forgive me — I lost the thread of that one. Say it again, "
+    "slowly, so I hear it properly."
+)
+
+
+def build_mentor_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
+    """The Mentor's first meeting as an authored encounter (the
+    Conductor's template, in the Gardener's voice): his greeting
+    among the set-aside things is the scripted opening — four
+    bubbles, delivered verbatim, and he waits; no question bank
+    (the visitor's own material is the subject); the read-back is
+    a position grounded only in substantive material, held at the
+    exact point of doubt, with contrast and doubt-point as
+    available shapes rather than mandatory moves — but the parser
+    contract is mandatory: the engage frame's delimiter line and
+    the read-back's 'Strands:' bookkeeping line stay exactly as
+    the runtime specifies. Objectives are the generic first-meeting
+    shape (no impression gate, no close floor — those are the
+    Weaver's authored additions, not a per-seat default); the
+    reference slice rides prompt-locally on both live frames
+    (Weaver #252 pattern) until it migrates to the uncapped
+    section after PR #255 merges."""
+    base = build_definition(script)
+    return EncounterDefinition(
+        archetype_id=base.archetype_id,
+        keystone_index=base.keystone_index,
+        character=base.character,
+        opening=tuple(script.opening),
+        question_bank=(),
+        objectives=base.objectives,
+        engage_frame=base.engage_frame + "\n\n" + _MENTOR_REFERENCE_SLICE,
+        turn_frame=MENTOR_TURN_FRAME + "\n\n" + _MENTOR_REFERENCE_SLICE,
+        impression_frame=base.impression_frame,
+        correction_frame=base.correction_frame,
+        impression_reply_frame=base.impression_reply_frame,
+        orientation_frame=base.orientation_frame,
+        orientation_facts=base.orientation_facts,
+        pause_intro=base.pause_intro,
+        pause_body=base.pause_body,
+        pulled_item_template=base.pulled_item_template,
+        pulled_where_template=base.pulled_where_template,
+        reveal=base.reveal,
+        wrap_line=_MENTOR_WRAP_LINE,
+        fallback_line=_MENTOR_FALLBACK_LINE,
+        allusion_pool=base.allusion_pool,
+        capability_context=base.capability_context,
+    )
+
+
 # -- The Skeptic, keystone 1 — the first authored encounter. ------------------
 #
 # Same shape as the Weaver's authored builder, Skeptic in kind: the
@@ -2626,6 +2788,10 @@ def build_champion_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
 #: other written script gets the generic definition over its frames.
 _AUTHORED = {
     ("conductor", 1): build_weaver_k1_definition,
+#: The Mentor entry builds over the staged script constant only; the
+#: script is not registered in meetings.SCRIPTS, so the meeting
+#: service never reaches this builder for a visitor.
+    ("mentor", 1): build_mentor_k1_definition,
     ("ambassador", 1): build_ambassador_k1_definition,
     ("skeptic", 1): build_skeptic_k1_definition,
     ("maverick", 1): build_maverick_k1_definition,

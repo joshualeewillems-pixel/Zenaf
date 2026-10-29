@@ -175,7 +175,8 @@ def test_start_refusals(ve_ctx, tmp_path):
         svc.start(user["id"], "not-a-seat")
 
     uid = _seeded_user("seeded@example.com")
-    # Mentor's meeting is not written yet — refused honestly, not improvised.
+    # Mentor's script is staged but deliberately unregistered (see
+    # tests/test_mentor_first_meeting.py) — refused honestly, not improvised.
     with pytest.raises(MeetingError, match="isn't written yet"):
         svc.start(uid, "mentor")
     # Keystone 2 has no meeting in this build either.

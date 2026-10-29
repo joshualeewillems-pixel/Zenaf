@@ -27,7 +27,12 @@ Rules the service enforces (Joshua's design, not preferences):
     seat's first meeting can begin (the attention markers encode the same
     order on the tree).
   - A seat with no written script has no meeting yet — the engine refuses
-    honestly instead of improvising one.
+    honestly instead of improvising one. Building is not availability:
+    a written-but-unreleased first meeting (RELEASED_FIRST_MEETING_SEATS
+    in meetings.py) is refused as the last guard in _check_beginnable,
+    after the seed / script / chain / entry checks, so no transcript,
+    generation, or reveal can happen for it. `start` is the single
+    entry: `turn` and `restart` both require a row only `start` creates.
   - Keystones run in chain order: keystone N's meeting requires N-1 Done.
     (Only keystone 1 is written in this build.)
   - The read-back is stored on the meeting record verbatim, with the
@@ -484,6 +489,20 @@ class MeetingService:
                     "The Weaver opens the council — meet them first. The "
                     "others will introduce themselves in their own time."
                 )
+        # BUILDING IS NOT AVAILABILITY, last guard: a written script
+        # alone never opens a seat to visitors. Only seats in
+        # RELEASED_FIRST_MEETING_SEATS may begin a first meeting; a
+        # written-but-unreleased seat is refused here, so no
+        # transcript, generation, or reveal can happen for it. The
+        # guard sits after the seed / script / chain / entry checks
+        # so every earlier refusal keeps its original message and
+        # the Conductor (released) is untouched.
+        if keystone_index == 1 and arch_id not in MT.RELEASED_FIRST_MEETING_SEATS:
+            raise MeetingError(
+                "That seat's first meeting isn't open to visitors yet — "
+                "it is written, not released. It will open in its own "
+                "time; nothing is improvised in the meantime."
+            )
         return script
 
     def _keystone_done(self, user_id: str, archetype_id: str, keystone_index: int) -> bool:

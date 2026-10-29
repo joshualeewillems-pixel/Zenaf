@@ -408,8 +408,8 @@ export function MeetingView({
                 <div className="text-sm text-stone-300">{state.demeanor}</div>
               )}
               <p className="mt-2 text-sm text-stone-400 leading-relaxed">
-                Name, face, and demeanor unlocked. The other seats are waiting to be met in
-                their own time — each will introduce themselves.
+                Name, face, and demeanor unlocked. The other seats each introduce
+                themselves in their own first meeting.
               </p>
             </div>
           )}

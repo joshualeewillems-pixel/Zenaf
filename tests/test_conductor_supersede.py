@@ -134,7 +134,9 @@ def _seeded_user(email="supersede@example.com"):
 def _run_conductor_to_completion(svc, uid, answer, response):
     """First substantive turn (shared work begins), second (the read
     lands), then the response to the impression; a settled turn ends
-    it if the answer left a thread open."""
+    it if the answer left a thread open. UPDATED for decoupled
+    recognition (no-scripting build, 2026-10-29): recognition no
+    longer closes — the visitor's own Complete action finishes it."""
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
     svc.turn(
@@ -144,6 +146,8 @@ def _run_conductor_to_completion(svc, uid, answer, response):
     state = svc.turn(uid, "conductor", response)
     if state["status"] != "complete":
         state = svc.turn(uid, "conductor", "Got it.")
+    if state["status"] != "complete":
+        state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     return state
 

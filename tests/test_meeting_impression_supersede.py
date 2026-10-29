@@ -141,6 +141,11 @@ def _run_conductor_to_completion(
     state = svc.turn(uid, "conductor", response)
     if state["status"] != "complete":
         state = svc.turn(uid, "conductor", "Got it.")
+    if state["status"] != "complete":
+        # UPDATED for decoupled recognition (no-scripting build,
+        # 2026-10-29): recognition no longer closes — the visitor's
+        # own Complete action finishes it.
+        state = svc.complete(uid, "conductor")
     return state
 
 

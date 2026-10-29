@@ -126,7 +126,10 @@ def _run_conductor_to_completion(
 ):
     """UPDATED for the Weaver pattern: the drive is the pattern's
     shape — a first substantive turn (the shared work begins), a
-    second (the read lands), then the response to the impression."""
+    second (the read lands), then the response to the impression.
+    UPDATED for decoupled recognition (no-scripting build,
+    2026-10-29): recognition no longer closes — the visitor's own
+    Complete action finishes it."""
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
     svc.turn(
@@ -138,6 +141,8 @@ def _run_conductor_to_completion(
         # The answer left a thread open (a substantive correction,
         # under the deterministic estimate): one settled turn ends it.
         state = svc.turn(uid, "conductor", "Got it.")
+    if state["status"] != "complete":
+        state = svc.complete(uid, "conductor")
     return state
 
 

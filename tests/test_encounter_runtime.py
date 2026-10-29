@@ -295,22 +295,24 @@ def test_weaver_introduction_end_to_end_on_objectives(ve_ctx, tmp_path):
     assert state["status"] == "active"  # offered, not yet answered
 
     # The genuine answer (an ack): recognition is complete and
-    # nothing is left hanging, so the meeting closes on THIS turn —
-    # her brief reply, then the reveal. (Adaptivity fix: the old
-    # contract delivered the workshop pause here and closed a turn
-    # later; recognition now concludes, and the pause's content is
-    # context, not a block.)
+    # nothing is left hanging — but recognition is a moment, not a
+    # close (decoupled recognition, no-scripting build, 2026-10-29):
+    # the meeting proceeds, and the close comes on the visitor's
+    # word. Nothing is filed until that close.
     state = svc.turn(uid, "conductor", "Yes — that's exactly right.")
-    assert state["status"] == "complete"
-    assert state["stage"] == "complete"
+    assert state["status"] == "active"
+    assert state["stage"] == "orientation"
     for paragraph in script.reveal:
-        assert paragraph in _bodies(state)
+        assert paragraph not in _bodies(state)
     enc = _enc_state(svc, uid)
     assert enc.satisfied["impression_answered"] is True
     assert enc.satisfied["own_undertaking_engaged"] is True
-
-    # And it filed exactly once.
     store = AgentStore(agents_db, user_id=uid)
+    assert store.get_claims("meeting-conductor-1") == []
+
+    # And the visitor's Complete action files exactly once.
+    state = svc.complete(uid, "conductor")
+    assert state["status"] == "complete"
     assert len(store.get_claims("meeting-conductor-1")) == 1
     svc.start(uid, "conductor")  # re-entry backfill is a no-op
     assert len(store.get_claims("meeting-conductor-1")) == 1
@@ -322,9 +324,11 @@ def test_ceiling_wraps_gracefully_and_files_nothing_without_a_gate(ve_ctx, tmp_p
     # safeguard, never a recognition claim. Thirteen question turns
     # never satisfy the shared-work gate, so the ceiling close must
     # file NOTHING — no impression generated from the whole exchange,
-    # no longest-turn pseudo-answer. The wrap line still precedes
-    # the reveal, and the meeting still completes (reveal + keystone
-    # Done); only the manufactured claim is gone. The old contract
+    # no longest-turn pseudo-answer. UPDATED for decoupled
+    # recognition (no-scripting build, 2026-10-29): the ceiling
+    # close is silent too — no scripted wrap line, no scripted
+    # reveal — and the meeting still completes (keystone Done);
+    # only the manufactured claim is gone. The old contract
     # ("files once, grounded in the longest turn") is superseded.
     uid = _seeded_user()
     gen = WeaverGen()
@@ -341,13 +345,13 @@ def test_ceiling_wraps_gracefully_and_files_nothing_without_a_gate(ve_ctx, tmp_p
     state = None
     for q in questions:
         state = svc.turn(uid, "conductor", q)
-    # The 13th turn crossed the ceiling: the wrap line precedes the
-    # reveal, the meeting completed — and nothing filed.
+    # The 13th turn crossed the ceiling: the meeting completed
+    # silently — and nothing filed.
     assert state["status"] == "complete"
     bodies = _bodies(state)
-    assert any(b.startswith("I've kept you long enough") for b in bodies)
+    assert not any(b.startswith("I've kept you long enough") for b in bodies)
     for paragraph in script.reveal:
-        assert paragraph in bodies
+        assert paragraph not in bodies
     assert not any("ranged beyond a single answer" in p for p in gen.prompts)
     store = AgentStore(agents_db, user_id=uid)
     assert store.get_claims("meeting-conductor-1") == []
@@ -389,12 +393,12 @@ def test_happy_path_spends_one_generation_call_per_turn(ve_ctx, tmp_path):
     for message in (
         "I triage by what breaks first if I ignore it.",  # engage: 1
         "Mostly I protect the mornings before anything else.",  # engage: 1
-        "Yes — that's exactly right.",                     # ack: 1
+        "Yes — that's exactly right.",                     # ack: reply + introduction
     ):
         before = len(gen.prompts)
         state = svc.turn(uid, "conductor", message)
         counts.append(len(gen.prompts) - before)
-    assert state["status"] == "complete"
+    assert state["status"] == "active"
     # UPDATED for the adaptivity fix: the ack that answers the
     # impression now spends its one generation too — the open-door
     # judgment (may this meeting close?) is semantic and rides the
@@ -402,10 +406,14 @@ def test_happy_path_spends_one_generation_call_per_turn(ve_ctx, tmp_path):
     # UPDATED for the Weaver pattern: the happy path is three turns
     # now — the first substantive turn begins the shared work (the
     # impression is gated, reply only), the second carries the read,
-    # the third answers it. The invariant that matters is unchanged:
-    # never more than one generation per turn.
-    assert counts == [1, 1, 1]
-    assert len(gen.prompts) == 3
+    # the third answers it. UPDATED for decoupled recognition
+    # (no-scripting build, 2026-10-29): the recognition turn spends
+    # a second generation on the live self-introduction — the one
+    # documented exception to one-generation-per-turn, once per
+    # meeting, because the introduction is a live moment rather
+    # than scripted text.
+    assert counts == [1, 1, 2]
+    assert len(gen.prompts) == 4
 
 
 def test_conversational_turn_spends_exactly_one_call(ve_ctx, tmp_path):
@@ -521,8 +529,10 @@ def test_state_json_round_trip_and_legacy_hydration(ve_ctx, tmp_path):
     state = svc.turn(uid, "conductor", "Yes — that's exactly right.")
     # UPDATED for the adaptivity fix: an ack answer closes on
     # recognition (reply + reveal in the same turn) — the old
-    # contract stopped in the orientation beat first.
-    assert state["stage"] == "complete"
+    # contract stopped in the orientation beat first. UPDATED for
+    # decoupled recognition (no-scripting build, 2026-10-29):
+    # recognition completes the recognition, not the meeting.
+    assert state["stage"] == "orientation"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == "A legacy impression, spoken before the runtime."
     assert row["readback_response"] == "Yes — that's exactly right."

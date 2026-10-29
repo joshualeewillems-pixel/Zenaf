@@ -28,12 +28,9 @@ standing/claim system. Accordingly:
 - test_restart_alone_does_not_supersede PASSES on this branch today
   (restart touches no claims) and guards the restart-alone rule
   against the shared implementation too.
-- test_second_filing_supersedes_prior_claim is marked xfail
-  (integration-pending): on this branch the archived run's claim
-  stays untouched by design (see _file_impression's docstring), so
-  the standing count is 2, not 1. When the shared mechanism lands,
-  this test must XPASS — and the xfail marker must then be removed
-  rather than left as decoration.
+- test_second_filing_supersedes_prior_claim ran xfail
+  (integration-pending) until the shared mechanism (#260) landed;
+  marker removed, test runs green against it.
 
 The tests drive the completion chokepoint (complete() -> _do_reveal
 -> _file_impression) with fabricated read-back rows, because the
@@ -167,15 +164,6 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path):
     assert len(_standing(after)) == 1
 
 
-@pytest.mark.xfail(
-    reason=(
-        "integration-pending: the shared supersede follow-up PR "
-        "(stacked on PR #255) owns the mechanism; this branch ships "
-        "none. Remove this marker when that PR lands — the test must "
-        "then XPASS and the marker must go, not linger."
-    ),
-    strict=False,
-)
 def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path):
     """Semantics 2+3: run 1 files and is accepted; restart (no change);
     run 2 files; the run-1 row is retained with its prior verdict

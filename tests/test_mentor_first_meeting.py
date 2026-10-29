@@ -297,10 +297,12 @@ def test_frame_sizes_and_headroom_measured():
     assert len(turn_frame) == 5287
     assert len(turn_frame) < 8000
     assert 8000 - len(turn_frame) == 2713
-    assert len(definition.engage_frame) == 6371
-    assert len(engage) == 7647
+    # #262's P1 rewrites tightened one engage impression instruction
+    # (243 chars shorter); re-measured. Headroom grew, still >= 300.
+    assert len(definition.engage_frame) == 6128
+    assert len(engage) == 7404
     assert len(engage) < 8000
-    assert 8000 - len(engage) == 353
+    assert 8000 - len(engage) == 596
     assert 8000 - len(engage) >= 300
     # Proposal fallback cap, for the record: reference + slice together
     # exceed 12,500 (PR #254 warning) — this branch carries the slice

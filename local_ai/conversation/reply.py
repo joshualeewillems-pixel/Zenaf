@@ -114,6 +114,7 @@ def build_voice_prompt(
     extra_instructions: str | None = None,
     weave: bool = True,
     capability_context: str | None = None,
+    fellowship_reference: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
 
@@ -222,6 +223,27 @@ def build_voice_prompt(
         # bookkeeping instructions (encounter runtime) — truncating
         # any of those silently would corrupt the turn's contract.
         prompt += ["", extra_instructions.strip()[:8000]]
+    if fellowship_reference and fellowship_reference.strip():
+        # Fellowship reference (shared foundation, 2026-10-28): the
+        # seat's slice of the shared Fellowship knowledge, as a NEW
+        # UNCAPPED meeting-scoped prompt section — the preferred
+        # placement from the encounter audit. Deliberately outside
+        # the 8,000-char frame cap: reference growth must never
+        # truncate frame content (and the honesty guard, the last
+        # line of the first-meeting capability block, must never be
+        # the first content lost). Empty = section absent, so
+        # meetings without a written reference are byte-identical
+        # to before. Content is caller-supplied and never improvised
+        # here; the canonical text needs Joshua's verdict (later
+        # phase). No model-call selector, no steward/S1 wiring.
+        prompt += [
+            "",
+            "Fellowship reference — what you know of the other seats "
+            "and your place among them (character knowledge, not an "
+            "agenda, and never a classification of the visitor):",
+            "",
+            fellowship_reference.strip(),
+        ]
     if thread_summary:
         prompt += [
             "",
@@ -239,6 +261,23 @@ def build_voice_prompt(
         for turn in turns:
             who = "User" if _turn_role(turn) == "user" else display_name
             prompt.append(f"{who}: {_turn_content(turn)[:2000]}")
+    if len(history or []) > 10:
+        # Continuity honesty floor (Fellowship shared foundation,
+        # 2026-10-28) — SHARED machinery, not a per-seat prompt edit:
+        # every voice built through this builder carries it, so all
+        # seats inherit it. When early context has fallen outside
+        # the ten-turn window, the character says she doesn't
+        # remember rather than confabulating. The condition is the
+        # truncation itself (more history supplied than the window
+        # keeps), so the floor appears exactly when the gap exists.
+        prompt += [
+            "",
+            "Continuity note: the history above shows only the most "
+            "recent turns; earlier turns are not visible to you. If "
+            "the visitor refers to something from earlier that you "
+            "cannot see above, say plainly that you don't remember "
+            "it rather than guessing or inventing a detail.",
+        ]
     prompt.append(f"User: {message}")
     prompt.append(f"{display_name}:")
 
@@ -265,6 +304,7 @@ def generate_voice_reply(
     extra_instructions: str | None = None,
     weave: bool = True,
     capability_context: str | None = None,
+    fellowship_reference: str | None = None,
 ) -> VoiceReply:
     """One exchange with a single council voice. Raises RuntimeError on LLM failure."""
     prompt, meta = build_voice_prompt(
@@ -279,6 +319,7 @@ def generate_voice_reply(
         extra_instructions=extra_instructions,
         weave=weave,
         capability_context=capability_context,
+        fellowship_reference=fellowship_reference,
     )
     gen = generate_fn or _default_generate
     reply = sanitize_weave(

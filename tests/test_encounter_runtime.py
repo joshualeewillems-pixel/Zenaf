@@ -316,7 +316,16 @@ def test_weaver_introduction_end_to_end_on_objectives(ve_ctx, tmp_path):
     assert len(store.get_claims("meeting-conductor-1")) == 1
 
 
-def test_ceiling_wraps_gracefully_and_still_files_once(ve_ctx, tmp_path):
+def test_ceiling_wraps_gracefully_and_files_nothing_without_a_gate(ve_ctx, tmp_path):
+    # REWRITTEN for the Fellowship shared foundation (2026-10-28)
+    # no-manufacture rule: the ceiling is a resource/runaway
+    # safeguard, never a recognition claim. Thirteen question turns
+    # never satisfy the shared-work gate, so the ceiling close must
+    # file NOTHING — no impression generated from the whole exchange,
+    # no longest-turn pseudo-answer. The wrap line still precedes
+    # the reveal, and the meeting still completes (reveal + keystone
+    # Done); only the manufactured claim is gone. The old contract
+    # ("files once, grounded in the longest turn") is superseded.
     uid = _seeded_user()
     gen = WeaverGen()
     svc, agents_db = _svc_with_agents(tmp_path, gen)
@@ -333,20 +342,15 @@ def test_ceiling_wraps_gracefully_and_still_files_once(ve_ctx, tmp_path):
     for q in questions:
         state = svc.turn(uid, "conductor", q)
     # The 13th turn crossed the ceiling: the wrap line precedes the
-    # reveal, the meeting completed, and the impression — formed from
-    # the whole exchange — filed exactly once, grounded in the user's
-    # most substantive words verbatim.
+    # reveal, the meeting completed — and nothing filed.
     assert state["status"] == "complete"
     bodies = _bodies(state)
     assert any(b.startswith("I've kept you long enough") for b in bodies)
     for paragraph in script.reveal:
         assert paragraph in bodies
-    assert any("ranged beyond a single answer" in p for p in gen.prompts)
+    assert not any("ranged beyond a single answer" in p for p in gen.prompts)
     store = AgentStore(agents_db, user_id=uid)
-    claims = store.get_claims("meeting-conductor-1")
-    assert len(claims) == 1
-    assert claims[0].evidence == longest
-    assert claims[0].inference.startswith("A first impression from the whole exchange")
+    assert store.get_claims("meeting-conductor-1") == []
 
 
 def test_reveal_never_fires_on_passes_and_detours_alone(ve_ctx, tmp_path):

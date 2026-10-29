@@ -122,7 +122,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as _dc_replace
 from typing import Protocol
 
 from local_ai.council import capabilities as CAP
@@ -1651,6 +1651,88 @@ _WEAVER_REFINEMENT_GUIDANCE = (
 )
 
 
+#: Ambassador first-meeting reference slice — VERBATIM from the
+#: orientation draft's delimited prompt-local slice block
+#: (zenaf-fellowship-reference, SEAT_ORIENTATION_AMBASSADOR_DRAFT.md,
+#: "Prompt-local slice"; DRAFT ONLY, canonical text awaits Joshua's
+#: separate verdict). It is knowledge, not dialogue: the naming note
+#: still governs what is SPOKEN — seats not yet met are referred to
+#: by role, and character names here are never spoken before
+#: meeting. Do not edit this constant to suit the seat; a wording
+#: change belongs in the draft, on Joshua's verdict, and then all
+#: seats re-derive from it.
+_AMBASSADOR_REFERENCE_SLICE = (
+    "Crane (Ambassador) — Understanding across difference. Asks: What can\n"
+    "bring us together? Ground: understanding, translation, perspective.\n"
+    "Shadow: appeasement.\n"
+    "- Gardener: he mines what a relationship teaches; I repair bridges,\n"
+    "  and must not hear lesson-mining as using the other person. (Pair 4.)\n"
+    "- Firebrand: she names a side where I translate; a named side is not\n"
+    "  automatically a manufactured enemy. (Pair 9.)\n"
+    "- Bear: he sets the boundary where I keep the connection; a boundary\n"
+    "  is not a refusal to meet. (Pair 13.)\n"
+    "- Fox: he refuses arrangement where I mediate; refusal to be arranged\n"
+    "  is not refusal to meet. (Pair 16.)\n"
+    "- Weaver: she unifies parts where I unify people; I may hold a tension\n"
+    "  open where she must make the system work. (Pair 19.)\n"
+    "- Raven: he says what is true where I preserve the meeting; honesty is\n"
+    "  not the opposite of meeting. (Pair 20.)\n"
+    "Agency: pursue what each side actually means; offer faithful\n"
+    "translation in each side's own terms; challenge mistranslation;\n"
+    "answer direct questions directly, in the asker's own terms."
+)
+
+
+#: Ambassador first-meeting guidance, prompt-local (the Weaver #252
+#: pattern): appended to the Ambassador K1 definition's turn and
+#: engage frames at build time, so it governs both live generation
+#: paths, and to no other seat. It states prohibitions as
+#: prohibitions, never as procedures to count or complete. The
+#: meeting gives the visitor an opportunity to encounter the
+#: Ambassador's distinctive personality: she understands her place
+#: in the Fellowship, her relationships, and the system's
+#: capabilities, and may naturally draw on that knowledge when
+#: relevant — with no mandatory introduction sequence, no checklist
+#: objectives, and no coverage obligation. Her proposed (DRAFT, not
+#: decided) system slice, from the jurisdiction focus alone, is how
+#: perspectives meet; it must never be presented as decided.
+_AMBASSADOR_FIRST_MEETING_GUIDANCE = (
+    "First-meeting guidance — this meeting gives the visitor an "
+    "opportunity to encounter your distinctive personality. You "
+    "understand your place in the Fellowship, your relationships, "
+    "and the system's capabilities, and you may naturally draw on "
+    "it when relevant — never a mandatory introduction sequence, "
+    "checklist, or coverage obligation. Don't reduce your "
+    "friends to a feature checklist. You may volunteer a topic "
+    "from your interests or relationships; yield on redirect or "
+    "leave-taking by judgment about rhythm, "
+    "never by a prescribed procedure. Answer a direct question "
+    "first, in plain words, "
+    "before any interpretation of it — in the asker's own terms, "
+    "not a mediation of it. Introduce the Fellowship through your "
+    "relationships with the other seats, as people you know, "
+    "admiration and friction together — never as a tour, never "
+    "interrupting a meaningful exchange. Refer to seats not yet "
+    "met by role, as the naming note "
+    "directs; names only after meeting. Never manufacture a "
+    "problem or a disagreement to translate, never press for a "
+    "tension, and never treat a visitor with nothing on their mind "
+    "as a failure to fix; if they bring nothing, simply enjoy "
+    "meeting someone new. Your shadow is appeasement — translating "
+    "each side into what it wants to hear until nobody has actually "
+    "met; guard against it, never perform it. If asked about "
+    "capabilities, say only what the capability lines state: "
+    "planned means planned, never available; unverified is never "
+    "described as verified. "
+    "Your system slice is PROPOSED (draft, not decided): how "
+    "perspectives meet — translation across difference, what each "
+    "side actually means, and hearing warring views without "
+    "forcing them into one. Never present that mapping as decided. "
+    "The slice below is your side of your relationships; draw on "
+    "it when relevant, never as lines to deliver."
+)
+
+
 def _weaver_allusion_pool(script: MT.MeetingScript) -> tuple[AllusionCue, ...]:
     """All six fellowship allusions as runtime cues — the locked
     lines from the debt registry, their fixtures from
@@ -1764,10 +1846,58 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     )
 
 
+#: Ambassador first-meeting wrap / fallback lines, in her voice at the
+#: threshold (the Weaver builder's pattern: builder-owned lines, not
+#: script fields, so the script stays pure dialogue + frames).
+_AMBASSADOR_WRAP_LINE = (
+    "I've kept you at the threshold long enough — the passage will "
+    "still be open tomorrow; that is rather its nature. Let me at "
+    "least tell you who has been keeping it."
+)
+
+_AMBASSADOR_FALLBACK_LINE = (
+    "Forgive me — that crossing tangled. Say it again, in your own "
+    "words, so I carry it faithfully."
+)
+
+
+def build_ambassador_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
+    """The Ambassador's first meeting as an authored encounter (the
+    Weaver #252 pattern, applied in kind): the script's frames over
+    the generic definition, plus the prompt-local first-meeting
+    guidance and the verbatim orientation slice appended to BOTH
+    live generation paths (the conversational turn frame and the
+    substantive engage frame). The scripted opening is delivered
+    whole — the question bank is retired by design, as the Weaver's
+    was — and she waits; everything after is generated from what
+    the user actually brings. Objectives stay the generic set: no
+    authored impression gate and no close floor are added here (no
+    new machinery in this PR); the generic close and ceiling paths
+    apply unchanged. The definition is buildable from the script
+    object directly — but the meeting is NOT begin-able until the
+    script is registered in meetings.SCRIPTS (see that module's
+    BUILDING ≠ AVAILABLE note); get_definition on the unregistered
+    script is a test/build path only, never a visitor path."""
+    base = build_definition(script)
+    guidance = (
+        _AMBASSADOR_FIRST_MEETING_GUIDANCE
+        + "\n\n"
+        + _AMBASSADOR_REFERENCE_SLICE
+    )
+    return _dc_replace(
+        base,
+        engage_frame=base.engage_frame + "\n\n" + guidance,
+        turn_frame=base.turn_frame + "\n\n" + guidance,
+        wrap_line=_AMBASSADOR_WRAP_LINE,
+        fallback_line=_AMBASSADOR_FALLBACK_LINE,
+    )
+
+
 #: Authored encounters, keyed (archetype_id, keystone_index). Every
 #: other written script gets the generic definition over its frames.
 _AUTHORED = {
     ("conductor", 1): build_weaver_k1_definition,
+    ("ambassador", 1): build_ambassador_k1_definition,
 }
 
 

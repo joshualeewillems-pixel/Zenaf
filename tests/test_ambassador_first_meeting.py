@@ -20,13 +20,17 @@ Behavioral specs for a separately authorized live run live in
 docs/ambassador-first-meeting-behavioral-specs.md.
 
 Spec 9 (restart-claim supersede, Joshua 2026-10-28) is verified
-here in two parts: restart-alone-not-superseding passes on this
-branch, and the two-run supersede sequence is marked
-integration-pending — it awaits the shared supersede mechanism
-(stacked on PR #255), which is authoritative at merge. This PR
-deliberately implements NO mechanism, so no second standing/claim
-system exists to fight the shared one; the pending test pins the
-per-seat end state the shared mechanism must produce.
+here in two parts, under the decoupled contract (Crane PR,
+2026-10-29): recognition turns never complete the meeting — only
+the visitor-controlled complete() does (see
+test_crane_recognition_moment.py, which exercises the same flow
+with test-only activation). The harness below keeps the
+production gate activation exactly as before (script registration
+only, no release change), so both tests below remain blocked by
+the pre-existing release gate at svc.start — the same failure as
+on main, not a failure introduced here — and their bodies already
+encode the new contract for when the gate question is separately
+decided.
 """
 
 from __future__ import annotations
@@ -405,17 +409,19 @@ def _ambassador_ready_user(monkeypatch):
 
 
 def _run_ambassador_to_completion(svc, uid, answer, response):
-    """Drive one run to completion through the public meeting API.
-    Turn 1 is substantive (the read lands), turn 2 answers the
-    read-back (and becomes the filed claim's evidence), turn 3
-    closes; one extra settled turn covers a still-open thread, the
-    conductor harness's pattern."""
+    """Drive one run to completion through the public meeting API
+    under the decoupled contract (Crane PR, 2026-10-29): turn 1 is
+    substantive (the read lands), turn 2 answers the read-back
+    (and becomes the filed claim's evidence), turn 3 is a settled
+    thread — which must NOT close a decoupled meeting — and only
+    the visitor-controlled complete() completes it, filing the
+    claim through the same chokepoint as a runtime close."""
     svc.start(uid, "ambassador")
     svc.turn(uid, "ambassador", answer)
     svc.turn(uid, "ambassador", response)
     state = svc.turn(uid, "ambassador", "Got it.")
-    if state["status"] != "complete":
-        state = svc.turn(uid, "ambassador", "Got it.")
+    assert state["status"] != "complete"
+    state = svc.complete(uid, "ambassador")
     assert state["status"] == "complete"
     return state
 
@@ -429,8 +435,10 @@ def _standing(claims):
 
 def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     """Spec 9a: restart archives the run verbatim and touches no
-    claim. Passes on this branch — current behavior already honors
-    it, and this test pins it against the coming mechanism change."""
+    claim. This test pins it against mechanism change; its run
+    currently stops at the pre-existing release gate at svc.start
+    (same failure as on main), with the completion step already
+    updated to the decoupled contract."""
     uid = _ambassador_ready_user(monkeypatch)
     svc = _supersede_svc(tmp_path)
     _run_ambassador_to_completion(
@@ -458,8 +466,10 @@ def test_second_run_supersedes_prior_claim(ve_ctx, tmp_path, monkeypatch):
     Expected end state once the shared mechanism lands: the run-1
     row retained (same id/evidence/inference), marked superseded
     with its prior verdict visible in the row, the run-2 claim
-    standing, standing count == 1. Shared mechanism (#260) landed:
-    xfail marker removed, test runs green against it."""
+    standing, standing count == 1. Shared mechanism (#260) landed.
+    Completion here is visitor-controlled (decoupled contract);
+    the test remains blocked by the pre-existing release gate at
+    svc.start until the gate question is separately decided."""
     uid = _ambassador_ready_user(monkeypatch)
     svc = _supersede_svc(tmp_path)
     _run_ambassador_to_completion(

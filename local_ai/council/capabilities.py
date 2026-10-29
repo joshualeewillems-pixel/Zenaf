@@ -72,6 +72,17 @@ PREREQUISITE_KEYS = ("signed_in", "consent_acknowledged")
 
 #: The ONE shared intention line (demonstration spec §3/§6). It lives
 #: in first-meeting frames only — never in continuation frames.
+#: RESOLVED (Conductor agency refinement, 2026-10-28): the apparent
+#: contradiction with the block header ("knowledge, not a list to
+#: work through") is resolved by accepting the line as a deliberate
+#: offer instruction, not by scoping it out of first-meeting frames.
+#: The line itself already says when (a natural opportunity), how
+#: (a real action over an abstract description), and never (forced,
+#: manufactured, or implied as occurred) — permission, not an agenda
+#: and not a list to work through. The Weaver frames' own "you may
+#: show one real thing" wording now reads the same way, so the block
+#: and the frames agree; scoping the line out would have removed the
+#: permission the agency direction needs.
 INTENTION_LINE = (
     "when a natural opportunity arises, offer something characteristic "
     "of what you do here; prefer a real action or interaction over an "

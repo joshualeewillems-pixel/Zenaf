@@ -85,7 +85,11 @@ def test_relationship_led_introduction():
         assert "through your relationships with the other seats" in text
         assert "admiration and friction together" in text
         assert "never as a tour" in text
-        assert "no checklist of seats" in text
+        # P1 rewrite (Conductor agency refinement, 2026-10-28): the
+        # no-checklist sentence becomes the principle — the old
+        # phrasing generalized into a refusal to introduce at all.
+        assert "no checklist of seats" not in text
+        assert "don't reduce your friends to a feature checklist" in text
         assert "no required order" in text
         assert "Refer to seats not yet met by role" in text
         assert "names come only after meeting" in text

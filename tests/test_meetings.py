@@ -431,6 +431,13 @@ def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, mo
         orientation=(), orientation_frame="", orientation_facts="",
     )
     monkeypatch.setitem(MT.SCRIPTS, ("mentor", 1), plain)
+    # The release gate (Guardian build): a stand-in script still has
+    # to be released to begin, so this fixture releases the mentor
+    # for the test — the test's subject is orientation-less closing,
+    # not release policy, which test_guardian_first_meeting covers.
+    monkeypatch.setattr(
+        MT, "RELEASED_FIRST_MEETING_SEATS", frozenset({"conductor", "mentor"})
+    )
     svc = _svc(tmp_path)
     # Conductor first, then the mentor — both close on recognition.
     # (The Weaver's drive carries the pattern's shape: shared work,

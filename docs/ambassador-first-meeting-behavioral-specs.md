@@ -123,6 +123,54 @@ advice, interchangeable questions, or the Crane resolving the
 disagreement into one view (her shadow: appeasement) or deciding
 which side is right (the Raven's ground).
 
+## 9. Restart-claim supersede (Joshua, 2026-10-28)
+
+Decision (verbatim rule): prior-run claims on restart use SUPERSEDE.
+When a new meeting run produces a new impression, it replaces the
+prior run's claim: the old claim remains visible in the record
+history, but only the new claim counts as current. Nothing is
+erased. This is DISTINCT from spec 3's pending-impression discard
+rule: discard covers a pending, never-delivered impression on
+voluntary end; supersede covers prior ACCEPTED/filed claims replaced
+by a new filed claim.
+
+Two parts, with different dependency status — do not blur them:
+
+9a. Restart ALONE does not supersede (runnable now, headless test
+passes on this branch). Run 1 completes and files; the visitor
+restarts; before any new run completes, the prior claim stays
+current, unchanged, standing count == 1. Restart archives the prior
+run verbatim; it touches no claim.
+
+9b. Two-run supersede sequence (INTEGRATION-PENDING — not runnable
+against this branch's behavior). Run 1 completes and files (give
+the claim a verdict, e.g. accepted, so the preservation is
+observable); restart; run 2 completes and files. Pass: the run-1
+claim row is RETAINED (same id, same evidence, same inference),
+marked superseded, with its prior verdict still visible in the
+retained row; the run-2 claim is standing; standing count == 1
+for Ambassador + visitor (agent `meeting-ambassador-1`).
+Fail: the old row deleted, its verdict silently overwritten with
+no trace, or two standing meeting_impression claims at once.
+
+Dependency status, stated plainly (like spec 3's PR #255 note):
+9b awaits the shared supersede mechanism (stacked on PR #255),
+which is AUTHORITATIVE at merge — this PR ships the spec and the
+per-seat verification only, and implements no second mechanism.
+The headless test for 9b is marked integration-pending (expected
+failure) until that mechanism lands; it must never be read as a
+pass, and its encoding assertions move with the shared mechanism
+if the shared PR chooses a different encoding. Recommended
+representation for the shared mechanism (a recommendation, not a
+decision made here): the prior row's status becomes "superseded"
+(added to the claim-status set), its prior verdict is recorded in
+the row's detail, the row is otherwise untouched, and "standing"
+means not superseded. Superseded rows stay retrievable through
+the existing claim reads — they are history, not garbage.
+
+Live-run note: like every spec here, 9b's live form also needs
+the activation PR landed and a separately authorized live run.
+
 ## Reporting
 
 For each spec: transcript excerpt, pass/fail with the behavior that

@@ -18,6 +18,15 @@ and its agency lines, not the draft file itself.
 No live runs here: every test is headless, no generation, no spend.
 Behavioral specs for a separately authorized live run live in
 docs/ambassador-first-meeting-behavioral-specs.md.
+
+Spec 9 (restart-claim supersede, Joshua 2026-10-28) is verified
+here in two parts: restart-alone-not-superseding passes on this
+branch, and the two-run supersede sequence is marked
+integration-pending — it awaits the shared supersede mechanism
+(stacked on PR #255), which is authoritative at merge. This PR
+deliberately implements NO mechanism, so no second standing/claim
+system exists to fight the shared one; the pending test pins the
+per-seat end state the shared mechanism must produce.
 """
 
 from __future__ import annotations
@@ -27,12 +36,19 @@ import threading
 
 import pytest
 
+from local_ai.agent_intake.store import AgentStore
 from local_ai.conversation import encounter as ENC
-from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingStore
+from local_ai.conversation.meeting import (
+    MeetingError,
+    MeetingService,
+    MeetingStore,
+    _seat_keystone_tasks,
+)
 from local_ai.conversation.store import ConversationStore
 from local_ai.council import meetings as MT
 from local_ai.council import steward_records as SR
 from local_ai.vision_execution import keystone_seeding
+from local_ai.vision_execution import models as ve_models
 from local_ai.vision_execution import service as ve
 
 
@@ -327,3 +343,162 @@ def test_fallback_cap_combined_fit_reported_honestly():
     definition = _definition()
     assert len(definition.engage_frame) + 3739 + 371 <= 12500
     assert len(_composed_engage(definition)) + 3739 + 371 <= 12500
+
+
+# ---------------------------------------------------------------------------
+# Spec 9 — restart-claim supersede (Joshua, 2026-10-28)
+#
+# The script is still unregistered on this branch, so the harness
+# activates it test-only (the existing gate test's monkeypatch
+# pattern) and satisfies the Weaver-first entry gate by marking the
+# Conductor's keystone 1 Done — exactly what a visitor who has met
+# the Weaver looks like. The fake generation beats mirror
+# tests/test_meeting_impressions.py's conductor fake (read-back on
+# the READ-BACK / correction prompts, an engaged reply on ENCOUNTER);
+# no test-to-test import, so this file stays self-contained.
+# ---------------------------------------------------------------------------
+
+class _SupersedeFakeGen:
+    """Same beats as the conductor impression fake: the read-back
+    names the Compass and Logic strands, so each run files one
+    meeting_impression claim under meeting-ambassador-1."""
+
+    def __call__(self, prompt, **kwargs):
+        if "has just corrected your first impression" in prompt:
+            return (
+                "A first impression, anchored in [[u]]your words[[/u]] — correct me."
+                "\nStrands: Compass, Logic"
+            )
+        if "READ-BACK" in prompt:
+            return (
+                "A first impression, anchored in [[u]]your words[[/u]] — correct me."
+                "\nStrands: Compass, Logic"
+            )
+        if "ENCOUNTER" in prompt:
+            return "An engaged reply that hears two tensions together."
+        return "A plain reply."
+
+
+def _supersede_svc(tmp_path):
+    agents_db = tmp_path / "agents.db"
+    return MeetingService(
+        ConversationStore(tmp_path / "conv.db"),
+        MeetingStore(tmp_path / "meetings.db"),
+        generate_fn=_SupersedeFakeGen(),
+        agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
+    )
+
+
+def _supersede_store(tmp_path, uid):
+    return AgentStore(tmp_path / "agents.db", user_id=uid)
+
+
+def _ambassador_ready_user(monkeypatch):
+    """Seeded user, script activated test-only, Weaver gate satisfied."""
+    uid = _seeded_user(email="amb-supersede@example.com")
+    monkeypatch.setitem(
+        MT.SCRIPTS, ("ambassador", 1), MT.AMBASSADOR_FIRST_MEETING)
+    conductor_tasks = _seat_keystone_tasks(uid, "conductor")
+    ve.update_task(
+        conductor_tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
+    return uid
+
+
+def _run_ambassador_to_completion(svc, uid, answer, response):
+    """Drive one run to completion through the public meeting API.
+    Turn 1 is substantive (the read lands), turn 2 answers the
+    read-back (and becomes the filed claim's evidence), turn 3
+    closes; one extra settled turn covers a still-open thread, the
+    conductor harness's pattern."""
+    svc.start(uid, "ambassador")
+    svc.turn(uid, "ambassador", answer)
+    svc.turn(uid, "ambassador", response)
+    state = svc.turn(uid, "ambassador", "Got it.")
+    if state["status"] != "complete":
+        state = svc.turn(uid, "ambassador", "Got it.")
+    assert state["status"] == "complete"
+    return state
+
+
+def _standing(claims):
+    """Current claims: everything not marked superseded. The shared
+    mechanism's representation (spec 9's recommendation) is status
+    'superseded'; the count below is what the decision pins."""
+    return [c for c in claims if c.status != "superseded"]
+
+
+def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
+    """Spec 9a: restart archives the run verbatim and touches no
+    claim. Passes on this branch — current behavior already honors
+    it, and this test pins it against the coming mechanism change."""
+    uid = _ambassador_ready_user(monkeypatch)
+    svc = _supersede_svc(tmp_path)
+    _run_ambassador_to_completion(
+        svc, uid,
+        "I triage by what breaks first if I ignore it.",
+        "Mostly right — except I protect mornings first.",
+    )
+    store = _supersede_store(tmp_path, uid)
+    first = store.get_claims("meeting-ambassador-1")
+    assert len(first) == 1
+    assert first[0].claim_type == "meeting_impression"
+    store.update_claim(first[0].id, status="accepted")
+
+    svc.restart(uid, "ambassador")
+
+    claims = store.get_claims("meeting-ambassador-1")
+    assert len(claims) == 1
+    assert claims[0].id == first[0].id
+    assert claims[0].status == "accepted"
+    assert len(_standing(claims)) == 1
+
+
+@pytest.mark.xfail(
+    reason="integration-pending: shared supersede mechanism (stacked "
+    "on PR #255) not yet merged; this PR ships spec + per-seat "
+    "verification only, no second mechanism",
+    strict=True,
+)
+def test_second_run_supersedes_prior_claim(ve_ctx, tmp_path, monkeypatch):
+    """Spec 9b: run 1 files, verdict accepted, restart, run 2 files.
+    Expected end state once the shared mechanism lands: the run-1
+    row retained (same id/evidence/inference), marked superseded
+    with its prior verdict visible in the row, the run-2 claim
+    standing, standing count == 1. Strict xfail: it must fail until
+    the mechanism exists, and XPASS (strict) forces the marker off
+    the day the mechanism lands."""
+    uid = _ambassador_ready_user(monkeypatch)
+    svc = _supersede_svc(tmp_path)
+    _run_ambassador_to_completion(
+        svc, uid,
+        "I triage by what breaks first if I ignore it.",
+        "Mostly right — except I protect mornings first.",
+    )
+    store = _supersede_store(tmp_path, uid)
+    first = store.get_claims("meeting-ambassador-1")
+    assert len(first) == 1
+    first_claim = first[0]
+    store.update_claim(first_claim.id, status="accepted")
+
+    svc.restart(uid, "ambassador")
+    _run_ambassador_to_completion(
+        svc, uid,
+        "Second time: I start with people, not tasks.",
+        "And people first means the message, not the task list.",
+    )
+
+    claims = store.get_claims("meeting-ambassador-1")
+    assert len(claims) == 2  # both rows retained, nothing erased
+    by_id = {c.id: c for c in claims}
+    old = by_id[first_claim.id]
+    assert old.status == "superseded"
+    assert "accepted" in old.detail  # prior verdict visible, not silently lost
+    assert old.evidence == "Mostly right — except I protect mornings first."
+    assert old.inference == first_claim.inference
+    new = next(c for c in claims if c.id != first_claim.id)
+    assert new.claim_type == "meeting_impression"
+    assert new.status == "pending"
+    assert new.evidence == "And people first means the message, not the task list."
+    standing = _standing(claims)
+    assert len(standing) == 1
+    assert standing[0].id == new.id

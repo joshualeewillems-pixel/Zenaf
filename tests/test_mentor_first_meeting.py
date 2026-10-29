@@ -291,9 +291,12 @@ def test_frame_sizes_and_headroom_measured():
     # extra_instructions at 8,000 chars. Both composed paths fit with
     # at least 300 chars headroom (proposal minimum).
     assert len(definition.turn_frame) == 4011
-    assert len(turn_frame) == 5587
+    # #262 dropped the appended jurisdiction line from _turn_frame
+    # (298 chars + separator = 300), so the composed turn frame is
+    # 300 smaller than originally measured; definition frame unchanged.
+    assert len(turn_frame) == 5287
     assert len(turn_frame) < 8000
-    assert 8000 - len(turn_frame) == 2413
+    assert 8000 - len(turn_frame) == 2713
     assert len(definition.engage_frame) == 6371
     assert len(engage) == 7647
     assert len(engage) < 8000

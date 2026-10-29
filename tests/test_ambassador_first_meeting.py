@@ -453,20 +453,13 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     assert len(_standing(claims)) == 1
 
 
-@pytest.mark.xfail(
-    reason="integration-pending: shared supersede mechanism (stacked "
-    "on PR #255) not yet merged; this PR ships spec + per-seat "
-    "verification only, no second mechanism",
-    strict=True,
-)
 def test_second_run_supersedes_prior_claim(ve_ctx, tmp_path, monkeypatch):
     """Spec 9b: run 1 files, verdict accepted, restart, run 2 files.
     Expected end state once the shared mechanism lands: the run-1
     row retained (same id/evidence/inference), marked superseded
     with its prior verdict visible in the row, the run-2 claim
-    standing, standing count == 1. Strict xfail: it must fail until
-    the mechanism exists, and XPASS (strict) forces the marker off
-    the day the mechanism lands."""
+    standing, standing count == 1. Shared mechanism (#260) landed:
+    xfail marker removed, test runs green against it."""
     uid = _ambassador_ready_user(monkeypatch)
     svc = _supersede_svc(tmp_path)
     _run_ambassador_to_completion(

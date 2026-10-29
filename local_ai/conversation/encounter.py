@@ -121,6 +121,7 @@ stay in the review interface, out of the character's dialogue.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -131,6 +132,8 @@ from local_ai.council import meetings as MT
 from local_ai.council import steward_records as _steward_records
 
 from .weave import strip_weave_markers
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Deterministic heuristics — safety nets for state-critical transitions.
@@ -430,12 +433,61 @@ _GREETING_TOKENS = {
     "good evening", "yo", "hiya",
 }
 
+#: Completion-intent vocabulary (Fellowship shared foundation,
+#: 2026-10-28): explicit finish phrasings ONLY — a narrow list, so
+#: an ordinary "bye" or a topical "done with this" is not swept in.
+#: Checked BEFORE the "?" rule, so "we're done here?" classifies as
+#: completion intent, not as a question. The signal NEVER auto-closes:
+#: it routes to the explicit confirmation action (the character
+#: naming the Complete action while the record stays honestly
+#: active, and the controller-visible `completion_offered` signal),
+#: and only the offered-path + affirmation sequence — or the
+#: visitor's explicit UI Complete action — closes the meeting.
+#: There is deliberately NO deterministic second-utterance rule:
+#: a bare utterance count never closes anything (see
+#: _is_completion_confirmation and the confirmation branch in
+#: handle_turn).
+_COMPLETION_PHRASES = (
+    "we're done", "we are done", "that's all", "i have to go",
+    "i've got to go", "i gotta go", "i need to go", "i must go",
+    "complete this meeting", "complete the meeting", "end the meeting",
+    "finish this meeting", "let's wrap up", "lets wrap up",
+    "time to wrap up",
+)
+
+#: The frame instruction appended on the completion-offer turn. It
+#: tells the character to name the Complete action explicitly while
+#: keeping words and record in agreement: the meeting is NOT over
+#: until the visitor confirms, and it stays open if they move on.
+_COMPLETION_PATH_INSTRUCTION = (
+    "The visitor has just said they want to finish. Say plainly, "
+    "in your own words, that they can tap 'Complete this meeting' "
+    "below to end it — and say plainly that the meeting is still "
+    "open until they do. Never state or imply that the meeting is "
+    "already over, and never close it yourself in words."
+)
+
+
+def _is_completion_confirmation(message: str) -> bool:
+    """Is this turn the visitor confirming a completion path that
+    was already offered? True for a restated completion intent, or
+    for a short affirmation (ack) while `completion_offered` is set.
+    A bare utterance count is never enough: without the offered
+    path already standing, this returns False for affirmations —
+    the caller checks the offered flag first. A new topic, a
+    question, or any other move is not a confirmation, and the
+    offered path lapses instead (see handle_turn)."""
+    if detect_move(message) == "completion":
+        return True
+    return _is_acknowledgment(message)
+
 
 def detect_move(message: str) -> str:
     """The deterministic shape of the user's turn, for frame routing:
-    "pass" | "offer" | "direction" | "joke" | "question" | "ack" |
-    "greeting" | "substantive". Reading the move's MEANING is the
-    character's job, in generation; this only picks the frame."""
+    "pass" | "offer" | "direction" | "joke" | "completion" |
+    "question" | "ack" | "greeting" | "substantive". Reading the
+    move's MEANING is the character's job, in generation; this only
+    picks the frame."""
     raw = (message or "").strip()
     norm = " ".join(raw.lower().strip(".! ").split())
     if not norm:
@@ -448,6 +500,8 @@ def detect_move(message: str) -> str:
         return "direction"
     if any(m in raw.lower() for m in _JOKE_MARKERS):
         return "joke"
+    if any(p in norm for p in _COMPLETION_PHRASES):
+        return "completion"
     if "?" in raw:
         return "question"
     if norm in _GREETING_TOKENS:
@@ -547,8 +601,19 @@ class EncounterDefinition:
     #: that must already be satisfied — as of a PRIOR turn's
     #: check_objectives — before an impression may be offered on the
     #: engage path or the pass path. "" = no gate (the generic
-    #: shape). The ceiling wrap bypasses it by design.
+    #: shape). The ceiling wrap offers a fresh impression ONLY when
+    #: the gate is satisfied (no-manufacture rule, Fellowship shared
+    #: foundation 2026-10-28); a held (pending) read, which was
+    #: gate-checked at generation, still speaks at the wrap.
     impression_gate_objective: str = ""
+    #: Fellowship reference (shared foundation, 2026-10-28): the
+    #: seat's slice of the shared Fellowship knowledge, carried as a
+    #: meeting-scoped prompt section OUTSIDE the capped frame (see
+    #: reply.build_voice_prompt `fellowship_reference`). "" = no
+    #: reference written yet — the placement mechanism is live, the
+    #: canonical reference text is a later phase (it needs Joshua's
+    #: verdict as canonical text) and is never improvised here.
+    fellowship_reference: str = ""
     #: The close floor (the Weaver pattern): objective ids of which
     #: at least one must be satisfied for a settled verdict to close
     #: the meeting after recognition. Empty = no floor. Legacy
@@ -582,7 +647,12 @@ SUBSTANCE_MIN_USER_CHARS = 40
 
 #: The graceful ceiling: past this many user turns, the character wraps
 #: ("I've kept you long enough") rather than letting the first meeting
-#: ramble — the impression still files, exactly once.
+#: ramble. RETAINED TEMPORARILY (Fellowship shared foundation,
+#: 2026-10-28) as a resource/runaway safeguard ONLY — never a
+#: narrative endpoint — and it manufactures nothing: when no gate
+#: was satisfied, a ceiling close files nothing (see _wrap_turn).
+#: The resource-limit replacement is proposed, not built, in the
+#: PR description for this change (ceiling investigation).
 TURN_CEILING = 12
 
 
@@ -628,6 +698,23 @@ class EncounterState:
     #: after the first later reply that does not end in a question.
     impression_pending_text: str = ""
     impression_pending_strands: list[str] = field(default_factory=list)
+    #: Fellowship shared foundation (2026-10-28) — completion path
+    #: state, persisted in state_json and surfaced by the meeting
+    #: API so the frontend can render the hint + primary Complete
+    #: action: True from the turn the character names the Complete
+    #: action until the visitor confirms, moves on (lapse), or the
+    #: meeting closes. Never, on its own, a close: closing requires
+    #: the offered-path + affirmation sequence, or the explicit UI
+    #: Complete action.
+    completion_offered: bool = False
+    #: Auditable discard record (2026-10-28): when a held (pending)
+    #: impression is discarded on a voluntary end instead of being
+    #: spoken or filed, this carries the reason ("" = nothing
+    #: discarded). The discard is also logged; the held text itself
+    #: is cleared, never spoken, never filed, never an accepted
+    #: claim. Ceiling wraps are NOT voluntary ends: a gate-earned
+    #: held read still speaks at the wrap (see _wrap_turn).
+    pending_impression_discarded: str = ""
     response_recorded: bool = False
     #: Legacy field, kept for state hydration: rows written by the
     #: P3 runtime (or the stage engine before it) may carry it. The
@@ -659,6 +746,8 @@ class EncounterState:
             "impression_strands": self.impression_strands,
             "impression_pending_text": self.impression_pending_text,
             "impression_pending_strands": self.impression_pending_strands,
+            "completion_offered": self.completion_offered,
+            "pending_impression_discarded": self.pending_impression_discarded,
             "response_recorded": self.response_recorded,
             "pause_delivered": self.pause_delivered,
             "allusions_used": self.allusions_used,
@@ -684,6 +773,7 @@ class EncounterState:
             "impression_answered", "impression_answer_kind",
             "impression_text", "impression_strands",
             "impression_pending_text", "impression_pending_strands",
+            "completion_offered", "pending_impression_discarded",
             "response_recorded",
             "pause_delivered", "allusions_used",
             "closed",
@@ -864,6 +954,51 @@ class EncounterRuntime:
         host.say(pending)
         return True
 
+    @staticmethod
+    def _discard_pending(state: EncounterState, reason: str) -> bool:
+        """Explicitly discard a held (pending) impression on a
+        voluntary end (Fellowship shared foundation, 2026-10-28 —
+        this REPLACES the audit's deliver-or-discard alternative:
+        a visitor who wants to leave is never made to sit through
+        a delivery first, and an uncommunicated impression must
+        never become an accepted claim). The held text is cleared
+        — never spoken, never filed — and the reason is both
+        logged and recorded on the state (`pending_impression_
+        discarded`), so the discard is inspectable after the fact
+        in the completed row's state_json. No-op when nothing is
+        pending. Callers: the confirmation close, the runtime
+        settled close, and MeetingService.complete (manual path).
+        The ceiling wrap is not a voluntary end and does not call
+        this: a gate-earned held read speaks at the wrap."""
+        pending = state.impression_pending_text
+        if not pending:
+            return False
+        logger.info(
+            "meeting: discarding pending impression on voluntary end "
+            "(%s); held text length=%d, never spoken, never filed",
+            reason, len(pending),
+        )
+        state.impression_pending_text = ""
+        state.impression_pending_strands = []
+        state.pending_impression_discarded = reason
+        return True
+
+    def _engage_frame(self) -> str:
+        """The substantive (engage) frame, composed in guarded
+        order (Fellowship shared foundation, 2026-10-28): the
+        capability block — whose last line is the honesty guard
+        (capabilities.HONESTY_GUARD) — sits BEFORE the naming note,
+        so if the capped frame ever overflows, the variable-length
+        naming note (which grows ~20 chars per met seat) is the
+        first content lost, never the honesty guard. The frame
+        itself is unchanged in content, only in order."""
+        d = self.definition
+        parts = [d.engage_frame, _ZENAF_QUESTION_NOTE]
+        if d.capability_context:
+            parts.append(d.capability_context)
+        parts.append(_naming_note(d))
+        return "\n\n".join(parts)
+
     # -- frames ----------------------------------------------------------------
 
     def _turn_frame(self, state: EncounterState,
@@ -958,6 +1093,34 @@ class EncounterRuntime:
             # thread was taken up, not merely opened.
             state.pursuit_turns += 1
 
+        # Completion, FIRST — before the impression-response, post-
+        # recognition, and ceiling branches, so a visitor who wants
+        # to leave is never routed into answering an impression or
+        # into a wrap instead (Fellowship shared foundation,
+        # 2026-10-28). The rule, exactly (this is NOT a blind
+        # second-utterance rule): closing requires the offered-path
+        # + affirmation sequence — a completion intent (or a short
+        # affirmation) on a turn where `completion_offered` already
+        # stands from a previous turn — or the visitor's explicit
+        # UI Complete action (the manual path, outside this
+        # runtime). A single completion utterance only OFFERS the
+        # path (the character names the Complete action; the record
+        # stays honestly active; the frontend renders the hint +
+        # primary Complete action from `completion_offered`). A
+        # second utterance that is NOT an affirmation or a
+        # restated intent lapses the offer and continues normally:
+        # utterance COUNT alone never closes anything.
+        if state.completion_offered and _is_completion_confirmation(message):
+            self._confirm_completion(host, state)
+            return question_idx
+        if detect_move(message) == "completion":
+            self._offer_completion_path(host, state, message)
+            return question_idx
+        if state.completion_offered:
+            # The visitor moved on to something else: the offered
+            # path lapses. The meeting continues; nothing closes.
+            state.completion_offered = False
+
         # The impression is on the table: this turn ANSWERS it, whatever
         # else it also is. (Correction detection here is a safety
         # check — it decides whether the stored impression is revised.)
@@ -1020,11 +1183,7 @@ class EncounterRuntime:
         # in a question holds its impression for a later turn
         # (2026-10-24 sequencing rule).
         state.engagements += 1
-        frame = d.engage_frame
-        frame += "\n\n" + _ZENAF_QUESTION_NOTE
-        frame += "\n\n" + _naming_note(d)
-        if d.capability_context:
-            frame += "\n\n" + d.capability_context
+        frame = self._engage_frame()
         raw = host.generate(frame)
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
@@ -1103,6 +1262,51 @@ class EncounterRuntime:
                                        allow_bare=bare_pending)
         check_objectives(d, state)
         return question_idx
+
+    # -- completion path -------------------------------------------------------
+
+    def _offer_completion_path(self, host: EncounterHost,
+                               state: EncounterState, message: str) -> None:
+        """First completion intent: OFFER the path, never close.
+        The character names the Complete action (via the frame
+        instruction below) while the record remains honestly active,
+        and `completion_offered` is set so the controller/frontend
+        can render the visible hint + primary Complete action.
+        Words and state cannot disagree: she never claims the
+        meeting is over. A held (pending) impression is NOT
+        delivered on this turn — delivery would make leaving wait
+        on a read; the discard happens only at the actual close.
+        One generation, like any conversational turn; a failed
+        generation degrades to the fallback anchor and the offer
+        still stands (the frontend action works regardless)."""
+        d = self.definition
+        state.completion_offered = True
+        frame, cue = self._turn_frame(state, message)
+        frame += "\n\n" + _COMPLETION_PATH_INSTRUCTION
+        out = _spoken(host.generate(frame) or "")
+        if out:
+            host.say(out)
+            if cue is not None:
+                state.allusions_used.append(cue.seat)
+        elif d.fallback_line:
+            host.say(d.fallback_line)
+        check_objectives(d, state)
+
+    def _confirm_completion(self, host: EncounterHost,
+                            state: EncounterState) -> None:
+        """The offered-path + affirmation sequence, completed: the
+        visitor confirmed after the path was offered, so the meeting
+        closes through the same chokepoint as every other close
+        (reveal + keystone Done + any earned impression filed).
+        A held impression is discarded explicitly first (never
+        spoken, never filed). This is the loop fix: intent stated,
+        path offered, intent restated (or affirmed) REACHES this
+        action instead of looping 'You can click Complete'."""
+        self._discard_pending(
+            state, "visitor confirmed completion after the Complete path was offered")
+        state.completion_offered = False
+        state.closed = True
+        host.close("")
 
     # -- beat handlers -----------------------------------------------------------
 
@@ -1280,28 +1484,63 @@ class EncounterRuntime:
                 and not any(state.satisfied.get(o, False) for o in floor)
             ):
                 return
+            # A held impression never survives a close as an orphan:
+            # on this runtime close it is discarded explicitly (in
+            # practice vacuous — a pending read cannot coexist with
+            # answered recognition — but the branch is explicit so
+            # no close path can strand one silently).
+            self._discard_pending(state, "runtime settled close")
             state.closed = True
             host.close("")
 
     def _wrap_turn(self, host: EncounterHost, state: EncounterState) -> None:
-        """The ceiling's graceful close: form the impression from the
-        whole exchange if it was never offered, ground its filing in
-        the user's most substantive words if it was never answered,
-        and close through the same chokepoint as every other path."""
+        """The ceiling's graceful close: speak a held read if one
+        was earned, otherwise form the impression from the whole
+        exchange ONLY when the impression gate was satisfied, and
+        close through the same chokepoint as every other path.
+        NO-MANUFACTURE RULE (Fellowship shared foundation,
+        2026-10-28): when no gate was satisfied, the ceiling close
+        files NOTHING — it no longer generates an impression from
+        a thin exchange, and it does not ground a filing in the
+        visitor's longest turn as a pseudo-answer. The ceiling is a
+        resource/runaway safeguard, never a recognition claim; a
+        thin meeting that hits it still completes (reveal +
+        keystone Done) with no claim filed. Separation, stated
+        plainly: the settled close may complete without a filed
+        impression, and impression filing still requires the
+        meaningful-evidence standard — the gate at offer time —
+        which is exactly what this branch enforces. (The close
+        floor itself is RETAINED for semantic settled verdicts in
+        _close_or_continue; visitor-directed departure — manual
+        complete and the confirmed completion path — is ungated,
+        as manual complete always was. Restart-claims handling is
+        UNCHANGED: that decision is still open.)"""
         d = self.definition
+        gate = d.impression_gate_objective
+        gate_satisfied = (not gate) or state.satisfied.get(gate, False)
         if not state.impression_offered:
             if state.impression_pending_text:
-                # A held read is the read: it speaks at the wrap
-                # rather than a freshly generated one.
+                # A held read is the read: it was gate-checked at
+                # generation, so it speaks at the wrap rather than
+                # a freshly generated one. (The ceiling is not a
+                # voluntary end, so the explicit-discard rule for
+                # voluntary ends does not apply here.)
                 self._deliver_pending_if_clear(host, state, "",
                                                allow_bare=True)
-            else:
+            elif gate_satisfied:
                 self._offer_impression(
                     host, state, d.impression_frame + _WHOLE_EXCHAUST_NOTE
                 )
-        if not state.response_recorded and state.longest_user_turn:
-            # The impression files with verbatim evidence: the words
-            # it was formed from, since no direct answer was given.
+            # else: no gate satisfied → manufacture nothing. The
+            # close below still runs; _file_impression is a no-op
+            # with no stored claim, so nothing files.
+        if (not state.response_recorded and state.impression_offered
+                and state.longest_user_turn):
+            # Only when an impression actually stands (gate-earned):
+            # the impression files with verbatim evidence — the
+            # words it was formed from, since no direct answer was
+            # given. Never a pseudo-answer for a claim that was
+            # never earned.
             host.store_response(state.longest_user_turn)
             state.response_recorded = True
         state.closed = True

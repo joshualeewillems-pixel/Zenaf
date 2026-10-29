@@ -348,12 +348,14 @@ class _MeetingHost:
     chokepoint."""
 
     def __init__(self, service: "MeetingService", user_id: str, arch_id: str,
-                 keystone_index: int, script: MT.MeetingScript) -> None:
+                 keystone_index: int, script: MT.MeetingScript,
+                 fellowship_reference: str = "") -> None:
         self._svc = service
         self._user_id = user_id
         self._arch_id = arch_id
         self._keystone_index = keystone_index
         self._script = script
+        self._fellowship_reference = fellowship_reference
         self._cid = conversation_id_for(arch_id, keystone_index)
 
     def say(self, body: str) -> None:
@@ -362,7 +364,8 @@ class _MeetingHost:
     def generate(self, frame: str) -> str:
         try:
             return self._svc._generate_framed(
-                self._user_id, self._arch_id, self._keystone_index, frame
+                self._user_id, self._arch_id, self._keystone_index, frame,
+                fellowship_reference=self._fellowship_reference,
             )
         except Exception:
             # A provider failure degrades to the runtime's fallback
@@ -467,12 +470,32 @@ class MeetingService:
             status = row["status"]
             stage = row["stage"]
         script = MT.get_script(arch_id, keystone_index)
+        # Controller-visible completion signal (Fellowship shared
+        # foundation, 2026-10-28): True while the character has
+        # named the Complete action and the record is still active
+        # — the frontend renders its hint + primary Complete action
+        # from this. `pending_impression_discarded` carries the
+        # auditable discard reason after a voluntary end ("" =
+        # nothing discarded). Neither is meaningful once complete
+        # except the discard record, which stays inspectable.
+        completion_offered = False
+        pending_discarded = ""
+        if row is not None:
+            try:
+                enc = self._hydrate_state(row)
+                completion_offered = bool(
+                    enc.completion_offered and status in ("active", "paused"))
+                pending_discarded = enc.pending_impression_discarded or ""
+            except Exception:
+                pass
         return {
             "archetype_id": arch_id,
             "keystone_index": keystone_index,
             "conversation_id": cid,
             "status": status,
             "stage": stage,
+            "completion_offered": completion_offered,
+            "pending_impression_discarded": pending_discarded,
             "has_script": script is not None,
             # The reveal payload: who was met, and the demeanor the first
             # meeting unlocks. Only meaningful once complete — before that
@@ -570,7 +593,10 @@ class MeetingService:
             capability_context=CAP.first_meeting_block(
                 arch_id, CAP.resolve_visitor_state(user_id)),
         )
-        host = _MeetingHost(self, user_id, arch_id, keystone_index, script)
+        host = _MeetingHost(
+            self, user_id, arch_id, keystone_index, script,
+            fellowship_reference=definition.fellowship_reference,
+        )
         new_q_idx = EncounterRuntime(definition).handle_turn(
             host, enc_state, message, int(row["question_idx"])
         )
@@ -622,10 +648,15 @@ class MeetingService:
         return [{"role": m["role"], "content": m["body"]} for m in rows]
 
     def _generate_framed(self, user_id: str, arch_id: str, keystone_index: int,
-                         frame: str) -> str:
+                         frame: str, fellowship_reference: str = "") -> str:
         """Run one live beat against the transcript: the last user message
         is lifted out as the reply builder's input, everything else stays
-        as context, in order. Returns the raw reply text."""
+        as context, in order. Returns the raw reply text.
+        `fellowship_reference` is the seat's slice of the shared
+        Fellowship knowledge, carried as an uncapped meeting-scoped
+        prompt section (see reply.build_voice_prompt) — "" means no
+        reference has been written for this seat yet, and the prompt
+        is byte-identical to before (mechanism only, no content)."""
         cid = conversation_id_for(arch_id, keystone_index)
         history = self._history_for_reply(user_id, cid)
         last_user_idx = max(
@@ -639,6 +670,7 @@ class MeetingService:
             user_id, arch_id, last_user.get("content", ""), prior,
             mode="base", generate_fn=self._generate_fn,
             extra_instructions=frame,
+            fellowship_reference=fellowship_reference or None,
             # Meetings run under the evidence/expression separation
             # (Joshua's ruling, 2026-10-23): no quote-weaving
             # instruction on this path — the character synthesizes
@@ -906,6 +938,15 @@ class MeetingService:
         meeting returns its state unchanged (the reveal is never
         spoken twice). Nothing here trains — same invariant as the
         rest of the engine.
+
+        Pending-impression rule (Fellowship shared foundation,
+        2026-10-28 — this REPLACES the audit's deliver-or-discard
+        alternative): a held (pending) impression is DISCARDED
+        explicitly on this voluntary end, with an auditable reason
+        logged and recorded on the meeting's state — never spoken,
+        never filed, never an accepted claim. If nothing is pending,
+        behavior is unchanged. Restart-claims handling is UNCHANGED
+        (that decision is still open).
         """
         arch_id = (archetype_id or "").strip().lower()
         if arch_id not in stock_archetype_ids():
@@ -929,6 +970,29 @@ class MeetingService:
         if row["status"] not in ("active", "paused"):
             raise MeetingError(
                 "This meeting can't be completed from where it stands."
+            )
+        # Explicit discard (see docstring): the held read must not
+        # strand in the completed row's state_json as an orphan, and
+        # must not be spoken or filed on the way out. The discard
+        # reason is persisted on the state, so it stays inspectable
+        # after the meeting completes.
+        enc_state = self._hydrate_state(row)
+        if enc_state.impression_pending_text:
+            logger.info(
+                "meeting: discarding pending impression on voluntary "
+                "manual complete (POST /meeting/complete); held text "
+                "length=%d, never spoken, never filed",
+                len(enc_state.impression_pending_text),
+            )
+            enc_state.impression_pending_text = ""
+            enc_state.impression_pending_strands = []
+            enc_state.pending_impression_discarded = (
+                "visitor completed the meeting manually "
+                "(POST /meeting/complete)"
+            )
+            self.meetings.update(
+                user_id, arch_id, keystone_index,
+                state_json=enc_state.to_json(),
             )
         self._do_reveal(user_id, arch_id, keystone_index, script)
         return self.state(user_id, arch_id, keystone_index)

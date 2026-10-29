@@ -74,6 +74,11 @@ type MeetingState = {
   conversation_id: string
   status: 'not_started' | 'active' | 'paused' | 'complete'
   stage: string | null
+  // Fellowship shared foundation (2026-10-28): true while the
+  // character has named the Complete action and the record is
+  // still honestly active — the hint + primary Complete action
+  // render from this. Absent on older responses: treated as false.
+  completion_offered?: boolean
   has_script: boolean
   character: string | null
   demeanor: string | null
@@ -379,6 +384,20 @@ export function MeetingView({
             </div>
           )}
 
+          {/* Fellowship shared foundation (2026-10-28): the
+          conversation-visible completion hint. Shown while the
+          character has named the Complete action and the record
+          is still active, so her words and the meeting's state
+          cannot disagree: the meeting is NOT over until the
+          visitor taps Complete. */}
+          {inRoom && state?.completion_offered && !complete && (
+            <div className="mt-3 rounded-2xl border border-amber-600/50 bg-amber-600/10 px-3 py-2 text-sm text-amber-100 leading-snug">
+              She heard you want to finish — the meeting is still open. Tap
+              “Complete this meeting” below when you’re ready, or just keep talking
+              and this note goes away.
+            </div>
+          )}
+
           {showComplete && state && (
             <div className="mtg-reveal">
               <div className="text-xs font-semibold tracking-wide" style={{ color: '#e8a33d' }}>
@@ -429,11 +448,16 @@ export function MeetingView({
             >
               Pause the meeting — it will wait at this exact point
             </button>
+            {/* Fellowship shared foundation (2026-10-28): the Complete
+            action promoted from small grey underlined text to a primary
+            footer action, unified with the paused footer's bordered
+            button pattern. The route is unchanged (POST
+            /meeting/complete, already correct and ungated). */}
             <button
               type="button"
               onClick={() => void completeMeeting()}
               disabled={busy}
-              className="mt-2 min-h-[44px] px-2 text-sm text-stone-400 underline underline-offset-4 disabled:opacity-40"
+              className="mt-2 min-h-[44px] px-5 rounded-full border border-amber-600/60 text-amber-100 text-sm font-semibold disabled:opacity-40"
             >
               Complete this meeting — we’re done here
             </button>

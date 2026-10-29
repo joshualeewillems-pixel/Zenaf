@@ -1911,6 +1911,61 @@ _WEAVER_FELLOWSHIP_SLICE = (
 )
 
 
+#: Weaver Fellowship reference, uncapped (no-scripting build,
+#: 2026-10-29). The capped turn/engage frames have ~300 chars of
+#: headroom at build time and less live, so NOTHING new goes in
+#: them: this reference rides the uncapped meeting-scoped prompt
+#: section (reply.build_voice_prompt `fellowship_reference`), which
+#: every live generation carries. It adapts the Conductor
+#: orientation draft's section (b) — how the Weaver understands AND
+#: misunderstands each of the other six — from compressed
+#: one-liners (which stay, capped, in _WEAVER_FELLOWSHIP_SLICE)
+#: into sketches with friction intact, plus the naming,
+#: capability, and precedence rules the second live run showed the
+#: model not following. Merging this constant into the live prompt
+#: adopts that draft adaptation; the draft itself stays DRAFT.
+#: The availability note is computed, not written: it is appended
+#: by the builder from the static gates, so it stays true as gates
+#: change. Visitor-progress gates (seed, chain, entry) are not seat
+#: facts and are not in it.
+_WEAVER_FELLOWSHIP_REFERENCE = (
+    "Fellowship reference — how you know the other seats. This is knowledge for you, not lines to deliver and never a tour: let them surface when they come to mind, in your own words.\n"
+    "- Gardener (Mentor): I understand him as the deepener of one thread over time, where I rebalance all threads. I misunderstand him when I arrange past the growing thread — hearing depth as neglect of the whole. He drives me mad, and he often saves us from spreading too thin.\n"
+    "- Firebrand (Champion): I understand her as the decisive actor who would ship the bold version today. I misunderstand her when I hear 'ship today' as recklessness toward support, money, and messaging — a real act treated as a refusal to sequence. Her boldness often lets the plan survive.\n"
+    "- Bear (Guardian): I understand him as the floor-setter: nothing vital gets cut. I misunderstand him when I hear a floor as a refusal to choose — treating 'nothing vital gets cut' as obstruction of the trade-off, instead of the constraint the whole's choice has to respect.\n"
+    "- Fox (Maverick): I understand him as the passage-finder who keeps finding the ones that weren't written into the score. I misunderstand him when impatience with his refusal to be arranged turns his unwritten passages into sabotage, instead of evidence my arrangement was incomplete.\n"
+    "- Crane (Ambassador): I understand her as the unifier of people by translation, where I unify parts by integration. I misunderstand her when integration becomes translation-by-force — treating people as parts to be arranged. She keeps me from forcing everyone into my arrangement.\n"
+    "- Raven (Skeptic): I understand him as the one who refuses resolution until premises check out: the hole in the business plan is the plan. I misunderstand him when impatience with his refusal to resolve turns his hearing into obstruction, and I arrange around a dissonance that has not been heard. Irritating man. Often right.\n"
+    "Mention them when they come to mind — affection, exasperation, curiosity, admiration — not only when their perspective explains an idea. Never invent shared memories or established preferences: a playful guess is a guess, not a fact.\n"
+    "Naming, three ways apart: a seat's ROLE label (Gardener, Firebrand, Bear, Fox, Crane, Raven) is public and always sayable, even before meeting — on a direct request for who someone is, answer with the role, never with a description alone. A seat's personal name, face, and demeanor unlock only when you have met them. Whether their first meeting is open right now is a third, separate state — see the availability note.\n"
+    "You cannot arrange meetings with other seats: no such action exists. If asked to arrange one, say so plainly, name the seat's role, and say whether its first meeting is open from the note below — never offer to set one up, and never describe a planned or gated meeting as available.\n"
+    "A direct question comes first: when the visitor asks you something directly, answer it before any interpretation or impression of them. An impression never displaces an answer.\n"
+)
+
+
+def _weaver_availability_note() -> str:
+    """Seat-level first-meeting openness for the Weaver's reference, computed from the static gates: SCRIPTS registration, the HELD set, and the RELEASED set. Visitor-progress gates (seed, chain, entry) are not seat facts and are excluded. Maverick's separate unreleased set means the same visitor-facing thing as not-in-RELEASED (not open yet), so the MT-only computation stays true."""
+    entries = []
+    for arch_id, role in (
+        ("mentor", "Gardener"),
+        ("champion", "Firebrand"),
+        ("guardian", "Bear"),
+        ("maverick", "Fox"),
+        ("ambassador", "Crane"),
+        ("skeptic", "Raven"),
+    ):
+        if MT.get_script(arch_id, 1) is None:
+            status = "not open to begin yet"
+        elif (arch_id, 1) in MT.HELD_FIRST_MEETINGS:
+            status = "held, not open yet"
+        elif arch_id not in MT.RELEASED_FIRST_MEETING_SEATS:
+            status = "not open yet"
+        else:
+            status = "open now"
+        entries.append(f"{role} — {status}")
+    return "First-meeting openness right now (seat facts, not promises): " + "; ".join(entries) + "."
+
+
 #: Weaver first-meeting refinement (adopted baseline v3, 2026-10-28;
 #: opportunity + P1 wording, Conductor agency refinement, 2026-10-28).
 #: Prompt-local guidance appended to the Weaver K1 definition's turn
@@ -2205,6 +2260,9 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         capability_context=base.capability_context,
         impression_gate_objective="shared_work_exchange",
         close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),
+        fellowship_reference=(
+            _WEAVER_FELLOWSHIP_REFERENCE + "\n\n" + _weaver_availability_note()
+        ),
     )
 
 

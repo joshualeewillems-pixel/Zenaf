@@ -83,7 +83,14 @@ def test_turn_frame_states_the_three_intentions():
     # 1. Be yourself, governing.
     assert "Be yourself above all" in frame
     assert "engage with what the visitor actually brings" in frame
-    assert "never resume an agenda of your own" in frame
+    # P1 rewrite (Conductor agency refinement, 2026-10-28): the
+    # initiative bans are superseded by permission + judgment-based
+    # yielding — never a prescribed yield procedure. The old ban
+    # wording must not survive as a separate prohibition.
+    assert "never resume an agenda of your own" not in frame
+    assert "may volunteer a topic" in frame
+    assert "you yield when the visitor redirects" in frame
+    assert "judgment about rhythm, not a procedure" in frame
     # 2. Discover who you are.
     assert "discover who you are" in frame
     assert "why you wanted to meet" in frame
@@ -117,7 +124,7 @@ def test_encounter_frame_carries_the_intentions_on_the_engage_path():
     # frame must carry the philosophy itself — in miniature, not as
     # a second checklist.
     frame = MT.get_script("conductor", 1).encounter_frame
-    assert "answer what they actually said — genuinely" in frame
+    assert "Answer what they actually said — genuinely" in frame
     assert "take up THEIR material as the shared work" in frame
     assert "discover who you are" in frame
     assert "show one real thing concretely" in frame

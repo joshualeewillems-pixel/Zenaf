@@ -206,11 +206,16 @@ def test_readback_frame_demands_a_position_with_contrast(ve_ctx, tmp_path):
     assert "contrast" in frame.lower()
     assert "do not paraphrase" in frame.lower()
     # The Weaver pattern's register rules ride the same frame: the
-    # read comes only after the shared work, and any hedge must NAME
-    # the claim it covers — no blanket "I may have that wrong".
+    # read comes only after the shared work, and contrast / doubt
+    # are available shapes, not mandatory moves (P1 rewrite,
+    # Conductor agency refinement, 2026-10-28). The hedge
+    # discipline survives: name the guessed part, invite correction
+    # of it specifically — no blanket "I may have that wrong".
     assert "after the shared work" in frame
-    assert "name THAT part as the guess" in frame
+    assert "neither is required" in frame
+    assert "name that part and invite correction of it specifically" in frame
     assert "blanket hedge" in frame
+    assert "name THAT part as the guess" not in frame
     # And the position actually flows: shared work → read-back stage.
     uid = _seeded_user()
     svc = _svc(tmp_path)

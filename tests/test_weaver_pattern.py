@@ -519,10 +519,16 @@ def test_hedge_instruction_names_its_claim(ve_ctx, tmp_path):
     script = MT.get_script("conductor", 1)
     definition = ENC.get_definition(script)
     frame = definition.impression_frame
-    # The exact-point-of-doubt discipline, instructed.
-    assert "name THAT part as the guess" in frame
-    assert "the part I may have wrong is" in frame
+    # P1 rewrite (Conductor agency refinement, 2026-10-28): the
+    # doubt-point is an available shape, not a mandatory move with a
+    # scripted phrase. What survives is the discipline: name the
+    # guessed part, invite correction of it specifically, and never
+    # hide behind a blanket hedge naming nothing.
+    assert "name that part and invite correction of it specifically" in frame
     assert "blanket hedge" in frame
+    assert "neither is required" in frame
+    assert "name THAT part as the guess" not in frame
+    assert "the part I may have wrong is" not in frame
     # The old unanchored instruction is gone.
     assert "phrase it as a first impression that may be wrong" not in frame
 

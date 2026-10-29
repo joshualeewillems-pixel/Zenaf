@@ -157,7 +157,10 @@ def _run_skeptic_to_completion(svc, uid, answer, response):
     """Mirror of the Weaver run-to-completion drive: a first
     substantive turn (examination begins), a second (the read
     lands), then the response to the impression; one settled turn
-    if the answer left a thread open."""
+    if the answer left a thread open. UPDATED for decoupled
+    recognition (six-seat Raven build, 2026-10-29): recognition
+    no longer closes — the visitor's own Complete action finishes
+    it, and filing happens at that completion."""
     svc.start(uid, "skeptic")
     svc.turn(uid, "skeptic", answer)
     svc.turn(
@@ -167,6 +170,8 @@ def _run_skeptic_to_completion(svc, uid, answer, response):
     state = svc.turn(uid, "skeptic", response)
     if state["status"] != "complete":
         state = svc.turn(uid, "skeptic", "Got it.")
+    if state["status"] != "complete":
+        state = svc.complete(uid, "skeptic")
     assert state["status"] == "complete"
     return state
 

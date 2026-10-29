@@ -191,6 +191,7 @@ import {
 } from './auth/session'
 import { ProfileAvatarControl } from './components/ProfileAvatarControl'
 import { SettingsView } from './settings/SettingsView'
+import { BuildCouncilSubmitView } from './build-council/BuildCouncilSubmitView'
 import {
   fetchLLMSettings,
   fetchUserPermissionsSettings,
@@ -484,6 +485,7 @@ function LeaveVisionSurfacesFocusClear({
     | 'signal_review'
     | 'provenance'
     | 'settings'
+    | 'build_council_submit'
 }) {
   const ctx = useVisionExecutionFocusOptional()
   const clearRef = useRef(ctx?.clearFocus)
@@ -5061,6 +5063,7 @@ function App() {
           user={currentUser}
           onLogout={handleLogout}
           onUserUpdated={setCurrentUser}
+          onOpenBuildCouncilSubmit={() => setMainView('build_council_submit')}
         />
       )
     }
@@ -5081,6 +5084,7 @@ function App() {
     | 'signal_review'
     | 'provenance'
     | 'settings'
+    | 'build_council_submit'
   const [mainView, setMainView] = useState<MainView>('living_tree')
   // Mobile: the conversation panel starts collapsed so the view's content owns
   // the screen; expand on demand. Desktop (lg+) always shows it.
@@ -6122,7 +6126,15 @@ function App() {
             user={currentUser}
             onLogout={handleLogout}
             onUserUpdated={setCurrentUser}
+            onOpenBuildCouncilSubmit={() => setMainView('build_council_submit')}
           />
+        ) : mainView === 'build_council_submit' ? (
+          <div className="flex-1 flex flex-col min-h-0">
+            <BuildCouncilSubmitView
+              user={currentUser}
+              onBack={() => setMainView('settings')}
+            />
+          </div>
         ) : mainView === 'vision_map' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <VisionMapView

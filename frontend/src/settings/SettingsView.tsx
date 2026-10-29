@@ -7,14 +7,16 @@ import { PrivacySection } from './sections/PrivacySection'
 import { CouncilIntegrityReviewSection } from './sections/CouncilIntegrityReviewSection'
 import { PermissionsSection } from './sections/PermissionsSection'
 import { InvitesSection } from './sections/InvitesSection'
+import { BuildCouncilSection } from './sections/BuildCouncilSection'
 
 type Props = {
   user: CurrentUser
   onLogout: () => void
   onUserUpdated: (u: CurrentUser) => void
+  onOpenBuildCouncilSubmit: () => void
 }
 
-export function SettingsView({ user, onLogout, onUserUpdated }: Props) {
+export function SettingsView({ user, onLogout, onUserUpdated, onOpenBuildCouncilSubmit }: Props) {
   return (
     <div className="flex-1 overflow-auto p-6 max-w-3xl mx-auto space-y-6">
       <div>
@@ -29,6 +31,7 @@ export function SettingsView({ user, onLogout, onUserUpdated }: Props) {
       <ModelConnectionsSection />
       <NotificationsSection />
       {user.is_admin && <InvitesSection user={user} />}
+      {user.is_admin && <BuildCouncilSection user={user} onOpen={onOpenBuildCouncilSubmit} />}
     </div>
   )
 }

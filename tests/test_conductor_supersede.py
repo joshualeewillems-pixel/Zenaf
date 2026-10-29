@@ -28,15 +28,12 @@ implement a second mechanism in shared code. Therefore:
 
 - test_restart_alone_does_not_supersede PASSES on this PR alone
   (restart already never touches claims).
-- test_second_filing_supersedes_prior_claim is marked xfail
-  (integration-pending against the shared PR): it fails today
-  because both claims stand, and passes when the shared mechanism
-  lands with the encoding asserted here. If the shared PR chooses a
-  different encoding, reconcile this test at merge time — do not
-  silently keep two mechanisms. When the shared mechanism merges,
-  remove the xfail marker AND update test_meeting_impressions.py's
-  test_replay_files_a_second_distinct_claim (which pins today's
-  archived-run-untouched behavior) to the supersede expectation.
+- test_second_filing_supersedes_prior_claim ran xfail
+  (integration-pending against the shared PR) until the shared
+  mechanism (#260) landed with the encoding asserted here;
+  marker removed. test_meeting_impressions.py's
+  test_replay_files_a_second_distinct_claim already carries the
+  supersede expectation on main.
 
 Harness mirrors tests/test_meeting_impressions.py (same FakeGen
 beats, same drive to completion, same AgentStore read path). No
@@ -181,12 +178,6 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path):
     assert len(_standing(claims)) == 1
 
 
-@pytest.mark.xfail(
-    strict=False,
-    reason="integration-pending: shared supersede mechanism (follow-up PR "
-    "stacked on PR #255) not yet merged; this per-seat PR deliberately "
-    "ships no second mechanism in shared filing code.",
-)
 def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path):
     # Run 1 files and is accepted; restart; run 2 files. Old row
     # retained with its prior verdict visible; exactly one standing

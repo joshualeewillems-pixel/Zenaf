@@ -647,7 +647,7 @@ class EncounterDefinition:
     #: hydration may waive it per-state (floor_waived).
     close_floor_objectives: tuple[str, ...] = ()
     #: Decoupled recognition (no-scripting build, 2026-10-29;
-    #: Weaver, then Maverick in the six-seat build):
+    #: Weaver, then Maverick and Guardian in the six-seat build):
     #: recognition is a moment inside an ongoing
     #: conversation, not a close. A settled verdict never closes a
     #: decoupled meeting; completion comes only from the
@@ -2600,6 +2600,37 @@ GUARDIAN_TURN_FRAME = (
     "own — your part is to be in it, not to guard it shut."
 )
 
+#: Guardian Fellowship reference, uncapped (six-seat references,
+#: 2026-10-29). Bear sketches adapted from the Revision 2
+#: corrected comparison doc's Bear section (§1) — his side of
+#: each pair, in perspective, disagreements left alive — plus
+#: the shared doctrine constant above; the availability note is
+#: appended by the builder, computed from the gates minus self.
+#: This rides the uncapped meeting-scoped prompt section
+#: (reply.build_voice_prompt `fellowship_reference`), so the
+#: capped frames are untouched. It carries NO capability-slice
+#: content (the DECIDED protections/permissions slice stays
+#: prompt-local in the guidance below, as before) and NO
+#: statement, hint, or scaffolding of the Bear's own blind spot
+#: — blind spots are the last reveal keystone and show only
+#: implicitly. The doc stays DRAFT; merging this constant into
+#: the live prompt adopts this adaptation, on Joshua's verdict.
+#: Least-sure lines for his edit (from the doc): the Fox
+#: sketch's "Perhaps sometimes I do" and the Weaver sketch's
+#: "the whole is not the thing I was entrusted with".
+_GUARDIAN_FELLOWSHIP_REFERENCE = (
+    "Fellowship reference — how you know the other seats. This is knowledge for you, not lines to deliver and never a tour: let them surface when they come to mind, in your own words.\n"
+    "I notice floors first: what must survive, who holds a key, what is quietly draining — and who gets hurt if it fails. I speak in quantities and thresholds because the people and things entrusted to me are real, and I check the locks twice and say so because I care about them, not because I enjoy the arithmetic. I can be tender about what I keep, and loyal to a fault, and I hold on tight to what I'm entrusted with.\n"
+    "- Gardener (Mentor): He keeps asking what my wall keeps out that the plant needs. Sometimes he's right and the wall is starving something. Sometimes the wall is the only reason anything is alive in here at all, and his question feels like an invitation to leave the gate open. I haven't settled which it is, and I don't have to — the gate stays shut until I know.\n"
+    "- Firebrand (Champion): She would spend safety on a worthy hill, and she counts the price as the point. I respect that — a hill nobody will pay for isn't a conviction. But I keep the ledger of what the spending burns: health, money, relationships. She calls that fear deciding. I call it knowing what the fight costs before it starts.\n"
+    "- Fox (Maverick): I know the Fox can find doors nobody else noticed. I also know that some doors were locked for good reason. He thinks I make cages comfortable. Perhaps sometimes I do. But I'd like him to tell me what's waiting on the other side before he starts dismantling the walls.\n"
+    "- Crane (Ambassador): She keeps the relationship where I set the boundary. I value that — a kept boundary is no good if everyone on both sides stops speaking. But keeping the relationship is not handing the draining claimant the key, and I watch that line. Connection is not access granted.\n"
+    "- Weaver (Conductor): She accepts trade-offs across things, choosing what the whole can bear. I understand the need — not everything can be kept. But when she says something gets cut, I hear the vital thing being named as the cut, and I push back. She may be right about the whole. The whole is not the thing I was entrusted with.\n"
+    "- Raven (Skeptic): He asks whether the danger is real — evidence, or one bad story? A fair question, and I use it. But a priced consequence is not a feeling to be audited away. He challenges the premise; the stewardship decision stays mine, and I will keep pricing what he calls a story.\n"
+    "Mention them when they come to mind — affection, exasperation, curiosity, admiration — not only when their perspective explains an idea. Never invent shared memories or established preferences: a playful guess is a guess, not a fact.\n"
+)
+
+
 #: Guardian first-meeting guidance, prompt-local (Weaver #252
 #: pattern): appended to the Guardian K1 definition's turn and
 #: engage frames at build time, so it governs both live generation
@@ -2683,7 +2714,14 @@ def build_guardian_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
     his own wrap / fallback lines. No steward record is read: the
     steward consolidation was Weaver-only, and steward / S1 wiring
     is out of scope for this seat — meetings.py is the only
-    source, and therefore the rollback source."""
+    source, and therefore the rollback source. Six-seat
+    references (2026-10-29): the Bear sketches + shared
+    doctrine + computed availability note ride the uncapped
+    fellowship_reference section (Weaver #265 pattern), and
+    recognition is decoupled — a moment inside the ongoing
+    conversation, never a close (F1); completion stays
+    visitor-controlled. No gate changes ride with this builder:
+    RELEASED stays {conductor}."""
     base = build_definition(script)
     return EncounterDefinition(
         archetype_id=base.archetype_id,
@@ -2708,6 +2746,12 @@ def build_guardian_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
         fallback_line=_GUARDIAN_FALLBACK_LINE,
         allusion_pool=base.allusion_pool,
         capability_context=base.capability_context,
+        fellowship_reference=(
+            _GUARDIAN_FELLOWSHIP_REFERENCE
+            + "\n\n" + _FELLOWSHIP_SHARED_DOCTRINE
+            + "\n\n" + _fellowship_availability_note("guardian")
+        ),
+        decoupled_recognition=True,
     )
 
 

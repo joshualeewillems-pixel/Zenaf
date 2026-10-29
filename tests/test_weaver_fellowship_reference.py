@@ -18,7 +18,9 @@ live generation carries — not the capped frames. What this pins:
   stays true as gates change — and it currently reports the
   post-merge truth (Conductor open; the rest not open).
 - The capped frames do NOT carry the new material (budget safety),
-  and no other seat gains a reference from this change.
+  and no other seat gains a reference from this change (the
+  Guardian gains one later, in its own six-seat PR — see
+  test_guardian_recognition_moment.py).
 - The stale capabilities-registry line ("Only the Conductor's
   first meeting is scripted") is gone.
 
@@ -102,9 +104,22 @@ def test_new_material_not_in_capped_frames():
     assert len(definition.turn_frame) == 4992
 
 
-def test_other_seats_gain_no_reference():
-    guardian = ENC.get_definition(MT.get_script("guardian", 1))
-    assert guardian.fellowship_reference == ""
+def test_all_seats_carry_a_reference():
+    # The six-seat build completed the set: every written seat now
+    # carries a fellowship_reference. This guard inverts the old
+    # no-reference guard — each six-seat merge removed its seat
+    # from the empty set, and Bear's removes the last — so a rebase
+    # that drops a seat's reference fails here instead of silently.
+    for definition in (
+        ENC.get_definition(MT.get_script("conductor", 1)),
+        ENC.get_definition(MT.get_script("champion", 1)),
+        ENC.get_definition(MT.get_script("guardian", 1)),
+        ENC.get_definition(MT.get_script("maverick", 1)),
+        ENC.get_definition(MT.MENTOR_FIRST_MEETING),
+        ENC.get_definition(MT.AMBASSADOR_FIRST_MEETING),
+        ENC.get_definition(MT.SKEPTIC_FIRST_MEETING),
+    ):
+        assert definition.fellowship_reference != ""
 
 
 def test_capabilities_registry_line_no_longer_stale():

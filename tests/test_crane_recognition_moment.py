@@ -3,9 +3,11 @@ references, 2026-10-29 — Crane PR, mirroring the Weaver
 recognition-moment suite). What this pins:
 
 - Decoupling flag: Crane True (Weaver True, unchanged; Guardian
-  False as the coupled control).
+  True by the six-seat Bear PR; Champion True by the Firebrand
+  merge — no real seat remains coupled, so the coupled path uses
+  a synthetic twin).
 - A settled verdict never closes a decoupled Crane meeting; it
-  still closes a coupled one (Guardian control).
+  still closes a coupled one (coupled twin).
 - The recognition moment delivers a live-generated introduction
   exactly once — a second generation on the recognition turn —
   and never as scripted text (no reveal paragraph spoken).
@@ -30,6 +32,7 @@ calls anywhere.
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 
 import pytest
@@ -81,22 +84,32 @@ def _crane_runtime():
     )
 
 
-def _guardian_runtime():
+def _coupled_runtime():
+    # No real seat remains coupled (F1: all seven decoupled after
+    # the six-seat build), so the coupled path is exercised via a
+    # synthetic coupled twin: this seat's own definition with only
+    # the flag flipped. Same script, same gates — only the coupled
+    # branch under test changes.
     return ENC.EncounterRuntime(
-        ENC.get_definition(MT.get_script("guardian", 1))
+        dataclasses.replace(
+            ENC.get_definition(MT.AMBASSADOR_FIRST_MEETING),
+            decoupled_recognition=False,
+        )
     )
 
 
 # ---------------------------------------------------------------- flags
 
 
-def test_decoupling_flag_crane_true_guardian_false():
+def test_decoupling_flag_crane_weaver_guardian_champion():
     crane = ENC.get_definition(MT.AMBASSADOR_FIRST_MEETING)
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
     weaver = ENC.get_definition(MT.get_script("conductor", 1))
+    champion = ENC.get_definition(MT.get_script("champion", 1))
     assert crane.decoupled_recognition is True
     assert weaver.decoupled_recognition is True
-    assert guardian.decoupled_recognition is False
+    assert guardian.decoupled_recognition is True
+    assert champion.decoupled_recognition is True
 
 
 def test_introduction_flag_round_trips_and_defaults_false():
@@ -125,7 +138,7 @@ def test_settled_verdict_does_not_close_decoupled_crane():
 def test_settled_verdict_still_closes_coupled():
     host = FakeHost()
     state = ENC.EncounterState(impression_answered=True)
-    _guardian_runtime()._close_or_continue(host, state, "Thanks.", "settled")
+    _coupled_runtime()._close_or_continue(host, state, "Thanks.", "settled")
     assert host.close_calls == [""]
     assert state.closed is True
 
@@ -174,7 +187,7 @@ def test_introduction_skipped_when_not_decoupled():
     state = ENC.EncounterState(
         impression_offered=True, impression_text="a read",
     )
-    runtime = _guardian_runtime()
+    runtime = _coupled_runtime()
     runtime._impression_response_turn(host, state, "Yes, that's right.")
     assert state.introduction_delivered is False
     assert "I am the Crane." not in host.said

@@ -2,9 +2,10 @@
 2026-10-29). Mirrors tests/test_weaver_recognition_moment.py for
 the Skeptic. What this pins:
 
-- Decoupling flag: Skeptic True, Guardian False (coupled control).
+- Decoupling flag: Skeptic True, Guardian True.
 - A settled verdict never closes a decoupled meeting; it still
-  closes a coupled one (Guardian control).
+  closes a coupled one (coupled twin — no real seat remains
+  coupled).
 - The recognition moment delivers a live-generated introduction
   exactly once (flag persists across to_json/from_json; old rows
   hydrate to False), and never as scripted text.
@@ -29,6 +30,8 @@ calls anywhere.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import pytest
 
@@ -78,20 +81,28 @@ def _skeptic_runtime():
     )
 
 
-def _guardian_runtime():
+def _coupled_runtime():
+    # No real seat remains coupled (F1: all seven decoupled after
+    # the six-seat build), so the coupled path is exercised via a
+    # synthetic coupled twin: this seat's own definition with only
+    # the flag flipped. Same script, same gates — only the coupled
+    # branch under test changes.
     return ENC.EncounterRuntime(
-        ENC.get_definition(MT.get_script("guardian", 1))
+        dataclasses.replace(
+            ENC.get_definition(MT.SKEPTIC_FIRST_MEETING),
+            decoupled_recognition=False,
+        )
     )
 
 
 # ---------------------------------------------------------------- flags
 
 
-def test_decoupling_flag_skeptic_true_guardian_false():
+def test_decoupling_flag_skeptic_true_guardian_true():
     skeptic = ENC.get_definition(MT.SKEPTIC_FIRST_MEETING)
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
     assert skeptic.decoupled_recognition is True
-    assert guardian.decoupled_recognition is False
+    assert guardian.decoupled_recognition is True
 
 
 def test_introduction_flag_round_trips_and_defaults_false():
@@ -119,7 +130,7 @@ def test_settled_verdict_does_not_close_decoupled():
 def test_settled_verdict_still_closes_coupled():
     host = FakeHost()
     state = ENC.EncounterState(impression_answered=True)
-    _guardian_runtime()._close_or_continue(host, state, "Thanks.", "settled")
+    _coupled_runtime()._close_or_continue(host, state, "Thanks.", "settled")
     assert host.close_calls == [""]
     assert state.closed is True
 
@@ -153,7 +164,7 @@ def test_introduction_skipped_when_not_decoupled():
     state = ENC.EncounterState(
         impression_offered=True, impression_text="a read",
     )
-    runtime = _guardian_runtime()
+    runtime = _coupled_runtime()
     runtime._impression_response_turn(host, state, "Yes, that's right.")
     assert state.introduction_delivered is False
     assert "I am the Raven." not in host.said

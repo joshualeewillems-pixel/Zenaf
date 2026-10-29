@@ -2,7 +2,7 @@
 references, 2026-10-29). Mirrors the Weaver recognition-moment
 suite, for the Fox — F1 decoupling applied to a second seat:
 
-- Decoupling flag: Maverick True (Guardian stays False).
+- Decoupling flag: Maverick True (Guardian True).
 - A settled verdict never closes a decoupled meeting, and the
   settled turn files nothing — filing happens only at the
   completion chokepoint (see the restart-supersede suite, which
@@ -26,6 +26,8 @@ No model calls anywhere.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import pytest
 
@@ -74,20 +76,28 @@ def _maverick_runtime():
     )
 
 
-def _guardian_runtime():
+def _coupled_runtime():
+    # No real seat remains coupled (F1: all seven decoupled after
+    # the six-seat build), so the coupled path is exercised via a
+    # synthetic coupled twin: this seat's own definition with only
+    # the flag flipped. Same script, same gates — only the coupled
+    # branch under test changes.
     return ENC.EncounterRuntime(
-        ENC.get_definition(MT.get_script("guardian", 1))
+        dataclasses.replace(
+            ENC.get_definition(MT.get_script("maverick", 1)),
+            decoupled_recognition=False,
+        )
     )
 
 
 # ---------------------------------------------------------------- flags
 
 
-def test_decoupling_flag_maverick_true_guardian_false():
+def test_decoupling_flag_maverick_true_guardian_true():
     maverick = ENC.get_definition(MT.get_script("maverick", 1))
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
     assert maverick.decoupled_recognition is True
-    assert guardian.decoupled_recognition is False
+    assert guardian.decoupled_recognition is True
     # No authored gate or floor rides with decoupling: the generic
     # path stands (the audit-carried gate/floor was never code).
     assert maverick.impression_gate_objective == ""
@@ -136,7 +146,7 @@ def test_introduction_skipped_when_not_decoupled():
     state = ENC.EncounterState(
         impression_offered=True, impression_text="a read",
     )
-    runtime = _guardian_runtime()
+    runtime = _coupled_runtime()
     runtime._impression_response_turn(host, state, "Yes, that's right.")
     assert state.introduction_delivered is False
     assert "I am the Fox." not in host.said

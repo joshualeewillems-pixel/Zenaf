@@ -273,10 +273,10 @@ def test_reference_slice_on_both_live_paths_and_nowhere_else():
         assert marker not in weaver.turn_frame, marker
         assert marker not in weaver.engage_frame, marker
     # The slice is prompt-local, not the shared uncapped section:
-    # this checkout's definition has no fellowship_reference field
-    # (that mechanism is unmerged PR #255) and the slice lives in
-    # the frames themselves.
-    assert not hasattr(definition, "fellowship_reference")
+    # #255 (merged) added a fellowship_reference field to every
+    # definition, but the Guardian builder leaves it empty — the
+    # slice lives in the frames themselves.
+    assert definition.fellowship_reference == ""
 
 
 def test_no_steward_wiring_for_guardian():

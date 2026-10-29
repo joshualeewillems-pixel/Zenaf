@@ -151,6 +151,23 @@ class MeetingError(ValueError):
     """A meeting rule refusal (maps to 409 in the route layer)."""
 
 
+#: Written-but-unreleased first meetings (Fellowship
+#: conversational-agency build, 2026-10-28): script existence alone
+#: would otherwise make a meeting begin-able once its seat's
+#: keystone chain is seeded and the entry seat's first meeting is
+#: complete (see _check_beginnable), so a written script needs an
+#: explicit begin refusal until its release decision. Building an
+#: encounter does NOT make it available. Removing an entry here
+#: is the whole release mechanism — no gate, keystone, or unlock
+#: semantics change for any other seat, and no other path can
+#: start a meeting: turn/complete/restart all refuse without an
+#: active/completed row, and only start creates one.
+#: The Conductor is deliberately absent: its meeting is released.
+_UNRELEASED_MEETINGS: frozenset[tuple[str, int]] = frozenset({
+    ("maverick", 1),
+})
+
+
 class MeetingStore:
     """SQLite-backed meeting state. Strictly per-user rows."""
 
@@ -416,6 +433,12 @@ class MeetingService:
         arch_id = (archetype_id or "").strip().lower()
         if arch_id not in stock_archetype_ids():
             raise ValueError(f"Unknown seat: {archetype_id!r}")
+        if (arch_id, keystone_index) in _UNRELEASED_MEETINGS:
+            raise MeetingError(
+                "That meeting is written but not open yet — it will "
+                "get its own conversation when its turn comes, "
+                "nothing improvised."
+            )
         if keystone_seeding.find_keystone_initiative(user_id) is None:
             raise MeetingError(
                 "Your council hasn't been seeded yet — the meetings arrive "

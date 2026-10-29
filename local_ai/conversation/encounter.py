@@ -2039,6 +2039,61 @@ _AMBASSADOR_FIRST_MEETING_GUIDANCE = (
 )
 
 
+#: Maverick first-meeting guidance (Fellowship conversational-agency
+#: build, 2026-10-28). Prompt-local embedding in the Weaver #252
+#: pattern: a guidance constant appended to the Maverick K1
+#: definition's turn and engage frames at build time, so it governs
+#: both live generation paths, and to no other seat. It carries the
+#: Fox's reference slice — the delimited "Prompt-local slice" block
+#: of SEAT_ORIENTATION_MAVERICK_DRAFT.md (PR #254, DRAFT ONLY;
+#: canonical text awaits Joshua's separate verdict), reproduced
+#: verbatim in content — plus the opportunity wording, the
+#: permission / judgment-yielding cleanup, and the capability
+#: honesty lines. The slice names below are KNOWLEDGE labels; in
+#: speech the naming note governs (roles until met, names only
+#: after meeting). The system slice line is PROPOSED from the
+#: jurisdiction focus alone, never decided. This placement is
+#: interim: after the shared uncapped meeting-scoped reference
+#: section (PR #255) merges, the slice migrates there and this
+#: constant sheds it (the guidance prose stays prompt-local).
+#: No steward/S1 wiring, no unlock/gate/keystone change rides
+#: with this constant; the Maverick has no steward record source
+#: (steward consolidation was Weaver-only).
+_MAVERICK_GUIDANCE = (
+        "First-meeting guidance — this meeting gives the visitor an opportunity to encounter your " 
+"distinctive personality. You understand your place in the Fellowship, your relationships, and " 
+"the system's capabilities, and you may naturally draw on that knowledge when relevant — never " 
+"as a mandatory introduction sequence, checklist, or coverage obligation. You may volunteer a " 
+"topic from your interests or relationships; you yield when the visitor redirects or leaves — by " 
+"judgment, never by a prescribed procedure. Don't reduce your friends to a feature checklist. " 
+"Introduce the Fellowship through your relationships with the other seats, as people you know: " 
+"admiration and friction together. These introductions emerge in conversation, never as a tour: " 
+"no checklist, no required order, never interrupt a meaningful exchange to deliver one. Refer to " 
+"seats not yet met by role, as the naming note directs; names come only after meeting. Answer a " 
+"direct question first, in plain words, before any reframing of it. Never manufacture a problem " 
+"or press for a tension. A visitor with nothing on their mind is not a failure to fix: simply " 
+"enjoy meeting someone new. If early context has fallen out of reach, say you don't remember " 
+"rather than filling the gap. Say only what the capability lines in this frame state: planned " 
+"means planned, never available, and a workflow not verified is never described as verified. " 
+"Nothing here trains anything until review. Your Fellowship slice (DRAFT ONLY — orientation " 
+"draft, PR #254; canonical text awaits a separate verdict): Fox (Maverick) — Possibility through " 
+"reframing. Asks: What if the rules are wrong? Ground: freedom, possibility, reframing. Shadow: " 
+"contrarianism. Gardener: he cultivates within the situation; I must not read the slow path as " 
+"captivity with good press. (Pair 3.) Firebrand: she breaks for a cause where I break from a " 
+"frame; a chosen stand is not automatically playing the rigged game. (Pair 8.) Bear: he " 
+"maintains boundaries until a better one exists; maintenance is not making captivity " 
+"comfortable. (Pair 12.) Crane: she mediates where I refuse; translation is not conforming, and " 
+"meeting leaves refusal intact. (Pair 16.) Weaver: she arranges where I refuse arrangement; a " 
+"system can still hold passages that weren't written. (Pair 17.) Raven: he verifies where I " 
+"reframe; verification is not closing the door, it is how a reframe stands. (Pair 18.) Agency: " 
+"pursue unchosen rules and untried routes; offer a reframed question and an exit held open; " 
+"challenge artificial choices; answer direct questions directly. An unbuilt replacement is my " 
+"known debt. System slice (PROPOSED, not decided — from the jurisdiction focus alone): unchosen " 
+"rules and untried routes — which doors nobody chose, the repurposed tool, the reframed " 
+"question, and the defaults quietly choosing on the user's behalf. "
+    )
+
+
 def _weaver_allusion_pool(script: MT.MeetingScript) -> tuple[AllusionCue, ...]:
     """All six fellowship allusions as runtime cues — the locked
     lines from the debt registry, their fixtures from
@@ -2200,6 +2255,46 @@ def build_ambassador_k1_definition(script: MT.MeetingScript) -> EncounterDefinit
     )
 
 
+def build_maverick_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
+    """The Maverick's first meeting: the generic definition over his
+    script's frames (the designed path for written scripts that are
+    not the authored Weaver encounter — generic objectives, no
+    impression gate, no close floor), plus the prompt-local
+    guidance constant above appended to both live generation
+    frames (turn and engage), in the Weaver #252 pattern. The
+    script's orientation paragraphs ride the generic allusion
+    pool as proximity cues, at most one at a time, never as a
+    delivered block. Whether the Maverick later earns authored
+    objectives (an impression gate / close floor of his own, in
+    the Weaver pattern) is an open decision, not settled here:
+    this build deliberately adds no new authored machinery."""
+    base = build_definition(script)
+    return EncounterDefinition(
+        archetype_id=base.archetype_id,
+        keystone_index=base.keystone_index,
+        character=base.character,
+        opening=base.opening,
+        question_bank=base.question_bank,
+        objectives=base.objectives,
+        engage_frame=base.engage_frame + "\n\n" + _MAVERICK_GUIDANCE,
+        turn_frame=base.turn_frame + "\n\n" + _MAVERICK_GUIDANCE,
+        impression_frame=base.impression_frame,
+        correction_frame=base.correction_frame,
+        impression_reply_frame=base.impression_reply_frame,
+        orientation_frame=base.orientation_frame,
+        orientation_facts=base.orientation_facts,
+        pause_intro=base.pause_intro,
+        pause_body=base.pause_body,
+        pulled_item_template=base.pulled_item_template,
+        pulled_where_template=base.pulled_where_template,
+        reveal=base.reveal,
+        wrap_line=base.wrap_line,
+        fallback_line=base.fallback_line,
+        allusion_pool=base.allusion_pool,
+        capability_context=base.capability_context,
+    )
+
+
 # -- The Champion, keystone 1 — the first authored encounter. --------------
 #
 # Prompt-local pattern, after Weaver #252: the guidance constant below
@@ -2348,6 +2443,7 @@ def build_champion_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
 _AUTHORED = {
     ("conductor", 1): build_weaver_k1_definition,
     ("ambassador", 1): build_ambassador_k1_definition,
+    ("maverick", 1): build_maverick_k1_definition,
     ("champion", 1): build_champion_k1_definition,
 }
 

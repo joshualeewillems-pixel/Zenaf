@@ -373,13 +373,15 @@ class _MeetingHost:
 
     def __init__(self, service: "MeetingService", user_id: str, arch_id: str,
                  keystone_index: int, script: MT.MeetingScript,
-                 fellowship_reference: str = "") -> None:
+                 fellowship_reference: str = "",
+                 decoupled_recognition: bool = False) -> None:
         self._svc = service
         self._user_id = user_id
         self._arch_id = arch_id
         self._keystone_index = keystone_index
         self._script = script
         self._fellowship_reference = fellowship_reference
+        self._decoupled_recognition = decoupled_recognition
         self._cid = conversation_id_for(arch_id, keystone_index)
 
     def say(self, body: str) -> None:
@@ -413,6 +415,7 @@ class _MeetingHost:
         self._svc._do_reveal(
             self._user_id, self._arch_id, self._keystone_index,
             self._script, wrap_line=wrap_line,
+            silent_close=self._decoupled_recognition,
         )
 
 
@@ -655,6 +658,7 @@ class MeetingService:
         host = _MeetingHost(
             self, user_id, arch_id, keystone_index, script,
             fellowship_reference=definition.fellowship_reference,
+            decoupled_recognition=definition.decoupled_recognition,
         )
         new_q_idx = EncounterRuntime(definition).handle_turn(
             host, enc_state, message, int(row["question_idx"])
@@ -739,17 +743,25 @@ class MeetingService:
         return reply.reply
 
     def _do_reveal(self, user_id: str, arch_id: str, keystone_index: int,
-                   script: MT.MeetingScript, wrap_line: str = "") -> None:
+                   script: MT.MeetingScript, wrap_line: str = "",
+                   silent_close: bool = False) -> None:
         """The completion chokepoint (the runtime's `close`): the
         reveal, the keystone task Done, and the impression filed —
         every path that finishes a meeting funnels through here, so
         the filing happens exactly once per run. A ceiling close
-        speaks its wrap line first ("I've kept you long enough")."""
+        speaks its wrap line first ("I've kept you long enough").
+        `silent_close` (decoupled recognition, no-scripting build,
+        2026-10-29): no scripted speech at all — neither the wrap
+        line nor the reveal paragraphs. The recognition moment
+        already introduced the character live, and the completion
+        card marks the close; the task Done, event, and filing
+        below still run exactly as before."""
         cid = conversation_id_for(arch_id, keystone_index)
-        if wrap_line:
-            self._say(user_id, cid, arch_id, wrap_line)
-        for paragraph in script.reveal:
-            self._say(user_id, cid, arch_id, paragraph)
+        if not silent_close:
+            if wrap_line:
+                self._say(user_id, cid, arch_id, wrap_line)
+            for paragraph in script.reveal:
+                self._say(user_id, cid, arch_id, paragraph)
 
         tasks = _seat_keystone_tasks(user_id, arch_id)
         if len(tasks) >= keystone_index:
@@ -1094,5 +1106,10 @@ class MeetingService:
                 user_id, arch_id, keystone_index,
                 state_json=enc_state.to_json(),
             )
-        self._do_reveal(user_id, arch_id, keystone_index, script)
+        # Manual Complete funnels through the same chokepoint, with
+        # the same silence for decoupled definitions (no scripted
+        # reveal on a visitor-initiated close either).
+        definition = ENC.get_definition(script)
+        self._do_reveal(user_id, arch_id, keystone_index, script,
+                        silent_close=definition.decoupled_recognition)
         return self.state(user_id, arch_id, keystone_index)

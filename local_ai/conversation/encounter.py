@@ -646,6 +646,16 @@ class EncounterDefinition:
     #: the meeting after recognition. Empty = no floor. Legacy
     #: hydration may waive it per-state (floor_waived).
     close_floor_objectives: tuple[str, ...] = ()
+    #: Decoupled recognition (no-scripting build, 2026-10-29; Weaver
+    #: only): recognition is a moment inside an ongoing
+    #: conversation, not a close. A settled verdict never closes a
+    #: decoupled meeting; completion comes only from the
+    #: visitor-confirmed path, the ceiling wrap, or manual
+    #: Complete. The recognition moment delivers a live-generated
+    #: self-introduction once (see _deliver_introduction_if_due),
+    #: and the close speaks no scripted reveal or wrap line (see
+    #: _do_reveal `silent_close`).
+    decoupled_recognition: bool = False
     #: Seats the visitor has already met (completed first meetings),
     #: as archetype ids — set by the meeting service per turn, never
     #: by the script. The naming rule (role before meeting, character
@@ -748,6 +758,12 @@ class EncounterState:
     #: adaptive runtime never sets it — it maps to the
     #: post-recognition phase (see derived_stage / handle_turn).
     pause_delivered: bool = False
+    #: Live-introduction ledger (no-scripting build, 2026-10-29):
+    #: True once the decoupled recognition moment has delivered the
+    #: character's live-generated self-introduction. Persisted, so
+    #: the introduction speaks exactly once across turns and
+    #: restarts; rows predating it hydrate to False.
+    introduction_delivered: bool = False
     #: Cue keys already surfaced: fellowship seats for allusions,
     #: "pause:N" for retired-pause paragraphs — one ledger, so the
     #: same fixture can never surface twice by either path.
@@ -781,6 +797,7 @@ class EncounterState:
             "pending_impression_discarded": self.pending_impression_discarded,
             "response_recorded": self.response_recorded,
             "pause_delivered": self.pause_delivered,
+            "introduction_delivered": self.introduction_delivered,
             "allusions_used": self.allusions_used,
             "fallback_uses": self.fallback_uses,
             "closed": self.closed,
@@ -807,7 +824,8 @@ class EncounterState:
             "impression_pending_text", "impression_pending_strands",
             "completion_offered", "pending_impression_discarded",
             "response_recorded",
-            "pause_delivered", "allusions_used",
+            "pause_delivered", "introduction_delivered",
+            "allusions_used",
             "fallback_uses",
             "closed",
         ):
@@ -1179,6 +1197,7 @@ class EncounterRuntime:
             return question_idx
 
         move = detect_move(message)
+        direct_question = move == "question"
 
         if move == "pass":
             return self._pass_turn(host, state, message, question_idx)
@@ -1189,6 +1208,8 @@ class EncounterRuntime:
             # The agenda does not advance — but nothing is skipped:
             # the objectives stay live for the next turn.
             frame, cue = self._turn_frame(state, message)
+            if direct_question:
+                frame += _DIRECT_QUESTION_PRECEDENCE
             out = _spoken(host.generate(frame) or "")
             if out:
                 host.say(out)
@@ -1196,7 +1217,8 @@ class EncounterRuntime:
                     # The trace surfaced: log it against the debt
                     # registry (the state's side of the ledger).
                     state.allusions_used.append(cue.seat)
-                self._deliver_pending_if_clear(host, state, out)
+                if not direct_question:
+                    self._deliver_pending_if_clear(host, state, out)
             elif _has_fallback(d):
                 host.say(_fallback_line(d, state))
             if move == "offer":
@@ -1444,8 +1466,32 @@ class EncounterRuntime:
             elif _has_fallback(d):
                 host.say(_fallback_line(d, state))
         state.impression_answered = True
+        self._deliver_introduction_if_due(host, state)
         check_objectives(d, state)
         self._close_or_continue(host, state, message, verdict)
+
+    def _deliver_introduction_if_due(self, host: EncounterHost,
+                                     state: EncounterState) -> None:
+        """The recognition moment, live-generated (no-scripting
+        build, 2026-10-29): once, for decoupled definitions, after
+        the impression is answered, the character introduces
+        herself by name and role in her own words — a moment
+        inside an ongoing conversation, never a farewell and never
+        a close. Generation failure leaves the flag unset so a
+        later turn retries; nothing scripted is ever spoken in its
+        place."""
+        d = self.definition
+        if (not d.decoupled_recognition or state.introduction_delivered
+                or not state.impression_answered):
+            return
+        frame = (
+            f"You are {d.character}, the {d.archetype_id} of this "
+            "council. " + _INTRODUCTION_FRAME
+        )
+        body = _spoken(host.generate(frame) or "")
+        if body:
+            host.say(body)
+            state.introduction_delivered = True
 
     def _post_recognition_turn(self, host: EncounterHost,
                                state: EncounterState, message: str) -> None:
@@ -1456,6 +1502,11 @@ class EncounterRuntime:
         the encounter closes only when the turn's open-door
         evaluation says nothing is left hanging."""
         d = self.definition
+        # Safety net for the recognition moment: if the recognition
+        # turn's generation failed (or a legacy row hydrates
+        # answered without it), the introduction still delivers
+        # exactly once, before this turn's own reply.
+        self._deliver_introduction_if_due(host, state)
         if detect_move(message) == "offer":
             state.offers_engaged += 1
         frame, cue = self._turn_frame(state, message)
@@ -1506,6 +1557,14 @@ class EncounterRuntime:
         The ceiling wrap is unchanged (a rescue, not a recognition
         claim)."""
         d = self.definition
+        if d.decoupled_recognition:
+            # Recognition is a moment, not an ending: a settled
+            # verdict never closes a decoupled meeting. Completion
+            # comes only from the visitor-confirmed path, the
+            # ceiling wrap, or manual Complete. The close floor is
+            # inert here — it gated settled-to-close, which no
+            # longer happens.
+            return
         if verdict is None:
             verdict = _fallback_thread_verdict(message)
         if verdict == "settled":
@@ -1595,6 +1654,35 @@ _ENGAGE_GLUE = (
     "below. If it hasn't, end after your reply: an impression offered before it "
     "is earned is flattery. Reply first, impression after the --- line."
     "\n\n"
+)
+
+#: The recognition moment's live introduction (no-scripting build,
+#: 2026-10-29): the character introduces herself by name and role
+#: in her own words. The runtime prefixes the character and seat,
+#: so the name and role are present even though the scripted
+#: opening never speaks them. Never a farewell, never a close.
+_INTRODUCTION_FRAME = (
+    "Introduce yourself by name and role in your own words, briefly. "
+    "You have just recognized each other — this is a moment inside an "
+    "ongoing conversation, not a farewell and not an ending: do not "
+    "close the conversation, do not use any scripted farewell, and "
+    "do not mark anything complete. Simply say who you are and "
+    "invite the visitor to keep talking."
+)
+
+#: Direct-question precedence (no-scripting build, 2026-10-29):
+#: appended to the frame on a direct-question turn only. The second
+#: live run showed the model improvising an impression as its reply
+#: to a direct question, though no impression instruction is in the
+#: move frame — so the prohibition is explicit, on that turn only.
+#: The runtime also holds any pending impression that turn (see
+#: handle_turn's move branch). The substantive branch needs no
+#: equivalent: routing sends every "?" message to the move branch,
+#: so a substantive turn never carries a direct question.
+_DIRECT_QUESTION_PRECEDENCE = (
+    "\n\nAnswer their direct question first, in plain words. Do not "
+    "offer a first impression on this turn, even if the exchange has "
+    "given you a read — the read waits for a later turn."
 )
 
 _GENERIC_TURN_FRAME = (
@@ -2263,6 +2351,7 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         fellowship_reference=(
             _WEAVER_FELLOWSHIP_REFERENCE + "\n\n" + _weaver_availability_note()
         ),
+        decoupled_recognition=True,
     )
 
 

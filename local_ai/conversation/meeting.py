@@ -427,6 +427,21 @@ class MeetingService:
                 "That meeting isn't written yet. It will get its own "
                 "conversation when its turn comes — nothing improvised."
             )
+        # Build-only hold (Fellowship conversational-agency build):
+        # a written meeting in MT.HELD_FIRST_MEETINGS is built, not
+        # available. This check changes nothing for any other seat
+        # or keystone — it fires only for held entries — and it
+        # runs before the entry-seat guard, so a held meeting is
+        # refused on its own terms, not by proxy. Lifting it is a
+        # one-line removal from that set, under Joshua's separate
+        # availability verdict. No meeting row can exist for a
+        # held meeting (begin is the only row creator), so turn /
+        # complete / restart are unreachable for it as well.
+        if (arch_id, keystone_index) in MT.HELD_FIRST_MEETINGS:
+            raise MeetingError(
+                "That meeting is built but not yet open to visitors — "
+                "it will open when its turn comes."
+            )
         tasks = _seat_keystone_tasks(user_id, arch_id)
         if len(tasks) < keystone_index:
             raise MeetingError("That keystone isn't part of this seat's chain.")

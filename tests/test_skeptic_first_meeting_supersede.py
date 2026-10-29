@@ -43,20 +43,12 @@ one mechanism). Consequences for this file:
 - `test_restart_alone_does_not_supersede` PASSES today: it pins
   semantics (1), which already holds (restart archives; filing
   is untouched by restart).
-- `test_two_run_supersede_sequence` is marked integration-pending
-  (skipped): it is the complete per-seat verification for
-  semantics (2)–(3), written against the decision, and it FAILS
-  on origin/main behavior today (the old claim stays standing
-  alongside the new one — verified by running it un-skipped
-  during development). Before un-skipping it against the shared
-  mechanism, conform its superseded-marking predicate to that
-  mechanism's exact marker: the test accepts either a
-  `status == "superseded"` marker or a "superseded" note in
-  `detail`/`user_note` (today `CLAIM_STATUSES` has no
-  "superseded" value, so the shared design must either add one
-  or record it in note/detail — the test covers both shapes,
-  but if the shared mechanism uses a third shape, conform the
-  test to it rather than weakening the decision).
+- `test_two_run_supersede_sequence` ran skipped
+  (integration-pending) until the shared mechanism (#260)
+  landed; its superseded-marking predicate already accepts
+  #260's exact marker (`status == "superseded"`), so no
+  conforming was needed — skip removed, test runs green
+  against it.
 
 Harness note: the Skeptic meeting is deliberately unregistered
 in `SCRIPTS` (this PR gates availability by non-registration),
@@ -234,16 +226,6 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(
-    reason=(
-        "Integration-pending: supersede needs the shared mechanism "
-        "(follow-up stacked on PR #255). On origin/main behavior "
-        "this fails: the archived run's claim stays standing "
-        "alongside the new one (see test_replay_files_a_second_"
-        "distinct_claim). Conform the superseded-marking predicate "
-        "to the shared mechanism's exact marker before un-skipping."
-    )
-)
 def test_two_run_supersede_sequence(ve_ctx, tmp_path, monkeypatch):
     _register_skeptic(monkeypatch)
     uid = _seeded_user()

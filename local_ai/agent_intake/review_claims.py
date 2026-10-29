@@ -57,7 +57,13 @@ CLAIM_TYPES = (
 # Claim statuses. "rejected" = the user judged the inference wrong.
 # "unresolved" = the user actively left it open — first-class, not a verdict,
 # and never a silent approval.
-CLAIM_STATUSES = ("pending", "accepted", "corrected", "explained", "rejected", "unresolved")
+# "superseded" = a later run's filing replaced this claim as the standing
+# one (Fellowship supersede rule, 2026-10-28). It is NOT a user verdict:
+# nothing may write it except the filing chokepoint superseding a prior
+# meeting_impression claim, it never writes a training signal, and the
+# row is retained — its prior verdict is recorded in its detail (see
+# supersede_claim) so history stays inspectable.
+CLAIM_STATUSES = ("pending", "accepted", "corrected", "explained", "rejected", "unresolved", "superseded")
 # Scope labels for insight claims: how broad the claim is.
 SCOPES = ("moment", "subject", "pattern")
 
@@ -723,8 +729,9 @@ def build_meeting_impression_claim(
     ("self+people", or "none") is the machine channel the verdict-signal
     routing reads (signals.claim_strands) — the same id-parsing precedent
     strand claims set. run_key discriminates runs: a replay files a NEW
-    claim under a new run_key and never touches the archived run's claim
-    or its verdict.
+    claim under a new run_key, and filing it SUPERSEDES the archived
+    run's claim (see supersede_claim) — the old row is retained with
+    its prior verdict recorded, but only the new claim stands.
     """
     from local_ai.conversation.weave import strip_weave_markers
 
@@ -753,6 +760,70 @@ def build_meeting_impression_claim(
         scope="moment",
         turn_ref="",
     )
+
+
+# ---------------------------------------------------------------------------
+# Supersede: a new run's filing replaces prior runs' claims as standing.
+# ---------------------------------------------------------------------------
+
+def supersede_claim(claim: ReviewClaim, superseding_claim_id: str) -> ReviewClaim:
+    """Return `claim` marked superseded by `superseding_claim_id`.
+
+    The row is NEVER deleted and its verdict is NEVER silently
+    overwritten: the prior status is recorded in the detail's
+    supersession note, and evidence, inference, title, and user_note
+    (the user's own correction/explanation text) are carried over
+    untouched. Supersede is a system bookkeeping move on a new filing,
+    not a user verdict — it must never write a training signal, and it
+    must never be applied to a claim that is already superseded
+    (already-superseded input returns unchanged, so re-running the
+    supersede pass cannot stack notes or rewrite history).
+    """
+    if claim.status == "superseded":
+        return claim
+    note = (
+        f"Superseded by a later first meeting (claim {superseding_claim_id}). "
+        f"Prior verdict: {claim.status}."
+    )
+    detail = claim.detail
+    if "Superseded by a later first meeting" not in detail:
+        detail = f"{detail}\n\n{note}" if detail else note
+    return ReviewClaim(
+        id=claim.id,
+        claim_type=claim.claim_type,
+        title=claim.title,
+        evidence=claim.evidence,
+        inference=claim.inference,
+        detail=detail,
+        status="superseded",
+        user_note=claim.user_note,
+        question=claim.question,
+        scope=claim.scope,
+        turn_ref=claim.turn_ref,
+    )
+
+
+def standing_impression_claim(
+    claims: list[ReviewClaim], agent_id: str
+) -> ReviewClaim | None:
+    """The one standing meeting_impression claim for an agent, or None.
+
+    Standing = filed for this agent, of meeting_impression type, and
+    not superseded. Claims arrive oldest-first (AgentStore.get_claims
+    order), so the last standing one is the current run's — which is
+    also how legacy rows heal: runs filed before the supersede rule
+    landed stay standing until the next filing supersedes them all,
+    and after that exactly one remains standing.
+    """
+    prefix = f"{agent_id}:"
+    standing = [
+        c
+        for c in claims
+        if c.id.startswith(prefix)
+        and c.claim_type == "meeting_impression"
+        and c.status != "superseded"
+    ]
+    return standing[-1] if standing else None
 
 
 def build_recurrence_claims(patterns: list, agent_id: str) -> list[ReviewClaim]:

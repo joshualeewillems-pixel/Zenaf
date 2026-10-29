@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   allClaimsResolved,
   canFinishReview,
+  claimStatusLabel,
   defaultCardExpanded,
   insightGroups,
   miningStateOf,
@@ -45,6 +46,28 @@ describe('claim resolution', () => {
 
   it('treats corrected and explained as resolved', () => {
     expect(allClaimsResolved([done('a', 'strand', 'corrected'), done('b', 'kind', 'explained')])).toBe(true)
+  })
+
+  it('does not count superseded claims as open or blocking', () => {
+    const superseded = (id: string, type = 'meeting_impression') => ({ id, claim_type: type, status: 'superseded' })
+    expect(openClaimsCount([superseded('old'), pending('new', 'meeting_impression')])).toBe(1)
+    expect(openClaimsCount([superseded('old')])).toBe(0)
+    expect(allClaimsResolved([superseded('old'), done('new', 'meeting_impression')])).toBe(true)
+    expect(whatsLeft([superseded('old'), done('new', 'meeting_impression')], 'mined')).toEqual([])
+  })
+})
+
+describe('claimStatusLabel', () => {
+  it('labels every verdict, including superseded history', () => {
+    expect(claimStatusLabel('accepted')).toBe('Confirmed')
+    expect(claimStatusLabel('corrected')).toBe('Qualified')
+    expect(claimStatusLabel('explained')).toBe('Explained')
+    expect(claimStatusLabel('rejected')).toBe('Rejected')
+    expect(claimStatusLabel('unresolved')).toBe('Left unresolved')
+    // Superseded is a standing marker, not a verdict — it must never
+    // read as 'Left unresolved', which would misread history as open.
+    expect(claimStatusLabel('superseded')).toBe('Superseded')
+    expect(claimStatusLabel('pending')).toBe('')
   })
 })
 

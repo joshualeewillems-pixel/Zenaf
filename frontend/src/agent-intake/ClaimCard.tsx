@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { apiBase } from '../apiBase'
-import { defaultCardExpanded } from './reviewStages'
+import { claimStatusLabel, defaultCardExpanded } from './reviewStages'
 
 export type Claim = {
   id: string
@@ -166,18 +166,7 @@ function ClaimBody({
   }
 
   const resolved = claim.status !== 'pending'
-  const statusLabel =
-    claim.status === 'accepted'
-      ? 'Confirmed'
-      : claim.status === 'corrected'
-        ? 'Qualified'
-        : claim.status === 'explained'
-          ? 'Explained'
-          : claim.status === 'rejected'
-            ? 'Rejected'
-            : claim.status === 'unresolved'
-              ? 'Left unresolved'
-              : ''
+  const statusLabel = claimStatusLabel(claim.status)
 
   return (
     <div>
@@ -273,7 +262,7 @@ export default function ClaimCard({ agentId, claim, alternatives, onResolved }: 
           </span>
           {claim.status !== 'pending' && (
             <span className="inline-block text-xs font-medium text-yellow-500/90 ml-2">
-              ✓ {claim.status === 'accepted' ? 'Confirmed' : claim.status === 'corrected' ? 'Qualified' : claim.status === 'explained' ? 'Explained' : claim.status === 'rejected' ? 'Rejected' : 'Left unresolved'}
+              ✓ {claimStatusLabel(claim.status)}
             </span>
           )}
         </span>

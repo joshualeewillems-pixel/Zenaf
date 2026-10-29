@@ -140,10 +140,13 @@ def _latest_impression_claim(
 
     Matches agent_id == the meeting's transcript id and the
     meeting_impression claim type. A replay files a NEW claim under
-    a new run key and never touches the archived run's claim, so
-    latest-created wins when several runs exist. Returns None
-    when no claim was filed (O1 still fires — the meeting row
-    alone is the evidence).
+    a new run key and filing it SUPERSEDES the archived run's claim
+    (status "superseded", row retained), so the standing claim is
+    the non-superseded one — latest-created among those. The
+    superseded fallback matters only for rows whose status is
+    missing (older readers): with no standing row, latest-created
+    wins, as before. Returns None when no claim was filed (O1
+    still fires — the meeting row alone is the evidence).
     """
     candidates = [
         c
@@ -153,12 +156,14 @@ def _latest_impression_claim(
     ]
     if not candidates:
         return None
+    standing = [c for c in candidates if c.get("status") != "superseded"]
+    pool = standing if standing else candidates
 
     def _created_key(claim: dict) -> tuple[int, str]:
         parsed = _parse_time(claim.get("created_at"))
         return (1, parsed.isoformat()) if parsed else (0, "")
 
-    return max(candidates, key=_created_key)
+    return max(pool, key=_created_key)
 
 
 def _derive_o1(

@@ -304,7 +304,9 @@ def test_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     brings THEIR OWN material (theirs — a food-bank rota, not the
     words of her question) with a real question inside it → she
     pursues it (asks for the evidence of their experience) → only
-    then may the impression come → recognition closes it."""
+    then may the impression come → recognition completes the
+    recognition, and the meeting closes on the visitor's word
+    (decoupled recognition, no-scripting build, 2026-10-29)."""
     uid = _seeded_user()
     gen = PatternGen()
     svc = _svc(tmp_path, gen)
@@ -382,23 +384,26 @@ def test_play_shape_pursuit_before_impression(ve_ctx, tmp_path):
     assert enc.satisfied["impression_offered"] is True
 
     # Turn 4 — their answer to the read settles it, and the floor
-    # is met (their material was taken up AND pursued): the
-    # meeting closes, with her reply AND the reveal in the
-    # closing state.
+    # is met (their material was taken up AND pursued): recognition
+    # completes, her reply is spoken — but the meeting does NOT
+    # close (decoupled recognition, no-scripting build, 2026-10-29);
+    # the close comes on the visitor's word and speaks no reveal.
     gen.reply.append("Then the rota can be honest.\n[[thread:settled]]")
     state = svc.turn(
         uid, "conductor",
         "That's uncomfortably close to true. The walk-ins part — yes.",
     )
+    assert state["status"] == "active"
+    bodies = _bodies(state)
+    assert any("Then the rota can be honest." in b for b in bodies)
+    for paragraph in script.reveal:
+        assert paragraph not in bodies
+    state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     bodies = _bodies(state)
     assert any("Then the rota can be honest." in b for b in bodies)
     for paragraph in script.reveal:
-        assert paragraph in bodies
-    # Her reply precedes the reveal in the transcript.
-    rota_idx = next(i for i, b in enumerate(bodies) if "Then the rota can be honest." in b)
-    reveal_idx = next(i for i, b in enumerate(bodies) if script.reveal[0] in b)
-    assert rota_idx < reveal_idx
+        assert paragraph not in bodies
 
 
 # --------------------------------- the old two-turn playthrough is dead
@@ -438,22 +443,29 @@ def test_two_turn_playthrough_can_no_longer_close(ve_ctx, tmp_path):
     assert state["stage"] == "readback"
 
     # And the meeting still completes gracefully from here: answer
-    # the read, and recognition — meaningful now — closes it.
+    # the read, and recognition — meaningful now — completes the
+    # recognition; the visitor's word closes it (decoupled
+    # recognition, no-scripting build, 2026-10-29).
     gen.reply.append("Good — then we've met.\n[[thread:settled]]")
     state = svc.turn(uid, "conductor", "Yes. That's the shape of it.")
+    assert state["status"] == "active"
+    state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
 
 
 # ------------------------------------------ the closing payload is whole
 
 
-def test_closing_state_carries_reply_and_reveal_together(ve_ctx, tmp_path):
-    """The backend half of note 6's missing lines, at the service
-    layer: an ack-classified impression answer must produce her
-    spoken reply AND every reveal paragraph in the SAME returned
-    state (the #197 backend was already sound here — this pins it
-    so it stays sound; the actual defect was presentational, in
-    MeetingView, and its regression test lives there)."""
+def test_closing_state_carries_reply_without_scripted_reveal(ve_ctx, tmp_path):
+    """REWRITTEN for decoupled recognition (no-scripting build,
+    2026-10-29): the old contract — an ack-classified impression
+    answer produces her spoken reply AND every reveal paragraph in
+    the SAME returned state — is superseded. Recognition completes
+    the recognition, not the meeting; the closing state (reached
+    on the visitor's word) carries her reply and NO scripted
+    reveal. The backend half of note 6's missing lines, at the
+    service layer: the reply is spoken and present through the
+    close, and the reveal never is."""
     uid = _seeded_user()
     gen = PatternGen()
     svc = _svc(tmp_path, gen)
@@ -470,15 +482,18 @@ def test_closing_state_carries_reply_and_reveal_together(ve_ctx, tmp_path):
     svc.turn(uid, "conductor", "Mostly I protect the mornings before anything else.")
     gen.reply.append("A brief engaged reply; the impression stands.\n[[thread:settled]]")
     state = svc.turn(uid, "conductor", "Yes — that's exactly right.")
-    assert state["status"] == "complete"
+    assert state["status"] == "active"
     bodies = _bodies(state)
     reply = "A brief engaged reply; the impression stands."
     assert any(reply in b for b in bodies)
     for paragraph in script.reveal:
-        assert paragraph in bodies
-    reply_idx = next(i for i, b in enumerate(bodies) if reply in b)
-    reveal_idx = next(i for i, b in enumerate(bodies) if script.reveal[0] in b)
-    assert reply_idx < reveal_idx
+        assert paragraph not in bodies
+    state = svc.complete(uid, "conductor")
+    assert state["status"] == "complete"
+    bodies = _bodies(state)
+    assert any(reply in b for b in bodies)
+    for paragraph in script.reveal:
+        assert paragraph not in bodies
 
 
 # -------------------------------------- dictionary: available, not owed

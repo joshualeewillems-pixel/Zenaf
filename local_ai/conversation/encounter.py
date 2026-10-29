@@ -646,6 +646,16 @@ class EncounterDefinition:
     #: the meeting after recognition. Empty = no floor. Legacy
     #: hydration may waive it per-state (floor_waived).
     close_floor_objectives: tuple[str, ...] = ()
+    #: Decoupled recognition (no-scripting build, 2026-10-29; Weaver
+    #: only): recognition is a moment inside an ongoing
+    #: conversation, not a close. A settled verdict never closes a
+    #: decoupled meeting; completion comes only from the
+    #: visitor-confirmed path, the ceiling wrap, or manual
+    #: Complete. The recognition moment delivers a live-generated
+    #: self-introduction once (see _deliver_introduction_if_due),
+    #: and the close speaks no scripted reveal or wrap line (see
+    #: _do_reveal `silent_close`).
+    decoupled_recognition: bool = False
     #: Seats the visitor has already met (completed first meetings),
     #: as archetype ids — set by the meeting service per turn, never
     #: by the script. The naming rule (role before meeting, character
@@ -748,6 +758,12 @@ class EncounterState:
     #: adaptive runtime never sets it — it maps to the
     #: post-recognition phase (see derived_stage / handle_turn).
     pause_delivered: bool = False
+    #: Live-introduction ledger (no-scripting build, 2026-10-29):
+    #: True once the decoupled recognition moment has delivered the
+    #: character's live-generated self-introduction. Persisted, so
+    #: the introduction speaks exactly once across turns and
+    #: restarts; rows predating it hydrate to False.
+    introduction_delivered: bool = False
     #: Cue keys already surfaced: fellowship seats for allusions,
     #: "pause:N" for retired-pause paragraphs — one ledger, so the
     #: same fixture can never surface twice by either path.
@@ -781,6 +797,7 @@ class EncounterState:
             "pending_impression_discarded": self.pending_impression_discarded,
             "response_recorded": self.response_recorded,
             "pause_delivered": self.pause_delivered,
+            "introduction_delivered": self.introduction_delivered,
             "allusions_used": self.allusions_used,
             "fallback_uses": self.fallback_uses,
             "closed": self.closed,
@@ -807,7 +824,8 @@ class EncounterState:
             "impression_pending_text", "impression_pending_strands",
             "completion_offered", "pending_impression_discarded",
             "response_recorded",
-            "pause_delivered", "allusions_used",
+            "pause_delivered", "introduction_delivered",
+            "allusions_used",
             "fallback_uses",
             "closed",
         ):
@@ -1179,6 +1197,7 @@ class EncounterRuntime:
             return question_idx
 
         move = detect_move(message)
+        direct_question = move == "question"
 
         if move == "pass":
             return self._pass_turn(host, state, message, question_idx)
@@ -1189,6 +1208,8 @@ class EncounterRuntime:
             # The agenda does not advance — but nothing is skipped:
             # the objectives stay live for the next turn.
             frame, cue = self._turn_frame(state, message)
+            if direct_question:
+                frame += _DIRECT_QUESTION_PRECEDENCE
             out = _spoken(host.generate(frame) or "")
             if out:
                 host.say(out)
@@ -1196,7 +1217,8 @@ class EncounterRuntime:
                     # The trace surfaced: log it against the debt
                     # registry (the state's side of the ledger).
                     state.allusions_used.append(cue.seat)
-                self._deliver_pending_if_clear(host, state, out)
+                if not direct_question:
+                    self._deliver_pending_if_clear(host, state, out)
             elif _has_fallback(d):
                 host.say(_fallback_line(d, state))
             if move == "offer":
@@ -1444,8 +1466,32 @@ class EncounterRuntime:
             elif _has_fallback(d):
                 host.say(_fallback_line(d, state))
         state.impression_answered = True
+        self._deliver_introduction_if_due(host, state)
         check_objectives(d, state)
         self._close_or_continue(host, state, message, verdict)
+
+    def _deliver_introduction_if_due(self, host: EncounterHost,
+                                     state: EncounterState) -> None:
+        """The recognition moment, live-generated (no-scripting
+        build, 2026-10-29): once, for decoupled definitions, after
+        the impression is answered, the character introduces
+        herself by name and role in her own words — a moment
+        inside an ongoing conversation, never a farewell and never
+        a close. Generation failure leaves the flag unset so a
+        later turn retries; nothing scripted is ever spoken in its
+        place."""
+        d = self.definition
+        if (not d.decoupled_recognition or state.introduction_delivered
+                or not state.impression_answered):
+            return
+        frame = (
+            f"You are {d.character}, the {d.archetype_id} of this "
+            "council. " + _INTRODUCTION_FRAME
+        )
+        body = _spoken(host.generate(frame) or "")
+        if body:
+            host.say(body)
+            state.introduction_delivered = True
 
     def _post_recognition_turn(self, host: EncounterHost,
                                state: EncounterState, message: str) -> None:
@@ -1456,6 +1502,11 @@ class EncounterRuntime:
         the encounter closes only when the turn's open-door
         evaluation says nothing is left hanging."""
         d = self.definition
+        # Safety net for the recognition moment: if the recognition
+        # turn's generation failed (or a legacy row hydrates
+        # answered without it), the introduction still delivers
+        # exactly once, before this turn's own reply.
+        self._deliver_introduction_if_due(host, state)
         if detect_move(message) == "offer":
             state.offers_engaged += 1
         frame, cue = self._turn_frame(state, message)
@@ -1506,6 +1557,14 @@ class EncounterRuntime:
         The ceiling wrap is unchanged (a rescue, not a recognition
         claim)."""
         d = self.definition
+        if d.decoupled_recognition:
+            # Recognition is a moment, not an ending: a settled
+            # verdict never closes a decoupled meeting. Completion
+            # comes only from the visitor-confirmed path, the
+            # ceiling wrap, or manual Complete. The close floor is
+            # inert here — it gated settled-to-close, which no
+            # longer happens.
+            return
         if verdict is None:
             verdict = _fallback_thread_verdict(message)
         if verdict == "settled":
@@ -1595,6 +1654,35 @@ _ENGAGE_GLUE = (
     "below. If it hasn't, end after your reply: an impression offered before it "
     "is earned is flattery. Reply first, impression after the --- line."
     "\n\n"
+)
+
+#: The recognition moment's live introduction (no-scripting build,
+#: 2026-10-29): the character introduces herself by name and role
+#: in her own words. The runtime prefixes the character and seat,
+#: so the name and role are present even though the scripted
+#: opening never speaks them. Never a farewell, never a close.
+_INTRODUCTION_FRAME = (
+    "Introduce yourself by name and role in your own words, briefly. "
+    "You have just recognized each other — this is a moment inside an "
+    "ongoing conversation, not a farewell and not an ending: do not "
+    "close the conversation, do not use any scripted farewell, and "
+    "do not mark anything complete. Simply say who you are and "
+    "invite the visitor to keep talking."
+)
+
+#: Direct-question precedence (no-scripting build, 2026-10-29):
+#: appended to the frame on a direct-question turn only. The second
+#: live run showed the model improvising an impression as its reply
+#: to a direct question, though no impression instruction is in the
+#: move frame — so the prohibition is explicit, on that turn only.
+#: The runtime also holds any pending impression that turn (see
+#: handle_turn's move branch). The substantive branch needs no
+#: equivalent: routing sends every "?" message to the move branch,
+#: so a substantive turn never carries a direct question.
+_DIRECT_QUESTION_PRECEDENCE = (
+    "\n\nAnswer their direct question first, in plain words. Do not "
+    "offer a first impression on this turn, even if the exchange has "
+    "given you a read — the read waits for a later turn."
 )
 
 _GENERIC_TURN_FRAME = (
@@ -1911,6 +1999,61 @@ _WEAVER_FELLOWSHIP_SLICE = (
 )
 
 
+#: Weaver Fellowship reference, uncapped (no-scripting build,
+#: 2026-10-29). The capped turn/engage frames have ~300 chars of
+#: headroom at build time and less live, so NOTHING new goes in
+#: them: this reference rides the uncapped meeting-scoped prompt
+#: section (reply.build_voice_prompt `fellowship_reference`), which
+#: every live generation carries. It adapts the Conductor
+#: orientation draft's section (b) — how the Weaver understands AND
+#: misunderstands each of the other six — from compressed
+#: one-liners (which stay, capped, in _WEAVER_FELLOWSHIP_SLICE)
+#: into sketches with friction intact, plus the naming,
+#: capability, and precedence rules the second live run showed the
+#: model not following. Merging this constant into the live prompt
+#: adopts that draft adaptation; the draft itself stays DRAFT.
+#: The availability note is computed, not written: it is appended
+#: by the builder from the static gates, so it stays true as gates
+#: change. Visitor-progress gates (seed, chain, entry) are not seat
+#: facts and are not in it.
+_WEAVER_FELLOWSHIP_REFERENCE = (
+    "Fellowship reference — how you know the other seats. This is knowledge for you, not lines to deliver and never a tour: let them surface when they come to mind, in your own words.\n"
+    "- Gardener (Mentor): I understand him as the deepener of one thread over time, where I rebalance all threads. I misunderstand him when I arrange past the growing thread — hearing depth as neglect of the whole. He drives me mad, and he often saves us from spreading too thin.\n"
+    "- Firebrand (Champion): I understand her as the decisive actor who would ship the bold version today. I misunderstand her when I hear 'ship today' as recklessness toward support, money, and messaging — a real act treated as a refusal to sequence. Her boldness often lets the plan survive.\n"
+    "- Bear (Guardian): I understand him as the floor-setter: nothing vital gets cut. I misunderstand him when I hear a floor as a refusal to choose — treating 'nothing vital gets cut' as obstruction of the trade-off, instead of the constraint the whole's choice has to respect.\n"
+    "- Fox (Maverick): I understand him as the passage-finder who keeps finding the ones that weren't written into the score. I misunderstand him when impatience with his refusal to be arranged turns his unwritten passages into sabotage, instead of evidence my arrangement was incomplete.\n"
+    "- Crane (Ambassador): I understand her as the unifier of people by translation, where I unify parts by integration. I misunderstand her when integration becomes translation-by-force — treating people as parts to be arranged. She keeps me from forcing everyone into my arrangement.\n"
+    "- Raven (Skeptic): I understand him as the one who refuses resolution until premises check out: the hole in the business plan is the plan. I misunderstand him when impatience with his refusal to resolve turns his hearing into obstruction, and I arrange around a dissonance that has not been heard. Irritating man. Often right.\n"
+    "Mention them when they come to mind — affection, exasperation, curiosity, admiration — not only when their perspective explains an idea. Never invent shared memories or established preferences: a playful guess is a guess, not a fact.\n"
+    "Naming, three ways apart: a seat's ROLE label (Gardener, Firebrand, Bear, Fox, Crane, Raven) is public and always sayable, even before meeting — on a direct request for who someone is, answer with the role, never with a description alone. A seat's personal name, face, and demeanor unlock only when you have met them. Whether their first meeting is open right now is a third, separate state — see the availability note.\n"
+    "You cannot arrange meetings with other seats: no such action exists. If asked to arrange one, say so plainly, name the seat's role, and say whether its first meeting is open from the note below — never offer to set one up, and never describe a planned or gated meeting as available.\n"
+    "A direct question comes first: when the visitor asks you something directly, answer it before any interpretation or impression of them. An impression never displaces an answer.\n"
+)
+
+
+def _weaver_availability_note() -> str:
+    """Seat-level first-meeting openness for the Weaver's reference, computed from the static gates: SCRIPTS registration, the HELD set, and the RELEASED set. Visitor-progress gates (seed, chain, entry) are not seat facts and are excluded. Maverick's separate unreleased set means the same visitor-facing thing as not-in-RELEASED (not open yet), so the MT-only computation stays true."""
+    entries = []
+    for arch_id, role in (
+        ("mentor", "Gardener"),
+        ("champion", "Firebrand"),
+        ("guardian", "Bear"),
+        ("maverick", "Fox"),
+        ("ambassador", "Crane"),
+        ("skeptic", "Raven"),
+    ):
+        if MT.get_script(arch_id, 1) is None:
+            status = "not open to begin yet"
+        elif (arch_id, 1) in MT.HELD_FIRST_MEETINGS:
+            status = "held, not open yet"
+        elif arch_id not in MT.RELEASED_FIRST_MEETING_SEATS:
+            status = "not open yet"
+        else:
+            status = "open now"
+        entries.append(f"{role} — {status}")
+    return "First-meeting openness right now (seat facts, not promises): " + "; ".join(entries) + "."
+
+
 #: Weaver first-meeting refinement (adopted baseline v3, 2026-10-28;
 #: opportunity + P1 wording, Conductor agency refinement, 2026-10-28).
 #: Prompt-local guidance appended to the Weaver K1 definition's turn
@@ -2205,6 +2348,10 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         capability_context=base.capability_context,
         impression_gate_objective="shared_work_exchange",
         close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),
+        fellowship_reference=(
+            _WEAVER_FELLOWSHIP_REFERENCE + "\n\n" + _weaver_availability_note()
+        ),
+        decoupled_recognition=True,
     )
 
 

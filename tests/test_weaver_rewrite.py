@@ -275,10 +275,12 @@ def test_acknowledgment_leaves_the_impression_untouched(ve_ctx, tmp_path):
     before = svc.meetings.get(uid, "conductor", 1)
 
     state = svc.turn(uid, "conductor", "Yeah, that's right.")
-    # UPDATED for the adaptivity fix: the ack completes the
-    # recognition and nothing hangs, so the meeting closes on this
-    # turn — the old contract stopped in the orientation beat.
-    assert state["stage"] == "complete"
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): the ack completes the recognition, not the
+    # meeting — the meeting proceeds in the orientation phase and
+    # closes only on the visitor's word (or the ceiling). The
+    # impression itself is untouched by the ack, as before.
+    assert state["stage"] == "orientation"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == before["readback_claim"]
     assert row["readback_strands"] == before["readback_strands"]
@@ -292,9 +294,11 @@ def test_other_reply_engages_and_the_impression_stands(ve_ctx, tmp_path):
     before = svc.meetings.get(uid, "conductor", 1)
 
     state = svc.turn(uid, "conductor", "Hmm. Interesting.")
-    # UPDATED for the adaptivity fix: as with the ack, a settled
-    # "other" answer closes on recognition in the same turn.
-    assert state["stage"] == "complete"
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): as with the ack, a settled "other" answer
+    # completes the recognition, not the meeting — the meeting
+    # proceeds in the orientation phase.
+    assert state["stage"] == "orientation"
     row = svc.meetings.get(uid, "conductor", 1)
     assert row["readback_claim"] == before["readback_claim"]
     bodies = [m["body"] for m in state["messages"]]
@@ -307,11 +311,17 @@ def test_corrected_meeting_still_completes(ve_ctx, tmp_path):
     _to_readback(svc, uid)
     svc.turn(uid, "conductor", "Actually it's more like I decide alone, then tell people.")
     state = svc.turn(uid, "conductor", "Got it.")
-    assert state["status"] == "complete"
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): recognition no longer closes — the meeting
+    # proceeds, and the close speaks no scripted reveal. The
+    # meeting still completes, on the visitor's word.
+    assert state["status"] == "active"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
     for paragraph in script.reveal:
-        assert paragraph in bodies
+        assert paragraph not in bodies
+    state = svc.complete(uid, "conductor")
+    assert state["status"] == "complete"
 
 
 # ------------------------------------------------- dialogue purity / close

@@ -164,8 +164,8 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
         prerequisites=("signed_in",),
         prerequisite_note=(
-            "Signed-in account. Only the Conductor's first meeting is "
-            "scripted so far; other seats have no meeting to begin yet."
+            "Signed-in account. All seven first meetings are written; "
+            "only the Conductor's is open to begin right now."
         ),
     ),
     Capability(

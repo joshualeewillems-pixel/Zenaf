@@ -213,16 +213,22 @@ def _settled_state(floor=True):
     return state
 
 
-def test_close_is_on_recognition_not_coverage():
-    # No coverage exists to gate on: a settled verdict with the
-    # recognition floor satisfied closes, full stop.
+def test_close_is_not_on_recognition_for_decoupled():
+    # REWRITTEN for decoupled recognition (no-scripting build,
+    # 2026-10-29): the old contract — a settled verdict with the
+    # recognition floor satisfied closes, full stop — is superseded
+    # for the Weaver. A settled verdict completes the recognition;
+    # it never closes. Completion comes only from the
+    # visitor-confirmed path, the ceiling wrap, or manual Complete.
+    # (The coupled path still closes on recognition — pinned by
+    # test_generic_definitions_close_on_recognition.)
     runtime = ENC.EncounterRuntime(
         ENC.get_definition(MT.get_script("conductor", 1)))
     host = _FakeHost()
     state = _settled_state()
     runtime._close_or_continue(host, state, "Yes, that's right.", "settled")
-    assert state.closed is True
-    assert host.close_calls == 1
+    assert state.closed is False
+    assert host.close_calls == 0
 
 
 def test_close_still_requires_the_recognition_floor():

@@ -251,14 +251,18 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     assert not any(b.strip().startswith("Strands:") for b in bodies)
 
     state = svc.turn(uid, "conductor", "Got it.")
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): the answering turn completes the recognition,
+    # not the meeting — the close comes on the visitor's word, and
+    # it speaks no scripted reveal.
+    assert state["status"] == "active"
+    state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     assert state["stage"] == "complete"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
     for paragraph in script.reveal:
-        assert paragraph in bodies
-    # The reveal names the Weaver and his demeanor — and no motto, no flaw.
-    assert any("I'm the Weaver." in b for b in bodies)
+        assert paragraph not in bodies
 
     # Keystone 1 flipped; the record kept both sides of the read-back
     # verbatim, and the strand attribution lives on the record (the
@@ -354,9 +358,13 @@ def test_completed_meeting_cannot_be_replayed(ve_ctx, tmp_path):
     svc.turn(uid, "conductor", "Deadlines first, then everything else.")
     svc.turn(uid, "conductor", "Deadlines first, then everything else, every time.")
     # UPDATED for the adaptivity fix + the Weaver pattern: the
-    # answering turn completes the meeting on recognition — but the
-    # read itself took the shared-work exchange first.
+    # read itself took the shared-work exchange first — and
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): the answering turn completes the recognition,
+    # not the meeting; the visitor's Complete action closes it.
     state = svc.turn(uid, "conductor", "That's right.")
+    assert state["status"] == "active"
+    state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     state = svc.start(uid, "conductor")
     assert state["status"] == "complete"
@@ -369,8 +377,10 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
     one Q&A exchange, then the reveal). There is no orientation beat:
     after recognition, a question is ordinary conversation — one
     generation under the conversational frame, with the workshop
-    facts riding as prepared context — and the meeting closes only
-    when a later turn settles."""
+    facts riding as prepared context. UPDATED for decoupled
+    recognition (no-scripting build, 2026-10-29): a settled turn
+    no longer closes either — the meeting closes on the visitor's
+    word, silently (no scripted reveal)."""
 
     class ThreadGen:
         def __init__(self):
@@ -411,18 +421,22 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
     assert "seven rather incompatible parts" in gen.prompts[-1]
 
     state = svc.turn(uid, "conductor", "Alright — settled now, thank you.")
+    assert state["status"] == "active"  # settled no longer closes
+    state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
     for paragraph in script.reveal:
-        assert paragraph in bodies
+        assert paragraph not in bodies
 
 
 def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, monkeypatch):
     """UPDATED for the adaptivity fix: there is no orientation beat
-    for ANY script now — recognition closes the meeting. A script
-    stripped of orientation content behaves exactly like one that
-    carries it: answer the impression, and the reveal follows."""
+    for ANY script now. UPDATED for decoupled recognition
+    (no-scripting build, 2026-10-29): the Weaver half no longer
+    closes on recognition — it closes on the visitor's word — while
+    the generic (coupled) mentor stand-in still does. The shared
+    point stands: no orientation stop anywhere."""
     uid = _seeded_user()
     base = MT.get_script("conductor", 1)
     plain = dataclasses.replace(
@@ -439,14 +453,18 @@ def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, mo
         MT, "RELEASED_FIRST_MEETING_SEATS", frozenset({"conductor", "mentor"})
     )
     svc = _svc(tmp_path)
-    # Conductor first, then the mentor — both close on recognition.
-    # (The Weaver's drive carries the pattern's shape: shared work,
-    # the read, then the answer. The generic mentor definition has
-    # no gate or floor — its two-turn drive is unchanged.)
+    # Conductor first, then the mentor. The Weaver's drive carries
+    # the pattern's shape: shared work, the read, then the answer —
+    # but recognition no longer closes her meeting; the visitor's
+    # Complete action does. The generic mentor definition has no
+    # gate or floor — its two-turn drive is unchanged, and it still
+    # closes on recognition.
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Slow is smooth, and smooth is fast in the end.")
     svc.turn(uid, "conductor", "That's how I approach my own work, too.")
     state = svc.turn(uid, "conductor", "Yes.")
+    assert state["status"] == "active"
+    state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     assert _conductor_k1_status(uid) == "Done"
 
@@ -501,9 +519,15 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
         user,
     )
     # UPDATED for the adaptivity fix: the answering turn completes
-    # the meeting on recognition — the reveal (and its demeanor)
-    # arrives with that same turn; there is no orientation stop
-    # where the demeanor is still locked.
+    # the recognition; there is no orientation stop where the
+    # demeanor is still locked. UPDATED for decoupled recognition
+    # (no-scripting build, 2026-10-29): the meeting itself closes
+    # on the visitor's Complete action, which unlocks the demeanor.
+    assert state["status"] == "active"
+    assert state["stage"] == "orientation"
+    state = routes.meeting_complete(
+        routes.MeetingCompleteBody(archetype_id="conductor"), user
+    )
     assert state["status"] == "complete"
     assert state["stage"] == "complete"
     assert state["character"] == "Weaver"
@@ -520,7 +544,10 @@ def _run_conductor_to_completion(
 ):
     """Drive the Weaver's meeting to its close under the pattern's
     shape: a first substantive turn (the shared work begins), a
-    second (the read lands), then the response to the impression."""
+    second (the read lands), then the response to the impression.
+    UPDATED for decoupled recognition (no-scripting build,
+    2026-10-29): recognition no longer closes — the visitor's own
+    Complete action finishes it."""
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
     svc.turn(
@@ -532,6 +559,10 @@ def _run_conductor_to_completion(
         # The answer left a thread open (a substantive correction,
         # under the deterministic estimate): one settled turn ends it.
         state = svc.turn(uid, "conductor", "Got it.")
+    if state["status"] != "complete":
+        # Recognition is a moment, not a close: complete on the
+        # visitor's word.
+        state = svc.complete(uid, "conductor")
     return state
 
 
@@ -615,8 +646,12 @@ def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
     svc.turn(uid, "conductor", "Second time: I start with people, not tasks.")
     svc.turn(uid, "conductor", "Second time: people first, whatever the deadline says.")
     # UPDATED for the adaptivity fix: the answering turn completes
-    # the rerun on recognition.
+    # the recognition. UPDATED for decoupled recognition
+    # (no-scripting build, 2026-10-29): the rerun itself closes on
+    # the visitor's word.
     state = svc.turn(uid, "conductor", "Yes, that's the shape of it.")
+    assert state["status"] == "active"
+    state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     assert _conductor_k1_status(uid) == "Done"
 
@@ -671,8 +706,9 @@ def test_complete_refusals(ve_ctx, tmp_path):
 
 def test_complete_active_meeting_without_recognition(ve_ctx, tmp_path):
     """The stuck case: a short exchange that never produced an impression
-    still completes cleanly — reveal spoken, task Done, turns refused,
-    restart unlocked. Nothing is filed without a read-back."""
+    still completes cleanly — silent close (no scripted reveal for
+    decoupled meetings), task Done, turns refused, restart unlocked.
+    Nothing is filed without a read-back."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
@@ -684,7 +720,8 @@ def test_complete_active_meeting_without_recognition(ve_ctx, tmp_path):
     assert _conductor_k1_status(uid) == "Done"
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
-    assert bodies[-len(script.reveal):] == list(script.reveal)
+    for paragraph in script.reveal:
+        assert paragraph not in bodies
 
     # A completed meeting takes no more turns, and Meet again is open.
     with pytest.raises(MeetingError, match="No meeting is in progress"):
@@ -708,14 +745,15 @@ def test_complete_paused_meeting(ve_ctx, tmp_path):
 
 
 def test_complete_is_idempotent(ve_ctx, tmp_path):
-    """Completing twice speaks the reveal exactly once — the second call
-    returns the completed state unchanged."""
+    """Completing twice speaks no scripted reveal at all (decoupled
+    close, no-scripting build, 2026-10-29) — the second call returns
+    the completed state unchanged."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     first = svc.complete(uid, "conductor")
     script = MT.get_script("conductor", 1)
-    assert [m["body"] for m in first["messages"]].count(script.reveal[0]) == 1
+    assert [m["body"] for m in first["messages"]].count(script.reveal[0]) == 0
 
     second = svc.complete(uid, "conductor")
 
@@ -783,7 +821,10 @@ def test_the_record_is_never_quoted_back_in_dialogue(ve_ctx, tmp_path):
     # carries the read (the gate), then the answer closes it.
     svc.turn(uid, "conductor", "And honestly, the sleeping on it is the part I never skip.")
     state = svc.turn(uid, "conductor", "Close enough.")
-    assert state["stage"] == "complete"  # recognition closed it
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): recognition completes the recognition, not the
+    # meeting — the meeting proceeds in the orientation phase.
+    assert state["stage"] == "orientation"
     bodies = [m["body"] for m in state["messages"]]
     assert bodies.count(long_answer) == 1  # the user's own bubble only
     claim = svc.meetings.get(uid, "conductor", 1)["readback_claim"]
@@ -848,11 +889,13 @@ def test_weave_markers_never_reach_dialogue_or_the_record(ve_ctx, tmp_path, monk
         "Intuition based usually, unless something practical is pressing.",
     )
     # UPDATED for the Weaver pattern: the woven impression rides
-    # the second substantive turn (the gate holds the first), and
-    # the answer turn closes the meeting.
+    # the second substantive turn (the gate holds the first).
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): the answer turn completes the recognition, not
+    # the meeting.
     svc.turn(uid, "conductor", "Close enough.")
     state = svc.turn(uid, "conductor", "Close enough.")
-    assert state["stage"] == "complete"
+    assert state["stage"] == "orientation"
     bodies = [m["body"] for m in state["messages"]]
     # No marker — whole, severed, or malformed — in anything spoken.
     assert not any("[[" in b or "[/u" in b for b in bodies)
@@ -884,11 +927,15 @@ def test_ok_sounds_good_closes_on_recognition(ve_ctx, tmp_path):
     """REWRITTEN for the adaptivity fix (the live-run break, in its
     new form): 'Ok sounds good' answering the impression must be
     received as the acknowledgment it is — one brief generated
-    reply, then the reveal — never answered as if it were a
-    question, and never with an improvised second introduction.
+    reply — never answered as if it were a question, and never with
+    an improvised second introduction.
     (The orientation beat it once stumbled into no longer exists;
     and acks now generate precisely so the close decision is the
-    model's semantic judgment, not a phrase match.)"""
+    model's semantic judgment, not a phrase match.)
+    UPDATED for decoupled recognition (no-scripting build,
+    2026-10-29): the ack completes the recognition, not the meeting
+    — the recognition turn spends a second generation on the live
+    introduction, and no scripted reveal follows."""
     uid = _seeded_user()
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
@@ -899,14 +946,14 @@ def test_ok_sounds_good_closes_on_recognition(ve_ctx, tmp_path):
     svc.turn(uid, "conductor", "I plan in pencil and improvise in ink — the ink is where it gets real.")
     prompts_before = len(gen.prompts)
     state = svc.turn(uid, "conductor", "Ok sounds good")
-    assert state["status"] == "complete"
+    assert state["status"] == "active"
     new_prompts = gen.prompts[prompts_before:]
-    assert len(new_prompts) == 1  # exactly one generation: her reply
+    assert len(new_prompts) == 2  # her reply + the live introduction
     assert not any("ORIENTATION" in p for p in new_prompts)
     bodies = [m["body"] for m in state["messages"]]
     script = MT.get_script("conductor", 1)
     for paragraph in script.reveal:
-        assert paragraph in bodies
+        assert paragraph not in bodies
 
 
 # ---------------------------------------------------------------------------

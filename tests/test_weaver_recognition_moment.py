@@ -78,10 +78,15 @@ def _guardian_runtime():
 # ---------------------------------------------------------------- flags
 
 
-def test_decoupling_flag_weaver_only():
+def test_decoupling_flag_weaver_and_maverick():
+    # UPDATED for the six-seat build (2026-10-29): decoupling is
+    # no longer Weaver-only — the Maverick is decoupled too (F1,
+    # all seven). The Guardian stays coupled as the control.
     weaver = ENC.get_definition(MT.get_script("conductor", 1))
+    maverick = ENC.get_definition(MT.get_script("maverick", 1))
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
     assert weaver.decoupled_recognition is True
+    assert maverick.decoupled_recognition is True
     assert guardian.decoupled_recognition is False
 
 

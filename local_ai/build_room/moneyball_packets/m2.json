@@ -1,0 +1,32 @@
+{
+  "work_item": "Build-Council Room series M2 \u2014 steward increment E scope",
+  "question": "Mutuality steward increment E is proposal-complete but its build authorization is undecided. What should E1 contain, what should gate E2 and beyond, and what is the most direct, reversible path to building E?",
+  "context": [
+    "The Build-Council Room is a deliberation space inside Zenaf for improving actual software-development decisions.",
+    "It has five participants, each a different language model. Each participant first contributes independently, without seeing the others' contributions; then participants respond to one another's claims.",
+    "You, the five participants, are the BUILD council. Your topic is the mutuality steward increment E: a review-and-retention system inside Zenaf, not the seven-seat fellowship and not yourselves. Do not assign yourselves fellowship seats.",
+    "Meetings are convened by Reynard. Convening is a function, not a rank, and the convener does not generate as a participant in this meeting.",
+    "The room deliberates and recommends; it never authorizes. Execution \u2014 file changes, PRs, or any consequential action \u2014 requires Joshua's explicit authorization, separate from any approval of design elements discussed.",
+    "Joshua holds final decision authority.",
+    "Contributions are attributed (participant, provider, model, key source) and preserved verbatim in an append-only transcript. The draft artifact is experimental and recommends only; it is not a review item.",
+    "Budget: at most sixteen generations across all participants (openings, one response round, optional revisions, and synthesis), a per-call timeout, and prompt-size caps. Failures and absences are recorded in the transcript, never raised as crashes.",
+    "The participants' roles and jurisdictions are not assigned. They are open, to be discovered through the participants' own conversation. Do not assume any participant holds a particular role.",
+    "Members must be capable of responding to and revising one another's claims, so that contributions can affect subsequent reasoning.",
+    "The system must distinguish evidence from inference and speculation.",
+    "Mechanics: number your substantive claims in your contribution, so each claim can be referenced by ID.",
+    "When responding, cite the claim ID you are engaging with, and perform one of these moves on its reasoning: agreement, correction, objection, extension, or request for evidence. Merely naming another participant does not count as a response.",
+    "Do not collapse disagreements into consensus: if participants disagree, both positions and their reasoning are preserved, and the synthesis must carry unresolved disagreements forward.",
+    "The mutuality steward: Zenaf's review-and-retention system for steward candidates. Increments A through D are merged. Increment E is proposal-complete but its build authorization is undecided.",
+    "Increment E as proposed: expired unacted candidates go to a BOUNDED INSPECTABLE ARCHIVE, not hard-delete; hard-delete only via explicit previewed deletion or holding-retention expiry; the 200-thread and 180-day holding limits became soft thresholds starting a minimum 14-day per-item grace period (temporary overflow allowed); the holding-removal warning is made available, not necessarily seen; correction provenance moved into the record contract; slices E1 through E5 are internal build checkpoints.",
+    "One review recommends E1 ONLY first (build E1, return for explicit review), with E2, F, G, H not to be begun. Four E2-gate items are open: first-party correction provenance extended to later citations; what happens when new evidence arrives while a thread is held (no silent recovery or implied verdict, bounded clock reset preferred); a short-lived server-issued preview token for confirmation semantics; per-slice explicit review.",
+    "Standing principles the design must honor: any deletion that affects the user experience must warn first, naming what will change or disappear (delete still means gone); review must be as streamlined as possible WITH the visitor's permission, with full granularity always accessible; a human exception never rewrites a system verdict \u2014 it is written down beside it while the verdict stays as recorded.",
+    "Product frame: the founder is one person with no funding landed, so speed and sustainability matter; the decision criterion is mission success, not revenue; nothing trains or ships without Joshua's explicit per-item authorization.",
+    "This discussion is one bounded step toward scoping increment E, not the build itself. Your job is intel and options: what E1 must contain to be shippable and safe, what should gate each later slice, and the most direct reversible path. Do not propose irreversible steps as though they were free."
+  ],
+  "constraints": [
+    "The room deliberates; it never decides. Joshua decides.",
+    "Preserve epistemic status for each claim: observed, inferred, proposed, speculative, or contested.",
+    "The artifact recommends only; it never authorizes execution.",
+    "Cite claim IDs when responding; do not collapse disagreements into consensus."
+  ]
+}

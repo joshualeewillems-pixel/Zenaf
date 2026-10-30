@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { CurrentUser } from '../auth/session'
+import { MoneyballProgramRunView } from './MoneyballProgramRunView'
 import { validateMeetingRequestJson } from './validateMeetingRequest'
 
 type Props = {
@@ -198,6 +199,7 @@ export function BuildCouncilSubmitView({ user, onBack }: Props) {
           <p className="text-sm text-slate-300">{result.detail}</p>
         </div>
       )}
+      <MoneyballProgramRunView user={user} />
     </div>
   )
 }

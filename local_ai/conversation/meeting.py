@@ -484,14 +484,23 @@ class MeetingService:
                 )
         # The Conductor opens the council: every other seat's FIRST meeting
         # waits until the entry seat's first meeting is complete.
+        # STICKY (Joshua's rule, 2026-10-30: "Once it's open it should
+        # stay open"): a seat whose begin door has become available
+        # stays beginnable even if the entry seat's task later returns
+        # to Todo (Weaver restart / Reopen toggle) — otherwise the lit
+        # door would lead to a refusal, which is not "open". The
+        # availability sets above (released / held / unreleased),
+        # the script check, and the chain check are untouched; only
+        # this entry condition consults the sticky record.
         entry = keystone_seeding.ENTRY_SEAT_REF
         if keystone_index == 1 and arch_id != entry:
             entry_tasks = _seat_keystone_tasks(user_id, entry)
             if not entry_tasks or entry_tasks[0].get("status") != "Done":
-                raise MeetingError(
-                    "The Weaver opens the council — meet them first. The "
-                    "others will introduce themselves in their own time."
-                )
+                if not keystone_seeding.seat_unlocked(user_id, arch_id):
+                    raise MeetingError(
+                        "The Weaver opens the council — meet them first. The "
+                        "others will introduce themselves in their own time."
+                    )
         # BUILDING IS NOT AVAILABILITY, last guard: a written script
         # alone never opens a seat to visitors. Only seats in
         # RELEASED_FIRST_MEETING_SEATS may begin a first meeting; a

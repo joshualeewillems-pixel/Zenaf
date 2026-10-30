@@ -607,3 +607,20 @@ CREATE TABLE IF NOT EXISTS aspiration_proposals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_aspiration_proposals_user_status ON aspiration_proposals(user_id, status);
+
+-- Sticky seat unlocks (Joshua's rule, 2026-10-30: "Once it's open it
+-- should stay open"). One row per (user, non-entry seat) whose begin
+-- door has become available: written when the entry seat's keystone-1
+-- task flips to Done, never deleted by a later Weaver restart or
+-- Reopen toggle. Read by keystone_attention (markers stay lit) and by
+-- the meeting begin entry guard. Weaver's own seat is never recorded
+-- here — its own restart semantics are unchanged.
+CREATE TABLE IF NOT EXISTS seat_unlocks (
+  user_id TEXT NOT NULL,
+  seat_ref TEXT NOT NULL,
+  unlocked_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, seat_ref),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_seat_unlocks_user ON seat_unlocks(user_id);

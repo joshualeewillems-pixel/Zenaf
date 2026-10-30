@@ -88,6 +88,15 @@ def seed_meet_your_council(user_id: str) -> dict[str, Any]:
 #   "intro" — the Weaver wants to talk about something).
 # - Once the conductor's first keystone completes, every other seat with an
 #   incomplete keystone chain carries a marker (reason "meet").
+# - STICKY (Joshua's rule, 2026-10-30: "Once it's open it should stay
+#   open"): once a seat's marker has lit, it stays lit across a later
+#   Weaver restart or Reopen toggle. The lighting is recorded in the
+#   seat_unlocks table when the entry keystone-1 task flips to Done
+#   (both Done paths — genuine meeting close and bare task toggle —
+#   funnel through the VE task update), and keystone_attention below
+#   treats a recorded seat as entry-complete for marker purposes. A
+#   seat that never lit stays locked behind Weaver-first ordering.
+#   Weaver's own marker/door/face logic is unchanged by stickiness.
 # - A seat whose keystones 1–3 are complete but whose keystone 4 ("The
 #   echo" — the recognition conversation) is not carries reason
 #   "recognition". (v1 proxy for readiness; true readiness detection is
@@ -129,12 +138,74 @@ def _chain_order(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(tasks, key=lambda t: depth(t))
 
 
+def seat_unlocked(user_id: str, seat_ref: str) -> bool:
+    """Whether the seat's begin door has become available and stuck.
+
+    Reads the seat_unlocks table written by maybe_record_entry_unlock.
+    Never raises: any read failure degrades to False (fail closed —
+    the pre-sticky behavior), so a storage problem can neither invent
+    a door nor break the tree or the begin guard.
+    """
+    try:
+        return (seat_ref or "").strip() in S.get_seat_unlocks(user_id)
+    except Exception:
+        return False
+
+
+def maybe_record_entry_unlock(user_id: str, task: dict[str, Any]) -> bool:
+    """Record sticky unlocks when the entry seat's keystone-1 task flips Done.
+
+    Called from the VE task-update path (both Done paths — genuine
+    meeting close via _do_reveal and the bare Execution-view toggle —
+    funnel through it, so neither can unlock without recording). The
+    check is exact, not heuristic: the task must be Done, belong to
+    the entry seat, belong to the user's keystone initiative, and be
+    first in its seat's dependency chain. On success, all six
+    non-entry seats are recorded (idempotent): every seat with an
+    incomplete chain lights at entry completion, and a complete-chain
+    seat needs no row — its door is already the revisit door via its
+    own face reveal, and the marker loop below skips complete chains
+    regardless. Returns True when rows were written. Storage errors
+    propagate (the storage-layer caller guards the call so a recording
+    failure never breaks the task update itself).
+    """
+    if (task or {}).get("status") != _DONE:
+        return False
+    if (task or {}).get("seat_ref") != ENTRY_SEAT_REF:
+        return False
+    initiative = find_keystone_initiative(user_id)
+    if initiative is None:
+        return False
+    project_ids = {
+        p["id"]
+        for p in S.list_projects(user_id)
+        if p.get("initiative_id") == initiative["id"]
+    }
+    if task.get("project_id") not in project_ids:
+        return False
+    mine = [
+        t
+        for t in S.list_tasks(user_id)
+        if t.get("project_id") in project_ids
+        and (t.get("seat_ref") or "") == ENTRY_SEAT_REF
+    ]
+    ordered = _chain_order(mine)
+    if not ordered or ordered[0].get("id") != task.get("id"):
+        return False
+    others = [s["seat_ref"] for s in KD.SEATS if s["seat_ref"] != ENTRY_SEAT_REF]
+    S.record_seat_unlocks(user_id, others)
+    return True
+
+
 def keystone_attention(user_id: str) -> dict[str, Any]:
     """Per-seat attention-marker state for the Living Tree.
 
     Returns {"seeded": bool, "markers": {seat_ref: {"attention": bool,
     "reason": "intro" | "meet" | "recognition" | None}}} covering all seven
-    canonical seats. Read-only; an unseeded user gets seeded=False with no
+    canonical seats. Read-only in output (same shape as before); the
+    one behavioral addition is stickiness: a seat recorded in
+    seat_unlocks keeps its marker even after the entry seat's task
+    returns to Todo. An unseeded user gets seeded=False with no
     markers lit.
     """
     markers: dict[str, dict[str, Any]] = {
@@ -167,6 +238,14 @@ def keystone_attention(user_id: str) -> dict[str, Any]:
 
     entry_chain = chain_of(ENTRY_SEAT_REF)
     entry_intro_done = bool(entry_chain) and entry_chain[0]
+    # Sticky unlocks: seats recorded when the entry keystone first
+    # completed keep their marker even if the entry task returns to
+    # Todo (Weaver restart / Reopen toggle). Read failure degrades to
+    # no stickiness (fail closed, pre-sticky behavior).
+    try:
+        unlocks = S.get_seat_unlocks(user_id)
+    except Exception:
+        unlocks = set()
 
     for seat in KD.SEATS:
         ref = seat["seat_ref"]
@@ -175,7 +254,7 @@ def keystone_attention(user_id: str) -> dict[str, Any]:
             continue  # nothing seeded for this seat, or chain complete
         if ref == ENTRY_SEAT_REF and not done[0]:
             markers[ref] = {"attention": True, "reason": "intro"}
-        elif not entry_intro_done and ref != ENTRY_SEAT_REF:
+        elif ref != ENTRY_SEAT_REF and not entry_intro_done and ref not in unlocks:
             continue  # conductor first — the others wait for the intro
         elif len(done) >= 4 and all(done[:3]) and not done[3]:
             markers[ref] = {"attention": True, "reason": "recognition"}

@@ -23,18 +23,26 @@ Boundaries (spec section 4/5, R1 semantics preserved):
 
 from __future__ import annotations
 
+import json
+import threading
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from api.routes.auth_routes import get_current_user
+from local_ai.build_room import moneyball_program
 from local_ai.build_room.meeting import (
     EvidencePacket,
     run_multi_model_meeting,
     run_single_model_meeting,
 )
 from local_ai.build_room.migration import execute_migration, inventory_store_dir
+from local_ai.build_room.program_runner import (
+    CAP_PRICING_DEFAULT_EXPIRY,
+    pricing_expired,
+    run_program,
+)
 from local_ai.llm.execution_principal import authenticated_account_principal
 from local_ai.vision_execution import storage as St
 
@@ -206,4 +214,253 @@ def migrate_artifacts(
     if report.get("lock_held"):
         raise HTTPException(status_code=409, detail=report)
     return report
+
+
+# ---------------------------------------------------------------- Moneyball
+# program run (role-only comparison, code PR #272 program runner).
+#
+# The program runner is an in-process harness with no CLI: this endpoint
+# is its ONLY invocation surface. Six meetings take far longer than one
+# synchronous HTTP request, so POST starts a daemon thread (the
+# codebase's established background pattern, e.g. demo_routes council
+# memory refresh) and returns a run id immediately; GET /program/status
+# reports progress from the persistent ProgramLedger, which is the sole
+# source of truth for cumulative reservations. The ledger is single-shot
+# by design: a second start after any meeting is recorded answers 409,
+# because re-running under the same ledger would double-count the cap.
+# A fresh program needs a fresh ledger path, which is a new review, not
+# something this endpoint does on its own.
+#
+# Single-process assumption: the active-run guard is in-memory. Staging
+# runs one uvicorn process (no --workers flag in the Dockerfile CMD),
+# so the guard is sound there; a multi-worker deployment would need a
+# shared lock before this endpoint is used. After a server restart the
+# in-memory record is gone by design and status derives state from the
+# ledger alone (completed / interrupted / not_started).
+#
+# This endpoint runs NOTHING on deploy, on import, or on any GET. It
+# does not change the /meetings or /meetings/r2 routes.
+
+
+def _program_ledger_path(store: Path) -> Path:
+    return store / "moneyball_program_ledger.json"
+
+
+def _read_program_ledger(ledger_path: Path) -> dict | None:
+    """The ledger JSON, or None when no program has recorded anything.
+
+    A present-but-unreadable ledger is a server problem, not a client
+    error: 500, never a silent fresh start (which would reset the cap).
+    """
+    if not ledger_path.exists():
+        return None
+    try:
+        data = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"moneyball program ledger unreadable: {exc}",
+        )
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=500,
+            detail="moneyball program ledger is not a JSON object",
+        )
+    return data
+
+
+def _run_moneyball_program_thread(specs, *, cap_usd: float, ledger_path: Path, store_dir: Path) -> None:
+    """Background thread body: run the program, record how it ended."""
+    try:
+        result = run_program(
+            specs,
+            cap_usd=cap_usd,
+            ledger_path=ledger_path,
+            store_dir=store_dir,
+        )
+        moneyball_program.PROGRAM_TRACKER.finish(
+            result_status=result.status, reason=result.reason
+        )
+    except Exception as exc:  # never die silently; status reports it
+        moneyball_program.PROGRAM_TRACKER.finish(
+            error=f"{type(exc).__name__}: {exc}"
+        )
+
+
+class ProgramRunBody(BaseModel):
+    """Start the fixed six-meeting program. cap_usd is REQUIRED: pydantic
+    refuses a missing cap (422) and a non-positive cap (422); there is
+    no default and no hardcoded figure anywhere in this module."""
+
+    cap_usd: float = Field(..., gt=0)
+    confirm: bool = False
+
+
+@router.post("/program/run", status_code=202)
+def run_moneyball_program_route(
+    body: ProgramRunBody, current_user: dict = Depends(get_current_owner_user)
+):
+    """Start the Moneyball role-only program in the background.
+
+    Owner-only, caller principal (spend follows the caller, exactly
+    like the existing routes), explicit ``{"confirm": true}`` required.
+    Returns a run id immediately; the six meetings run sequentially in
+    a daemon thread under the caller-supplied cap. No key values appear
+    in the response (work-item titles only).
+    """
+    if body.confirm is not True:
+        raise HTTPException(
+            status_code=400,
+            detail="program run requires explicit confirmation: {\"confirm\": true}",
+        )
+    if pricing_expired(CAP_PRICING_DEFAULT_EXPIRY):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"pricing table expired {CAP_PRICING_DEFAULT_EXPIRY}; "
+                "admission fails closed until the table is refreshed. "
+                "No meeting started."
+            ),
+        )
+    store = get_build_room_store_dir()
+    ledger_path = _program_ledger_path(store)
+    ledger = _read_program_ledger(ledger_path)
+    if ledger is not None:
+        recorded = ledger.get("meetings") or []
+        if recorded:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"moneyball program already run: ledger holds "
+                    f"{len(recorded)} meeting(s); refusing a second run "
+                    "under the same ledger"
+                ),
+            )
+        if float(ledger.get("cap_usd", body.cap_usd)) != float(body.cap_usd):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "moneyball program ledger cap mismatch: refusing to "
+                    "mix programs under different caps"
+                ),
+            )
+    run_id = moneyball_program.new_run_id()
+    if not moneyball_program.PROGRAM_TRACKER.try_start(run_id):
+        raise HTTPException(
+            status_code=409,
+            detail="a moneyball program run is already active",
+        )
+    try:
+        specs = moneyball_program.build_program_specs(
+            authenticated_account_principal(current_user["id"])
+        )
+    except ValueError as exc:
+        moneyball_program.PROGRAM_TRACKER.finish(error=f"ValueError: {exc}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"moneyball program packet invalid: {exc}",
+        )
+    thread = threading.Thread(
+        target=_run_moneyball_program_thread,
+        args=(specs,),
+        kwargs={
+            "cap_usd": body.cap_usd,
+            "ledger_path": ledger_path,
+            "store_dir": store,
+        },
+        name="moneyball-program-run",
+        daemon=True,
+    )
+    thread.start()
+    return {
+        "run_id": run_id,
+        "state": "started",
+        "cap_usd": body.cap_usd,
+        "meetings": moneyball_program.program_plan(),
+    }
+
+
+@router.get("/program/status")
+def moneyball_program_status(
+    current_user: dict = Depends(get_current_owner_user),
+):
+    """Report the Moneyball program's progress from the ledger.
+
+    Owner-only. No key values, no server paths: meeting ids, conditions,
+    and dollar figures only. State derivation: a live thread means
+    running; a finished thread reports its outcome; with no in-memory
+    record (e.g. after a restart) the ledger alone decides — 6 meetings
+    means completed, 1–5 means interrupted, none means not started.
+    """
+    store = get_build_room_store_dir()
+    ledger = _read_program_ledger(_program_ledger_path(store))
+    recorded = (ledger or {}).get("meetings") or []
+    cap_usd = (ledger or {}).get("cap_usd")
+    cumulative = float((ledger or {}).get("cumulative_reserved_usd", 0.0))
+    tracker = moneyball_program.PROGRAM_TRACKER.snapshot()
+    meetings = [
+        {
+            "meeting_id": m.get("meeting_id"),
+            "packet_work_item": m.get("packet_work_item"),
+            "condition": m.get("condition"),
+            "ok": m.get("ok"),
+            "allocation_usd": m.get("allocation_usd"),
+            "committed_usd": m.get("committed_usd"),
+        }
+        for m in recorded
+    ]
+    if tracker is not None and tracker["state"] == "running":
+        state = "running"
+        run_id = tracker["run_id"]
+        result_status = None
+        reason = None
+        error = None
+    elif tracker is not None and tracker["state"] == "finished":
+        run_id = tracker["run_id"]
+        result_status = tracker["result_status"]
+        reason = tracker["reason"]
+        error = tracker["error"]
+        if error:
+            state = "error"
+        elif result_status == "completed":
+            state = "completed"
+        elif result_status == "stopped":
+            state = "stopped"
+        elif result_status == "refused":
+            state = "refused"
+        else:
+            state = "finished"
+    elif not recorded:
+        state = "not_started"
+        run_id = None
+        result_status = None
+        reason = None
+        error = None
+    elif len(recorded) >= moneyball_program.PROGRAM_MEETING_COUNT:
+        state = "completed"
+        run_id = None
+        result_status = "completed"
+        reason = None
+        error = None
+    else:
+        state = "interrupted"
+        run_id = None
+        result_status = None
+        reason = None
+        error = None
+    return {
+        "state": state,
+        "run_id": run_id,
+        "cap_usd": cap_usd,
+        "cumulative_reserved_usd": cumulative,
+        "remaining_usd": (
+            round(float(cap_usd) - cumulative, 6) if cap_usd is not None else None
+        ),
+        "meetings_completed": len(recorded),
+        "meetings": meetings,
+        "result_status": result_status,
+        "reason": reason,
+        "error": error,
+    }
+
 

@@ -110,12 +110,12 @@ def test_script_identity_from_approved_sources():
     assert script.demeanor == "Curious about the other side; holds two truths lightly."
     # Approved ideal (archetypes.py, revised PR #250) + defining question.
     assert "Understanding across difference" in ENC._AMBASSADOR_REFERENCE_SLICE
-    assert "What can bring us together" in script.opening[2]
+    assert "understanding someone necessarily brings us closer" in script.opening[4]
 
 
-def test_opening_four_bubbles_no_announcement():
+def test_opening_eight_bubbles_no_announcement():
     opening = MT.AMBASSADOR_FIRST_MEETING.opening
-    assert len(opening) == 4
+    assert len(opening) == 8
     joined = "\n".join(opening)
     # Introductions are earned, not announced: no name, no role, no
     # other seat's character name in the opening.
@@ -125,8 +125,8 @@ def test_opening_four_bubbles_no_announcement():
         assert name not in joined, name
     # Her question is asked outright, and a visitor with nothing to
     # carry is a guest, not a failure to fix.
-    assert "What can bring us together" in joined
-    assert "nothing you want carried anywhere today" in joined
+    assert "make the crossing possible" in joined
+    assert "stranger" in joined and "guest" in joined
     # The question bank is retired by design, as the Weaver's was.
     assert MT.AMBASSADOR_FIRST_MEETING.questions == ()
     # The authored definition therefore delivers the opening whole.

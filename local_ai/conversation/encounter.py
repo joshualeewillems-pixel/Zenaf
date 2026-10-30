@@ -2944,7 +2944,7 @@ _GARDENER_FELLOWSHIP_REFERENCE = (
 def build_mentor_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Mentor's first meeting as an authored encounter (the
     Conductor's template, in the Gardener's voice): his greeting
-    among the set-aside things is the scripted opening — four
+    among the set-aside things is the scripted opening — six
     bubbles, delivered verbatim, and he waits; no question bank
     (the visitor's own material is the subject); the read-back is
     a position grounded only in substantive material, held at the
@@ -3003,7 +3003,7 @@ def build_mentor_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
 # -- The Skeptic, keystone 1 — the first authored encounter. ------------------
 #
 # Same shape as the Weaver's authored builder, Skeptic in kind: the
-# script's introduction is the opening (four bubbles, delivered
+# script's introduction is the opening (nine bubbles, delivered
 # verbatim, and he waits); no question bank (his questions field is
 # empty by design — examination of the visitor's own material, not
 # an interrogation); the impression gated on the shared-work
@@ -3588,7 +3588,7 @@ _CHAMPION_FELLOWSHIP_REFERENCE = (
 
 def build_champion_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Champion's first meeting as an authored encounter: her
-    forge greeting is the scripted opening — four bubbles,
+    her introduction is the scripted opening — five bubbles,
     delivered verbatim, and she waits; no question bank (the
     user's own hill, commitment, or avoidance is the subject);
     the generic first-meeting objectives (the Weaver's gate and

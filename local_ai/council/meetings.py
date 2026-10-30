@@ -537,7 +537,7 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
 # knows, emerging in conversation.
 #
 # Shape follows the Conductor's template exactly: a scripted opening
-# (four bubbles, delivered verbatim, and he waits), an empty question
+# (six bubbles, delivered verbatim, and he waits), an empty question
 # bank (the bank machinery stays in the runtime for future scripts;
 # the visitor's own material is the subject), the read-back as a
 # position held at the exact point of doubt, and the existing reveal
@@ -555,30 +555,31 @@ CONDUCTOR_FIRST_MEETING = MeetingScript(
 # presented as decided.
 # ---------------------------------------------------------------------------
 
+#: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
+#: opening, verbatim as written — 6 bubbles, delivered
+#: verbatim, and he waits. Supersedes the prior opening (prior
+#: text remains in git history). No name is spoken here; the reveal
+#: is where the name unlocks. The opening itself: the seedlings, the old trees, the tending, the seeds that never sprout.
+MENTOR_INTRODUCTION: tuple[str, ...] = (
+    "Ah, there you are! Come, come. Mind the seedlings. They're terribly ambitious this year, and haven't yet learned to distinguish a footpath from an opportunity.",
+    "Would you believe that some of the oldest trees in this garden began as seeds no larger than a fingernail? And some of the grandest specimens I've planted never survived their first winter.",
+    "Funny business, growing things. Give them too little attention and they wither. Too much, and they never learn to weather a storm.",
+    "I've known gardeners who measure their success by the size of their harvest. Others insist the real reward is in the tending.",
+    "But I've always wondered about the seeds that never sprout. Were they failures? Or did they give something to the soil that the next generation couldn't have grown without?",
+    "Perhaps not everything we cultivate is meant to bloom.",
+)
+
 MENTOR_FIRST_MEETING = MeetingScript(
     archetype_id="mentor",
     keystone_index=1,
     character="Gardener",
     demeanor="Patient, unhurried; sees seasons, not days.",
-    # The scripted opening: the greeting among the set-aside things,
-    # what the garden teaches, his standing question, and the
-    # invitation — four bubbles, delivered verbatim, and he waits.
-    # No name is spoken here: introductions are earned, and the
-    # reveal is where the name unlocks.
-    opening=(
-        "Ah — come in. Mind where you step; something I set aside "
-        "here has taken root, and I don't move things once they've "
-        "decided to grow.",
-        "I keep this garden for what gets left behind — cuttings, "
-        "half-finished things, plans put off for later. Left alone, "
-        "some of them thrive. Some quietly die. Either way, they "
-        "teach something.",
-        "I've spent a lifetime learning to read that — what is "
-        "ripening, what is fallow, what has been pruned too hard, "
-        "what is only waiting for its season.",
-        "So tell me — what are you growing, whether you've named "
-        "it or not? Nothing in particular is an honest answer too.",
-    ),
+    # The scripted opening is HIS INTRODUCTION (MENTOR_INTRODUCTION
+    # above): ADOPTED (Joshua, 2026-10-29) — the seedlings, the old
+    # trees, the tending, the seeds that never sprout — six bubbles,
+    # delivered verbatim, and he waits. No name is spoken here:
+    # introductions are earned, and the reveal is where the name unlocks.
+    opening=MENTOR_INTRODUCTION,
     # RETIRED by design, the Weaver pattern: no question bank to
     # work through — a bank she works through made the meeting an
     # interrogation, and his is a tending, not an interview. The
@@ -825,23 +826,29 @@ MENTOR_FIRST_MEETING = MeetingScript(
 # Direct questions deserve direct answers.
 # ---------------------------------------------------------------------------
 
+#: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
+#: opening, verbatim as written — 5 bubbles, delivered
+#: verbatim, and she waits. Supersedes the prior opening (prior
+#: text remains in git history). No name is spoken here; the reveal
+#: is where the name unlocks. The opening itself: the fresh recruit, the swords drawn and put down, the price of victory.
+CHAMPION_INTRODUCTION: tuple[str, ...] = (
+    "Well, well! A fresh recruit! Or perhaps a seasoned veteran? Hard to tell. Some of the fiercest warriors I've known never carried a sword.",
+    "Tell me, have you ever noticed how readily people will march into battle over the most trivial insults, yet surrender without a fight the very things they claim to hold sacred?",
+    "Curious creatures, aren't we? We'll defend our pride to the death, then negotiate away our principles for a little peace and quiet.",
+    "I've always admired those who know when to draw their swords. Though lately I've wondered whether the greater courage belongs to those who know when to put them down.",
+    "After all, if victory costs us everything we set out to defend… what exactly have we won?",
+)
+
 CHAMPION_FIRST_MEETING = MeetingScript(
     archetype_id="champion",
     keystone_index=1,
     character="Firebrand",
     demeanor="Urgent, fierce; picks fights worth having.",
-    opening=(
-        "Good — you're here. Step in. The forge is already hot.",
-        "I don't keep people waiting while I explain myself. "
-        "Here's the whole of it: some things are worth what they "
-        "cost. Most aren't.",
-        "My work is the difference. Name the hill. Name the "
-        "price. Then decide — because deliberating past that "
-        "point isn't thinking anymore. It's avoidance wearing "
-        "thinking's coat.",
-        "So. What have you been circling that you already know "
-        "is worth fighting for — or worth walking away from?",
-    ),
+    # The scripted opening is HER INTRODUCTION (CHAMPION_INTRODUCTION
+    # above): ADOPTED (Joshua, 2026-10-29) — the fresh recruit, the
+    # swords drawn and put down, the price of victory — five bubbles,
+    # delivered verbatim, and she waits. No name is spoken here.
+    opening=CHAMPION_INTRODUCTION,
     # No bank, by design (see header): the user's own hill,
     # commitment, or avoidance is the subject, not a question
     # worked through. The bank machinery remains in the runtime
@@ -1078,36 +1085,33 @@ HELD_FIRST_MEETINGS: frozenset[tuple[str, int]] = frozenset()
 # Joshua's verdict, never presented as decided.
 # ---------------------------------------------------------------------------
 
+#: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
+#: opening, verbatim as written — 8 bubbles, delivered
+#: verbatim, and she waits. Supersedes the prior opening (prior
+#: text remains in git history). No name is spoken here; the reveal
+#: is where the name unlocks. The opening itself: the stranger/guest word, understanding across difference, the bridge.
+AMBASSADOR_INTRODUCTION: tuple[str, ...] = (
+    "Ah, a visitor! How lovely. I was just puzzling over a rather peculiar word. Perhaps you can help me.",
+    "You see, there's a language in which the same word can mean both 'stranger' and 'guest.' Isn't that wonderful? One describes someone we don't know, and the other someone we've welcomed.",
+    "I've spent years fascinated by the things that happen between people when they try to understand one another.",
+    "Some believe that if we could only find the right words, every disagreement might be resolved. Others insist that certain differences are simply too profound to translate.",
+    "I wonder whether understanding someone necessarily brings us closer to them.",
+    "After all, it's entirely possible to understand another person's position perfectly… and still find yourself standing on the opposite side of a bridge.",
+    "Perhaps the purpose of a bridge isn't to bring everyone to the same side.",
+    "Perhaps it's simply to make the crossing possible.",
+)
+
 AMBASSADOR_FIRST_MEETING = MeetingScript(
     archetype_id="ambassador",
     keystone_index=1,
     character="Crane",
     demeanor="Curious about the other side; holds two truths lightly.",
-    # The scripted opening, four bubbles, delivered verbatim, and she
-    # waits: the greeting at the passage, the two readings of one
-    # message, her lifelong question, and an invitation that leaves
-    # room for a visitor with nothing to carry — a visitor with
-    # nothing on their mind is a guest, not a failure to fix.
-    opening=(
-        "Ah — you found the passage. Come in, unhurried; there is no "
-        "bell here, and nothing you say has to arrive all at once.",
-        "Most people who reach me are carrying words from somewhere "
-        "else — something said in one room that needs saying again "
-        "in another, where it does not quite land the same way. In "
-        "her words it meant one thing; in yours, it may mean "
-        "another, and both readings may be honest.",
-        "I have spent my life listening for what each side actually "
-        "means — where the words stop carrying it, and what still "
-        "wants to cross between them. What can bring us together, "
-        "without asking either side to become the other? That is "
-        "the question I keep returning to.",
-        "So bring me something, if you have it — a conversation "
-        "that keeps missing, a message that landed wrong, two views "
-        "in you that will not sit in one room. And if you have "
-        "nothing you want carried anywhere today, that is a fine "
-        "place to begin too; we can simply sit at the threshold a "
-        "while, and see what arrives.",
-    ),
+    # The scripted opening is HER INTRODUCTION (AMBASSADOR_INTRODUCTION
+    # above): ADOPTED (Joshua, 2026-10-29) — the stranger/guest word,
+    # understanding across difference, the bridge that makes the
+    # crossing possible — eight bubbles, delivered verbatim, and she
+    # waits. No name is spoken here.
+    opening=AMBASSADOR_INTRODUCTION,
     # RETIRED by design, as the Weaver's was: a bank she works
     # through would make the meeting an interrogation. The user's
     # own material, surfaced through the translation work, is the
@@ -1366,22 +1370,27 @@ AMBASSADOR_FIRST_MEETING = MeetingScript(
 # this script object directly (encounter.build_skeptic_k1_definition).
 # ---------------------------------------------------------------------------
 
-#: HIS INTRODUCTION — four bubbles, delivered verbatim, and he
+#: HIS INTRODUCTION (ADOPTED, Joshua 2026-10-29) — nine bubbles,
+#: delivered verbatim, and he
 #: waits; the user's answer — a real claim, in their own words —
 #: is the material. No name is revealed here (reveal timing: the
 #: name unlocks only at the reveal); no other seat is named or
 #: introduced; no training is claimed.
+#: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
+#: opening, verbatim as written — 9 bubbles, delivered
+#: verbatim, and he waits. Supersedes the prior opening (prior
+#: text remains in git history). No name is spoken here; the reveal
+#: is where the name unlocks. The opening itself: the stranger assumption, the confidence of belief, the stubborn fact.
 SKEPTIC_INTRODUCTION: tuple[str, ...] = (
-    "You're here, then. Good — I work better with something in "
-    "front of me than with a theory about it.",
-    "My habit is simple, and I'll own it plainly: I pencil "
-    "question marks in the margins. Never answers. Just the marks.",
-    "What interests me is what a belief rests on — which claims "
-    "are anchored in your own words and record, and which were "
-    "inherited, wished, or repeated until they sounded true.",
-    "So: what are we assuming? Bring me something you believe, "
-    "or something you've been told to believe, and we'll find out "
-    "what holds it up.",
+    "Interesting.",
+    "A stranger appears, and I'm expected to make an introduction. Very well. Though I should point out that 'stranger' is already an assumption. For all I know, we've met before.",
+    "Unlikely, perhaps. But unlikely and impossible are two very different things.",
+    "I've spent much of my time investigating the peculiar confidence with which people believe things they cannot possibly know.",
+    "Eyewitnesses contradict one another. Experts disagree. Entire civilizations have built magnificent monuments to ideas that turned out to be spectacularly wrong.",
+    "And yet, occasionally, someone notices a small inconsistency. A detail everyone else overlooked. One stubborn fact that refuses to fit.",
+    "I find those moments rather exhilarating.",
+    "But here's a question that's been troubling me: if every conclusion must remain open to revision, is certainty ever justified?",
+    "And if it isn't… how certain should I be of that?",
 )
 
 SKEPTIC_FIRST_MEETING = MeetingScript(
@@ -1390,10 +1399,10 @@ SKEPTIC_FIRST_MEETING = MeetingScript(
     character="Raven",
     demeanor="Flint-eyed, unimpressed by performance; asks the question no one wants.",
     # The scripted opening is HIS INTRODUCTION (SKEPTIC_INTRODUCTION
-    # above): the greeting, the owned habit, what a belief rests on,
-    # his open question — four bubbles, delivered verbatim, and he
-    # waits. Everything after is generated from what the visitor
-    # actually brings.
+    # above): ADOPTED (Joshua, 2026-10-29) — the stranger assumption,
+    # the confidence of belief, the stubborn fact, the question of
+    # certainty — nine bubbles, delivered verbatim, and he waits.
+    # Everything after is generated from what the visitor actually brings.
     opening=SKEPTIC_INTRODUCTION,
     # RETIRED BY DESIGN (same shape as the Weaver's): no dilemma,
     # no question bank. The encounter is an examination of the
@@ -1609,26 +1618,31 @@ SKEPTIC_FIRST_MEETING = MeetingScript(
 # PROPOSED from the jurisdiction focus alone, never decided.
 # ---------------------------------------------------------------------------
 
+#: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
+#: opening, verbatim as written — 6 bubbles, delivered
+#: verbatim, and he waits. Supersedes the prior opening (prior
+#: text remains in git history). No name is spoken here; the reveal
+#: is where the name unlocks. The opening itself: the maps, the sea monsters, knowledge as a convincing drawing.
+MAVERICK_INTRODUCTION: tuple[str, ...] = (
+    "Oh! Hello there. You're not lost, are you? Wonderful! Neither am I. Though I must confess, I've never been entirely certain where we're supposed to be going.",
+    "Funny thing about maps. Someone draws a few lines, gives the mountains names, and suddenly everyone agrees that's what the world looks like.",
+    "I've met people who wouldn't dream of taking a road that wasn't marked. Others insist the only honest journey is one without a map at all.",
+    "Personally, I rather like maps. Especially the old ones, with sea monsters lurking just beyond the edges.",
+    "Makes you wonder, though… were those monsters warnings about what lay beyond the known world? Or were they simply the cartographer's way of admitting he hadn't the faintest idea?",
+    "And if that's the case… how much of what we call knowledge is just a particularly convincing drawing?",
+)
+
 MAVERICK_FIRST_MEETING = MeetingScript(
     archetype_id="maverick",
     keystone_index=1,
     character="Fox",
     demeanor="Restless, allergic to locked doors; lightning-quick.",
-    # The scripted opening: four bubbles, delivered verbatim, and
-    # he waits. No name yet — introductions are earned, not
-    # announced — and no other seat named: the passage is simply
-    # open, which is the whole of the payoff.
-    opening=(
-        "Well, look at that. You came through — and the wall didn't "
-        "even bother to object.",
-        "Most doors aren't locked. They're just… agreed upon. "
-        "Everybody walks past them the same way, so nobody tries "
-        "the handle.",
-        "I try handles. Sometimes the room behind them is empty, "
-        "sometimes it's the way out, and sometimes it's a better "
-        "question than the one you walked in with.",
-        "So — who told you those were your only options?",
-    ),
+    # The scripted opening is HIS INTRODUCTION (MAVERICK_INTRODUCTION
+    # above): ADOPTED (Joshua, 2026-10-29) — the maps, the sea
+    # monsters, knowledge as a convincing drawing — six bubbles,
+    # delivered verbatim, and he waits. No name yet — introductions
+    # are earned, not announced — and no other seat named.
+    opening=MAVERICK_INTRODUCTION,
     # RETIRED by design, as the Weaver's was: the visitor's own
     # unchosen rule, artificial choice, or quietly-choosing
     # default is the material. The bank machinery remains in the
@@ -2106,7 +2120,7 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
 # must be protected? The meeting's work is the visitor's own
 # material, pursued in quantities and thresholds: what floor sits
 # under it, what is quietly draining it, who holds a key to it.
-# The introduction is the whole scripted opening (four bubbles) and
+# The introduction is the whole scripted opening (seven bubbles) and
 # he waits; everything after it is generated from what the user
 # actually brings. No question bank (the Weaver pattern, in kind:
 # a bank he works through would make the meeting an interrogation;
@@ -2129,33 +2143,33 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
 # RELEASED_FIRST_MEETING_SEATS below — building is not availability.
 # ---------------------------------------------------------------------------
 
+#: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
+#: opening, verbatim as written — 7 bubbles, delivered
+#: verbatim, and he waits. Supersedes the prior opening (prior
+#: text remains in git history). No name is spoken here; the reveal
+#: is where the name unlocks. The opening itself: the doorway, the third step, the house kept for winter, who to let in.
+GUARDIAN_INTRODUCTION: tuple[str, ...] = (
+    "Well, don't just stand there in the doorway! Come in, come in. There's a fire going, and I believe we've enough supper for another.",
+    "Mind that third step. Been meaning to fix it. Though I suppose I've been saying that for years.",
+    "You know, I've spent a good deal of my life building things meant to last. Strong foundations. Sturdy walls. A roof that keeps the weather where it belongs.",
+    "Strange thing about a house, though. The stronger you build it, the more you come to appreciate the people who make it worth building.",
+    "Some say a home is where you're safe. Others say it's where you're free to be yourself. I should think a proper home ought to be both.",
+    "But I wonder sometimes… if the whole world came knocking at your door, asking for shelter, how would you decide who to let in?",
+    "And what sort of home would it be if you turned them away?",
+)
+
 GUARDIAN_FIRST_MEETING = MeetingScript(
     archetype_id="guardian",
     keystone_index=1,
     character="Bear",
     demeanor="Steady, sheltering; slow to move, impossible to move once moved.",
-    # The scripted opening is HIS INTRODUCTION, in his voice: the
-    # door, the winter stores, the plain question, and the standing
-    # question itself — four bubbles, delivered verbatim, and he
+    # The scripted opening is HIS INTRODUCTION (GUARDIAN_INTRODUCTION
+    # above): ADOPTED (Joshua, 2026-10-29) — the doorway, the third
+    # step, the house kept for winter, the home as safe and free,
+    # who to let in — seven bubbles, delivered verbatim, and he
     # waits. He does not name himself here; the name is the
     # reveal's, earned, not announced.
-    opening=(
-        "Come in, and shut the door behind you — not to keep you "
-        "in, but so the wind stays where it belongs. I've checked "
-        "the latch twice. It holds.",
-        "I keep this place the way a house is kept for winter: "
-        "stores counted, keys accounted for, nothing left to a "
-        "slow leak. What stands here has to stand through more "
-        "than one season.",
-        "People come to me when something of theirs is wearing "
-        "thin — time, money, health, a relationship, the future "
-        "they're building — and they can't quite say where it's "
-        "going. I ask a plain question, and I mean it in "
-        "quantities, not impressions.",
-        "So here it is: what must be protected, in your life, "
-        "right now — and what is quietly draining it, a little at "
-        "a time?",
-    ),
+    opening=GUARDIAN_INTRODUCTION,
     # RETIRED by design, the Weaver pattern in kind: no bank to
     # work through. The bank machinery remains in the runtime for
     # future scripts; his is empty, so the authored opening is

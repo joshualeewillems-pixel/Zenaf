@@ -119,16 +119,16 @@ def test_guardian_script_exists_with_canonical_identity():
     assert script.keystone_index == 1
 
 
-def test_guardian_opening_is_four_bubbles_and_names_nobody():
+def test_guardian_opening_is_seven_bubbles_and_names_nobody():
     script = MT.get_script("guardian", 1)
-    assert len(script.opening) == 4
+    assert len(script.opening) == 7
     opening_text = "\n".join(script.opening)
     # Introductions are earned, not announced: the opening carries
-    # the door, the winter stores, and his standing question — never
-    # the name or the role.
+    # the doorway, the house kept for winter, and his question of
+    # who to let in — never the name or the role.
     assert "Bear" not in opening_text
     assert "Guardian" not in opening_text
-    assert "What must be protected" in opening_text or "what must be protected" in opening_text
+    assert "who to let in" in opening_text
     # The Weaver pattern in kind: no question bank to work through.
     assert script.questions == ()
 

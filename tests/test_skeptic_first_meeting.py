@@ -22,7 +22,13 @@ meeting cannot begin. What this file pins:
 - Reference slice: the orientation draft's delimited slice
   (PR #254, draft only) embedded prompt-locally, verbatim, on
   both live frames — in the Weaver #252 guidance-constant pattern.
-  It migrates to the uncapped section after PR #255 merges.
+  The richer Fellowship reference (six-seat corrected doc §6,
+  adapted) rides the uncapped section (PR #255 mechanism) and is
+  pinned in tests/test_skeptic_fellowship_reference.py.
+- Decoupled recognition (F1, all seven): recognition is a moment,
+  not a close — pinned in tests/test_skeptic_recognition_moment.py.
+  A settled verdict never closes this meeting; the visitor's own
+  Complete action (or the ceiling wrap) finishes it.
 - Availability: the script is deliberately NOT in SCRIPTS, so
   get_script is None, state reports has_script False, and begin
   refuses — even for a seeded user whose Weaver keystone 1 is
@@ -197,8 +203,16 @@ def test_definition_assembles_from_script():
     ]
     # Impression gate: the shared-work exchange, Skeptic description.
     assert definition.impression_gate_objective == "shared_work_exchange"
-    # Generic close shape: no close floor added by this PR.
+    # Generic close shape: no close floor added by this PR — and
+    # decoupling makes the floor question moot: a settled verdict
+    # never closes a decoupled meeting (F1).
     assert definition.close_floor_objectives == ()
+    assert definition.decoupled_recognition is True
+    # Uncapped Fellowship reference, composed at build time.
+    assert definition.fellowship_reference.startswith(
+        "Fellowship reference — how you know the other seats."
+    )
+    assert "First-meeting openness right now" in definition.fellowship_reference
     assert definition.reveal == MT.SKEPTIC_FIRST_MEETING.reveal
     assert definition.wrap_line == ENC._SKEPTIC_WRAP_LINE
     assert definition.fallback_line == ENC._SKEPTIC_FALLBACK_LINE

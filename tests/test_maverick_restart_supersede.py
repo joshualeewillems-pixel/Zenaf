@@ -164,6 +164,34 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path):
     assert len(_standing(after)) == 1
 
 
+def test_completion_is_silent_under_decoupling(ve_ctx, tmp_path):
+    """UPDATED for the six-seat build (2026-10-29): the Maverick
+    is decoupled now, so the completion chokepoint speaks nothing
+    scripted — no wrap line, no reveal — while still completing
+    the meeting and marking the task Done. Filing still happens
+    at this chokepoint only (see the tests above)."""
+    from local_ai.conversation import encounter as ENC
+    from local_ai.council import meetings as MT
+
+    assert ENC.get_definition(MT.get_script("maverick", 1)).decoupled_recognition is True
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+    svc.meetings.create(uid, "maverick", 1)
+    svc.meetings.update(
+        uid, "maverick", 1,
+        status="active",
+        readback_claim="Run one: you orient by the door nobody chose.",
+        readback_response="That's right.",
+        readback_strands=json.dumps(["Compass"]),
+    )
+    said: list[str] = []
+    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    state = svc.complete(uid, "maverick")
+    assert state["status"] == "complete"
+    assert said == []
+    assert _seat_keystone_tasks(uid, "maverick")[0]["status"] == "Done"
+
+
 def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path):
     """Semantics 2+3: run 1 files and is accepted; restart (no change);
     run 2 files; the run-1 row is retained with its prior verdict

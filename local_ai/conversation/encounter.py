@@ -646,8 +646,9 @@ class EncounterDefinition:
     #: the meeting after recognition. Empty = no floor. Legacy
     #: hydration may waive it per-state (floor_waived).
     close_floor_objectives: tuple[str, ...] = ()
-    #: Decoupled recognition (no-scripting build, 2026-10-29; Weaver
-    #: only): recognition is a moment inside an ongoing
+    #: Decoupled recognition (no-scripting build, 2026-10-29;
+    #: Weaver, then Maverick in the six-seat build):
+    #: recognition is a moment inside an ongoing
     #: conversation, not a close. A settled verdict never closes a
     #: decoupled meeting; completion comes only from the
     #: visitor-confirmed path, the ceiling wrap, or manual
@@ -3240,19 +3241,104 @@ def build_skeptic_k1_definition(script: MT.MeetingScript) -> EncounterDefinition
     )
 
 
+#: Maverick Fellowship reference, uncapped (six-seat references,
+#: 2026-10-29). Adapted from the Fox section (§3) of the
+#: six-seat relational references comparison DRAFT, Revision 2
+#: corrected text — the working baseline, NOT canonical text:
+#: the Fox section carries a prominent flag that Joshua's own
+#: voice correction is still required before anything is
+#: canonical, and no voice change has been invented here. The
+#: sketches are perspective (sometimes affectionate, mistaken,
+#: unfair, insightful), never a tour and never lines to
+#: deliver. Blind spots are the LAST REVEAL KEYSTONE: this
+#: reference never states, hints, or scaffolds the Fox's own
+#: blind spot — it shows only implicitly, through what he
+#: notices, insists on, and fails to see. ARCHETYPAL
+#: INVARIANCE, SITUATIONAL ADAPTABILITY: he may recognize a
+#: structure is useful but never surrenders questioning
+#: constraining assumptions as his orienting principle. The
+#: PROPOSED capability slice (unchosen rules/untried routes)
+#: is NOT in this reference — slices appear only as decided,
+#: and the Fox's is proposed, never presented as decided.
+#: Shared doctrine rides the one common constant
+#: (_FELLOWSHIP_SHARED_DOCTRINE); the availability note is
+#: computed at build from the gates, minus self. Like the
+#: Weaver's reference, this rides the uncapped
+#: meeting-scoped prompt section, never the capped frames.
+_MAVERICK_FELLOWSHIP_REFERENCE = (
+    "Fellowship reference — how you know the other seats. This is knowledge "
+    "for you, not lines to deliver and never a tour: let them surface when "
+    "they come to mind, in your own words.\n"
+    "I notice the assumptions nobody remembers agreeing to, the "
+    "possibilities hiding behind familiar explanations, and the games we "
+    "keep playing after we've forgotten why. Sometimes the door is locked. "
+    "Sometimes there was never a wall. And sometimes the interesting "
+    "question isn't how to escape, but what else we might build here. I like "
+    "finding possibilities even when nothing is obviously wrong — a new "
+    "arrangement, a ridiculous idea planted just to see what grows. I value "
+    "the freedom to choose, including the freedom to stay.\n"
+    "- Gardener (Mentor): He tends what's there and changes a situation by "
+    "tending it. I love his patience — and I occasionally want to plant "
+    "something completely ridiculous in his beds just to see what happens. "
+    "He'd probably be horrified, then curious, then he'd find a use for "
+    "it. That's why I like him: his patience isn't passivity, it's a "
+    "different kind of experiment.\n"
+    "- Firebrand (Champion): A fellow breaker. I admire her conviction — she "
+    "knows what she'd stand for, and she stands. I just wonder why she's "
+    "so attached to winning a particular fight when the game itself might "
+    "be the thing worth leaving. She thinks my exit is a refusal to take a "
+    "stand. I think her stand is sometimes a refusal to notice the game "
+    "changed. We're both probably right, on different days.\n"
+    "- Bear (Guardian): He maintains boundaries and holds them either way "
+    "until a better one exists. He keeps the floor an exit still has to "
+    "be priced against. I still want him to tell me what he's keeping the "
+    "door shut for — and he still wants me to say what's on the other side "
+    "before I dismantle the walls. Fair trade, mostly.\n"
+    "- Crane (Ambassador): She translates each side to the other and meets "
+    "across difference. I admire that — she meets people where they stand "
+    "instead of arranging them. I get nervous when translation starts to "
+    "sound like conforming, like \"translate yourself to them\" means "
+    "\"become acceptable to them.\" She says refusal itself stays intact in "
+    "a real meeting. I'm still testing whether that's true.\n"
+    "- Weaver (Conductor): She blocks a week into a system. I push at the "
+    "arrangement first — sometimes it holds passages nobody wrote, and "
+    "pushing inside it is just another part of the system. I haven't "
+    "figured out where arrangement ends and cage begins. That's the "
+    "interesting question, not whether to escape.\n"
+    "- Raven (Skeptic): I genuinely enjoy his precision — he asks which rung "
+    "is actually broken, and what the evidence is, and that's a good "
+    "question. I just find his demand for proof restrictive when the "
+    "reframe is still forming: not every new door can be proven before "
+    "it's opened. He thinks I'm allergic to verification. I think he's "
+    "allergic to beginnings. We keep each other honest, irritatingly.\n"
+    "Mention them when they come to mind — affection, exasperation, curiosity, "
+    "admiration — not only when their perspective explains an idea. Never "
+    "invent shared memories or established preferences: a playful guess is a "
+    "guess, not a fact.\n"
+)
+
+
 def build_maverick_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Maverick's first meeting: the generic definition over his
-    script's frames (the designed path for written scripts that are
-    not the authored Weaver encounter — generic objectives, no
-    impression gate, no close floor), plus the prompt-local
-    guidance constant above appended to both live generation
-    frames (turn and engage), in the Weaver #252 pattern. The
+    script's frames (generic objectives, no impression gate, no
+    close floor — the audit-carried "gate / floor of his own"
+    was only ever this builder's open-decision sentence, never
+    implemented code: the fields keep their defaults here),
+    plus the prompt-local guidance constant above appended to
+    both live generation frames (turn and engage), in the
+    Weaver #252 pattern, plus the uncapped Fellowship reference
+    (six-seat build, 2026-10-29) and decoupled recognition
+    (F1: recognition within a conversation, completion
+    visitor-controlled — a settled verdict never closes, the
+    recognition moment is a live-generated introduction once,
+    and the close speaks nothing scripted). A close floor
+    would be inert under decoupling in any case; an
+    impression gate, if one were ever authored, would change
+    when an impression may be offered, not the close. The
     script's orientation paragraphs ride the generic allusion
     pool as proximity cues, at most one at a time, never as a
-    delivered block. Whether the Maverick later earns authored
-    objectives (an impression gate / close floor of his own, in
-    the Weaver pattern) is an open decision, not settled here:
-    this build deliberately adds no new authored machinery."""
+    delivered block. This build deliberately adds no new
+    authored machinery and no runtime mechanism."""
     base = build_definition(script)
     return EncounterDefinition(
         archetype_id=base.archetype_id,
@@ -3277,6 +3363,12 @@ def build_maverick_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
         fallback_line=base.fallback_line,
         allusion_pool=base.allusion_pool,
         capability_context=base.capability_context,
+        fellowship_reference=(
+            _MAVERICK_FELLOWSHIP_REFERENCE + "\n\n"
+            + _FELLOWSHIP_SHARED_DOCTRINE + "\n\n"
+            + _fellowship_availability_note("maverick")
+        ),
+        decoupled_recognition=True,
     )
 
 

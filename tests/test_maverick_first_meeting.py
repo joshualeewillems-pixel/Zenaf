@@ -181,10 +181,17 @@ def test_definition_assembles_from_script_frames():
     assert definition.reveal == tuple(script.reveal)
     assert definition.orientation_frame == script.orientation_frame
     assert definition.orientation_facts == script.orientation_facts
-    # Generic objectives (the designed path for non-Weaver scripts):
-    # no authored impression gate, no close floor added here.
+    # Generic objectives: no authored impression gate, no close
+    # floor added here (unchanged by decoupling).
     assert definition.impression_gate_objective == ""
     assert definition.close_floor_objectives == ()
+    # UPDATED for the six-seat build (2026-10-29): decoupled
+    # recognition (F1) and the uncapped Fellowship reference —
+    # the old coupled, reference-less contract is gone. Detail
+    # pins live in test_maverick_fellowship_reference.py and
+    # test_maverick_recognition_moment.py.
+    assert definition.decoupled_recognition is True
+    assert definition.fellowship_reference != ""
 
 
 def test_guidance_rides_both_frames_and_no_other_seat():

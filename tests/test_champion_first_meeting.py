@@ -93,12 +93,12 @@ def test_script_exists_with_approved_names():
     assert script.demeanor == "Urgent, fierce; picks fights worth having."
 
 
-def test_opening_is_four_bubbles_in_her_voice_without_a_name():
+def test_opening_is_five_bubbles_in_her_voice_without_a_name():
     script = _script()
-    assert len(script.opening) == 4
+    assert len(script.opening) == 5
     joined = " ".join(script.opening)
-    assert "forge" in joined
-    assert "Name the hill. Name the price." in joined
+    assert "fresh recruit" in joined
+    assert "what exactly have we won?" in joined
     # Introductions are earned, not announced: no name in the opening.
     assert "Firebrand" not in joined
     # No question bank: the visitor's own material is the subject.

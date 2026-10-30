@@ -128,16 +128,16 @@ def test_script_identity_and_opening():
     assert script.keystone_index == 1
     assert script.character == "Raven"
     assert script.opening == MT.SKEPTIC_INTRODUCTION
-    assert len(script.opening) == 4
-    # His habit, owned plainly — the payoff of the Weaver's locked
-    # skeptic allusion ("Someone leaves question marks in my
-    # margins. Never answers. Just the marks.").
-    assert "question marks in the margins" in " ".join(script.opening)
-    assert "Never answers. Just the marks." in " ".join(script.opening)
+    assert len(script.opening) == 9
+    # Adopted introduction (Joshua, 2026-10-29): the stranger
+    # assumption, the confidence of belief, the stubborn fact, the
+    # question of certainty.
+    assert "A stranger appears" in " ".join(script.opening)
+    assert "how certain should I be of that?" in " ".join(script.opening)
     # Reveal timing: the name is withheld from the opening.
     assert "Raven" not in " ".join(script.opening)
     # Defining question + invitation: visitor material is the subject.
-    assert "what are we assuming?" in " ".join(script.opening).lower()
+    assert "is certainty ever justified?" in " ".join(script.opening).lower()
     # No question bank by design (Weaver shape): examination of
     # visitor material, not an interrogation to work through.
     assert script.questions == ()

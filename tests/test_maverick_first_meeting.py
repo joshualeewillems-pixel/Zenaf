@@ -120,16 +120,16 @@ def test_script_identity_matches_canonical_records():
     assert script.demeanor == "Restless, allergic to locked doors; lightning-quick."
 
 
-def test_opening_four_bubbles_ends_in_his_question_names_nobody():
+def test_opening_six_bubbles_ends_in_his_question_names_nobody():
     script = _maverick_script()
-    assert len(script.opening) == 4
-    assert script.opening[-1] == "So — who told you those were your only options?"
+    assert len(script.opening) == 6
+    assert script.opening[-1] == "And if that's the case… how much of what we call knowledge is just a particularly convincing drawing?"
     # Introductions are earned, not announced: no name in the opening.
     assert "Fox" not in " ".join(script.opening)
     assert "Maverick" not in " ".join(script.opening)
-    # The Weaver payoff, from his side, naming nobody: the wall is
-    # simply open.
-    assert "the wall didn't even bother to object" in script.opening[0]
+    # The adopted opening, from his side, naming nobody: maps, sea
+    # monsters, knowledge as a convincing drawing.
+    assert "You're not lost, are you?" in script.opening[0]
     # No question bank: the visitor's own material is the subject.
     assert script.questions == ()
 

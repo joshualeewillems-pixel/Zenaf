@@ -108,10 +108,10 @@ def test_script_identity_and_shape():
     assert script.character == "Gardener"
     # Demeanor matches the keystone seed data for the Mentor.
     assert script.demeanor == "Patient, unhurried; sees seasons, not days."
-    # Scripted opening: four bubbles, delivered verbatim, and he waits.
-    assert len(script.opening) == 4
-    assert script.opening[0].startswith("Ah — come in.")
-    assert script.opening[-1].endswith("Nothing in particular is an honest answer too.")
+    # Scripted opening: six bubbles, delivered verbatim, and he waits.
+    assert len(script.opening) == 6
+    assert script.opening[0].startswith("Ah, there you are! Come, come.")
+    assert script.opening[-1].endswith("Perhaps not everything we cultivate is meant to bloom.")
     # Reveal timing: no name spoken before the reveal.
     assert "Gardener" not in " ".join(script.opening)
     assert "Gardener" not in script.encounter_frame

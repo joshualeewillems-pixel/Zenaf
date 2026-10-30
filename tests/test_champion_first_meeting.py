@@ -15,7 +15,9 @@ What this pins:
   objectives; the Weaver's gate and floor are not copied), with the
   prompt-local guidance — including the orientation slice, verbatim
   in substance — on both live generation paths, and on no other
-  seat's generic definition.
+  seat's generic definition; it carries the Fellowship reference on
+  the uncapped section and is decoupled (settled never closes;
+  completion is visitor-controlled).
 - Every integrity invariant rides the frames verbatim (naming,
   direct-answer-first, honesty guard, grounding, reveal timing, no
   invented training, recognition note, trailer instruction), and
@@ -146,6 +148,13 @@ def test_definition_assembles_over_the_script():
     ]
     assert definition.impression_gate_objective == ""
     assert definition.close_floor_objectives == ()
+    # Decoupled like all seven (F1): recognition is a moment, not a
+    # close; the Fellowship reference rides the uncapped section.
+    assert definition.decoupled_recognition is True
+    assert definition.fellowship_reference
+    assert "I break for a cause; he breaks from a frame" in (
+        definition.fellowship_reference
+    )
     assert definition.wrap_line.startswith("I've kept you long enough")
     assert definition.fallback_line.startswith("Forgive me")
     # Her system slice, rendered from the capability registry.
@@ -372,6 +381,10 @@ def _agents(tmp_path, uid):
 
 
 def _run_conductor_to_completion(svc, uid):
+    # UPDATED for decoupled recognition (no-scripting build,
+    # 2026-10-29): recognition no longer closes — the visitor's
+    # own Complete action finishes it (cf.
+    # tests/test_conductor_supersede.py).
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
     svc.turn(
@@ -381,16 +394,24 @@ def _run_conductor_to_completion(svc, uid):
     state = svc.turn(uid, "conductor", "That's right.")
     if state["status"] != "complete":
         state = svc.turn(uid, "conductor", "Got it.")
+    if state["status"] != "complete":
+        state = svc.complete(uid, "conductor")
     assert state["status"] == "complete"
     return state
 
 
 def _run_champion_to_completion(svc, uid, answer, response):
+    # UPDATED for decoupled recognition (six-seat references,
+    # 2026-10-29): the Champion is decoupled like all seven, so
+    # recognition no longer closes — the visitor's own Complete
+    # action finishes it.
     state = svc.start(uid, "champion")
     assert state["status"] == "active"
     svc.turn(uid, "champion", answer)
     svc.turn(uid, "champion", response)
     state = svc.turn(uid, "champion", "Got it.")
+    if state["status"] != "complete":
+        state = svc.complete(uid, "champion")
     assert state["status"] == "complete"
     return state
 

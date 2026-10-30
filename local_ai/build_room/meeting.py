@@ -1961,6 +1961,8 @@ def run_multi_model_meeting(
     nominated_paths: list[str] | None = None,
     snapshot_dir: Path | str | None = None,
     deployed_version: str | None = None,
+    role_prompt_extras: dict[str, str] | None = None,
+    role_brief_version: str | None = None,
 ) -> MeetingResult:
     """Run one R2 meeting. Never raises for participant/generation
     failure: failures are recorded in the transcript and reflected
@@ -2123,6 +2125,23 @@ def run_multi_model_meeting(
     if tool_enabled_for_meeting and tool_revision is not None:
         section = tools_prompt_section(tool_nominated, tool_revision)
         tool_prompt_extras = {name: "\n\n" + section for name in tool_capable_names}
+
+    # Moneyball role-only comparison: per-seat brief sections merged
+    # with the tool extras. In the experiment tools are OFF, so the
+    # tool extras are empty and the briefs are the ONLY per-seat
+    # prompt difference in Condition B. Brief sections follow the
+    # tools precedent ("\\n\\n" + section) and are appended, never
+    # substituted, so the base prompt is identical with or without
+    # them. Base-prompt hashes are recorded per phase below and
+    # attached to the artifact: Phase 1 hashes must match across a
+    # packet pair; later-phase hashes are traceability only.
+    prompt_extras: dict[str, str] = dict(tool_prompt_extras)
+    for _name, _section in (role_prompt_extras or {}).items():
+        prompt_extras[_name] = prompt_extras.get(_name, "") + _section
+    base_prompt_hashes: dict[str, str] = {}
+
+    def _hash_base_prompt(prompt: str) -> str:
+        return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
     def _drain_tool_log() -> None:
         """Append one phase's tool entries to the transcript.
@@ -2512,8 +2531,9 @@ def run_multi_model_meeting(
         + "\n\n" + _LANGUAGE_LINE
         + "\n\n" + opening_telemetry
     )
+    base_prompt_hashes["opening"] = _hash_base_prompt(opening_prompt)
     opening_jobs = _generate_jobs("opening", opening_prompt, present,
-                                  prompt_extras=tool_prompt_extras)
+                                  prompt_extras=prompt_extras)
     opening_results = _run_phase_parallel(
         opening_jobs, budget,
         tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
@@ -2564,13 +2584,14 @@ def run_multi_model_meeting(
             + "\n\n" + _LANGUAGE_LINE
             + "\n\n" + response_telemetry
         )
+        base_prompt_hashes["response"] = _hash_base_prompt(response_prompt)
         for seat in seats:
             if seat.participant is None:
                 transcript.append(
                     "note", seat.name,
                     f"{seat.name} did not respond: absent from openings.")
         response_jobs = _generate_jobs("response", response_prompt, present,
-                                       prompt_extras=tool_prompt_extras)
+                                       prompt_extras=prompt_extras)
         response_results = _run_phase_parallel(
             response_jobs, budget,
             tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
@@ -2609,10 +2630,11 @@ def run_multi_model_meeting(
                 + "\n\n" + _LANGUAGE_LINE
                 + "\n\n" + revision_telemetry
             )
+            base_prompt_hashes["revision"] = _hash_base_prompt(revision_prompt)
             revision_frozen = registry.ids()
             revision_jobs = _generate_jobs(
                 "revision", revision_prompt, invited,
-                prompt_extras=tool_prompt_extras)
+                prompt_extras=prompt_extras)
             revision_results = _run_phase_parallel(
                 revision_jobs, budget,
                 tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
@@ -2897,6 +2919,20 @@ def run_multi_model_meeting(
             {"phase": s["phase"], "participant": s["participant"]}
             for s in generation_settlements if s.get("output_capped")
         ],
+    }
+    # Moneyball role-only comparison capture: objective facts for
+    # the comparison program. The meeting records only what IT did
+    # (brief version, briefed seats, base-prompt hashes); the
+    # condition label (A/B) is recorded by the program runner,
+    # which knows the pair. Phase 1 hashes must match across a
+    # packet pair (asserted by the program tooling, not here);
+    # later-phase hashes are traceability only and are NEVER
+    # required to match — Phase 2/3 prompts contain the generated
+    # registry, which SHOULD differ if the briefs work.
+    artifact["comparison_capture"] = {
+        "role_brief_version": role_brief_version,
+        "role_brief_seats": sorted(role_prompt_extras or {}),
+        "base_prompt_hashes": base_prompt_hashes,
     }
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"

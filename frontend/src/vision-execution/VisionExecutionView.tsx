@@ -7859,7 +7859,7 @@ export function VisionExecutionView({
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 p-6 max-w-4xl mx-auto w-full">
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 p-4 lg:p-6 max-w-4xl mx-auto w-full">
       <h2 className="text-xl font-semibold text-slate-100 mb-1">Vision → Execution Engine</h2>
       <p className="text-slate-400 text-sm mb-4">
         Capture ideas, evaluate initiatives, run projects and tasks; people, capacity, and assets. Separate backend (no Airtable).
@@ -9236,15 +9236,15 @@ export function VisionExecutionView({
 
       {/* Execution: unified hierarchy (initiatives → projects → tasks), timeline default */}
       {tab === 'execution' && (
-        <div className="flex gap-4 flex-1 min-h-0">
-          <div className={`flex flex-col gap-4 min-h-0 ${executionViewMode === 'list' ? 'flex-shrink-0 w-80' : 'flex-1 min-w-0'}`}>
+        <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 min-w-0">
+          <div className={`flex flex-col gap-4 min-h-0 min-w-0 ${executionViewMode === 'list' ? 'w-full lg:flex-shrink-0 lg:w-80' : 'flex-1 min-w-0'}`}>
             <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-sm font-medium text-slate-300">Execution</h3>
-              <div className="flex items-center gap-2">
-                <ProjectsViewModeToggle value={executionViewMode} onChange={setExecutionViewMode} />
-                <button type="button" onClick={() => setShowCreate(true)} className="px-2 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs">Add initiative</button>
-                <button type="button" onClick={() => setShowCreateProject(true)} className="px-2 py-1.5 rounded-lg border border-slate-500 text-slate-300 hover:bg-slate-700 text-xs">Add project</button>
-                <button type="button" onClick={() => setShowCreateTask(true)} className="px-2 py-1.5 rounded-lg border border-slate-500 text-slate-300 hover:bg-slate-700 text-xs">Add task</button>
+              <div className="flex flex-wrap items-center gap-2">
+                <ProjectsViewModeToggle value={executionViewMode} onChange={setExecutionViewMode} className="shrink-0" />
+                <button type="button" onClick={() => setShowCreate(true)} className="px-2 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs whitespace-nowrap shrink-0">Add initiative</button>
+                <button type="button" onClick={() => setShowCreateProject(true)} className="px-2 py-1.5 rounded-lg border border-slate-500 text-slate-300 hover:bg-slate-700 text-xs whitespace-nowrap shrink-0">Add project</button>
+                <button type="button" onClick={() => setShowCreateTask(true)} className="px-2 py-1.5 rounded-lg border border-slate-500 text-slate-300 hover:bg-slate-700 text-xs whitespace-nowrap shrink-0">Add task</button>
               </div>
             </div>
             {showCreate && <CreateInitiativeForm onSave={handleCreateInitiative} onCancel={() => setShowCreate(false)} />}

@@ -12,18 +12,18 @@ export interface ProjectsViewModeToggleProps {
 
 export function ProjectsViewModeToggle({ value, onChange, className = '' }: ProjectsViewModeToggleProps) {
   return (
-    <div className={`flex rounded-lg border border-slate-600 bg-slate-800/50 p-0.5 ${className}`}>
+    <div className={`flex rounded-lg border border-slate-600 bg-slate-800/50 p-0.5 shrink-0 ${className}`}>
       <button
         type="button"
         onClick={() => onChange('list')}
-        className={`px-3 py-1.5 text-sm rounded-md transition-colors ${value === 'list' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+        className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${value === 'list' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
       >
         List
       </button>
       <button
         type="button"
         onClick={() => onChange('timeline')}
-        className={`px-3 py-1.5 text-sm rounded-md transition-colors ${value === 'timeline' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+        className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${value === 'timeline' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
       >
         Timeline
       </button>

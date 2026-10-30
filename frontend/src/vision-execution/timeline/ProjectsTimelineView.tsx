@@ -5,7 +5,7 @@
 
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { Initiative, Project, Task } from '../types'
-import { buildTimelineRows } from './timelineUtils'
+import { buildTimelineRows, TIMELINE_ROW_HEIGHT_PX } from './timelineUtils'
 import type { TimelineZoom, TimelineRow } from './timelineTypes'
 import { TimelineTree } from './TimelineTree'
 import { TimelineGrid, getRange } from './TimelineGrid'
@@ -21,7 +21,7 @@ export interface ProjectsTimelineViewProps {
   onSelectInitiative?: (id: string | null) => void
 }
 
-const ROW_HEIGHT = 44
+const ROW_HEIGHT = TIMELINE_ROW_HEIGHT_PX
 
 export function ProjectsTimelineView({
   initiatives,
@@ -93,24 +93,24 @@ export function ProjectsTimelineView({
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      <div className="flex items-center gap-4 mb-2 shrink-0">
-        <div className="flex rounded-lg border border-slate-600 bg-slate-800/50 p-0.5">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-4 mb-2 shrink-0">
+        <div className="flex rounded-lg border border-slate-600 bg-slate-800/50 p-0.5 shrink-0">
           <button
             type="button"
             onClick={() => setZoom('week')}
-            className={`px-3 py-1.5 text-sm rounded-md ${zoom === 'week' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-3 py-1.5 text-sm rounded-md whitespace-nowrap ${zoom === 'week' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
           >
             Week
           </button>
           <button
             type="button"
             onClick={() => setZoom('month')}
-            className={`px-3 py-1.5 text-sm rounded-md ${zoom === 'month' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+            className={`px-3 py-1.5 text-sm rounded-md whitespace-nowrap ${zoom === 'month' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-slate-200'}`}
           >
             Month
           </button>
         </div>
-        <div className="text-sm text-slate-400">
+        <div className="text-sm text-slate-400 min-w-0">
           {rangeStart.toLocaleDateString(undefined, { month: 'short', year: 'numeric', day: 'numeric' })}
           {' → '}
           {rangeEnd.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
@@ -118,12 +118,12 @@ export function ProjectsTimelineView({
         <button
           type="button"
           onClick={() => setAnchorDate(new Date())}
-          className="text-xs text-slate-500 hover:text-slate-300"
+          className="text-xs text-slate-500 hover:text-slate-300 whitespace-nowrap shrink-0"
         >
           Today
         </button>
       </div>
-      <div className="flex flex-1 min-h-0 overflow-hidden border border-slate-600 rounded-lg bg-slate-800/30">
+      <div className="flex flex-1 min-h-0 overflow-x-auto overflow-y-hidden border border-slate-600 rounded-lg bg-slate-800/30">
         <TimelineTree
           rows={rows}
           rowHeightPx={ROW_HEIGHT}

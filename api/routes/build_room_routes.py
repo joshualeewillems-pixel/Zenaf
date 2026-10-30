@@ -475,6 +475,38 @@ def moneyball_program_status(
 # blind evaluation (comparison_eval.py: strip + sheet + views) could
 # not retrieve the claim sets it scores. This route is the unblocker.
 #
+# Paging extension (why: the full response is ~2 MB and a browser
+# text view caps at 256 KB, so the full pull cannot be read; a
+# per-meeting pull alone is still ~200-280 KB for the largest
+# meeting). Optional query parameters, backward compatible — a
+# request with no parameters returns exactly the shape this route
+# has always returned:
+# - ?meeting_id=<id>: return only that meeting's entry, same fields
+#   as the unfiltered entry, full capture intact. Unknown id -> 404
+#   naming the id. A filtered request reads ONLY the selected
+#   meeting's capture; a missing capture for an unselected meeting
+#   does not fail it (the no-params request still reads all and
+#   still fails on any missing capture — see below).
+# - ?claim_offset=<n>&claim_limit=<m>, only together with
+#   meeting_id (without it -> 400): paginate WITHIN that meeting's
+#   claim_registry only. The returned capture is a copy with
+#   claim_registry replaced by the requested slice; every other
+#   capture field stays complete. Either parameter may be given
+#   alone: a missing offset defaults to 0, a missing limit defaults
+#   to the rest of the registry. The entry additionally carries
+#   claim_total, claim_offset, and claim_limit (the EFFECTIVE
+#   values after defaulting), so the caller can page to completion
+#   deterministically. Offset beyond the total -> an empty slice
+#   with the total, not an error. Negative offset/limit -> 400.
+#   Recommended page size: ~40 claims (see the paging tests: the
+#   largest staging meeting holds 113 claims, so 40/40/33 pages it
+#   in three reads, each far under the 256 KB view cap; any page
+#   size reconstructs the registry exactly, so shrink freely if a
+#   page still clips).
+# - meetings_completed always equals len(meetings) in the response,
+#   filtered or not; cap_usd and cumulative_reserved_usd always
+#   describe the whole program ledger.
+#
 # Boundaries, all load-bearing:
 # - Owner-only via the SAME gate as /program/status and /program/run
 #   (get_current_owner_user, 403 "Build-room meetings are owner-only").
@@ -485,18 +517,21 @@ def moneyball_program_status(
 # - Read-only by construction: GET only, no writes, no run/start/stop
 #   capability, no ledger mutation, no file writes. Calling it twice
 #   returns the same bytes and changes nothing.
-# - This program's ledger only: no parameters, no filtering, no
-#   cross-program reads. Capture paths are DERIVED from the ledger's
-#   meeting_id under the store dir (the runner's naming scheme), never
-#   taken from ledger path strings — a ledger path value is never
-#   opened, so no server path leaks into the response either.
+# - This program's ledger only: no cross-program reads. Capture paths
+#   are DERIVED from the ledger's meeting_id under the store dir (the
+#   runner's naming scheme), never taken from ledger path strings —
+#   a ledger path value is never opened, so no server path leaks
+#   into the response either. A filtered meeting_id is looked up in
+#   the ledger first, so only ledger-recorded ids ever reach path
+#   derivation.
 # - Transcript/artifact files are NOT read: no transcript.json or
 #   draft_artifact.json contents appear here, only the capture
 #   record the runner wrote.
 # - Failure is explicit, never partial: a missing ledger is 404; a
 #   missing, unreadable, or malformed capture for ANY recorded meeting
-#   is 500 naming that meeting — the response never silently omits a
-#   meeting or substitutes another program's data.
+#   is 500 naming that meeting on the unfiltered request, and for the
+#   SELECTED meeting on a filtered request — the response never
+#   silently omits a meeting or substitutes another program's data.
 
 
 def _capture_path_for(store: Path, meeting_id: str) -> Path:
@@ -547,16 +582,44 @@ def _read_meeting_capture(capture_path: Path, meeting_id: str) -> dict:
 
 @router.get("/program/captures")
 def moneyball_program_captures(
+    meeting_id: str | None = None,
+    claim_offset: int | None = None,
+    claim_limit: int | None = None,
     current_user: dict = Depends(get_current_owner_user),
 ):
     """Return this program's meetings with their capture records.
 
-    Owner-only, read-only. Ledger order, ledger summary fields per
-    meeting, plus each meeting's full comparison_capture.json contents
-    under "capture". A missing ledger is 404; any missing or broken
-    capture fails the whole request (500) rather than returning
-    partial data.
+    Owner-only, read-only. No parameters: ledger order, ledger
+    summary fields per meeting, plus each meeting's full
+    comparison_capture.json contents under "capture" — exactly the
+    shape this route has always returned. With ?meeting_id: only
+    that meeting's entry (404 naming an unknown id). With
+    claim_offset/claim_limit (meeting_id required, else 400): the
+    returned capture's claim_registry holds just that slice, and
+    the entry additionally carries claim_total, claim_offset, and
+    claim_limit (effective values after defaulting). A missing
+    ledger is 404; any missing or broken capture fails the whole
+    request (500) rather than returning partial data.
     """
+    paging = claim_offset is not None or claim_limit is not None
+    if paging and meeting_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "claim_offset/claim_limit require meeting_id: paging "
+                "applies within one meeting's claim_registry"
+            ),
+        )
+    if claim_offset is not None and claim_offset < 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"claim_offset must not be negative: {claim_offset}",
+        )
+    if claim_limit is not None and claim_limit < 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"claim_limit must not be negative: {claim_limit}",
+        )
     store = get_build_room_store_dir()
     ledger = _read_program_ledger(_program_ledger_path(store))
     if ledger is None:
@@ -570,23 +633,55 @@ def moneyball_program_captures(
             status_code=500,
             detail="moneyball program ledger meetings is not a list",
         )
+    if meeting_id is not None:
+        recorded = [m for m in recorded if m.get("meeting_id") == meeting_id]
+        if not recorded:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    "moneyball program meeting not found in ledger: "
+                    f"{meeting_id}"
+                ),
+            )
     meetings = []
     for m in recorded:
-        meeting_id = m.get("meeting_id")
+        selected_id = m.get("meeting_id")
         capture = _read_meeting_capture(
-            _capture_path_for(store, meeting_id), meeting_id
+            _capture_path_for(store, selected_id), selected_id
         )
-        meetings.append(
-            {
-                "meeting_id": meeting_id,
-                "packet_work_item": m.get("packet_work_item"),
-                "condition": m.get("condition"),
-                "ok": m.get("ok"),
-                "allocation_usd": m.get("allocation_usd"),
-                "committed_usd": m.get("committed_usd"),
-                "capture": capture,
-            }
-        )
+        entry = {
+            "meeting_id": selected_id,
+            "packet_work_item": m.get("packet_work_item"),
+            "condition": m.get("condition"),
+            "ok": m.get("ok"),
+            "allocation_usd": m.get("allocation_usd"),
+            "committed_usd": m.get("committed_usd"),
+            "capture": capture,
+        }
+        if paging:
+            registry = capture.get("claim_registry")
+            if not isinstance(registry, list):
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        "moneyball program capture has no claim_registry "
+                        f"list for meeting {selected_id}"
+                    ),
+                )
+            total = len(registry)
+            offset = claim_offset if claim_offset is not None else 0
+            limit = (
+                claim_limit
+                if claim_limit is not None
+                else max(0, total - offset)
+            )
+            sliced = dict(capture)
+            sliced["claim_registry"] = registry[offset:offset + limit]
+            entry["capture"] = sliced
+            entry["claim_total"] = total
+            entry["claim_offset"] = offset
+            entry["claim_limit"] = limit
+        meetings.append(entry)
     return {
         "cap_usd": ledger.get("cap_usd"),
         "cumulative_reserved_usd": float(

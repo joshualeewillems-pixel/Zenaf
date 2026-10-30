@@ -25,9 +25,12 @@ OTHER = {"id": "someone-else"}
 
 
 def _call(app, method: str, path: str) -> tuple[int, dict]:
+    # Split "?..." off so FastAPI parses the query parameters.
+    raw_path, _, query = path.partition("?")
     scope = {
         "type": "http", "http_version": "1.1", "method": method, "scheme": "http",
-        "path": path, "raw_path": path.encode(), "query_string": b"",
+        "path": raw_path, "raw_path": path.encode(),
+        "query_string": query.encode(),
         "headers": [(b"content-length", b"0")],
         "client": ("testclient", 50000), "server": ("testserver", 80),
     }
@@ -257,3 +260,264 @@ def test_captures_twice_identical_and_no_side_effects(app, tmp_path):
     assert sorted(p.name for p in store.iterdir()) == before_files
     assert (store / "moneyball_program_ledger.json").read_bytes() == before_ledger
     assert (store / "moneyball_program_ledger.json").stat().st_mtime_ns == before_mtime
+
+
+# ---------------------------------------------------------------- paging extension
+
+
+def _capture_with_claims(meeting_id, n_claims, condition="A"):
+    """A capture whose registry mirrors the real shape at scale: the
+    largest staging meeting holds 113 claims, so 113 is the paging
+    fixture size. Claim text is multi-sentence (~400 chars), the
+    order of magnitude a real scored claim occupies serialized."""
+    capture = _capture(meeting_id, condition)
+    capture["claim_registry"] = [
+        {
+            "id": f"C{i + 1}",
+            "author": "Muse",
+            "text": (f"Claim {i + 1}: a substantive scored contribution. " * 8).strip(),
+            "phase": "opening",
+        }
+        for i in range(n_claims)
+    ]
+    return capture
+
+
+def test_captures_meeting_filter_returns_only_that_entry_full_capture(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A"), _meeting_record("bbb222", "B")]
+    _write_program(store, meetings, {
+        "aaa111": _capture("aaa111", "A"),
+        "bbb222": _capture("bbb222", "B"),
+    })
+    status, body = _call_get(app, "/build-room/program/captures?meeting_id=bbb222")
+    assert status == 200, body
+    # Envelope still describes the whole program; the meetings list
+    # holds only the selected entry, full capture intact.
+    assert body["cap_usd"] == 2.0
+    assert body["cumulative_reserved_usd"] == 0.5
+    assert body["meetings_completed"] == 1
+    assert [m["meeting_id"] for m in body["meetings"]] == ["bbb222"]
+    entry = body["meetings"][0]
+    # Meeting-only filter adds NO paging keys: the entry is exactly
+    # the unfiltered entry shape.
+    assert set(entry.keys()) == {
+        "meeting_id", "packet_work_item", "condition", "ok",
+        "allocation_usd", "committed_usd", "capture",
+    }
+    assert entry["capture"]["claim_registry"][0]["id"] == "C1"
+    assert entry["capture"]["role_brief_version"] == "v1"
+
+
+def test_captures_meeting_filter_unknown_id_is_404(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    _write_program(store, meetings, {"aaa111": _capture("aaa111", "A")})
+    status, body = _call_get(app, "/build-room/program/captures?meeting_id=zzz999")
+    assert status == 404
+    assert "zzz999" in body["detail"]
+    assert "meetings" not in body
+
+
+def test_captures_paging_reconstructs_registry_exactly(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    full = _capture_with_claims("aaa111", 113)
+    _write_program(store, meetings, {"aaa111": full})
+    base = "/build-room/program/captures?meeting_id=aaa111"
+    pages = []
+    for offset, expected_len in ((0, 40), (40, 40), (80, 33)):
+        status, body = _call_get(
+            app, f"{base}&claim_offset={offset}&claim_limit=40"
+        )
+        assert status == 200, body
+        assert body["meetings_completed"] == 1
+        entry = body["meetings"][0]
+        assert entry["claim_total"] == 113
+        assert entry["claim_offset"] == offset
+        assert entry["claim_limit"] == 40
+        sliced = entry["capture"]["claim_registry"]
+        assert len(sliced) == expected_len
+        # Every non-registry capture field stays complete on a page.
+        assert entry["capture"]["meeting_id"] == "aaa111"
+        assert entry["capture"]["base_prompt_hashes"]["phase1"] == "base-aaa111"
+        pages.append(sliced)
+    rebuilt = [claim for page in pages for claim in page]
+    assert rebuilt == full["claim_registry"]
+    assert json.dumps(rebuilt, sort_keys=True) == json.dumps(
+        full["claim_registry"], sort_keys=True
+    )
+    # Paging actually shrinks the payload: a 40-claim page serializes
+    # far under the 256 KB browser text-view cap (and under the full
+    # meeting capture), which is the whole point of the feature.
+    status, full_body = _call_get(app, base)
+    assert status == 200
+    status, page_body = _call_get(app, f"{base}&claim_offset=0&claim_limit=40")
+    assert status == 200
+    assert len(json.dumps(page_body).encode()) < 256 * 1024
+    assert len(json.dumps(page_body).encode()) < len(json.dumps(full_body).encode())
+
+
+def test_captures_paging_offset_beyond_total_is_empty_not_error(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    _write_program(store, meetings, {"aaa111": _capture_with_claims("aaa111", 113)})
+    status, body = _call_get(
+        app,
+        "/build-room/program/captures?meeting_id=aaa111&claim_offset=200&claim_limit=40",
+    )
+    assert status == 200, body
+    entry = body["meetings"][0]
+    assert entry["claim_total"] == 113
+    assert entry["claim_offset"] == 200
+    assert entry["claim_limit"] == 40
+    assert entry["capture"]["claim_registry"] == []
+
+
+def test_captures_paging_negative_values_are_400(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    _write_program(store, meetings, {"aaa111": _capture("aaa111", "A")})
+    for query in ("claim_offset=-1", "claim_limit=-5"):
+        status, body = _call_get(
+            app, f"/build-room/program/captures?meeting_id=aaa111&{query}"
+        )
+        assert status == 400, body
+        assert "negative" in body["detail"]
+
+
+def test_captures_paging_without_meeting_is_400(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    _write_program(store, meetings, {"aaa111": _capture("aaa111", "A")})
+    for query in ("claim_offset=0", "claim_limit=40", "claim_offset=0&claim_limit=40"):
+        status, body = _call_get(app, f"/build-room/program/captures?{query}")
+        assert status == 400, body
+        assert "meeting_id" in body["detail"]
+
+
+def test_captures_paging_single_param_defaults(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    _write_program(store, meetings, {"aaa111": _capture_with_claims("aaa111", 113)})
+    # Offset alone pages to the end of the registry.
+    status, body = _call_get(
+        app, "/build-room/program/captures?meeting_id=aaa111&claim_offset=100"
+    )
+    assert status == 200, body
+    entry = body["meetings"][0]
+    assert entry["claim_offset"] == 100
+    assert entry["claim_limit"] == 13
+    assert len(entry["capture"]["claim_registry"]) == 13
+    assert entry["capture"]["claim_registry"][0]["id"] == "C101"
+    # Limit alone starts at the beginning.
+    status, body = _call_get(
+        app, "/build-room/program/captures?meeting_id=aaa111&claim_limit=10"
+    )
+    assert status == 200, body
+    entry = body["meetings"][0]
+    assert entry["claim_offset"] == 0
+    assert entry["claim_limit"] == 10
+    assert len(entry["capture"]["claim_registry"]) == 10
+    assert entry["capture"]["claim_registry"][-1]["id"] == "C10"
+
+
+def test_captures_paging_limit_zero_is_empty(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    _write_program(store, meetings, {"aaa111": _capture_with_claims("aaa111", 113)})
+    status, body = _call_get(
+        app, "/build-room/program/captures?meeting_id=aaa111&claim_limit=0"
+    )
+    assert status == 200, body
+    entry = body["meetings"][0]
+    assert entry["claim_total"] == 113
+    assert entry["claim_limit"] == 0
+    assert entry["capture"]["claim_registry"] == []
+
+
+def test_captures_no_params_shape_is_exactly_the_old_shape(app, tmp_path):
+    """Backward compat, pinned: a no-params request returns exactly
+    the #278 key sets — no claim_* keys, no extra envelope keys."""
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A"), _meeting_record("bbb222", "B")]
+    _write_program(store, meetings, {
+        "aaa111": _capture("aaa111", "A"),
+        "bbb222": _capture("bbb222", "B"),
+    })
+    status, body = _call_get(app, "/build-room/program/captures")
+    assert status == 200, body
+    assert set(body.keys()) == {
+        "cap_usd", "cumulative_reserved_usd", "meetings_completed", "meetings",
+    }
+    for entry in body["meetings"]:
+        assert set(entry.keys()) == {
+            "meeting_id", "packet_work_item", "condition", "ok",
+            "allocation_usd", "committed_usd", "capture",
+        }
+        assert entry["capture"] == _capture(entry["meeting_id"], entry["condition"])
+
+
+def test_captures_gate_enforced_on_new_params(app, tmp_path):
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    _write_program(store, meetings, {"aaa111": _capture("aaa111", "A")})
+    app.dependency_overrides[get_current_user] = lambda: OTHER
+    status, body = _call_get(
+        app,
+        "/build-room/program/captures?meeting_id=aaa111&claim_offset=0&claim_limit=40",
+    )
+    assert status == 403
+    assert body["detail"] == "Build-room meetings are owner-only"
+    app.dependency_overrides.pop(get_current_user, None)
+    status, _ = _call_get(
+        app, "/build-room/program/captures?meeting_id=aaa111"
+    )
+    assert status == 401
+
+
+def test_captures_filtered_request_reads_only_the_selected_capture(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A"), _meeting_record("bbb222", "B")]
+    _write_program(store, meetings, {
+        "aaa111": _capture("aaa111", "A"),
+        "bbb222": _capture("bbb222", "B"),
+    })
+    # Sibling capture goes missing: the filtered request still serves
+    # the selected meeting (the unfiltered request would 500 here).
+    (store / "meeting_bbb222.comparison_capture.json").unlink()
+    status, body = _call_get(app, "/build-room/program/captures?meeting_id=aaa111")
+    assert status == 200, body
+    assert [m["meeting_id"] for m in body["meetings"]] == ["aaa111"]
+    # But the selected meeting's own missing capture still 500s,
+    # naming that meeting — never a silent omission.
+    (store / "meeting_aaa111.comparison_capture.json").unlink()
+    status, body = _call_get(app, "/build-room/program/captures?meeting_id=aaa111")
+    assert status == 500, body
+    assert "aaa111" in body["detail"]
+    assert "meetings" not in body
+
+
+def test_captures_paging_non_list_registry_is_500(app, tmp_path):
+    app.dependency_overrides[get_current_user] = lambda: OWNER
+    store = tmp_path / "store"
+    meetings = [_meeting_record("aaa111", "A")]
+    broken = _capture("aaa111", "A")
+    broken["claim_registry"] = "not-a-list"
+    _write_program(store, meetings, {"aaa111": broken})
+    status, body = _call_get(
+        app,
+        "/build-room/program/captures?meeting_id=aaa111&claim_offset=0&claim_limit=40",
+    )
+    assert status == 500, body
+    assert "aaa111" in body["detail"]

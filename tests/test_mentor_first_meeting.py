@@ -23,10 +23,16 @@ The composed engage frame is what _generate_framed passes as
 extra_instructions, so it — not the bare definition frame — is the
 binding measurement: at 7,647 nothing truncates, and the honesty
 guard (last line of the capability block, last in the composition)
-is never the first content lost. After PR #255 merges, the slice
-migrates to the uncapped fellowship_reference section and these
-frames shrink by the slice length; until then the sizes above are
-the honest fit statement.
+is never the first content lost. PR #255 merged the uncapped
+fellowship_reference section, and the six-seat references build
+(2026-10-29) puts the Gardener's full relational sketches there —
+adapted from the corrected comparison doc §4, plus the shared
+doctrine constant, plus a build-time-computed availability note —
+while the compressed slice STAYS prompt-local on the capped frames
+(Weaver pattern: slice and reference coexist). The capped frame
+sizes above are therefore unchanged by that build. Recognition is
+decoupled (F1): a settled verdict never closes; completion is
+visitor-controlled (see test_mentor_recognition_moment).
 
 No steward wiring: the Mentor builder reads meetings.py only (no
 steward record source, no S1 wiring). No live runs, no model calls:
@@ -142,6 +148,12 @@ def test_definition_assembles_like_weaver():
     ]
     assert definition.impression_gate_objective == ""
     assert definition.close_floor_objectives == ()
+    # Decoupled recognition (six-seat references build, 2026-10-29):
+    # a settled verdict never closes; the recognition moment is a
+    # live-generated introduction on impression-answered (see
+    # test_mentor_recognition_moment for the gateless verification).
+    assert definition.decoupled_recognition is True
+    assert definition.fellowship_reference != ""
     # Allusion pool: his four orientation paragraphs as proximity cues.
     assert len(definition.allusion_pool) == 4
     assert definition.wrap_line.startswith("I've kept you long enough")
@@ -273,6 +285,80 @@ def test_reference_slice_prompt_local_on_both_frames():
     generic = ENC.build_definition(MT.MENTOR_FIRST_MEETING)
     assert "Wisdom through cultivation" not in generic.turn_frame
     assert "Wisdom through cultivation" not in generic.engage_frame
+
+
+# ---------------------------------------------------------------------------
+# Fellowship reference: uncapped sketches + shared doctrine + computed note.
+# ---------------------------------------------------------------------------
+
+
+def test_fellowship_reference_sketches_shared_doctrine_computed_note():
+    definition = _definition()
+    ref = definition.fellowship_reference
+    # All six other seats, in the Gardener's own voice (corrected
+    # doc §4, adapted — perspective with friction intact, not the
+    # drafting formula).
+    for role in ("Firebrand", "Bear", "Fox", "Crane", "Weaver", "Raven"):
+        assert role in ref, role
+    assert "She thinks I delay. I think she harvests early." in ref
+    assert "which walls are shelter and which are starvation" in ref
+    assert "I defend the trellis, and he questions it" in ref
+    assert "She won't let me get away with that" in ref
+    assert "She still disagrees. Good." in ref
+    assert "The timing is the argument." in ref
+    # Not merely instrumental: mention line + no-invented-memories.
+    assert "affection, exasperation, curiosity, admiration" in ref
+    assert "Never invent shared memories" in ref
+    assert "a playful guess is a guess, not a fact" in ref
+    # Shared doctrine, composed from the ONE common constant: naming
+    # three ways apart + no-arrangement. No per-seat direct-question
+    # paragraph — that precedence is already shared machinery.
+    assert "always sayable" in ref
+    assert "answer with the role, never with a description alone" in ref
+    assert "unlock only when you have met them" in ref
+    assert "a third, separate state" in ref
+    assert "You cannot arrange meetings with other seats" in ref
+    assert "no such action exists" in ref
+    assert "never offer to set one up" in ref
+    assert "A direct question comes first" not in ref
+    assert "An impression never displaces an answer" not in ref
+    # NO slice content in the reference: the growth-over-time slice
+    # is PROPOSED, never decided (G5), and slices do not appear in
+    # references at all.
+    assert "growth over time" not in ref
+    assert "PROPOSED" not in ref
+    # Blind spot never stated, hinted, or scaffolded (LAST REVEAL
+    # KEYSTONE): the Revision 2 self-diagnosis wording is absent.
+    assert "instrumentalizes" not in ref
+    # Availability note, COMPUTED from the gates at build, minus self.
+    note = ref.splitlines()[-1]
+    assert note.startswith("First-meeting openness right now")
+    assert "Firebrand — held, not open yet" in note
+    assert "Bear — not open yet" in note
+    assert "Fox — not open yet" in note
+    assert "Crane — not open to begin yet" in note
+    assert "Weaver — open now" in note
+    assert "Raven — not open to begin yet" in note
+    assert "Gardener —" not in note
+    # The new material rides the uncapped section only: capped
+    # frames carry neither the sketches nor the note.
+    for text in (definition.turn_frame, definition.engage_frame):
+        assert "She thinks I delay" not in text
+        assert "First-meeting openness right now" not in text
+        assert "You cannot arrange meetings" not in text
+
+
+def test_availability_note_is_computed_not_snapshot(monkeypatch):
+    # Releasing the Guardian changes the note with no text edit.
+    import local_ai.council.meetings as MT_mod
+
+    monkeypatch.setattr(
+        MT_mod, "RELEASED_FIRST_MEETING_SEATS",
+        frozenset({"conductor", "guardian"}),
+    )
+    note = ENC._fellowship_availability_note("mentor")
+    assert "Bear — open now" in note
+    assert "Firebrand — held, not open yet" in note
 
 
 # ---------------------------------------------------------------------------

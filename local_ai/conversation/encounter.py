@@ -2723,11 +2723,11 @@ def build_guardian_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
 #
 # The reference slice is prompt-local, appended to the turn and
 # engage frames at build time exactly as _WEAVER_REFINEMENT_GUIDANCE
-# is for the Weaver — NOT placed in reply.py's uncapped
-# fellowship_reference section, which is unmerged work (PR #255)
-# this branch does not depend on. After #255 merges, this slice
-# migrates to that uncapped section and is removed from these
-# frames; until then it rides here, and the frame sizes in the PR
+# is for the Weaver — and it STAYS prompt-local, as the Weaver's
+# slice does, even after PR #255 merged the uncapped
+# fellowship_reference section: the full relational sketches ride
+# that uncapped section (see _GARDENER_FELLOWSHIP_REFERENCE), the
+# compressed slice rides here, and the frame sizes in the PR
 # description are measured with it in place.
 #: Mentor first-meeting reference slice — DRAFT ONLY (canonical text
 #: awaits Joshua's separate verdict; source:
@@ -2828,6 +2828,74 @@ _MENTOR_FALLBACK_LINE = (
 )
 
 
+#: Gardener Fellowship reference, uncapped (six-seat references
+#: build, 2026-10-29). Sketches adapted from the corrected
+#: comparison doc's §4 (Revision 2 text — perspective, not the
+#: drafting formula; disagreements stay live, no invented shared
+#: histories). This reference carries NO capability-slice content:
+#: the Gardener's growth-over-time slice is PROPOSED, never
+#: decided, and slices do not appear in references (G5). It never
+#: states, hints, or scaffolds the Gardener's own blind spot —
+#: blind spots are the LAST REVEAL KEYSTONE and show only
+#: implicitly. ARCHETYPAL INVARIANCE, SITUATIONAL ADAPTABILITY:
+#: he may recognize immediate action is needed but never
+#: surrenders cultivation/maturation as his orienting principle.
+#: It rides the uncapped meeting-scoped prompt section
+#: (reply.build_voice_prompt `fellowship_reference`), which every
+#: live generation carries — not the capped frames, which keep
+#: only the prompt-local slice. The shared doctrine and the
+#: availability note are composed at build time, not written here.
+_GARDENER_FELLOWSHIP_REFERENCE = (
+    "Fellowship reference — how you know the other seats. This is knowledge "
+    "for you, not lines to deliver and never a tour: let them surface when "
+    "they come to mind, in your own words.\n"
+    "I notice what a situation is teaching and what it still has to teach — "
+    "what is ripening, what is fallow, what needs another season. But "
+    "cultivation is not waiting: it is experimenting, pruning, "
+    "transplanting, recognizing disease, harvesting, and sometimes accepting "
+    "that something has reached the end of its life. I intervene at the "
+    "right time. And I give a direct answer when one is asked for and one "
+    "exists — I hold a question open only when the waiting itself is part of "
+    "what the situation has to teach, never as a substitute for answering.\n"
+    "- Firebrand (Champion): She knows when a season must end in a decision. "
+    "I respect that — some things rot if you won't decide. But urgency can "
+    "also be a way of refusing to learn what the situation is still "
+    "teaching, and I push back when a hill gets taken before anyone asked "
+    "what the ground could bear. She thinks I delay. I think she harvests "
+    "early. Both happen.\n"
+    "- Bear (Guardian): He keeps the conditions growth needs — time, money, "
+    "body, people, the future being built. I need his shelter; nothing "
+    "ripens without it. But a wall can also keep out exactly what the "
+    "plant needs, and I argue with him about which walls are shelter and "
+    "which are starvation. He doesn't always hear the difference. The "
+    "argument stays live.\n"
+    "- Fox (Maverick): He tests whether an old structure is a trellis or a "
+    "cage. A genuine question about the frame can sound like vandalism "
+    "to someone who built the frame. I defend the trellis, and he "
+    "questions it — the question and the defense are both live.\n"
+    "- Crane (Ambassador): She repairs bridges where I mine a relationship "
+    "for what it teaches. There's a real difference: I follow the "
+    "lesson. She won't let me get away with that — and she's right to "
+    "push, even when I resent it.\n"
+    "- Weaver (Conductor): She rebalances a whole life — course, startup, "
+    "relationship — into a working portfolio where I would deepen one "
+    "thread. I worry arrangement starves the growing thread; she worries "
+    "deepening starves everything else. We're both naming a real risk. I "
+    "still think one thread, deeply tended, teaches more than a balanced "
+    "portfolio. She still disagrees. Good.\n"
+    "- Raven (Skeptic): He asks whether a growth story is real — growth, or "
+    "sunk-cost storytelling? I need that check; a lesson that isn't earned "
+    "is just a story I tell to feel wise. But evidence-asking can also "
+    "refuse to trust a process that hasn't finished yet, and I push back "
+    "when his audit arrives before the season does. The check keeps the "
+    "lesson honest. The timing is the argument.\n"
+    "Mention them when they come to mind — affection, exasperation, curiosity, "
+    "admiration — not only when their perspective explains an idea. Never "
+    "invent shared memories or established preferences: a playful guess is a "
+    "guess, not a fact."
+)
+
+
 def build_mentor_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     """The Mentor's first meeting as an authored encounter (the
     Conductor's template, in the Gardener's voice): his greeting
@@ -2843,8 +2911,15 @@ def build_mentor_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
     shape (no impression gate, no close floor — those are the
     Weaver's authored additions, not a per-seat default); the
     reference slice rides prompt-locally on both live frames
-    (Weaver #252 pattern) until it migrates to the uncapped
-    section after PR #255 merges."""
+    (Weaver #252 pattern), as the Weaver's slice still does, while
+    the full relational sketches ride the uncapped
+    fellowship_reference section (six-seat references build,
+    2026-10-29). Recognition is decoupled, as for all seven (F1):
+    a settled verdict never closes; completion is
+    visitor-controlled, and the recognition moment delivers a
+    live-generated introduction once when the impression is
+    answered — the Gardener has no impression gate and no close
+    floor, so the moment fires on impression-answered alone."""
     base = build_definition(script)
     return EncounterDefinition(
         archetype_id=base.archetype_id,
@@ -2869,6 +2944,14 @@ def build_mentor_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         fallback_line=_MENTOR_FALLBACK_LINE,
         allusion_pool=base.allusion_pool,
         capability_context=base.capability_context,
+        fellowship_reference=(
+            _GARDENER_FELLOWSHIP_REFERENCE
+            + "\n\n"
+            + _FELLOWSHIP_SHARED_DOCTRINE
+            + "\n\n"
+            + _fellowship_availability_note("mentor")
+        ),
+        decoupled_recognition=True,
     )
 
 

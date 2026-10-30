@@ -433,10 +433,12 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
 def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, monkeypatch):
     """UPDATED for the adaptivity fix: there is no orientation beat
     for ANY script now. UPDATED for decoupled recognition
-    (no-scripting build, 2026-10-29): the Weaver half no longer
-    closes on recognition — it closes on the visitor's word — while
-    the generic (coupled) mentor stand-in still does. The shared
-    point stands: no orientation stop anywhere."""
+    (no-scripting build, 2026-10-29; six-seat references build for
+    the Mentor): neither half closes on recognition any more — the
+    Weaver closes on the visitor's word, and the mentor stand-in
+    now builds through the authored (decoupled) Mentor builder, so
+    it too stays active until the visitor's Complete action. The
+    shared point stands: no orientation stop anywhere."""
     uid = _seeded_user()
     base = MT.get_script("conductor", 1)
     plain = dataclasses.replace(
@@ -456,9 +458,10 @@ def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, mo
     # Conductor first, then the mentor. The Weaver's drive carries
     # the pattern's shape: shared work, the read, then the answer —
     # but recognition no longer closes her meeting; the visitor's
-    # Complete action does. The generic mentor definition has no
-    # gate or floor — its two-turn drive is unchanged, and it still
-    # closes on recognition.
+    # Complete action does. The mentor stand-in now builds through
+    # the authored (decoupled) Mentor builder, so its drive is the
+    # same shape: recognition leaves it active, and the visitor's
+    # Complete action closes it.
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Slow is smooth, and smooth is fast in the end.")
     svc.turn(uid, "conductor", "That's how I approach my own work, too.")
@@ -471,7 +474,9 @@ def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, mo
     svc.start(uid, "mentor")
     svc.turn(uid, "mentor", "I learned patience the hard way.")
     state = svc.turn(uid, "mentor", "That's fair.")
-    assert state["status"] == "complete"  # no orientation stop anywhere
+    assert state["status"] == "active"  # no orientation stop anywhere
+    state = svc.complete(uid, "mentor")
+    assert state["status"] == "complete"
 
 
 # -------------------------------------------------------------------- API

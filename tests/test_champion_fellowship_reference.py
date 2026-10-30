@@ -97,14 +97,13 @@ def test_availability_note_computed_from_gates_minus_self():
     ref = _champion_definition().fellowship_reference
     note = ref.splitlines()[-1]
     assert note.startswith("First-meeting openness right now")
-    # Post-merge truth: Conductor open; Guardian/Maverick written
-    # but unreleased; Mentor/Ambassador/Skeptic unregistered.
-    assert "Gardener — not open to begin yet" in note
-    assert "Bear — not open yet" in note
-    assert "Fox — not open yet" in note
-    assert "Crane — not open to begin yet" in note
+    # All-six release truth: every other seat is open now.
+    assert "Gardener — open now" in note
+    assert "Bear — open now" in note
+    assert "Fox — open now" in note
+    assert "Crane — open now" in note
     assert "Weaver — open now" in note
-    assert "Raven — not open to begin yet" in note
+    assert "Raven — open now" in note
     # The note covers the other seats, not the Firebrand herself.
     assert "Firebrand —" not in note
     # And it is the computed function, not a pasted snapshot.
@@ -146,13 +145,16 @@ def test_new_material_not_in_capped_frames():
     assert 8000 - len(definition.turn_frame) >= 300
 
 
-def test_other_seats_gain_no_reference_and_weaver_untouched():
-    # Registered seats with builders of their own gain nothing here.
-    # Mentor, Ambassador, and Skeptic are unregistered (get_script
-    # is None), so no definition exists that could carry one.
-    for arch_id in ("guardian", "maverick"):
+def test_other_seats_carry_their_own_references_and_weaver_untouched():
+    # All-seven references (all-six release): every other seat's
+    # definition carries its OWN reference — the note line equals
+    # that seat's own computed note, so a leak from another seat's
+    # builder would fail here. (Previously these seats had no
+    # reference; the six-seat merges gave each one its own.)
+    for arch_id in ("guardian", "maverick", "mentor", "ambassador", "skeptic"):
         definition = ENC.get_definition(MT.get_script(arch_id, 1))
-        assert definition.fellowship_reference == "", arch_id
+        assert definition.fellowship_reference != "", arch_id
+        assert ENC._fellowship_availability_note(arch_id) in definition.fellowship_reference
     # The Weaver's shipped reference is untouched by this PR.
     weaver = ENC.get_definition(MT.get_script("conductor", 1))
     assert "I understand her as the decisive actor" in (

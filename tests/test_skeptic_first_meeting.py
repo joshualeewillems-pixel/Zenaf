@@ -506,27 +506,26 @@ def test_no_per_generation_duplicates():
 # ---------------------------------------------------------------------------
 
 
-def test_script_deliberately_unregistered():
-    assert MT.get_script("skeptic", 1) is None
-    assert MT.has_script("skeptic", 1) is False
-    assert ("skeptic", 1) not in MT.SCRIPTS
+def test_script_registered():
+    assert MT.get_script("skeptic", 1) is not None
+    assert MT.has_script("skeptic", 1) is True
+    assert ("skeptic", 1) in MT.SCRIPTS
     # The script object itself exists and assembles — the data is
-    # written; only the registry entry is withheld.
+    # written, and the registry entry is carried (all-six release).
     assert MT.SKEPTIC_FIRST_MEETING is not None
     assert ENC.get_definition(MT.SKEPTIC_FIRST_MEETING) is not None
 
 
-def test_meeting_not_beginnable_even_after_weaver_done(ve_ctx, tmp_path, monkeypatch):
+def test_meeting_beginnable_after_weaver_done(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    # The begin guard checks the script BEFORE the entry gate, so a
-    # seeded user gets the honest not-written refusal whether or
-    # not the Weaver's keystone 1 is Done.
-    with pytest.raises(MeetingError, match="isn't written yet"):
+    # The script is registered (all-six release), so a seeded user
+    # without the Weaver's keystone 1 Done gets the entry-order
+    # refusal, not a not-written refusal.
+    with pytest.raises(MeetingError, match="Weaver opens the council"):
         svc.start(uid, "skeptic")
     # Mark the Weaver's keystone 1 Done: the entry gate now passes,
-    # the chain task exists — and the ONLY remaining block is the
-    # withheld registration. Begin still refuses, honestly.
+    # the chain task exists — and the meeting begins.
     from local_ai.conversation.meeting import _seat_keystone_tasks
 
     conductor_tasks = _seat_keystone_tasks(uid, "conductor")
@@ -539,14 +538,10 @@ def test_meeting_not_beginnable_even_after_weaver_done(ve_ctx, tmp_path, monkeyp
     assert _seat_keystone_tasks(uid, "conductor")[0]["status"] == "Done"
     # A Skeptic keystone task was seeded (so the chain check passes).
     assert _seat_keystone_tasks(uid, "skeptic")
-    with pytest.raises(MeetingError, match="isn't written yet"):
-        svc.start(uid, "skeptic")
+    state = svc.start(uid, "skeptic")
+    assert state["status"] == "active"
     state = svc.state(uid, "skeptic")
-    assert state["has_script"] is False
-    assert state["character"] is None
-    # Control: registering the script is exactly the availability
-    # flip — with it registered, the begin guard returns the script
-    # (monkeypatch reverts the registration after this test).
-    monkeypatch.setitem(MT.SCRIPTS, ("skeptic", 1), MT.SKEPTIC_FIRST_MEETING)
+    assert state["has_script"] is True
+    assert state["character"] is not None
     script = svc._check_beginnable(uid, "skeptic", 1)
     assert script is MT.SKEPTIC_FIRST_MEETING

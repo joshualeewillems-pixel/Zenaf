@@ -1038,12 +1038,10 @@ CHAMPION_FIRST_MEETING = MeetingScript(
 #: (local_ai/conversation/meeting.py, _check_beginnable) refuses
 #: every entry here before any other begin check past seeding,
 #: and no gate or keystone semantics for any other seat change.
-#: Lifting the hold is a one-line removal from this set, under
-#: Joshua's separate availability verdict — never a side effect
-#: of writing the script.
-HELD_FIRST_MEETINGS: frozenset[tuple[str, int]] = frozenset({
-    ("champion", 1),
-})
+#: The hold was lifted for the Champion in the all-six release
+#: (Joshua's availability verdict, 2026-10-29); the set is empty
+#: and retained as the mechanism, not removed.
+HELD_FIRST_MEETINGS: frozenset[tuple[str, int]] = frozenset()
 
 
 # ---------------------------------------------------------------------------
@@ -2353,41 +2351,28 @@ GUARDIAN_FIRST_MEETING = MeetingScript(
 #: exists and the entry order is satisfied (see meeting.py's
 #: _check_beginnable). A seat joins this set only by a release
 #: decision, in its own change — never as a side effect of writing
-#: its script. Today only the Conductor is released; the Guardian's
-#: script above is written, tested, and unreleased.
-RELEASED_FIRST_MEETING_SEATS: frozenset[str] = frozenset({"conductor"})
+#: its script. All-six release (Joshua's availability verdict,
+#: 2026-10-29): all seven seats are released; the Conductor-first
+#: entry order still applies to fresh users.
+RELEASED_FIRST_MEETING_SEATS: frozenset[str] = frozenset({"conductor", "mentor", "champion", "ambassador", "skeptic", "maverick", "guardian"})
 
 
 #: All written meetings, keyed (archetype_id, keystone_index).
-#: AMBASSADOR_FIRST_MEETING is deliberately NOT listed here yet:
-#: building ≠ available. Until a separate activation PR adds
-#: (AMBASSADOR_FIRST_MEETING,) to this tuple, get_script returns
-#: None for ("ambassador", 1) and the meeting service refuses to
-#: begin it ("That meeting isn't written yet") — the entry gate
-#: never even runs. No gate or keystone semantics change.
-#: DELIBERATELY conductor-only in this PR: SKEPTIC_FIRST_MEETING
-#: above is written but unregistered (see its availability note).
-#: Registration is the availability flip and belongs in a later,
-#: separately authorized availability PR.
-#: NOTE: registering the Maverick's script here does NOT make it
-#: visitor-accessible — MeetingService refuses its begin until a
-#: separate release decision lifts the unreleased-meetings gate
-#: in meeting.py. Registration only makes the written script
-#: retrievable (frames, reveal, state reporting) like any other.
-#: A script's presence here satisfies the entry gate's
-#: "written yet" check — which is why held meetings (above) need
-#: their own explicit refusal in _check_beginnable: presence
-#: alone must never imply availability.
+#: All seven first meetings are registered (all-six release,
+#: Joshua's availability verdict, 2026-10-29). Registration only
+#: makes a written script retrievable (frames, reveal, state
+#: reporting) like any other — it never implied availability on
+#: its own: the release decision lives in
+#: RELEASED_FIRST_MEETING_SEATS and the HELD / unreleased sets
+#: (see _check_beginnable). A script's presence here satisfies
+#: the entry gate's "written yet" check — which is why held
+#: meetings need their own explicit refusal in _check_beginnable:
+#: presence alone must never imply availability.
 #: All meetings a visitor may begin, keyed (archetype_id, keystone_index).
-#: MENTOR_FIRST_MEETING is deliberately NOT registered here: the script
-#: is staged data, but registration is the availability switch, and this
-#: round ships no gate change. Registering it is a separately authorized
-#: change; until then get_script("mentor", 1) is None and the meeting
-#: service refuses the Mentor exactly as for an unwritten seat.
 
 SCRIPTS: dict[tuple[str, int], MeetingScript] = {
     (s.archetype_id, s.keystone_index): s
-    for s in (CONDUCTOR_FIRST_MEETING, CHAMPION_FIRST_MEETING, MAVERICK_FIRST_MEETING, GUARDIAN_FIRST_MEETING)
+    for s in (CONDUCTOR_FIRST_MEETING, CHAMPION_FIRST_MEETING, MAVERICK_FIRST_MEETING, GUARDIAN_FIRST_MEETING, MENTOR_FIRST_MEETING, AMBASSADOR_FIRST_MEETING, SKEPTIC_FIRST_MEETING)
 }
 
 

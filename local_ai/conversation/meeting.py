@@ -167,10 +167,10 @@ class MeetingError(ValueError):
 #: semantics change for any other seat, and no other path can
 #: start a meeting: turn/complete/restart all refuse without an
 #: active/completed row, and only start creates one.
-#: The Conductor is deliberately absent: its meeting is released.
-_UNRELEASED_MEETINGS: frozenset[tuple[str, int]] = frozenset({
-    ("maverick", 1),
-})
+#: The Maverick was released in the all-six release (Joshua's
+#: availability verdict, 2026-10-29); the set is empty and
+#: retained as the mechanism, not removed.
+_UNRELEASED_MEETINGS: frozenset[tuple[str, int]] = frozenset()
 
 
 class MeetingStore:

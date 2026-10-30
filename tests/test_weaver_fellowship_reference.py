@@ -80,15 +80,14 @@ def test_availability_note_computed_from_gates():
     ref = _weaver_definition().fellowship_reference
     note = ref.splitlines()[-1]
     assert note.startswith("First-meeting openness right now")
-    # Post-merge truth: Conductor open (excluded — this is about the
-    # other seats); Guardian written-unreleased; Champion held;
-    # Maverick unreleased; Mentor/Ambassador/Skeptic unregistered.
-    assert "Firebrand — held, not open yet" in note
-    assert "Bear — not open yet" in note
-    assert "Fox — not open yet" in note
-    assert "Gardener — not open to begin yet" in note
-    assert "Crane — not open to begin yet" in note
-    assert "Raven — not open to begin yet" in note
+    # All-six release truth: Conductor open (excluded — this is about
+    # the other seats); every other seat is open now.
+    assert "Firebrand — open now" in note
+    assert "Bear — open now" in note
+    assert "Fox — open now" in note
+    assert "Gardener — open now" in note
+    assert "Crane — open now" in note
+    assert "Raven — open now" in note
     # The note covers the other seats, not the Weaver herself.
     assert "Weaver —" not in note
 

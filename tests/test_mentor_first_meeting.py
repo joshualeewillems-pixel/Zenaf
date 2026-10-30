@@ -331,14 +331,15 @@ def test_fellowship_reference_sketches_shared_doctrine_computed_note():
     # KEYSTONE): the Revision 2 self-diagnosis wording is absent.
     assert "instrumentalizes" not in ref
     # Availability note, COMPUTED from the gates at build, minus self.
+    # All-six release truth: every other seat is open now.
     note = ref.splitlines()[-1]
     assert note.startswith("First-meeting openness right now")
-    assert "Firebrand — held, not open yet" in note
-    assert "Bear — not open yet" in note
-    assert "Fox — not open yet" in note
-    assert "Crane — not open to begin yet" in note
+    assert "Firebrand — open now" in note
+    assert "Bear — open now" in note
+    assert "Fox — open now" in note
+    assert "Crane — open now" in note
     assert "Weaver — open now" in note
-    assert "Raven — not open to begin yet" in note
+    assert "Raven — open now" in note
     assert "Gardener —" not in note
     # The new material rides the uncapped section only: capped
     # frames carry neither the sketches nor the note.
@@ -350,11 +351,18 @@ def test_fellowship_reference_sketches_shared_doctrine_computed_note():
 
 def test_availability_note_is_computed_not_snapshot(monkeypatch):
     # Releasing the Guardian changes the note with no text edit.
+    # The test pins the gate view in-process (including the held
+    # set, empty since the all-six release) — its subject is that
+    # the note is computed, not the real sets.
     import local_ai.council.meetings as MT_mod
 
     monkeypatch.setattr(
         MT_mod, "RELEASED_FIRST_MEETING_SEATS",
         frozenset({"conductor", "guardian"}),
+    )
+    monkeypatch.setattr(
+        MT_mod, "HELD_FIRST_MEETINGS",
+        frozenset({("champion", 1)}),
     )
     note = ENC._fellowship_availability_note("mentor")
     assert "Bear — open now" in note
@@ -399,30 +407,44 @@ def test_frame_sizes_and_headroom_measured():
 
 
 # ---------------------------------------------------------------------------
-# BUILDING != AVAILABLE: staged script, refused at the gate.
+# BUILDING == AVAILABLE (all-six release): registered, released.
 # ---------------------------------------------------------------------------
 
 
-def test_meeting_not_visitor_accessible():
-    # The script object exists, but the registry — the availability
-    # switch — does not carry it.
-    assert MT.MENTOR_FIRST_MEETING not in MT.SCRIPTS.values()
-    assert MT.get_script("mentor", 1) is None
-    assert MT.has_script("mentor", 1) is False
+def test_meeting_visitor_accessible():
+    # The script object exists, and the registry — the availability
+    # switch — now carries it (all-six release, 2026-10-29).
+    assert MT.MENTOR_FIRST_MEETING in MT.SCRIPTS.values()
+    assert MT.get_script("mentor", 1) is not None
+    assert MT.has_script("mentor", 1) is True
 
 
-def test_meeting_service_refuses_mentor_start(ve_ctx, tmp_path):
+def test_meeting_service_begins_mentor_start(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    # Seeded user, Weaver gate notwithstanding: the refusal is the
-    # missing registration, exactly as for an unwritten seat — the
-    # frontend shows "isn't written yet" and offers no Begin button.
-    with pytest.raises(MeetingError, match="isn't written yet"):
+    # Seeded user without the Weaver's keystone 1 Done: the refusal
+    # is the entry order, not a missing registration — the script
+    # is registered (all-six release) and the state reports it.
+    with pytest.raises(MeetingError, match="Weaver opens the council"):
         svc.start(uid, "mentor")
     state = svc.state(uid, "mentor")
-    assert state["has_script"] is False
-    assert state["character"] is None
+    assert state["has_script"] is True
+    assert state["character"] == "Gardener"
     assert state["status"] == "not_started"
+    # With the Weaver's keystone 1 Done, the meeting begins.
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution import models as ve_models
+
+    conductor_tasks = _seat_keystone_tasks(uid, "conductor")
+    assert conductor_tasks and conductor_tasks[0]["status"] != "Done"
+    ve.update_task(
+        conductor_tasks[0]["id"],
+        ve_models.TaskUpdate(status="Done"),
+        uid,
+    )
+    assert _seat_keystone_tasks(uid, "conductor")[0]["status"] == "Done"
+    state = svc.start(uid, "mentor")
+    assert state["status"] == "active"
 
 
 def test_no_steward_wiring_for_mentor():

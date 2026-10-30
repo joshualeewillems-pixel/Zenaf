@@ -55,7 +55,9 @@ describe('markerTitle', () => {
  * the 'intro' marker — which disappears the moment the first meeting
  * completes. The completed meeting (transcript + "Meet again") became
  * unreachable. The door now follows the seat's state: intro → begin,
- * already met (face_revealed) → revisit, otherwise no door at all.
+ * already met (face_revealed) → revisit, unmet with a 'meet' marker
+ * (the post-entry invitation for a written, released seat) → begin,
+ * otherwise no door at all (all-six release, 2026-10-29).
  */
 describe('meetingDoorState', () => {
   it('an intro marker gets the begin door, met or not', () => {
@@ -71,9 +73,12 @@ describe('meetingDoorState', () => {
     expect(meetingDoorState(undefined, true)).toBe('revisit')
   })
 
-  it('an unmet seat without the intro marker gets no door', () => {
-    expect(meetingDoorState('meet')).toBeNull()
-    expect(meetingDoorState('meet', false)).toBeNull()
+  it('an unmet seat with a meet marker gets the begin door', () => {
+    expect(meetingDoorState('meet')).toBe('begin')
+    expect(meetingDoorState('meet', false)).toBe('begin')
+  })
+
+  it('an unmet seat with no marker, or a later-keystone reason, gets no door', () => {
     expect(meetingDoorState('recognition', false)).toBeNull()
     expect(meetingDoorState(null)).toBeNull()
     expect(meetingDoorState(undefined)).toBeNull()

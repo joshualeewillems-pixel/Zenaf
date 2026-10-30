@@ -132,15 +132,13 @@ def test_no_invented_shared_histories():
 def test_availability_note_computed_from_gates_minus_self():
     ref = _crane_definition().fellowship_reference
     note = ref.split("First-meeting openness right now")[-1]
-    # Post-merge truth, computed: Conductor open; Guardian
-    # written-unreleased; Champion held; Maverick unreleased;
-    # Mentor/Skeptic unregistered.
-    assert "Firebrand — held, not open yet" in note
-    assert "Bear — not open yet" in note
-    assert "Fox — not open yet" in note
-    assert "Gardener — not open to begin yet" in note
+    # All-six release truth, computed: every other seat open now.
+    assert "Firebrand — open now" in note
+    assert "Bear — open now" in note
+    assert "Fox — open now" in note
+    assert "Gardener — open now" in note
     assert "Weaver — open now" in note
-    assert "Raven — not open to begin yet" in note
+    assert "Raven — open now" in note
     # The note covers the other seats, not the Crane herself.
     assert "Crane —" not in note
 
@@ -175,8 +173,14 @@ def test_new_material_not_in_capped_frames():
         assert "You cannot arrange meetings" not in text
 
 
-def test_other_seats_gain_no_reference():
+def test_other_seats_carry_their_own_references():
+    # All-seven references (all-six release): the Guardian's
+    # definition carries its OWN reference — the note line equals
+    # the Guardian's own computed note, so a leak from another
+    # seat's builder would fail here. (Previously the Guardian had
+    # no reference; the six-seat merges gave it its own.)
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
-    assert guardian.fellowship_reference == ""
+    assert guardian.fellowship_reference != ""
+    assert ENC._fellowship_availability_note("guardian") in guardian.fellowship_reference
     generic = ENC.build_definition(MT.AMBASSADOR_FIRST_MEETING)
     assert generic.fellowship_reference == ""

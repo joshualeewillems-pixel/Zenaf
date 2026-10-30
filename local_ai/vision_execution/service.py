@@ -497,6 +497,15 @@ def delete_task(task_id: str, user_id: str):
     return S.delete_task(task_id, user_id)
 
 
+# Sticky seat unlocks (see keystone_seeding.maybe_record_entry_unlock).
+def record_seat_unlocks(user_id: str, seat_refs: list[str]) -> None:
+    return S.record_seat_unlocks(user_id, seat_refs)
+
+
+def get_seat_unlocks(user_id: str) -> set[str]:
+    return S.get_seat_unlocks(user_id)
+
+
 # Persons
 def list_persons():
     return S.list_persons()

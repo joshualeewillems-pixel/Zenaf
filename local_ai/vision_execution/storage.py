@@ -4822,6 +4822,20 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
                 "project_id": str(rel_pid) if rel_pid else "",
             },
         )
+        # Sticky seat unlock (Joshua's rule, 2026-10-30: "Once it's
+        # open it should stay open"). If this flip completed the entry
+        # seat's keystone 1, the other seats' begin doors light — and
+        # they must survive a later Weaver restart or Reopen toggle,
+        # both of which funnel through this same update path. The
+        # recording is guarded like the fellowship event above: it
+        # must never break the task update itself (the task commit
+        # already succeeded by this point).
+        try:
+            from local_ai.vision_execution import keystone_seeding
+
+            keystone_seeding.maybe_record_entry_unlock(user_id, after or {})
+        except Exception:
+            _logger.exception("seat unlock recording failed")
     else:
         det = f"fields={','.join(patch_keys)[:200]}"
         if _ve_task_status_done(old_status) and not _ve_task_status_done(new_status):
@@ -4835,6 +4849,38 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
             detail=det,
         )
     return after
+
+
+# --- Sticky seat unlocks ---
+# One row per (user, non-entry seat) whose begin door has become
+# available (see keystone_seeding.maybe_record_entry_unlock). Rows are
+# append-only in practice: nothing deletes them — not a Weaver restart,
+# not a Reopen toggle, not a server restart. Reads degrade to "not
+# unlocked" on any error (fail closed: the pre-sticky behavior).
+
+
+def record_seat_unlocks(user_id: str, seat_refs: list[str]) -> None:
+    """Idempotently record begin-door availability for seats."""
+    refs = sorted({(r or "").strip() for r in seat_refs if (r or "").strip()})
+    if not refs:
+        return
+    conn = get_connection()
+    now = _now()
+    conn.executemany(
+        "INSERT OR IGNORE INTO seat_unlocks (user_id, seat_ref, unlocked_at)"
+        " VALUES (?, ?, ?)",
+        [(user_id, ref, now) for ref in refs],
+    )
+    conn.commit()
+
+
+def get_seat_unlocks(user_id: str) -> set[str]:
+    """Seat refs whose begin door has become available for the user."""
+    conn = get_connection()
+    cur = conn.execute(
+        "SELECT seat_ref FROM seat_unlocks WHERE user_id = ?", (user_id,)
+    )
+    return {(r[0] or "").strip() for r in cur.fetchall() if r and r[0]}
 
 
 def delete_task(task_id: str, user_id: str) -> bool:

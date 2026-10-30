@@ -464,3 +464,136 @@ def moneyball_program_status(
     }
 
 
+# Convener-only capture retrieval (Moneyball program, code PR: captures
+# endpoint). GET /program/captures returns this program's ledger
+# meetings in ledger order, each with its deterministic capture record
+# (claim_registry, base_prompt_hashes, role_brief_version, cap_budget,
+# transcript serialization) as written by the program runner.
+#
+# Why this route exists: GET /program/status returns ids, conditions,
+# and dollars only, and no other route serves capture contents, so the
+# blind evaluation (comparison_eval.py: strip + sheet + views) could
+# not retrieve the claim sets it scores. This route is the unblocker.
+#
+# Boundaries, all load-bearing:
+# - Owner-only via the SAME gate as /program/status and /program/run
+#   (get_current_owner_user, 403 "Build-room meetings are owner-only").
+#   Captures carry condition and brief seats, which must never reach
+#   judges unblinded — this route serves the CONVENER's retrieval only.
+#   Blinded judge sheets are produced separately by comparison_eval.py,
+#   never by this route.
+# - Read-only by construction: GET only, no writes, no run/start/stop
+#   capability, no ledger mutation, no file writes. Calling it twice
+#   returns the same bytes and changes nothing.
+# - This program's ledger only: no parameters, no filtering, no
+#   cross-program reads. Capture paths are DERIVED from the ledger's
+#   meeting_id under the store dir (the runner's naming scheme), never
+#   taken from ledger path strings — a ledger path value is never
+#   opened, so no server path leaks into the response either.
+# - Transcript/artifact files are NOT read: no transcript.json or
+#   draft_artifact.json contents appear here, only the capture
+#   record the runner wrote.
+# - Failure is explicit, never partial: a missing ledger is 404; a
+#   missing, unreadable, or malformed capture for ANY recorded meeting
+#   is 500 naming that meeting — the response never silently omits a
+#   meeting or substitutes another program's data.
+
+
+def _capture_path_for(store: Path, meeting_id: str) -> Path:
+    """The runner's capture filename for one ledger meeting_id.
+
+    Meeting ids are runner-generated hex; anything containing a path
+    separator is ledger corruption, not a meeting — refuse it rather
+    than resolving a path outside the store dir.
+    """
+    if not meeting_id or "/" in meeting_id or "\\" in meeting_id:
+        raise HTTPException(
+            status_code=500,
+            detail=f"moneyball program ledger has invalid meeting_id: {meeting_id!r}",
+        )
+    return store / f"meeting_{meeting_id}.comparison_capture.json"
+
+
+def _read_meeting_capture(capture_path: Path, meeting_id: str) -> dict:
+    """One meeting's parsed capture record, or an explicit 500."""
+    if not capture_path.exists():
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"moneyball program capture missing for meeting "
+                f"{meeting_id}: {capture_path.name} not found"
+            ),
+        )
+    try:
+        data = json.loads(capture_path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"moneyball program capture unreadable for meeting "
+                f"{meeting_id}: {exc}"
+            ),
+        )
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"moneyball program capture is not a JSON object for "
+                f"meeting {meeting_id}"
+            ),
+        )
+    return data
+
+
+@router.get("/program/captures")
+def moneyball_program_captures(
+    current_user: dict = Depends(get_current_owner_user),
+):
+    """Return this program's meetings with their capture records.
+
+    Owner-only, read-only. Ledger order, ledger summary fields per
+    meeting, plus each meeting's full comparison_capture.json contents
+    under "capture". A missing ledger is 404; any missing or broken
+    capture fails the whole request (500) rather than returning
+    partial data.
+    """
+    store = get_build_room_store_dir()
+    ledger = _read_program_ledger(_program_ledger_path(store))
+    if ledger is None:
+        raise HTTPException(
+            status_code=404,
+            detail="moneyball program ledger not found: no program recorded",
+        )
+    recorded = ledger.get("meetings") or []
+    if not isinstance(recorded, list):
+        raise HTTPException(
+            status_code=500,
+            detail="moneyball program ledger meetings is not a list",
+        )
+    meetings = []
+    for m in recorded:
+        meeting_id = m.get("meeting_id")
+        capture = _read_meeting_capture(
+            _capture_path_for(store, meeting_id), meeting_id
+        )
+        meetings.append(
+            {
+                "meeting_id": meeting_id,
+                "packet_work_item": m.get("packet_work_item"),
+                "condition": m.get("condition"),
+                "ok": m.get("ok"),
+                "allocation_usd": m.get("allocation_usd"),
+                "committed_usd": m.get("committed_usd"),
+                "capture": capture,
+            }
+        )
+    return {
+        "cap_usd": ledger.get("cap_usd"),
+        "cumulative_reserved_usd": float(
+            ledger.get("cumulative_reserved_usd", 0.0)
+        ),
+        "meetings_completed": len(meetings),
+        "meetings": meetings,
+    }
+
+

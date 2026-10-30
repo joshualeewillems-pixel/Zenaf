@@ -5,6 +5,7 @@
  */
 
 import type { TimelineRow } from './timelineTypes'
+import { timelineRowSubline } from './timelineUtils'
 
 const KIND_LABEL: Record<string, string> = {
   initiative: 'Initiative',
@@ -47,6 +48,7 @@ export function TimelineTree({
             (row.kind === 'initiative' && row.initiativeId && false) // initiative detail not wired yet
           const hasChildren = (row.childCount ?? 0) > 0
           const isCollapsed = row.collapsed === true
+          const subline = timelineRowSubline(row.summary, row.blockedBy)
           return (
             <div
               key={row.id}
@@ -79,18 +81,11 @@ export function TimelineTree({
                     {row.label}
                   </span>
                 </div>
-                {row.summary && (
-                  <p className="text-[11px] text-slate-500 truncate mt-0.5" title={row.summary}>
-                    {row.summary}
-                  </p>
-                )}
-                {row.blockedBy && row.blockedBy.length > 0 && (
-                  <p
-                    className="text-[11px] text-amber-400/70 truncate mt-0.5"
-                    title={`Waits on: ${row.blockedBy.join(', ')}`}
-                  >
-                    ⏳ waits on {row.blockedBy.slice(0, 2).join(', ')}
-                    {row.blockedBy.length > 2 ? ` +${row.blockedBy.length - 2}` : ''}
+                {subline.text && (
+                  <p className="text-[11px] truncate mt-0.5" title={subline.title ?? undefined}>
+                    {subline.summary && <span className="text-slate-500">{subline.summary}</span>}
+                    {subline.summary && subline.waits && <span className="text-slate-500"> · </span>}
+                    {subline.waits && <span className="text-amber-400/70">{subline.waits}</span>}
                   </p>
                 )}
               </div>

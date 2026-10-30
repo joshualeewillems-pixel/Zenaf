@@ -30,6 +30,48 @@ function truncateSummary(s: string | null | undefined, maxLen: number): string |
   return t.length <= maxLen ? t : t.slice(0, maxLen) + '…'
 }
 
+/**
+ * Timeline tree/grid row height (px). Shared by both sides so rows stay
+ * aligned (the grid positions bars by row index, so tree rows cannot grow
+ * independently). Sized to fit exactly a label line + ONE subline + row
+ * padding: 20 (text-sm) + 2 (mt-0.5) + 16.5 (11px at default leading) + 8
+ * (py-1) = 46.5px, rounded up to 48. Any row content taller than this paints
+ * into the next row, so sublines must be combined (see timelineRowSubline),
+ * never stacked.
+ */
+export const TIMELINE_ROW_HEIGHT_PX = 48
+
+export interface TimelineRowSubline {
+  /** Single display line (summary and waits-on combined), or null when neither exists */
+  text: string | null
+  /** Full untruncated text for the title tooltip */
+  title: string | null
+  summary: string | null
+  waits: string | null
+}
+
+/**
+ * Combine a timeline row's summary and waits-on note into ONE subline, so a
+ * row never needs more than label + subline and always fits
+ * TIMELINE_ROW_HEIGHT_PX. No information is dropped: the full text stays in
+ * the tooltip, and both parts keep their colors in the rendered line.
+ */
+export function timelineRowSubline(
+  summary: string | null | undefined,
+  blockedBy: string[] | undefined,
+): TimelineRowSubline {
+  const summaryText = summary && summary.trim() ? summary : null
+  const waits =
+    blockedBy && blockedBy.length > 0
+      ? `⏳ waits on ${blockedBy.slice(0, 2).join(', ')}${blockedBy.length > 2 ? ` +${blockedBy.length - 2}` : ''}`
+      : null
+  const waitsTitle =
+    blockedBy && blockedBy.length > 0 ? `Waits on: ${blockedBy.join(', ')}` : null
+  const text = [summaryText, waits].filter(Boolean).join(' · ') || null
+  const title = [summaryText, waitsTitle].filter(Boolean).join(' · ') || null
+  return { text, title, summary: summaryText, waits }
+}
+
 /** Project bar: start_date → end_date, or created_at + 4 weeks if missing */
 function projectSpan(p: Project): { start: string | null; end: string | null } {
   const start = parseDate(p.start_date)

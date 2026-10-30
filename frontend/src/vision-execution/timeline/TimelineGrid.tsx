@@ -74,7 +74,7 @@ export function TimelineGrid({
   }, [zoom, rangeStart])
 
   return (
-    <div className="flex-1 min-w-0 flex flex-col border-l border-slate-600">
+    <div className="flex-1 min-w-[280px] flex flex-col border-l border-slate-600">
       {/* Header: time labels */}
       <div className="flex border-b border-slate-600 bg-slate-800/80 shrink-0">
         {columnLabels.map((label, i) => (

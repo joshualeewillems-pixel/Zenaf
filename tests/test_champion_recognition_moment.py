@@ -6,9 +6,10 @@ Decoupled like all seven (F1): her decisiveness is how she thinks
 and acts, not a reason for the application to end a conversation.
 What this pins:
 
-- Decoupling flag: Champion True, Guardian False (control).
+- Decoupling flag: Champion True, Guardian True.
 - A settled verdict never closes a decoupled meeting; it still
-  closes a coupled one (Guardian control).
+  closes a coupled one (coupled twin — no real seat remains
+  coupled).
 - The recognition moment delivers a live-generated introduction
   exactly once — a second generation on the recognition turn,
   after the reply generation — and never as scripted text.
@@ -36,6 +37,7 @@ tests/test_champion_first_meeting.py. No model calls anywhere.
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 
 import pytest
@@ -88,20 +90,28 @@ def _champion_runtime():
     )
 
 
-def _guardian_runtime():
+def _coupled_runtime():
+    # No real seat remains coupled (F1: all seven decoupled after
+    # the six-seat build), so the coupled path is exercised via a
+    # synthetic coupled twin: this seat's own definition with only
+    # the flag flipped. Same script, same gates — only the coupled
+    # branch under test changes.
     return ENC.EncounterRuntime(
-        ENC.get_definition(MT.get_script("guardian", 1))
+        dataclasses.replace(
+            ENC.get_definition(MT.get_script("champion", 1)),
+            decoupled_recognition=False,
+        )
     )
 
 
 # ---------------------------------------------------------------- flags
 
 
-def test_decoupling_flag_champion_true_guardian_false():
+def test_decoupling_flag_champion_true_guardian_true():
     champion = ENC.get_definition(MT.get_script("champion", 1))
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
     assert champion.decoupled_recognition is True
-    assert guardian.decoupled_recognition is False
+    assert guardian.decoupled_recognition is True
 
 
 def test_introduction_flag_round_trips_and_defaults_false():
@@ -129,7 +139,7 @@ def test_settled_verdict_does_not_close_decoupled():
 def test_settled_verdict_still_closes_coupled():
     host = FakeHost()
     state = ENC.EncounterState(impression_answered=True)
-    _guardian_runtime()._close_or_continue(host, state, "Thanks.", "settled")
+    _coupled_runtime()._close_or_continue(host, state, "Thanks.", "settled")
     assert host.close_calls == [""]
     assert state.closed is True
 
@@ -167,7 +177,7 @@ def test_introduction_skipped_when_not_decoupled():
     state = ENC.EncounterState(
         impression_offered=True, impression_text="a read",
     )
-    runtime = _guardian_runtime()
+    runtime = _coupled_runtime()
     runtime._impression_response_turn(host, state, "Yes, that's right.")
     assert state.introduction_delivered is False
     assert "I am the Firebrand." not in host.said

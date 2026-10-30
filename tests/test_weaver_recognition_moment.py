@@ -1,9 +1,11 @@
 """Weaver recognition as a moment, not a close (no-scripting build,
 2026-10-29). What this pins:
 
-- Decoupling flag: Weaver True, other seats False.
+- Decoupling flag: Weaver, Guardian, Maverick, and Champion True
+  — all seven decoupled (F1); no real seat remains coupled, so
+  the coupled path uses a synthetic twin.
 - A settled verdict never closes a decoupled meeting; it still
-  closes a coupled one (Guardian control).
+  closes a coupled one (coupled twin).
 - The recognition moment delivers a live-generated introduction
   exactly once (flag persists across to_json/from_json; old rows
   hydrate to False), and never as scripted text.
@@ -21,6 +23,8 @@ runtime suite. No model calls anywhere.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import pytest
 
@@ -69,25 +73,36 @@ def _weaver_runtime():
     )
 
 
-def _guardian_runtime():
+def _coupled_runtime():
+    # No real seat remains coupled (F1: all seven decoupled after
+    # the six-seat build), so the coupled path is exercised via a
+    # synthetic coupled twin: this seat's own definition with only
+    # the flag flipped. Same script, same gates — only the coupled
+    # branch under test changes.
     return ENC.EncounterRuntime(
-        ENC.get_definition(MT.get_script("guardian", 1))
+        dataclasses.replace(
+            ENC.get_definition(MT.get_script("conductor", 1)),
+            decoupled_recognition=False,
+        )
     )
 
 
 # ---------------------------------------------------------------- flags
 
 
-def test_decoupling_flag_weaver_and_maverick():
+def test_decoupling_flag_weaver_maverick_guardian_champion():
     # UPDATED for the six-seat build (2026-10-29): decoupling is
-    # no longer Weaver-only — the Maverick is decoupled too (F1,
-    # all seven). The Guardian stays coupled as the control.
+    # no longer Weaver-only — the Maverick, the Guardian, and the
+    # Champion are decoupled too (F1, all seven). No real seat
+    # remains coupled, so the old coupled-control pin is gone.
     weaver = ENC.get_definition(MT.get_script("conductor", 1))
     maverick = ENC.get_definition(MT.get_script("maverick", 1))
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
+    champion = ENC.get_definition(MT.get_script("champion", 1))
     assert weaver.decoupled_recognition is True
     assert maverick.decoupled_recognition is True
-    assert guardian.decoupled_recognition is False
+    assert guardian.decoupled_recognition is True
+    assert champion.decoupled_recognition is True
 
 
 def test_introduction_flag_round_trips_and_defaults_false():
@@ -114,8 +129,14 @@ def test_settled_verdict_does_not_close_decoupled():
 
 def test_settled_verdict_still_closes_coupled():
     host = FakeHost()
-    state = ENC.EncounterState(impression_answered=True)
-    _guardian_runtime()._close_or_continue(host, state, "Thanks.", "settled")
+    # The Conductor carries a close floor: a settled verdict may
+    # close only once a floor objective is satisfied. The twin is
+    # coupled, so the floor — not decoupling — is what gates here.
+    state = ENC.EncounterState(
+        impression_answered=True,
+        satisfied={"own_undertaking_engaged": True},
+    )
+    _coupled_runtime()._close_or_continue(host, state, "Thanks.", "settled")
     assert host.close_calls == [""]
     assert state.closed is True
 
@@ -145,14 +166,14 @@ def test_introduction_delivered_once_live_generated():
 
 
 def test_introduction_skipped_when_not_decoupled():
-    host = FakeHost(intro="I am the Weaver.")
+    host = FakeHost(intro="I am the Firebrand.")
     state = ENC.EncounterState(
         impression_offered=True, impression_text="a read",
     )
-    runtime = _guardian_runtime()
+    runtime = _coupled_runtime()
     runtime._impression_response_turn(host, state, "Yes, that's right.")
     assert state.introduction_delivered is False
-    assert "I am the Weaver." not in host.said
+    assert "I am the Firebrand." not in host.said
 
 
 # ---------------------------------------------- direct-question precedence

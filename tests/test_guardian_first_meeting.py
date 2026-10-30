@@ -4,8 +4,7 @@ Guardian K1 is the second written first meeting (the Weaver's is the
 template) and the first written under the Fellowship conversational-
 agency build: prompt-control cleanup in the Weaver pattern, the
 orientation draft's reference slice embedded prompt-locally (Weaver
-#252 pattern — NOT the shared uncapped section, which is unmerged
-PR #255), and a release gate proving BUILDING IS NOT AVAILABILITY:
+#252 pattern), and a release gate proving BUILDING IS NOT AVAILABILITY:
 the script exists, the meeting is still not visitor-accessible.
 
 What this file pins, and why each pin exists:
@@ -272,11 +271,13 @@ def test_reference_slice_on_both_live_paths_and_nowhere_else():
     for marker in SLICE_MARKERS:
         assert marker not in weaver.turn_frame, marker
         assert marker not in weaver.engage_frame, marker
-    # The slice is prompt-local, not the shared uncapped section:
-    # #255 (merged) added a fellowship_reference field to every
-    # definition, but the Guardian builder leaves it empty — the
-    # slice lives in the frames themselves.
-    assert definition.fellowship_reference == ""
+    # The prompt-local slice stays in the frames: the uncapped
+    # fellowship_reference section (six-seat references) carries
+    # the NEW Bear sketches, not the old slice one-liners.
+    assert definition.fellowship_reference != ""
+    assert "First-meeting openness right now" in definition.fellowship_reference
+    for marker in SLICE_MARKERS:
+        assert marker not in definition.fellowship_reference, marker
 
 
 def test_no_steward_wiring_for_guardian():

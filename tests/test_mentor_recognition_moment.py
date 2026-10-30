@@ -4,7 +4,7 @@ for the Mentor.
 
 What this pins:
 
-- Decoupling flag: Mentor True (Guardian control stays False).
+- Decoupling flag: Mentor True (Guardian True).
 - A settled verdict never closes a decoupled meeting.
 - The recognition moment delivers a live-generated introduction
   exactly once (never scripted reveal text), and the meeting stays
@@ -29,6 +29,8 @@ test_mentor_first_meeting). No model calls anywhere.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import pytest
 
@@ -77,20 +79,28 @@ def _mentor_runtime():
     )
 
 
-def _guardian_runtime():
+def _coupled_runtime():
+    # No real seat remains coupled (F1: all seven decoupled after
+    # the six-seat build), so the coupled path is exercised via a
+    # synthetic coupled twin: this seat's own definition with only
+    # the flag flipped. Same script, same gates — only the coupled
+    # branch under test changes.
     return ENC.EncounterRuntime(
-        ENC.get_definition(MT.get_script("guardian", 1))
+        dataclasses.replace(
+            ENC.get_definition(MT.MENTOR_FIRST_MEETING),
+            decoupled_recognition=False,
+        )
     )
 
 
 # ---------------------------------------------------------------- flags
 
 
-def test_decoupling_flag_mentor_true_guardian_false():
+def test_decoupling_flag_mentor_true_guardian_true():
     mentor = ENC.get_definition(MT.MENTOR_FIRST_MEETING)
     guardian = ENC.get_definition(MT.get_script("guardian", 1))
     assert mentor.decoupled_recognition is True
-    assert guardian.decoupled_recognition is False
+    assert guardian.decoupled_recognition is True
 
 
 # ------------------------------------------------------- close decision
@@ -135,7 +145,7 @@ def test_introduction_skipped_when_not_decoupled():
     state = ENC.EncounterState(
         impression_offered=True, impression_text="a read",
     )
-    runtime = _guardian_runtime()
+    runtime = _coupled_runtime()
     runtime._impression_response_turn(host, state, "Yes, that's right.")
     assert state.introduction_delivered is False
     assert "I am the Bear." not in host.said

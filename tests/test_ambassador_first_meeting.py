@@ -161,24 +161,25 @@ def test_orientation_material_honors_weaver_trace():
 # BUILDING ≠ AVAILABLE — the gate
 # ---------------------------------------------------------------------------
 
-def test_script_not_registered_and_not_beginnable(ve_ctx, tmp_path):
-    assert MT.get_script("ambassador", 1) is None
-    assert MT.has_script("ambassador", 1) is False
-    assert ("ambassador", 1) not in MT.SCRIPTS
+def test_script_registered_and_beginnable(ve_ctx, tmp_path):
+    assert MT.get_script("ambassador", 1) is not None
+    assert MT.has_script("ambassador", 1) is True
+    assert ("ambassador", 1) in MT.SCRIPTS
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    with pytest.raises(MeetingError, match="isn't written yet"):
+    # Without the Weaver's keystone 1 Done, the entry gate refuses.
+    with pytest.raises(MeetingError, match="Weaver opens the council"):
         svc.start(uid, "ambassador")
     state = svc.state(uid, "ambassador")
-    assert state["has_script"] is False
-    assert state["character"] is None
+    assert state["has_script"] is True
+    assert state["character"] == "Crane"
     assert state["demeanor"] is None
 
 
 def test_entry_gate_is_a_second_layer(ve_ctx, tmp_path, monkeypatch):
-    """Even if the script were registered, the Weaver-first entry gate
-    still refuses until the Weaver's keystone 1 is Done — gate/keystone
-    semantics for existing seats are unchanged by this PR."""
+    """The script is registered (all-six release); the Weaver-first
+    entry gate still refuses until the Weaver's keystone 1 is Done —
+    gate/keystone semantics for existing seats are unchanged."""
     uid = _seeded_user()
     monkeypatch.setitem(
         MT.SCRIPTS, ("ambassador", 1), MT.AMBASSADOR_FIRST_MEETING)

@@ -115,28 +115,28 @@ def test_availability_note_computed_from_gates_minus_self():
     ref = _skeptic_definition().fellowship_reference
     note = ref.splitlines()[-1]
     assert note.startswith("First-meeting openness right now")
-    # Current gate truth, computed: Conductor open; Champion held;
-    # Guardian/Maverick written-unreleased; Mentor/Ambassador
-    # unregistered.
-    assert "Gardener — not open to begin yet" in note
-    assert "Firebrand — held, not open yet" in note
-    assert "Bear — not open yet" in note
-    assert "Fox — not open yet" in note
-    assert "Crane — not open to begin yet" in note
+    # All-six release truth, computed: every other seat open now.
+    assert "Gardener — open now" in note
+    assert "Firebrand — open now" in note
+    assert "Bear — open now" in note
+    assert "Fox — open now" in note
+    assert "Crane — open now" in note
     assert "Weaver — open now" in note
     # The note covers the other seats, not the Raven himself.
     assert "Raven —" not in note
 
 
 def test_availability_note_recomputes_when_gates_change(monkeypatch):
-    # Proof it is computed, not a hardcoded snapshot: registering
+    # Proof it is computed, not a hardcoded snapshot: unregistering
     # the Mentor's script (test-only, reverted after) moves the
-    # Gardener from "not open to begin yet" to "not open yet".
-    monkeypatch.setitem(MT.SCRIPTS, ("mentor", 1), MT.MENTOR_FIRST_MEETING)
+    # Gardener from "open now" to "not open to begin yet" — the
+    # mirror image of the original registration proof, since the
+    # Mentor is registered for real now (all-six release).
+    monkeypatch.delitem(MT.SCRIPTS, ("mentor", 1))
     ref = _skeptic_definition().fellowship_reference
     note = ref.splitlines()[-1]
-    assert "Gardener — not open yet" in note
-    assert "Gardener — not open to begin yet" not in note
+    assert "Gardener — not open to begin yet" in note
+    assert "Gardener — open now" not in note
 
 
 def test_new_material_not_in_capped_frames():
@@ -151,9 +151,16 @@ def test_new_material_not_in_capped_frames():
     assert len(definition.turn_frame) < 8000
 
 
-def test_other_seats_gain_no_reference():
-    guardian = ENC.get_definition(MT.get_script("guardian", 1))
-    assert guardian.fellowship_reference == ""
+def test_other_seats_carry_their_own_references():
+    # All-seven references (all-six release): every other seat's
+    # definition carries its OWN reference — the note line equals
+    # that seat's own computed note, so a leak from another seat's
+    # builder would fail here. (Previously these seats had no
+    # reference; the six-seat merges gave each one its own.)
+    for arch_id in ("guardian", "maverick", "mentor", "champion", "ambassador"):
+        definition = ENC.get_definition(MT.get_script(arch_id, 1))
+        assert definition.fellowship_reference != "", arch_id
+        assert ENC._fellowship_availability_note(arch_id) in definition.fellowship_reference
     # The Weaver's shipped reference is untouched by this PR.
     weaver = ENC.get_definition(MT.get_script("conductor", 1))
     assert "I understand him as the deepener of one thread" in (

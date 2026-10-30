@@ -175,13 +175,34 @@ def test_start_refusals(ve_ctx, tmp_path):
         svc.start(user["id"], "not-a-seat")
 
     uid = _seeded_user("seeded@example.com")
-    # Mentor's script is staged but deliberately unregistered (see
-    # tests/test_mentor_first_meeting.py) — refused honestly, not improvised.
-    with pytest.raises(MeetingError, match="isn't written yet"):
+    # Mentor's script is registered and released (all-six release,
+    # 2026-10-29) — for a seeded user without the Weaver's keystone
+    # 1 Done, the refusal is the entry order, not a missing script.
+    with pytest.raises(MeetingError, match="Weaver opens the council"):
         svc.start(uid, "mentor")
     # Keystone 2 has no meeting in this build either.
     with pytest.raises(MeetingError, match="isn't written yet"):
         svc.start(uid, "conductor", keystone_index=2)
+
+
+def test_all_six_seats_released_and_registered():
+    """All-six release (2026-10-29): every seat's first meeting is
+    registered and released, and neither hold set blocks any seat."""
+    from local_ai.conversation.meeting import _UNRELEASED_MEETINGS
+
+    for arch_id in (
+        "conductor",
+        "mentor",
+        "champion",
+        "ambassador",
+        "skeptic",
+        "maverick",
+        "guardian",
+    ):
+        assert MT.get_script(arch_id, 1) is not None
+        assert arch_id in MT.RELEASED_FIRST_MEETING_SEATS
+        assert (arch_id, 1) not in MT.HELD_FIRST_MEETINGS
+        assert (arch_id, 1) not in _UNRELEASED_MEETINGS
 
 
 def test_conductor_first_guard(ve_ctx, tmp_path, monkeypatch):
@@ -578,8 +599,8 @@ def test_restart_refusals(ve_ctx, tmp_path):
     # No meeting on record at all.
     with pytest.raises(MeetingError, match="hasn't been met yet"):
         svc.restart(uid, "conductor")
-    # A seat whose meeting isn't written yet — same honest gate as start.
-    with pytest.raises(MeetingError, match="isn't written yet"):
+    # A seat with no meeting on record — same row gate as above.
+    with pytest.raises(MeetingError, match="hasn't been met yet"):
         svc.restart(uid, "mentor")
     with pytest.raises(ValueError, match="Unknown seat"):
         svc.restart(uid, "not-a-seat")
@@ -702,8 +723,8 @@ def test_complete_refusals(ve_ctx, tmp_path):
     # No meeting on record at all.
     with pytest.raises(MeetingError, match="no meeting in progress"):
         svc.complete(uid, "conductor")
-    # A seat whose meeting isn't written yet — same honest gate as start.
-    with pytest.raises(MeetingError, match="isn't written yet"):
+    # A seat with no meeting on record — same row gate as above.
+    with pytest.raises(MeetingError, match="no meeting in progress"):
         svc.complete(uid, "mentor")
     with pytest.raises(ValueError, match="Unknown seat"):
         svc.complete(uid, "not-a-seat")

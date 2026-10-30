@@ -100,15 +100,14 @@ def test_availability_note_computed_from_gates_minus_self():
     ref = _maverick_definition().fellowship_reference
     note = ref.splitlines()[-1]
     assert note.startswith("First-meeting openness right now")
-    # Post-merge truth, computed — not the doc's snapshot pasted in:
-    # Weaver open; Firebrand held; Bear unreleased; Gardener, Crane,
-    # Raven unregistered.
-    assert "Gardener — not open to begin yet" in note
-    assert "Firebrand — held, not open yet" in note
-    assert "Bear — not open yet" in note
-    assert "Crane — not open to begin yet" in note
+    # All-six release truth, computed — not the doc's snapshot pasted in:
+    # every other seat is open now.
+    assert "Gardener — open now" in note
+    assert "Firebrand — open now" in note
+    assert "Bear — open now" in note
+    assert "Crane — open now" in note
     assert "Weaver — open now" in note
-    assert "Raven — not open to begin yet" in note
+    assert "Raven — open now" in note
     # The note covers the other seats, not the Fox himself.
     assert "Fox —" not in note
     # And it is the computed function, not a pasted string: the
@@ -152,9 +151,16 @@ def test_new_material_not_in_capped_frames():
         assert "a different kind of experiment" not in text
 
 
-def test_other_seats_gain_no_reference_and_weaver_untouched():
-    guardian = ENC.get_definition(MT.get_script("guardian", 1))
-    assert guardian.fellowship_reference == ""
+def test_other_seats_carry_their_own_references_and_weaver_untouched():
+    # All-seven references (all-six release): every other seat's
+    # definition carries its OWN reference — the note line equals
+    # that seat's own computed note, so a leak from another seat's
+    # builder would fail here. (Previously these seats had no
+    # reference; the six-seat merges gave each one its own.)
+    for arch_id in ("guardian", "mentor", "champion", "ambassador", "skeptic"):
+        definition = ENC.get_definition(MT.get_script(arch_id, 1))
+        assert definition.fellowship_reference != "", arch_id
+        assert ENC._fellowship_availability_note(arch_id) in definition.fellowship_reference
     # The Weaver's builder still uses her inline text, not the
     # shared constant — her shipped reference is byte-stable
     # under this PR (her self-excluding role list stands).

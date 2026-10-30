@@ -140,19 +140,22 @@ export type MeetingDoorState = 'begin' | 'revisit' | null
 
 /** Whether the seat's character head carries a door into the first-meeting
     overlay, and which one. 'intro' is the fresh-tree invitation — the
-    "Begin" door. The intro marker lasts only until the first meeting
-    completes; after that the reason moves on ('meet', a later keystone)
-    and the Begin door vanishes. A seat already met (face_revealed — true
-    exactly when keystone 1 is Done or the face is depth-unlocked) gets
-    the revisit door instead, so the completed meeting stays reachable:
-    MeetingView renders the transcript and "Meet again" once open. Seats
-    neither intro nor met have unwritten meetings; no door is honest. */
+    "Begin" door. A seat already met (face_revealed — true exactly when
+    keystone 1 is Done or the face is depth-unlocked) gets the revisit
+    door instead, so the completed meeting stays reachable: MeetingView
+    renders the transcript and "Meet again" once open. An unmet seat
+    with a 'meet' marker — the post-entry invitation for a written,
+    released seat — also gets the Begin door (all-six release,
+    2026-10-29); the backend begin gates, not the marker, are what
+    refuse an unreleased seat. Seats with no marker, or a later-keystone
+    reason while unmet, have no door. */
 export function meetingDoorState(
   reason: KeystoneAttentionReason | null | undefined,
   met = false,
 ): MeetingDoorState {
   if (reason === 'intro') return 'begin'
   if (met) return 'revisit'
+  if (reason === 'meet') return 'begin'
   return null
 }
 

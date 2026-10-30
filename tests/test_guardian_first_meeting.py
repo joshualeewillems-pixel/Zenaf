@@ -295,35 +295,34 @@ def test_no_steward_wiring_for_guardian():
 # ---------------------------------------------------------------- release gate
 
 
-def test_guardian_meeting_is_not_visitor_accessible(ve_ctx, tmp_path):
-    """BUILDING IS NOT AVAILABILITY. A seeded visitor with Weaver K1
-    complete satisfies every old rule (seeded, scripted, entry done)
-    — the exact visitor script existence alone would have opened
-    the meeting to — and is still refused by the release gate, with
-    no row, no transcript, and no generation possible."""
+def test_guardian_meeting_is_visitor_accessible(ve_ctx, tmp_path):
+    """All-six release (2026-10-29): a seeded visitor with Weaver K1
+    complete satisfies every rule (seeded, scripted, entry done) —
+    the exact visitor script existence alone would have opened the
+    meeting to — and now begins it, with a row and no release
+    refusal."""
     uid = _seeded_user()
     _complete_conductor_k1(uid)
     svc = _svc(tmp_path)
     # The script genuinely exists — this is not the unwritten-seat path.
     assert MT.get_script("guardian", 1) is not None
-    with pytest.raises(MeetingError, match="isn't open to visitors yet"):
-        svc.start(uid, "guardian")
-    assert svc.meetings.get(uid, "guardian", 1) is None
-    with pytest.raises(MeetingError, match="No meeting is in progress"):
-        svc.turn(uid, "guardian", "Hello?")
+    state = svc.start(uid, "guardian")
+    assert state["status"] == "active"
+    assert svc.meetings.get(uid, "guardian", 1) is not None
     # And the release gate changes nothing for the released seat.
     assert "conductor" in MT.RELEASED_FIRST_MEETING_SEATS
-    assert "guardian" not in MT.RELEASED_FIRST_MEETING_SEATS
+    assert "guardian" in MT.RELEASED_FIRST_MEETING_SEATS
 
 
 def test_unwritten_seats_keep_their_original_refusal(ve_ctx, tmp_path):
-    """Gate ordering: unwritten seats still hit the script check
+    """Gate ordering: unwritten meetings still hit the script check
     first, with the original message — the release check never
-    shadows it."""
+    shadows it. All seven first meetings are registered now, so
+    the still-unwritten example is the Conductor's keystone 2."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     with pytest.raises(MeetingError, match="isn't written yet"):
-        svc.start(uid, "mentor")
+        svc.start(uid, "conductor", keystone_index=2)
 
 
 # ---------------------------------------------------------------- frame budget

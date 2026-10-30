@@ -343,37 +343,41 @@ def test_slice_marked_draft_and_system_slice_proposed():
 # Availability: written, but the begin gate refuses it.
 # ---------------------------------------------------------------------------
 
-def test_unreleased_gate_covers_maverick_not_conductor():
-    assert ("maverick", 1) in _UNRELEASED_MEETINGS
+def test_maverick_released_not_in_unreleased_set():
+    assert ("maverick", 1) not in _UNRELEASED_MEETINGS
     assert ("conductor", 1) not in _UNRELEASED_MEETINGS
+    assert "maverick" in MT.RELEASED_FIRST_MEETING_SEATS
 
 
-def test_begin_refused_even_for_a_fully_eligible_user(ve_ctx, tmp_path):
-    """The exact user for whom script existence alone would make the
-    meeting begin-able: seeded council, Weaver keystone 1 Done, and
-    the Maverick's own keystone chain present. The gate — not the
-    entry-seat rule, not a missing script — is what refuses."""
+def test_begin_succeeds_for_a_fully_eligible_user(ve_ctx, tmp_path):
+    """The exact user for whom script existence alone would have
+    made the meeting begin-able before the release: seeded council,
+    Weaver keystone 1 Done, and the Maverick's own keystone chain
+    present. After the all-six release (2026-10-29) the begin
+    succeeds; the entry-seat rule still refuses before Weaver is
+    done."""
     uid = _seeded_user()
     conductor_k1 = _seat_keystone_tasks(uid, "conductor")[0]
     ve.update_task(conductor_k1["id"], ve_models.TaskUpdate(status="Done"), uid)
     assert _seat_keystone_tasks(uid, "maverick"), "maverick chain must exist"
     assert MT.get_script("maverick", 1) is not None, "script is written"
     svc = _svc(tmp_path)
-    with pytest.raises(MeetingError, match="not open yet"):
-        svc.start(uid, "maverick")
-    # And the refusal is the gate's even before Weaver is done.
+    state = svc.start(uid, "maverick")
+    assert state["status"] == "active"
+    # And the entry-seat rule still refuses before Weaver is done.
     uid2 = _seeded_user("maverick2@example.com")
-    with pytest.raises(MeetingError, match="not open yet"):
+    with pytest.raises(MeetingError, match="Weaver opens the council"):
         svc.start(uid2, "maverick")
-    # The Conductor's meeting is untouched by the gate.
+    # The Conductor's meeting is untouched by the release.
     state = svc.start(uid2, "conductor")
     assert state["status"] == "active"
 
 
-def test_no_meeting_row_can_exist_for_maverick(ve_ctx, tmp_path):
+def test_no_row_without_start_turn_still_refuses(ve_ctx, tmp_path):
     """Turn/complete/restart all refuse without an active/completed
-    row, and only start creates one — so the start gate closes the
-    whole path, not just the front door."""
+    row, and only start creates one — so even now that the Maverick
+    is released, an unstarted meeting still has no path past the
+    front door."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     with pytest.raises(MeetingError, match="No meeting is in progress"):

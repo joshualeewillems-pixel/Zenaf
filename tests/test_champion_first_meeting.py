@@ -1,9 +1,9 @@
 """Champion (Firebrand) first meeting — keystone 1.
 
-Build-only: the script is written and framed here, but the meeting is
-HELD (meetings.HELD_FIRST_MEETINGS) and the entry gate refuses it, so
-writing it does not make it visitor-accessible. The behavioral specs
-for a later, separately authorized live run live in
+The script is written and framed here, and the meeting is released
+(all-six release, 2026-10-29): the HELD hold was lifted, so the
+entry gate no longer refuses it. The behavioral specs for a later,
+separately authorized live run live in
 docs/champion-first-meeting-behavioral-specs.md — nothing here spends
 a model call.
 
@@ -278,20 +278,27 @@ def test_parser_contract_delimiter_and_strands():
 # ------------------------------------------------------------ accessibility
 
 
-def test_champion_meeting_is_held_not_visitor_beginnable(ve_ctx, tmp_path):
+def test_champion_meeting_is_visitor_beginnable(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    # The script exists — state says so honestly — but begin refuses.
+    # The script exists — state says so honestly — and the hold is
+    # lifted (all-six release): the entry order is now the only
+    # refusal before the Weaver is met.
     assert svc.state(uid, "champion")["has_script"] is True
-    with pytest.raises(MeetingError, match="not yet open to visitors"):
+    with pytest.raises(MeetingError, match="Weaver opens the council"):
         svc.start(uid, "champion")
-    # The hold fires on its own terms, before the entry-seat guard:
-    # it holds even for a visitor who has not met the Weaver yet.
     # And it changes nothing for the Conductor, which still begins.
     state = svc.start(uid, "conductor")
     assert state["status"] == "active"
-    with pytest.raises(MeetingError, match="not yet open to visitors"):
-        svc.start(uid, "champion")
+    # With the Weaver's keystone 1 Done, the Champion begins.
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution.models import TaskUpdate
+
+    tasks = _seat_keystone_tasks(uid, "conductor")
+    assert tasks and tasks[0]["status"] != "Done"
+    ve.update_task(tasks[0]["id"], TaskUpdate(status="Done"), uid)
+    state = svc.start(uid, "champion")
+    assert state["status"] == "active"
 
 
 def test_turn_without_a_begin_is_refused(ve_ctx, tmp_path):
@@ -336,8 +343,9 @@ def test_frame_sizes_fit_the_voice_builder_cap():
 # landed. The behavioral spec lives in
 # docs/champion-first-meeting-behavioral-specs.md, Spec 9.
 #
-# Harness note: the meeting itself stays HELD for visitors. These
-# tests lift the hold in-process only (monkeypatch), complete the
+# Harness note: the meeting's HELD hold was lifted in the all-six
+# release (2026-10-29). These tests keep the in-process lift
+# (monkeypatch) as a belt-and-braces guard, complete the
 # Conductor first (the entry-seat guard), then drive the Champion
 # arc with a fake voice — no model calls, no live runs.
 

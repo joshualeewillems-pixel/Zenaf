@@ -137,6 +137,14 @@ def adapt_claims_to_contract_inputs(claims: list[dict]) -> dict:
     E12 rather than passing silently); claims without one get
     evidence ``absent`` (E12). Input claim dicts are never mutated
     (copies are not even needed: nothing here writes to them).
+
+    Increment A (native declarations): a claim carrying a native
+    ``target_state`` was captured from an explicit declaration block.
+    Its native ``declarations`` (layer ``declared``) are its
+    declarations, and its native target-state is used as an explicit
+    override — prose-derived links are NOT added for it (declared !=
+    inferred). Claims without native outcomes (old captures, replay
+    paths, openings) keep the derivation below unchanged.
     """
     declarations: list[dict] = []
     legacy_dispositions: list[dict] = []
@@ -160,28 +168,42 @@ def adapt_claims_to_contract_inputs(claims: list[dict]) -> dict:
         cid = claim.get("id", "")
         if not cid:
             continue
-        label = claim.get("relationship")
-        kind = _LABEL_TO_KIND.get(label, label if label in KIND_VOCABULARY else "other")
-        note = f"source relationship: {label}" if label else "relationship unstated in source"
-        targets: list[str] = []
-        for field in ("relationship_targets",):
-            targets.extend(claim.get(field) or [])
-        if not targets and claim.get("relationship_target"):
-            targets.append(claim["relationship_target"])
-        if not targets:
-            targets.extend(claim.get("relates_to") or [])
-        for target in targets:
-            if _is_claim_id(target):
-                add_declaration(cid, target, kind, note)
-        for field in ("supersedes", "withdraws"):
-            target = claim.get(field)
-            if _is_claim_id(target):
-                add_declaration(cid, target, "other", f"source field: {field}")
-        text = claim.get("text", "") or ""
-        for num in _CLAIM_REF_RE.findall(text):
-            target = f"C{num}"
-            if target != cid:
-                add_declaration(cid, target, "other", "in-text reference")
+        if claim.get("target_state") is not None:
+            # Increment A: native declaration outcome. Only the
+            # native declarations count for this claim; prose
+            # derivation below is skipped (declared != inferred).
+            for decl in (claim.get("declarations") or []):
+                if not isinstance(decl, dict):
+                    continue
+                add_declaration(
+                    cid,
+                    decl.get("target_claim", ""),
+                    decl.get("kind", ""),
+                    decl.get("note") or "native declaration",
+                )
+        else:
+            label = claim.get("relationship")
+            kind = _LABEL_TO_KIND.get(label, label if label in KIND_VOCABULARY else "other")
+            note = f"source relationship: {label}" if label else "relationship unstated in source"
+            targets: list[str] = []
+            for field in ("relationship_targets",):
+                targets.extend(claim.get(field) or [])
+            if not targets and claim.get("relationship_target"):
+                targets.append(claim["relationship_target"])
+            if not targets:
+                targets.extend(claim.get("relates_to") or [])
+            for target in targets:
+                if _is_claim_id(target):
+                    add_declaration(cid, target, kind, note)
+            for field in ("supersedes", "withdraws"):
+                target = claim.get(field)
+                if _is_claim_id(target):
+                    add_declaration(cid, target, "other", f"source field: {field}")
+            text = claim.get("text", "") or ""
+            for num in _CLAIM_REF_RE.findall(text):
+                target = f"C{num}"
+                if target != cid:
+                    add_declaration(cid, target, "other", "in-text reference")
         if claim.get("disposition") is not None:
             legacy_dispositions.append(
                 {
@@ -191,7 +213,18 @@ def adapt_claims_to_contract_inputs(claims: list[dict]) -> dict:
                 }
             )
 
-    target_states = compute_target_states(claims, declarations)
+    # Increment A: native target-states override computed defaults.
+    explicit_states: dict[str, dict] = {}
+    for claim in claims:
+        cid = claim.get("id", "")
+        if cid and claim.get("target_state") is not None:
+            explicit_states[cid] = {
+                "state": claim.get("target_state"),
+                "set_by": claim.get("target_state_set_by") or "system",
+                "uncertainty_reason": claim.get("uncertainty_reason"),
+            }
+    target_states = compute_target_states(claims, declarations,
+                                          explicit=explicit_states)
     exposure: dict[str, dict] = {}
     for claim in claims:
         cid = claim.get("id", "")
@@ -479,6 +512,7 @@ def validate_contract_record(
 
     # --- declarations: E1/E2/E3/E4 ---
     valid_declaration_sources: dict[str, int] = {}
+    e4_sources: set[str] = set()
     for decl in declarations:
         src = decl.get("source_claim", "")
         tgt = decl.get("target_claim", "")
@@ -503,6 +537,7 @@ def validate_contract_record(
                  f"declaration kind/layer outside contract: kind={kind!r} "
                  f"layer={layer!r}",
                  claim_id=src)
+            e4_sources.add(src)
             valid = False
         if valid:
             valid_declaration_sources[src] = valid_declaration_sources.get(src, 0) + 1
@@ -559,6 +594,20 @@ def validate_contract_record(
                 _err(errors, "E6",
                      f"unknown target-state without uncertainty_reason: {cid}",
                      claim_id=cid)
+        # Increment A (plan-prescribed E6 mapping): a recorded
+        # declaration parse failure with zero valid declarations
+        # means the declaration set cannot be established. Fires
+        # only when no E4 fired for this source (E4 else E6, never
+        # both), and only for claims carrying a native parse-failure
+        # record — old records never carry one, so this rule cannot
+        # change their validation.
+        if (claim.get("declaration_parse_failure") is not None
+                and valid_declaration_sources.get(cid, 0) == 0
+                and cid not in e4_sources):
+            _err(errors, "E6",
+                 f"declaration set cannot be established: {cid} "
+                 f"(malformed declaration block)",
+                 claim_id=cid)
 
     # --- proposals: E1/E7/W4 ---
     for prop in proposals:

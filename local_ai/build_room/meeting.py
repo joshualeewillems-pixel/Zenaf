@@ -522,6 +522,11 @@ def run_single_model_meeting(
 from local_ai.build_room.artifact import build_draft_artifact_r2
 from local_ai.build_room.citation_validation import validate_tool_citations
 from local_ai.build_room.claim_standing import compute_claim_standing
+from local_ai.build_room.declarations import (
+    DECLARATION_BLOCK_VERSION,
+    extract_declaration_block,
+    parse_declaration_block,
+)
 from local_ai.build_room.exposure import capture_exposure
 from local_ai.build_room.measurement import summarize_tool_round_usage
 from local_ai.build_room.record_completeness import check_record_completeness
@@ -746,6 +751,32 @@ _FOLLOWUP_INSTRUCTION = (
     "spans."
 )
 
+# Increment A (accepted schema contract §1.2): response/revision
+# prompts ask models to end contributions with an explicit,
+# versioned declaration block, separate from prose. The block format
+# version is DECLARATION_BLOCK_VERSION (declarations.py); changing
+# the format means a new version, recorded per meeting in
+# comparison_capture, so the comparability break with SPEC runs
+# (which carry no declaration version) is explicit, not hidden.
+_DECLARATION_INSTRUCTION = (
+    "Declare your targets explicitly. End your contribution with a "
+    "declaration block, separate from your prose, in exactly this "
+    "format:\n"
+    "Declarations (declaration-block-v1):\n"
+    "1: extends C12, challenges C18\n"
+    "2: none\n"
+    "One entry per numbered claim, in order: entry 1 declares for your "
+    "first claim, entry 2 for your second, and so on. Each entry lists "
+    "the earlier claim IDs you engage and how: extends, corrects, "
+    "challenges, integrates, endorses, repeats, defends, "
+    "requests-evidence, or other (with a note in parentheses, e.g. "
+    "'other C5 (note: restates with new evidence)'). Write 'none' for "
+    "a claim that engages no specific earlier claim. A claim with no "
+    "entry is recorded as undeclared, not as engaging nothing. Do not "
+    "put declaration lines inside your prose claims; the block is the "
+    "only place declarations count."
+)
+
 @dataclass
 class Claim:
     """One mechanically registered claim (design §2A, correction C1–C4).
@@ -798,6 +829,22 @@ class Claim:
     # + visible ids/spans), or None when never recorded. Old-style
     # claims carry no exposure_ref key in to_dict() at all.
     exposure_ref: dict | None = None
+    # Increment A (accepted schema contract §1.2/§2/§7): native
+    # declaration outcome for this claim, or None when the claim
+    # predates declaration capture (old captures, replay paths).
+    # declaration_raw is the contribution's emitted block verbatim;
+    # declarations are the parsed native declarations (layer
+    # declared) or [] for author-set declared-none; target_state /
+    # target_state_set_by / uncertainty_reason are the contract §2
+    # state; declaration_parse_failure records a malformed block.
+    # All six keys are omitted from to_dict() when None, so old
+    # claim shapes serialize byte-identically to before.
+    declaration_raw: str | None = None
+    declarations: list[dict] | None = None
+    target_state: str | None = None
+    target_state_set_by: str | None = None
+    uncertainty_reason: str | None = None
+    declaration_parse_failure: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -805,6 +852,11 @@ class Claim:
         # old claim shapes serialize byte-identically to before.
         if d.get("exposure_ref") is None:
             d.pop("exposure_ref", None)
+        for key in ("declaration_raw", "declarations", "target_state",
+                    "target_state_set_by", "uncertainty_reason",
+                    "declaration_parse_failure"):
+            if d.get(key) is None:
+                d.pop(key, None)
         return d
 
 
@@ -951,13 +1003,20 @@ class ClaimRegistry:
     def register_spans(self, participant: str, phase: str,
                        spans: list[ClaimSpan],
                        links: list[dict[str, Any]] | None = None,
-                       exposure_ref: dict | None = None) -> list[Claim]:
+                       exposure_ref: dict | None = None,
+                       declaration_outcomes: list[dict] | None = None) -> list[Claim]:
         """Append pre-parsed spans with per-span links (C3).
 
         ``links[i]`` (when given) carries that span's relationship,
         relationship_target, relates_to, supersedes, and withdraws,
         plus relationship_targets and reclassified_status for
         multi-target / reclassification links.
+        ``declaration_outcomes[i]`` (Increment A, when given) carries
+        that span's native declaration outcome: declaration_raw,
+        declarations, target_state, target_state_set_by,
+        uncertainty_reason, declaration_parse_failure. Outcomes are
+        aligned with spans in order; a shorter list leaves the tail
+        claims without native outcomes (adapter defaults apply).
         System IDs are assigned sequentially; model-written numbers
         are never stored (C1).
         """
@@ -969,6 +1028,9 @@ class ClaimRegistry:
                 # Recover the model-written number for the note.
                 self.last_disregarded_model_numbers.append(
                     f"C{span.model_number}" if span.model_number else "C?")
+            outcome = None
+            if declaration_outcomes is not None and i < len(declaration_outcomes):
+                outcome = declaration_outcomes[i]
             claim = Claim(
                 id=f"C{len(self.claims) + 1}",
                 participant=participant,
@@ -983,6 +1045,13 @@ class ClaimRegistry:
                 relationship_targets=list(link.get("relationship_targets") or []),
                 reclassified_status=link.get("reclassified_status"),
                 exposure_ref=exposure_ref,
+                declaration_raw=(outcome or {}).get("declaration_raw"),
+                declarations=(outcome or {}).get("declarations"),
+                target_state=(outcome or {}).get("target_state"),
+                target_state_set_by=(outcome or {}).get("target_state_set_by"),
+                uncertainty_reason=(outcome or {}).get("uncertainty_reason"),
+                declaration_parse_failure=(
+                    (outcome or {}).get("declaration_parse_failure")),
             )
             self.claims.append(claim)
             registered.append(claim)
@@ -1980,6 +2049,7 @@ def run_multi_model_meeting(
     deployed_version: str | None = None,
     role_prompt_extras: dict[str, str] | None = None,
     role_brief_version: str | None = None,
+    declaration_prompt_version: str | None = None,
 ) -> MeetingResult:
     """Run one R2 meeting. Never raises for participant/generation
     failure: failures are recorded in the transcript and reflected
@@ -2162,6 +2232,15 @@ def run_multi_model_meeting(
     prompt_extras: dict[str, str] = dict(tool_prompt_extras)
     for _name, _section in (role_prompt_extras or {}).items():
         prompt_extras[_name] = prompt_extras.get(_name, "") + _section
+    # Increment A: declaration-block format version for this
+    # meeting's response/revision prompts (defaults to the current
+    # format version; an explicit value lets tests pin a version).
+    # Recorded in comparison_capture below; SPEC-era captures carry
+    # no such key, which is exactly how the comparability break
+    # surfaces: version present = declaration prompts used.
+    decl_prompt_version = (
+        declaration_prompt_version or DECLARATION_BLOCK_VERSION
+    )
     base_prompt_hashes: dict[str, str] = {}
 
     def _hash_base_prompt(prompt: str) -> str:
@@ -2329,7 +2408,18 @@ def run_multi_model_meeting(
                 continue
             transcript.append("contribution", name, text or "")
             generated.append((name, text or ""))
-            analysis = _analyze_contribution(text or "", author=name,
+            # Increment A: response/revision contributions may carry
+            # a declaration block as their final section. Strip it
+            # BEFORE span analysis so block lines never become claim
+            # spans or citations; the transcript above keeps the
+            # full verbatim text. Openings carry no declaration
+            # prompt and are analyzed unchanged.
+            analysis_text = text or ""
+            declaration_block: str | None = None
+            if phase in ("response", "revision"):
+                analysis_text, declaration_block = extract_declaration_block(
+                    text or "")
+            analysis = _analyze_contribution(analysis_text, author=name,
                                              registry=registry,
                                              frozen_ids=frozen_ids)
             valid = analysis["cited_claim_ids"]
@@ -2339,7 +2429,7 @@ def run_multi_model_meeting(
             # (correction §5, mark never strip). The claim text
             # above is preserved verbatim; only this annotation
             # marks grounded vs unverified.
-            tool_citations = _tool_citation_annotations(phase, name, text or "")
+            tool_citations = _tool_citation_annotations(phase, name, analysis_text)
             grounded_tool = sum(
                 1 for a in tool_citations if a["status"] == "grounded")
             unverified_tool = sum(
@@ -2360,9 +2450,20 @@ def run_multi_model_meeting(
                     "does not exist; it counts for nothing.")
             registered: list[Claim] = []
             if register:
+                # Increment A: parse the stripped declaration block
+                # against the registered span count; the raw block
+                # rides on every outcome so each claim preserves it
+                # verbatim (None when no block was emitted).
+                declaration_outcomes = None
+                if phase in ("response", "revision"):
+                    declaration_outcomes = parse_declaration_block(
+                        declaration_block, len(analysis["spans"]))
+                    for outcome in declaration_outcomes:
+                        outcome["declaration_raw"] = declaration_block
                 registered = registry.register_spans(
                     name, phase, analysis["spans"],
-                    exposure_ref=phase_exposures.get((phase, name)))
+                    exposure_ref=phase_exposures.get((phase, name)),
+                    declaration_outcomes=declaration_outcomes)
                 if registry.last_disregarded_model_numbers:
                     transcript.append(
                         "note", name,
@@ -2627,6 +2728,7 @@ def run_multi_model_meeting(
             + "\n\n" + _CONTRIBUTION_DISCIPLINE
             + "\n\n" + response_registry_block
             + "\n\n" + _RESPONSE_INSTRUCTION
+            + "\n\n" + _DECLARATION_INSTRUCTION
             + "\n\n" + _LANGUAGE_LINE
             + "\n\n" + response_telemetry
         )
@@ -2675,6 +2777,7 @@ def run_multi_model_meeting(
                 + "\n\n" + _CONTRIBUTION_DISCIPLINE
                 + "\n\n" + revision_registry_block
                 + "\n\n" + _FOLLOWUP_INSTRUCTION
+                + "\n\n" + _DECLARATION_INSTRUCTION
                 + "\n\n" + _LANGUAGE_LINE
                 + "\n\n" + revision_telemetry
             )
@@ -2717,8 +2820,12 @@ def run_multi_model_meeting(
                     continue
                 transcript.append("contribution", name, text or "")
                 rev_generated.append((name, text or ""))
+                # Increment A: strip the declaration block before
+                # span analysis (same as _record_phase); the
+                # transcript above keeps the full verbatim text.
+                rev_text, rev_block = extract_declaration_block(text or "")
                 analysis = _analyze_contribution(
-                    text or "", author=name, registry=registry,
+                    rev_text, author=name, registry=registry,
                     frozen_ids=revision_frozen)
                 valid = analysis["cited_claim_ids"]
                 dead = analysis["dead_citations"]
@@ -2726,7 +2833,7 @@ def run_multi_model_meeting(
                 # Increment C: same ingestion-time tool-citation
                 # validation as _record_phase (mark, never strip).
                 tool_citations = _tool_citation_annotations(
-                    "revision", name, text or "")
+                    "revision", name, rev_text)
                 grounded_tool = sum(
                     1 for a in tool_citations if a["status"] == "grounded")
                 unverified_tool = sum(
@@ -2751,9 +2858,14 @@ def run_multi_model_meeting(
                         f"No relationship stated in {name}'s follow-up; "
                         "recorded as unstated.")
                 links = _revision_links(analysis, name, registry)
+                rev_outcomes = parse_declaration_block(
+                    rev_block, len(analysis["spans"]))
+                for outcome in rev_outcomes:
+                    outcome["declaration_raw"] = rev_block
                 registered = registry.register_spans(
                     name, "revision", analysis["spans"], links,
-                    exposure_ref=phase_exposures.get(("revision", name)))
+                    exposure_ref=phase_exposures.get(("revision", name)),
+                    declaration_outcomes=rev_outcomes)
                 # Authorial disposition (C4): only the author's own
                 # revision changes the original claim, first wins.
                 _apply_dispositions(registry, registered, links)
@@ -2984,6 +3096,11 @@ def run_multi_model_meeting(
         "role_brief_version": role_brief_version,
         "role_brief_seats": sorted(role_prompt_extras or {}),
         "base_prompt_hashes": base_prompt_hashes,
+        # Increment A: declaration-block format version used by this
+        # meeting's response/revision prompts. Absent from SPEC-era
+        # captures (pre-declaration prompts); present here marks the
+        # comparability break explicitly.
+        "declaration_prompt_version": decl_prompt_version,
     }
     t_path = store / f"meeting_{meeting_id}.transcript.json"
     a_path = store / f"meeting_{meeting_id}.draft_artifact.json"

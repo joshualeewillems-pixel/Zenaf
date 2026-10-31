@@ -530,6 +530,7 @@ from local_ai.build_room.declarations import (
 from local_ai.build_room.exposure import capture_exposure
 from local_ai.build_room.measurement import summarize_tool_round_usage
 from local_ai.build_room.record_completeness import check_record_completeness
+from local_ai.build_room.validation_gate import interim_validation_report
 from local_ai.build_room.tool_access import (
     ToolLoopContext,
     normalize_snapshot_path,
@@ -2688,6 +2689,18 @@ def run_multi_model_meeting(
     _drain_tool_usage()
     openings = _record_phase("opening", opening_results, frozen_ids=set())
 
+    # Increment G: interim validation reports, one per phase that
+    # produced claims. Report only, never repair: the gate validates
+    # to_dict() snapshots and the registry itself is untouched. A
+    # phase that produced nothing gets no report (a report over zero
+    # claims would be vacuously conformant); the final report at
+    # artifact build covers failed meetings instead.
+    interim_validation_reports: list[dict] = []
+    if openings:
+        interim_validation_reports.append(interim_validation_report(
+            [c.to_dict() for c in registry.claims],
+            meeting_phase="opening"))
+
     unresolved_objections: list[dict] = []
     # Stage 2: initialized here (not only in the deliberation branch)
     # so the record-completeness check below always has a value,
@@ -2748,6 +2761,10 @@ def run_multi_model_meeting(
         _drain_tool_log()
         _drain_tool_usage()
         responses = _record_phase("response", response_results, frozen_ids=frozen_ids)
+        if responses:
+            interim_validation_reports.append(interim_validation_report(
+                [c.to_dict() for c in registry.claims],
+                meeting_phase="response"))
 
         # -- Phase 3: optional revision. Invited = originators of
         # claims cited with an objection or evidence request.
@@ -2955,6 +2972,13 @@ def run_multi_model_meeting(
             registry, verified_challenges,
             unclassified_interactions=unclassified)
 
+    # Increment G: revision interim report (revision runs only when
+    # invited, so this fires only when revision claims exist).
+    if revision_claims:
+        interim_validation_reports.append(interim_validation_report(
+            [c.to_dict() for c in registry.claims],
+            meeting_phase="revision"))
+
     # Synthesis-removal stage 2 (2026-10-27): the four
     # record-completeness checks run over the record just built
     # (design §4). A check failure never raises out of the runner:
@@ -3064,6 +3088,7 @@ def run_multi_model_meeting(
         tool_access=tool_access_record,
         claim_standing=standing_table,
         payload_evidence=payload_evidence,
+        transjective_validation_reports=interim_validation_reports or None,
     )
     # Cap gates (§6): the meeting's budget record — estimated vs
     # verified expenditure, reservation states, and the pricing

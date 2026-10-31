@@ -775,8 +775,40 @@ _DECLARATION_INSTRUCTION = (
     "a claim that engages no specific earlier claim. A claim with no "
     "entry is recorded as undeclared, not as engaging nothing. Do not "
     "put declaration lines inside your prose claims; the block is the "
-    "only place declarations count."
+    "only place declarations count. Declarations that do not follow "
+    "this format will not count: prose about your targets is wasted "
+    "effort; only entries in this block are recorded."
 )
+
+
+def _reframe_prompt(failed_block: str, n_claims: int) -> str:
+    """Self-contained one-shot reframe prompt for a malformed block.
+
+    The reframe call carries no conversation history, so the prompt
+    restates the format, the kind vocabulary, and the failed block
+    verbatim. It asks ONLY for a re-emitted block: the model never
+    re-argues its claims here, and the engine never writes
+    declarations on its behalf — a successful reframe is still the
+    model's own emission, parsed by the same parser. The marker
+    phrase "could not be parsed" is what tests branch on; keep it.
+    """
+    return (
+        "Your declaration block below could not be parsed, so none of "
+        "its declarations counted. Re-emit ONLY the declaration block, "
+        f"in exactly this format, for your {n_claims} claims (entry 1 "
+        "for your first claim, and so on). Do not repeat your prose "
+        "claims and do not add text outside the block.\n\n"
+        "Your failed block:\n"
+        f"{failed_block}\n\n"
+        "Declarations (declaration-block-v1):\n"
+        "1: extends C12, challenges C18\n"
+        "2: none\n\n"
+        "Kinds: extends, corrects, challenges, integrates, endorses, "
+        "repeats, defends, requests-evidence, or other (with a note in "
+        "parentheses). Write 'none' for a claim that engages no "
+        "specific earlier claim."
+    )
+
 
 @dataclass
 class Claim:
@@ -838,14 +870,18 @@ class Claim:
     # declared) or [] for author-set declared-none; target_state /
     # target_state_set_by / uncertainty_reason are the contract §2
     # state; declaration_parse_failure records a malformed block.
-    # All six keys are omitted from to_dict() when None, so old
-    # claim shapes serialize byte-identically to before.
+    # declaration_reframed is True ONLY when the declarations came
+    # from a successful reframe generation (2026-10-31), never from
+    # a first-attempt block. All seven keys are omitted from
+    # to_dict() when None, so old claim shapes serialize
+    # byte-identically to before.
     declaration_raw: str | None = None
     declarations: list[dict] | None = None
     target_state: str | None = None
     target_state_set_by: str | None = None
     uncertainty_reason: str | None = None
     declaration_parse_failure: dict | None = None
+    declaration_reframed: bool | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -855,7 +891,7 @@ class Claim:
             d.pop("exposure_ref", None)
         for key in ("declaration_raw", "declarations", "target_state",
                     "target_state_set_by", "uncertainty_reason",
-                    "declaration_parse_failure"):
+                    "declaration_parse_failure", "declaration_reframed"):
             if d.get(key) is None:
                 d.pop(key, None)
         return d
@@ -1015,7 +1051,8 @@ class ClaimRegistry:
         ``declaration_outcomes[i]`` (Increment A, when given) carries
         that span's native declaration outcome: declaration_raw,
         declarations, target_state, target_state_set_by,
-        uncertainty_reason, declaration_parse_failure. Outcomes are
+        uncertainty_reason, declaration_parse_failure, and (on a
+        successful reframe only) declaration_reframed. Outcomes are
         aligned with spans in order; a shorter list leaves the tail
         claims without native outcomes (adapter defaults apply).
         System IDs are assigned sequentially; model-written numbers
@@ -1053,6 +1090,8 @@ class ClaimRegistry:
                 uncertainty_reason=(outcome or {}).get("uncertainty_reason"),
                 declaration_parse_failure=(
                     (outcome or {}).get("declaration_parse_failure")),
+                declaration_reframed=(
+                    (outcome or {}).get("declaration_reframed")),
             )
             self.claims.append(claim)
             registered.append(claim)
@@ -2368,6 +2407,130 @@ def run_multi_model_meeting(
         generation_settlements.append(record)
         return record
 
+    def _attempt_declaration_reframe(
+        phase: str, seat: Seat, failed_block: str, n_claims: int
+    ) -> dict[str, Any]:
+        """Exactly ONE reframe attempt for a malformed declaration block.
+
+        Trigger (call sites check this first): the initial parse
+        produced a structural failure record. This helper never
+        decides that itself — it only runs the attempt.
+
+        Budget guard, in order: the generation-count cap
+        (_budget_blocked) then the dollar gates (evaluate_admission
+        against remaining budget). Either refusal skips the attempt
+        and the original failure stands. On admission the reframe
+        reserves under its own ledger key (``f"{phase}:reframe"``)
+        and consumes one generation from ``attempts`` — it must
+        never clobber the original generation's reservation, which
+        settles only after registration. The reframe uses a plain
+        generate() call (or generate_with_usage where the seat
+        exposes it, mirroring _run_phase_parallel); it never uses
+        the tool loop, since it asks for a block only.
+
+        Returns {"attempted": bool, "outcomes": list | None,
+        "reframed_block": str | None}. outcomes is not None ONLY
+        when the reframe parsed cleanly (no failure record); then
+        the outcomes carry the reframed block as declaration_raw
+        and declaration_reframed=True. Every path appends a
+        transcript note naming phase + participant, so the attempt
+        is observable in the meeting record even when the original
+        failure stands. A twice-failed piece is never repaired,
+        never inferred, never counted as anything but a failure:
+        the original outcomes survive untouched.
+        """
+        nonlocal attempts
+        if seat.participant is None or not failed_block or n_claims <= 0:
+            return {"attempted": False, "outcomes": None,
+                    "reframed_block": None}
+        blocked = _budget_blocked()
+        if blocked is not None:
+            transcript.append(
+                "note", seat.name,
+                f"Declaration reframe ({phase}, {seat.name}): skipped — "
+                f"{blocked}; malformed block stands as failure.")
+            return {"attempted": False, "outcomes": None,
+                    "reframed_block": None}
+        prompt = _reframe_prompt(failed_block, n_claims)
+        decision = evaluate_admission(
+            model=seat.model, prompt=prompt, budget=budget,
+            remaining_budget=ledger.available_usd)
+        if not decision.admitted:
+            transcript.append(
+                "note", seat.name,
+                f"Declaration reframe ({phase}, {seat.name}): skipped — "
+                f"budget_exceeded: [gate={decision.code}] "
+                f"{decision.reason}; malformed block stands as failure.")
+            return {"attempted": False, "outcomes": None,
+                    "reframed_block": None}
+        reframe_phase = f"{phase}:reframe"
+        ledger.reserve((reframe_phase, seat.name),
+                       decision.estimated_cost_usd or 0.0)
+        attempts += 1
+        try:
+            participant = seat.participant
+            if hasattr(participant, "generate_with_usage"):
+                reframe_text, reframe_usage = participant.generate_with_usage(
+                    prompt, timeout=budget.timeout_seconds)
+            else:
+                reframe_text = participant.generate(
+                    prompt, timeout=budget.timeout_seconds)
+                reframe_usage = None
+            error = None
+        except Exception as exc:  # recorded, never raised; no retry
+            error = f"{type(exc).__name__}: {str(exc)[:200]}"
+            reframe_text, reframe_usage = None, None
+        settlement = _settle_generation(reframe_phase, seat.name, error,
+                                        reframe_usage)
+        _log_usage(store, meeting_id=meeting_id, participant=seat.name,
+                   provider=seat.provider_id,
+                   key_source=seat.participant.key_source,
+                   operation="build_room_r2_meeting",
+                   outcome="failed" if error is not None else "generated",
+                   phase=reframe_phase, cited_claim_ids=[],
+                   token_usage=(reframe_usage if reframe_usage is not None
+                                else "unavailable"),
+                   reservation_status=settlement["reservation_status"],
+                   estimated_cost_usd=settlement["estimated_cost_usd"],
+                   verified_cost_usd=settlement["verified_cost_usd"],
+                   output_capped=settlement["output_capped"])
+        if error is not None:
+            transcript.append(
+                "note", seat.name,
+                f"Declaration reframe ({phase}, {seat.name}): generation "
+                f"failed ({error}); malformed block stands as failure.")
+            return {"attempted": True, "outcomes": None,
+                    "reframed_block": None}
+        _, reframe_block = extract_declaration_block(reframe_text or "")
+        if reframe_block is None:
+            transcript.append(
+                "note", seat.name,
+                f"Declaration reframe ({phase}, {seat.name}): model "
+                f"returned no declaration block; malformed block stands "
+                f"as failure.")
+            return {"attempted": True, "outcomes": None,
+                    "reframed_block": None}
+        re_outcomes = parse_declaration_block(reframe_block, n_claims)
+        if any(o.get("declaration_parse_failure") is not None
+               for o in re_outcomes):
+            transcript.append(
+                "note", seat.name,
+                f"Declaration reframe ({phase}, {seat.name}): reframed "
+                f"block also failed to parse; malformed block stands as "
+                f"failure. Reframed block:\n{reframe_block}")
+            return {"attempted": True, "outcomes": None,
+                    "reframed_block": None}
+        for outcome in re_outcomes:
+            outcome["declaration_raw"] = reframe_block
+            outcome["declaration_reframed"] = True
+        transcript.append(
+            "note", seat.name,
+            f"Declaration reframe ({phase}, {seat.name}): reframed block "
+            f"parsed; declarations now come from the reframed block, "
+            f"authored by the model. Reframed block:\n{reframe_block}")
+        return {"attempted": True, "outcomes": re_outcomes,
+                "reframed_block": reframe_block}
+
     def _record_phase(phase: str, results: list[tuple[str, str | None, str | None, float, dict | None]],
                       frozen_ids: set[str] | None = None,
                       register: bool = True) -> list[tuple[str, str]]:
@@ -2461,6 +2624,22 @@ def run_multi_model_meeting(
                         declaration_block, len(analysis["spans"]))
                     for outcome in declaration_outcomes:
                         outcome["declaration_raw"] = declaration_block
+                    # Reframe-once (2026-10-31): a structural parse
+                    # failure (failure record present) earns exactly
+                    # one reframe attempt. Absent blocks, no-entry
+                    # claims, and out-of-vocabulary kinds (E4, parsed
+                    # fine) never trigger it. On success the
+                    # reframed outcomes replace the failed ones;
+                    # otherwise the original failure stands.
+                    if (declaration_outcomes
+                            and any(o.get("declaration_parse_failure")
+                                    is not None
+                                    for o in declaration_outcomes)):
+                        reframe = _attempt_declaration_reframe(
+                            phase, seat, declaration_block,
+                            len(analysis["spans"]))
+                        if reframe["outcomes"] is not None:
+                            declaration_outcomes = reframe["outcomes"]
                 registered = registry.register_spans(
                     name, phase, analysis["spans"],
                     exposure_ref=phase_exposures.get((phase, name)),
@@ -2879,6 +3058,17 @@ def run_multi_model_meeting(
                     rev_block, len(analysis["spans"]))
                 for outcome in rev_outcomes:
                     outcome["declaration_raw"] = rev_block
+                # Reframe-once (2026-10-31): same trigger and
+                # single-attempt rule as _record_phase; the original
+                # failure stands unless the reframe parses cleanly.
+                if (rev_outcomes
+                        and any(o.get("declaration_parse_failure")
+                                is not None for o in rev_outcomes)):
+                    reframe = _attempt_declaration_reframe(
+                        "revision", seat, rev_block,
+                        len(analysis["spans"]))
+                    if reframe["outcomes"] is not None:
+                        rev_outcomes = reframe["outcomes"]
                 registered = registry.register_spans(
                     name, "revision", analysis["spans"], links,
                     exposure_ref=phase_exposures.get(("revision", name)),

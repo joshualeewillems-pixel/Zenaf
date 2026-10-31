@@ -936,6 +936,7 @@ def build_transjective_record(
     proposals: list[dict] | None = None,
     events: list[dict] | None = None,
     close_report: dict | None = None,
+    disagreements: list[dict] | None = None,
 ) -> dict:
     """Build the ``transjective_record`` section from claim dicts.
 
@@ -957,7 +958,13 @@ def build_transjective_record(
     ``proposals`` / ``events`` / ``close_report`` carry a
     convener-close run's outputs into validation and the section;
     when ``close_report`` is None (the default) no new section keys
-    appear, so old callers see no change at all.
+    appear, so old callers see no change at all. Increment D:
+    ``disagreements`` carries convener-recorded disagreement pairs
+    into validation and the section; when None (the default) no
+    new section key appears, so old callers see no change at all.
+    Disagreements never affect derived standing (derived from
+    DispositionEvent history only) and this function issues no
+    events for them.
     """
     adapted = adapt_claims_to_contract_inputs(claims)
     record = {
@@ -965,7 +972,9 @@ def build_transjective_record(
         "declarations": adapted["declarations"],
         "proposals": list(proposals) if proposals is not None else [],
         "events": list(events) if events is not None else [],
-        "disagreements": [],
+        "disagreements": (
+            list(disagreements) if disagreements is not None else []
+        ),
         "corrections": [],
         "target_states": adapted["target_states"],
         "exposure": adapted["exposure"],
@@ -1021,4 +1030,11 @@ def build_transjective_record(
         section["proposals"] = list(proposals) if proposals is not None else []
         section["events"] = list(events) if events is not None else []
         section["close_report"] = dict(close_report)
+    if disagreements is not None:
+        # Increment D: convener-recorded disagreement pairs ride the
+        # close funnel under their own key; omitted when never
+        # supplied, so old callers see no new key. Disagreements
+        # never move derived standing (events only) and add no
+        # events of their own.
+        section["disagreements"] = list(disagreements)
     return section

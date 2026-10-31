@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { CurrentUser } from '../auth/session'
+import { MeetingHistoryView } from './MeetingHistoryView'
 import { MoneyballProgramRunView } from './MoneyballProgramRunView'
 import { validateMeetingRequestJson } from './validateMeetingRequest'
 
@@ -200,6 +201,7 @@ export function BuildCouncilSubmitView({ user, onBack }: Props) {
         </div>
       )}
       <MoneyballProgramRunView user={user} />
+      <MeetingHistoryView />
     </div>
   )
 }

@@ -775,3 +775,226 @@ def moneyball_program_captures(
     }
 
 
+# ---------------------------------------------------------------- Meeting
+# history retrieval (read-only retrieval of stored meeting records).
+#
+# The gap this closes (mapping audit, 2026-10-31): every meeting —
+# standalone or program — writes meeting_<id>.transcript.json plus
+# meeting_<id>.draft_artifact.json to the store dir, but only program
+# meetings had a read path, and that path serves the capture record,
+# never the artifact. A standalone meeting's discussion was reachable
+# only through the transient POST response; refresh or navigation
+# lost it even though the files were still on disk.
+#
+# These endpoints serve from the store dir (audit candidate C6), the
+# one complete source: standalone meetings have no ledger, and
+# program meetings' files live here too. They deliberately do NOT
+# touch /program/captures (audit candidate C4, excluded): that
+# endpoint's ledger-only contract and default shape are unchanged.
+#
+# Boundaries, all load-bearing:
+# - Owner-only via the SAME gate as every other build-room route
+#   (get_current_owner_user, 403 "Build-room meetings are owner-only").
+#   Stored transcripts/artifacts carry the same audience as program
+#   captures (owner only); serving them here introduces no new
+#   audience. The full artifact is served verbatim, including tool
+#   logs, provenance, and generation timestamps — that is the
+#   authorized C2 shape, not a subset.
+# - Read-only by construction: GET only, no writes, no migration, no
+#   backfill, no stored-file mutation. Calling a read twice returns
+#   the same bytes and changes nothing on disk.
+# - Failure is explicit, never partial: an unknown meeting id is 404
+#   naming the id; a missing store dir is an empty list, not an
+#   error (no ledger is required to exist); a present-but-broken
+#   artifact file appears in the list WITH an error field, never
+#   silently omitted; a broken file requested directly is 500 naming
+#   the meeting. No server paths leak into any response.
+# - History list ordering is file mtime, most recent first: no
+#   timestamp is stored in the artifact, and adding a stored index
+#   would be a write-path addition, out of scope for this read-only
+#   step. mtime is implicit and documented as such, not presented
+#   as a recorded meeting time.
+# - Paging bounds the list (audit: enumeration cost at scale was
+#   untested): default limit 50, max 200, offset 0; negatives are
+#   400. Offset beyond the total is an empty page with the total,
+#   not an error.
+
+
+def _meeting_file_path_for(store: Path, meeting_id: str, stem: str) -> Path:
+    """The runner's filename for one client-supplied meeting id.
+
+    Unlike _capture_path_for, whose ids come from the trusted ledger
+    (separator = ledger corruption = 500), these ids come from the
+    client — a separator is a client error (400), never a path
+    traversal. The filename is DERIVED from the id under the store
+    dir; no client-supplied path is ever opened.
+    """
+    if not meeting_id or "/" in meeting_id or "\\" in meeting_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid meeting_id: {meeting_id!r}",
+        )
+    return store / f"meeting_{meeting_id}.{stem}.json"
+
+
+def _read_meeting_file(path: Path, meeting_id: str, kind: str) -> dict:
+    """One meeting's parsed stored file, or an explicit failure.
+
+    Missing means the meeting is unknown here (404 naming the id) —
+    there is no ledger promising the file exists, unlike the captures
+    endpoint where a missing capture is a 500. Unreadable, malformed,
+    or non-object content is a 500 naming the meeting.
+    """
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"build-room meeting not found: {meeting_id}",
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"build-room meeting {kind} unreadable for meeting "
+                f"{meeting_id}: {exc}"
+            ),
+        )
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"build-room meeting {kind} is not a JSON object for "
+                f"meeting {meeting_id}"
+            ),
+        )
+    return data
+
+
+def _history_entry_for(store: Path, meeting_id: str) -> dict:
+    """One history-list entry for a store-enumerated meeting id.
+
+    Artifact fields (work item, question, ok, claim count) come from
+    the stored artifact when it parses; a broken artifact is reported
+    WITH an error field, never silently dropped. Presence flags are
+    file-existence checks only — no file contents leak through them.
+    """
+    artifact_path = store / f"meeting_{meeting_id}.draft_artifact.json"
+    transcript_path = store / f"meeting_{meeting_id}.transcript.json"
+    capture_path = store / f"meeting_{meeting_id}.comparison_capture.json"
+    entry: dict = {
+        "meeting_id": meeting_id,
+        "work_item": None,
+        "question": None,
+        "ok": None,
+        "claim_count": None,
+        "has_transcript": transcript_path.exists(),
+        "has_artifact": artifact_path.exists(),
+        "has_capture": capture_path.exists(),
+    }
+    if artifact_path.exists():
+        try:
+            artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
+        except (ValueError, OSError) as exc:
+            entry["error"] = f"artifact unreadable: {exc}"
+            return entry
+        if not isinstance(artifact, dict):
+            entry["error"] = "artifact is not a JSON object"
+            return entry
+        entry["work_item"] = artifact.get("work_item")
+        entry["question"] = artifact.get("question")
+        entry["ok"] = artifact.get("ok")
+        registry = artifact.get("claim_registry")
+        entry["claim_count"] = len(registry) if isinstance(registry, list) else None
+    return entry
+
+
+@router.get("/meetings")
+def meeting_history(
+    offset: int = 0,
+    limit: int = 50,
+    current_user: dict = Depends(get_current_owner_user),
+):
+    """List stored build-council meetings, most recent first.
+
+    Owner-only, read-only. Enumerates the union of stored artifact
+    and transcript files in the store dir, so standalone AND program
+    meetings appear (program meetings additionally carry a capture
+    file, flagged by has_capture). Ordering is file mtime, most
+    recent first (see the section comment: no meeting timestamp is
+    stored). An empty store is an empty list, not an error. Paging
+    uses ?offset/&limit; limit is clamped to 200, negatives are 400,
+    and offset beyond the total is an empty page with the total.
+    """
+    if offset < 0:
+        raise HTTPException(
+            status_code=400, detail=f"offset must not be negative: {offset}",
+        )
+    if limit < 0:
+        raise HTTPException(
+            status_code=400, detail=f"limit must not be negative: {limit}",
+        )
+    limit = min(limit, 200)
+    store = get_build_room_store_dir()
+    ids: dict[str, float] = {}
+    for pattern, suffix in (
+        ("meeting_*.draft_artifact.json", ".draft_artifact.json"),
+        ("meeting_*.transcript.json", ".transcript.json"),
+    ):
+        for path in store.glob(pattern):
+            meeting_id = path.name[len("meeting_"):-len(suffix)]
+            if not meeting_id:
+                continue
+            try:
+                mtime = path.stat().st_mtime_ns
+            except OSError:
+                mtime = 0
+            if meeting_id not in ids or mtime > ids[meeting_id]:
+                ids[meeting_id] = mtime
+    ordered = sorted(ids, key=lambda mid: ids[mid], reverse=True)
+    total = len(ordered)
+    page = ordered[offset:offset + limit]
+    return {
+        "meetings": [_history_entry_for(store, mid) for mid in page],
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "order": "mtime_desc",
+    }
+
+
+@router.get("/meetings/{meeting_id}/transcript")
+def meeting_transcript(
+    meeting_id: str, current_user: dict = Depends(get_current_owner_user)
+):
+    """Return one stored meeting transcript, verbatim.
+
+    Owner-only, read-only. Serves the stored
+    meeting_<id>.transcript.json contents exactly as written — full
+    entries, verbatim contribution texts. Unknown id is 404 naming
+    the id; a broken file is 500 naming the meeting.
+    """
+    store = get_build_room_store_dir()
+    path = _meeting_file_path_for(store, meeting_id, "transcript")
+    return _read_meeting_file(path, meeting_id, "transcript")
+
+
+@router.get("/meetings/{meeting_id}/artifact")
+def meeting_artifact(
+    meeting_id: str, current_user: dict = Depends(get_current_owner_user)
+):
+    """Return one stored meeting draft artifact, verbatim.
+
+    Owner-only, read-only. Serves the stored
+    meeting_<id>.draft_artifact.json contents exactly as written,
+    including its transjective sections where present (final
+    transjective_record, interim transjective_validation_reports,
+    standing_report, unresolved_objections, tool_access log,
+    provenance, generation timestamps). Unknown id is 404 naming
+    the id; a broken file is 500 naming the meeting.
+    """
+    store = get_build_room_store_dir()
+    path = _meeting_file_path_for(store, meeting_id, "draft_artifact")
+    return _read_meeting_file(path, meeting_id, "artifact")
+
+

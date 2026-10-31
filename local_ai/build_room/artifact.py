@@ -15,6 +15,7 @@ from local_ai.build_room.claim_standing import (
     render_standing_table,
 )
 from local_ai.build_room.participants import OpenAIParticipant, Seat
+from local_ai.build_room.transjective_record import build_transjective_record
 
 AUTHORIZATION_TEXT = (
     "DRAFT EXPERIMENTAL ARTIFACT — RECOMMENDS ONLY. "
@@ -88,6 +89,7 @@ def build_draft_artifact_r2(
     record_completeness: dict[str, Any] | None = None,
     tool_access: dict[str, Any] | None = None,
     claim_standing: dict[str, Any] | None = None,
+    transjective_record: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict (synthesis-less).
 
@@ -136,6 +138,16 @@ def build_draft_artifact_r2(
             [c.to_dict() for c in registry.claims], interactions or []
         )
     )
+    # Transjective record (accepted schema contract, 2026-10-30):
+    # adapter-derived contract validation + derived contract standing
+    # over the same registry. Computed at build time like
+    # claim_standing, under its OWN key — it never overwrites
+    # claim_standing, and the registry itself is untouched.
+    transjective_section = (
+        transjective_record
+        if transjective_record is not None
+        else build_transjective_record([c.to_dict() for c in registry.claims])
+    )
     return {
         "status": "DRAFT_EXPERIMENTAL",
         "is_review_item": False,
@@ -157,6 +169,11 @@ def build_draft_artifact_r2(
         # identical; direct callers (replays) get a fresh computation.
         # R1 artifacts (no registry) do not carry it.
         "claim_standing": standing_section,
+        # Transjective record (accepted schema contract, 2026-10-30):
+        # adapter-derived validation + derived contract standing, under
+        # its own key, computed at build time. Old captures are
+        # expected to be non-conformant; that is correct behavior.
+        "transjective_record": transjective_section,
         # Registry standing stage 2: the reporting contract's
         # standing table — deterministic rendering of the same
         # section, one three-dimension headline per claim. Standing

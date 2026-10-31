@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from api.routes.auth_routes import get_current_user
 from local_ai.build_room import moneyball_program
+from local_ai.build_room.transjective_record import build_transjective_record
 from local_ai.build_room.meeting import (
     EvidencePacket,
     run_multi_model_meeting,
@@ -580,11 +581,69 @@ def _read_meeting_capture(capture_path: Path, meeting_id: str) -> dict:
     return data
 
 
+# Increment F (read-path only): keys the route forwards into
+# build_transjective_record when the STORED capture actually carries
+# them. The capture writer never emits these keys today (close /
+# correction / payload outputs live in the draft artifact, not the
+# comparison capture), so forwarding is a no-op for every capture the
+# runner produces — but a capture that does carry them (a future
+# writer, a hand-built fixture) gets them honored instead of silently
+# dropped. Nothing is ever synthesized: absent keys stay absent.
+_TRANSJECTIVE_FORWARD_KEYS = (
+    "proposals",
+    "events",
+    "close_report",
+    "disagreements",
+    "corrections",
+    "payload_evidence",
+)
+
+
+def _transjective_section_for(capture: dict, meeting_id: str) -> dict:
+    """Compute the transjective_record section for one stored capture.
+
+    Read-only: computed from the stored capture's FULL claim_registry
+    (never from a paged slice) and never written back — the stored
+    capture bytes are untouched. Native close/correction/disagreement/
+    payload keys ride through only when the stored capture actually
+    carries them (see _TRANSJECTIVE_FORWARD_KEYS); nothing is
+    synthesized, repaired, or upgraded. Failure is explicit, per this
+    route's doctrine: a missing/non-list registry or a builder failure
+    is a 500 naming the meeting, never a partial entry.
+    """
+    registry = capture.get("claim_registry")
+    if not isinstance(registry, list):
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "moneyball program capture has no claim_registry "
+                f"list for meeting {meeting_id}"
+            ),
+        )
+    forwarded = {
+        key: capture[key] for key in _TRANSJECTIVE_FORWARD_KEYS
+        if key in capture
+    }
+    try:
+        return build_transjective_record(registry, **forwarded)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "moneyball program transjective record failed for "
+                f"meeting {meeting_id}: {exc}"
+            ),
+        )
+
+
 @router.get("/program/captures")
 def moneyball_program_captures(
     meeting_id: str | None = None,
     claim_offset: int | None = None,
     claim_limit: int | None = None,
+    transjective: int = 0,
     current_user: dict = Depends(get_current_owner_user),
 ):
     """Return this program's meetings with their capture records.
@@ -600,6 +659,18 @@ def moneyball_program_captures(
     claim_limit (effective values after defaulting). A missing
     ledger is 404; any missing or broken capture fails the whole
     request (500) rather than returning partial data.
+
+    Increment F: with ?transjective=1, each entry additionally
+    carries "transjective_record", computed on read from that
+    meeting's FULL claim_registry (never from a paged slice) via
+    build_transjective_record. The default response (flag absent
+    or 0) is byte-identical to before: no new keys anywhere.
+    The section is computed, never written back — stored captures
+    are never rewritten — and it advances nothing by itself: old
+    (adapter) captures surface with their non-conformance reports
+    intact, and native close/correction/disagreement/payload keys
+    appear only when the stored capture actually carries them.
+    Any other transjective value is a 400.
     """
     paging = claim_offset is not None or claim_limit is not None
     if paging and meeting_id is None:
@@ -619,6 +690,11 @@ def moneyball_program_captures(
         raise HTTPException(
             status_code=400,
             detail=f"claim_limit must not be negative: {claim_limit}",
+        )
+    if transjective not in (0, 1):
+        raise HTTPException(
+            status_code=400,
+            detail=f"transjective must be 0 or 1: {transjective}",
         )
     store = get_build_room_store_dir()
     ledger = _read_program_ledger(_program_ledger_path(store))
@@ -681,6 +757,13 @@ def moneyball_program_captures(
             entry["claim_total"] = total
             entry["claim_offset"] = offset
             entry["claim_limit"] = limit
+        if transjective == 1:
+            # Computed from the FULL capture, never the paged slice:
+            # a section built from a page would report missing claims
+            # as validation failures of the meeting itself.
+            entry["transjective_record"] = _transjective_section_for(
+                capture, selected_id
+            )
         meetings.append(entry)
     return {
         "cap_usd": ledger.get("cap_usd"),

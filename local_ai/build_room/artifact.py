@@ -15,7 +15,14 @@ from local_ai.build_room.claim_standing import (
     render_standing_table,
 )
 from local_ai.build_room.participants import OpenAIParticipant, Seat
-from local_ai.build_room.transjective_record import build_transjective_record
+from local_ai.build_room.dispositions import (
+    convener_close,
+    extract_proposals,
+)
+from local_ai.build_room.transjective_record import (
+    adapt_claims_to_contract_inputs,
+    build_transjective_record,
+)
 
 AUTHORIZATION_TEXT = (
     "DRAFT EXPERIMENTAL ARTIFACT — RECOMMENDS ONLY. "
@@ -144,13 +151,40 @@ def build_draft_artifact_r2(
     # over the same registry. Computed at build time like
     # claim_standing, under its OWN key — it never overwrites
     # claim_standing, and the registry itself is untouched.
-    transjective_section = (
-        transjective_record
-        if transjective_record is not None
-        else build_transjective_record(
-            [c.to_dict() for c in registry.claims],
-            payload_evidence=payload_evidence)
-    )
+    # Increment C: deterministic convener-close runs here, at artifact
+    # build — the single funnel for live meetings and replays. It
+    # extracts proposals + challenge candidates from the registry,
+    # with NO structured acceptance input (none exists in live runs
+    # yet; prose is never parsed into acceptance) and NO meeting-rule
+    # registry (none exists yet). Consequence, by design: close from
+    # the runner issues contested-standing events where the §4.3 bar
+    # holds, and leaves every other proposal pending with a refusal
+    # reason. Proposal-driven events await an acceptance input path
+    # (convener tooling or a future increment), which C does not
+    # invent. Close results ride into the section under their own
+    # keys; a pre-supplied transjective_record bypasses close (the
+    # caller owns it then).
+    if transjective_record is not None:
+        transjective_section = transjective_record
+    else:
+        _close_claims = [c.to_dict() for c in registry.claims]
+        _adapted = adapt_claims_to_contract_inputs(_close_claims)
+        _props, _chals = extract_proposals(
+            _close_claims, _adapted["declarations"])
+        _close = convener_close(
+            _close_claims, _props, [], _chals,
+            meeting_kind="build_council", meeting_rules=[])
+        transjective_section = build_transjective_record(
+            _close_claims,
+            payload_evidence=payload_evidence,
+            proposals=_close["proposals"],
+            events=_close["events"],
+            close_report={
+                "issued_event_ids": [e["event_id"]
+                                     for e in _close["events"]],
+                "refusals": _close["refusals"],
+                "unmatched_acceptances": _close["unmatched_acceptances"],
+            })
     return {
         "status": "DRAFT_EXPERIMENTAL",
         "is_review_item": False,

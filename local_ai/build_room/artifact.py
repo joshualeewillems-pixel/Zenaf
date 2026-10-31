@@ -98,6 +98,7 @@ def build_draft_artifact_r2(
     claim_standing: dict[str, Any] | None = None,
     transjective_record: dict[str, Any] | None = None,
     payload_evidence: dict[str, str] | None = None,
+    disagreements: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict (synthesis-less).
 
@@ -164,6 +165,14 @@ def build_draft_artifact_r2(
     # invent. Close results ride into the section under their own
     # keys; a pre-supplied transjective_record bypasses close (the
     # caller owns it then).
+    # Increment D: the same close funnel accepts convener-recorded
+    # disagreement pairs (explicit input only — no producer exists
+    # in live runs yet, and no model-emitted incompatibility parser
+    # is built in v1, deliberately). Pairs ride into the section
+    # under their own key when supplied; when None, no new key
+    # appears. Disagreements never move standing and add no events:
+    # any §4.3 contested-standing event comes from C's challenge
+    # machinery above, never from a disagreement record itself.
     if transjective_record is not None:
         transjective_section = transjective_record
     else:
@@ -184,7 +193,8 @@ def build_draft_artifact_r2(
                                      for e in _close["events"]],
                 "refusals": _close["refusals"],
                 "unmatched_acceptances": _close["unmatched_acceptances"],
-            })
+            },
+            disagreements=disagreements)
     return {
         "status": "DRAFT_EXPERIMENTAL",
         "is_review_item": False,

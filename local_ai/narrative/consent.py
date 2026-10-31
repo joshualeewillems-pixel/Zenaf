@@ -34,6 +34,17 @@ logger = logging.getLogger(__name__)
 #: permissions-v1 flag key for Narrative Steward derivation.
 STEWARD_PERMISSION_KEY = "steward_derivation"
 
+#: permissions-v1 flag key for Narrative Steward cross-branch
+#: coordination (Phase 1, addendum §4.5 / §7(c)). Distinct from
+#: derivation by design: a visitor may want patterns recognized
+#: within individual conversations without distributing those
+#: observations to other branches. Default ``False`` like the
+#: derivation flag; missing, malformed, or unavailable state fails
+#: closed. This flag never expands the derivation flag's meaning,
+#: and neither flag overrides aspiration permissions or evidence
+#: restrictions — those are enforced by their own paths, not here.
+STEWARD_COORDINATION_KEY = "steward_coordination"
+
 
 def steward_consent_allowed(
     user_id: str | None,
@@ -77,3 +88,82 @@ def steward_consent_allowed(
             user_id,
         )
         return False
+
+
+def _flag_allowed(
+    user_id: str | None,
+    flag_key: str,
+    *,
+    connection=None,
+) -> bool:
+    """Shared fail-closed flag read (derivation + coordination).
+
+    Same discipline as ``steward_consent_allowed``: a direct
+    read-only SELECT on the permissions row, never the settings
+    helper (which INSERTs). Any failure, missing row, or non-``True``
+    value resolves to ``False``.
+    """
+    if not user_id:
+        return False
+    try:
+        if connection is None:
+            from local_ai.vision_execution.storage import get_connection
+
+            connection = get_connection()
+        row = connection.execute(
+            "SELECT permissions_json FROM user_permissions_settings "
+            "WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        try:
+            parsed = json.loads(row[0] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return False
+        if not isinstance(parsed, dict):
+            return False
+        return parsed.get(flag_key) is True
+    except Exception:
+        logger.exception(
+            "narrative: steward consent check failed for user %r; "
+            "failing closed",
+            user_id,
+        )
+        return False
+
+
+def steward_coordination_allowed(
+    user_id: str | None,
+    *,
+    connection=None,
+) -> bool:
+    """Does this visitor hold the coordination flag?
+
+    Default-off ``steward_coordination`` in ``permissions_json``.
+    Fail-closed exactly like the derivation flag. This flag
+    authorizes eligible narrative context to cross branch
+    boundaries; it does not authorize derivation, and derivation
+    does not authorize coordination.
+    """
+    return _flag_allowed(user_id, STEWARD_COORDINATION_KEY, connection=connection)
+
+
+def coordination_allowed(
+    user_id: str | None,
+    *,
+    connection=None,
+) -> bool:
+    """Are BOTH coordination prerequisites satisfied?
+
+    Derived cross-branch coordination requires the derivation flag
+    AND the coordination flag, alongside relevance assessment
+    (which this function does not perform — see relevance.py and
+    coordination.py). Either flag off, missing, malformed, or
+    unreadable closes coordination. The check is re-run at every
+    context preparation; prior eligibility never permanently
+    authorizes subsequent disclosure.
+    """
+    return steward_consent_allowed(
+        user_id, connection=connection
+    ) and steward_coordination_allowed(user_id, connection=connection)

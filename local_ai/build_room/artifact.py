@@ -90,6 +90,7 @@ def build_draft_artifact_r2(
     tool_access: dict[str, Any] | None = None,
     claim_standing: dict[str, Any] | None = None,
     transjective_record: dict[str, Any] | None = None,
+    payload_evidence: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict (synthesis-less).
 
@@ -146,7 +147,9 @@ def build_draft_artifact_r2(
     transjective_section = (
         transjective_record
         if transjective_record is not None
-        else build_transjective_record([c.to_dict() for c in registry.claims])
+        else build_transjective_record(
+            [c.to_dict() for c in registry.claims],
+            payload_evidence=payload_evidence)
     )
     return {
         "status": "DRAFT_EXPERIMENTAL",

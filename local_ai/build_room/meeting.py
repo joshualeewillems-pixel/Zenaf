@@ -522,6 +522,7 @@ def run_single_model_meeting(
 from local_ai.build_room.artifact import build_draft_artifact_r2
 from local_ai.build_room.citation_validation import validate_tool_citations
 from local_ai.build_room.claim_standing import compute_claim_standing
+from local_ai.build_room.exposure import capture_exposure
 from local_ai.build_room.measurement import summarize_tool_round_usage
 from local_ai.build_room.record_completeness import check_record_completeness
 from local_ai.build_room.tool_access import (
@@ -792,9 +793,19 @@ class Claim:
     disposition_by: str | None = None
     epistemic_assessment: str = "unresolved"
     assessment_sources: list[str] = field(default_factory=list)
+    # Increment B (accepted schema contract §5): exposure reference
+    # for the generation this claim came from (payload hash + window
+    # + visible ids/spans), or None when never recorded. Old-style
+    # claims carry no exposure_ref key in to_dict() at all.
+    exposure_ref: dict | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        d = asdict(self)
+        # Backward compatibility: omit the key when unrecorded, so
+        # old claim shapes serialize byte-identically to before.
+        if d.get("exposure_ref") is None:
+            d.pop("exposure_ref", None)
+        return d
 
 
 @dataclass
@@ -917,11 +928,14 @@ class ClaimRegistry:
                  relationship: str | None = None,
                  relates_to: list[str] | None = None,
                  supersedes: str | None = None,
-                 withdraws: str | None = None) -> list[Claim]:
+                 withdraws: str | None = None,
+                 exposure_ref: dict | None = None) -> list[Claim]:
         """Parse numbered claims structurally and append them.
 
         Kept for openings/responses (no links). Revision claims use
         :meth:`register_spans` for per-span links (C3).
+        ``exposure_ref`` (Increment B) is attached unchanged to every
+        claim registered from this contribution, or None.
         """
         spans = _parse_claim_spans(text)
         links = [{
@@ -931,11 +945,13 @@ class ClaimRegistry:
             "supersedes": supersedes,
             "withdraws": withdraws,
         } for _ in spans]
-        return self.register_spans(participant, phase, spans, links)
+        return self.register_spans(participant, phase, spans, links,
+                                   exposure_ref=exposure_ref)
 
     def register_spans(self, participant: str, phase: str,
                        spans: list[ClaimSpan],
-                       links: list[dict[str, Any]] | None = None) -> list[Claim]:
+                       links: list[dict[str, Any]] | None = None,
+                       exposure_ref: dict | None = None) -> list[Claim]:
         """Append pre-parsed spans with per-span links (C3).
 
         ``links[i]`` (when given) carries that span's relationship,
@@ -966,6 +982,7 @@ class ClaimRegistry:
                 relationship_target=link.get("relationship_target"),
                 relationship_targets=list(link.get("relationship_targets") or []),
                 reclassified_status=link.get("reclassified_status"),
+                exposure_ref=exposure_ref,
             )
             self.claims.append(claim)
             registered.append(claim)
@@ -2013,6 +2030,13 @@ def run_multi_model_meeting(
     invited_generations: list[dict[str, str]] = []
     generation_outcomes: list[dict[str, Any]] = []
     attempts = 0
+    # Increment B (accepted schema contract §5): exposure captured at
+    # send time, per admitted job, keyed (phase, participant name).
+    # payload_evidence maps payload hashes to the exact payload text
+    # (deduped: one copy per distinct prompt); it travels with the
+    # artifact so payload references stay retrievable.
+    phase_exposures: dict[tuple[str, str], dict] = {}
+    payload_evidence: dict[str, str] = {}
     # Cap gates (§4): the per-meeting dollar ledger. Reservations
     # are made in _generate_jobs (before dispatch, single-threaded,
     # hence batch-atomic); settlement happens in _record_phase and
@@ -2337,7 +2361,8 @@ def run_multi_model_meeting(
             registered: list[Claim] = []
             if register:
                 registered = registry.register_spans(
-                    name, phase, analysis["spans"])
+                    name, phase, analysis["spans"],
+                    exposure_ref=phase_exposures.get((phase, name)))
                 if registry.last_disregarded_model_numbers:
                     transcript.append(
                         "note", name,
@@ -2407,6 +2432,7 @@ def run_multi_model_meeting(
     def _generate_jobs(phase: str, prompt: str,
                        members: list[Seat],
                        prompt_extras: dict[str, str] | None = None,
+                       registry_block: str = "",
                        ) -> list[tuple[str, Any, str]]:
         """Build parallel jobs, enforcing the cap gates + generation budget.
 
@@ -2515,6 +2541,25 @@ def run_multi_model_meeting(
         for seat, full_prompt, decision in candidates:
             ledger.reserve((phase, seat.name), decision.estimated_cost_usd or 0.0)
             attempts += 1
+            # Increment B: capture exposure at send time from the
+            # finalized provider-bound prompt (base + this seat's
+            # extras) and the registry block inserted into it. The
+            # engine never truncates today (over-window generations
+            # are refused, never silently truncated), so the
+            # transformation list is empty by construction here; the
+            # record shape carries transformations when they occur.
+            # Refused jobs never reach this loop, so no exposure is
+            # recorded for generations that never happened.
+            window_id = (
+                f"declared-window:{seat.model}:{decision.window}"
+                if decision.window is not None else "unspecified"
+            )
+            exposure = capture_exposure(
+                full_prompt, registry_block, window_id=window_id,
+                transformations=[],
+            )
+            phase_exposures[(phase, seat.name)] = exposure
+            payload_evidence[exposure["payload_hash"]] = full_prompt
             jobs.append((seat.name, seat.participant, full_prompt))
         return jobs
 
@@ -2576,10 +2621,11 @@ def run_multi_model_meeting(
             completed=len(openings), allocated=len(present),
             reserved={"Revision slots": "up to 5"})
         transcript.append("note", "Reynard (convener)", response_telemetry)
+        response_registry_block = registry.render()
         response_prompt = (
             packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
             + "\n\n" + _CONTRIBUTION_DISCIPLINE
-            + "\n\n" + registry.render()
+            + "\n\n" + response_registry_block
             + "\n\n" + _RESPONSE_INSTRUCTION
             + "\n\n" + _LANGUAGE_LINE
             + "\n\n" + response_telemetry
@@ -2591,7 +2637,8 @@ def run_multi_model_meeting(
                     "note", seat.name,
                     f"{seat.name} did not respond: absent from openings.")
         response_jobs = _generate_jobs("response", response_prompt, present,
-                                       prompt_extras=prompt_extras)
+                                       prompt_extras=prompt_extras,
+                                       registry_block=response_registry_block)
         response_results = _run_phase_parallel(
             response_jobs, budget,
             tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
@@ -2622,10 +2669,11 @@ def run_multi_model_meeting(
                 completed=len(openings) + len(responses), allocated=len(invited),
                 reserved={})
             transcript.append("note", "Reynard (convener)", revision_telemetry)
+            revision_registry_block = registry.render()
             revision_prompt = (
                 packet.render_prompt() + "\n\n" + _CLAIM_NUMBERING_INSTRUCTION
                 + "\n\n" + _CONTRIBUTION_DISCIPLINE
-                + "\n\n" + registry.render()
+                + "\n\n" + revision_registry_block
                 + "\n\n" + _FOLLOWUP_INSTRUCTION
                 + "\n\n" + _LANGUAGE_LINE
                 + "\n\n" + revision_telemetry
@@ -2634,7 +2682,8 @@ def run_multi_model_meeting(
             revision_frozen = registry.ids()
             revision_jobs = _generate_jobs(
                 "revision", revision_prompt, invited,
-                prompt_extras=prompt_extras)
+                prompt_extras=prompt_extras,
+                registry_block=revision_registry_block)
             revision_results = _run_phase_parallel(
                 revision_jobs, budget,
                 tool_contexts=tool_contexts if tool_enabled_for_meeting else None,
@@ -2703,7 +2752,8 @@ def run_multi_model_meeting(
                         "recorded as unstated.")
                 links = _revision_links(analysis, name, registry)
                 registered = registry.register_spans(
-                    name, "revision", analysis["spans"], links)
+                    name, "revision", analysis["spans"], links,
+                    exposure_ref=phase_exposures.get(("revision", name)))
                 # Authorial disposition (C4): only the author's own
                 # revision changes the original claim, first wins.
                 _apply_dispositions(registry, registered, links)
@@ -2901,6 +2951,7 @@ def run_multi_model_meeting(
         record_completeness=record_completeness,
         tool_access=tool_access_record,
         claim_standing=standing_table,
+        payload_evidence=payload_evidence,
     )
     # Cap gates (§6): the meeting's budget record — estimated vs
     # verified expenditure, reservation states, and the pricing

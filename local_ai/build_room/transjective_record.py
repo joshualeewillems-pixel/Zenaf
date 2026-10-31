@@ -130,9 +130,13 @@ def adapt_claims_to_contract_inputs(claims: list[dict]) -> dict:
     captures, which never recorded target-states); openings with
     declarations -> populated, without -> unknown with reason. The
     adapter never produces declared-none: it cannot attest author
-    intent. Exposure: old captures carry no exposure_ref, so every
-    claim gets evidence ``absent`` (E12). Input claim dicts are never
-    mutated (copies are not even needed: nothing here writes to them).
+    intent. Exposure: claims carrying a native ``exposure_ref``
+    (Increment B) use it — ref from payload_ref/payload_hash,
+    evidence passed through (unknown evidence values are normalized
+    to ``absent``, fail-closed, so a malformed native record errors
+    E12 rather than passing silently); claims without one get
+    evidence ``absent`` (E12). Input claim dicts are never mutated
+    (copies are not even needed: nothing here writes to them).
     """
     declarations: list[dict] = []
     legacy_dispositions: list[dict] = []
@@ -188,11 +192,25 @@ def adapt_claims_to_contract_inputs(claims: list[dict]) -> dict:
             )
 
     target_states = compute_target_states(claims, declarations)
-    exposure = {
-        claim.get("id", ""): {"ref": None, "evidence": "absent", "visible_ids": None}
-        for claim in claims
-        if claim.get("id", "")
-    }
+    exposure: dict[str, dict] = {}
+    for claim in claims:
+        cid = claim.get("id", "")
+        if not cid:
+            continue
+        ref = claim.get("exposure_ref")
+        if isinstance(ref, dict):
+            evidence = ref.get("evidence")
+            if evidence not in ("available", "temporarily_unavailable",
+                                "absent", "present"):
+                evidence = "absent"
+            exposure[cid] = {
+                "ref": ref.get("payload_ref") or ref.get("payload_hash"),
+                "evidence": evidence,
+                "visible_ids": ref.get("visible_ids"),
+            }
+        else:
+            exposure[cid] = {"ref": None, "evidence": "absent",
+                             "visible_ids": None}
     return {
         "claims": claims,
         "declarations": declarations,
@@ -865,6 +883,7 @@ def build_transjective_record(
     validation_phase: str = "final",
     meeting_kind: str = "build_council",
     meeting_rules: list[str] | None = None,
+    payload_evidence: dict[str, str] | None = None,
 ) -> dict:
     """Build the ``transjective_record`` section from claim dicts.
 
@@ -872,12 +891,17 @@ def build_transjective_record(
     dispositions, and exposure are computed from the existing claim
     fields (see :func:`adapt_claims_to_contract_inputs`); the input
     claims are never mutated and no stored capture is rewritten.
-    Contract standing is derived from the (empty, for old captures)
-    event history — old captures carry no DispositionEvents, so every
-    claim derives ``open``; proposals, labels, and legacy dispositions
-    never move it. Old captures are expected to be non-conformant
-    (E5 missing target-states, E7 dispositions without authorizers,
-    E12 missing exposure_refs) — that is correct behavior, not a bug.
+    Claims carrying a native ``exposure_ref`` (Increment B) feed
+    validation through the adapter instead of defaulting to absent
+    evidence. Contract standing is derived from the (empty, for old
+    captures) event history — old captures carry no DispositionEvents,
+    so every claim derives ``open``; proposals, labels, and legacy
+    dispositions never move it. Old captures are expected to be
+    non-conformant (E5 missing target-states, E7 dispositions without
+    authorizers, E12 missing exposure_refs) — that is correct
+    behavior, not a bug. ``payload_evidence`` (hash -> exact payload
+    text, Increment B) is included in the section only when provided
+    and non-empty, so old callers see no new key.
     """
     adapted = adapt_claims_to_contract_inputs(claims)
     record = {
@@ -897,7 +921,7 @@ def build_transjective_record(
         meeting_kind=meeting_kind,
         meeting_rules=meeting_rules,
     )
-    return {
+    section = {
         "version": 1,
         "source": "adapter",
         "meeting_kind": meeting_kind,
@@ -914,6 +938,7 @@ def build_transjective_record(
         "declarations": adapted["declarations"],
         "target_states": adapted["target_states"],
         "legacy_dispositions": adapted["legacy_dispositions"],
+        "exposure": adapted["exposure"],
         "notes": [
             "Adapter-derived from existing claim fields; original capture "
             "untouched.",
@@ -924,3 +949,10 @@ def build_transjective_record(
             "only and never overwrites registry claim_standing.",
         ],
     }
+    if payload_evidence:
+        # Increment B: exact payload texts keyed by hash, so payload
+        # references stay retrievable and the presented-vs-mentioned
+        # distinction stays auditable. Omitted when empty so old
+        # callers see no new key.
+        section["payload_evidence"] = dict(payload_evidence)
+    return section

@@ -837,6 +837,7 @@ def validate_contract_record(
                          f"valid reconciliation",
                          record_id=corr_id)
                     continue
+                chain_of[corr_id] = sup
                 head_of[sup] = corr_id
             else:
                 chain_of[corr_id] = sup
@@ -937,6 +938,7 @@ def build_transjective_record(
     events: list[dict] | None = None,
     close_report: dict | None = None,
     disagreements: list[dict] | None = None,
+    corrections: list[dict] | None = None,
 ) -> dict:
     """Build the ``transjective_record`` section from claim dicts.
 
@@ -964,7 +966,12 @@ def build_transjective_record(
     new section key appears, so old callers see no change at all.
     Disagreements never affect derived standing (derived from
     DispositionEvent history only) and this function issues no
-    events for them.
+    events for them. Increment E: ``corrections`` carries
+    tooling/user CorrectionEvents into validation and the section;
+    when None (the default) no new section key appears, so old
+    callers see no change at all. An explicitly supplied empty list
+    means corrections were considered and none exist — distinct
+    from never supplying them.
     """
     adapted = adapt_claims_to_contract_inputs(claims)
     record = {
@@ -975,7 +982,7 @@ def build_transjective_record(
         "disagreements": (
             list(disagreements) if disagreements is not None else []
         ),
-        "corrections": [],
+        "corrections": list(corrections) if corrections is not None else [],
         "target_states": adapted["target_states"],
         "exposure": adapted["exposure"],
         "legacy_dispositions": adapted["legacy_dispositions"],
@@ -1037,4 +1044,10 @@ def build_transjective_record(
         # never move derived standing (events only) and add no
         # events of their own.
         section["disagreements"] = list(disagreements)
+    if corrections is not None:
+        # Increment E: CorrectionEvents ride under their own key;
+        # omitted when never supplied, so old callers see no new
+        # key. Corrections never rewrite the claims above: the
+        # originals stay intact and the chain is the audit trail.
+        section["corrections"] = list(corrections)
     return section

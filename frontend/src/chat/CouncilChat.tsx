@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
+import VoiceFeedback from './VoiceFeedback'
 
 /**
  * One message in the persistent conversation. Voice turns carry the
@@ -15,6 +16,21 @@ export type ConversationMessage = {
   voiceId?: string | null
   voiceName?: string
   voiceColor?: string
+  /** Stable response reference for feedback: the server message id on
+   *  the store path, a session-scoped `local-` ref otherwise. Absent for
+   *  seed/initial messages and failure notices — those get no widget. */
+  messageId?: string | null
+}
+
+/** Session-scoped response ref for threads that live in component state
+ *  only (no server message id exists there). The `local-` prefix never
+ *  collides with server ids, which are bare hex. */
+function newLocalRef(): string {
+  const rand =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `local-${rand}`
 }
 
 /**
@@ -147,6 +163,10 @@ export default function CouncilChat({
           mapped.push({
             role,
             content: body,
+            messageId:
+              typeof (m as Record<string, unknown>).id === 'string'
+                ? ((m as Record<string, unknown>).id as string)
+                : null,
             voiceId: role === 'voice' ? aid : null,
             voiceName: role === 'voice' ? namesRef.current[aid ?? ''] ?? aid ?? undefined : undefined,
             voiceColor: role === 'voice' && aid ? voiceColor(aid) : undefined,
@@ -220,6 +240,9 @@ export default function CouncilChat({
       return {
         role: 'voice',
         content: data.reply,
+        // Store path: the server's message id. Local path: no server id
+        // exists, so mint a session-scoped ref at receipt time.
+        messageId: useStore ? (data.message_id ?? null) : newLocalRef(),
         voiceId: data.archetype_id ?? seatId,
         voiceName:
           data.display_name ?? (seatId === activeId ? activeName : names[seatId] ?? seatId),
@@ -404,7 +427,7 @@ export default function CouncilChat({
               </div>
             </div>
           ) : (
-            <div key={i} className="flex justify-start">
+            <div key={i} className="flex flex-col items-start gap-1">
               <div
                 className="max-w-[88%] rounded-2xl px-3 py-2 text-sm leading-snug bg-stone-800/80 border text-stone-200"
                 style={
@@ -427,6 +450,15 @@ export default function CouncilChat({
                 )}
                 <WeaveText text={m.content} />
               </div>
+              {m.messageId && m.voiceId && (
+                <div className="max-w-[88%] w-full">
+                  <VoiceFeedback
+                    messageId={m.messageId}
+                    seat={m.voiceId}
+                    conversationId={conversationKey}
+                  />
+                </div>
+              )}
             </div>
           ),
         )}

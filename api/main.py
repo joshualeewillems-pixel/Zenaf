@@ -352,6 +352,15 @@ except Exception as e:
     print(f"Conversation routes not loaded: {e}")
     _router_load_errors.append(f"conversation: {e}")
 
+# Per-response feedback v1 — inert records only (no analysis, no training
+# writes). POST /feedback, GET /feedback.
+try:
+    from api.routes.feedback_routes import router as feedback_router
+    app.include_router(feedback_router)
+except Exception as e:
+    print(f"Feedback routes not loaded: {e}")
+    _router_load_errors.append(f"feedback: {e}")
+
 # Per-seat "You" profiles — the Zenaf/You switch + QC surface data.
 # GET /you-profile/{archetype_id}, PUT /you-profile/{archetype_id}.
 try:

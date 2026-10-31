@@ -578,3 +578,115 @@ class StewardObservable:
             "last_seen_at": self.last_seen_at,
             "created_at": self.created_at,
         }
+
+
+# -- Phase 1 (review wiring + branch contract) --------------------------------
+# Additive records only. These rows are append-only by construction:
+# assessments are never updated (a fresh assessment supersedes by
+# recency, it does not rewrite history), flags never adjudicate
+# themselves, and verdicts are a log, not a mutable status. The
+# underlying proposal rows keep their own lifecycles in store.py.
+
+
+@dataclass(frozen=True)
+class RelevanceAssessment:
+    """One deterministic relevance assessment (addendum I2).
+
+    Records the inputs a coordination decision actually used, so the
+    decision is inspectable after the fact: which branch, which
+    thread/evidence, which rules fired, and the exact inputs they
+    read. ``relevant`` is the decision; ``reasons`` names the rules
+    that fired; ``inputs`` is the snapshot those rules read.
+    """
+
+    id: str
+    user_id: str
+    branch_id: str
+    thread_id: str | None = None
+    evidence_refs: list[str] | None = None
+    relevant: bool = False
+    reasons: list[str] | None = None
+    inputs: dict[str, Any] | None = None
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "branch_id": self.branch_id,
+            "thread_id": self.thread_id,
+            "evidence_refs": self.evidence_refs or [],
+            "relevant": self.relevant,
+            "reasons": self.reasons or [],
+            "inputs": self.inputs or {},
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class DiscrepancyFlag:
+    """One flag-only discrepancy objection (addendum I5, §7(a)).
+
+    A branch's inspectable objection to a steward relevance
+    assessment. The flag preserves the assessment id (the original
+    assessment row is append-only and never rewritten), the
+    objecting branch, the objection text, and supporting evidence
+    references. It changes no shared evidence, triggers no model
+    generation, and initiates no adjudication: ``status`` stays
+    ``open`` because there is no workflow that closes it in
+    Phase 1 — a flag is an observation to preserve, not a ticket
+    to resolve. Declining context is NOT a flag and creates no row.
+    """
+
+    id: str
+    user_id: str
+    assessment_id: str
+    branch_id: str
+    objection: str = ""
+    evidence_refs: list[str] | None = None
+    status: str = "open"
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "assessment_id": self.assessment_id,
+            "branch_id": self.branch_id,
+            "objection": self.objection,
+            "evidence_refs": self.evidence_refs or [],
+            "status": self.status,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class ReviewVerdict:
+    """One recorded review verdict (addendum §4.1).
+
+    The audit trail for steward-proposal verdicts: which review
+    item, which verdict, when. ``verdict`` is one of ``accepted``,
+    ``rejected``, ``unresolved`` — the claim-verdict discipline's
+    vocabulary, where unresolved is an explicit not-deciding,
+    recorded rather than silently skipped. The verdict log is the
+    source for the proposal-precision metric: precision counts
+    review-layer verdicts only, never flags, disagreements, or
+    cross-branch agreement, so it cannot reward convergence.
+    """
+
+    id: str
+    user_id: str
+    item_kind: str  # birth | reading | change | fitting
+    item_id: str
+    verdict: str  # accepted | rejected | unresolved
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "item_kind": self.item_kind,
+            "item_id": self.item_id,
+            "verdict": self.verdict,
+            "created_at": self.created_at,
+        }

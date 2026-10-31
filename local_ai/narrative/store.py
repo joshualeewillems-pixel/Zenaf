@@ -64,10 +64,13 @@ from .models import (
     THREAD_LINK_RELATIONS,
     THREAD_ORIGINS,
     THREAD_STATUSES,
+    DiscrepancyFlag,
     InvolvementMeasure,
     LensFitting,
     NarrativeThread,
     ProgressionPosition,
+    RelevanceAssessment,
+    ReviewVerdict,
     StewardDismissal,
     StewardObservable,
     ThreadChange,
@@ -313,6 +316,48 @@ CREATE TABLE IF NOT EXISTS steward_signal_states (
 );
 CREATE INDEX IF NOT EXISTS idx_signal_states_user
   ON steward_signal_states (user_id, signal_kind);
+
+-- Phase 1 (review wiring + branch contract): append-only coordination
+-- records. Assessments are never updated (a fresh assessment
+-- supersedes by recency); flags never adjudicate themselves;
+-- verdicts are a log, not a mutable status. Additive only: old
+-- databases gain these tables on open via CREATE TABLE IF NOT
+-- EXISTS, and no existing table is altered.
+CREATE TABLE IF NOT EXISTS steward_relevance_assessments (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  thread_id TEXT,
+  evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+  relevant INTEGER NOT NULL DEFAULT 0,
+  reasons_json TEXT NOT NULL DEFAULT '[]',
+  inputs_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_relevance_user_branch
+  ON steward_relevance_assessments (user_id, branch_id, created_at);
+CREATE TABLE IF NOT EXISTS steward_discrepancy_flags (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  assessment_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  objection TEXT NOT NULL DEFAULT '',
+  evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_flags_user_assessment
+  ON steward_discrepancy_flags (user_id, assessment_id, created_at);
+CREATE TABLE IF NOT EXISTS steward_review_verdicts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  item_kind TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  verdict TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_verdicts_user_kind
+  ON steward_review_verdicts (user_id, item_kind, created_at);
 """
 
 
@@ -2567,7 +2612,11 @@ class NarrativeStore:
 
         Removes the thread row, its evidence, readings, changes,
         deferred-prose rows, lens fittings, observables, and
-        containment links on either side. Involvement measures are
+        containment links on either side. Phase 1 rows follow the
+        same rule: verdict rows for the thread's items, relevance
+        assessments for the thread, and flags on those assessments
+        are deleted with it (NULL-thread assessments are not
+        thread-owned and survive). Involvement measures are
         measures ABOUT a subject, not the subject's records, and
         are left untouched. Meeting-scoped (NULL thread)
         observables do NOT cascade here — every clause is
@@ -2593,6 +2642,35 @@ class NarrativeStore:
                 "(SELECT signal_key FROM steward_observables "
                 "WHERE thread_id = ?)))",
                 (user_id, thread_id, thread_id),
+            )
+            # Phase 1 cascade contract: verdict rows follow their
+            # items, and relevance assessments + flags follow
+            # their thread. Runs BEFORE the owned-row deletes
+            # below, so the subqueries still see them.
+            # NULL-thread assessments are not thread-owned and
+            # survive (they record a branch-level decision, not a
+            # thread's content).
+            self._conn.execute(
+                "DELETE FROM steward_review_verdicts WHERE user_id = ? "
+                "AND ((item_kind = 'birth' AND item_id = ?) "
+                "OR (item_kind = 'reading' AND item_id IN "
+                "(SELECT id FROM thread_readings WHERE thread_id = ?)) "
+                "OR (item_kind = 'change' AND item_id IN "
+                "(SELECT id FROM thread_changes WHERE thread_id = ?)) "
+                "OR (item_kind = 'fitting' AND item_id IN "
+                "(SELECT id FROM lens_fittings WHERE thread_id = ?)))",
+                (user_id, thread_id, thread_id, thread_id, thread_id),
+            )
+            self._conn.execute(
+                "DELETE FROM steward_discrepancy_flags WHERE user_id = ? "
+                "AND assessment_id IN (SELECT id FROM "
+                "steward_relevance_assessments WHERE thread_id = ?)",
+                (user_id, thread_id),
+            )
+            self._conn.execute(
+                "DELETE FROM steward_relevance_assessments "
+                "WHERE user_id = ? AND thread_id = ?",
+                (user_id, thread_id),
             )
             for table, clause in (
                 ("thread_evidence", "thread_id = ?"),
@@ -2775,7 +2853,12 @@ class NarrativeStore:
         and decline rows (rule A). Full deletion deletes the
         same, PLUS the preview's verdict-state readings on
         preserved threads, PLUS the user's decline rows (both
-        regimes, hard removal). Clear is NOT suppression: cleared
+        regimes, hard removal). Phase 1 verdict rows follow their
+        items exactly (deleted with directly-deleted readings,
+        cascaded with wholesale threads via delete_thread);
+        assessments and flags follow their threads via
+        delete_thread and otherwise survive clear as decision
+        records, like involvement measures. Clear is NOT suppression: cleared
         observables may be re-derived on the next pass if their
         facts still hold. Returns a report with the operation,
         the preview acted on, deleted thread ids, and the
@@ -2823,6 +2906,16 @@ class NarrativeStore:
                     f"AND signal_id IN ({placeholders})",
                     (user_id, *proposed_ids),
                 )
+                # Phase 1: verdict rows follow their items — a
+                # verdict on a deleted proposed reading goes with
+                # it; verdicts on preserved readings survive
+                # (rule A: a verdict is a visitor act).
+                self._conn.execute(
+                    "DELETE FROM steward_review_verdicts "
+                    "WHERE user_id = ? AND item_kind = 'reading' "
+                    f"AND item_id IN ({placeholders})",
+                    (user_id, *proposed_ids),
+                )
             deleted_verdict = 0
             if operation == "full_delete":
                 verdict_ids = preview.get(
@@ -2841,6 +2934,15 @@ class NarrativeStore:
                         "DELETE FROM steward_signal_states "
                         "WHERE user_id = ? AND signal_kind = 'reading' "
                         f"AND signal_id IN ({placeholders})",
+                        (user_id, *verdict_ids),
+                    )
+                    # Phase 1: verdict rows follow their items —
+                    # full deletion removes the verdict-state
+                    # readings, so their verdict rows go too.
+                    self._conn.execute(
+                        "DELETE FROM steward_review_verdicts "
+                        "WHERE user_id = ? AND item_kind = 'reading' "
+                        f"AND item_id IN ({placeholders})",
                         (user_id, *verdict_ids),
                     )
             self._conn.commit()
@@ -3040,3 +3142,318 @@ class NarrativeStore:
                 (user_id, signal_kind, signal_id),
             ).fetchone()
         return dict(stored)
+
+    # -- Phase 1: relevance assessments, discrepancy flags, review verdicts --
+    # Append-only records. Assessments are never updated; a fresh
+    # assessment supersedes by recency. Flags never adjudicate
+    # themselves. Verdicts are a log. Nothing here transitions a
+    # proposal row — review.py owns verdict-to-transition mapping.
+
+    def record_relevance_assessment(
+        self,
+        user_id: str,
+        branch_id: str,
+        *,
+        thread_id: str | None = None,
+        evidence_refs: Iterable[str] = (),
+        relevant: bool = False,
+        reasons: Iterable[str] = (),
+        inputs: dict | None = None,
+    ) -> RelevanceAssessment:
+        """Store one deterministic relevance assessment, append-only."""
+        now = _utcnow()
+        record = RelevanceAssessment(
+            id=_new_id("asm"),
+            user_id=user_id,
+            branch_id=branch_id,
+            thread_id=thread_id,
+            evidence_refs=[str(r) for r in evidence_refs],
+            relevant=bool(relevant),
+            reasons=[str(r) for r in reasons],
+            inputs=dict(inputs or {}),
+            created_at=now,
+        )
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO steward_relevance_assessments "
+                "(id, user_id, branch_id, thread_id, evidence_refs_json, "
+                "relevant, reasons_json, inputs_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.id,
+                    user_id,
+                    branch_id,
+                    thread_id,
+                    json.dumps(record.evidence_refs),
+                    1 if record.relevant else 0,
+                    json.dumps(record.reasons),
+                    json.dumps(record.inputs),
+                    now,
+                ),
+            )
+            self._conn.commit()
+        return record
+
+    def assessments_for(
+        self,
+        user_id: str,
+        *,
+        branch_id: str | None = None,
+        thread_id: str | None = None,
+        limit: int = 100,
+    ) -> list[RelevanceAssessment]:
+        """Assessments for a user, newest first."""
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if branch_id is not None:
+            clauses.append("branch_id = ?")
+            args.append(branch_id)
+        if thread_id is not None:
+            clauses.append("thread_id = ?")
+            args.append(thread_id)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_relevance_assessments WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at DESC, id DESC LIMIT ?",
+                [*args, limit],
+            ).fetchall()
+        return [
+            RelevanceAssessment(
+                id=row["id"],
+                user_id=row["user_id"],
+                branch_id=row["branch_id"],
+                thread_id=row["thread_id"],
+                evidence_refs=_loads(row["evidence_refs_json"], []),
+                relevant=bool(row["relevant"]),
+                reasons=_loads(row["reasons_json"], []),
+                inputs=_loads(row["inputs_json"], {}),
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def record_discrepancy_flag(
+        self,
+        user_id: str,
+        assessment_id: str,
+        branch_id: str,
+        *,
+        objection: str = "",
+        evidence_refs: Iterable[str] = (),
+    ) -> DiscrepancyFlag:
+        """Record a flag-only discrepancy objection.
+
+        The referenced assessment must exist for this user; the
+        assessment row itself is never modified, so the original
+        assessment is preserved alongside the objection. The flag
+        changes no shared evidence and starts (and stays, in
+        Phase 1) ``open``: there is no adjudication workflow.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM steward_relevance_assessments "
+                "WHERE id = ? AND user_id = ?",
+                (assessment_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    f"unknown relevance assessment for user: {assessment_id!r}"
+                )
+            now = _utcnow()
+            record = DiscrepancyFlag(
+                id=_new_id("flg"),
+                user_id=user_id,
+                assessment_id=assessment_id,
+                branch_id=branch_id,
+                objection=objection,
+                evidence_refs=[str(r) for r in evidence_refs],
+                status="open",
+                created_at=now,
+            )
+            self._conn.execute(
+                "INSERT INTO steward_discrepancy_flags "
+                "(id, user_id, assessment_id, branch_id, objection, "
+                "evidence_refs_json, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record.id,
+                    user_id,
+                    assessment_id,
+                    branch_id,
+                    objection,
+                    json.dumps(record.evidence_refs),
+                    "open",
+                    now,
+                ),
+            )
+            self._conn.commit()
+        return record
+
+    def flags_for(
+        self,
+        user_id: str,
+        *,
+        assessment_id: str | None = None,
+        branch_id: str | None = None,
+    ) -> list[DiscrepancyFlag]:
+        """Flags for a user, oldest first."""
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if assessment_id is not None:
+            clauses.append("assessment_id = ?")
+            args.append(assessment_id)
+        if branch_id is not None:
+            clauses.append("branch_id = ?")
+            args.append(branch_id)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_discrepancy_flags WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at, id",
+                args,
+            ).fetchall()
+        return [
+            DiscrepancyFlag(
+                id=row["id"],
+                user_id=row["user_id"],
+                assessment_id=row["assessment_id"],
+                branch_id=row["branch_id"],
+                objection=row["objection"],
+                evidence_refs=_loads(row["evidence_refs_json"], []),
+                status=row["status"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def record_review_verdict(
+        self,
+        user_id: str,
+        item_kind: str,
+        item_id: str,
+        verdict: str,
+    ) -> ReviewVerdict:
+        """Append one review verdict to the log.
+
+        ``verdict`` follows the claim-verdict vocabulary: accepted,
+        rejected, or unresolved (explicit not-deciding, recorded
+        rather than silently skipped). Unresolved never transitions
+        proposal state — review.py records it and stops there.
+        """
+        if item_kind not in ("birth", "reading", "change", "fitting"):
+            raise ValueError(f"unknown review item kind: {item_kind!r}")
+        if verdict not in ("accepted", "rejected", "unresolved"):
+            raise ValueError(f"unknown review verdict: {verdict!r}")
+        now = _utcnow()
+        record = ReviewVerdict(
+            id=_new_id("vrd"),
+            user_id=user_id,
+            item_kind=item_kind,
+            item_id=item_id,
+            verdict=verdict,
+            created_at=now,
+        )
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO steward_review_verdicts "
+                "(id, user_id, item_kind, item_id, verdict, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    record.id,
+                    user_id,
+                    item_kind,
+                    item_id,
+                    verdict,
+                    now,
+                ),
+            )
+            self._conn.commit()
+        return record
+
+    def verdicts_for(
+        self,
+        user_id: str,
+        *,
+        item_kind: str | None = None,
+    ) -> list[ReviewVerdict]:
+        """Verdict log for a user, oldest first."""
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if item_kind is not None:
+            clauses.append("item_kind = ?")
+            args.append(item_kind)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_review_verdicts WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at, id",
+                args,
+            ).fetchall()
+        return [
+            ReviewVerdict(
+                id=row["id"],
+                user_id=row["user_id"],
+                item_kind=row["item_kind"],
+                item_id=row["item_id"],
+                verdict=row["verdict"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def proposal_precision(self, user_id: str) -> dict:
+        """Proposal-precision metric from the verdict log (Phase 1).
+
+        Precision = accepted / (accepted + rejected) over
+        review-layer verdicts, per proposal kind and overall.
+        Unresolved verdicts are recorded but excluded from both
+        numerator and denominator — not deciding is not a
+        rejection. With zero decided verdicts, precision is None
+        (no data), never 0.
+
+        The metric's inputs are verdict counts ONLY. Flags,
+        disagreements, and cross-branch agreement are not inputs
+        and cannot move it, so it cannot reward interpretive
+        convergence (addendum I5).
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT item_kind, verdict, COUNT(*) AS n "
+                "FROM steward_review_verdicts WHERE user_id = ? "
+                "AND verdict IN ('accepted', 'rejected') "
+                "GROUP BY item_kind, verdict",
+                (user_id,),
+            ).fetchall()
+        per_kind: dict[str, dict] = {}
+        total_accepted = 0
+        total_rejected = 0
+        for kind in ("birth", "reading", "change", "fitting"):
+            accepted = 0
+            rejected = 0
+            for row in rows:
+                if row["item_kind"] != kind:
+                    continue
+                if row["verdict"] == "accepted":
+                    accepted = row["n"]
+                elif row["verdict"] == "rejected":
+                    rejected = row["n"]
+            total = accepted + rejected
+            per_kind[kind] = {
+                "accepted": accepted,
+                "rejected": rejected,
+                "decided": total,
+                "precision": (accepted / total) if total else None,
+            }
+            total_accepted += accepted
+            total_rejected += rejected
+        total = total_accepted + total_rejected
+        return {
+            "per_kind": per_kind,
+            "overall": {
+                "accepted": total_accepted,
+                "rejected": total_rejected,
+                "decided": total,
+                "precision": (total_accepted / total) if total else None,
+            },
+        }

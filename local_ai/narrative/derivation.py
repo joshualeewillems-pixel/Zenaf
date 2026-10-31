@@ -54,10 +54,11 @@ Parts VII–XI):
     cycle discipline.
   - No foreground calls. Nothing here runs on a reply path; the
     pipeline schedules derivation on daemon threads (the P1
-    precedent), and the pipeline is NOT installed at app assembly
-    by this phase — ``install_default_pipeline`` exists for the
-    review-time wiring decision, and production behavior is
-    unchanged until Joshua makes it.
+    precedent). CORRECTION (Phase 1): the pipeline IS installed at
+    app assembly — ``api/main.py`` installs it at boot. What bounds
+    production behavior is the consent gate, not non-installation:
+    derivation runs only for visitors holding the default-off
+    ``steward_derivation`` flag, and fails closed otherwise.
   - No new user-facing interventions and no HTTP routes. The only
     writes are to the S0 narrative store (threads, readings,
     changes, dismissal memory).

@@ -382,6 +382,16 @@ except Exception as e:
     print(f"Steward routes not loaded: {e}")
     _router_load_errors.append(f"steward: {e}")
 
+# Steward review verdict surface (Phase 1) — separate router so
+# increment D's read-only steward_routes contract stays intact.
+# GET /steward/review, POST /steward/review/{kind}/{id}/accept|reject|unresolve.
+try:
+    from api.routes.steward_review_routes import router as steward_review_router
+    app.include_router(steward_review_router)
+except Exception as e:
+    print(f"Steward review routes not loaded: {e}")
+    _router_load_errors.append(f"steward_review: {e}")
+
 
 # Build-Council Room runner: POST /build-room/meetings — owner-only
 # invocation of a single-model (R1) meeting for the owner account

@@ -99,6 +99,7 @@ def build_draft_artifact_r2(
     transjective_record: dict[str, Any] | None = None,
     payload_evidence: dict[str, str] | None = None,
     disagreements: list[dict] | None = None,
+    transjective_validation_reports: list[dict] | None = None,
 ) -> dict[str, Any]:
     """Build the R2 draft artifact dict (synthesis-less).
 
@@ -173,6 +174,15 @@ def build_draft_artifact_r2(
     # appears. Disagreements never move standing and add no events:
     # any §4.3 contested-standing event comes from C's challenge
     # machinery above, never from a disagreement record itself.
+    # Increment G: the final validation report is explicit here.
+    # build_transjective_record validates with
+    # validation_phase="final"; its validation + conformant +
+    # validation_phase fields ARE the final report at close. The
+    # interim reports (runner, one per phase that produced claims)
+    # ride under their own key below; a pre-supplied
+    # transjective_record bypasses close AND final validation (the
+    # caller owns it then) — the gate never rewrites a supplied
+    # section into conformance.
     if transjective_record is not None:
         transjective_section = transjective_record
     else:
@@ -185,6 +195,7 @@ def build_draft_artifact_r2(
             meeting_kind="build_council", meeting_rules=[])
         transjective_section = build_transjective_record(
             _close_claims,
+            validation_phase="final",
             payload_evidence=payload_evidence,
             proposals=_close["proposals"],
             events=_close["events"],
@@ -195,7 +206,7 @@ def build_draft_artifact_r2(
                 "unmatched_acceptances": _close["unmatched_acceptances"],
             },
             disagreements=disagreements)
-    return {
+    artifact = {
         "status": "DRAFT_EXPERIMENTAL",
         "is_review_item": False,
         "experimental_area": True,
@@ -267,3 +278,12 @@ def build_draft_artifact_r2(
         "generation_timestamps": generation_timestamps or {},
         "transcript_entries": len(transcript.entries),
     }
+    if transjective_validation_reports is not None:
+        # Increment G: interim validation reports from the runner
+        # (one per phase that produced claims). Absent for replays
+        # and direct callers — honest absence, never a fabricated
+        # report. The final report lives in
+        # transjective_record.validation (phase "final").
+        artifact["transjective_validation_reports"] = list(
+            transjective_validation_reports)
+    return artifact

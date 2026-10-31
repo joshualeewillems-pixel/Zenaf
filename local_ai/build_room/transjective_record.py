@@ -933,6 +933,9 @@ def build_transjective_record(
     meeting_kind: str = "build_council",
     meeting_rules: list[str] | None = None,
     payload_evidence: dict[str, str] | None = None,
+    proposals: list[dict] | None = None,
+    events: list[dict] | None = None,
+    close_report: dict | None = None,
 ) -> dict:
     """Build the ``transjective_record`` section from claim dicts.
 
@@ -950,14 +953,18 @@ def build_transjective_record(
     authorizers, E12 missing exposure_refs) — that is correct
     behavior, not a bug. ``payload_evidence`` (hash -> exact payload
     text, Increment B) is included in the section only when provided
-    and non-empty, so old callers see no new key.
+    and non-empty, so old callers see no new key. Increment C:
+    ``proposals`` / ``events`` / ``close_report`` carry a
+    convener-close run's outputs into validation and the section;
+    when ``close_report`` is None (the default) no new section keys
+    appear, so old callers see no change at all.
     """
     adapted = adapt_claims_to_contract_inputs(claims)
     record = {
         "claims": claims,
         "declarations": adapted["declarations"],
-        "proposals": [],
-        "events": [],
+        "proposals": list(proposals) if proposals is not None else [],
+        "events": list(events) if events is not None else [],
         "disagreements": [],
         "corrections": [],
         "target_states": adapted["target_states"],
@@ -1004,4 +1011,14 @@ def build_transjective_record(
         # distinction stays auditable. Omitted when empty so old
         # callers see no new key.
         section["payload_evidence"] = dict(payload_evidence)
+    if close_report is not None:
+        # Increment C: convener-close ran. Proposals, events, and the
+        # close report ride alongside the validation, under their own
+        # keys; contract standing above is already derived from these
+        # events. Omitted when close never ran, so old callers see no
+        # new key. An empty proposals/events pair with a report means
+        # close ran and issued nothing — distinct from never running.
+        section["proposals"] = list(proposals) if proposals is not None else []
+        section["events"] = list(events) if events is not None else []
+        section["close_report"] = dict(close_report)
     return section

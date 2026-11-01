@@ -66,11 +66,15 @@ from .models import (
     THREAD_ORIGINS,
     THREAD_STATUSES,
     ArtifactVersion,
+    Correspondence,
+    CorrespondenceResponse,
     DiscrepancyFlag,
     InvolvementMeasure,
     LensFitting,
     NarrativeThread,
+    OversightProposal,
     ProgressionPosition,
+    ReadingReconsideration,
     RelevanceAssessment,
     ReviewVerdict,
     StewardArtifact,
@@ -416,6 +420,70 @@ CREATE TABLE IF NOT EXISTS steward_artifact_versions (
 );
 CREATE INDEX IF NOT EXISTS idx_artifact_versions_artifact
   ON steward_artifact_versions (artifact_id, version_no);
+
+-- Phase 7 (layer completion + rollout): correspondences,
+-- oversight proposals, and reading reconsiderations. Additive
+-- only: old databases gain these tables on open via CREATE
+-- TABLE IF NOT EXISTS, and no existing table is altered.
+-- Correspondences are NEVER evidence: their ids carry the
+-- "corr-" prefix and no code path writes them into
+-- thread_evidence; readings can only cite thread_evidence row
+-- ids (audit invariant 1), so a correspondence can never be
+-- cited as a fourth observation.
+CREATE TABLE IF NOT EXISTS steward_correspondences (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  thread_ids_json TEXT NOT NULL DEFAULT '[]',
+  evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+  structural_tension TEXT NOT NULL DEFAULT '',
+  proposed_relationship TEXT NOT NULL DEFAULT '',
+  candidate_metaphor TEXT,
+  mapping_json TEXT NOT NULL DEFAULT '{}',
+  limitations TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'proposed',
+  supersedes_id TEXT,
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_correspondences_user
+  ON steward_correspondences (user_id, created_at);
+CREATE TABLE IF NOT EXISTS steward_correspondence_responses (
+  id TEXT PRIMARY KEY,
+  correspondence_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  branch_id TEXT NOT NULL,
+  response TEXT NOT NULL,
+  expression TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (correspondence_id, branch_id)
+);
+CREATE INDEX IF NOT EXISTS idx_corr_responses_corr
+  ON steward_correspondence_responses (correspondence_id, branch_id);
+CREATE TABLE IF NOT EXISTS steward_oversight_proposals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'proposed',
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_oversight_user_thread
+  ON steward_oversight_proposals (user_id, thread_id, created_at);
+CREATE TABLE IF NOT EXISTS steward_reading_reconsiderations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  reading_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'proposed',
+  created_at TEXT NOT NULL,
+  decided_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_reconsiderations_reading
+  ON steward_reading_reconsiderations (user_id, reading_id, created_at);
 """
 
 
@@ -3472,6 +3540,38 @@ class NarrativeStore:
             # NULL-thread assessments are not thread-owned and
             # survive (they record a branch-level decision, not a
             # thread's content).
+            # Phase 7 cascade contract: a correspondence cites
+            # threads by id, so deleting a cited thread orphans
+            # it — correspondences citing this thread (and their
+            # seat responses) go with the thread, and their
+            # verdict rows follow. Correspondences citing only
+            # surviving threads are untouched. Runs BEFORE the
+            # verdict delete below, so the doomed ids are known
+            # while their rows still exist.
+            doomed_corr: list[str] = []
+            for corr_row in self._conn.execute(
+                "SELECT id, thread_ids_json FROM "
+                "steward_correspondences WHERE user_id = ?",
+                (user_id,),
+            ).fetchall():
+                try:
+                    cited = json.loads(corr_row["thread_ids_json"] or "[]")
+                except (ValueError, TypeError):
+                    cited = []
+                if thread_id in cited:
+                    doomed_corr.append(corr_row["id"])
+            if doomed_corr:
+                placeholders = ", ".join("?" for _ in doomed_corr)
+                self._conn.execute(
+                    "DELETE FROM steward_correspondence_responses "
+                    f"WHERE correspondence_id IN ({placeholders})",
+                    doomed_corr,
+                )
+                self._conn.execute(
+                    "DELETE FROM steward_correspondences "
+                    f"WHERE id IN ({placeholders})",
+                    doomed_corr,
+                )
             self._conn.execute(
                 "DELETE FROM steward_review_verdicts WHERE user_id = ? "
                 "AND ((item_kind = 'birth' AND item_id = ?) "
@@ -3481,15 +3581,30 @@ class NarrativeStore:
                 "(SELECT id FROM thread_changes WHERE thread_id = ?)) "
                 "OR (item_kind = 'fitting' AND item_id IN "
                 "(SELECT id FROM lens_fittings WHERE thread_id = ?)) "
+                "OR (item_kind = 'oversight' AND item_id IN "
+                "(SELECT id FROM steward_oversight_proposals "
+                "WHERE thread_id = ?)) "
+                "OR (item_kind = 'reconsideration' AND item_id IN "
+                "(SELECT id FROM steward_reading_reconsiderations "
+                "WHERE thread_id = ?)) "
                 "OR (item_kind = 'revision' AND item_id IN "
                 "(SELECT id FROM steward_artifact_versions WHERE "
                 "artifact_id IN (SELECT id FROM steward_artifacts "
                 "WHERE thread_id = ?))))",
                 (
                     user_id, thread_id, thread_id, thread_id,
-                    thread_id, thread_id,
+                    thread_id, thread_id, thread_id, thread_id,
                 ),
             )
+            if doomed_corr:
+                placeholders = ", ".join("?" for _ in doomed_corr)
+                self._conn.execute(
+                    "DELETE FROM steward_review_verdicts "
+                    "WHERE user_id = ? AND item_kind = "
+                    "'correspondence' AND item_id IN "
+                    f"({placeholders})",
+                    [user_id, *doomed_corr],
+                )
             self._conn.execute(
                 "DELETE FROM steward_discrepancy_flags WHERE user_id = ? "
                 "AND assessment_id IN (SELECT id FROM "
@@ -3508,6 +3623,14 @@ class NarrativeStore:
                 ("steward_deferred_prose", "thread_id = ?"),
                 ("lens_fittings", "thread_id = ?"),
                 ("steward_observables", "thread_id = ?"),
+                # Phase 7: oversight proposals and
+                # reconsiderations are thread-owned rows, so
+                # they cascade with the thread. (Correspondences
+                # citing the thread were removed above, with
+                # their responses, because they cite by id list
+                # rather than a thread_id column.)
+                ("steward_oversight_proposals", "thread_id = ?"),
+                ("steward_reading_reconsiderations", "thread_id = ?"),
                 # Phase 6: artifact versions go before their
                 # artifacts; both are thread-owned rows, so they
                 # cascade with the thread. Involvement measures
@@ -3793,6 +3916,20 @@ class NarrativeStore:
                     "DELETE FROM steward_dismissals WHERE user_id = ?",
                     (user_id,),
                 )
+                # Phase 7: sweep the layer-completion tables by
+                # user on full delete (thread deletion above
+                # already cascades thread-owned rows and cited
+                # correspondences; this covers any orphan).
+                for table in (
+                    "steward_correspondences",
+                    "steward_correspondence_responses",
+                    "steward_oversight_proposals",
+                    "steward_reading_reconsiderations",
+                ):
+                    self._conn.execute(
+                        f"DELETE FROM {table} WHERE user_id = ?",
+                        (user_id,),
+                    )
                 self._conn.commit()
             deleted_declines = cursor.rowcount
         return {
@@ -4182,7 +4319,11 @@ class NarrativeStore:
         proposal state — review.py records it and stops there.
         """
         if item_kind not in (
-            "birth", "reading", "change", "fitting", "revision"
+            "birth", "reading", "change", "fitting", "revision",
+            # Phase 7: oversight, correspondence, and
+            # reconsideration proposals route through the same
+            # review machinery (review.py ITEM_KINDS must match).
+            "oversight", "correspondence", "reconsideration",
         ):
             raise ValueError(f"unknown review item kind: {item_kind!r}")
         if verdict not in ("accepted", "rejected", "unresolved"):
@@ -4270,7 +4411,13 @@ class NarrativeStore:
         per_kind: dict[str, dict] = {}
         total_accepted = 0
         total_rejected = 0
-        for kind in ("birth", "reading", "change", "fitting", "revision"):
+        for kind in (
+            "birth", "reading", "change", "fitting", "revision",
+            # Phase 7: the new proposal kinds count in precision
+            # exactly like the old ones — verdicts on steward
+            # proposals, never flags or agreement.
+            "oversight", "correspondence", "reconsideration",
+        ):
             accepted = 0
             rejected = 0
             for row in rows:
@@ -4299,3 +4446,610 @@ class NarrativeStore:
                 "precision": (total_accepted / total) if total else None,
             },
         }
+
+    # -- Phase 7: correspondences, oversight, reconsiderations ----------
+
+    def create_correspondence(
+        self,
+        user_id: str,
+        *,
+        thread_ids: list[str],
+        evidence_refs: list[str],
+        structural_tension: str,
+        proposed_relationship: str,
+        candidate_metaphor: str | None = None,
+        mapping: dict | None = None,
+        limitations: str = "",
+        supersedes_id: str | None = None,
+    ) -> Correspondence:
+        """Insert one proposed correspondence row.
+
+        Validation of the §3 evidence rules (refs resolve to
+        real thread_evidence rows spanning >= 2 threads) lives
+        in correspondence.propose_correspondence; this writer
+        only enforces row-level invariants: non-empty tension
+        and relationship, and a supersedes target that exists
+        and is not already terminal (it becomes superseded).
+        The row is structure, never evidence: its id carries
+        the "corr-" prefix and no path writes it into
+        thread_evidence.
+        """
+        if not structural_tension or not proposed_relationship:
+            raise ValueError(
+                "a correspondence needs a structural tension and "
+                "a proposed relationship"
+            )
+        with self._lock:
+            if supersedes_id is not None:
+                old = self._conn.execute(
+                    "SELECT status FROM steward_correspondences "
+                    "WHERE id = ? AND user_id = ?",
+                    (supersedes_id, user_id),
+                ).fetchone()
+                if old is None:
+                    raise ValueError(
+                        f"unknown correspondence to supersede: "
+                        f"{supersedes_id!r}"
+                    )
+                if old["status"] in ("rejected", "superseded"):
+                    raise ValueError(
+                        "a rejected or superseded correspondence "
+                        "cannot be superseded again"
+                    )
+            now = _utcnow()
+            record = Correspondence(
+                id=_new_id("corr"),
+                user_id=user_id,
+                thread_ids=list(thread_ids),
+                evidence_refs=list(evidence_refs),
+                structural_tension=structural_tension,
+                proposed_relationship=proposed_relationship,
+                candidate_metaphor=candidate_metaphor,
+                mapping=dict(mapping or {}),
+                limitations=limitations,
+                status="proposed",
+                supersedes_id=supersedes_id,
+                created_at=now,
+            )
+            self._conn.execute(
+                "INSERT INTO steward_correspondences (id, user_id, "
+                "thread_ids_json, evidence_refs_json, "
+                "structural_tension, proposed_relationship, "
+                "candidate_metaphor, mapping_json, limitations, "
+                "status, supersedes_id, created_at, decided_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                (
+                    record.id, user_id,
+                    json.dumps(record.thread_ids),
+                    json.dumps(record.evidence_refs),
+                    structural_tension, proposed_relationship,
+                    candidate_metaphor,
+                    json.dumps(record.mapping),
+                    limitations, "proposed", supersedes_id, now,
+                ),
+            )
+            if supersedes_id is not None:
+                self._conn.execute(
+                    "UPDATE steward_correspondences SET status = "
+                    "'superseded', decided_at = ? WHERE id = ? "
+                    "AND user_id = ?",
+                    (now, supersedes_id, user_id),
+                )
+            self._conn.commit()
+        return record
+
+    def get_correspondence(
+        self, user_id: str, correspondence_id: str
+    ) -> Correspondence | None:
+        """One correspondence row, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_correspondences WHERE id = ? "
+                "AND user_id = ?",
+                (correspondence_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return Correspondence(
+            id=row["id"], user_id=row["user_id"],
+            thread_ids=json.loads(row["thread_ids_json"] or "[]"),
+            evidence_refs=json.loads(row["evidence_refs_json"] or "[]"),
+            structural_tension=row["structural_tension"],
+            proposed_relationship=row["proposed_relationship"],
+            candidate_metaphor=row["candidate_metaphor"],
+            mapping=json.loads(row["mapping_json"] or "{}"),
+            limitations=row["limitations"],
+            status=row["status"],
+            supersedes_id=row["supersedes_id"],
+            created_at=row["created_at"],
+            decided_at=row["decided_at"],
+        )
+
+    def correspondences_for(
+        self, user_id: str, *, status: str | None = None
+    ) -> list[Correspondence]:
+        """Correspondences for a user, oldest first."""
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if status is not None:
+            clauses.append("status = ?")
+            args.append(status)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM steward_correspondences WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at, id",
+                args,
+            ).fetchall()
+        out = []
+        for row in rows:
+            corr = self.get_correspondence(user_id, row["id"])
+            if corr is not None:
+                out.append(corr)
+        return out
+
+    def set_correspondence_status(
+        self, user_id: str, correspondence_id: str, status: str
+    ) -> Correspondence:
+        """Move a correspondence through its §3 lifecycle.
+
+        proposed -> user_accepted | rejected | superseded;
+        user_accepted -> superseded. rejected and superseded
+        are terminal. Only user verdicts (via review.py) move a
+        correspondence to user_accepted/rejected; seat
+        responses never call this.
+        """
+        from .models import CORRESPONDENCE_STATUSES
+
+        if status not in CORRESPONDENCE_STATUSES:
+            raise ValueError(f"unknown correspondence status: {status!r}")
+        with self._lock:
+            # Inline row fetch: get_correspondence takes the
+            # store lock, and this lock is a plain Lock —
+            # re-entering it would deadlock (see the lock's
+            # own comment at init).
+            row = self._conn.execute(
+                "SELECT status FROM steward_correspondences "
+                "WHERE id = ? AND user_id = ?",
+                (correspondence_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    f"unknown correspondence: {correspondence_id!r}"
+                )
+            current_status = row["status"]
+            allowed = {
+                "proposed": ("user_accepted", "rejected", "superseded"),
+                "user_accepted": ("superseded",),
+                "rejected": (),
+                "superseded": (),
+            }[current_status]
+            if status not in allowed and status != current_status:
+                raise ValueError(
+                    f"correspondence cannot move {current_status!r} "
+                    f"-> {status!r}"
+                )
+            now = _utcnow()
+            self._conn.execute(
+                "UPDATE steward_correspondences SET status = ?, "
+                "decided_at = ? WHERE id = ? AND user_id = ?",
+                (
+                    status,
+                    now if status != "proposed" else None,
+                    correspondence_id, user_id,
+                ),
+            )
+            self._conn.commit()
+        updated = self.get_correspondence(user_id, correspondence_id)
+        assert updated is not None
+        return updated
+
+    def record_correspondence_response(
+        self,
+        user_id: str,
+        correspondence_id: str,
+        branch_id: str,
+        response: str,
+        expression: str = "",
+    ) -> CorrespondenceResponse:
+        """One seat's response to a correspondence (addendum §3).
+
+        One row per (correspondence, branch): a seat revising
+        its response replaces its own row. The response never
+        moves the correspondence's status — only a user verdict
+        does. A translate response without its own expression
+        is refused: translation must carry the seat's own
+        imagery, not an empty adoption of the steward's words.
+        """
+        from .models import CORRESPONDENCE_RESPONSES
+
+        if response not in CORRESPONDENCE_RESPONSES:
+            raise ValueError(
+                f"unknown correspondence response: {response!r}"
+            )
+        if response == "translate" and not expression:
+            raise ValueError(
+                "a translate response must carry the seat's own "
+                "expression"
+            )
+        with self._lock:
+            # Inline existence check: get_correspondence takes
+            # the store lock, and re-entering this plain Lock
+            # would deadlock.
+            exists = self._conn.execute(
+                "SELECT id FROM steward_correspondences "
+                "WHERE id = ? AND user_id = ?",
+                (correspondence_id, user_id),
+            ).fetchone()
+            if exists is None:
+                raise ValueError(
+                    f"unknown correspondence: {correspondence_id!r}"
+                )
+            now = _utcnow()
+            existing = self._conn.execute(
+                "SELECT id FROM steward_correspondence_responses "
+                "WHERE correspondence_id = ? AND branch_id = ?",
+                (correspondence_id, branch_id),
+            ).fetchone()
+            if existing is not None:
+                self._conn.execute(
+                    "UPDATE steward_correspondence_responses SET "
+                    "response = ?, expression = ?, created_at = ? "
+                    "WHERE id = ?",
+                    (response, expression, now, existing["id"]),
+                )
+                record_id = existing["id"]
+            else:
+                record_id = _new_id("cresp")
+                self._conn.execute(
+                    "INSERT INTO steward_correspondence_responses "
+                    "(id, correspondence_id, user_id, branch_id, "
+                    "response, expression, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        record_id, correspondence_id, user_id,
+                        branch_id, response, expression, now,
+                    ),
+                )
+            self._conn.commit()
+        return CorrespondenceResponse(
+            id=record_id,
+            correspondence_id=correspondence_id,
+            user_id=user_id,
+            branch_id=branch_id,
+            response=response,
+            expression=expression,
+            created_at=now,
+        )
+
+    def responses_for(
+        self, user_id: str, correspondence_id: str
+    ) -> list[CorrespondenceResponse]:
+        """Seat responses to one correspondence, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_correspondence_responses "
+                "WHERE correspondence_id = ? AND user_id = ? "
+                "ORDER BY created_at, id",
+                (correspondence_id, user_id),
+            ).fetchall()
+        return [
+            CorrespondenceResponse(
+                id=row["id"],
+                correspondence_id=row["correspondence_id"],
+                user_id=row["user_id"],
+                branch_id=row["branch_id"],
+                response=row["response"],
+                expression=row["expression"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
+
+    def create_oversight_proposal(
+        self,
+        user_id: str,
+        thread_id: str,
+        kind: str,
+        reason: str = "",
+        detail: dict | None = None,
+    ) -> OversightProposal:
+        """Insert one oversight proposal, or return the existing
+        proposed one for the same (thread, kind).
+
+        Dedupe is load-bearing for oversight: a detector that
+        re-fires on unchanged state must not stack identical
+        proposals in the review queue. A decided (confirmed /
+        dismissed) proposal does not block a fresh one — new
+        state may warrant a new observation.
+        """
+        from .models import OVERSIGHT_KINDS
+
+        if kind not in OVERSIGHT_KINDS:
+            raise ValueError(f"unknown oversight kind: {kind!r}")
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            existing = self._conn.execute(
+                "SELECT * FROM steward_oversight_proposals "
+                "WHERE user_id = ? AND thread_id = ? AND kind = ? "
+                "AND status = 'proposed' ORDER BY created_at, id "
+                "LIMIT 1",
+                (user_id, thread_id, kind),
+            ).fetchone()
+            if existing is not None:
+                return OversightProposal(
+                    id=existing["id"], user_id=user_id,
+                    thread_id=thread_id, kind=kind,
+                    reason=existing["reason"],
+                    detail=json.loads(existing["detail_json"] or "{}"),
+                    status="proposed",
+                    created_at=existing["created_at"],
+                )
+            now = _utcnow()
+            record = OversightProposal(
+                id=_new_id("ovp"),
+                user_id=user_id,
+                thread_id=thread_id,
+                kind=kind,
+                reason=reason,
+                detail=dict(detail or {}),
+                status="proposed",
+                created_at=now,
+            )
+            self._conn.execute(
+                "INSERT INTO steward_oversight_proposals (id, "
+                "user_id, thread_id, kind, reason, detail_json, "
+                "status, created_at, decided_at) VALUES (?, ?, ?, "
+                "?, ?, ?, 'proposed', ?, NULL)",
+                (
+                    record.id, user_id, thread_id, kind, reason,
+                    json.dumps(record.detail), now,
+                ),
+            )
+            self._conn.commit()
+        return record
+
+    def oversight_proposals_for(
+        self,
+        user_id: str,
+        *,
+        thread_id: str | None = None,
+        status: str | None = None,
+    ) -> list[OversightProposal]:
+        """Oversight proposals for a user, oldest first."""
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if thread_id is not None:
+            clauses.append("thread_id = ?")
+            args.append(thread_id)
+        if status is not None:
+            clauses.append("status = ?")
+            args.append(status)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_oversight_proposals WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at, id",
+                args,
+            ).fetchall()
+        return [
+            OversightProposal(
+                id=row["id"], user_id=row["user_id"],
+                thread_id=row["thread_id"], kind=row["kind"],
+                reason=row["reason"],
+                detail=json.loads(row["detail_json"] or "{}"),
+                status=row["status"],
+                created_at=row["created_at"],
+                decided_at=row["decided_at"],
+            )
+            for row in rows
+        ]
+
+    def set_oversight_status(
+        self, user_id: str, proposal_id: str, status: str
+    ) -> OversightProposal:
+        """Decide an oversight proposal (review verdicts only).
+
+        proposed -> confirmed | dismissed. Confirming an
+        oversight proposal changes NO thread, reading, or
+        branch state: oversight never commands. The confirmed
+        row is a confirmed observation the user may act on,
+        nothing more. Terminal states refuse further moves.
+        """
+        from .models import OVERSIGHT_PROPOSAL_STATUSES
+
+        if status not in OVERSIGHT_PROPOSAL_STATUSES:
+            raise ValueError(
+                f"unknown oversight status: {status!r}"
+            )
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_oversight_proposals "
+                "WHERE id = ? AND user_id = ?",
+                (proposal_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    f"unknown oversight proposal: {proposal_id!r}"
+                )
+            if row["status"] != "proposed" and status != row["status"]:
+                raise ValueError(
+                    f"oversight proposal cannot move "
+                    f"{row['status']!r} -> {status!r}"
+                )
+            now = _utcnow()
+            self._conn.execute(
+                "UPDATE steward_oversight_proposals SET status = ?, "
+                "decided_at = ? WHERE id = ? AND user_id = ?",
+                (
+                    status,
+                    now if status != "proposed" else None,
+                    proposal_id, user_id,
+                ),
+            )
+            self._conn.commit()
+        updated = self.oversight_proposals_for(user_id)
+        for proposal in updated:
+            if proposal.id == proposal_id:
+                return proposal
+        raise ValueError(f"unknown oversight proposal: {proposal_id!r}")
+
+    def propose_reading_reconsideration(
+        self, user_id: str, reading_id: str, reason: str = ""
+    ) -> ReadingReconsideration:
+        """Open candidate-for-reconsideration status (I3) on a
+        previously ACCEPTED reading.
+
+        The reading row is never touched: its status stays
+        "accepted" and its content and evidence_refs are
+        byte-identical before and after. Only this separate
+        row records the candidacy. Proposing reconsideration
+        of a non-accepted reading is a category error (there
+        is nothing standing to reconsider) and raises. An
+        already-proposed candidacy for the same reading is
+        returned instead of duplicated.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM thread_readings WHERE id = ? "
+                "AND thread_id IN (SELECT id FROM narrative_threads "
+                "WHERE user_id = ?)",
+                (reading_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    f"unknown reading for user: {reading_id!r}"
+                )
+            if row["status"] != "accepted":
+                raise ValueError(
+                    "only an accepted reading can gain "
+                    "candidate-for-reconsideration status "
+                    f"(reading status is {row['status']!r})"
+                )
+            existing = self._conn.execute(
+                "SELECT * FROM steward_reading_reconsiderations "
+                "WHERE user_id = ? AND reading_id = ? AND "
+                "status = 'proposed' ORDER BY created_at, id LIMIT 1",
+                (user_id, reading_id),
+            ).fetchone()
+            if existing is not None:
+                return ReadingReconsideration(
+                    id=existing["id"], user_id=user_id,
+                    reading_id=reading_id,
+                    thread_id=existing["thread_id"],
+                    reason=existing["reason"],
+                    status="proposed",
+                    created_at=existing["created_at"],
+                )
+            now = _utcnow()
+            record = ReadingReconsideration(
+                id=_new_id("rcn"),
+                user_id=user_id,
+                reading_id=reading_id,
+                thread_id=row["thread_id"],
+                reason=reason,
+                status="proposed",
+                created_at=now,
+            )
+            self._conn.execute(
+                "INSERT INTO steward_reading_reconsiderations (id, "
+                "user_id, reading_id, thread_id, reason, status, "
+                "created_at, decided_at) VALUES (?, ?, ?, ?, ?, "
+                "'proposed', ?, NULL)",
+                (
+                    record.id, user_id, reading_id,
+                    row["thread_id"], reason, now,
+                ),
+            )
+            self._conn.commit()
+        return record
+
+    def reconsiderations_for(
+        self,
+        user_id: str,
+        *,
+        reading_id: str | None = None,
+        status: str | None = None,
+    ) -> list[ReadingReconsideration]:
+        """Reconsiderations for a user, oldest first."""
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if reading_id is not None:
+            clauses.append("reading_id = ?")
+            args.append(reading_id)
+        if status is not None:
+            clauses.append("status = ?")
+            args.append(status)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_reading_reconsiderations "
+                "WHERE " + " AND ".join(clauses)
+                + " ORDER BY created_at, id",
+                args,
+            ).fetchall()
+        return [
+            ReadingReconsideration(
+                id=row["id"], user_id=row["user_id"],
+                reading_id=row["reading_id"],
+                thread_id=row["thread_id"],
+                reason=row["reason"],
+                status=row["status"],
+                created_at=row["created_at"],
+                decided_at=row["decided_at"],
+            )
+            for row in rows
+        ]
+
+    def set_reconsideration_status(
+        self, user_id: str, reconsideration_id: str, status: str
+    ) -> ReadingReconsideration:
+        """Decide a reconsideration candidacy (review verdicts only).
+
+        proposed -> affirmed | dismissed. Affirming keeps the
+        reading accepted and open for revision; it does not
+        revise, retire, or reaffirm the reading by itself —
+        those are downstream outcomes through the existing
+        reading-proposal and retirement flows. Dismissing
+        clears the candidacy; the reading stands as before.
+        Terminal states refuse further moves.
+        """
+        from .models import RECONSIDERATION_STATUSES
+
+        if status not in RECONSIDERATION_STATUSES:
+            raise ValueError(
+                f"unknown reconsideration status: {status!r}"
+            )
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_reading_reconsiderations "
+                "WHERE id = ? AND user_id = ?",
+                (reconsideration_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(
+                    "unknown reconsideration: "
+                    f"{reconsideration_id!r}"
+                )
+            if row["status"] != "proposed" and status != row["status"]:
+                raise ValueError(
+                    f"reconsideration cannot move "
+                    f"{row['status']!r} -> {status!r}"
+                )
+            now = _utcnow()
+            self._conn.execute(
+                "UPDATE steward_reading_reconsiderations SET "
+                "status = ?, decided_at = ? WHERE id = ? "
+                "AND user_id = ?",
+                (
+                    status,
+                    now if status != "proposed" else None,
+                    reconsideration_id, user_id,
+                ),
+            )
+            self._conn.commit()
+        for item in self.reconsiderations_for(user_id):
+            if item.id == reconsideration_id:
+                return item
+        raise ValueError(
+            f"unknown reconsideration: {reconsideration_id!r}"
+        )

@@ -73,6 +73,13 @@ class BranchContract:
     conditioning_sources: tuple[str, ...]
     notes: str = ""
     tier_constraint: str | None = None
+    #: Phase 7 decision recorded for this branch. Every registered
+    #: branch carries one: confirmed branches record their
+    #: confirmation; candidate branches record the Phase 7
+    #: disposition (sibling / deferred / confirmed). An empty
+    #: decision means the registry is INCOMPLETE — see
+    #: :func:`registry_audit`, which refuses that state.
+    decision: str = ""
 
     def __post_init__(self) -> None:
         if self.kind not in BRANCH_KINDS:
@@ -101,6 +108,8 @@ def _seat_contract(archetype_id: str) -> BranchContract:
             "(focus, periphery, conflicts, register)",
             "personal profile where the mirror applies",
         ),
+        decision="Phase 7: confirmed branch — seat voice branch "
+        "under the amended branch contract (addendum §2).",
     )
 
 
@@ -130,6 +139,8 @@ VISION_EXECUTION_BRANCH = BranchContract(
     ),
     notes="Does not author narrative interpretations; its completions "
     "and flips are milestone/change evidence.",
+    decision="Phase 7: confirmed branch — progression branch under "
+    "the amended branch contract (addendum §2).",
 )
 
 JOURNAL_BRANCH = BranchContract(
@@ -142,6 +153,8 @@ JOURNAL_BRANCH = BranchContract(
     notes="Reads thread state for framing only; its artifacts can "
     "never be cited as evidence.",
     tier_constraint="Tier-D only",
+    decision="Phase 7: confirmed branch — dramatization branch, "
+    "Tier-D only, under the amended branch contract (addendum §2).",
 )
 
 BUILD_COUNCIL_BRANCH = BranchContract(
@@ -158,6 +171,15 @@ BUILD_COUNCIL_BRANCH = BranchContract(
     "record referenced by the steward, not subsumed. Coordination "
     "is NOT contracted until branch-read is proven safe against "
     "the record contract — its absence here is deliberate.",
+    decision="Phase 7: SIBLING, not a branch (base plan §6.2 "
+    "default, applied). The build-council record — declarations, "
+    "exposure, standing, validation — is self-contained and is "
+    "referenced by the steward, never subsumed: no steward code "
+    "reads or writes build-council records, and branch-read "
+    "safety against the record contract was not proven in this "
+    "phase. Coordination stays uncontracted. Revisiting the "
+    "decision requires a branch-read safety proof, not a "
+    "registry edit alone.",
 )
 
 GARDEN_BRANCH = BranchContract(
@@ -171,6 +193,12 @@ GARDEN_BRANCH = BranchContract(
     "located in the audit pass (only a frontend test reference was "
     "found). Phase 7 locates it or defers the branch explicitly. "
     "Do not invent a garden store before then.",
+    decision="Phase 7: DEFERRED EXPLICITLY (base plan §6.4 "
+    "default, applied). No backend garden progression store was "
+    "located in the codebase (no Python module owns garden "
+    "progression state); the branch is not activated and no "
+    "store was invented for it. Activating it requires locating "
+    "or building that store first.",
 )
 
 #: Every §1 branch (reading surfaces excluded).
@@ -194,6 +222,8 @@ READING_SURFACES: tuple[BranchContract, ...] = (
             "branch state and steward state (display only)",
         ),
         notes="Holds no narrative state of its own.",
+        decision="Phase 7: reading surface, not a branch — "
+        "displays branch and steward state, holds none.",
     ),
     BranchContract(
         branch_id="review",
@@ -205,6 +235,8 @@ READING_SURFACES: tuple[BranchContract, ...] = (
             "branch state and steward state (display only)",
         ),
         notes="Holds no narrative state of its own.",
+        decision="Phase 7: reading surface, not a branch — "
+        "the verdict surface for steward proposals.",
     ),
 )
 
@@ -222,3 +254,156 @@ def get_branch(branch_id: str) -> BranchContract | None:
 def coordination_capable_branches() -> list[BranchContract]:
     """Branches contracted for coordination (capability, not authorization)."""
     return [c for c in BRANCHES if "coordination" in c.capabilities]
+
+
+#: Phase 7 conditioning audit: for each branch and each Phase 6
+#: schedule step, the conditioner — whose conditioning governs
+#: that step for that branch. This table is DATA, not behavior:
+#: it names the same conditioners the implemented wiring already
+#: enforces (schedule.py step docstrings), so the audit can be
+#: spot-checked against code instead of asserted from prose.
+#:
+#: - draft: the thread's jurisdiction registry routes the draft
+#:   (seats), or the branch's own progression evidence (vision
+#:   execution). Journal never conditions evidence (Tier-D
+#:   framing only); the sibling record and the deferred branch
+#:   condition nothing.
+#: - revision: approved evidence (Tier-E refs) + accepted readings,
+#:   within the branch's jurisdiction where the branch has one.
+#: - review: the user verdict, for every branch alike — authority
+#:   resides with the user alone (addendum §0).
+#: - artifact: the accepted version + involvement ledger, for
+#:   branches that render artifacts; nothing for the rest.
+_CONDITIONER_BY_STEP: dict[str, dict[str, str]] = {
+    "seat": {
+        "draft": "seat jurisdiction registry (SeatJurisdiction: "
+        "focus, periphery, conflicts, register) + evidence gate",
+        "revision": "approved evidence (Tier-E refs) + accepted "
+        "readings, within the seat's jurisdiction",
+        "review": "user verdict (review layer)",
+        "artifact": "accepted version + involvement ledger",
+    },
+    "progression": {
+        "draft": "task/initiative completions + commitment status "
+        "flips (milestone/change evidence)",
+        "revision": "approved evidence (Tier-E refs) + accepted readings",
+        "review": "user verdict (review layer)",
+        "artifact": "accepted version + involvement ledger",
+    },
+    "dramatization": {
+        "draft": "none — Tier-D framing only; journal never "
+        "conditions evidence",
+        "revision": "none — Tier-D framing only; journal never "
+        "conditions evidence",
+        "review": "user verdict (review layer)",
+        "artifact": "none — Tier-D dramatization surface only",
+    },
+}
+
+#: Schedule steps (Phase 6), shared with schedule.SCHEDULE_STEPS
+#: without importing it (branches.py must stay behavior-free).
+AUDIT_SCHEDULE_STEPS: tuple[str, ...] = (
+    "draft", "revision", "review", "artifact",
+)
+
+
+def conditioning_audit() -> list[dict]:
+    """One row per branch per schedule step: its conditioner.
+
+    Sibling and deferred branches condition nothing at any step —
+    that absence is the recorded decision, not a gap. Reading
+    surfaces are included with conditioner "none" and a note:
+    they display state and hold none of their own.
+    """
+    rows: list[dict] = []
+    for contract in (*BRANCHES, *READING_SURFACES):
+        if contract.kind == "reading_surface":
+            for step in AUDIT_SCHEDULE_STEPS:
+                rows.append({
+                    "branch_id": contract.branch_id,
+                    "step": step,
+                    "conditioner": "none — reading surface; displays "
+                    "branch and steward state, holds none",
+                    "decision": contract.decision,
+                })
+            continue
+        if contract.branch_id == "build_council":
+            for step in AUDIT_SCHEDULE_STEPS:
+                rows.append({
+                    "branch_id": contract.branch_id,
+                    "step": step,
+                    "conditioner": "none — sibling record; the "
+                    "steward references it, never conditions it",
+                    "decision": contract.decision,
+                })
+            continue
+        if contract.branch_id == "garden":
+            for step in AUDIT_SCHEDULE_STEPS:
+                rows.append({
+                    "branch_id": contract.branch_id,
+                    "step": step,
+                    "conditioner": "none — deferred branch; no "
+                    "store, no conditioning",
+                    "decision": contract.decision,
+                })
+            continue
+        per_step = _CONDITIONER_BY_STEP[contract.kind]
+        for step in AUDIT_SCHEDULE_STEPS:
+            rows.append({
+                "branch_id": contract.branch_id,
+                "step": step,
+                "conditioner": per_step[step],
+                "decision": contract.decision,
+            })
+    return rows
+
+
+def registry_audit() -> dict:
+    """Registry completeness (Phase 7 acceptance): every branch
+    registered with its conditioning contract and a recorded
+    decision; every branch's conditioning sources named (or an
+    explicit decision explaining their absence, as for garden).
+
+    Returns the audit table plus a completeness verdict. An
+    empty decision anywhere, or a confirmed branch with no
+    conditioning sources, makes the registry INCOMPLETE — the
+    function reports it instead of raising, so a test (or a
+    future phase) can see exactly which branch is undecided.
+    """
+    entries: list[dict] = []
+    incomplete: list[str] = []
+    for contract in BRANCHES:
+        entry = {
+            "branch_id": contract.branch_id,
+            "display_name": contract.display_name,
+            "kind": contract.kind,
+            "capabilities": list(contract.capabilities),
+            "status": contract.status,
+            "conditioning_sources": list(contract.conditioning_sources),
+            "decision": contract.decision,
+            "tier_constraint": contract.tier_constraint,
+        }
+        entries.append(entry)
+        if not contract.decision:
+            incomplete.append(
+                f"{contract.branch_id}: no decision recorded"
+            )
+        if contract.status == "confirmed" and not contract.conditioning_sources:
+            incomplete.append(
+                f"{contract.branch_id}: confirmed but no "
+                "conditioning sources named"
+            )
+    return {
+        "complete": not incomplete,
+        "incomplete_reasons": incomplete,
+        "branches": entries,
+        "reading_surfaces": [
+            {
+                "branch_id": c.branch_id,
+                "display_name": c.display_name,
+                "decision": c.decision,
+            }
+            for c in READING_SURFACES
+        ],
+        "conditioning_audit": conditioning_audit(),
+    }

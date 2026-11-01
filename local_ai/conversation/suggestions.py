@@ -144,8 +144,10 @@ def _shape_project_proposal(item: dict[str, Any], n: int) -> dict[str, Any]:
     }
 
 
-def _shape_mint_suggestion(item: dict[str, Any], n: int) -> dict[str, Any]:
-    return {
+def _shape_mint_suggestion(
+    item: dict[str, Any], n: int, known_threads: dict[str, str] | None = None
+) -> dict[str, Any]:
+    out = {
         "id": f"skeleton:mint:{n}",
         "title": str(item.get("title") or "Untitled moment")[:160],
         "moment": str(item.get("moment") or "")[:600],
@@ -156,6 +158,19 @@ def _shape_mint_suggestion(item: dict[str, Any], n: int) -> dict[str, Any]:
         "draft": True,
         "source": "conversation-skeleton",
     }
+    # Phase 5: mint items cite thread ids, validated against the known
+    # thread list — never trusted from the model alone. An unknown or
+    # missing id leaves the shape exactly as it was before Phase 5.
+    if known_threads:
+        tid = item.get("thread_id")
+        if isinstance(tid, str) and tid in known_threads:
+            title = known_threads[tid][:160]
+            out["thread_id"] = tid
+            if title:
+                out["thread_note"] = f"This moment belongs to your {title} thread."
+            else:
+                out["thread_note"] = "This moment belongs to one of your threads."
+    return out
 
 
 def _parse(raw: str) -> dict[str, Any]:
@@ -172,9 +187,17 @@ def generate_suggestions(
     generate_fn: GenerateFn | None = None,
     seat_names: dict[str, str] | None = None,
     user_id: str | None = None,
+    threads: list[dict[str, Any]] | None = None,
 ) -> dict[str, list]:
     """Produce the three suggestion kinds. Never raises — failures yield the
-    empty triple (honest empty state, never junk)."""
+    empty triple (honest empty state, never junk).
+
+    Phase 5: when ``threads`` (active-thread summaries from the read
+    model) is non-empty, the mint category is re-based onto them — the
+    prompt names the live threads and mint items may cite a thread id,
+    validated at shaping. When ``threads`` is empty or None, the prompt
+    and every shaped item are byte-identical to before Phase 5.
+    """
     try:
         if not turns:
             return empty_suggestions()
@@ -193,6 +216,29 @@ def generate_suggestions(
             live_context=ctx_line,
             transcript=_transcript(turns, seat_names),
         )
+        known_threads: dict[str, str] = {}
+        if threads:
+            lines = []
+            for t in threads:
+                tid = str(t.get("id") or "")
+                if not tid:
+                    continue
+                known_threads[tid] = str(t.get("title") or "")
+                lines.append(
+                    f"- {tid}: {known_threads[tid]} ({t.get('status') or 'active'})"
+                )
+            if lines:
+                block = (
+                    "\n\nNarrative threads this user already has "
+                    "(live stories, newest first):\n"
+                    + "\n".join(lines)
+                    + "\nIf a mint moment belongs to one of these threads, "
+                    'include its "thread_id" in that mint item; otherwise '
+                    "omit thread_id. Never invent a thread id."
+                )
+                prompt = prompt.replace(
+                    "\n\nRespond with STRICT JSON only", block + "\n\nRespond with STRICT JSON only", 1
+                )
         raw = gen(
             prompt, provider_id="meta", user_id=user_id,
             operation="conversation-suggestions", timeout=90,
@@ -207,7 +253,9 @@ def generate_suggestions(
                 out["project_proposals"].append(_shape_project_proposal(item, n))
         for n, item in enumerate((data.get("mint_suggestions") or [])[:_MAX_PER_KIND]):
             if isinstance(item, dict):
-                out["mint_suggestions"].append(_shape_mint_suggestion(item, n))
+                out["mint_suggestions"].append(
+                    _shape_mint_suggestion(item, n, known_threads)
+                )
         return out
     except Exception:
         return empty_suggestions()

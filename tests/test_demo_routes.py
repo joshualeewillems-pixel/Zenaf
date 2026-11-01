@@ -734,7 +734,6 @@ def test_progression_reader_section_judges_arc_with_restraint():
     section = dr._progression_reader_section(
         ["Visitor: I keep delaying.", "Mentor: What can the pattern teach?"],
         "guardian",
-        "Strand analysis of the recent window: the window's strands lean Logic 80%.",
     )
     # Judges the arc, not the last answer's accent.
     assert "Judge the ARC" in section
@@ -743,11 +742,13 @@ def test_progression_reader_section_judges_arc_with_restraint():
     assert "An empty verdict is common and valid" in section
     assert "Never light all seven" in section
     assert "The visitor chooses the road" in section
-    # Inputs present: memory-adjacent window turns, the register signal
-    # (named by display name), and the strand signal.
+    # Inputs present: memory-adjacent window turns and the register
+    # signal (named by display name). The deterministic strand signal
+    # was retired in Phase 5 (demo-only third path for casting data),
+    # so it must not appear here.
     assert "Visitor: I keep delaying." in section
     assert "Guardian" in section
-    assert "Strand analysis of the recent window" in section
+    assert "Strand analysis" not in section
     # Reasons name the situation, never the seat's job description.
     assert "never the seat's job description" in section
     assert "at most 10 words" in section
@@ -759,7 +760,7 @@ def test_progression_reader_section_judges_arc_with_restraint():
 def test_progression_reader_section_without_signals():
     from api.routes import demo_routes as dr
 
-    section = dr._progression_reader_section(["Visitor: hi"], None, "")
+    section = dr._progression_reader_section(["Visitor: hi"], None)
     assert "No seat flagged the last reply's register." in section
     assert "Strand analysis" not in section
 

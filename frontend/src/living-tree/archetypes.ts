@@ -240,3 +240,93 @@ export function dominantStrandKey(a: ArchetypeStatus): string | null {
   }
   return best
 }
+
+/* ------------------------------------------------------------------ */
+/* Phase 5 — tree-panel thread state (GET /steward/tree-panels)      */
+/* ------------------------------------------------------------------ */
+
+/** One live thread row for a seat panel — state only, no prose. The
+    payload carries both I4 axes: status + latest confirmed change
+    (developmental) and standing-reading presence + proposed/confirmed
+    counts (epistemic). Nothing here is generated text. */
+export type TreePanelThread = {
+  id: string
+  title: string
+  status: string
+  latest_confirmed_change: { kind: string; created_at: string } | null
+  standing_reading: boolean
+  proposed_changes: number
+  confirmed_changes: number
+}
+
+/** Panels keyed by seat id. Returns null on any failure (caller falls
+    back to no section — the panel stays identical to its static
+    frame). Validates the shape; a malformed payload is null, never
+    partial rows. */
+export async function fetchTreePanels(): Promise<Record<string, TreePanelThread[]> | null> {
+  try {
+    const res = await fetch('/steward/tree-panels', { credentials: 'include' })
+    if (!res.ok) return null
+    const j = (await res.json()) as { panels?: unknown }
+    if (!j.panels || typeof j.panels !== 'object' || Array.isArray(j.panels)) return null
+    const out: Record<string, TreePanelThread[]> = {}
+    for (const [seat, rows] of Object.entries(j.panels as Record<string, unknown>)) {
+      if (!Array.isArray(rows)) return null
+      const clean: TreePanelThread[] = []
+      for (const r of rows) {
+        const row = r as Record<string, unknown>
+        if (
+          typeof row.id !== 'string' ||
+          typeof row.title !== 'string' ||
+          typeof row.status !== 'string' ||
+          typeof row.standing_reading !== 'boolean' ||
+          typeof row.proposed_changes !== 'number' ||
+          typeof row.confirmed_changes !== 'number' ||
+          !(
+            row.latest_confirmed_change === null ||
+            (typeof row.latest_confirmed_change === 'object' &&
+              row.latest_confirmed_change !== null &&
+              typeof (row.latest_confirmed_change as Record<string, unknown>).kind === 'string' &&
+              typeof (row.latest_confirmed_change as Record<string, unknown>).created_at === 'string')
+          )
+        ) {
+          return null
+        }
+        clean.push(row as unknown as TreePanelThread)
+      }
+      out[seat] = clean
+    }
+    return out
+  } catch {
+    return null
+  }
+}
+
+/** Threads for one seat's panel section. Null panels, a missing seat,
+    or an empty list all mean the same thing: no section renders, and
+    the panel is identical to its static frame. */
+export function treePanelThreads(
+  panels: Record<string, TreePanelThread[]> | null,
+  seatId: string,
+): TreePanelThread[] {
+  if (!panels) return []
+  return panels[seatId] ?? []
+}
+
+/** One thread row's meta line — state strings only, no generated
+    prose. The latest confirmed change is developmental movement; the
+    awaiting-review count is epistemic pending state, never presented
+    as completion. */
+export function treePanelMeta(t: TreePanelThread): string {
+  const change = t.latest_confirmed_change
+    ? `latest confirmed change: ${t.latest_confirmed_change.kind} (${t.latest_confirmed_change.created_at.slice(0, 10)})`
+    : 'no confirmed change yet'
+  const parts = [`${t.status} · ${change}`]
+  if (t.standing_reading) parts.push('standing reading')
+  if (t.proposed_changes > 0) {
+    parts.push(
+      t.proposed_changes === 1 ? '1 change awaiting review' : `${t.proposed_changes} changes awaiting review`,
+    )
+  }
+  return parts.join(' · ')
+}

@@ -727,58 +727,22 @@ def _split_memory_and_verdict(raw: str) -> tuple[str, dict]:
     return mem, verdict
 
 
-def _strand_signal_line(window_text: str) -> str:
-    """One deterministic strand read of the recent window, as a prompt line.
-
-    Uses the journal story machinery (rule-based sorter + archetype
-    matching — no LLM call, no import cycle: the import is lazy and this
-    helper is only reached from the background worker). Best-effort: ""
-    when nothing scores or anything fails; the reader weighs the line as
-    one signal among several, never as the decision.
-    """
-    try:
-        from local_ai.journal.story import (
-            CAST_THRESHOLD,
-            analyze_entry_strands,
-            detect_active_archetypes,
-        )
-
-        weights = analyze_entry_strands(window_text or "")
-        if not weights:
-            return ""
-        top = sorted(weights.items(), key=lambda kv: kv[1], reverse=True)[:3]
-        strand_part = ", ".join(
-            f"{name} {w:.0%}" for name, w in top if w >= 0.1
-        )
-        names = []
-        for seat_id, sim in detect_active_archetypes(weights):
-            if sim < CAST_THRESHOLD or len(names) >= 3:
-                continue
-            arch = get_archetype(seat_id)
-            names.append(arch.display_name if arch else seat_id)
-        parts = []
-        if strand_part:
-            parts.append(f"the window's strands lean {strand_part}")
-        if names:
-            parts.append("the text already resembles " + " and ".join(names))
-        if not parts:
-            return ""
-        return "Strand analysis of the recent window: " + "; ".join(parts) + "."
-    except Exception:
-        return ""
-
-
 def _progression_reader_section(
     window_lines: list[str],
     register_flag: str | None,
-    strand_line: str,
 ) -> str:
     """The progression-reader half of the background generation's prompt.
 
     Judges the arc, not the last answer's accent. Inputs: the council
     memory (already in the prompt above this section), the last ~6
-    transcript turns, the last reply's self-reported register flag, and
-    the deterministic strand read — weighed together, none deciding alone.
+    transcript turns, and the last reply's self-reported register flag
+    — weighed together, none deciding alone.
+
+    Phase 5 (retired fragment): the deterministic strand-signal line
+    that used to join these signals is deleted — it was the demo-only
+    third path for casting data, with no callers beyond demo. The
+    reader weighs the register flag and the window only; casting data
+    for any future reader comes through the steward read model.
     """
     if register_flag:
         arch = get_archetype(register_flag)
@@ -790,8 +754,6 @@ def _progression_reader_section(
     else:
         register_line = "- No seat flagged the last reply's register."
     signals = [register_line]
-    if strand_line:
-        signals.append(f"- {strand_line}")
     seats = ", ".join(stock_archetype_ids())
     return (
         "After the memory bullets, one more job. You are also the council's "
@@ -856,9 +818,6 @@ def _refresh_council_memory(session_id: str) -> None:
         prompt += "\n\n" + _progression_reader_section(
             _speaker_lines(window),
             sess.get("last_register_flag"),
-            _strand_signal_line(
-                " ".join((t.get("content") or "") for t in window)
-            ),
         )
         raw = _meta.generate("", prompt, timeout=45, reasoning_effort="minimal").strip()
         if not raw:

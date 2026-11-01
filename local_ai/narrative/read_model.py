@@ -48,7 +48,7 @@ import json
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from local_ai.council.jurisdictions import SEAT_JURISDICTIONS
+from local_ai.council.jurisdictions import SEAT_JURISDICTIONS, jurisdiction_ids
 from local_ai.narrative.derivation import (
     consult_offer_declines,
     subject_key_for_thread,
@@ -796,6 +796,86 @@ class _Assembler:
             }
             for r in self.dismissals
         ]
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — tree panels + mint thread citations (pure over the snapshot)
+# ---------------------------------------------------------------------------
+
+#: Mint prompt thread cap (Phase 5): a prompt-size bound, not a data
+#: limit. The panel endpoint below is uncapped (per-user thread counts
+#: are small); only the mint prompt block is capped, newest first.
+MINT_THREAD_CAP = 20
+
+
+def _panel_thread_row(thread: Any, changes: list) -> dict:
+    """One panel row: state only, both I4 axes carried, never conflated.
+
+    Developmental axis: thread status + latest confirmed change.
+    Epistemic axis: standing-reading presence + proposed/confirmed
+    change counts. Approval density is served as counts, never rendered
+    as completion — the frontend shows "awaiting review" for proposed
+    counts and never aggregates them into a finished-ness score.
+    """
+    confirmed = [c for c in changes if c.status == "confirmed"]
+    proposed = [c for c in changes if c.status == "proposed"]
+    latest = confirmed[-1] if confirmed else None
+    return {
+        "id": thread.id,
+        "title": thread.title,
+        "status": thread.status,
+        "latest_confirmed_change": (
+            {"kind": latest.kind, "created_at": latest.created_at}
+            if latest is not None
+            else None
+        ),
+        "standing_reading": thread.standing_reading_id is not None,
+        "proposed_changes": len(proposed),
+        "confirmed_changes": len(confirmed),
+    }
+
+
+def panel_thread_state(snapshot: dict) -> dict[str, list[dict]]:
+    """Phase 5 tree panels: live thread state per seat, pure over one
+    snapshot (same contract as the rest of this module: no store calls).
+
+    Only ``active`` threads render — nascent threads are unaccepted
+    proposals, dormant/resolved/retired/archived threads are not live
+    stories. A thread renders under a seat only when that seat stands
+    in the thread's cast. Rows are newest first (the snapshot arrives
+    oldest first). Seats with no active threads get an empty list, so
+    the frontend renders no section there — the panel stays identical
+    to its static frame.
+    """
+    changes_by_thread: dict[str, list] = {}
+    for row in snapshot["changes"]:
+        changes_by_thread.setdefault(row.thread_id, []).append(row)
+    panels: dict[str, list[dict]] = {}
+    for seat in jurisdiction_ids():
+        rows = [
+            _panel_thread_row(thread, changes_by_thread.get(thread.id, []))
+            for thread in snapshot["threads"]
+            if thread.status == "active"
+            and any(c.get("seat") == seat for c in (thread.cast or []))
+        ]
+        rows.reverse()
+        panels[seat] = rows
+    return panels
+
+
+def active_thread_summaries(
+    snapshot: dict, *, limit: int = MINT_THREAD_CAP
+) -> list[dict]:
+    """Phase 5 mint re-basing: flat active-thread summaries, newest
+    first, capped for prompt size. The suggestions engine cites these
+    ids; it never invents one (unknown ids are dropped at shaping).
+    """
+    rows = [t for t in snapshot["threads"] if t.status == "active"]
+    rows.reverse()
+    return [
+        {"id": t.id, "title": t.title, "status": t.status}
+        for t in rows[:limit]
+    ]
 
 
 # ---------------------------------------------------------------------------

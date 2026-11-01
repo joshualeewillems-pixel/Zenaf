@@ -27,6 +27,11 @@ Verdict mapping (existing store transitions only, nothing new):
   reject → ``dismissed``.
 - fitting (``proposed``/``offered``, ``proposed_by`` steward):
   accept → ``accepted``; reject → ``rejected``.
+- revision (Phase 6 schedule version, ``in_review``):
+  accept → ``accepted`` (prior accepted version, if any, becomes
+  ``superseded``; the accepted version is the artifact's
+  deliverable); reject → ``rejected`` (terminal; the row stays).
+  Unresolved → no transition, version stays in review.
 
 Durability note, stated honestly: a decided proposal never
 reappears as pending — rejected/accepted statuses are terminal in
@@ -87,7 +92,15 @@ from dataclasses import dataclass
 
 from .store import NarrativeStore
 
-ITEM_KINDS: tuple[str, ...] = ("birth", "reading", "change", "fitting")
+# Phase 6: schedule revisions are review items too — a version in
+# review is a steward proposal awaiting a verdict, exactly like a
+# birth, reading, change, or fitting. This is the schedule's
+# review step running through the Phase 1 wiring, not a parallel
+# system: revisions appear in GET /steward/review and take verdicts
+# through the existing routes. No other Phase 1 semantics change.
+ITEM_KINDS: tuple[str, ...] = (
+    "birth", "reading", "change", "fitting", "revision",
+)
 VERDICTS: tuple[str, ...] = ("accepted", "rejected", "unresolved")
 
 #: Review surface per item kind (base plan §6.1 default).
@@ -96,6 +109,7 @@ SURFACE_BY_KIND: dict[str, str] = {
     "reading": "queue_card",
     "fitting": "queue_card",
     "change": "thread_note",
+    "revision": "queue_card",
 }
 
 
@@ -224,6 +238,49 @@ def pending_review_items(store: NarrativeStore, user_id: str) -> list[ReviewItem
                     },
                 )
             )
+        # Phase 6: schedule revisions in review. Only versions
+        # with status "in_review" are pending: a merely proposed
+        # version has not entered the review step yet, and the
+        # submit gate (store.submit_artifact_version_for_review)
+        # is what moves it here. Accepted, rejected, and
+        # superseded versions are terminal history, never pending.
+        for artifact in store.artifacts_for(user_id, thread_id=thread.id):
+            for version in store.artifact_versions(
+                user_id, artifact.id
+            ):
+                if version.status != "in_review":
+                    continue
+                items.append(
+                    ReviewItem(
+                        item_id=_item_id("revision", version.id),
+                        item_kind="revision",
+                        thread_id=thread.id,
+                        surface=SURFACE_BY_KIND["revision"],
+                        status=version.status,
+                        title=artifact.title,
+                        payload={
+                            "artifact_id": artifact.id,
+                            "version_no": version.version_no,
+                            "content": dict(version.content),
+                            "evidence_refs": version.evidence_refs or [],
+                            "reading_ids": version.reading_ids or [],
+                            "lens_id": version.lens_id,
+                            "created_by": version.created_by,
+                            "involvement": {
+                                "user_authored_units": (
+                                    version.user_authored_units
+                                ),
+                                "user_edited_units": (
+                                    version.user_edited_units
+                                ),
+                                "synthesized_units": (
+                                    version.synthesized_units
+                                ),
+                                "user_share": version.user_share,
+                            },
+                        },
+                    )
+                )
     return items
 
 
@@ -293,6 +350,8 @@ def apply_verdict(
                 )
         elif kind == "fitting":
             store.set_fitting_status(user_id, row_id, "accepted")
+        elif kind == "revision":
+            store.accept_artifact_version(user_id, row_id)
     elif verdict == "rejected":
         if kind == "birth":
             store.set_thread_status(user_id, row_id, "archived")
@@ -302,6 +361,8 @@ def apply_verdict(
             store.set_change_status(user_id, row_id, "dismissed")
         elif kind == "fitting":
             store.set_fitting_status(user_id, row_id, "rejected")
+        elif kind == "revision":
+            store.reject_artifact_version(user_id, row_id)
     store.record_review_verdict(user_id, kind, row_id, verdict)
     if verdict == "unresolved":
         return item
@@ -314,6 +375,8 @@ def apply_verdict(
         status = "accepted" if verdict == "accepted" else "rejected"
     elif kind == "change":
         status = "confirmed" if verdict == "accepted" else "dismissed"
+    elif kind == "revision":
+        status = "accepted" if verdict == "accepted" else "rejected"
     else:
         status = "accepted" if verdict == "accepted" else "rejected"
     return ReviewItem(

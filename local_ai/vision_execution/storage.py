@@ -686,6 +686,9 @@ def _migrate_aspiration_tables(conn: sqlite3.Connection) -> None:
           long_term_aspirations TEXT NOT NULL DEFAULT '',
           guidance_preferences TEXT NOT NULL DEFAULT '{}',
           anti_goals TEXT NOT NULL DEFAULT '',
+          heart_loves TEXT NOT NULL DEFAULT '',
+          heart_meaning TEXT NOT NULL DEFAULT '',
+          heart_commitments TEXT NOT NULL DEFAULT '',
           use_in_guidance INTEGER NOT NULL DEFAULT 0 CHECK (use_in_guidance IN (0, 1)),
           allow_inference INTEGER NOT NULL DEFAULT 0 CHECK (allow_inference IN (0, 1)),
           updated_at TEXT NOT NULL,
@@ -693,6 +696,26 @@ def _migrate_aspiration_tables(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    # Phase 2 (Narrative Steward, Part IX dependency): Heart fields
+    # for loves, sources of meaning, and commitments. Databases
+    # created before Phase 2 have no such columns (CREATE TABLE IF
+    # NOT EXISTS does not add them). Additive only; a missing
+    # column reads back as "not stated" for older rows. The fields
+    # hold user-stated text only — nothing in this codebase infers
+    # or invents Heart values; the Phase 2 aspiration bridge
+    # renders them verbatim when the guidance gates allow.
+    _heart_columns = {
+        row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(aspiration_profile)"
+        ).fetchall()
+    }
+    for _heart_col in ("heart_loves", "heart_meaning", "heart_commitments"):
+        if _heart_col not in _heart_columns:
+            conn.execute(
+                f"ALTER TABLE aspiration_profile ADD COLUMN {_heart_col} "
+                "TEXT NOT NULL DEFAULT ''"
+            )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS aspiration_inference_log (
@@ -1595,6 +1618,7 @@ def _parse_json_obj(raw: str | None) -> dict[str, Any]:
 
 
 def _aspiration_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    keys = set(row.keys()) if hasattr(row, "keys") else set()
     return {
         "user_id": row["user_id"],
         "core_aim": row["core_aim"] or "",
@@ -1605,6 +1629,14 @@ def _aspiration_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "long_term_aspirations": row["long_term_aspirations"] or "",
         "guidance_preferences": _parse_json_obj(row["guidance_preferences"]),
         "anti_goals": row["anti_goals"] or "",
+        # Heart fields (Phase 2): absent on pre-Phase 2 rows, where
+        # the migration above has not run — read as "not stated",
+        # never inferred.
+        "heart_loves": row["heart_loves"] if "heart_loves" in keys else "",
+        "heart_meaning": row["heart_meaning"] if "heart_meaning" in keys else "",
+        "heart_commitments": (
+            row["heart_commitments"] if "heart_commitments" in keys else ""
+        ),
         "use_in_guidance": bool(row["use_in_guidance"]),
         "allow_inference": bool(row["allow_inference"]),
         "updated_at": row["updated_at"],
@@ -1632,6 +1664,9 @@ def _validate_aspiration_text_fields(data: dict[str, Any]) -> dict[str, Any]:
         "near_term_aspirations",
         "long_term_aspirations",
         "anti_goals",
+        "heart_loves",
+        "heart_meaning",
+        "heart_commitments",
     ):
         if key not in data:
             continue
@@ -1702,6 +1737,9 @@ def upsert_aspiration_profile(user_id: str, data: dict[str, Any]) -> dict[str, A
             "long_term_aspirations": "",
             "guidance_preferences": "{}",
             "anti_goals": "",
+            "heart_loves": "",
+            "heart_meaning": "",
+            "heart_commitments": "",
             "use_in_guidance": 0,
             "allow_inference": 0,
         }
@@ -1712,8 +1750,9 @@ def upsert_aspiration_profile(user_id: str, data: dict[str, Any]) -> dict[str, A
             INSERT INTO aspiration_profile (
               user_id, core_aim, growth_domains, current_edge, current_obstacles,
               near_term_aspirations, long_term_aspirations, guidance_preferences, anti_goals,
+              heart_loves, heart_meaning, heart_commitments,
               use_in_guidance, allow_inference, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 uid,
@@ -1725,6 +1764,9 @@ def upsert_aspiration_profile(user_id: str, data: dict[str, Any]) -> dict[str, A
                 defaults["long_term_aspirations"],
                 defaults["guidance_preferences"],
                 defaults["anti_goals"],
+                defaults["heart_loves"],
+                defaults["heart_meaning"],
+                defaults["heart_commitments"],
                 int(defaults["use_in_guidance"]),
                 int(defaults["allow_inference"]),
                 now,

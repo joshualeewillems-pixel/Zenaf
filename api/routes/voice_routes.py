@@ -26,6 +26,7 @@ from local_ai.conversation.reply import generate_voice_reply
 from local_ai.conversation.store import ConversationStore
 from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
+from local_ai.narrative.context import weaver_context_provider
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -109,6 +110,20 @@ def voice_chat(
         history = (body.history or [])[-10:]
 
     try:
+        # Phase 2 steward (Weaver only, same provider seam as
+        # POST /conversation/turn): prepared steward context
+        # travels as extra_instructions inside the existing prompt
+        # budget — no new generation. Every other seat's call is
+        # unchanged, and any provider failure degrades to no
+        # context, never a failed turn.
+        steward_block = None
+        if arch_id == "conductor":
+            try:
+                steward_block = weaver_context_provider()(
+                    user_id, message, history
+                )
+            except Exception:
+                steward_block = None
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -117,6 +132,7 @@ def voice_chat(
             mode=body.mode,
             question=body.question,
             thread_summary=thread_summary,
+            extra_instructions=steward_block,
             # Continuation background knowledge (demonstration spec
             # §6): this seat's slice, resolved from the visitor's
             # actual state — no intention line, no offer instruction.

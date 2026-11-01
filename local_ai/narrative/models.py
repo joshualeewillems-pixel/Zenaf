@@ -380,6 +380,20 @@ class ThreadChange:
     new_reading_id: str | None = None
     status: str = "proposed"
     created_at: str = ""
+    #: Retirement reason, mandatory when kind == "retired" (Phase 3):
+    #: one of RETIREMENT_REASONS. None for non-retirement changes.
+    reason: str | None = None
+    #: Successor thread id, mandatory when reason == "reinterpreted".
+    #: The old thread's readings are preserved, never moved.
+    successor_thread_id: str | None = None
+    #: Outgrown-absence basis (Phase 3): the decay window in days
+    #: over which no new evidence arrived. Only for
+    #: retired/outgrown proposals, which cite a verified absence
+    #: instead of new evidence (see store.record_change).
+    absence_window_days: int | None = None
+    #: Timestamp of the thread's most recent evidence row at the
+    #: time the outgrown proposal was recorded. None otherwise.
+    absence_last_evidence_at: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -391,6 +405,10 @@ class ThreadChange:
             "new_reading_id": self.new_reading_id,
             "status": self.status,
             "created_at": self.created_at,
+            "reason": self.reason,
+            "successor_thread_id": self.successor_thread_id,
+            "absence_window_days": self.absence_window_days,
+            "absence_last_evidence_at": self.absence_last_evidence_at,
         }
 
 

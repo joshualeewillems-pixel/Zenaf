@@ -63,6 +63,14 @@ MEETING_COMPLETED = "meeting_completed"
 #: existing append-only DecisionCreate record as its source — the
 #: event references the decision by id and never duplicates it.
 DECISION_RECORDED = "decision_recorded"
+#: A record the user already had was edited (Phase 3 decision, per
+#: the addendum §8 gap note: no edit-event kind existed). The
+#: vocabulary accepts it and the derivation paths route it; no
+#: production emitter is wired yet — no user-edit chokepoint exists
+#: today that would not be noisy (VE update_* calls serve system
+#: flows as well as user edits), so emitters are a follow-up
+#: decision, not something this phase invents.
+RECORD_EDITED = "record_edited"
 
 EVENT_KINDS: tuple[str, ...] = (
     CONVERSATION_TURN,
@@ -70,6 +78,7 @@ EVENT_KINDS: tuple[str, ...] = (
     TASK_COMPLETED,
     MEETING_COMPLETED,
     DECISION_RECORDED,
+    RECORD_EDITED,
 )
 
 

@@ -1,13 +1,20 @@
-"""Journal entries rendered as archetype stories.
+"""Journal entries analyzed through the 7 strands; active council
+archetypes identified and built into casts.
 
 The user journals conversationally. We analyze the entry through the 7 strands,
 identify which council archetypes are active (by matching strand weight patterns),
-and render the entry as a short metaphorical story — a scene where the active
-archetypes appear as characters in dialogue.
+and build the cast other surfaces use (the minting pipeline's story path,
+demo readers, project mining, twigs).
 
-Like Inside Out meets journaling: your inner council dramatized.
+RETIRED (Phase 4, tier enforcement): the scene renderer
+(``render_archetype_story`` + ``_build_story_prompt``) was removed. It had
+zero production callers, its route was already empty, and its job —
+journal entry → told story — is covered by the minting pipeline's
+POST /pipeline/story (title + narrative + tier-graded key line). The
+``scene_render`` ref kind stays in the narrative ref vocabulary so any
+old scene-render rows remain Tier D (inadmissible as evidence).
 
-Comic-strip contract (for the future renderer):
+Comic-strip contract (for any future renderer):
     Each cast member carries an `avatar_url` (None when the seat's avatar is
     still locked — the ??? state). The comic renderer MUST honor this field:
       - avatar_url present -> draw the character using that image.
@@ -39,10 +46,6 @@ CAST_THRESHOLD = 0.45
 
 #: Maximum characters in the cast.
 MAX_CAST_SIZE = 3
-
-#: Target story length in words.
-STORY_MIN_WORDS = 150
-STORY_MAX_WORDS = 250
 
 #: Canonical plain-spoken strand order for vector alignment.
 _STRAND_ORDER: tuple[str, ...] = (
@@ -164,62 +167,3 @@ def build_cast(
             }
         )
     return out
-
-
-def _build_story_prompt(
-    entry_text: str,
-    cast: list[tuple[str, float]],
-    user_id: str | None = None,
-) -> str:
-    """Build the Meta LLM prompt that renders the entry as a scene.
-
-    Character names honor user-renamed seats (naming unlock milestones)
-    when user_id is given; stock names otherwise.
-    """
-    from local_ai.council.naming import get_display_name
-
-    characters: list[str] = []
-    for archetype_id, similarity in cast:
-        arch = get_archetype(archetype_id)
-        if arch is None:
-            continue
-        characters.append(
-            f"**{get_display_name(user_id, archetype_id)}**: {arch.prompt_frame}"
-        )
-    cast_block = "\n\n".join(characters)
-
-    return f"""You are a storyteller. Below is someone's journal entry, followed by a cast of characters — inner voices, each with a distinct way of seeing the world.
-
-Your task: render the journal entry as a short metaphorical SCENE (150-250 words) where these characters appear in dialogue, reacting to what happened in the entry. Not a clinical analysis — a living scene, like a moment from a film. The characters should sound like themselves: let their distinct voices come through in what they say and notice.
-
-JOURNAL ENTRY:
-\"\"\"
-{entry_text.strip()}
-\"\"\"
-
-CAST:
-{cast_block}
-
-Write the scene now. Keep it to 150-250 words. No preamble, no explanation — just the story."""
-
-
-def render_archetype_story(
-    entry_text: str,
-    cast: list[tuple[str, float]],
-    api_key: str | None = None,
-    model: str | None = None,
-    timeout: int = 120,
-    user_id: str | None = None,
-) -> str:
-    """Render a journal entry as an archetype story via the Meta LLM.
-
-    `cast` is a list of (archetype_id, similarity) from `select_cast`.
-    `user_id` lets character names honor user-renamed seats.
-    Raises RuntimeError if the Meta API key is not configured or the call fails.
-    """
-    if not cast:
-        raise ValueError("Cannot render a story with an empty cast.")
-    from local_ai.providers import meta as _meta
-
-    prompt = _build_story_prompt(entry_text, cast, user_id=user_id)
-    return _meta.generate(api_key, prompt, model=model, timeout=timeout).strip()

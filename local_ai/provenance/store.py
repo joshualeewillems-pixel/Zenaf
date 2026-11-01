@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS provenance_artifacts (
     reach_updated_at TEXT,
     c2pa_manifest BLOB,
     styled_by TEXT,
-    variation_of TEXT
+    variation_of TEXT,
+    tier TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_prov_art_sha ON provenance_artifacts(sha256);
 CREATE INDEX IF NOT EXISTS idx_prov_art_phash ON provenance_artifacts(phash);
@@ -137,6 +138,9 @@ def _row_to_artifact(row: sqlite3.Row) -> dict[str, Any]:
         "has_c2pa_manifest": row["c2pa_manifest"] is not None,
         "styled_by": row["styled_by"] if "styled_by" in row.keys() else None,
         "variation_of": row["variation_of"] if "variation_of" in row.keys() else None,
+        # Phase 4 (tier enforcement): NULL = unlabeled (legacy rows and
+        # non-pipeline artifacts). Never read as a tier.
+        "tier": row["tier"] if "tier" in row.keys() else None,
     }
 
 
@@ -164,7 +168,7 @@ class ProvenanceStore:
             row["name"]
             for row in self._conn.execute("PRAGMA table_info(provenance_artifacts)")
         }
-        for name in ("styled_by", "variation_of"):
+        for name in ("styled_by", "variation_of", "tier"):
             if name not in cols:
                 self._conn.execute(
                     f"ALTER TABLE provenance_artifacts ADD COLUMN {name} TEXT"
@@ -196,9 +200,18 @@ class ProvenanceStore:
         c2pa_manifest: bytes | None = None,
         styled_by: str | None = None,
         variation_of: str | None = None,
+        # Phase 4 (tier enforcement): "evidence" for verbatim user
+        # records (journal entries), "dramatization" for tellings
+        # shaped for effect (stories, packs, quote cards). None =
+        # unlabeled (legacy rows, non-pipeline artifacts) — never
+        # interpreted as a tier. Any other value is a programming
+        # error and raises.
+        tier: str | None = None,
     ) -> dict[str, Any]:
         if visibility not in VISIBILITIES:
             raise ValueError(f"bad visibility: {visibility}")
+        if tier not in (None, "evidence", "dramatization"):
+            raise ValueError(f"bad provenance tier: {tier!r}")
         if remix_policy not in REMIX_POLICIES:
             raise ValueError(f"bad remix_policy: {remix_policy}")
         artifact_id = _new_id()
@@ -211,15 +224,15 @@ class ProvenanceStore:
                     title, description, archetype_cast, source_hash, modality,
                     phash, sha256, visibility, remix_policy, minted, imported,
                     disputed, creator_declared, reach_cached, reach_updated_at,
-                    c2pa_manifest, styled_by, variation_of
-                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    c2pa_manifest, styled_by, variation_of, tier
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     artifact_id, creator_user_id, custodian_user_id, now,
                     title, description, json.dumps(archetype_cast or []),
                     source_hash, modality, phash, sha256, visibility,
                     remix_policy, 0, int(imported), 0, int(creator_declared),
-                    0.0, None, c2pa_manifest, styled_by, variation_of,
+                    0.0, None, c2pa_manifest, styled_by, variation_of, tier,
                 ),
             )
             self._conn.commit()
@@ -239,6 +252,7 @@ class ProvenanceStore:
             "source_hash", "visibility", "remix_policy", "minted", "imported",
             "disputed", "creator_declared", "reach_cached", "reach_updated_at",
             "c2pa_manifest", "styled_by", "variation_of", "phash", "sha256",
+            "tier",
         }
         updates = {k: v for k, v in fields.items() if k in allowed}
         if "visibility" in updates and updates["visibility"] not in VISIBILITIES:

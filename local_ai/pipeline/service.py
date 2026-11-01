@@ -99,6 +99,9 @@ def create_journal_entry(
         remix_policy="open",
         imported=False,
         creator_declared=True,
+        # Phase 4 (tier enforcement): the entry artifact IS the
+        # verbatim user record — Tier E.
+        tier="evidence",
     )
     prov_store.log_event(artifact["artifact_id"], "minted", actor_user_id=user_id)
 
@@ -202,6 +205,11 @@ def make_story(
         remix_policy="open",
         imported=False,
         creator_declared=True,
+        # Phase 4 (tier enforcement): a story is a telling shaped
+        # for effect — Tier D, inadmissible as evidence. (The
+        # key-line tier in the description is a separate axis: it
+        # grades the line, this grades the artifact.)
+        tier="dramatization",
     )
     prov_store.log_event(artifact["artifact_id"], "minted", actor_user_id=user_id)
     prov_store.add_link(artifact["artifact_id"], entry["artifact_id"], "linked")
@@ -420,6 +428,9 @@ def generate_packs(
             creator_declared=True,
             styled_by=None,  # style rental is later work (spec §9 step 10)
             variation_of=None,
+            # Phase 4 (tier enforcement): packs are tellings shaped
+            # for effect — Tier D.
+            tier="dramatization",
         )
         prov_store.log_event(artifact["artifact_id"], "minted", actor_user_id=user_id)
         prov_store.add_link(artifact["artifact_id"], story_id, "linked")
@@ -481,6 +492,9 @@ def regen_pack(
         creator_declared=True,
         styled_by=None,
         variation_of=pack_id,
+        # Phase 4 (tier enforcement): packs are tellings shaped
+        # for effect — Tier D.
+        tier="dramatization",
     )
     prov_store.log_event(artifact["artifact_id"], "minted", actor_user_id=user_id)
     prov_store.add_link(artifact["artifact_id"], story_id, "linked")
@@ -541,6 +555,10 @@ def make_quote_card(
         archetype_cast=content["archetype_cast"],
         source_hash=story.get("sha256"),
         remix_policy="open",
+        # Phase 4 (tier enforcement): quote cards are tellings
+        # shaped for effect — Tier D. (The line itself is certified
+        # verbatim; the card as an artifact is still dramatization.)
+        tier="dramatization",
     )
     image_b64 = base64.b64encode(plain_png).decode()
     if badge:

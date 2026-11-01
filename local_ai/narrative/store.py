@@ -51,6 +51,7 @@ from local_ai.strands import strand_keys
 
 from .lenses import get_lens
 from .models import (
+    ARTIFACT_VERSION_STATUSES,
     CHANGE_KINDS,
     CHANGE_STATUSES,
     DISMISSAL_KINDS,
@@ -64,6 +65,7 @@ from .models import (
     THREAD_LINK_RELATIONS,
     THREAD_ORIGINS,
     THREAD_STATUSES,
+    ArtifactVersion,
     DiscrepancyFlag,
     InvolvementMeasure,
     LensFitting,
@@ -71,6 +73,7 @@ from .models import (
     ProgressionPosition,
     RelevanceAssessment,
     ReviewVerdict,
+    StewardArtifact,
     StewardDismissal,
     StewardObservable,
     ThreadChange,
@@ -108,6 +111,20 @@ _CHANGE_TRANSITIONS: dict[str, frozenset[str]] = {
     "proposed": frozenset({"confirmed", "dismissed"}),
     "confirmed": frozenset(),
     "dismissed": frozenset(),
+}
+
+#: Phase 6 artifact-version transitions (models
+#: ARTIFACT_VERSION_STATUSES). One-way forward: a proposed version
+#: enters review, then is accepted or rejected; an accepted version
+#: is superseded only by a later acceptance. No backward moves, no
+#: resurrection — a rejected or superseded version keeps its row
+#: (durable rejection, retrievable predecessor) and never advances.
+_ARTIFACT_VERSION_TRANSITIONS: dict[str, frozenset[str]] = {
+    "proposed": frozenset({"in_review"}),
+    "in_review": frozenset({"accepted", "rejected"}),
+    "accepted": frozenset({"superseded"}),
+    "rejected": frozenset(),
+    "superseded": frozenset(),
 }
 
 _SCHEMA = """
@@ -362,6 +379,43 @@ CREATE TABLE IF NOT EXISTS steward_review_verdicts (
 );
 CREATE INDEX IF NOT EXISTS idx_verdicts_user_kind
   ON steward_review_verdicts (user_id, item_kind, created_at);
+
+-- Phase 6 (diffusion schedule, literal): steward artifacts and
+-- their versions. Versions are append-only: a rewrite inserts a
+-- new row, never updates a predecessor, so every draft stays
+-- retrievable. Content is the WHOLE draft at that version, never
+-- a patch. Evidence is cited by thread_evidence row id only —
+-- this module never writes evidence rows, so Tier-E records are
+-- immutable by construction. Additive only: old databases gain
+-- these tables on open via CREATE TABLE IF NOT EXISTS.
+CREATE TABLE IF NOT EXISTS steward_artifacts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_artifacts_user_thread
+  ON steward_artifacts (user_id, thread_id, created_at);
+CREATE TABLE IF NOT EXISTS steward_artifact_versions (
+  id TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  version_no INTEGER NOT NULL,
+  content_json TEXT NOT NULL DEFAULT '{}',
+  evidence_refs_json TEXT NOT NULL DEFAULT '[]',
+  reading_ids_json TEXT NOT NULL DEFAULT '[]',
+  lens_id TEXT,
+  status TEXT NOT NULL DEFAULT 'proposed',
+  user_authored_units REAL NOT NULL DEFAULT 0,
+  user_edited_units REAL NOT NULL DEFAULT 0,
+  synthesized_units REAL NOT NULL DEFAULT 0,
+  created_by TEXT NOT NULL DEFAULT 'steward',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_artifact_versions_artifact
+  ON steward_artifact_versions (artifact_id, version_no);
 """
 
 
@@ -658,6 +712,36 @@ def _row_to_dismissal(row: sqlite3.Row) -> StewardDismissal:
         user_id=row["user_id"],
         kind=row["kind"],
         signature=row["signature"],
+        created_at=row["created_at"],
+    )
+
+
+def _row_to_artifact(row: sqlite3.Row) -> StewardArtifact:
+    return StewardArtifact(
+        id=row["id"],
+        user_id=row["user_id"],
+        thread_id=row["thread_id"],
+        title=row["title"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_artifact_version(row: sqlite3.Row) -> ArtifactVersion:
+    return ArtifactVersion(
+        id=row["id"],
+        artifact_id=row["artifact_id"],
+        user_id=row["user_id"],
+        version_no=int(row["version_no"]),
+        content=_loads(row["content_json"], {}),
+        evidence_refs=_loads(row["evidence_refs_json"], []),
+        reading_ids=_loads(row["reading_ids_json"], []),
+        lens_id=row["lens_id"],
+        status=row["status"],
+        user_authored_units=float(row["user_authored_units"]),
+        user_edited_units=float(row["user_edited_units"]),
+        synthesized_units=float(row["synthesized_units"]),
+        created_by=row["created_by"],
         created_at=row["created_at"],
     )
 
@@ -2060,6 +2144,524 @@ class NarrativeStore:
             ).fetchall()
         return [_row_to_fitting(r) for r in rows]
 
+    # -- Phase 6: steward artifacts + versions (diffusion schedule) -----------
+
+    def _validate_version_refs(
+        self,
+        user_id: str,
+        thread_id: str,
+        evidence_refs: Iterable[str],
+        reading_ids: Iterable[str],
+    ) -> tuple[list[str], list[str]]:
+        """Citations must belong to this thread; nothing else is checked.
+
+        Evidence refs are thread_evidence row ids (citations, never
+        embedded text — the pass never writes evidence rows, so
+        Tier-E records cannot be rewritten here). Reading ids are
+        thread reading ids. Unknown or other-thread ids raise
+        loudly; silent repair would let a draft cite state it
+        never saw.
+        """
+        ev_ids = [str(r) for r in evidence_refs]
+        rd_ids = [str(r) for r in reading_ids]
+        with self._lock:
+            for ev_id in ev_ids:
+                row = self._conn.execute(
+                    "SELECT id FROM thread_evidence "
+                    "WHERE id = ? AND thread_id = ?",
+                    (ev_id, thread_id),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(
+                        f"unknown evidence for thread: {ev_id!r}"
+                    )
+            for rd_id in rd_ids:
+                row = self._conn.execute(
+                    "SELECT id FROM thread_readings "
+                    "WHERE id = ? AND thread_id = ?",
+                    (rd_id, thread_id),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(
+                        f"unknown reading for thread: {rd_id!r}"
+                    )
+        return ev_ids, rd_ids
+
+    def _validate_involvement_units(
+        self, involvement: dict | None
+    ) -> tuple[float, float, float]:
+        """Per-version involvement split, same validation as the ledger."""
+        units: dict[str, float] = {}
+        for label in (
+            "user_authored_units",
+            "user_edited_units",
+            "synthesized_units",
+        ):
+            value = (involvement or {}).get(label, 0.0)
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                raise ValueError(f"{label} is not a number: {value!r}") from None
+            if number < 0:
+                raise ValueError(f"{label} cannot be negative: {value!r}")
+            units[label] = number
+        return (
+            units["user_authored_units"],
+            units["user_edited_units"],
+            units["synthesized_units"],
+        )
+
+    def _insert_version_locked(
+        self,
+        user_id: str,
+        artifact_id: str,
+        version_no: int,
+        content: dict,
+        evidence_refs: list[str],
+        reading_ids: list[str],
+        lens_id: str | None,
+        units: tuple[float, float, float],
+        created_by: str,
+        now: str,
+    ) -> ArtifactVersion:
+        record = ArtifactVersion(
+            id=_new_id("artv"),
+            artifact_id=artifact_id,
+            user_id=user_id,
+            version_no=version_no,
+            content=dict(content),
+            evidence_refs=list(evidence_refs),
+            reading_ids=list(reading_ids),
+            lens_id=lens_id,
+            status="proposed",
+            user_authored_units=units[0],
+            user_edited_units=units[1],
+            synthesized_units=units[2],
+            created_by=created_by,
+            created_at=now,
+        )
+        self._conn.execute(
+            "INSERT INTO steward_artifact_versions (id, artifact_id, "
+            "user_id, version_no, content_json, evidence_refs_json, "
+            "reading_ids_json, lens_id, status, user_authored_units, "
+            "user_edited_units, synthesized_units, created_by, "
+            "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                record.id, record.artifact_id, record.user_id,
+                record.version_no, json.dumps(record.content),
+                json.dumps(record.evidence_refs),
+                json.dumps(record.reading_ids), record.lens_id,
+                record.status, record.user_authored_units,
+                record.user_edited_units, record.synthesized_units,
+                record.created_by, record.created_at,
+            ),
+        )
+        return record
+
+    def create_artifact(
+        self,
+        user_id: str,
+        thread_id: str,
+        *,
+        title: str = "",
+        content: dict | None = None,
+        evidence_refs: Iterable[str] = (),
+        reading_ids: Iterable[str] = (),
+        lens_id: str | None = None,
+        involvement: dict | None = None,
+        created_by: str = "steward",
+    ) -> tuple[StewardArtifact, ArtifactVersion]:
+        """Start a schedule run: artifact row + version 1 (Draft step).
+
+        The Draft conditioner is enforced here: at least one
+        evidence citation is required — zero candidates means no
+        draft, not an uncited one. Content is the WHOLE draft at
+        this version, never a patch. The version's involvement
+        split is also recorded on the ledger (subject "artifact"),
+        so resolution rendering reads one current measure.
+        """
+        if not isinstance(content, dict):
+            raise ValueError("artifact content must be a dict")
+        ev_ids, rd_ids = self._validate_version_refs(
+            user_id, thread_id, evidence_refs, reading_ids
+        )
+        if not ev_ids:
+            raise ValueError(
+                "artifact draft requires at least one evidence citation"
+            )
+        units = self._validate_involvement_units(involvement)
+        now = _utcnow()
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            artifact = StewardArtifact(
+                id=_new_id("art"),
+                user_id=user_id,
+                thread_id=thread_id,
+                title=title,
+                created_at=now,
+                updated_at=now,
+            )
+            self._conn.execute(
+                "INSERT INTO steward_artifacts (id, user_id, thread_id, "
+                "title, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    artifact.id, artifact.user_id, artifact.thread_id,
+                    artifact.title, artifact.created_at, artifact.updated_at,
+                ),
+            )
+            version = self._insert_version_locked(
+                user_id, artifact.id, 1, content, ev_ids, rd_ids,
+                lens_id, units, created_by, now,
+            )
+            self._conn.commit()
+        self.record_involvement(
+            user_id,
+            subject_kind="artifact",
+            subject_id=artifact.id,
+            user_authored_units=units[0],
+            user_edited_units=units[1],
+            synthesized_units=units[2],
+            note=f"schedule v{version.version_no}",
+        )
+        return artifact, version
+
+    def get_artifact(
+        self, user_id: str, artifact_id: str
+    ) -> StewardArtifact | None:
+        """One artifact, or None when it is not this user's."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_artifacts "
+                "WHERE id = ? AND user_id = ?",
+                (artifact_id, user_id),
+            ).fetchone()
+        return _row_to_artifact(row) if row is not None else None
+
+    def artifacts_for(
+        self, user_id: str, *, thread_id: str | None = None
+    ) -> list[StewardArtifact]:
+        """A user's artifacts, oldest first, optionally per thread."""
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if thread_id is not None:
+            clauses.append("thread_id = ?")
+            args.append(thread_id)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_artifacts WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at, id",
+                args,
+            ).fetchall()
+        return [_row_to_artifact(r) for r in rows]
+
+    def artifact_versions(
+        self, user_id: str, artifact_id: str
+    ) -> list[ArtifactVersion]:
+        """Every version of one artifact, in version order.
+
+        Predecessors stay retrievable after supersede or rejection:
+        versions are append-only, never updated except for their
+        own forward status transitions.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM steward_artifacts "
+                "WHERE id = ? AND user_id = ?",
+                (artifact_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"unknown artifact: {artifact_id!r}")
+            rows = self._conn.execute(
+                "SELECT * FROM steward_artifact_versions "
+                "WHERE artifact_id = ? ORDER BY version_no, id",
+                (artifact_id,),
+            ).fetchall()
+        return [_row_to_artifact_version(r) for r in rows]
+
+    def get_artifact_version(
+        self, user_id: str, version_id: str
+    ) -> ArtifactVersion | None:
+        """One version, or None when it is not this user's."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_artifact_versions "
+                "WHERE id = ? AND user_id = ?",
+                (version_id, user_id),
+            ).fetchone()
+        return _row_to_artifact_version(row) if row is not None else None
+
+    def artifact_status(self, user_id: str, artifact_id: str) -> str:
+        """Derived schedule position: rendered | in_review | drafting.
+
+        Derived from versions, never stored redundantly, so it
+        cannot drift from version state. "rendered" iff an accepted
+        version exists; else "in_review" iff a version is in
+        review; else "drafting".
+        """
+        versions = self.artifact_versions(user_id, artifact_id)
+        statuses = {v.status for v in versions}
+        if "accepted" in statuses:
+            return "rendered"
+        if "in_review" in statuses:
+            return "in_review"
+        return "drafting"
+
+    def propose_artifact_revision(
+        self,
+        user_id: str,
+        artifact_id: str,
+        *,
+        content: dict | None = None,
+        evidence_refs: Iterable[str] | None = None,
+        reading_ids: Iterable[str] | None = None,
+        lens_id: str | None = None,
+        involvement: dict | None = None,
+        created_by: str = "steward",
+    ) -> ArtifactVersion:
+        """Global revision pass: a whole-draft rewrite, versioned.
+
+        The new version's content replaces the draft wholesale —
+        it is never a patch and never merges with its predecessor.
+        Defaults make the pass genuinely global: omitted
+        evidence_refs become the thread's CURRENT evidence rows,
+        omitted reading_ids become its CURRENT accepted readings,
+        so the rewrite reconsiders the whole constellation, not a
+        slice. Citing an accepted reading never mutates it; a
+        change to accepted state goes through a new reading
+        proposal, not through this row. The pass writes no
+        evidence rows and no reading rows: Tier-E records and
+        accepted readings are immutable here by construction.
+        Unproposed alternatives are never stored (§6.7 default):
+        each revision act records exactly one proposed version.
+        """
+        if not isinstance(content, dict):
+            raise ValueError("artifact content must be a dict")
+        artifact = self.get_artifact(user_id, artifact_id)
+        if artifact is None:
+            raise ValueError(f"unknown artifact: {artifact_id!r}")
+        # Defaults are read BEFORE the write lock: evidence_for /
+        # readings_for take the store lock themselves (plain,
+        # non-reentrant), so calling them under it would deadlock.
+        if evidence_refs is None:
+            evidence_refs = [
+                r.id
+                for r in self.evidence_for(user_id, artifact.thread_id)
+            ]
+        if reading_ids is None:
+            reading_ids = [
+                r.id
+                for r in self.readings_for(
+                    user_id, artifact.thread_id, status="accepted"
+                )
+            ]
+        ev_ids, rd_ids = self._validate_version_refs(
+            user_id, artifact.thread_id, evidence_refs, reading_ids
+        )
+        if not ev_ids:
+            raise ValueError(
+                "artifact revision requires at least one evidence citation"
+            )
+        units = self._validate_involvement_units(involvement)
+        now = _utcnow()
+        with self._lock:
+            max_no = self._conn.execute(
+                "SELECT MAX(version_no) FROM steward_artifact_versions "
+                "WHERE artifact_id = ?",
+                (artifact_id,),
+            ).fetchone()[0]
+            version_no = (max_no or 0) + 1
+            version = self._insert_version_locked(
+                user_id, artifact_id, version_no, content, ev_ids,
+                rd_ids, lens_id, units, created_by, now,
+            )
+            self._conn.execute(
+                "UPDATE steward_artifacts SET updated_at = ? "
+                "WHERE id = ?",
+                (now, artifact_id),
+            )
+            self._conn.commit()
+        self.record_involvement(
+            user_id,
+            subject_kind="artifact",
+            subject_id=artifact_id,
+            user_authored_units=units[0],
+            user_edited_units=units[1],
+            synthesized_units=units[2],
+            note=f"schedule v{version.version_no}",
+        )
+        return version
+
+    def _set_artifact_version_status(
+        self, user_id: str, version_id: str, new_status: str
+    ) -> ArtifactVersion:
+        """One forward version transition, or a loud ValueError.
+
+        Gate enforcement lives here: only the transitions in
+        _ARTIFACT_VERSION_TRANSITIONS exist, and only the owning
+        user may move a version. A rejected or superseded version
+        never advances again.
+        """
+        if new_status not in ARTIFACT_VERSION_STATUSES:
+            raise ValueError(f"unknown version status: {new_status!r}")
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_artifact_versions "
+                "WHERE id = ? AND user_id = ?",
+                (version_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"unknown version: {version_id!r}")
+            version = _row_to_artifact_version(row)
+            allowed = _ARTIFACT_VERSION_TRANSITIONS[version.status]
+            if new_status not in allowed:
+                raise ValueError(
+                    f"version {version_id!r} cannot move "
+                    f"{version.status!r} -> {new_status!r}"
+                )
+            self._conn.execute(
+                "UPDATE steward_artifact_versions SET status = ? "
+                "WHERE id = ?",
+                (new_status, version_id),
+            )
+            self._conn.commit()
+        return self.get_artifact_version(user_id, version_id)  # type: ignore[return-value]
+
+    def submit_artifact_version_for_review(
+        self, user_id: str, version_id: str
+    ) -> ArtifactVersion:
+        """Review-step entry gate: proposed → in_review only.
+
+        Entering review is what makes a version a pending review
+        item; a merely proposed version is not verdictable. This
+        is the gate the schedule's review step enforces.
+        """
+        return self._set_artifact_version_status(
+            user_id, version_id, "in_review"
+        )
+
+    def accept_artifact_version(
+        self, user_id: str, version_id: str
+    ) -> ArtifactVersion:
+        """Accept one in-review version; supersede any prior accepted.
+
+        The accepted version becomes the artifact's deliverable;
+        the superseded predecessor keeps its row and content,
+        retrievable, never destroyed. Only the review layer calls
+        this (review.apply_verdict, transition-then-log); direct
+        callers must still pass the in_review gate.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_artifact_versions "
+                "WHERE id = ? AND user_id = ?",
+                (version_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"unknown version: {version_id!r}")
+            version = _row_to_artifact_version(row)
+            if version.status != "in_review":
+                raise ValueError(
+                    f"version {version_id!r} cannot move "
+                    f"{version.status!r} -> 'accepted'"
+                )
+            prior = self._conn.execute(
+                "SELECT id FROM steward_artifact_versions "
+                "WHERE artifact_id = ? AND status = 'accepted'",
+                (version.artifact_id,),
+            ).fetchall()
+            for prior_row in prior:
+                self._conn.execute(
+                    "UPDATE steward_artifact_versions SET status = "
+                    "'superseded' WHERE id = ?",
+                    (prior_row["id"],),
+                )
+            self._conn.execute(
+                "UPDATE steward_artifact_versions SET status = "
+                "'accepted' WHERE id = ?",
+                (version_id,),
+            )
+            self._conn.commit()
+        return self.get_artifact_version(user_id, version_id)  # type: ignore[return-value]
+
+    def reject_artifact_version(
+        self, user_id: str, version_id: str
+    ) -> ArtifactVersion:
+        """Reject one in-review version; its row stays, terminal."""
+        return self._set_artifact_version_status(
+            user_id, version_id, "rejected"
+        )
+
+    def render_artifact(
+        self, user_id: str, artifact_id: str
+    ) -> dict | None:
+        """The rendered deliverable — or None when nothing is accepted.
+
+        Rendering is a pure read over store state, not a state
+        change: an unaccepted revision can never become standing
+        state through this function, because there is nothing to
+        render until a version carries an accepted verdict. The
+        deliverable carries its tier, lens, and involvement on
+        itself, so any downstream reader can check what produced
+        the telling. Blend appears here only as labeled provenance.
+        """
+        artifact = self.get_artifact(user_id, artifact_id)
+        if artifact is None:
+            raise ValueError(f"unknown artifact: {artifact_id!r}")
+        versions = self.artifact_versions(user_id, artifact_id)
+        accepted = [v for v in versions if v.status == "accepted"]
+        if not accepted:
+            return None
+        version = accepted[-1]
+        fitted = [
+            f
+            for f in self.fittings_for(user_id, artifact.thread_id)
+            if f.status == "accepted"
+        ]
+        lens = None
+        if fitted:
+            fit = fitted[-1]
+            lens = {
+                "lens_id": fit.lens_id,
+                "proposed_by": fit.proposed_by,
+                "decided_at": fit.decided_at,
+            }
+        return {
+            "artifact_id": artifact.id,
+            "thread_id": artifact.thread_id,
+            "title": artifact.title,
+            "version_no": version.version_no,
+            "content": dict(version.content),
+            "evidence_refs": list(version.evidence_refs or []),
+            "reading_ids": list(version.reading_ids or []),
+            "lens": lens,
+            "draft_lens_id": version.lens_id,
+            "involvement": {
+                "user_authored_units": version.user_authored_units,
+                "user_edited_units": version.user_edited_units,
+                "synthesized_units": version.synthesized_units,
+                "user_share": version.user_share,
+            },
+            "provenance": (
+                {
+                    "blend": {
+                        "user_sourced": version.user_share,
+                        "base_model_fill": (
+                            1 - version.user_share
+                            if version.user_share is not None
+                            else None
+                        ),
+                        "label": "provenance: user-sourced vs "
+                        "base-model fill — not resolution, "
+                        "not fidelity",
+                    },
+                    "version_id": version.id,
+                }
+                if version.user_share is not None
+                else None
+            ),
+        }
+
     # -- involvement ledger (Part VII) --------------------------------------------
 
     def record_involvement(
@@ -2831,8 +3433,8 @@ class NarrativeStore:
         DELETE means real removal, not retire-and-hide).
 
         Removes the thread row, its evidence, readings, changes,
-        deferred-prose rows, lens fittings, observables, and
-        containment links on either side. Phase 1 rows follow the
+        deferred-prose rows, lens fittings, observables, Phase 6
+        artifacts + versions, and containment links on either side. Phase 1 rows follow the
         same rule: verdict rows for the thread's items, relevance
         assessments for the thread, and flags on those assessments
         are deleted with it (NULL-thread assessments are not
@@ -2878,8 +3480,15 @@ class NarrativeStore:
                 "OR (item_kind = 'change' AND item_id IN "
                 "(SELECT id FROM thread_changes WHERE thread_id = ?)) "
                 "OR (item_kind = 'fitting' AND item_id IN "
-                "(SELECT id FROM lens_fittings WHERE thread_id = ?)))",
-                (user_id, thread_id, thread_id, thread_id, thread_id),
+                "(SELECT id FROM lens_fittings WHERE thread_id = ?)) "
+                "OR (item_kind = 'revision' AND item_id IN "
+                "(SELECT id FROM steward_artifact_versions WHERE "
+                "artifact_id IN (SELECT id FROM steward_artifacts "
+                "WHERE thread_id = ?))))",
+                (
+                    user_id, thread_id, thread_id, thread_id,
+                    thread_id, thread_id,
+                ),
             )
             self._conn.execute(
                 "DELETE FROM steward_discrepancy_flags WHERE user_id = ? "
@@ -2899,6 +3508,17 @@ class NarrativeStore:
                 ("steward_deferred_prose", "thread_id = ?"),
                 ("lens_fittings", "thread_id = ?"),
                 ("steward_observables", "thread_id = ?"),
+                # Phase 6: artifact versions go before their
+                # artifacts; both are thread-owned rows, so they
+                # cascade with the thread. Involvement measures
+                # are measures ABOUT a subject and survive, as
+                # before.
+                (
+                    "steward_artifact_versions",
+                    "artifact_id IN (SELECT id FROM steward_artifacts "
+                    "WHERE thread_id = ?)",
+                ),
+                ("steward_artifacts", "thread_id = ?"),
             ):
                 self._conn.execute(
                     f"DELETE FROM {table} WHERE {clause}",
@@ -3561,7 +4181,9 @@ class NarrativeStore:
         rather than silently skipped). Unresolved never transitions
         proposal state — review.py records it and stops there.
         """
-        if item_kind not in ("birth", "reading", "change", "fitting"):
+        if item_kind not in (
+            "birth", "reading", "change", "fitting", "revision"
+        ):
             raise ValueError(f"unknown review item kind: {item_kind!r}")
         if verdict not in ("accepted", "rejected", "unresolved"):
             raise ValueError(f"unknown review verdict: {verdict!r}")
@@ -3648,7 +4270,7 @@ class NarrativeStore:
         per_kind: dict[str, dict] = {}
         total_accepted = 0
         total_rejected = 0
-        for kind in ("birth", "reading", "change", "fitting"):
+        for kind in ("birth", "reading", "change", "fitting", "revision"):
             accepted = 0
             rejected = 0
             for row in rows:

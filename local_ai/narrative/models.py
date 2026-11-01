@@ -694,7 +694,7 @@ class ReviewVerdict:
 
     id: str
     user_id: str
-    item_kind: str  # birth | reading | change | fitting
+    item_kind: str  # birth | reading | change | fitting | revision
     item_id: str
     verdict: str  # accepted | rejected | unresolved
     created_at: str = ""
@@ -706,5 +706,129 @@ class ReviewVerdict:
             "item_kind": self.item_kind,
             "item_id": self.item_id,
             "verdict": self.verdict,
+            "created_at": self.created_at,
+        }
+
+
+# -- Phase 6 (diffusion schedule, literal) ---------------------------------
+# The schedule's records. Versions are append-only by construction:
+# a rewrite inserts a new version row; no version row is ever
+# updated, so every predecessor stays retrievable. A rejected
+# version keeps its row with status "rejected" (durable rejection,
+# §2 schedule) — the §6.7 default (do not record rejected OPTIONS)
+# governs unproposed alternatives, which are never stored at all:
+# each revision act records exactly one proposed version.
+
+
+#: Artifact version lifecycle. One-way forward, enforced by the
+#: store: proposed → in_review → accepted | rejected; accepted →
+#: superseded (only by a later acceptance). No backward moves, no
+#: resurrection of a rejected or superseded version.
+ARTIFACT_VERSION_STATUSES: tuple[str, ...] = (
+    "proposed",
+    "in_review",
+    "accepted",
+    "rejected",
+    "superseded",
+)
+
+
+@dataclass(frozen=True)
+class StewardArtifact:
+    """One steward-mediated artifact: a thread's accepted state
+    rendered into a deliverable, via the §2 schedule.
+
+    The artifact row itself carries identity only — title, thread,
+    timestamps. Its CONTENT lives on versions: before any version
+    is accepted there is no artifact content, only draft versions
+    (proposed / in_review); after acceptance the accepted version
+    is the deliverable. Status is derived from versions, never
+    stored redundantly: "rendered" iff an accepted version exists,
+    else "in_review" iff a version is in review, else "drafting".
+    """
+
+    id: str
+    user_id: str
+    thread_id: str
+    title: str = ""
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "thread_id": self.thread_id,
+            "title": self.title,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True)
+class ArtifactVersion:
+    """One version of a steward artifact — a WHOLE draft, never a patch.
+
+    ``content`` is the complete draft at this version (telling,
+    structure, whatever the caller renders); a rewrite replaces it
+    wholesale, it never diffs against its predecessor. ``evidence_refs``
+    are thread_evidence row ids the version cites — citations, never
+    embedded evidence text: the pass never writes evidence rows, so
+    Tier-E records are immutable by construction. ``reading_ids``
+    are thread reading ids the version draws on; citing an accepted
+    reading never mutates it — a change to accepted state goes
+    through a new reading proposal, not through this row.
+    Involvement is recorded per version, in the ledger's separate
+    columns, so each rewrite's user vs synthesized split is
+    assertable from the row itself.
+    """
+
+    id: str
+    artifact_id: str
+    user_id: str
+    version_no: int
+    content: dict[str, Any] = field(default_factory=dict)
+    evidence_refs: list[str] | None = None
+    reading_ids: list[str] | None = None
+    lens_id: str | None = None
+    status: str = "proposed"
+    user_authored_units: float = 0.0
+    user_edited_units: float = 0.0
+    synthesized_units: float = 0.0
+    created_by: str = "steward"
+    created_at: str = ""
+
+    @property
+    def total_units(self) -> float:
+        return (
+            self.user_authored_units
+            + self.user_edited_units
+            + self.synthesized_units
+        )
+
+    @property
+    def user_share(self) -> float | None:
+        """The user's fraction of this version — None when unmeasured."""
+        total = self.total_units
+        if total <= 0:
+            return None
+        return (self.user_authored_units + self.user_edited_units) / total
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "artifact_id": self.artifact_id,
+            "user_id": self.user_id,
+            "version_no": self.version_no,
+            "content": dict(self.content or {}),
+            "evidence_refs": list(self.evidence_refs or []),
+            "reading_ids": list(self.reading_ids or []),
+            "lens_id": self.lens_id,
+            "status": self.status,
+            "user_authored_units": self.user_authored_units,
+            "user_edited_units": self.user_edited_units,
+            "synthesized_units": self.synthesized_units,
+            "user_share": self.user_share,
+            "created_by": self.created_by,
             "created_at": self.created_at,
         }

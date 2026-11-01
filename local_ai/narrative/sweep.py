@@ -10,11 +10,15 @@ multi-event batches.
 
 Design decisions, stated so review can challenge them:
 
-- ROLLOUT (proposal §2/§10): increment A derives
-  ``meeting_completed`` events ONLY. Other fellowship kinds in the
-  segment are consumed-and-skipped (the offset advances past
-  them): widening later does NOT backfill pre-widening events of
-  other kinds, because the offset has already passed them.
+- ROLLOUT (proposal §2/§10, lifted in Phase 3): increment A
+  derived ``meeting_completed`` events ONLY. Other fellowship kinds
+  in the segment were consumed-and-skipped (the offset advances
+  past them): widening later does NOT backfill pre-widening events
+  of other kinds, because the offset has already passed them.
+  Phase 3 widens to all kinds once its fixture criteria pass
+  (§6.8 default); the live-divergence check (sweep vs live
+  agreement in production) is NOT established by fixtures and
+  remains a deploy-time consideration.
 - GATE-CLOSED CONSUME-SKIP: when the consent gate is closed for a
   batch, the batch is NOT derived and the offset still advances
   past it. Derivation covers activity from opt-in forward; it
@@ -55,7 +59,6 @@ from local_ai.activity import _activity_log_path
 from local_ai.fellowship.events import (
     EVENT_KINDS,
     FELLOWSHIP_ACTIVITY_SOURCE,
-    MEETING_COMPLETED,
     FellowshipEvent,
 )
 
@@ -88,8 +91,10 @@ STEWARD_SWEEP_INTERVAL_SECONDS = 60
 #: a pattern resets the clock is an open detail for increment E,
 #: which owns surfacing.
 STEWARD_IGNORED_RETENTION_WINDOW = timedelta(days=30)
-#: Increment A derives meeting completions only (§2 rollout).
-STEWARD_SWEEP_KINDS: tuple[str, ...] = (MEETING_COMPLETED,)
+#: Phase 3: all fellowship event kinds (was meeting-completed
+#: only under increment A). See the ROLLOUT note above for the
+#: no-backfill consequence.
+STEWARD_SWEEP_KINDS: tuple[str, ...] = EVENT_KINDS
 
 _USER_LOCKS: dict[str, threading.Lock] = {}
 _USER_LOCKS_GUARD = threading.Lock()
@@ -243,8 +248,8 @@ def run_sweep_for_user(
 ) -> SweepResult:
     """Sweep the activity log for one user (increment A §3.2/§4).
 
-    Reads from the user's stored byte offset, derives
-    meeting_completed events in batches of ≤ ``batch_max``, advances
+    Reads from the user's stored byte offset, derives fellowship
+    events in batches of ≤ ``batch_max``, advances
     the offset only past successfully consumed batches (cursor-last,
     §7), runs the deferred worker, runs the friction pass
     (increment C: after the deferred worker so it sees freshly
@@ -427,6 +432,22 @@ def _process_batch(
         result.events_gate_skipped += len(batch)
         return True
     try:
+        # Phase 3: detectors run before derivation, same ordering
+        # as the live path — a change proposal attaches the
+        # event's evidence first, so derivation finds it already
+        # attached and proposes nothing twice. Detector failure
+        # never fails the batch (derivation still runs).
+        from local_ai.narrative.changes import detect_changes_for_event
+
+        for event in batch:
+            try:
+                detect_changes_for_event(store, user_id, event)
+            except Exception:
+                logger.exception(
+                    "steward sweep: change detection failed for "
+                    "event %s",
+                    event.id,
+                )
         derive_batch(
             user_id,
             [event_to_item(event) for event in batch],

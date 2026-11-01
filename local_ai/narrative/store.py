@@ -185,7 +185,11 @@ CREATE TABLE IF NOT EXISTS thread_changes (
   prior_reading_id TEXT,
   new_reading_id TEXT,
   status TEXT NOT NULL DEFAULT 'proposed',
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  reason TEXT,
+  successor_thread_id TEXT,
+  absence_window_days INTEGER,
+  absence_last_evidence_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_thread_changes_thread
   ON thread_changes (thread_id, created_at);
@@ -586,6 +590,22 @@ def _row_to_change(row: sqlite3.Row) -> ThreadChange:
         new_reading_id=row["new_reading_id"],
         status=row["status"],
         created_at=row["created_at"],
+        reason=row["reason"] if "reason" in row.keys() else None,
+        successor_thread_id=(
+            row["successor_thread_id"]
+            if "successor_thread_id" in row.keys()
+            else None
+        ),
+        absence_window_days=(
+            row["absence_window_days"]
+            if "absence_window_days" in row.keys()
+            else None
+        ),
+        absence_last_evidence_at=(
+            row["absence_last_evidence_at"]
+            if "absence_last_evidence_at" in row.keys()
+            else None
+        ),
     )
 
 
@@ -728,6 +748,29 @@ class NarrativeStore:
                     "ALTER TABLE steward_deferred_prose "
                     "ADD COLUMN suppressed_key TEXT"
                 )
+            # Phase 3 migration: databases created before Phase 3
+            # have no retirement/absence columns on thread_changes
+            # (CREATE TABLE IF NOT EXISTS does not add them).
+            # Additive only; NULL reads back as "no retirement
+            # basis recorded" for older rows (no retired changes
+            # could exist before Phase 3: no caller recorded them).
+            chg_columns = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(thread_changes)"
+                ).fetchall()
+            }
+            for _col, _type in (
+                ("reason", "TEXT"),
+                ("successor_thread_id", "TEXT"),
+                ("absence_window_days", "INTEGER"),
+                ("absence_last_evidence_at", "TEXT"),
+            ):
+                if _col not in chg_columns:
+                    self._conn.execute(
+                        f"ALTER TABLE thread_changes "
+                        f"ADD COLUMN {_col} {_type}"
+                    )
             self._conn.commit()
 
     def close(self) -> None:
@@ -1569,6 +1612,9 @@ class NarrativeStore:
         evidence_refs: Iterable[SourceRef | str] = (),
         new_reading_id: str | None = None,
         prior_reading_id: str | None = None,
+        reason: str | None = None,
+        successor_thread_id: str | None = None,
+        absence_basis: dict | None = None,
     ) -> ThreadChange:
         """Record that a thread's story moved.
 
@@ -1576,13 +1622,131 @@ class NarrativeStore:
         ref must be NEW to the thread — evidence ids already attached
         and refs already attached do not count. A change asserted on
         only old evidence raises here, whatever called it.
+
+        Phase 3 structural exception, narrow and verified: a
+        ``retired`` change whose basis is structural rather than
+        evidential may cite no new evidence, because the movement
+        it records is not a new arrival:
+
+        - ``outgrown``: ``absence_basis`` must carry ``window_days``
+          (int > 0) and ``last_evidence_at`` (ISO timestamp). The
+          store verifies the thread has at least one evidence row
+          and that its most recent evidence predates now minus the
+          window; otherwise it raises. The verified computation —
+          window + last-evidence timestamp — is stored on the row,
+          so the proposal is inspectable and falsifiable, not an
+          invented event.
+        - ``reinterpreted``: ``successor_thread_id`` must name a
+          different thread of the same user. The successor link is
+          the basis; both threads' readings are untouched.
+
+        Every other retired reason (``completed``, ``abandoned``)
+        and every non-retired kind still requires new evidence.
+        ``reason``/``successor_thread_id``/``absence_basis`` on a
+        non-retired kind raise.
         """
         if kind not in CHANGE_KINDS:
             raise ValueError(f"unknown thread change kind: {kind!r}")
+        if kind != "retired" and (
+            reason is not None
+            or successor_thread_id is not None
+            or absence_basis is not None
+        ):
+            raise ValueError(
+                "reason/successor/absence_basis are only valid for "
+                "retired changes"
+            )
+        structural_basis = False
+        absence_window_days: int | None = None
+        absence_last_evidence_at: str | None = None
+        if kind == "retired":
+            if reason not in RETIREMENT_REASONS:
+                raise ValueError(
+                    "a retired change requires a reason in "
+                    f"{list(RETIREMENT_REASONS)}: {reason!r}"
+                )
+            if reason == "reinterpreted":
+                if not successor_thread_id:
+                    raise ValueError(
+                        "a reinterpreted retirement requires "
+                        "successor_thread_id"
+                    )
+                if successor_thread_id == thread_id:
+                    raise ValueError(
+                        "a thread cannot be its own successor"
+                    )
+            if reason == "outgrown":
+                if not isinstance(absence_basis, dict):
+                    raise ValueError(
+                        "an outgrown retirement requires "
+                        "absence_basis {window_days, last_evidence_at}"
+                    )
+                try:
+                    absence_window_days = int(
+                        absence_basis["window_days"]
+                    )
+                    absence_last_evidence_at = str(
+                        absence_basis["last_evidence_at"]
+                    )
+                except (KeyError, TypeError, ValueError):
+                    raise ValueError(
+                        "absence_basis needs int window_days and "
+                        "str last_evidence_at"
+                    ) from None
+                if absence_window_days <= 0:
+                    raise ValueError("window_days must be positive")
+            elif absence_basis is not None:
+                raise ValueError(
+                    "absence_basis is only valid for outgrown "
+                    "retirements"
+                )
+            structural_basis = reason in ("outgrown", "reinterpreted")
         with self._lock:
             thread = self._require_thread(user_id, thread_id)
+            if successor_thread_id is not None:
+                self._require_thread(user_id, successor_thread_id)
+            if reason == "outgrown":
+                assert absence_window_days is not None
+                assert absence_last_evidence_at is not None
+                rows = self._conn.execute(
+                    "SELECT created_at FROM thread_evidence "
+                    "WHERE thread_id = ? ORDER BY created_at DESC",
+                    (thread_id,),
+                ).fetchall()
+                if not rows:
+                    raise ValueError(
+                        "an outgrown retirement needs at least one "
+                        "evidence row to cite as last confirmation"
+                    )
+                last_seen = rows[0]["created_at"]
+                cutoff = (
+                    datetime.now(timezone.utc)
+                    - timedelta(days=absence_window_days)
+                )
+                try:
+                    last_dt = datetime.fromisoformat(
+                        last_seen.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    raise ValueError(
+                        "cannot verify absence: unparseable evidence "
+                        f"timestamp {last_seen!r}"
+                    ) from None
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=timezone.utc)
+                if last_dt > cutoff:
+                    raise ValueError(
+                        "absence not verified: evidence arrived "
+                        f"within the window (last {last_seen})"
+                    )
+                if absence_last_evidence_at != last_seen:
+                    raise ValueError(
+                        "absence_basis last_evidence_at does not "
+                        "match the thread's most recent evidence "
+                        f"({last_seen})"
+                    )
             resolved, newly = self._attach_evidence(thread_id, evidence_refs)
-            if not newly:
+            if not newly and not structural_basis:
                 raise ValueError(
                     "a thread change cannot be recorded without new "
                     "evidence (invariant: at least one cited ref must "
@@ -1616,17 +1780,26 @@ class NarrativeStore:
                 new_reading_id=new_reading_id,
                 status="proposed",
                 created_at=_utcnow(),
+                reason=reason,
+                successor_thread_id=successor_thread_id,
+                absence_window_days=absence_window_days,
+                absence_last_evidence_at=absence_last_evidence_at,
             )
             self._conn.execute(
                 "INSERT INTO thread_changes (id, thread_id, kind, "
                 "evidence_refs_json, prior_reading_id, "
-                "new_reading_id, status, created_at) VALUES "
-                "(?, ?, ?, ?, ?, ?, ?, ?)",
+                "new_reading_id, status, created_at, reason, "
+                "successor_thread_id, absence_window_days, "
+                "absence_last_evidence_at) VALUES "
+                "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     record.id, record.thread_id, record.kind,
                     json.dumps(resolved, ensure_ascii=False),
                     record.prior_reading_id, record.new_reading_id,
                     record.status, record.created_at,
+                    record.reason, record.successor_thread_id,
+                    record.absence_window_days,
+                    record.absence_last_evidence_at,
                 ),
             )
             self._touch_thread(thread_id, change=True)

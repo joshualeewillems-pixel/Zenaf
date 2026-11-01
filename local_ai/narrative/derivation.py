@@ -89,7 +89,7 @@ from typing import Any, Callable, Iterable
 
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 from local_ai.council.jurisdictions import get_jurisdiction
-from local_ai.fellowship.events import MEETING_COMPLETED, FellowshipEvent
+from local_ai.fellowship.events import FellowshipEvent
 
 from .models import NarrativeThread
 from .refs import RefTier, SourceRef
@@ -1965,11 +1965,15 @@ class StewardPipeline:
 
     def _run_event(self, event: FellowshipEvent) -> None:
         try:
-            # Increment A rollout: the install path derives
-            # meeting completions only; other kinds arrive via the
-            # sweep only after the initial path passes tests.
-            if event.kind != MEETING_COMPLETED:
-                return
+            # Phase 3: the live path derives ALL event kinds, not
+            # just meeting completions (increment A rollout lifted
+            # once the Phase 3 fixture criteria pass). The consent
+            # gate still comes first — detectors are derivation
+            # work and never run for a closed gate. Detectors run
+            # before analysis: a change proposal attaches the
+            # event's evidence before derivation sees it, so
+            # re-analysis finds it already attached and proposes
+            # nothing twice.
             if not self._gate_open(event.user_id):
                 logger.info(
                     "narrative: steward consent closed for user %r; "
@@ -1978,6 +1982,19 @@ class StewardPipeline:
                     event.id,
                 )
                 return
+            from local_ai.narrative.changes import (
+                detect_changes_for_event,
+            )
+
+            try:
+                detect_changes_for_event(
+                    self.store, event.user_id, event
+                )
+            except Exception:
+                logger.exception(
+                    "narrative: change detection failed for event %s",
+                    event.id,
+                )
             analyze_for_threads(event, self.store, generate_fn=self._generate_fn)
         except Exception:
             logger.exception("narrative: derivation run failed")

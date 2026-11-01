@@ -192,6 +192,15 @@ def pending_review_items(store: NarrativeStore, user_id: str) -> list[ReviewItem
                         "prior_reading_id": change.prior_reading_id,
                         "new_reading_id": change.new_reading_id,
                         "evidence_refs": change.evidence_refs or [],
+                        # Phase 3: retirement basis travels with
+                        # the proposal so the verdict surface shows
+                        # WHY the story is proposed to end.
+                        "reason": change.reason,
+                        "successor_thread_id": change.successor_thread_id,
+                        "absence_window_days": change.absence_window_days,
+                        "absence_last_evidence_at": (
+                            change.absence_last_evidence_at
+                        ),
                     },
                 )
             )
@@ -251,6 +260,37 @@ def apply_verdict(
             store.accept_reading(user_id, row_id)
         elif kind == "change":
             store.set_change_status(user_id, row_id, "confirmed")
+            # Phase 3: accepting a retirement retires the thread
+            # itself (status "retired", reason + successor from
+            # the proposal). A retired thread keeps its evidence
+            # and readings, leaves fast-path context (standing =
+            # active/dormant only), and is never quietly revived.
+            # No retired change can predate Phase 3 (no caller
+            # recorded one), so a missing reason is a data error
+            # and surfaces loudly instead of defaulting.
+            change = next(
+                (
+                    row
+                    for row in store.changes_for(
+                        user_id, item.thread_id
+                    )
+                    if row.id == row_id
+                ),
+                None,
+            )
+            if change is not None and change.kind == "retired":
+                if change.reason is None:
+                    raise ValueError(
+                        "retired change without a reason cannot "
+                        "retire its thread"
+                    )
+                store.set_thread_status(
+                    user_id,
+                    item.thread_id,
+                    "retired",
+                    retirement_reason=change.reason,
+                    successor_thread_id=change.successor_thread_id,
+                )
         elif kind == "fitting":
             store.set_fitting_status(user_id, row_id, "accepted")
     elif verdict == "rejected":

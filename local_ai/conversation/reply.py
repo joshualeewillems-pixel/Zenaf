@@ -20,6 +20,7 @@ from typing import Any, Callable
 from local_ai.agent_intake.llm_keys import generate as _default_generate
 from local_ai.conversation.weave import sanitize_weave
 from local_ai.council.archetypes import (
+    ANTI_PRESUMPTION_STYLE,
     PLAIN_TO_KEY,
     WEIGHT_FLOOR,
     build_archetype_prompt_lines,
@@ -28,6 +29,9 @@ from local_ai.council.archetypes import (
     stock_archetype_ids,
     voice_color,
 )
+from local_ai.council.canonical.weaver import WEAVER_RECORD
+from local_ai.council.jurisdictions import jurisdiction_prompt_lines
+from local_ai.council.render import render_weaver_ordinary
 
 _MSG_MAX = 2000
 _HISTORY_MAX = 20
@@ -40,6 +44,45 @@ _WEAVE_INSTRUCTION = (
 )
 
 GenerateFn = Callable[..., str]
+
+# Weaver canonical cutover — CODE-LEVEL, not a persistent feature flag.
+# True (the merged state): ordinary Weaver turns (weave=True) render
+# the canonical character block instead of the legacy archetype block.
+# False restores the exact legacy Weaver prompt: reverting this one
+# branch is the whole rollback, because no legacy function is modified.
+# Meeting turns (weave=False) always keep the legacy assembly — the
+# cutover is ordinary-conversation-only by design, so first-encounter
+# behavior is untouched.
+WEAVER_CANONICAL_CUTOVER = True
+
+
+def _strand_blend_lines(weights: dict[str, float]) -> list[str]:
+    """Strand-blend lines, mirroring the blend section of
+    build_archetype_prompt_lines. Mirrored (not reused) deliberately:
+    archetypes.py is the frozen rollback source and must not be
+    modified, so the canonical path recomputes these faculty lines
+    from the same weights and taglines instead of calling it."""
+    from local_ai.strands import strand as _strand
+
+    blend: list[str] = []
+    for plain_name, weight in sorted(weights.items(), key=lambda kv: kv[1], reverse=True):
+        if weight < WEIGHT_FLOOR:
+            continue
+        key = PLAIN_TO_KEY.get(plain_name)
+        tagline = ""
+        if key:
+            try:
+                tagline = _strand(key).tagline
+            except KeyError:
+                pass
+        pct = int(round(weight * 100))
+        if tagline:
+            blend.append(f"- {plain_name} ({pct}%): {tagline}")
+        else:
+            blend.append(f"- {plain_name} ({pct}%)")
+    if not blend:
+        return []
+    return ["Strand blend (faculties this seat draws on, by weight):", *blend]
 
 
 @dataclass
@@ -148,12 +191,18 @@ def build_voice_prompt(
         mode = "trained"
 
     display_name = arch.display_name
+    custom_name = None
     try:
         from local_ai.council.naming import get_display_name
 
         custom = get_display_name(user_id, arch.id)
         if custom:
             display_name = custom
+            # get_display_name falls back to the stock name when no
+            # custom name exists: only a value DIFFERENT from stock
+            # is a visitor-chosen name for the address line.
+            if custom != arch.display_name:
+                custom_name = custom
     except Exception:
         pass
 
@@ -162,9 +211,41 @@ def build_voice_prompt(
         weights_override = compute_skeptic_weights(user_id, mode=mode)
     weights = weights_override if weights_override is not None else (arch.strand_weights or {})
 
-    prompt_lines = build_archetype_prompt_lines(
-        arch_id, weights_override=weights_override, display_name_override=display_name
+    # Weaver canonical cutover (single gate, ordinary conversation
+    # only): for ordinary Weaver turns, the canonical renderer
+    # REPLACES the legacy character block — it does not supplement it.
+    # Replaced: the "You are {display_name}, a voice…" opener, the
+    # Archetype frame line, and the philosophy lines (both legacy
+    # sources: ARCHETYPE_PHILOSOPHY lines and steward-record lines
+    # when Weaver steward is active — neither function is called on
+    # this path, so neither is modified). Preserved verbatim: the
+    # shared anti-presumption style rule, the jurisdiction lines
+    # (registry focus/register/dictionary — complementary content the
+    # canonical block does not duplicate), and the strand blend, plus
+    # every downstream section below (trained sections, weave,
+    # reply guidance, question block, extra_instructions, fellowship
+    # reference, thread summary, context hint, history, continuity,
+    # trailer). The resolved capability guidance rides INSIDE the
+    # character block (assembly order) instead of its legacy
+    # downstream slot, so the downstream append below is skipped on
+    # this path — same content, moved once, never duplicated.
+    # Meeting turns (weave=False) and all other seats keep the exact
+    # legacy assembly.
+    weaver_canonical = (
+        arch_id == "conductor" and WEAVER_CANONICAL_CUTOVER and weave
     )
+    if weaver_canonical:
+        visitor_state = {"personal_name": custom_name} if custom_name else {}
+        character_block = render_weaver_ordinary(
+            WEAVER_RECORD, visitor_state, resolved_capability=capability_context
+        )
+        preserved_lines = [ANTI_PRESUMPTION_STYLE]
+        preserved_lines.extend(jurisdiction_prompt_lines(arch_id))
+        preserved_lines.extend(_strand_blend_lines(weights))
+    else:
+        prompt_lines = build_archetype_prompt_lines(
+            arch_id, weights_override=weights_override, display_name_override=display_name
+        )
 
     sections: list[str] = []
     has_training = False
@@ -174,11 +255,17 @@ def build_voice_prompt(
         if has_training:
             mode_used = "trained"
 
-    prompt = [
-        f"You are {display_name}, a voice in the user's Zenaf council, in a direct one-on-one conversation.",
-        "",
-        *prompt_lines,
-    ]
+    if weaver_canonical:
+        prompt = [
+            *character_block,
+            *preserved_lines,
+        ]
+    else:
+        prompt = [
+            f"You are {display_name}, a voice in the user's Zenaf council, in a direct one-on-one conversation.",
+            "",
+            *prompt_lines,
+        ]
     if sections:
         prompt += [
             "",
@@ -193,11 +280,12 @@ def build_voice_prompt(
             "you are the aspirational base voice. Be honest about that if it matters; "
             "never invent training they don't have.",
         ]
-    if capability_context:
+    if capability_context and not weaver_canonical:
         # Continuation background knowledge (demonstration spec §6):
         # the slice, rendered by the registry — never a per-turn
         # instruction to offer a feature, and never the first-meeting
-        # intention line.
+        # intention line. Skipped on the canonical path because the
+        # resolved guidance already rides inside the character block.
         prompt += ["", capability_context.strip()]
     if weave:
         prompt += ["", _WEAVE_INSTRUCTION]

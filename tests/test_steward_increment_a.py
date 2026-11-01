@@ -266,13 +266,15 @@ def test_pipeline_gates_install_path(tmp_path):
     assert len(_threads(store, USER)) == 1
 
 
-def test_pipeline_skips_non_meeting_kinds(tmp_path):
-    """Install-path rollout: meeting completions only. A
-    conversation_turn never derives on the install path, even with
-    consent open and a live thread to extend."""
+def test_pipeline_processes_matching_non_meeting_kinds(tmp_path):
+    """Phase 3 generalization (base plan §5): the live path no
+    longer filters to meeting completions. A conversation_turn
+    carrying a matching entity extends the live thread (one
+    generation, second reading); a conversation_turn with no
+    matching entity derives nothing. This supersedes the
+    pre-Phase-3 install-path rollout pin (meeting-only)."""
     store = _store(tmp_path)
     calls: list = []
-    gen = _counting_gen(BIRTH_JSON, calls)
     derive_batch(
         USER,
         [
@@ -280,19 +282,30 @@ def test_pipeline_skips_non_meeting_kinds(tmp_path):
             event_to_item(_event("evt-2", FOCUS_TEXT + " again")),
         ],
         store,
-        generate_fn=gen,
+        generate_fn=_counting_gen(BIRTH_JSON, calls),
     )
     assert len(_threads(store, USER)) == 1
     calls.clear()
     pipe = StewardPipeline(
         store=store,
-        generate_fn=gen,
+        generate_fn=_counting_gen(EXTENSION_JSON, calls),
         scheduler=lambda fn: fn(),
         consent_reader=lambda user_id: True,
     )
     pipe.schedule_event(_event("evt-3", FOCUS_TEXT, kind="conversation_turn"))
+    assert len(calls) == 1
+    assert len(_readings(store, USER, _threads(store, USER)[0].id)) == 2
+    calls.clear()
+    pipe.schedule_event(
+        _event(
+            "evt-4",
+            "unrelated text",
+            kind="conversation_turn",
+            entity="meeting:other-k9",
+        )
+    )
     assert calls == []
-    assert len(_readings(store, USER, _threads(store, USER)[0].id)) == 1
+    assert len(_readings(store, USER, _threads(store, USER)[0].id)) == 2
 
 
 def test_install_default_pipeline_gates_by_default(tmp_path, monkeypatch):
@@ -421,7 +434,11 @@ def test_deferred_recovery_through_sweep(tmp_path):
         generate_fn=_raising_gen,
         consent_reader=lambda user_id: True,
     )
-    assert res1.events_derived == 2
+    # Phase 3: the sweep no longer filters to meeting completions,
+    # so the conversation_turn line is processed too (3 events, not
+    # the pre-Phase-3 2). The run still births exactly one
+    # deferred thread.
+    assert res1.events_derived == 3
     assert res1.offset_after == log_path.stat().st_size
     threads = _threads(store, USER)
     assert len(threads) == 1

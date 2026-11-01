@@ -30,6 +30,7 @@ from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import ConversationStore
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 from local_ai.fellowship.events import emit_event as fellowship_emit_event
+from local_ai.narrative.context import weaver_context_provider
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
@@ -43,7 +44,16 @@ def _store() -> ConversationStore:
 def _service() -> ConversationService:
     # Fellowship Runtime P1: turns emit shared-reality events at the
     # request tail; derivation is scheduled off-path by the emitter.
-    return ConversationService(_store(), event_sink=fellowship_emit_event)
+    # Phase 2 steward: the Weaver's turns also carry prepared
+    # steward context (consent + relevance gated inside the
+    # provider). The provider builds its NarrativeStore lazily on
+    # the first Weaver turn, so non-Weaver turns never touch the
+    # narrative DB; any provider failure degrades to no context.
+    return ConversationService(
+        _store(),
+        event_sink=fellowship_emit_event,
+        steward_context_provider=weaver_context_provider(),
+    )
 
 
 def _uid(current_user: dict) -> str | None:

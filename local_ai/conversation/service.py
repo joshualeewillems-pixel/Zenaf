@@ -71,10 +71,21 @@ class ConversationService:
         store: ConversationStore,
         generate_fn: GenerateFn | None = None,
         event_sink: EventSink | None = None,
+        steward_context_provider: Callable[..., str | None] | None = None,
     ) -> None:
         self.store = store
         self._generate_fn = generate_fn
         self._event_sink = event_sink
+        # Phase 2 (Narrative Steward, Weaver-first): an optional
+        # provider of prepared steward context, called ONLY for the
+        # Weaver (archetype "conductor"). Every other seat's path is
+        # byte-identical with or without it: the provider is never
+        # consulted, and extra_instructions stays None. The block
+        # itself is advisory — the Weaver's existing generation
+        # responds to it or sets it aside; availability adds zero
+        # generations. Any provider failure degrades to no context,
+        # never a broken turn.
+        self._steward_context_provider = steward_context_provider
 
     # -- the turn loop ----------------------------------------------------------
 
@@ -113,6 +124,18 @@ class ConversationService:
         thread = self.store.get_thread_state(user_id, conversation_id, arch_id)
         thread_summary = thread["summary"] or None
 
+        steward_block = None
+        if arch_id == "conductor" and self._steward_context_provider is not None:
+            try:
+                steward_block = self._steward_context_provider(
+                    user_id, message, history_turns
+                )
+            except Exception:
+                logger.exception(
+                    "steward: prepared context failed; continuing without it"
+                )
+                steward_block = None
+
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -123,6 +146,11 @@ class ConversationService:
             context_hint=context_hint_for(context),
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,
+            # Phase 2 steward context (Weaver only): prepared
+            # context travels as extra_instructions inside the
+            # existing prompt budget — no new generation, no
+            # second call. Other seats never receive it.
+            extra_instructions=steward_block,
             # Continuation background knowledge (demonstration spec
             # §6): this seat's slice, resolved from the visitor's
             # actual state — no intention line, no offer instruction.

@@ -7,6 +7,9 @@ Three GET endpoints over the pure read model
 - ``GET /steward/signals/{kind}/{signal_id}`` — per-claim drill-down.
 - ``GET /steward/groups/{group_id}/members`` — bounded member pages
   for oversized groups (the list endpoint's escape hatch).
+- ``GET /steward/tree-panels`` (Phase 5) — live thread state per
+  seat for the Living Tree panels: active threads + latest confirmed
+  change, state only, no generated prose.
 
 Read-only by construction: no endpoint writes, transitions
 delivery state, touches a clock, or moves the sweep cursor. The
@@ -43,6 +46,7 @@ from local_ai.narrative.read_model import (
     build_signals_response,
     get_group_members,
     get_signal_detail,
+    panel_thread_state,
     validate_request_params,
 )
 from local_ai.narrative.store import NarrativeStore
@@ -182,5 +186,25 @@ def group_members(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LookupError as exc:
         raise HTTPException(status_code=404, detail="not found") from exc
+    finally:
+        store.close()
+
+
+@router.get("/tree-panels")
+def tree_panels(
+    current_user: dict = Depends(get_current_user),
+):
+    """Phase 5 tree panels: live thread state per seat, state only.
+
+    Same owner-gated, open-query-close pattern as the other endpoints
+    in this route. Seats with no active threads get an empty list, so
+    the frontend renders no section there. No generated prose anywhere
+    in the payload — titles, statuses, change kinds, and counts only.
+    """
+    user_id = current_user["id"]
+    store = get_narrative_store()
+    try:
+        snapshot = _build_snapshot(store, user_id)
+        return {"panels": panel_thread_state(snapshot)}
     finally:
         store.close()

@@ -312,8 +312,30 @@ def get_suggestions(
     except Exception:
         pass
 
+    # Phase 5: mint items cite live thread ids from the read model.
+    # Best-effort and same-user only — any failure leaves thread
+    # state out, which is exactly the pre-Phase 5 behavior. Threads
+    # are the user's own state surfaced in their own conversation;
+    # this is not cross-branch coordination, so no coordination flag
+    # gates it (the route itself is already current-user-only).
+    thread_summaries = None
+    try:
+        from api.routes.steward_routes import get_narrative_store
+        from local_ai.narrative.read_model import active_thread_summaries
+
+        _narrative_store = get_narrative_store()
+        try:
+            thread_summaries = active_thread_summaries(
+                _narrative_store.snapshot_for_read(user_id)
+            )
+        finally:
+            _narrative_store.close()
+    except Exception:
+        thread_summaries = None
+
     payload = sugg.generate_suggestions(
-        turns, live_context, generate_fn=None, seat_names=seat_names, user_id=user_id
+        turns, live_context, generate_fn=None, seat_names=seat_names,
+        user_id=user_id, threads=thread_summaries,
     )
     payload = sugg.asdict_suggestion_payload(payload)
     if latest_id:

@@ -33,9 +33,13 @@ import {
   dominantStrandKey,
   fetchArchetypeStatus,
   fetchKeystoneAttention,
+  fetchTreePanels,
+  treePanelMeta,
+  treePanelThreads,
   type ArchetypeStatus,
   type KeystoneAttention,
   type KeystoneAttentionReason,
+  type TreePanelThread,
 } from './archetypes'
 import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
 import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
@@ -874,6 +878,19 @@ export function LivingTreeView({
       cancelled = true
     }
   }, [])
+  // Phase 5 — live thread state per seat for the character panels.
+  // Null (backend unreachable, unseeded account) simply means no
+  // section renders; the panel stays identical to its static frame.
+  const [treePanels, setTreePanels] = useState<Record<string, TreePanelThread[]> | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    fetchTreePanels().then((p) => {
+      if (!cancelled && p) setTreePanels(p)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   /** Seat whose keystone meeting overlay is open, if any. */
   const [meetingSeat, setMeetingSeat] = useState<string | null>(null)
 
@@ -1144,6 +1161,26 @@ export function LivingTreeView({
           archetypeId={arch.id}
           character={FELLOWSHIP_NAMES[arch.id] ?? arch.display_name}
         />
+        {(() => {
+          // Phase 5 — recent stories, true from state: the seat's live
+          // threads (active, cast) with latest confirmed change. State
+          // strings only, no generated prose. No threads (or no panel
+          // data) renders nothing here, so the panel is identical to
+          // its static frame.
+          const panelThreads = treePanelThreads(treePanels, arch.id)
+          if (panelThreads.length === 0) return null
+          return (
+            <div className="lthreads">
+              <div className="lsect">Recent stories</div>
+              {panelThreads.map((t) => (
+                <div key={t.id} className="ltwig">
+                  <span className="lname">{t.title || 'Untitled thread'}</span>
+                  <span className="ldomain">{treePanelMeta(t)}</span>
+                </div>
+              ))}
+            </div>
+          )
+        })()}
         {isSeed && (
           <button
             type="button"

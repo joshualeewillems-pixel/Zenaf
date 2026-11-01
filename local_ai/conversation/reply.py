@@ -14,7 +14,6 @@ Two additive inputs exist only here (the voice route ignores them):
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -46,18 +45,15 @@ _WEAVE_INSTRUCTION = (
 
 GenerateFn = Callable[..., str]
 
-# Weaver canonical cutover — TRIAL-ONLY environment override
-# (Weaver Behavioral Trial v1, authorized 2026-11-01; reverted after
-# the legacy arm). Read at import: unset (or any value other than
-# "legacy") keeps the merged canonical behavior ON; explicit
-# "legacy" turns it OFF for ordinary Weaver turns. Fail-closed to
-# canonical. Scope is unchanged: ordinary Weaver turns only
-# (weave=True); meeting turns always keep the legacy assembly.
-# Reverting this change restores the constant True below it.
-WEAVER_CANONICAL_CUTOVER = (
-    os.environ.get("ZENAF_WEAVER_CUTOVER", "canonical").strip().lower()
-    != "legacy"
-)
+# Weaver canonical cutover — CODE-LEVEL, not a persistent feature flag.
+# True (the merged state): ordinary Weaver turns (weave=True) render
+# the canonical character block instead of the legacy archetype block.
+# False restores the exact legacy Weaver prompt: reverting this one
+# branch is the whole rollback, because no legacy function is modified.
+# Meeting turns (weave=False) always keep the legacy assembly — the
+# cutover is ordinary-conversation-only by design, so first-encounter
+# behavior is untouched.
+WEAVER_CANONICAL_CUTOVER = True
 
 
 def _strand_blend_lines(weights: dict[str, float]) -> list[str]:

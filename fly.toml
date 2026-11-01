@@ -8,9 +8,6 @@ primary_region = "lax"
 [env]
   ZENAF_PROD = "1"
   ZENAF_DB_DIR = "/app/data"
-  # TRIAL-ONLY (Weaver Behavioral Trial v1, legacy arm): reverted after
-  # the trial. See reply.py WEAVER_CANONICAL_CUTOVER.
-  ZENAF_WEAVER_CUTOVER = "legacy"
 
 [http_service]
   internal_port = 8010

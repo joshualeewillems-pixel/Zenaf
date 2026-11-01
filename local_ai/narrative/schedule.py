@@ -172,6 +172,76 @@ def render(
     return store.render_artifact(user_id, artifact_id)
 
 
+def propose_reconsideration(
+    store: NarrativeStore,
+    user_id: str,
+    reading_id: str,
+    reason: str = "",
+):
+    """State-revision pass entry (I3): candidate status for a
+    previously accepted interpretation, through the schedule's
+    proposal → offer → verdict discipline.
+
+    This is the schedule's review step applied to state
+    rather than to an artifact draft: the candidacy is a
+    review item (kind ``reconsideration``); the reading row
+    itself is never mutated — its status stays ``accepted``
+    and its content and evidence_refs are byte-identical
+    before and after. What the verdict decides is the
+    candidacy (affirmed: open for revision; dismissed:
+    stands as before). Reaffirm / revise / retire are the
+    downstream outcomes: a new reading proposal that
+    supersedes this one is the revise path; a retirement
+    change is the retire path; an affirmed candidacy with
+    no new proposal is, at close, the reaffirm path.
+    """
+    return store.propose_reading_reconsideration(
+        user_id, reading_id, reason
+    )
+
+
+def thread_status_display(
+    store: NarrativeStore,
+    user_id: str,
+    thread_id: str,
+) -> dict:
+    """A thread's status with BOTH I4 axes visible (Phase 7).
+
+    Developmental axis: the thread's lifecycle status,
+    retirement reason/successor, latest confirmed change.
+    Epistemic axis: standing-reading presence + status,
+    approval counts, fitted lens (the thread's ACCEPTED
+    fitting only — never a lens canon pick, never a draft's
+    claimed lens). Reconsideration candidacies on the
+    thread's readings are listed separately: a candidate
+    reading is still accepted, and the display must not
+    confuse candidacy with revision.
+
+    There is deliberately no ``resolved`` key anywhere in
+    this dict: no single bit may conflate the axes, and
+    approval density is counts, never a finished-ness score.
+    """
+    resolution = resolution_for_thread(store, user_id, thread_id)
+    reconsiderations = [
+        {
+            "id": item.id,
+            "reading_id": item.reading_id,
+            "status": item.status,
+            "reason": item.reason,
+        }
+        for item in store.reconsiderations_for(user_id)
+        if item.thread_id == thread_id
+    ]
+    return {
+        "thread_id": thread_id,
+        "developmental": resolution["developmental"],
+        "epistemic": resolution["epistemic"],
+        "involvement": resolution["involvement"],
+        "provenance": resolution["provenance"],
+        "reconsiderations": reconsiderations,
+    }
+
+
 def step_of_artifact(
     store: NarrativeStore, user_id: str, artifact_id: str
 ) -> str:

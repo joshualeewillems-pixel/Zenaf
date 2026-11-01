@@ -32,6 +32,18 @@ Verdict mapping (existing store transitions only, nothing new):
   ``superseded``; the accepted version is the artifact's
   deliverable); reject → ``rejected`` (terminal; the row stays).
   Unresolved → no transition, version stays in review.
+- oversight (Phase 7 oversight proposal, ``proposed``):
+  accept → ``confirmed`` (a confirmed OBSERVATION — no thread,
+  reading, or branch state changes, because oversight never
+  commands); reject → ``dismissed``.
+- correspondence (Phase 7 correspondence, ``proposed``):
+  accept → ``user_accepted`` (the user alone accepts; seat
+  responses never move this status); reject → ``rejected``.
+- reconsideration (Phase 7 reading reconsideration, ``proposed``):
+  accept → ``affirmed`` (the reading stays accepted and is
+  open for revision; the reading row itself is never edited);
+  reject → ``dismissed`` (candidacy cleared, reading stands).
+  Unresolved → no transition for all three new kinds.
 
 Durability note, stated honestly: a decided proposal never
 reappears as pending — rejected/accepted statuses are terminal in
@@ -98,8 +110,12 @@ from .store import NarrativeStore
 # review step running through the Phase 1 wiring, not a parallel
 # system: revisions appear in GET /steward/review and take verdicts
 # through the existing routes. No other Phase 1 semantics change.
+# Phase 7: oversight proposals, correspondences, and reading
+# reconsiderations route through the same machinery (store.py
+# record_review_verdict's kind tuple must match ITEM_KINDS).
 ITEM_KINDS: tuple[str, ...] = (
     "birth", "reading", "change", "fitting", "revision",
+    "oversight", "correspondence", "reconsideration",
 )
 VERDICTS: tuple[str, ...] = ("accepted", "rejected", "unresolved")
 
@@ -110,6 +126,9 @@ SURFACE_BY_KIND: dict[str, str] = {
     "fitting": "queue_card",
     "change": "thread_note",
     "revision": "queue_card",
+    "oversight": "queue_card",
+    "correspondence": "queue_card",
+    "reconsideration": "queue_card",
 }
 
 
@@ -138,14 +157,17 @@ def _parse_item_id(item_id: str) -> tuple[str, str]:
 
 
 def pending_review_items(store: NarrativeStore, user_id: str) -> list[ReviewItem]:
-    """All undecided steward proposals for a user, oldest first.
+    """All undecided steward proposals for a user, oldest first
+    within each kind.
 
     Only steward proposals appear: births with origin
     ``steward_proposal``, readings authored by ``steward``,
     steward-recorded changes, and fittings proposed by
     ``steward``. User-declared threads and user/seat-authored
     readings never appear here — they are not steward proposals
-    awaiting a verdict.
+    awaiting a verdict. Phase 7 kinds (oversight,
+    correspondence, reconsideration) append after the
+    thread-scoped items, oldest first within each kind.
     """
     items: list[ReviewItem] = []
     threads = store.threads_for(user_id, status="nascent", limit=None)
@@ -281,6 +303,76 @@ def pending_review_items(store: NarrativeStore, user_id: str) -> list[ReviewItem
                         },
                     )
                 )
+    # Phase 7: oversight proposals, correspondences, and
+    # reconsiderations are review items through this same
+    # enumeration — no parallel surface. Oversight items are
+    # thread-scoped; correspondences cite threads (listed
+    # under their first cited thread for display; the item
+    # itself carries all cited threads); reconsiderations
+    # are thread-scoped via their reading's thread.
+    for proposal in store.oversight_proposals_for(
+        user_id, status="proposed"
+    ):
+        thread = store.get_thread(user_id, proposal.thread_id)
+        items.append(
+            ReviewItem(
+                item_id=_item_id("oversight", proposal.id),
+                item_kind="oversight",
+                thread_id=proposal.thread_id,
+                surface=SURFACE_BY_KIND["oversight"],
+                status=proposal.status,
+                title=thread.title if thread else "",
+                payload={
+                    "kind": proposal.kind,
+                    "reason": proposal.reason,
+                    "detail": dict(proposal.detail or {}),
+                },
+            )
+        )
+    for corr in store.correspondences_for(user_id, status="proposed"):
+        first_thread = corr.thread_ids[0] if corr.thread_ids else ""
+        thread = (
+            store.get_thread(user_id, first_thread)
+            if first_thread
+            else None
+        )
+        items.append(
+            ReviewItem(
+                item_id=_item_id("correspondence", corr.id),
+                item_kind="correspondence",
+                thread_id=first_thread,
+                surface=SURFACE_BY_KIND["correspondence"],
+                status=corr.status,
+                title=thread.title if thread else "",
+                payload={
+                    "thread_ids": list(corr.thread_ids or []),
+                    "evidence_refs": list(corr.evidence_refs or []),
+                    "structural_tension": corr.structural_tension,
+                    "proposed_relationship": corr.proposed_relationship,
+                    "candidate_metaphor": corr.candidate_metaphor,
+                    "mapping": dict(corr.mapping or {}),
+                    "limitations": corr.limitations,
+                },
+            )
+        )
+    for item_row in store.reconsiderations_for(
+        user_id, status="proposed"
+    ):
+        thread = store.get_thread(user_id, item_row.thread_id)
+        items.append(
+            ReviewItem(
+                item_id=_item_id("reconsideration", item_row.id),
+                item_kind="reconsideration",
+                thread_id=item_row.thread_id,
+                surface=SURFACE_BY_KIND["reconsideration"],
+                status=item_row.status,
+                title=thread.title if thread else "",
+                payload={
+                    "reading_id": item_row.reading_id,
+                    "reason": item_row.reason,
+                },
+            )
+        )
     return items
 
 
@@ -352,6 +444,24 @@ def apply_verdict(
             store.set_fitting_status(user_id, row_id, "accepted")
         elif kind == "revision":
             store.accept_artifact_version(user_id, row_id)
+        elif kind == "oversight":
+            # Confirmed observation only: no thread, reading,
+            # or branch state changes, by construction — the
+            # store has no transition for it. Oversight never
+            # commands.
+            store.set_oversight_status(user_id, row_id, "confirmed")
+        elif kind == "correspondence":
+            # The user alone accepts: seat responses never
+            # move this status (three-layer framing, §3).
+            store.set_correspondence_status(
+                user_id, row_id, "user_accepted"
+            )
+        elif kind == "reconsideration":
+            # Affirmed candidacy: the reading stays accepted
+            # and untouched; only the candidacy moves.
+            store.set_reconsideration_status(
+                user_id, row_id, "affirmed"
+            )
     elif verdict == "rejected":
         if kind == "birth":
             store.set_thread_status(user_id, row_id, "archived")
@@ -363,6 +473,14 @@ def apply_verdict(
             store.set_fitting_status(user_id, row_id, "rejected")
         elif kind == "revision":
             store.reject_artifact_version(user_id, row_id)
+        elif kind == "oversight":
+            store.set_oversight_status(user_id, row_id, "dismissed")
+        elif kind == "correspondence":
+            store.set_correspondence_status(user_id, row_id, "rejected")
+        elif kind == "reconsideration":
+            store.set_reconsideration_status(
+                user_id, row_id, "dismissed"
+            )
     store.record_review_verdict(user_id, kind, row_id, verdict)
     if verdict == "unresolved":
         return item
@@ -377,6 +495,12 @@ def apply_verdict(
         status = "confirmed" if verdict == "accepted" else "dismissed"
     elif kind == "revision":
         status = "accepted" if verdict == "accepted" else "rejected"
+    elif kind == "oversight":
+        status = "confirmed" if verdict == "accepted" else "dismissed"
+    elif kind == "correspondence":
+        status = "user_accepted" if verdict == "accepted" else "rejected"
+    elif kind == "reconsideration":
+        status = "affirmed" if verdict == "accepted" else "dismissed"
     else:
         status = "accepted" if verdict == "accepted" else "rejected"
     return ReviewItem(

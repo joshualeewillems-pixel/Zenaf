@@ -832,3 +832,204 @@ class ArtifactVersion:
             "created_by": self.created_by,
             "created_at": self.created_at,
         }
+
+
+#: Correspondence lifecycle (addendum §3): the steward proposes
+#: structure; the user alone accepts or rejects; a newer
+#: correspondence may supersede an older one. Seat responses
+#: (adopt / translate / decline) live in their own rows and
+#: never move this status — the three-layer framing made
+#: mechanical: steward proposes, seat expresses, user decides.
+CORRESPONDENCE_STATUSES: tuple[str, ...] = (
+    "proposed", "user_accepted", "rejected", "superseded",
+)
+
+#: Seat responses to a correspondence (addendum §3, §2.7).
+#: Translation preserves the relationship, not the wording; a
+#: decline is a seat's own response, not a disagreement record.
+CORRESPONDENCE_RESPONSES: tuple[str, ...] = (
+    "adopt", "translate", "decline",
+)
+
+
+@dataclass(frozen=True)
+class Correspondence:
+    """One steward-proposed narrative correspondence (addendum §3).
+
+    STRUCTURE, not prose: the steward offers evidence references,
+    a structural tension, a proposed relationship, a mapping of
+    which elements parallel which, and the limitations — where
+    the analogy fails or risks imposing meaning. The candidate
+    metaphor is optional and illustrative only. A correspondence
+    is NEVER evidence: its id (``corr-`` prefix) is not a
+    thread_evidence row id, readings cannot cite it (their
+    evidence_refs must resolve to thread_evidence rows), and no
+    code path writes it into an evidence table. Metaphors
+    illuminate evidence; they never become a fourth observation.
+    """
+
+    id: str
+    user_id: str
+    thread_ids: list[str] | None = None
+    evidence_refs: list[str] | None = None
+    structural_tension: str = ""
+    proposed_relationship: str = ""
+    candidate_metaphor: str | None = None
+    mapping: dict[str, Any] | None = None
+    limitations: str = ""
+    status: str = "proposed"
+    supersedes_id: str | None = None
+    created_at: str = ""
+    decided_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "thread_ids": list(self.thread_ids or []),
+            "evidence_refs": list(self.evidence_refs or []),
+            "structural_tension": self.structural_tension,
+            "proposed_relationship": self.proposed_relationship,
+            "candidate_metaphor": self.candidate_metaphor,
+            "mapping": dict(self.mapping or {}),
+            "limitations": self.limitations,
+            "status": self.status,
+            "supersedes_id": self.supersedes_id,
+            "created_at": self.created_at,
+            "decided_at": self.decided_at,
+        }
+
+
+@dataclass(frozen=True)
+class CorrespondenceResponse:
+    """One seat's response to a correspondence (addendum §3).
+
+    One row per (correspondence, branch): a seat revising its
+    response replaces its own row. The response never moves the
+    correspondence's status — only a user verdict does — and a
+    decline here is the seat's expression, not a manufactured
+    disagreement and not a penalty.
+    """
+
+    id: str
+    correspondence_id: str
+    user_id: str
+    branch_id: str
+    response: str  # adopt | translate | decline
+    expression: str = ""
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "correspondence_id": self.correspondence_id,
+            "user_id": self.user_id,
+            "branch_id": self.branch_id,
+            "response": self.response,
+            "expression": self.expression,
+            "created_at": self.created_at,
+        }
+
+
+#: Oversight proposal lifecycle (addendum I1): proposals only.
+#: An accepted oversight proposal is a CONFIRMED OBSERVATION —
+#: it changes no thread, reading, or branch state, because
+#: oversight never commands. A dismissed proposal is a
+#: dismissed observation. Unresolved stays proposed.
+OVERSIGHT_PROPOSAL_STATUSES: tuple[str, ...] = (
+    "proposed", "confirmed", "dismissed",
+)
+
+#: Oversight detector kinds (addendum I1). ``drift`` is the
+#: aspiration-drift detector's deterministic proxy, documented
+#: in oversight.py: recent evidence disjoint from founding
+#: evidence on a thread with a standing reading. Judging
+#: whether the movement still serves the aspiration is the
+#: user's verdict on the proposal, not the detector's claim.
+OVERSIGHT_KINDS: tuple[str, ...] = ("stall", "conflict", "drift")
+
+
+@dataclass(frozen=True)
+class OversightProposal:
+    """One oversight observation awaiting a user verdict (I1).
+
+    Detectors are deterministic functions over store rows; they
+    generate no text, spend no generation, and write no branch
+    state. The proposal is the oversight output; the verdict
+    is the user's judgment. ``detail`` carries the deterministic
+    basis (timestamps, shared refs, disjoint ref sets) so the
+    user can check the observation without trusting it.
+    """
+
+    id: str
+    user_id: str
+    thread_id: str
+    kind: str  # stall | conflict | drift
+    reason: str = ""
+    detail: dict[str, Any] | None = None
+    status: str = "proposed"
+    created_at: str = ""
+    decided_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "thread_id": self.thread_id,
+            "kind": self.kind,
+            "reason": self.reason,
+            "detail": dict(self.detail or {}),
+            "status": self.status,
+            "created_at": self.created_at,
+            "decided_at": self.decided_at,
+        }
+
+
+#: Reconsideration lifecycle (addendum I3): a previously
+#: accepted interpretation gains CANDIDATE status — proposed
+#: here — without being mutated. ``affirmed`` means the user
+#: agreed the reading is open for reconsideration (it stays
+#: accepted until a new proposal supersedes it, retires it, or
+#: the process otherwise closes it); ``dismissed`` clears the
+#: candidacy and the reading stands as before. The reading row
+#: itself is never edited by this record: status, content, and
+#: evidence_refs are byte-identical before and after.
+RECONSIDERATION_STATUSES: tuple[str, ...] = (
+    "proposed", "affirmed", "dismissed",
+)
+
+
+@dataclass(frozen=True)
+class ReadingReconsideration:
+    """Candidate-for-reconsideration status for one reading (I3).
+
+    A separate row, deliberately: the reading keeps its
+    ``accepted`` status and its content untouched while this
+    candidacy is pending or affirmed. Reaffirm / revise / retire
+    are the DOWNSTREAM outcomes: a new reading proposal that
+    supersedes this one is the revise path; a retirement change
+    is the retire path; an affirmed candidacy with no new
+    proposal is, at close, the reaffirm path. This record opens
+    the question; it never answers it by itself.
+    """
+
+    id: str
+    user_id: str
+    reading_id: str
+    thread_id: str
+    reason: str = ""
+    status: str = "proposed"
+    created_at: str = ""
+    decided_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "reading_id": self.reading_id,
+            "thread_id": self.thread_id,
+            "reason": self.reason,
+            "status": self.status,
+            "created_at": self.created_at,
+            "decided_at": self.decided_at,
+        }

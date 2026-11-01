@@ -10,9 +10,12 @@ The router object stays mounted (empty) so ``api/main.py``'s import and
 ``include_router`` keep working with no load error. The underlying
 module ``local_ai/journal/story.py`` MUST stay: ``pipeline/stories.py``,
 ``demo_routes.py``, ``agent_intake/project_miner.py``, and
-``council/twigs.py`` all import its strand/casting machinery, and its
-scene renderer (``render_archetype_story``) is now caller-less — see the
-comb-over findings report before removing anything further from it.
+``council/twigs.py`` all import its strand/casting machinery. Phase 4
+(tier enforcement) removed the scene renderer itself
+(``render_archetype_story`` + ``_build_story_prompt``) after verifying
+zero production callers and no unique behavior beyond what the
+minting pipeline's story path covers; the ``scene_render`` ref kind
+stays in the narrative vocabulary so old rows remain Tier D.
 """
 
 from __future__ import annotations

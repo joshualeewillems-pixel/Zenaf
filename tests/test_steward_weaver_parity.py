@@ -192,15 +192,10 @@ def test_turn_frame_shapes_differ():
 # ---------------------------------------------------------------------------
 # A2 — indirect prompt consumers (P4–P8)
 # ---------------------------------------------------------------------------
-
-def test_story_prompt_parity(monkeypatch):
-    from local_ai.journal.story import _build_story_prompt
-    assert_parity(
-        monkeypatch,
-        lambda: _build_story_prompt(
-            "An entry about a week of tangled projects.",
-            [("conductor", 0.9), ("mentor", 0.4)], user_id=None),
-    )
+# NOTE (Phase 4, tier enforcement): test_story_prompt_parity was removed
+# with its subject — the scene renderer's _build_story_prompt was retired
+# (zero production callers; job covered by the minting pipeline's story
+# path). The remaining parity tests below are unaffected.
 
 
 def test_fellowship_observation_parity(monkeypatch):

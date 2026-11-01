@@ -76,7 +76,9 @@ INTERPRETATION_REF_KINDS: tuple[str, ...] = (
 DRAMATIZATION_REF_KINDS: tuple[str, ...] = (
     "story_artifact",  # pipeline provenance artifact: story / pack /
                        # quote card (local_ai/pipeline/, provenance)
-    "scene_render",    # journal scene renderer output
+    "scene_render",    # journal scene renderer output (retired in
+                       # Phase 4 — kind retained so any old rows stay
+                       # Tier D, inadmissible as evidence)
                        # (local_ai/journal/story.py)
 )
 

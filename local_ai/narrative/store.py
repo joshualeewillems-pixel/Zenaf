@@ -1859,6 +1859,16 @@ class NarrativeStore:
         evidence_refs: Iterable[SourceRef | str] = (),
         proposed_by: str = "steward",
         status: str = "proposed",
+        # Phase 4 (T2 — rejected fittings are durable): a fitting
+        # whose lens + evidence set matches a REJECTED fitting on
+        # this thread is refused, unless the caller names that
+        # rejection in ``reopen_of`` (explicit user reopen) or the
+        # evidence set is new. The rejected row itself is never
+        # mutated: rejection stays recorded, and the new proposal
+        # stands beside it. A reopen_of naming anything else (a
+        # live, retired, or other-thread fitting, or a rejected
+        # fitting with different lens/evidence) raises.
+        reopen_of: str | None = None,
     ) -> LensFitting:
         """Record a lens fitting for a thread.
 
@@ -1883,6 +1893,43 @@ class NarrativeStore:
                     "a lens fitting cannot be proposed without "
                     "evidence refs — the proposal must cite the "
                     "evidence that suggested the lens"
+                )
+            # Phase 4 (T2): a rejected fitting is durable data, not
+            # an obstacle to route around. Re-proposing the same
+            # lens on the same evidence is refused unless the caller
+            # names the rejection being reopened (reopen_of) — new
+            # evidence needs no reopen. The raise rolls back the
+            # evidence rows attached above, so a refused proposal
+            # leaves no orphaned evidence behind.
+            rejected = [
+                _row_to_fitting(row)
+                for row in self._conn.execute(
+                    "SELECT * FROM lens_fittings WHERE thread_id = ? "
+                    "AND status = 'rejected'",
+                    (thread_id,),
+                ).fetchall()
+            ]
+            new_evidence = set(resolved)
+            matching = [
+                fit
+                for fit in rejected
+                if fit.lens_id == lens_id
+                and set(fit.evidence_refs or []) == new_evidence
+            ]
+            if matching and reopen_of not in {fit.id for fit in matching}:
+                self._conn.rollback()
+                raise ValueError(
+                    "fitting was already rejected on this evidence; "
+                    "re-propose with new evidence or reopen the "
+                    "rejection explicitly via reopen_of"
+                )
+            if reopen_of is not None and reopen_of not in {
+                fit.id for fit in matching
+            }:
+                self._conn.rollback()
+                raise ValueError(
+                    "reopen_of must name a rejected fitting on this "
+                    "thread with the same lens and evidence set"
                 )
             if status == "accepted" and thread["lens_fitting_id"]:
                 raise ValueError(

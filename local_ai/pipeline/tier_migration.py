@@ -34,6 +34,20 @@ This is a library function, deliberately NOT an HTTP route: the
 operator runs it against the production stores and reviews the counts
 before applying (dry run first). It never touches S0/S1 narrative
 stores, training signals, or review claims.
+
+RUN MECHANISM (Phase 4, stated explicitly for the merge decision):
+this migration does NOT run automatically at boot or deploy. There is
+no caller in the codebase, no route, and no startup wiring — the
+operator invokes ``migrate_story_tiers`` explicitly (dry run first,
+then a real run) and reviews the counts. Any future auto-run would be
+a separate, separately authorized change.
+
+Phase 4 addition: every story/card artifact the migration touches
+(including already-migrated rows on backfill, and no-line rows) also
+gets the provenance ``tier`` column stamped ``"dramatization"`` — the
+artifact is Tier D by kind, whatever its key line graded as. The
+column is never stamped on journal-entry artifacts (Tier E) or on
+non-story/card artifacts.
 """
 
 from __future__ import annotations
@@ -137,10 +151,21 @@ def migrate_story_tiers(
     for artifact in artifacts:
         data = _description(artifact)
         if data.get("tier_migrated"):
+            # Phase 4: already-classified rows keep their
+            # classification (idempotency), but a row migrated
+            # before the provenance tier column existed gets its
+            # column backfilled — description untouched, counts
+            # unchanged. Only NULL is backfilled, never overwritten.
             if _is_story(data):
                 record(artifact["artifact_id"], "stories", "already_migrated")
             elif _is_quote_card(data):
                 record(artifact["artifact_id"], "cards", "already_migrated")
+            else:
+                continue
+            if not dry_run and artifact.get("tier") is None:
+                prov_store.update_artifact(
+                    artifact["artifact_id"], tier="dramatization"
+                )
             continue
         if _is_story(data):
             stories.append(artifact)
@@ -159,7 +184,11 @@ def migrate_story_tiers(
                 if not dry_run:
                     data["tier_migrated"] = True
                     prov_store.update_artifact(
-                        artifact_id, description=json.dumps(data)
+                        artifact_id,
+                        description=json.dumps(data),
+                        # Phase 4: the artifact itself is Tier D
+                        # by kind, whatever its key line graded as.
+                        tier="dramatization",
                     )
                 record(artifact_id, "stories", outcome)
                 story_outcomes[artifact_id] = {"tier": None}
@@ -176,7 +205,11 @@ def migrate_story_tiers(
                     }
                     data["tier_migrated"] = True
                     prov_store.update_artifact(
-                        artifact_id, description=json.dumps(data)
+                        artifact_id,
+                        description=json.dumps(data),
+                        # Phase 4: the artifact itself is Tier D
+                        # by kind, whatever its key line graded as.
+                        tier="dramatization",
                     )
                 record(artifact_id, "stories", "certified")
                 story_outcomes[artifact_id] = {
@@ -190,7 +223,11 @@ def migrate_story_tiers(
                     data["tier_note"] = _DRAMATIZATION_NOTE
                     data["tier_migrated"] = True
                     prov_store.update_artifact(
-                        artifact_id, description=json.dumps(data)
+                        artifact_id,
+                        description=json.dumps(data),
+                        # Phase 4: the artifact itself is Tier D
+                        # by kind, whatever its key line graded as.
+                        tier="dramatization",
                     )
                 record(artifact_id, "stories", "dramatization")
                 story_outcomes[artifact_id] = {"tier": TIER_DRAMATIZATION}
@@ -208,7 +245,11 @@ def migrate_story_tiers(
                 if not dry_run:
                     data["tier_migrated"] = True
                     prov_store.update_artifact(
-                        artifact_id, description=json.dumps(data)
+                        artifact_id,
+                        description=json.dumps(data),
+                        # Phase 4: the artifact itself is Tier D
+                        # by kind, whatever its key line graded as.
+                        tier="dramatization",
                     )
                 record(artifact_id, "cards", "no_line")
                 continue
@@ -249,7 +290,11 @@ def migrate_story_tiers(
                     data["tier_note"] = _DRAMATIZATION_NOTE
                 data["tier_migrated"] = True
                 prov_store.update_artifact(
-                    artifact_id, description=json.dumps(data)
+                    artifact_id,
+                    description=json.dumps(data),
+                    # Phase 4: the artifact itself is Tier D
+                    # by kind, whatever its key line graded as.
+                    tier="dramatization",
                 )
             record(
                 artifact_id, "cards", "certified" if certified else "dramatization"

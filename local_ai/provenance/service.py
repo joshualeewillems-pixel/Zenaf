@@ -77,6 +77,10 @@ def register_artifact(
     archetype_cast: list[str] | None = None,
     source_hash: str | None = None,
     remix_policy: str = "open",
+    # Phase 4 (tier enforcement): passed through to the artifact
+    # row. None = unlabeled; callers that know the artifact's tier
+    # (e.g. the quote-card path) must pass it explicitly.
+    tier: str | None = None,
 ) -> dict[str, Any]:
     """Register a new artifact (creation -> unlisted). Logs the `minted` event
     (weight 0 — creation isn't reach)."""
@@ -98,6 +102,7 @@ def register_artifact(
         imported=False,
         creator_declared=True,
         c2pa_manifest=manifest,
+        tier=tier,
     )
     store.log_event(artifact["artifact_id"], "minted", actor_user_id=creator_user_id)
     return artifact

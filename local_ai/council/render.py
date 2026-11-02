@@ -769,3 +769,104 @@ def render_bear_ordinary(
         f"Bear character block still over the {CHARACTER_CEILING}-char "
         "ceiling after dropping all optional units; refusing to truncate"
     )
+
+
+def render_crane_ordinary(
+    record: dict,
+    authorized_name: str | None = None,
+    resolved_capability: str | None = None,
+    detail: str = "compact",
+) -> list[str]:
+    """Assemble the canonical Crane ordinary-conversation block.
+
+    Units (Crane §2): identity, personality (CHANGED between
+    details, not appended: the fuller drops "person", "actually",
+    "are"→"can be", the trailing clause, "tentative", and
+    "that"), worldview (ideal verbatim + defining question
+    verbatim ONLY — no tension sentence in compact; the tension
+    rides as a CLAUSE inside the fuller bridge sentence),
+    capability (resolver-supplied, after worldview), hearing,
+    then either the fuller middle + humanitarian + conviction
+    (the fuller has NO voice sentence and NO tempo counterpart)
+    or the humanitarian + compact voice (single fused sentence).
+    Hearing + humanitarian are shared post units: ineligible →
+    AssemblyError, never dropped. Assembled blocks reproduce
+    exemplar §2 exactly (compact 1,034 chars, fuller 1,481 chars,
+    no capability).
+    """
+    if detail not in ("compact", "fuller"):
+        raise ValueError(f"Unknown detail: {detail!r}")
+    capability = _validated_capability(resolved_capability)
+
+    identity = _five_seat_identity_unit(record, authorized_name)
+    personality_compact = eligible_field(record, "characterization", "personality")
+    personality_fuller = eligible_field(record, "characterization", "personality_fuller")
+    worldview_parts = [
+        eligible_field(record, "philosophy", "ideal"),
+        eligible_field(record, "philosophy", "defining_question"),
+    ]
+    hearing = eligible_field(record, "characterization", "hearing")
+    humanitarian = eligible_field(record, "characterization", "humanitarian")
+    # Gating fields: eligible by rule even though their prose is
+    # embodied rather than separately rendered (Raven pattern).
+    for section, key in (
+        ("characterization", "temperament"),
+        ("characterization", "demeanor"),
+        ("characterization", "governing_conviction"),
+    ):
+        if eligible_field(record, section, key) is None:
+            raise AssemblyError(
+                f"Crane gating field {section}.{key} is not eligible"
+            )
+    if (
+        personality_compact is None
+        or any(part is None for part in worldview_parts)
+        or hearing is None
+        or humanitarian is None
+    ):
+        raise AssemblyError(
+            "Crane core unit (personality/worldview/shared post) is not eligible"
+        )
+    worldview = " ".join(worldview_parts)
+
+    def with_capability(units: list[str]) -> list[str]:
+        if capability:
+            return [*units[:3], capability, *units[3:]]
+        return units
+
+    middle = eligible_field(record, "characterization", "fuller_middle")
+    conviction = eligible_field(record, "characterization", "conviction_conduct")
+    voice = eligible_field(record, "characterization", "voice")
+
+    def over_budget(units: list[str]) -> bool:
+        return len("\n".join(units)) > CHARACTER_CEILING
+
+    # Fuller-specific units ineligible → fall back to compact units
+    # (not failure). The fuller conviction sentence is the terminal
+    # conduct unit: ineligible → dropped whole, middle kept (the
+    # tempo pattern from Gardener/Bear).
+    candidates: list[list[str]] = []
+    if detail == "fuller" and personality_fuller is not None and middle is not None:
+        fuller_units = [
+            identity, personality_fuller, worldview, hearing, middle,
+            humanitarian,
+        ]
+        if conviction is not None:
+            fuller_units.append(conviction)
+        candidates.append(with_capability(fuller_units))
+    compact_units = [
+        identity, personality_compact, worldview, hearing, humanitarian,
+    ]
+    if voice is not None:
+        compact_units.append(voice)
+    candidates.append(with_capability(compact_units))
+    candidates.append(with_capability(
+        [identity, personality_compact, worldview, hearing, humanitarian]
+    ))
+    for units in candidates:
+        if not over_budget(units):
+            return units
+    raise AssemblyError(
+        f"Crane character block still over the {CHARACTER_CEILING}-char "
+        "ceiling after dropping all optional units; refusing to truncate"
+    )

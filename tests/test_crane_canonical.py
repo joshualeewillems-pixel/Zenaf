@@ -27,16 +27,23 @@ Scope notes (read before "fixing" a failure by weakening a test):
   definition line "Shadow: appeasement." AND the frame
   instruction "Your shadow is appeasement — translating each
   side into what it wants to hear until nobody has actually
-  met; guard against it, ..." — both UNADOPTED draft content
-  awaiting the open shadow verdict. That meeting-path material
-  is out of scope for this plan (ordinary renderer only) and is
-  pinned, not fixed, here.
-- NO SHADOW IS ADOPTED for Crane. The record's protected shadow
-  field carries standing "open" (leading candidate only). The
-  renderer carries no shadow content at all: the live
-  appeasement line is dropped, and the picture-record candidate
-  is never presented as adopted. Any test asserting an adopted
-  Crane shadow is wrong.
+  met; guard against it, ..." — both UNADOPTED draft content.
+  The shadow verdict (2026-11-01) does NOT change that
+  meeting-path material: the frames still carry the unadopted
+  draft, pinned not fixed, because fixing them is a separate
+  content decision out of scope for this plan (ordinary
+  renderer only).
+- CRANE'S SHADOW IS ADOPTED (2026-11-01, Joshua's widget
+  verdict): the record's protected shadow field carries
+  standing "adopted" with his formulation verbatim. It is
+  PROTECTED design information: it must NEVER appear in any
+  assembled output, same as the other seats' shadow strings.
+  Candidate A's picture-record sketch is SUBSUMED by the
+  adopted formulation, not a separate shadow. Candidates B
+  (live appeasement) and C (jurisdiction translating-toward-
+  peace) remain UNADOPTED, and whether they count as
+  manifestations of the adopted shadow was NOT decided — the
+  record must not present them as manifestations.
 - Ideal + defining question ARE verbatim in the output (unlike
   Gardener/Firebrand/Bear). The §1.3 draft worldview sentence
   does NOT appear verbatim and is never reconstructed: the
@@ -87,9 +94,18 @@ from local_ai.council.render import (
 
 # Distinctive protected formulations. Deliberately specific phrases,
 # not generic words: these are the formulations that must never reach
-# an ordinary prompt. Note: NO Crane shadow is adopted, so ALL THREE
-# candidates are protected here, not just the live line.
+# an ordinary prompt. Crane's shadow IS adopted (2026-11-01), so the
+# adopted wording joins the candidates here: adoption does not make
+# a shadow renderable — protected means never rendered, and the
+# candidates stay protected too (A subsumed, B/C unadopted).
 PROTECTED_PHRASES = (
+    # Adopted shadow wording (Joshua's formulation, verbatim):
+    "substitute for judgment",
+    "postpones the moment when understanding must give way to a decision",
+    "continued interpretation is no longer helping",
+    "He understands why the bridge matters",
+    "shouldn't be crossed",
+    # Candidate A sketch (subsumed, not separate) + B/C (unadopted):
     "postpones necessary judgment for understanding",
     "Appeasement",
     "appeasement",
@@ -103,6 +119,20 @@ PROTECTED_PHRASES = (
     "What you're really afraid of is being abandoned.",
     "Shadow — your characteristic failure mode",
     "Shadow:",
+)
+
+# Adopted Crane shadow, verbatim (Joshua's formulation, 2026-11-01).
+# The record's protected shadow field must carry exactly this text.
+SHADOW_VERBATIM = (
+    '"Understanding becomes a substitute for judgment." He can '
+    "become so committed to understanding everyone that he "
+    "postpones the moment when understanding must give way to a "
+    "decision. He might recognize precisely why someone behaves "
+    "destructively, articulate their perspective with "
+    "extraordinary compassion, and still fail to recognize when "
+    "continued interpretation is no longer helping. He "
+    "understands why the bridge matters. He doesn't always "
+    "recognize when it shouldn't be crossed."
 )
 
 PHILOSOPHER_NAMES = ("Levinas", "Gadamer", "Chomsky", "Ricœur")
@@ -317,19 +347,28 @@ def test_record_core_values_verbatim():
     assert CRANE_RECORD["identity"]["personal_name"]["default"] == "unselected"
     assert CRANE_RECORD["identity"]["personal_name"]["favorites"] == ["Linnea", "Iona"]
     assert CRANE_RECORD["identity"]["pronouns"]["text"] == "he / him"
-    # NO SHADOW IS ADOPTED: the protected shadow field is OPEN, not adopted.
-    # This is the pin that prevents a silent shadow adoption.
-    assert CRANE_RECORD["protected"]["shadow"]["standing"] == "open"
+    # SHADOW ADOPTED 2026-11-01 (Joshua's widget verdict): the
+    # protected shadow field is adopted with his formulation
+    # verbatim. Protected category keeps it out of rendering.
+    assert CRANE_RECORD["protected"]["shadow"]["standing"] == "adopted"
     assert CRANE_RECORD["protected"]["shadow"]["category"] == "protected"
-    assert CRANE_RECORD["protected"]["developmental_knowledge"]["standing"] == "open"
-    assert "NO SINGLE PROTECTED SHADOW IS ADOPTED" in (
+    assert CRANE_RECORD["protected"]["shadow"]["text"] == SHADOW_VERBATIM
+    assert CRANE_RECORD["protected"]["developmental_knowledge"]["standing"] == "adopted"
+    assert "SHADOW ADOPTED 2026-11-01" in (
         CRANE_RECORD["protected"]["developmental_knowledge"]["text"]
     )
-    # The live legacy line is documented ONLY as an unadopted
-    # candidate: the shadow field itself never presents it, and the
-    # developmental-knowledge field labels it UNADOPTED.
+    assert "SUBSUMED" in (
+        CRANE_RECORD["protected"]["developmental_knowledge"]["text"]
+    )
+    # B/C documented ONLY as unadopted candidates: the shadow
+    # field itself never presents appeasement, and the
+    # developmental-knowledge field labels B/C UNADOPTED and
+    # records that manifestation status was NOT decided.
     assert "Appeasement" not in CRANE_RECORD["protected"]["shadow"]["text"]
     assert "(UNADOPTED" in (
+        CRANE_RECORD["protected"]["developmental_knowledge"]["text"]
+    )
+    assert "NOT separately decided" in (
         CRANE_RECORD["protected"]["developmental_knowledge"]["text"]
     )
     # Per-thinker contributions: open, not invented. P-001 open: no Ricœur.
@@ -406,7 +445,8 @@ def test_eligibility_matrix():
     assert ("characterization", "humanitarian") in eligible
     assert ("characterization", "fuller_middle") in eligible
     assert ("characterization", "personality_fuller") in eligible
-    # Open + protected → EXCLUDED (no adopted shadow exists).
+    # Adopted + protected → EXCLUDED (category rule: protected is
+    # never eligible, regardless of standing).
     assert ("protected", "shadow") not in eligible
     assert ("protected", "developmental_knowledge") not in eligible
     # Provisional + characterization → EXCLUDED (draft wording, draft friction).
@@ -893,12 +933,13 @@ def test_encounter_material_excludes_protected_fields():
     grow: the definition line 'Shadow: appeasement.' AND the frame
     instruction 'Your shadow is appeasement — translating each
     side into what it wants to hear until nobody has actually
-    met; guard against it, ...' — both UNADOPTED draft content
-    awaiting the open shadow verdict. That meeting-path material
-    is out of scope for this plan (ordinary renderer only) and is
-    pinned, not fixed, here. (Meeting-turn prompts via the shared
-    builder's legacy character block are likewise out of scope,
-    preserved byte-identical by the weave gate.)"""
+    met; guard against it, ...' — both UNADOPTED draft content.
+    The shadow verdict (2026-11-01) does NOT change that
+    meeting-path material: it is pinned, not fixed, here, because
+    fixing it is a separate content decision out of scope for
+    this plan (ordinary renderer only). (Meeting-turn prompts via
+    the shared builder's legacy character block are likewise out
+    of scope, preserved byte-identical by the weave gate.)"""
     from local_ai.conversation import encounter as ENC
     from local_ai.council import meetings as MT
 
@@ -938,6 +979,10 @@ def test_encounter_material_excludes_protected_fields():
         # The ADOPTED picture content (candidate A) is NOT presented
         # as an adopted shadow anywhere in encounter material.
         assert "postpones necessary judgment for understanding" not in frame
+        # The ADOPTED shadow wording is likewise absent from the
+        # frames: they carry only the unadopted appeasement draft.
+        assert "substitute for judgment" not in frame
+        assert "shouldn't be crossed" not in frame
         for name in PHILOSOPHER_NAMES:
             assert name not in frame, name
 

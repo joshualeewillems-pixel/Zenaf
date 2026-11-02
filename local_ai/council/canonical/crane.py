@@ -8,17 +8,20 @@ fields (see local_ai/council/render.py eligible_field).
 
 Protected §1.7 material is recorded here as design information
 and is NEVER eligible for rendering: category "protected"
-excludes it regardless of standing. CRANE'S SHADOW IS NOT
-ADOPTED: the protected shadow field below carries standing
-"open" (leading candidate only, pending Joshua's explicit
-shadow verdict) — never present any candidate as adopted.
-Candidates: (A) picture-record "postpones necessary judgment
-for understanding" (adopted as picture content, leading
-candidate, NOT ratified); (B) live "appeasement" line
-(UNADOPTED, FELLOW-015); (C) jurisdiction overreach
-"translating toward peace" (UNADOPTED). GPT's recommendation
-(favor A, B/C as manifestations) is a RECOMMENDATION, not an
-adoption, and is recorded as such.
+excludes it regardless of standing. CRANE'S SHADOW IS ADOPTED
+2026-11-01 by Joshua's verdict (widget tap). The protected
+shadow field below carries standing "adopted" with Joshua's
+own formulation verbatim. Candidate A's picture-record
+sketch ("postpones necessary judgment for understanding") is
+SUBSUMED by the adopted formulation, not a separate shadow.
+Candidates (B) live "appeasement" line (UNADOPTED,
+FELLOW-015) and (C) jurisdiction overreach "translating
+toward peace" (UNADOPTED) remain UNADOPTED, and whether they
+count as manifestations of the adopted shadow was NOT
+separately decided — do not record them as manifestations.
+GPT's recommendation (favor A, B/C as manifestations) is
+superseded by the verdict on the adoption itself and is
+recorded as history only.
 
 Deliberate deviations from the registry, recorded in the
 exemplar and honored here:
@@ -549,36 +552,61 @@ CRANE_RECORD = {
     },
     "protected": {
         "developmental_knowledge": {
-            # NOT an adopted shadow: candidates + recommendation
-            # only. Standing "open" — never present as adopted.
+            # Adopted verdict record (2026-11-01, Joshua's widget
+            # verdict): the shadow is adopted; Candidate A is
+            # subsumed, not separate; B/C remain UNADOPTED; whether
+            # B/C count as manifestations was NOT decided.
             "text": (
-                "NO SINGLE PROTECTED SHADOW IS ADOPTED. Candidates: "
-                "(A) picture-record 'postpones necessary judgment for "
-                "understanding' (adopted as picture content, leading "
-                "candidate, NOT ratified); (B) live 'Appeasement: "
-                "translating each side into what it wants to hear, "
-                "until nobody has actually met' (UNADOPTED, "
-                "FELLOW-015); (C) jurisdiction overreach 'Translating "
-                "toward peace: softening each side into what it wants "
-                "to hear until nobody has actually met and nothing "
-                "true has crossed' (UNADOPTED). GPT recommendation "
-                "(2026-11-01, RECOMMENDATION ONLY): favor A, with B "
-                "and C as possible manifestations. The hypothetical "
-                "violation 'because you cannot bear to judge' would "
-                "cross into §1.7 territory and must never render."
+                "SHADOW ADOPTED 2026-11-01 by Joshua's verdict "
+                "(widget tap). Adopted formulation (Joshua's own "
+                "words): 'Understanding becomes a substitute for "
+                "judgment.' He can become so committed to "
+                "understanding everyone that he postpones the "
+                "moment when understanding must give way to a "
+                "decision. He might recognize precisely why "
+                "someone behaves destructively, articulate their "
+                "perspective with extraordinary compassion, and "
+                "still fail to recognize when continued "
+                "interpretation is no longer helping. He "
+                "understands why the bridge matters. He doesn't "
+                "always recognize when it shouldn't be crossed. "
+                "Candidate A's picture-record sketch 'postpones "
+                "necessary judgment for understanding' is "
+                "SUBSUMED by the adopted formulation, not a "
+                "separate shadow. Candidates: (B) live "
+                "'Appeasement: translating each side into what it "
+                "wants to hear, until nobody has actually met' "
+                "(UNADOPTED, FELLOW-015); (C) jurisdiction "
+                "overreach 'Translating toward peace: softening "
+                "each side into what it wants to hear until nobody "
+                "has actually met and nothing true has crossed' "
+                "(UNADOPTED). Whether B/C count as manifestations "
+                "of the adopted shadow was NOT separately decided. "
+                "The hypothetical violation 'because you cannot "
+                "bear to judge' would cross into §1.7 territory "
+                "and must never render."
             ),
-            "standing": "open",
+            "standing": "adopted",
             "category": "protected",
         },
         "shadow": {
-            # Leading candidate ONLY, pending Joshua's explicit
-            # shadow verdict. Standing "open" is the pin: this is
-            # NOT an adopted shadow.
+            # ADOPTED 2026-11-01 (Joshua's verdict, widget tap).
+            # Joshua's own formulation, verbatim. Protected: never
+            # eligible for rendering (category "protected").
             "text": (
-                "CANDIDATE (not adopted): postpones necessary "
-                "judgment for understanding."
+                "\"Understanding becomes a substitute for "
+                "judgment.\" He can become so committed to "
+                "understanding everyone that he postpones the "
+                "moment when understanding must give way to a "
+                "decision. He might recognize precisely why "
+                "someone behaves destructively, articulate their "
+                "perspective with extraordinary compassion, and "
+                "still fail to recognize when continued "
+                "interpretation is no longer helping. He "
+                "understands why the bridge matters. He doesn't "
+                "always recognize when it shouldn't be crossed."
             ),
-            "standing": "open",
+            "standing": "adopted",
             "category": "protected",
         },
     },

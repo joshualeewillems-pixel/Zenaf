@@ -29,12 +29,14 @@ from local_ai.council.archetypes import (
     stock_archetype_ids,
     voice_color,
 )
+from local_ai.council.canonical.bear import BEAR_RECORD
 from local_ai.council.canonical.firebrand import FIREBRAND_RECORD
 from local_ai.council.canonical.gardener import GARDENER_RECORD
 from local_ai.council.canonical.raven import RAVEN_RECORD
 from local_ai.council.canonical.weaver import WEAVER_RECORD
 from local_ai.council.jurisdictions import jurisdiction_prompt_lines
 from local_ai.council.render import (
+    render_bear_ordinary,
     render_firebrand_ordinary,
     render_gardener_ordinary,
     render_raven_ordinary,
@@ -100,6 +102,18 @@ GARDENER_CANONICAL_CUTOVER = True
 # override: any future trial override needs its own authorization
 # (Weaver trial precedent).
 FIREBRAND_CANONICAL_CUTOVER = True
+
+
+# Bear canonical cutover — CODE-LEVEL, not a persistent feature flag.
+# True: ordinary Bear turns (weave=True) render the canonical
+# character block instead of the legacy archetype block. False
+# restores the exact legacy Bear prompt: reverting this one branch
+# is the whole rollback, because no legacy function is modified.
+# Meeting turns (weave=False) always keep the legacy assembly — the
+# cutover is ordinary-conversation-only by design, so first-encounter
+# behavior is untouched. No environment-variable override: any future
+# trial override needs its own authorization (Weaver trial precedent).
+BEAR_CANONICAL_CUTOVER = True
 
 
 def _strand_blend_lines(weights: dict[str, float]) -> list[str]:
@@ -390,7 +404,41 @@ def build_voice_prompt(
         )
         preserved_lines = [ANTI_PRESUMPTION_STYLE]
         preserved_lines.extend(_strand_blend_lines(weights))
-    if not weaver_canonical and not raven_canonical and not gardener_canonical and not firebrand_canonical:
+    # Bear canonical cutover (single gate, ordinary conversation
+    # only): for ordinary Bear turns, the canonical renderer
+    # REPLACES the legacy character block — it does not supplement it.
+    # Replaced: the "You are {display_name}, a voice…" opener, the
+    # Archetype frame line, the philosophy lines, and the warmth
+    # register line (the registry's "warm-protective" formulation is
+    # SUPERSEDED character material — the canonical voice passages
+    # carry the adopted warm-protective warmth — so it is not
+    # preserved). Preserved verbatim: the shared anti-presumption
+    # style rule and the strand blend, plus every downstream section
+    # below. NO jurisdiction lines are added: jurisdiction lines are
+    # consumed ONLY for the conductor, so the legacy Bear prompt
+    # carries none and the canonical path adds none. NO steward leg:
+    # Bear has no steward record and none is created. The resolved
+    # capability guidance rides INSIDE the character block (assembly
+    # order) instead of its legacy downstream slot, so the downstream
+    # append below is skipped on this path — same content, moved
+    # once, never duplicated. The address clause uses custom_name,
+    # which is the existing naming lookup's result (it differs from
+    # stock only when the lookup returns a visitor-chosen name); the
+    # renderer receives that already-authorized value, never raw
+    # visitor state, and never infers milestone eligibility itself.
+    # Meeting turns (weave=False) and all other seats keep the exact
+    # legacy assembly.
+    bear_canonical = (
+        arch_id == "guardian" and BEAR_CANONICAL_CUTOVER and weave
+    )
+    if bear_canonical:
+        character_block = render_bear_ordinary(
+            BEAR_RECORD, authorized_name=custom_name,
+            resolved_capability=capability_context,
+        )
+        preserved_lines = [ANTI_PRESUMPTION_STYLE]
+        preserved_lines.extend(_strand_blend_lines(weights))
+    if not weaver_canonical and not raven_canonical and not gardener_canonical and not firebrand_canonical and not bear_canonical:
         prompt_lines = build_archetype_prompt_lines(
             arch_id, weights_override=weights_override, display_name_override=display_name
         )
@@ -403,7 +451,7 @@ def build_voice_prompt(
         if has_training:
             mode_used = "trained"
 
-    if weaver_canonical or raven_canonical or gardener_canonical or firebrand_canonical:
+    if weaver_canonical or raven_canonical or gardener_canonical or firebrand_canonical or bear_canonical:
         prompt = [
             *character_block,
             *preserved_lines,
@@ -428,7 +476,7 @@ def build_voice_prompt(
             "you are the aspirational base voice. Be honest about that if it matters; "
             "never invent training they don't have.",
         ]
-    if capability_context and not weaver_canonical and not raven_canonical and not gardener_canonical and not firebrand_canonical:
+    if capability_context and not weaver_canonical and not raven_canonical and not gardener_canonical and not firebrand_canonical and not bear_canonical:
         # Continuation background knowledge (demonstration spec §6):
         # the slice, rendered by the registry — never a per-turn
         # instruction to offer a feature, and never the first-meeting

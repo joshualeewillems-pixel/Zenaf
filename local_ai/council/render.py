@@ -688,3 +688,84 @@ def render_firebrand_ordinary(
         f"Firebrand character block still over the {CHARACTER_CEILING}-char "
         "ceiling after dropping all optional units; refusing to truncate"
     )
+
+
+def render_bear_ordinary(
+    record: dict,
+    authorized_name: str | None = None,
+    resolved_capability: str | None = None,
+    detail: str = "compact",
+) -> list[str]:
+    """Assemble the canonical Bear ordinary-conversation block.
+
+    Units (Bear §2): identity, personality, worldview
+    (ideal-rendering-form + defining question + affirmative
+    conviction), capability (resolver-supplied, after worldview),
+    then either the fuller middle + fuller voice-close (which is
+    ENTIRELY different from the compact voice-close: joy/welcome +
+    warmth response, no compact voice sentence, no compact warmth
+    sentence) or the compact voice + warmth passage. Assembled
+    blocks reproduce exemplar §2 exactly (compact 767 chars,
+    fuller 1,298 chars, no capability). Semicolon sentences are
+    single units, never split; em-dashes are preserved exactly.
+    """
+    if detail not in ("compact", "fuller"):
+        raise ValueError(f"Unknown detail: {detail!r}")
+    capability = _validated_capability(resolved_capability)
+
+    identity = _five_seat_identity_unit(record, authorized_name)
+    personality = eligible_field(record, "characterization", "personality")
+    worldview_parts = [
+        eligible_field(record, "characterization", "ideal_rendering_form"),
+        eligible_field(record, "philosophy", "defining_question"),
+        eligible_field(record, "characterization", "affirmative_conviction"),
+    ]
+    # Gating fields: eligible by rule even though their prose is
+    # embodied rather than separately rendered (Raven pattern).
+    for section, key in (
+        ("characterization", "temperament"),
+        ("characterization", "demeanor"),
+        ("characterization", "governing_conviction"),
+    ):
+        if eligible_field(record, section, key) is None:
+            raise AssemblyError(
+                f"Bear gating field {section}.{key} is not eligible"
+            )
+    if personality is None or any(part is None for part in worldview_parts):
+        raise AssemblyError(
+            "Bear core unit (personality/worldview) is not eligible"
+        )
+    worldview = " ".join(worldview_parts)
+    core = [identity, personality, worldview]
+    if capability:
+        core.append(capability)
+
+    middle = eligible_field(record, "characterization", "fuller_middle")
+    voice = eligible_field(record, "characterization", "voice_and_humor")
+    warmth = eligible_field(record, "characterization", "warmth")
+    voice_fuller = eligible_field(record, "characterization", "voice_fuller")
+    # The compact voice unit is voice + warmth together: if either
+    # part is ineligible, the whole voice unit drops (never partial).
+    voice_compact = (
+        " ".join([voice, warmth]) if voice is not None and warmth is not None else None
+    )
+
+    def over_budget(units: list[str]) -> bool:
+        return len("\n".join(units)) > CHARACTER_CEILING
+
+    candidates: list[list[str]] = []
+    if detail == "fuller" and middle is not None:
+        fuller_units = [*core, middle]
+        if voice_fuller is not None:
+            fuller_units.append(voice_fuller)
+        candidates.append(fuller_units)
+    if voice_compact is not None:
+        candidates.append([*core, voice_compact])
+    candidates.append(core)
+    for units in candidates:
+        if not over_budget(units):
+            return units
+    raise AssemblyError(
+        f"Bear character block still over the {CHARACTER_CEILING}-char "
+        "ceiling after dropping all optional units; refusing to truncate"
+    )

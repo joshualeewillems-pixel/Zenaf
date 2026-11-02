@@ -239,7 +239,9 @@ def test_record_core_values_verbatim():
     assert RAVEN_RECORD["identity"]["character"]["text"] == "Raven"
     assert RAVEN_RECORD["identity"]["personal_name"]["default"] == "unselected"
     assert RAVEN_RECORD["identity"]["personal_name"]["favorites"] == ["Severin", "Vance"]
-    assert RAVEN_RECORD["identity"]["pronouns"]["text"] == "he / him"
+    # Gender verdict 2026-11-01 (Joshua's concurrence): Raven is she/her.
+    # The builder's "he / him" pin predates the verdict and is stale.
+    assert RAVEN_RECORD["identity"]["pronouns"]["text"] == "she / her"
     # Protected section present, with the adopted Option A shadow.
     assert "finds deception where none exists" in (
         RAVEN_RECORD["protected"]["developmental_knowledge"]["text"]

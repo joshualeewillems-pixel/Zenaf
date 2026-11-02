@@ -744,10 +744,13 @@ class MeetingService:
             extra_instructions=frame,
             fellowship_reference=fellowship_reference or None,
             # Meetings run under the evidence/expression separation
-            # (Joshua's ruling, 2026-10-23): no quote-weaving
-            # instruction on this path — the character synthesizes
+            # (Joshua's ruling, 2026-10-23): the character synthesizes
             # in her own words; exact quotes live in the evidence.
-            weave=False,
+            # canonical=False keeps the legacy assembly (ordinary
+            # turns use the canonical renderer); no quote-weaving
+            # instruction exists on any path anymore (removed
+            # 2026-11-02, Step 2).
+            canonical=False,
         )
         return reply.reply
 

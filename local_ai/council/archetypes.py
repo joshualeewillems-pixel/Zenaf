@@ -57,6 +57,8 @@ VOICE_COLORS: dict[str, str] = {
 }
 
 #: Accent for user/visitor words woven into a voice's reply ([[u]] spans).
+#: Historical spans still render; new ordinary-chat prompts no longer
+#: instruct the model to emit them (weave instruction removed 2026-11-02).
 USER_WEAVE_COLOR = "#e8a33d"  # bright amber — "your words"
 
 

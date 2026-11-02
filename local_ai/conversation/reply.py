@@ -50,32 +50,25 @@ from local_ai.council.render import (
 _MSG_MAX = 2000
 _HISTORY_MAX = 20
 
-_WEAVE_INSTRUCTION = (
-    "When you genuinely echo, quote, or build directly on the user's own "
-    "words or phrasing, wrap those exact words in [[u]]...[[/u]] markers. "
-    "Use sparingly — only for real echoes of their language. Never wrap "
-    "your own words."
-)
-
 GenerateFn = Callable[..., str]
 
 # Weaver canonical cutover — CODE-LEVEL, not a persistent feature flag.
-# True (the merged state): ordinary Weaver turns (weave=True) render
+# True (the merged state): ordinary Weaver turns (canonical=True) render
 # the canonical character block instead of the legacy archetype block.
 # False restores the exact legacy Weaver prompt: reverting this one
 # branch is the whole rollback, because no legacy function is modified.
-# Meeting turns (weave=False) always keep the legacy assembly — the
+# Meeting turns (canonical=False) always keep the legacy assembly — the
 # cutover is ordinary-conversation-only by design, so first-encounter
 # behavior is untouched.
 WEAVER_CANONICAL_CUTOVER = True
 
 
 # Raven canonical cutover — CODE-LEVEL, not a persistent feature flag.
-# True (the merged state): ordinary Raven turns (weave=True) render
+# True (the merged state): ordinary Raven turns (canonical=True) render
 # the canonical character block instead of the legacy archetype block.
 # False restores the exact legacy Raven prompt: reverting this one
 # branch is the whole rollback, because no legacy function is modified.
-# Meeting turns (weave=False) always keep the legacy assembly — the
+# Meeting turns (canonical=False) always keep the legacy assembly — the
 # cutover is ordinary-conversation-only by design, so first-encounter
 # behavior is untouched. No environment-variable override: any future
 # trial override needs its own authorization (Weaver trial precedent).
@@ -83,11 +76,11 @@ RAVEN_CANONICAL_CUTOVER = True
 
 
 # Gardener canonical cutover — CODE-LEVEL, not a persistent feature flag.
-# True: ordinary Gardener turns (weave=True) render the canonical
+# True: ordinary Gardener turns (canonical=True) render the canonical
 # character block instead of the legacy archetype block. False
 # restores the exact legacy Gardener prompt: reverting this one
 # branch is the whole rollback, because no legacy function is
-# modified. Meeting turns (weave=False) always keep the legacy
+# modified. Meeting turns (canonical=False) always keep the legacy
 # assembly — the cutover is ordinary-conversation-only by design,
 # so first-encounter behavior is untouched. No environment-variable
 # override: any future trial override needs its own authorization
@@ -96,11 +89,11 @@ GARDENER_CANONICAL_CUTOVER = True
 
 
 # Firebrand canonical cutover — CODE-LEVEL, not a persistent feature flag.
-# True: ordinary Firebrand turns (weave=True) render the canonical
+# True: ordinary Firebrand turns (canonical=True) render the canonical
 # character block instead of the legacy archetype block. False
 # restores the exact legacy Firebrand prompt: reverting this one
 # branch is the whole rollback, because no legacy function is
-# modified. Meeting turns (weave=False) always keep the legacy
+# modified. Meeting turns (canonical=False) always keep the legacy
 # assembly — the cutover is ordinary-conversation-only by design,
 # so first-encounter behavior is untouched. No environment-variable
 # override: any future trial override needs its own authorization
@@ -109,11 +102,11 @@ FIREBRAND_CANONICAL_CUTOVER = True
 
 
 # Bear canonical cutover — CODE-LEVEL, not a persistent feature flag.
-# True: ordinary Bear turns (weave=True) render the canonical
+# True: ordinary Bear turns (canonical=True) render the canonical
 # character block instead of the legacy archetype block. False
 # restores the exact legacy Bear prompt: reverting this one branch
 # is the whole rollback, because no legacy function is modified.
-# Meeting turns (weave=False) always keep the legacy assembly — the
+# Meeting turns (canonical=False) always keep the legacy assembly — the
 # cutover is ordinary-conversation-only by design, so first-encounter
 # behavior is untouched. No environment-variable override: any future
 # trial override needs its own authorization (Weaver trial precedent).
@@ -121,11 +114,11 @@ BEAR_CANONICAL_CUTOVER = True
 
 
 # Crane canonical cutover — CODE-LEVEL, not a persistent feature flag.
-# True: ordinary Crane turns (weave=True) render the canonical
+# True: ordinary Crane turns (canonical=True) render the canonical
 # character block instead of the legacy archetype block. False
 # restores the exact legacy Crane prompt: reverting this one branch
 # is the whole rollback, because no legacy function is modified.
-# Meeting turns (weave=False) always keep the legacy assembly — the
+# Meeting turns (canonical=False) always keep the legacy assembly — the
 # cutover is ordinary-conversation-only by design, so first-encounter
 # behavior is untouched. No environment-variable override: any future
 # trial override needs its own authorization (Weaver trial precedent).
@@ -133,11 +126,11 @@ CRANE_CANONICAL_CUTOVER = True
 
 
 # Fox canonical cutover — CODE-LEVEL, not a persistent feature flag.
-# True: ordinary Fox turns (weave=True) render the canonical
+# True: ordinary Fox turns (canonical=True) render the canonical
 # character block instead of the legacy archetype block. False
 # restores the exact legacy Fox prompt: reverting this one branch
 # is the whole rollback, because no legacy function is modified.
-# Meeting turns (weave=False) always keep the legacy assembly — the
+# Meeting turns (canonical=False) always keep the legacy assembly — the
 # cutover is ordinary-conversation-only by design, so first-encounter
 # behavior is untouched. No environment-variable override: any future
 # trial override needs its own authorization (Weaver trial precedent).
@@ -243,7 +236,7 @@ def build_voice_prompt(
     context_hint: str | None = None,
     thread_summary: str | None = None,
     extra_instructions: str | None = None,
-    weave: bool = True,
+    canonical: bool = True,
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
@@ -258,12 +251,17 @@ def build_voice_prompt(
     voice route); first meetings never pass it, because their frames
     already carry the first-meeting block via the encounter runtime.
 
-    `weave=False` omits the [[u]] quote-weaving instruction: the
-    encounter runtime (keystone meetings) runs under the
+    `canonical` selects the character assembly: True (the default)
+    renders the canonical character block on ordinary turns; False
+    keeps the exact legacy archetype assembly for meeting turns.
+    The encounter runtime (keystone meetings) runs under the
     evidence/expression separation (Joshua's ruling, 2026-10-23) —
     dialogue synthesizes in the character's own words and is never
     required to splice the user's phrases, while exact quotations
-    live in the evidence layer. Chat surfaces keep the default.
+    live in the evidence layer. No path appends a [[u]]
+    quote-weaving instruction anymore (removed 2026-11-02, Step 2);
+    historical markers in stored replies still render via the
+    client, and sanitize_weave still normalizes them.
     """
     arch_id = (archetype_id or "").strip().lower()
     arch = get_archetype(arch_id)
@@ -310,17 +308,17 @@ def build_voice_prompt(
     # shared anti-presumption style rule, the jurisdiction lines
     # (registry focus/register/dictionary — complementary content the
     # canonical block does not duplicate), and the strand blend, plus
-    # every downstream section below (trained sections, weave,
+    # every downstream section below (trained sections,
     # reply guidance, question block, extra_instructions, fellowship
     # reference, thread summary, context hint, history, continuity,
     # trailer). The resolved capability guidance rides INSIDE the
     # character block (assembly order) instead of its legacy
     # downstream slot, so the downstream append below is skipped on
     # this path — same content, moved once, never duplicated.
-    # Meeting turns (weave=False) and all other seats keep the exact
+    # Meeting turns (canonical=False) and all other seats keep the exact
     # legacy assembly.
     weaver_canonical = (
-        arch_id == "conductor" and WEAVER_CANONICAL_CUTOVER and weave
+        arch_id == "conductor" and WEAVER_CANONICAL_CUTOVER and canonical
     )
     if weaver_canonical:
         visitor_state = {"personal_name": custom_name} if custom_name else {}
@@ -352,10 +350,10 @@ def build_voice_prompt(
     # stock only when the lookup returns a visitor-chosen name); the
     # renderer receives that already-authorized value, never raw
     # visitor state, and never infers milestone eligibility itself.
-    # Meeting turns (weave=False) and all other seats keep the exact
+    # Meeting turns (canonical=False) and all other seats keep the exact
     # legacy assembly.
     raven_canonical = (
-        arch_id == "skeptic" and RAVEN_CANONICAL_CUTOVER and weave
+        arch_id == "skeptic" and RAVEN_CANONICAL_CUTOVER and canonical
     )
     if raven_canonical:
         character_block = render_raven_ordinary(
@@ -386,10 +384,10 @@ def build_voice_prompt(
     # stock only when the lookup returns a visitor-chosen name); the
     # renderer receives that already-authorized value, never raw
     # visitor state, and never infers milestone eligibility itself.
-    # Meeting turns (weave=False) and all other seats keep the exact
+    # Meeting turns (canonical=False) and all other seats keep the exact
     # legacy assembly.
     gardener_canonical = (
-        arch_id == "mentor" and GARDENER_CANONICAL_CUTOVER and weave
+        arch_id == "mentor" and GARDENER_CANONICAL_CUTOVER and canonical
     )
     if gardener_canonical:
         character_block = render_gardener_ordinary(
@@ -420,10 +418,10 @@ def build_voice_prompt(
     # stock only when the lookup returns a visitor-chosen name); the
     # renderer receives that already-authorized value, never raw
     # visitor state, and never infers milestone eligibility itself.
-    # Meeting turns (weave=False) and all other seats keep the exact
+    # Meeting turns (canonical=False) and all other seats keep the exact
     # legacy assembly.
     firebrand_canonical = (
-        arch_id == "champion" and FIREBRAND_CANONICAL_CUTOVER and weave
+        arch_id == "champion" and FIREBRAND_CANONICAL_CUTOVER and canonical
     )
     if firebrand_canonical:
         character_block = render_firebrand_ordinary(
@@ -454,10 +452,10 @@ def build_voice_prompt(
     # stock only when the lookup returns a visitor-chosen name); the
     # renderer receives that already-authorized value, never raw
     # visitor state, and never infers milestone eligibility itself.
-    # Meeting turns (weave=False) and all other seats keep the exact
+    # Meeting turns (canonical=False) and all other seats keep the exact
     # legacy assembly.
     bear_canonical = (
-        arch_id == "guardian" and BEAR_CANONICAL_CUTOVER and weave
+        arch_id == "guardian" and BEAR_CANONICAL_CUTOVER and canonical
     )
     if bear_canonical:
         character_block = render_bear_ordinary(
@@ -492,10 +490,10 @@ def build_voice_prompt(
     # lookup's result (it differs from stock only when the lookup
     # returns a visitor-chosen name); the renderer receives that
     # already-authorized value, never raw visitor state, and never
-    # infers milestone eligibility itself. Meeting turns (weave=False)
+    # infers milestone eligibility itself. Meeting turns (canonical=False)
     # and all other seats keep the exact legacy assembly.
     crane_canonical = (
-        arch_id == "ambassador" and CRANE_CANONICAL_CUTOVER and weave
+        arch_id == "ambassador" and CRANE_CANONICAL_CUTOVER and canonical
     )
     if crane_canonical:
         character_block = render_crane_ordinary(
@@ -528,10 +526,10 @@ def build_voice_prompt(
     # (it differs from stock only when the lookup returns a
     # visitor-chosen name); the renderer receives that
     # already-authorized value, never raw visitor state, and never
-    # infers milestone eligibility itself. Meeting turns (weave=False)
+    # infers milestone eligibility itself. Meeting turns (canonical=False)
     # and all other seats keep the exact legacy assembly.
     fox_canonical = (
-        arch_id == "maverick" and FOX_CANONICAL_CUTOVER and weave
+        arch_id == "maverick" and FOX_CANONICAL_CUTOVER and canonical
     )
     if fox_canonical:
         character_block = render_fox_ordinary(
@@ -585,8 +583,6 @@ def build_voice_prompt(
         # intention line. Skipped on the canonical path because the
         # resolved guidance already rides inside the character block.
         prompt += ["", capability_context.strip()]
-    if weave:
-        prompt += ["", _WEAVE_INSTRUCTION]
     prompt += ["", "Keep replies conversational (2-5 sentences)."]
     if question:
         # "Question me" — mirrors the landing demo's question tap-mode: the
@@ -688,7 +684,7 @@ def generate_voice_reply(
     thread_summary: str | None = None,
     generate_fn: GenerateFn | None = None,
     extra_instructions: str | None = None,
-    weave: bool = True,
+    canonical: bool = True,
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
 ) -> VoiceReply:
@@ -703,7 +699,7 @@ def generate_voice_reply(
         context_hint=context_hint,
         thread_summary=thread_summary,
         extra_instructions=extra_instructions,
-        weave=weave,
+        canonical=canonical,
         capability_context=capability_context,
         fellowship_reference=fellowship_reference,
     )

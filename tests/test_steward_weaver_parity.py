@@ -97,7 +97,7 @@ VOICE_CASES = [
     (dict(mode="base"), "base-default"),
     (dict(mode="trained"), "trained-no-data"),
     (dict(mode="base", question=True), "question-mode"),
-    (dict(mode="base", weave=False,
+    (dict(mode="base", canonical=False,
           extra_instructions="FRAME: encounter instructions here."),
      "meeting-shape-frame"),
     (dict(mode="base",
@@ -303,7 +303,7 @@ def test_network_boundary_chat(monkeypatch):
             "parity-nobody", "conductor", "Hello, I need to sort my week.",
             [], mode="base", generate_fn=gen,
             extra_instructions="FRAME: encounter instructions here.",
-            weave=False)
+            canonical=False)
         assert reply.reply == "A reply."
         return captured["prompt"]
 
@@ -313,7 +313,7 @@ def test_network_boundary_chat(monkeypatch):
     lines, _meta = build_voice_prompt(
         "parity-nobody", "conductor", "Hello, I need to sort my week.",
         [], mode="base", extra_instructions="FRAME: encounter instructions here.",
-        weave=False)
+        canonical=False)
     assert old == "\n".join(lines)
 
 

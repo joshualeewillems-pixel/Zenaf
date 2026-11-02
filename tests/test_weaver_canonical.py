@@ -466,7 +466,17 @@ def test_branch_six_seats_byte_identical_and_cutover_independent(monkeypatch):
         assert prompts[True] == prompts[False], seat
         joined = _joined(prompts[True])
         assert CANONICAL_MARKER not in joined, seat
-        assert "a voice in the user's Zenaf council" in joined, seat
+        # NOTE (Raven implementation, PR raven-canonical-impl): the
+        # skeptic seat is no longer legacy on ordinary turns — its
+        # ordinary prompt is the canonical Raven block (see
+        # tests/test_raven_canonical.py). Cutover independence still
+        # holds for it (the Raven branch does not depend on the
+        # Weaver cutover), but the legacy-opener assertion below
+        # applies only to the five seats that remain legacy.
+        if seat == "skeptic":
+            assert "You are the Raven, who occupies the Skeptic seat" in joined, seat
+        else:
+            assert "a voice in the user's Zenaf council" in joined, seat
 
 
 def test_branch_steward_toggle_parity_on_path(monkeypatch):

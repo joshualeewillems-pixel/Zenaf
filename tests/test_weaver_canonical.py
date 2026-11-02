@@ -469,12 +469,39 @@ def test_branch_six_seats_byte_identical_and_cutover_independent(monkeypatch):
         # NOTE (Raven implementation, PR raven-canonical-impl): the
         # skeptic seat is no longer legacy on ordinary turns — its
         # ordinary prompt is the canonical Raven block (see
-        # tests/test_raven_canonical.py). Cutover independence still
-        # holds for it (the Raven branch does not depend on the
-        # Weaver cutover), but the legacy-opener assertion below
-        # applies only to the five seats that remain legacy.
+        # tests/test_raven_canonical.py). NOTE (Gardener
+        # implementation, PR five-seats-canonical-impl): the mentor
+        # seat is likewise no longer legacy — its ordinary prompt is
+        # the canonical Gardener block (see
+        # tests/test_gardener_canonical.py). NOTE (Firebrand
+        # implementation, same PR): the champion seat is likewise no
+        # longer legacy — its ordinary prompt is the canonical
+        # Firebrand block (see tests/test_firebrand_canonical.py).
+        # NOTE (Bear implementation, same PR): the guardian seat is
+        # likewise no longer legacy — its ordinary prompt is the
+        # canonical Bear block (see tests/test_bear_canonical.py).
+        # NOTE (Crane implementation, same PR): the ambassador seat
+        # is likewise no longer legacy — its ordinary prompt is the
+        # canonical Crane block (see tests/test_crane_canonical.py).
+        # NOTE (Fox implementation, same PR): the maverick seat is
+        # likewise no longer legacy — its ordinary prompt is the
+        # canonical Fox block (see tests/test_fox_canonical.py).
+        # Cutover independence still holds for all six (no branch
+        # depends on the Weaver cutover), and the legacy-opener
+        # assertion below now applies to no remaining seat — every
+        # seat is canonical on ordinary turns.
         if seat == "skeptic":
             assert "You are the Raven, who occupies the Skeptic seat" in joined, seat
+        elif seat == "mentor":
+            assert "You are the Gardener, who occupies the Mentor seat" in joined, seat
+        elif seat == "champion":
+            assert "You are the Firebrand, who occupies the Champion seat" in joined, seat
+        elif seat == "guardian":
+            assert "You are the Bear, who occupies the Guardian seat" in joined, seat
+        elif seat == "ambassador":
+            assert "You are the Crane, who occupies the Ambassador seat" in joined, seat
+        elif seat == "maverick":
+            assert "You are the Fox, who occupies the Maverick seat" in joined, seat
         else:
             assert "a voice in the user's Zenaf council" in joined, seat
 

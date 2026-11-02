@@ -483,10 +483,13 @@ def test_branch_six_seats_byte_identical_and_cutover_independent(monkeypatch):
         # NOTE (Crane implementation, same PR): the ambassador seat
         # is likewise no longer legacy — its ordinary prompt is the
         # canonical Crane block (see tests/test_crane_canonical.py).
-        # Cutover independence still holds for all five (no branch
-        # depends on the Weaver cutover), but the legacy-opener
-        # assertion below applies only to the one seat that
-        # remains legacy.
+        # NOTE (Fox implementation, same PR): the maverick seat is
+        # likewise no longer legacy — its ordinary prompt is the
+        # canonical Fox block (see tests/test_fox_canonical.py).
+        # Cutover independence still holds for all six (no branch
+        # depends on the Weaver cutover), and the legacy-opener
+        # assertion below now applies to no remaining seat — every
+        # seat is canonical on ordinary turns.
         if seat == "skeptic":
             assert "You are the Raven, who occupies the Skeptic seat" in joined, seat
         elif seat == "mentor":
@@ -497,6 +500,8 @@ def test_branch_six_seats_byte_identical_and_cutover_independent(monkeypatch):
             assert "You are the Bear, who occupies the Guardian seat" in joined, seat
         elif seat == "ambassador":
             assert "You are the Crane, who occupies the Ambassador seat" in joined, seat
+        elif seat == "maverick":
+            assert "You are the Fox, who occupies the Maverick seat" in joined, seat
         else:
             assert "a voice in the user's Zenaf council" in joined, seat
 

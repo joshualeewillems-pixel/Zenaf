@@ -870,3 +870,107 @@ def render_crane_ordinary(
         f"Crane character block still over the {CHARACTER_CEILING}-char "
         "ceiling after dropping all optional units; refusing to truncate"
     )
+
+
+def render_fox_ordinary(
+    record: dict,
+    authorized_name: str | None = None,
+    resolved_capability: str | None = None,
+    detail: str = "compact",
+) -> list[str]:
+    """Assemble the canonical Fox ordinary-conversation block.
+
+    Units (Fox §2, revised P-005 renderings): identity, lead
+    (CHANGED between details, not appended), worldview (ideal
+    verbatim + defining question verbatim ONLY — no
+    domain-tension sentence in either rendering), capability
+    (resolver-supplied, after worldview), middle, then voice.
+    Voice order is REVERSED vs Raven: warmth is LAST in both
+    renderings, and the fuller has an encounter-conduct TAIL
+    after warmth, so the voice-close is NOT terminal in fuller.
+    The fuller middle + voice + tail swap for the compact middle
+    + voice on degradation; voice drops whole next; then
+    AssemblyError (the compact middle is essential
+    characterization and is never dropped). Assembled blocks
+    reproduce exemplar §2 exactly (compact 1,164 chars, fuller
+    1,489 chars, no capability). The word "Irish" appears nowhere:
+    the sensibility is carried by storyteller cadence and
+    sideways speech, never as an accent instruction.
+    """
+    if detail not in ("compact", "fuller"):
+        raise ValueError(f"Unknown detail: {detail!r}")
+    capability = _validated_capability(resolved_capability)
+
+    identity = _five_seat_identity_unit(record, authorized_name)
+    lead_compact = eligible_field(record, "characterization", "lead_compact")
+    lead_fuller = eligible_field(record, "characterization", "lead_fuller")
+    worldview_parts = [
+        eligible_field(record, "philosophy", "ideal"),
+        eligible_field(record, "philosophy", "defining_question"),
+    ]
+    # Gating fields: eligible by rule even though their prose is
+    # embodied rather than separately rendered (Raven pattern).
+    for section, key in (
+        ("characterization", "temperament"),
+        ("characterization", "demeanor"),
+        ("characterization", "governing_conviction"),
+    ):
+        if eligible_field(record, section, key) is None:
+            raise AssemblyError(
+                f"Fox gating field {section}.{key} is not eligible"
+            )
+    if (
+        lead_compact is None
+        or any(part is None for part in worldview_parts)
+    ):
+        raise AssemblyError(
+            "Fox core unit (lead/worldview) is not eligible"
+        )
+    worldview = " ".join(worldview_parts)
+    middle_compact = eligible_field(record, "characterization", "middle_compact")
+    if middle_compact is None:
+        raise AssemblyError(
+            "Fox core unit (middle) is not eligible"
+        )
+
+    def with_capability(units: list[str]) -> list[str]:
+        if capability:
+            return [*units[:3], capability, *units[3:]]
+        return units
+
+    middle_fuller = eligible_field(record, "characterization", "middle_fuller")
+    voice_compact = eligible_field(record, "characterization", "voice_compact")
+    voice_fuller = eligible_field(record, "characterization", "voice_fuller")
+    tail = eligible_field(record, "characterization", "tail")
+
+    def over_budget(units: list[str]) -> bool:
+        return len("\n".join(units)) > CHARACTER_CEILING
+
+    # Fuller-specific units ineligible → fall back to compact units
+    # (not failure). The fuller voice passage and tail are terminal
+    # units: ineligible → dropped whole, middle kept (the
+    # tempo/tail pattern from Gardener/Bear/Crane).
+    candidates: list[list[str]] = []
+    if detail == "fuller" and lead_fuller is not None and middle_fuller is not None:
+        fuller_units = [
+            identity, lead_fuller, worldview, middle_fuller,
+        ]
+        if voice_fuller is not None:
+            fuller_units.append(voice_fuller)
+        if tail is not None:
+            fuller_units.append(tail)
+        candidates.append(with_capability(fuller_units))
+    compact_units = [identity, lead_compact, worldview, middle_compact]
+    if voice_compact is not None:
+        compact_units.append(voice_compact)
+    candidates.append(with_capability(compact_units))
+    candidates.append(with_capability(
+        [identity, lead_compact, worldview, middle_compact]
+    ))
+    for units in candidates:
+        if not over_budget(units):
+            return units
+    raise AssemblyError(
+        f"Fox character block still over the {CHARACTER_CEILING}-char "
+        "ceiling after dropping all optional units; refusing to truncate"
+    )

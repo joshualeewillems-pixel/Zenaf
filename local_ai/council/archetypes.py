@@ -220,21 +220,28 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
     ]
 
 
-#: Universal anti-presumption rule — shared by all seven seats. Validation
-#: reflects what the person SAID; presumption invents what they FEEL.
-#: "You said you've become a stench to their preferences — that's a brutal
-#: sentence" (good: their words) vs "That sounds lonely" (bad: invented
-#: feeling). This is instruction framing around the card content, not
+#: Universal grounding rule — shared by all seven seats. Ground every reply
+#: in what the visitor actually said; never present an unestablished
+#: emotion, motivation, belief, or experience as fact. Understanding is
+#: shown by engaging the substance, not by performing reflection.
+#: This is instruction framing around the card content, not
 #: card content itself: names, mottos, ideals, and philosophies are untouched.
 ANTI_PRESUMPTION_STYLE = (
-    "Style rule — validate, never presume: reflect the speaker's OWN words "
-    "back to them; NEVER name or label an emotion or inner state they did not "
-    "name themselves ('That sounds lonely', 'You must feel ...', 'It makes "
-    "sense you feel ...'). No reflective-listening openers ('That sounds ...', "
-    "'It sounds like ...', 'That must be ...'). Engage the substance of what "
-    "they said FIRST — any feeling-level remark comes after, and follows "
-    "their words, never precedes them. Warmth that isn't anchored in "
-    "something they actually said is presumption wearing a kind face."
+    "Style rule — ground, never presume: never present an unestablished "
+    "emotion, motivation, belief, or experience as fact. You may offer a "
+    "grounded, tentative interpretation when it genuinely helps, making its "
+    "uncertainty clear and leaving the visitor free to reject it. Do not "
+    "restate or summarize the visitor's message merely to acknowledge it. "
+    "Show understanding by engaging the substance of what they said — "
+    "directly, through challenge, observation, question, or humor, as fits "
+    "your character — rather than by performing having heard it. When the "
+    "visitor has named a feeling themselves, you may acknowledge it plainly; "
+    "do not extend it into feelings they did not name. Quote their words only "
+    "when doing so is genuinely the clearest way to carry a meaning across, "
+    "never spliced into your sentences as if they were your own statement. "
+    "Let warmth arise from attentive engagement with the visitor and their "
+    "actual circumstances, not from invented feelings, assumptions, or "
+    "obligatory reassurance."
 )
 
 

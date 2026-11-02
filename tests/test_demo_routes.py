@@ -321,17 +321,22 @@ def test_anti_presumption_rule_present_for_all_seats():
     for vid in arch.stock_archetype_ids():
         text = "\n".join(arch.build_archetype_prompt_lines(vid))
         assert "never presume" in text.lower(), vid
-        assert "own words" in text.lower(), vid
+        assert "ground, never presume" in text.lower(), vid
+        assert "merely to acknowledge" in text.lower(), vid
 
 
 def test_anti_presumption_names_banned_patterns():
     from local_ai.council import archetypes as arch
 
     text = "\n".join(arch.build_archetype_prompt_lines("guardian"))
-    # Presumption is steered against by name ...
-    assert "That sounds lonely" in text
-    # ... while validation with the user's own words is explicitly allowed.
-    assert "reflect the speaker's own words" in text.lower()
+    # Presumption is steered against by name: unestablished interiority
+    # presented as fact, and restatement merely to acknowledge, are banned ...
+    assert "never present an unestablished" in text
+    assert "merely to acknowledge" in text
+    # ... while grounded tentative interpretation and purposeful quotation
+    # are explicitly allowed.
+    assert "grounded, tentative interpretation" in text
+    assert "genuinely the clearest way to carry a meaning across" in text
 
 
 def test_warmth_registers_differ_per_seat():
@@ -386,7 +391,7 @@ def test_demo_prompt_matches_two_layer_framing():
     from api.routes import demo_routes as dr
 
     prompt = dr._build_demo_prompt("guardian", [], speak=False, question_mode=False)
-    assert "That sounds lonely" in prompt  # the presumption pattern is named
+    assert "ground, never presume" in prompt  # the grounding rule rides via archetype lines
     assert "warmth register" in prompt
     # The per-seat register flows into the demo prompt via the archetype lines.
     assert "warm-protective" in prompt

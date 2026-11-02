@@ -99,12 +99,18 @@ def test_readback_formula_is_shapes_not_mandatory_moves():
 
 
 def test_anti_presumption_governs_substance_no_double_read_structure():
-    # Anti-presumption (archetype style rule) still says reflect their
-    # words; the frame's blanket no-restatement ban is gone, replaced
-    # by the structural rule: one read per breath.
+    # Grounding rule (archetype style rule): ground in what was said,
+    # never present unestablished interiority as fact, no restatement
+    # merely to acknowledge; the frame's blanket no-restatement ban is
+    # gone, replaced by the structural rule: one read per breath.
     from local_ai.council import archetypes as A
     style = A.ANTI_PRESUMPTION_STYLE
-    assert "reflect the speaker's OWN words back to them" in style
+    assert "Style rule — ground, never presume:" in style
+    assert "never present an unestablished emotion, motivation, belief, or experience as fact" in style
+    assert "Do not restate or summarize the visitor's message merely to acknowledge it" in style
+    assert "may offer a grounded, tentative interpretation" in style
+    assert "may acknowledge it plainly; do not extend it" in style
+    assert "reflect the speaker's OWN words back to them" not in style
     encounter = SR.SCRIPT_ENCOUNTER_FRAME
     assert "Do NOT restate, summarize, or interpret" not in encounter
     assert "do not weave their words back in this reply" not in encounter

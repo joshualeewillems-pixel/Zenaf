@@ -469,12 +469,18 @@ def test_branch_six_seats_byte_identical_and_cutover_independent(monkeypatch):
         # NOTE (Raven implementation, PR raven-canonical-impl): the
         # skeptic seat is no longer legacy on ordinary turns — its
         # ordinary prompt is the canonical Raven block (see
-        # tests/test_raven_canonical.py). Cutover independence still
-        # holds for it (the Raven branch does not depend on the
-        # Weaver cutover), but the legacy-opener assertion below
-        # applies only to the five seats that remain legacy.
+        # tests/test_raven_canonical.py). NOTE (Gardener
+        # implementation, PR five-seats-canonical-impl): the mentor
+        # seat is likewise no longer legacy — its ordinary prompt is
+        # the canonical Gardener block (see
+        # tests/test_gardener_canonical.py). Cutover independence
+        # still holds for both (neither branch depends on the Weaver
+        # cutover), but the legacy-opener assertion below applies
+        # only to the four seats that remain legacy.
         if seat == "skeptic":
             assert "You are the Raven, who occupies the Skeptic seat" in joined, seat
+        elif seat == "mentor":
+            assert "You are the Gardener, who occupies the Mentor seat" in joined, seat
         else:
             assert "a voice in the user's Zenaf council" in joined, seat
 

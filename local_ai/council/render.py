@@ -490,3 +490,126 @@ def render_raven_ordinary(
             "ceiling after dropping all optional units; refusing to truncate"
         )
     return units
+
+
+# ---------------------------------------------------------------------------
+# Five-seat canonical renderers (Gardener, Firebrand, Bear, Crane, Fox)
+# ---------------------------------------------------------------------------
+# Same architecture as Weaver/Raven (record with standing+category,
+# eligible_field gating, ceiling+ladder, never truncate, never drop
+# conviction/identity/essential characterization) but each seat gets
+# its own renderer function with seat-specific unit fields: NONE of
+# the five §2s fits the Raven assembly shape, so reusing Raven's
+# unit helpers verbatim would misassemble every seat. The shared
+# pieces are the identity helper below and the ladder shape:
+# fuller → compact → drop voice → AssemblyError.
+
+
+def _five_seat_identity_unit(record: dict, authorized_name: str | None) -> str:
+    """Generic identity unit for the five new seats.
+
+    The renderer takes the ALREADY-AUTHORIZED name from the call-site
+    naming lookup only (Raven pattern): it takes no visitor-state
+    argument and builds no second permission system. A whitespace
+    name is not authorized; a non-string name is a contract
+    violation, not a fallback.
+    """
+    if authorized_name is not None and not isinstance(authorized_name, str):
+        raise TypeError("authorized_name must be a string or None")
+    role = record["identity"]["role"]["text"]
+    character = record["identity"]["character"]["text"]
+    line = (
+        f"You are the {character}, who occupies the {role} seat "
+        "in the Fellowship."
+    )
+    name = authorized_name.strip() if authorized_name else ""
+    if name:
+        line += f" The visitor calls you {name}."
+    return line
+
+
+def _validated_capability(resolved_capability: str | None) -> str | None:
+    """Validate the resolver-supplied capability text, if any."""
+    if resolved_capability is None:
+        return None
+    if not isinstance(resolved_capability, str):
+        raise TypeError("resolved_capability must be a string or None")
+    stripped = resolved_capability.strip()
+    return stripped or None
+
+
+def render_gardener_ordinary(
+    record: dict,
+    authorized_name: str | None = None,
+    resolved_capability: str | None = None,
+    detail: str = "compact",
+) -> list[str]:
+    """Assemble the canonical Gardener ordinary-conversation block.
+
+    Units (Gardener §2): identity, personality, worldview
+    (ideal-rendering-form + defining question + domain tension),
+    capability (resolver-supplied, after worldview), then either
+    the fuller middle + tempo-precision sentence, or the compact
+    voice + warmth passage. Assembled blocks reproduce exemplar §2
+    exactly (compact 670 chars, fuller 921 chars, no capability).
+    """
+    if detail not in ("compact", "fuller"):
+        raise ValueError(f"Unknown detail: {detail!r}")
+    capability = _validated_capability(resolved_capability)
+
+    identity = _five_seat_identity_unit(record, authorized_name)
+    personality = eligible_field(record, "characterization", "personality")
+    worldview_parts = [
+        eligible_field(record, "characterization", "ideal_rendering_form"),
+        eligible_field(record, "philosophy", "defining_question"),
+        eligible_field(record, "characterization", "domain_tension"),
+    ]
+    # Gating fields: eligible by rule even though their prose is
+    # embodied rather than separately rendered (Raven pattern).
+    for section, key in (
+        ("characterization", "temperament"),
+        ("characterization", "demeanor"),
+        ("characterization", "governing_conviction"),
+    ):
+        if eligible_field(record, section, key) is None:
+            raise AssemblyError(
+                f"Gardener gating field {section}.{key} is not eligible"
+            )
+    if personality is None or any(part is None for part in worldview_parts):
+        raise AssemblyError(
+            "Gardener core unit (personality/worldview) is not eligible"
+        )
+    worldview = " ".join(worldview_parts)
+    core = [identity, personality, worldview]
+    if capability:
+        core.append(capability)
+
+    middle = eligible_field(record, "characterization", "fuller_middle")
+    voice = eligible_field(record, "characterization", "voice_and_humor")
+    warmth = eligible_field(record, "characterization", "warmth")
+    tempo = eligible_field(record, "characterization", "tempo")
+    # The compact voice unit is voice + warmth together: if either
+    # part is ineligible, the whole voice unit drops (never partial).
+    voice_compact = (
+        " ".join([voice, warmth]) if voice is not None and warmth is not None else None
+    )
+
+    def over_budget(units: list[str]) -> bool:
+        return len("\n".join(units)) > CHARACTER_CEILING
+
+    candidates: list[list[str]] = []
+    if detail == "fuller" and middle is not None:
+        fuller_units = [*core, middle]
+        if tempo is not None:
+            fuller_units.append(tempo)
+        candidates.append(fuller_units)
+    if voice_compact is not None:
+        candidates.append([*core, voice_compact])
+    candidates.append(core)
+    for units in candidates:
+        if not over_budget(units):
+            return units
+    raise AssemblyError(
+        f"Gardener character block still over the {CHARACTER_CEILING}-char "
+        "ceiling after dropping all optional units; refusing to truncate"
+    )

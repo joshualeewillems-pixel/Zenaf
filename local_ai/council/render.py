@@ -613,3 +613,78 @@ def render_gardener_ordinary(
         f"Gardener character block still over the {CHARACTER_CEILING}-char "
         "ceiling after dropping all optional units; refusing to truncate"
     )
+
+
+def render_firebrand_ordinary(
+    record: dict,
+    authorized_name: str | None = None,
+    resolved_capability: str | None = None,
+    detail: str = "compact",
+) -> list[str]:
+    """Assemble the canonical Firebrand ordinary-conversation block.
+
+    Units (Firebrand §2): identity, personality, worldview
+    (conviction paraphrase + defining question + temperament
+    sentence), capability (resolver-supplied, after worldview),
+    then either the fuller additional unit (which DELETES the
+    compact voice-close entirely — no voice sentence, no warmth
+    sentence in the fuller) or the compact voice + warmth passage.
+    Assembled blocks reproduce exemplar §2 exactly (compact 719
+    chars, fuller 1,066 chars, no capability).
+    """
+    if detail not in ("compact", "fuller"):
+        raise ValueError(f"Unknown detail: {detail!r}")
+    capability = _validated_capability(resolved_capability)
+
+    identity = _five_seat_identity_unit(record, authorized_name)
+    personality = eligible_field(record, "characterization", "personality")
+    worldview_parts = [
+        eligible_field(record, "characterization", "conviction_paraphrase"),
+        eligible_field(record, "philosophy", "defining_question"),
+        eligible_field(record, "characterization", "temperament_sentence"),
+    ]
+    # Gating fields: eligible by rule even though their prose is
+    # embodied rather than separately rendered (Raven pattern).
+    for section, key in (
+        ("characterization", "temperament"),
+        ("characterization", "demeanor"),
+        ("characterization", "governing_conviction"),
+    ):
+        if eligible_field(record, section, key) is None:
+            raise AssemblyError(
+                f"Firebrand gating field {section}.{key} is not eligible"
+            )
+    if personality is None or any(part is None for part in worldview_parts):
+        raise AssemblyError(
+            "Firebrand core unit (personality/worldview) is not eligible"
+        )
+    worldview = " ".join(worldview_parts)
+    core = [identity, personality, worldview]
+    if capability:
+        core.append(capability)
+
+    additional = eligible_field(record, "characterization", "fuller_additional")
+    voice = eligible_field(record, "characterization", "voice_and_humor")
+    warmth = eligible_field(record, "characterization", "warmth")
+    # The compact voice unit is voice + warmth together: if either
+    # part is ineligible, the whole voice unit drops (never partial).
+    voice_compact = (
+        " ".join([voice, warmth]) if voice is not None and warmth is not None else None
+    )
+
+    def over_budget(units: list[str]) -> bool:
+        return len("\n".join(units)) > CHARACTER_CEILING
+
+    candidates: list[list[str]] = []
+    if detail == "fuller" and additional is not None:
+        candidates.append([*core, additional])
+    if voice_compact is not None:
+        candidates.append([*core, voice_compact])
+    candidates.append(core)
+    for units in candidates:
+        if not over_budget(units):
+            return units
+    raise AssemblyError(
+        f"Firebrand character block still over the {CHARACTER_CEILING}-char "
+        "ceiling after dropping all optional units; refusing to truncate"
+    )

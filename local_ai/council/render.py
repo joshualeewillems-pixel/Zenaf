@@ -40,6 +40,25 @@ then the droppable voice guidance is dropped; if the block is still
 over budget, assembly FAILS with :class:`AssemblyError` (validation
 failure, never silent truncation). Essential units (identity,
 personality, worldview) missing through ineligibility also raise.
+
+Raven ordinary-conversation renderer (:func:`render_raven_ordinary`).
+Same machinery, same ceiling, same ladder — one deliberate
+difference, from the adopted Raven plan §4: the renderer receives
+the ALREADY-AUTHORIZED name from the call site (resolved through
+the existing naming lookup), never raw visitor state. A name being
+present in visitor state does not establish that the visitor has
+earned its use, and the renderer cannot infer milestone eligibility
+— so it takes no visitor-state argument at all. The call site passes
+the lookup's result (or nothing); the renderer formats it as an
+address clause and nothing else. No second naming-permission system
+is built here. (Weaver's renderer reads personal_name from
+visitor_state directly; Raven's does not, because the naming
+contract requires milestone eligibility the renderer cannot infer.)
+The Raven voice close is detail-dependent by design, so the
+assembled blocks reproduce exemplar §2 exactly: the compact voice
+close is warmth + examination preference, and the fuller voice close
+adds the tempo sentence. The fuller development sentences live in
+their own record field and drop whole when the fuller degrades.
 """
 
 from __future__ import annotations
@@ -296,6 +315,178 @@ def render_weaver_ordinary(
     if over_budget(units):
         raise AssemblyError(
             f"Weaver character block still over the {CHARACTER_CEILING}-char "
+            "ceiling after dropping all optional units; refusing to truncate"
+        )
+    return units
+
+
+def _raven_identity_unit(record: dict, authorized_name: str | None) -> str:
+    """Structural identity line. Role/character are adopted by
+    record-integrity test; a lookup-authorized name changes address
+    (an appended clause), never essence. The name arrives already
+    authorized from the call site — this function never inspects
+    visitor state and never infers milestone eligibility."""
+    identity = record.get("identity", {})
+    role = identity.get("role", {}).get("text", "Skeptic")
+    character = identity.get("character", {}).get("text", "Raven")
+    line = f"You are the {character}, who occupies the {role} seat in the Fellowship."
+    if isinstance(authorized_name, str) and authorized_name.strip():
+        line += f" The visitor calls you {authorized_name.strip()}."
+    return line
+
+
+def _raven_personality_unit(
+    personality: str, development: str | None, detail: str
+) -> str:
+    """Personality paragraph. The fuller variant appends the
+    development sentences; degrading fuller → compact drops exactly
+    that addition, whole."""
+    if detail == "fuller" and development:
+        return f"{personality} {development}"
+    return personality
+
+
+def _raven_worldview_unit(
+    ideal: str, defining_question: str, domain_tension: str
+) -> str:
+    """Worldview paragraph: ideal (verbatim) + defining question
+    (verbatim) + domain tension as a worldview question, never a
+    labeled tension. The discernment sentence is the adopted one;
+    the superseded relentless-doubt sentence must never reach here
+    because the record carries the adopted value."""
+    return f"{ideal} {defining_question} {domain_tension}"
+
+
+def _raven_voice_close_unit(
+    warmth: str, voice_and_humor: str, tempo: str | None, detail: str
+) -> str:
+    """Voice close. Compact: warmth + examination preference. Fuller
+    adds the tempo sentence. Detail-dependent so the assembled blocks
+    reproduce exemplar §2 exactly."""
+    close = f"{warmth} {voice_and_humor}"
+    if detail == "fuller" and tempo:
+        close += f" {tempo}"
+    return close
+
+
+def render_raven_ordinary(
+    record: dict,
+    authorized_name: str | None = None,
+    resolved_capability: str | None = None,
+    detail: str = "compact",
+) -> list[str]:
+    """Render the Raven's ordinary-conversation character block.
+
+    Args:
+        record: the canonical Raven record (RAVEN_RECORD).
+        authorized_name: already-authorized name from the call site
+            (resolved through the existing naming lookup), or None
+            when the lookup authorizes no name. Rendered only as an
+            address clause. NEVER raw visitor state: this function
+            takes no visitor-state argument and cannot infer
+            milestone eligibility.
+        resolved_capability: already-resolved, visitor-authorized
+            capability guidance from the resolver (a string), or
+            None/empty when no capability is invoked. The renderer
+            appends it whole — never truncated, never interpreted.
+        detail: ``"compact"`` or ``"fuller"``.
+
+    Returns the block as a list of unit strings (one per line when
+    joined into a prompt). Raises :class:`AssemblyError` when an
+    essential field is ineligible or the block stays over budget
+    after dropping every optional unit. Raises ValueError on an
+    unknown detail, TypeError on a non-string capability input or
+    a non-string authorized name.
+    """
+    if detail not in ("compact", "fuller"):
+        raise ValueError(f"Unknown rendering detail: {detail!r}")
+    if resolved_capability is not None and not isinstance(resolved_capability, str):
+        raise TypeError(
+            "resolved_capability must be already-resolved guidance text, "
+            "never a raw capability id or structure"
+        )
+    if authorized_name is not None and not isinstance(authorized_name, str):
+        raise TypeError(
+            "authorized_name must be an already-authorized name string "
+            "from the naming lookup, or None — never raw visitor state"
+        )
+
+    # Essential content fields — all must pass both eligibility checks.
+    temperament = eligible_field(record, "characterization", "temperament")
+    demeanor = eligible_field(record, "characterization", "demeanor")
+    governing = eligible_field(record, "characterization", "governing_conviction")
+    domain_tension = eligible_field(record, "characterization", "domain_tension")
+    ideal = eligible_field(record, "philosophy", "ideal")
+    defining_question = eligible_field(record, "philosophy", "defining_question")
+    personality = eligible_field(record, "characterization", "personality")
+    # Voice fields are optional: ineligible voice guidance is dropped
+    # whole, never failed. (Temperament, demeanor, and governing
+    # conviction gate eligibility like Weaver's, but their prose is
+    # embodied by the personality/worldview units rather than rendered
+    # as separate sentences.)
+    warmth = eligible_field(record, "characterization", "warmth")
+    voice_and_humor = eligible_field(record, "characterization", "voice_and_humor")
+    tempo = eligible_field(record, "characterization", "tempo")
+    development = eligible_field(
+        record, "characterization", "personality_fuller_development"
+    )
+    missing = [
+        name
+        for name, value in (
+            ("temperament", temperament),
+            ("demeanor", demeanor),
+            ("governing_conviction", governing),
+            ("domain_tension", domain_tension),
+            ("ideal", ideal),
+            ("defining_question", defining_question),
+            ("personality", personality),
+        )
+        if value is None
+    ]
+    if missing:
+        raise AssemblyError(
+            f"Essential Raven field(s) ineligible or absent: {', '.join(missing)}"
+        )
+
+    identity = _raven_identity_unit(record, authorized_name)
+    personality_compact = _raven_personality_unit(personality, None, "compact")
+    personality_fuller = _raven_personality_unit(personality, development, "fuller")
+    personality_text = personality_fuller if detail == "fuller" else personality_compact
+    worldview = _raven_worldview_unit(ideal, defining_question, domain_tension)
+    capability = (
+        resolved_capability.strip()
+        if isinstance(resolved_capability, str) and resolved_capability.strip()
+        else None
+    )
+    voice_close = (
+        _raven_voice_close_unit(warmth, voice_and_humor, tempo, detail)
+        if warmth is not None and voice_and_humor is not None
+        else None
+    )
+
+    def assemble(personality_text: str, include_voice: bool) -> list[str]:
+        units = [identity, personality_text, worldview]
+        if capability is not None:
+            units.append(capability)
+        if include_voice and voice_close is not None:
+            units.append(voice_close)
+        return units
+
+    def over_budget(units: list[str]) -> bool:
+        return len("\n".join(units)) > CHARACTER_CEILING
+
+    units = assemble(personality_text, voice_close is not None)
+    # Drop whole optional units only, lowest priority first: fuller
+    # personality extras (degrade to compact), then voice guidance.
+    # A fuller request that degrades to compact is valid operation of
+    # this ladder, not a failure (adopted fuller-headroom rule).
+    if over_budget(units) and detail == "fuller":
+        units = assemble(personality_compact, voice_close is not None)
+    if over_budget(units) and voice_close is not None:
+        units = [u for u in units if u != voice_close]
+    if over_budget(units):
+        raise AssemblyError(
+            f"Raven character block still over the {CHARACTER_CEILING}-char "
             "ceiling after dropping all optional units; refusing to truncate"
         )
     return units

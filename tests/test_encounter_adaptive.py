@@ -541,15 +541,16 @@ def test_no_frame_on_the_encounter_path_requires_weaving(ve_ctx, tmp_path):
 
 
 def test_meeting_generation_is_not_fed_the_weave_instruction(ve_ctx, tmp_path):
-    """The generic voice path's weave instruction (reply.py) stays
-    the default for chat — but meeting generation opts out, so no
-    prompt on the encounter path carries it."""
+    """No prompt on any path carries a weave instruction anymore: the
+    ordinary-chat instruction was removed (2026-11-02, Step 2), and
+    meeting generation never had one (evidence/expression separation).
+    The encounter-path assertions below are unchanged."""
     from local_ai.conversation.reply import build_voice_prompt
 
     uid = _seeded_user()
     lines, _ = build_voice_prompt(uid, "conductor", "hello", [])
-    assert any("wrap those exact words" in line for line in lines)
-    lines, _ = build_voice_prompt(uid, "conductor", "hello", [], weave=False)
+    assert not any("wrap those exact words" in line for line in lines)
+    lines, _ = build_voice_prompt(uid, "conductor", "hello", [], canonical=False)
     assert not any("wrap those exact words" in line for line in lines)
 
     gen = ScriptedGen()

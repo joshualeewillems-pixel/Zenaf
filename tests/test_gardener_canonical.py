@@ -18,7 +18,7 @@ Scope notes (read before "fixing" a failure by weakening a test):
   shadow/tension lines; the canonical branch bypasses it for
   ordinary Gardener turns instead of modifying it. There is
   deliberately NO test asserting it returns ideal+question only.
-- Meeting turns (weave=False) keep the exact legacy assembly,
+- Meeting turns (canonical=False) keep the exact legacy assembly,
   including its philosophy lines. The encounter-eligibility test
   pins the encounter's OWN material (scripts + frames): the
   script texts carry no protected formulations, while the
@@ -617,8 +617,6 @@ def _legacy_minimal_prompt(monkeypatch):
         "",
         NO_TRAINING_NOTE,
         "",
-        R._WEAVE_INSTRUCTION,
-        "",
         KEEP_REPLIES,
         "User: hello",
         "Mentor:",
@@ -647,9 +645,9 @@ def test_branch_gate_on_replaces_character_block_only(monkeypatch):
     assert any(l.startswith("Strand blend") for l in lines)
     # No jurisdiction lines are added (conductor-only content).
     assert not any("jurisdiction" in l.lower() for l in lines)
-    # Downstream sections unchanged: no-training note, weave, guidance, trailer.
+    # Downstream sections unchanged: no-training note, guidance, trailer.
     assert NO_TRAINING_NOTE in lines
-    assert R._WEAVE_INSTRUCTION in lines
+    assert not any("[[u]]" in l or "wrap those exact words" in l for l in lines)
     assert KEEP_REPLIES in lines
     assert lines[-2] == "User: hello"
     assert lines[-1] == "Mentor:"
@@ -679,23 +677,23 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
 
 
 def test_branch_meeting_path_keeps_exact_legacy_prompt(monkeypatch):
-    # Meeting turns (weave=False) are out of scope: identical under
+    # Meeting turns (canonical=False) are out of scope: identical under
     # both cutover settings, and exactly the legacy assembly.
     for cutover in (True, False):
         monkeypatch.setattr(R, "GARDENER_CANONICAL_CUTOVER", cutover)
         lines, _ = build_voice_prompt(
-            "u1", "mentor", "hello", [], mode="base", weave=False
+            "u1", "mentor", "hello", [], mode="base", canonical=False
         )
-        # Meeting path = legacy assembly minus the weave append
-        # (weave=False omits BOTH the blank line and the instruction).
+        # Meeting path = legacy assembly (canonical=False keeps the
+        # legacy assembly; the weave instruction no longer exists
+        # on any path).
         legacy = _legacy_minimal_prompt(monkeypatch)
-        weave_idx = legacy.index(R._WEAVE_INSTRUCTION)
-        expected = legacy[:weave_idx - 1] + legacy[weave_idx + 1:]
+        expected = legacy
         assert lines == expected
         joined = _joined(lines)
         assert "Foundational ideal:" in joined
         assert CANONICAL_MARKER not in joined
-        assert R._WEAVE_INSTRUCTION not in lines
+        assert not any("[[u]]" in l for l in lines)
 
 
 def test_branch_other_seats_byte_identical_and_cutover_independent(monkeypatch):

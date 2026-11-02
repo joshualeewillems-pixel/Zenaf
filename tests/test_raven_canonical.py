@@ -17,12 +17,12 @@ Scope notes (read before "fixing" a failure by weakening a test):
   contains shadow/tension lines; the canonical branch bypasses it
   for ordinary Raven turns instead of modifying it. There is
   deliberately NO test asserting it returns ideal+question only.
-- Meeting turns (weave=False) keep the exact legacy assembly,
+- Meeting turns (canonical=False) keep the exact legacy assembly,
   including its philosophy lines. The encounter-eligibility test pins
   the encounter's OWN material (scripts + frames), which carries
   exactly ONE known pre-existing draft exception (below); the
   shared builder's legacy block on meeting turns is out of scope
-  for this plan and is preserved byte-identical by the weave gate.
+  for this plan and is preserved byte-identical by the canonical gate.
 - The Raven first meeting's availability is NOT decided here: on
   current main the script is registered (PR #274 all-six release)
   and RELEASED_FIRST_MEETING_SEATS includes "skeptic" — the
@@ -583,8 +583,6 @@ def _legacy_minimal_prompt(monkeypatch):
         "",
         NO_TRAINING_NOTE,
         "",
-        R._WEAVE_INSTRUCTION,
-        "",
         KEEP_REPLIES,
         "User: hello",
         "Skeptic:",
@@ -614,9 +612,9 @@ def test_branch_gate_on_replaces_character_block_only(monkeypatch):
     assert any(l.startswith("Strand blend") for l in lines)
     # No jurisdiction lines are added (conductor-only content).
     assert not any("jurisdiction" in l.lower() for l in lines)
-    # Downstream sections unchanged: no-training note, weave, guidance, trailer.
+    # Downstream sections unchanged: no-training note, guidance, trailer.
     assert NO_TRAINING_NOTE in lines
-    assert R._WEAVE_INSTRUCTION in lines
+    assert not any("[[u]]" in l or "wrap those exact words" in l for l in lines)
     assert KEEP_REPLIES in lines
     assert lines[-2] == "User: hello"
     assert lines[-1] == "Skeptic:"
@@ -645,23 +643,23 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
 
 
 def test_branch_meeting_path_keeps_exact_legacy_prompt(monkeypatch):
-    # Meeting turns (weave=False) are out of scope: identical under
+    # Meeting turns (canonical=False) are out of scope: identical under
     # both cutover settings, and exactly the legacy assembly.
     for cutover in (True, False):
         monkeypatch.setattr(R, "RAVEN_CANONICAL_CUTOVER", cutover)
         lines, _ = build_voice_prompt(
-            "u1", "skeptic", "hello", [], mode="base", weave=False
+            "u1", "skeptic", "hello", [], mode="base", canonical=False
         )
-        # Meeting path = legacy assembly minus the weave append
-        # (weave=False omits BOTH the blank line and the instruction).
+        # Meeting path = legacy assembly (canonical=False keeps the
+        # legacy assembly; the weave instruction no longer exists
+        # on any path).
         legacy = _legacy_minimal_prompt(monkeypatch)
-        weave_idx = legacy.index(R._WEAVE_INSTRUCTION)
-        expected = legacy[:weave_idx - 1] + legacy[weave_idx + 1:]
+        expected = legacy
         assert lines == expected
         joined = _joined(lines)
         assert "Foundational ideal:" in joined
         assert CANONICAL_MARKER not in joined
-        assert R._WEAVE_INSTRUCTION not in lines
+        assert not any("[[u]]" in l for l in lines)
 
 
 def test_branch_six_seats_byte_identical_and_cutover_independent(monkeypatch):
@@ -758,7 +756,7 @@ def test_full_prompt_single_source_invariant(monkeypatch):
         assert marker not in joined, marker
     # Unrelated sections unchanged.
     assert NO_TRAINING_NOTE in lines
-    assert R._WEAVE_INSTRUCTION in lines
+    assert not any("[[u]]" in l or "wrap those exact words" in l for l in lines)
     assert KEEP_REPLIES in lines
 
 
@@ -835,7 +833,7 @@ def test_encounter_material_excludes_protected_fields():
     would be both a first-encounter behavior change and a content
     decision, both out of scope for this plan. (Meeting-turn prompts
     via the shared builder's legacy character block are likewise out
-    of scope, preserved byte-identical by the weave=False gate.)"""
+    of scope, preserved byte-identical by the canonical=False gate.)"""
     from local_ai.conversation import encounter as ENC
     from local_ai.council import meetings as MT
 

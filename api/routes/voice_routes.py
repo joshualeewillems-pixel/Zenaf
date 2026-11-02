@@ -12,8 +12,10 @@ the same builder POST /conversation/turn uses. Passing `conversation_id`
 joins the persistent skeleton: the server loads history from the store
 (instead of the client-sent `history` array) and persists both turns.
 
-Replies use the [[u]]...[[/u]] color-weave convention for user words the
-voice builds on (rendered by the shared WeaveText component).
+Historical replies may contain [[u]]...[[/u]] color-weave spans for user
+words the voice built on (rendered by the shared WeaveText component);
+new ordinary-chat prompts no longer instruct the model to emit them
+(the weave instruction was removed 2026-11-02, Step 2).
 """
 
 from __future__ import annotations

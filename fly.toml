@@ -8,6 +8,7 @@ primary_region = "lax"
 [env]
   ZENAF_PROD = "1"
   ZENAF_DB_DIR = "/app/data"
+  ZENAF_BEAR_VARIANT = "bear-b"
 
 [http_service]
   internal_port = 8010

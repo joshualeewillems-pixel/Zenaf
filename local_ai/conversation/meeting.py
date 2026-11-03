@@ -240,7 +240,8 @@ class MeetingStore:
 
     def delete(self, user_id: str, archetype_id: str, keystone_index: int) -> None:
         """Remove the live meeting row. Only ever called by restart, AFTER
-        the run has been archived — the record survives in the archive."""
+        the run has been archived and verified complete — the record
+        survives in the archive."""
         with self._lock:
             self._conn.execute(
                 "DELETE FROM meetings WHERE user_id = ? AND archetype_id = ? "
@@ -969,9 +970,11 @@ class MeetingService:
     def restart(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         """Meet again: reset a COMPLETED meeting so it can be run fresh.
 
-        The prior run is archived verbatim (transcript + the read-back
-        impression) in the meeting store before anything is
-        reset — archived, never deleted. The seat's keystone task returns
+        The prior run's FULL transcript (every message row,
+        in original order, verified complete against the live rows)
+        plus the read-back impression is archived in the meeting store
+        before anything is reset — archived and verified, never deleted
+        unverified. The seat's keystone task returns
         to the status it was seeded with, which also re-locks the face
         the first meeting revealed (PR #186's face_revealed reads the
         same task store) until the new run completes.
@@ -1005,7 +1008,28 @@ class MeetingService:
             )
 
         cid = conversation_id_for(arch_id, keystone_index)
-        transcript = self.conversations.history(user_id, cid, limit=200)
+        # Archive the FULL transcript in bounded 200-row pages, then
+        # verify it against the live rows before anything is deleted.
+        # Any failure aborts the restart with every live row and the
+        # live meeting row intact, so the meeting stays restartable.
+        pages: list[list[dict[str, Any]]] = []
+        offset = 0
+        while True:
+            page = self.conversations.history(user_id, cid, limit=200, offset=offset)
+            pages.append(page)
+            if len(page) < 200:
+                break
+            offset += 200
+        transcript: list[dict[str, Any]] = []
+        for page in reversed(pages):
+            transcript.extend(page)
+        count = self.conversations.count_messages(user_id, cid)
+        ids = self.conversations.message_ids(user_id, cid)
+        if len(transcript) != count or [m["id"] for m in transcript] != ids:
+            raise MeetingError(
+                "The prior run could not be archived completely — its live "
+                "transcript was left untouched. Meet again to retry."
+            )
         self.meetings.archive_run(user_id, arch_id, keystone_index, row, transcript)
         self.conversations.clear_conversation(user_id, cid)
         self.meetings.delete(user_id, arch_id, keystone_index)

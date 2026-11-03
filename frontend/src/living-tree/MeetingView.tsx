@@ -257,10 +257,11 @@ export function MeetingView({
     if (s) apply(s)
   }
 
-  // Meet again: the server archives the finished run verbatim and resets
-  // the meeting; starting right away runs the new meeting in place. The
-  // fresh messages carry new ids, so the streaming reveal types them like
-  // any new run — and the composer works without a reload.
+  // Meet again: the server archives the finished run's full transcript,
+  // verified complete, and resets the meeting; starting right away runs
+  // the new meeting in place. The fresh messages carry new ids, so the
+  // streaming reveal types them like any new run — and the composer
+  // works without a reload.
   const meetAgain = async () => {
     finishTyping() // settle the old run's bubbles before it leaves
     const s = await call('/restart', { archetype_id: archetypeId, keystone_index: 1 })

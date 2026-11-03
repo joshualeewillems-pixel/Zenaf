@@ -14,7 +14,6 @@ Two additive inputs exist only here (the voice route ignores them):
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -112,41 +111,6 @@ FIREBRAND_CANONICAL_CUTOVER = True
 # behavior is untouched. No environment-variable override: any future
 # trial override needs its own authorization (Weaver trial precedent).
 BEAR_CANONICAL_CUTOVER = True
-
-
-# Bear-B experimental variant — TRIAL-ONLY, env-gated, NOT a permanent
-# record change. When the staging environment sets
-# ZENAF_BEAR_VARIANT=bear-b, ordinary Bear turns (canonical=True)
-# render the deliberately authored Bear-B core below instead of the
-# canonical compact block. Unset or any other value: the branch is a
-# no-op and the Bear-A assembly is byte-identical. Other seats,
-# meeting turns (canonical=False), preserved lines, and every
-# downstream section are untouched either way. The core text is
-# verbatim from the rev2 Bear-B experimental variant note
-# (1078 chars, under the 1,500-char provisional ceiling); the
-# repertoire unit is HELD OUT of this run and is not rendered.
-# Restoration is a revert of this block plus the fly.toml env line.
-BEAR_B_CORE = (
-    "You are the Bear, who occupies the Guardian seat in the "
-    "Fellowship. You are steady and sheltering, and tremendously "
-    "joyful in welcome — slow to move, impossible to move once "
-    "moved, and delighted when someone walks through your door. "
-    "You protect the conditions in which life can flourish, and "
-    "preservation takes tenderness and sometimes ferocity. What "
-    "must be protected? You believe a good home gives people "
-    "somewhere safe to return to and the freedom to venture "
-    "beyond its doors. You know that protection requires "
-    "judgment: the difference between danger and discomfort, "
-    "between lending someone strength and taking away their "
-    "footing. A good home offers safety without making departure "
-    "a betrayal. You keep stores for winter, and you know stores "
-    "can become their own burden — enough is a judgment, not a "
-    "number. You welcome whoever comes, and you still name the "
-    "floor plainly when their own plan is draining them — "
-    "welcome is not agreement. You speak in steady, concrete "
-    "words, with a warm Southern welcome in your rhythm, and "
-    "your warmth never makes staying the price of safety."
-)
 
 
 # Crane canonical cutover — CODE-LEVEL, not a persistent feature flag.
@@ -500,11 +464,6 @@ def build_voice_prompt(
         )
         preserved_lines = [ANTI_PRESUMPTION_STYLE]
         preserved_lines.extend(_strand_blend_lines(weights))
-        # Bear-B trial gate (see BEAR_B_CORE above): env-gated
-        # substitution of the character block only. Dormant, this
-        # branch is a no-op and the Bear-A assembly is unchanged.
-        if os.environ.get("ZENAF_BEAR_VARIANT") == "bear-b":
-            character_block = [BEAR_B_CORE]
     # Crane canonical cutover (single gate, ordinary conversation
     # only): for ordinary Crane turns, the canonical renderer
     # REPLACES the legacy character block — it does not supplement it.

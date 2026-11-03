@@ -236,10 +236,10 @@ def meeting_pause(body: MeetingPauseBody, current_user: dict = Depends(get_curre
 
 @router.post("/meeting/restart")
 def meeting_restart(body: MeetingRestartBody, current_user: dict = Depends(get_current_user)) -> dict:
-    """Meet again: archive a completed meeting verbatim and reset it to
-    not-started (its keystone task returns to its seeded status), so the
-    conversation can be run fresh. Refuses — 409 — when there is no
-    completed meeting to restart."""
+    """Meet again: archive a completed meeting's full transcript, verified
+    complete, and reset it to not-started (its keystone task returns to
+    its seeded status), so the conversation can be run fresh. Refuses —
+    409 — when there is no completed meeting to restart."""
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to meet again.")

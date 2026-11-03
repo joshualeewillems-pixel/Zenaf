@@ -168,17 +168,18 @@ class ConversationStore:
         }
 
     def history(
-        self, user_id: str, conversation_id: str = "skeleton", limit: int = 50
+        self, user_id: str, conversation_id: str = "skeleton", limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:
         """Oldest-first message history for hydration. Strictly per-user."""
         limit = max(1, min(int(limit or 50), 200))
+        offset = max(0, int(offset or 0))
         with self._lock:
             rows = self._conn.execute(
                 "SELECT id, user_id, conversation_id, archetype_id, role, body, "
                 "mode, context_json, created_at FROM messages "
                 "WHERE user_id = ? AND conversation_id = ? "
-                "ORDER BY created_at DESC, id DESC LIMIT ?",
-                (user_id, conversation_id, limit),
+                "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+                (user_id, conversation_id, limit, offset),
             ).fetchall()
         out: list[dict[str, Any]] = []
         for r in reversed(rows):
@@ -201,12 +202,34 @@ class ConversationStore:
             )
         return out
 
+    def count_messages(self, user_id: str, conversation_id: str) -> int:
+        """Count of live message rows for one user conversation. Read-only."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) FROM messages WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def message_ids(self, user_id: str, conversation_id: str) -> list[str]:
+        """Live message ids in original order. Read-only, ids only."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM messages WHERE user_id = ? AND conversation_id = ? "
+                "ORDER BY created_at ASC, id ASC",
+                (user_id, conversation_id),
+            ).fetchall()
+        return [r["id"] for r in rows]
+
     def clear_conversation(self, user_id: str, conversation_id: str) -> None:
         """Remove a conversation's messages and derived per-conversation
         state (thread summaries, cached suggestion runs). The conversation
         row itself stays. Used by the meeting restart: the prior run's
-        transcript is archived in the meeting store before this runs, so
-        nothing is lost — the live conversation simply starts empty."""
+        FULL transcript is archived and verified complete in the
+        meeting store before this runs; only then is the live
+        conversation cleared. Clearing deletes EVERY message row for
+        the conversation, including any row not in the archive — never
+        call this unless completeness has been verified."""
         with self._lock:
             self._conn.execute(
                 "DELETE FROM messages WHERE user_id = ? AND conversation_id = ?",

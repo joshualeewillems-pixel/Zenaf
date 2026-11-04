@@ -58,6 +58,72 @@ def context_hint_for(context: dict[str, Any] | None) -> str | None:
     return "the user currently has " + " and ".join(parts) + "."
 
 
+#: Capability C S5 — join-context caps. The block is bounded to the
+#: justifying exchange by construction (the stored evidence), and
+#: these caps keep a hostile or oversized stored record from
+#: expanding the prompt: same 2000-char line cap as history lines,
+#: at most 10 stored context entries.
+_JOIN_LINE_CAP = 2000
+_JOIN_CONTEXT_ENTRIES_CAP = 10
+
+
+def build_invitation_context(invitation: dict[str, Any] | None) -> str | None:
+    """Render one pending invitation as a first-joining-turn block.
+
+    Verdict Q5: verbatim evidence plus explicitly attributed
+    interpretation. The reason is labeled as the inviting selection's
+    reading — an interpretation, never an established fact — and the
+    exchange lines are the stored verbatim record. Returns None for
+    a missing invitation or an empty reason (the store requires a
+    reason, so None here means "nothing to join on").
+
+    The responding seat is labeled by its stock display name (the
+    S0 history convention for seats without a visitor-chosen name
+    in this path); the label never comes from the current seat.
+    Stored context entries, when present, render verbatim and
+    bounded; non-string entries without a readable content field
+    are skipped rather than stringified.
+    """
+    if not invitation:
+        return None
+    reason = (invitation.get("reason") or "").strip()
+    if not reason:
+        return None
+    evidence = invitation.get("evidence") or {}
+    if not isinstance(evidence, dict):
+        evidence = {}
+    lines = [
+        "Invitation context — this turn joins you to a conversation "
+        "you were invited into.",
+        "The inviting selection's reading (an interpretation, not an "
+        f"established fact): {reason}",
+    ]
+    user_message = (evidence.get("user_message") or "").strip()
+    assistant_reply = (evidence.get("assistant_reply") or "").strip()
+    responding_seat = (evidence.get("responding_seat") or "").strip().lower()
+    context_entries = evidence.get("context") or []
+    if user_message or assistant_reply or context_entries:
+        lines.append("The exchange that justified the invitation (verbatim):")
+        if user_message:
+            lines.append(f"User: {user_message[:_JOIN_LINE_CAP]}")
+        if assistant_reply:
+            arch = get_archetype(responding_seat) if responding_seat else None
+            label = arch.display_name if arch is not None else (responding_seat or "Voice")
+            lines.append(f"{label}: {assistant_reply[:_JOIN_LINE_CAP]}")
+        if isinstance(context_entries, list):
+            for entry in context_entries[:_JOIN_CONTEXT_ENTRIES_CAP]:
+                if isinstance(entry, str) and entry.strip():
+                    lines.append(entry.strip()[:_JOIN_LINE_CAP])
+                elif isinstance(entry, dict):
+                    content = (entry.get("content") or "").strip()
+                    if content:
+                        role = (entry.get("role") or "Context").strip() or "Context"
+                        lines.append(f"{role}: {content[:_JOIN_LINE_CAP]}")
+    else:
+        lines.append("No justifying exchange was stored with this invitation.")
+    return "\n".join(lines)
+
+
 @dataclass
 class TurnResult:
     user_message: dict[str, Any]
@@ -151,6 +217,29 @@ class ConversationService:
                 _obligations.build_obligation_context(user_id)
             )
 
+        # Capability C S5: first joining turn only. If a pending,
+        # unexpired invitation exists for this (user, conversation,
+        # seat) at turn start, the turn carries its evidence +
+        # attributed reason as a bounded context block (same pattern
+        # as obligation_context: a delimited section, absent
+        # otherwise). The S1 accept wiring below consumes the
+        # invitation when the turn completes, so later turns use
+        # normal continuity and never see the block again. Guarded:
+        # a failed lookup must never break the turn.
+        invitation_context = None
+        try:
+            pending = self.store.list_pending_invitations(user_id, conversation_id)
+            joined = [
+                inv
+                for inv in pending
+                if (inv.get("seat") or "").strip().lower() == arch_id
+            ]
+            if joined:
+                invitation_context = build_invitation_context(joined[0])
+        except Exception:
+            logger.exception("invitations: join context lookup failed")
+            invitation_context = None
+
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -160,6 +249,7 @@ class ConversationService:
             question=question,
             context_hint=context_hint_for(context),
             obligation_context=obligation_context,
+            invitation_context=invitation_context,
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,
             # Phase 2 steward context (Weaver only): prepared

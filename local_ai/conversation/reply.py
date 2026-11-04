@@ -188,6 +188,53 @@ def _turn_content(turn: Any) -> str:
     return str(getattr(turn, "content", ""))
 
 
+def _turn_archetype_id(turn: Any) -> str | None:
+    """The seat that spoke a history turn, if recorded.
+
+    Service-built histories carry it (service.turn keeps the store's
+    archetype_id); client-built histories (e.g. the voice route's
+    VoiceChatTurn) do not, and trunk turns have none. Returns None
+    for all of those — never a guess.
+    """
+    if isinstance(turn, dict):
+        value = turn.get("archetype_id")
+    else:
+        value = getattr(turn, "archetype_id", None)
+    if value is None:
+        return None
+    value = str(value).strip().lower()
+    return value or None
+
+
+def _voice_turn_label(user_id: str, turn: Any) -> str:
+    """Label for a non-user history turn, by its ACTUAL speaker.
+
+    Capability C S0: a voice turn's archetype_id names its speaker, so
+    the label is that seat's display name — the same naming authority
+    the builder uses for the current seat (stock role name, e.g.
+    "Champion", or the visitor's chosen name) — never the current
+    seat's name. User turns are not labeled here: they stay "User",
+    because a user turn's archetype_id names the sheet it was said in
+    (the addressee seat), not its speaker. Unattributed turns (trunk
+    turns, or histories built without archetype_id) get the neutral
+    label "Voice", never a seat name we cannot justify.
+    """
+    arch_id = _turn_archetype_id(turn)
+    if arch_id:
+        arch = get_archetype(arch_id)
+        if arch is not None:
+            try:
+                from local_ai.council.naming import get_display_name
+
+                name = get_display_name(user_id, arch_id)
+                if name:
+                    return name
+            except Exception:
+                pass
+            return arch.display_name
+    return "Voice"
+
+
 def _trained_sections(user_id: str, weights: dict[str, float]) -> tuple[list[str], bool]:
     """Render the user's trained per-strand sections for this voice's blend.
 
@@ -651,7 +698,12 @@ def build_voice_prompt(
         prompt.append("")
         prompt.append("Conversation so far:")
         for turn in turns:
-            who = "User" if _turn_role(turn) == "user" else display_name
+            # Capability C S0: voice turns are labeled by their ACTUAL
+            # speaker (archetype_id), not by the current seat. User
+            # turns stay "User" — their archetype_id is the addressee
+            # seat, not the speaker. Unattributed voice turns fall
+            # back to the neutral "Voice", never the current seat.
+            who = "User" if _turn_role(turn) == "user" else _voice_turn_label(user_id, turn)
             prompt.append(f"{who}: {_turn_content(turn)[:2000]}")
     if len(history or []) > 10:
         # Continuity honesty floor (Fellowship shared foundation,

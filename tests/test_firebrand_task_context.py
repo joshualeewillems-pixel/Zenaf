@@ -654,3 +654,97 @@ def test_c3_decline_vs_approve_race(ve_file, conv_store):
             assert prop["state"] == "declined"
             assert len(mine) == 0
             assert isinstance(outcomes["approve"], S.ProposalConflict)
+
+
+# -- Prompt-contract fix (trial 2026-11-04): JSON contract + task ids -------
+
+
+def test_prompt_contract_ids_and_distinction_in_assembled_prompt(ve_conn, conv_store):
+    """(a) The assembled champion prompt carries the exact JSON contract,
+    the example, the timeframe-vs-status distinction, and task ids on
+    every record line type. Regression for the trial failure, where the
+    prompt named the fence but never its format."""
+    parent = S.create_task(M.TaskCreate(title="Parent", due_date="2026-11-08"), "u1")
+    child = S.create_task(
+        M.TaskCreate(title="Child", due_date="2026-11-09", parent_task_id=parent["id"]), "u1"
+    )
+    tent = S.create_task(M.TaskCreate(title="Tent", timeframe_commitment="tentative"), "u1")
+    captured: dict = {}
+    svc = _turn_service(conv_store, captured)
+    svc.turn("u1", "champion", "what is coming up?")
+    prompt = captured["prompt"]
+    # Exact contract: wrapper, field names, types.
+    assert '{"proposals":' in prompt
+    assert '"parent_task_id"' in prompt and '"timeframe_commitment"' in prompt
+    assert '"due_date"' in prompt and '"notes"' in prompt
+    # One short example, valid JSON shape.
+    assert '"title": "Call the clinic"' in prompt
+    # Timeframe-vs-status distinction, in the instruction's own words.
+    assert "NOT the task's" in prompt and "status" in prompt
+    assert 'Never emit a "status" field' in prompt
+    # Parent ids are machine references, never titles.
+    assert "never a title" in prompt
+    # Task ids on every line type: due-soon parent + child, provisional.
+    assert f"• Parent — due 2026-11-08 [id: {parent['id']}]" in prompt
+    assert f"• Child — due 2026-11-09 [id: {child['id']}] (under: Parent)" in prompt
+    assert f"• Tent — provisional, no date yet [id: {tent['id']}]" in prompt
+
+
+def test_prompt_contract_survives_truncation(ve_conn, conv_store):
+    """(d) Truncation rule: with far more records than the caps, the
+    assembled block still contains the FULL proposal contract verbatim.
+    Caps trim task record lines only — never the contract text."""
+    for i in range(30):
+        S.create_task(
+            M.TaskCreate(title=f"Long task number {i} with a padded title", due_date="2026-11-05"),
+            "u1",
+        )
+    buckets = OB.classify(S.list_tasks("u1"), TODAY)
+    block = OB.render_obligation_block(buckets, "ok")
+    assert "+22 more" in block  # 30 dated records, cap 8: only lines trimmed.
+    # The whole contract survives: wrapper, example, distinction, id rule.
+    assert OB.PROPOSAL_INSTRUCTION in block
+    assert '{"proposals":' in block
+    assert 'Never emit a "status" field' in block
+    assert "never a title" in block
+
+
+def test_nested_proposal_by_id_records_and_approves_exactly_once(client, ve_conn, conv_store):
+    """(c) A valid nested proposal (JSON, parent_task_id = an existing
+    task id) proceeds through recording and approval exactly once.
+    Reuses the T4 harness; extends it to the nested-by-id case the
+    trial could not reach."""
+    parent = S.create_task(M.TaskCreate(title="Dentist follow-up", due_date="2026-11-08"), "u1")
+    block = (
+        "Prose.\n```task-proposal\n"
+        '{"proposals": [{"title": "Confirm dentist slot", '
+        f'"parent_task_id": "{parent["id"]}", "timeframe_commitment": "tentative", '
+        '"due_date": null, "notes": "Call to confirm"}]}\n```'
+    )
+    msg = _champion_message(conv_store, body=block)
+    r = client.post(
+        "/vision-execution/task-proposals",
+        json=_record_payload(
+            msg,
+            title="Confirm dentist slot",
+            parent_task_id=parent["id"],
+            notes="Call to confirm",
+        ),
+    )
+    assert r.status_code == 200, r.text
+    rec = r.json()
+    assert rec["state"] == "pending"
+    r = client.post(f"/vision-execution/task-proposals/{rec['id']}/approve")
+    assert r.status_code == 200, r.text
+    task = r.json()["task"]
+    assert task["title"] == "Confirm dentist slot"
+    assert task["parent_task_id"] == parent["id"]
+    assert task["status"] == "Todo"
+    assert task["timeframe_commitment"] == "tentative"
+    assert task["due_date"] is None
+    tasks = client.get("/vision-execution/tasks").json()
+    assert len([t for t in tasks if t["title"] == "Confirm dentist slot"]) == 1
+    # Repeat approval returns the same task, creates nothing.
+    r = client.post(f"/vision-execution/task-proposals/{rec['id']}/approve")
+    assert r.status_code == 200 and r.json()["task"]["id"] == task["id"]
+    assert len([t for t in client.get("/vision-execution/tasks").json() if t["title"] == "Confirm dentist slot"]) == 1

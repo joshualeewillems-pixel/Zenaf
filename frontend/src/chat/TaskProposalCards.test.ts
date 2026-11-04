@@ -43,6 +43,21 @@ describe('parseTaskProposalBlocks', () => {
     expect(entries[2].key).toBe('m1#1:1')
   })
 
+  it('pins the 2026-11-04 trial failure: YAML list block is invalid, never a card', () => {
+    // Verbatim stored block from the staging trial: the model was never
+    // told the JSON contract, so it improvised YAML with non-schema
+    // fields. The parser must keep rejecting it (JSON-only by design);
+    // the fix is the prompt contract, not a YAML fallback.
+    const entries = parseTaskProposalBlocks(
+      'Got it.\n```task-proposal\n- title: Confirm dentist slot\n  parent: Capability B trial — dentist follow-up\n  detail: Call to confirm time for Nov 8 record\n  status: tentative\n```',
+      'm1',
+    )
+    expect(entries).toHaveLength(1)
+    expect(entries[0].valid).toBe(false)
+    expect(entries[0].proposalIndex).toBe(-1)
+    expect(entries[0].proposal).toBeNull()
+  })
+
   it('strips blocks from display text but keeps the prose', () => {
     const text = 'Here is the plan.\n```task-proposal\n{"proposals": []}\n```\nLet me know.'
     const stripped = stripTaskProposalBlocks(text)

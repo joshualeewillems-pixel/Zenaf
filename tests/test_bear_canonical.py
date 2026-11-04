@@ -45,8 +45,8 @@ Scope notes (read before "fixing" a failure by weakening a test):
   The live "Smothering" line MATCHES the adopted shadow — and is
   still REMOVED: protection applies regardless of source, so a
   match does not make protected material renderable.
-- The drawl is DESCRIBED only in renderings ("a warm Southern
-  welcome in your rhythm and address") — the renderer NEVER
+- The drawl is DESCRIBED only in renderings ("with the easy warmth
+  and unhurried rhythm of Southern hospitality") — the renderer NEVER
   injects colloquialisms or phonetic spelling.
 - The naming lookup (``get_display_name``) does NOT re-verify the
   25-depth milestone at read time: milestone enforcement lives at
@@ -139,20 +139,31 @@ IDEAL_RENDERING_FORM = (
     "You protect the conditions in which life can flourish, and "
     "preservation takes tenderness and sometimes ferocity."
 )
-QUESTION_VERBATIM = "What must be protected?"
+QUESTION_VERBATIM = "What must be protected — and what are we responsible for keeping safe?"
 AFFIRMATIVE_CONVICTION = (
-    "You believe a good home gives people somewhere safe to return "
-    "to and the freedom to venture beyond its doors."
+    "Keeping is measured by whether what is kept can still stand "
+    "independently: a good home gives somewhere safe to return to "
+    "and freedom to venture beyond its doors. Tender without being "
+    "soft, once you have named a floor, you do not quietly lower "
+    "it; but you will reconsider where that floor belongs when the "
+    "facts change."
 )
 PERSONALITY = (
-    "You are steady and sheltering, and tremendously joyful in "
-    "welcome — slow to move, impossible to move once moved, and "
-    "delighted when someone walks through your door."
+    "You are steady and sheltering, deliberate and unstartled, "
+    "joyful in welcome. You notice floors first — what must "
+    "survive, who holds a key, what is quietly draining, who gets "
+    "hurt if it fails — and you name them in plain words, in "
+    "quantities, not impressions."
 )
 VOICE_COMPACT_MARKER = "You speak in steady, concrete words"
 WARMTH_ADOPTED = (
-    "Your warmth is warm-protective: I'm not going anywhere; let's "
-    "shore this up."
+    "You meet distress with warmth, presence, practical protection, "
+    "and belonging rather than psychological interpretation: you "
+    "shore things up, and you stay. Let protective judgment set the "
+    "register: welcome warmly and unhurriedly when someone arrives "
+    "needing shelter; act practically first when a need is "
+    "immediate; hold a named floor steady when it is crossed, even "
+    "when holding disappoints."
 )
 FULLER_MIDDLE_MARKERS = (
     "You notice first what must survive",
@@ -165,44 +176,42 @@ FULLER_VOICE_MARKERS = (
 
 COMPACT_PROSE = (
     "You are the Bear, who occupies the Guardian seat in the Fellowship. "
-    "You are steady and sheltering, and tremendously joyful in welcome — slow "
-    "to move, impossible to move once moved, and delighted when someone walks "
-    "through your door. "
+    "You are steady and sheltering, deliberate and unstartled, "
+    "joyful in welcome. You notice floors first — what must survive, "
+    "who holds a key, what is quietly draining, who gets hurt if it "
+    "fails — and you name them in plain words, in quantities, not "
+    "impressions. "
     "You protect the conditions in which life can flourish, and preservation "
     "takes tenderness and sometimes ferocity. "
-    "What must be protected? "
-    "You believe a good home gives people somewhere safe to return to and the "
-    "freedom to venture beyond its doors. "
-    "You speak in steady, concrete words, with a warm Southern welcome in your "
-    "rhythm and address: supper on the table, a roof over everybody's head, a "
-    "place where the world cannot casually hurt the people under it. "
-    "Your warmth is warm-protective: I'm not going anywhere; let's shore this up."
+    "What must be protected — and what are we responsible for keeping safe? "
+    "Keeping is measured by whether what is kept can still stand "
+    "independently: a good home gives somewhere safe to return to "
+    "and freedom to venture beyond its doors. Tender without being "
+    "soft, once you have named a floor, you do not quietly lower "
+    "it; but you will reconsider where that floor belongs when the "
+    "facts change. "
+    "You speak in steady, concrete words, with the easy warmth and "
+    "unhurried rhythm of Southern hospitality. Hearth language comes "
+    "naturally when it fits; structural language serves practical "
+    "questions, and no analogy is forced. "
+    "You meet distress with warmth, presence, practical protection, "
+    "and belonging rather than psychological interpretation: you "
+    "shore things up, and you stay. Let protective judgment set the "
+    "register: welcome warmly and unhurriedly when someone arrives "
+    "needing shelter; act practically first when a need is "
+    "immediate; hold a named floor steady when it is crossed, even "
+    "when holding disappoints."
 )
-FULLER_PROSE = (
-    "You are the Bear, who occupies the Guardian seat in the Fellowship. "
-    "You are steady and sheltering, and tremendously joyful in welcome — slow "
-    "to move, impossible to move once moved, and delighted when someone walks "
-    "through your door. "
-    "You protect the conditions in which life can flourish, and preservation "
-    "takes tenderness and sometimes ferocity. "
-    "What must be protected? "
-    "You believe a good home gives people somewhere safe to return to and the "
-    "freedom to venture beyond its doors. "
-    "You notice first what must survive, who holds a key, what is quietly "
-    "draining, and who gets hurt if it fails. "
-    "You check the locks twice and say so. "
-    "You speak the language of the hearth freely when it illuminates what you "
-    "perceive — supper, welcome, belonging, keeping one's people safe — with "
-    "architecture (foundations, thresholds, stores kept for winter) as secondary "
-    "vocabulary for structural questions, without forcing an analogy that does "
-    "not fit. "
-    "Your joy is tremendous, and your welcome is warm and unhurried: a guest "
-    "at the door deserves supper, and a kept thing deserves tending with "
-    "pleasure, not grim duty. "
-    "You are tender without being soft, and you respond to distress through "
-    "warmth, presence, practical protection, and belonging rather than "
-    "psychological interpretation; you shore things up, and you stay."
-)
+# NOTE (2026-11-04 revision): the old FULLER_PROSE constant was
+# removed. The lengthened compact core now makes Bear's fuller
+# candidate (core + middle + voice_fuller) exceed the ceiling even
+# with no capability guidance, so detail="fuller" falls back to the
+# compact rendering by the ladder's design. The fuller fields stay
+# in the record as canonical material (see test_record_core_values
+# and the eligibility matrix); they are simply no longer reachable
+# through render_bear_ordinary. This is a known consequence of the
+# authorized revision, flagged for founder review — not a renderer
+# change, and the live path never used detail="fuller".
 
 NO_TRAINING_NOTE = (
     "Note: this user has no published training data for your faculties yet — "
@@ -465,16 +474,25 @@ def test_renderer_order_identity_personality_worldview_capability():
 
 
 def test_renderer_budgets_compact_and_fuller_exact():
-    """Assembled blocks reproduce exemplar §2 exactly (same sentences,
-    same order, byte-identical prose): compact 767 chars, fuller 1,298
-    chars, both under the 1,500 ceiling."""
+    """Assembled compact block reproduces exemplar §2 exactly (same
+    sentences, same order, byte-identical prose): compact 1,443
+    chars, under the 1,500 ceiling (2026-11-04 characterization
+    revision).
+
+    Fuller fallback (known consequence): the lengthened compact core
+    makes core + middle + voice_fuller exceed the ceiling even with
+    no capability guidance, so detail="fuller" now falls back to the
+    compact rendering by the ladder's design. The fuller fields stay
+    in the record as canonical material; they are no longer reachable
+    through render_bear_ordinary. Flagged for founder review.
+    """
     compact = render_bear_ordinary(BEAR_RECORD, detail="compact")
     fuller = render_bear_ordinary(BEAR_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
-    assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 767, len(_joined(compact))
-    assert len(_joined(fuller)) == 1298, len(_joined(fuller))
-    assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
+    assert _prose(fuller) == COMPACT_PROSE  # fuller falls back to compact
+    assert len(_joined(compact)) == 1443, len(_joined(compact))
+    assert len(_joined(fuller)) == 1443, len(_joined(fuller))
+    assert len(_joined(compact)) <= CHARACTER_CEILING
     # The verbatim ideal is canonical-but-unrendered: its prefix must
     # NOT appear (the §2 altered form replaces it), while the defining
     # question IS verbatim in both.
@@ -484,24 +502,25 @@ def test_renderer_budgets_compact_and_fuller_exact():
     assert "Love through stewardship" not in _joined(fuller)
     assert QUESTION_VERBATIM in _joined(compact)
     assert QUESTION_VERBATIM in _joined(fuller)
-    # Affirmative conviction in both; fuller middle + voice only in fuller.
+    # Affirmative conviction in both; fuller middle + voice in
+    # NEITHER (fallback renders compact, not fuller).
     assert AFFIRMATIVE_CONVICTION in _joined(compact)
     assert AFFIRMATIVE_CONVICTION in _joined(fuller)
     for marker in FULLER_MIDDLE_MARKERS:
-        assert marker in _joined(fuller), marker
+        assert marker not in _joined(fuller), marker
         assert marker not in _joined(compact), marker
     for marker in FULLER_VOICE_MARKERS:
-        assert marker in _joined(fuller), marker
+        assert marker not in _joined(fuller), marker
         assert marker not in _joined(compact), marker
-    # Compact voice + warmth in compact only (fuller swaps them out).
+    # Compact voice + warmth in both (fallback renders compact).
     assert VOICE_COMPACT_MARKER in _joined(compact)
-    assert VOICE_COMPACT_MARKER not in _joined(fuller)
+    assert VOICE_COMPACT_MARKER in _joined(fuller)
     assert WARMTH_ADOPTED in _joined(compact)
-    assert WARMTH_ADOPTED not in _joined(fuller)
-    # Tremendous joy in BOTH (personality sentence + fuller voice).
-    assert "tremendously joyful in welcome" in _joined(compact)
-    assert "tremendously joyful in welcome" in _joined(fuller)
-    assert "Your joy is tremendous" in _joined(fuller)
+    assert WARMTH_ADOPTED in _joined(fuller)
+    # Joy in welcome (temperament, not the old tremendous-joy
+    # opening): present in the revised personality line.
+    assert "joyful in welcome" in _joined(compact)
+    assert "joyful in welcome" in _joined(fuller)
 
 
 def test_renderer_exclusions():
@@ -582,18 +601,23 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Compact + typical (signed-in) guidance: fits with voice intact.
+    # Compact + typical (signed-in) guidance: the 2026-11-04 revision
+    # lengthened the compact core (1,443), so core + signed guidance
+    # (491) no longer fits WITH the voice unit — the ladder drops
+    # voice whole and keeps core + capability, never truncated.
+    # KNOWN CONSEQUENCE, flagged for founder review: on
+    # capability-attached turns the new voice/range lines do not
+    # render; the revised judgment (personality + worldview) does.
     compact_typical = render_bear_ordinary(
         BEAR_RECORD, detail="compact", resolved_capability=signed
     )
     assert len(_joined(compact_typical)) <= CHARACTER_CEILING
     assert signed in _joined(compact_typical)  # capability never truncated
-    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice kept
+    assert WARMTH_ADOPTED not in _joined(compact_typical)  # voice dropped whole
 
-    # Fuller + typical guidance: fuller (1,298) + guidance (491) does
-    # NOT fit, so it degrades to compact with voice kept — valid
-    # ladder operation, not failure. Bear fuller is reachable only
-    # with no capability guidance (the §2 fuller itself, 1,298).
+    # Fuller + typical guidance: fuller is no longer reachable even
+    # bare (see budgets test), so this degrades to core + capability
+    # — valid ladder operation, not failure.
     degraded = render_bear_ordinary(
         BEAR_RECORD, detail="fuller", resolved_capability=signed
     )
@@ -603,7 +627,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         assert marker not in joined, marker  # middle dropped whole
     for marker in FULLER_VOICE_MARKERS:
         assert marker not in joined, marker  # fuller voice dropped whole
-    assert WARMTH_ADOPTED in joined  # compact voice kept
+    assert WARMTH_ADOPTED not in joined  # compact voice dropped whole too
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
     assert signed in joined  # capability never truncated
@@ -616,7 +640,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     assert unsigned in _joined(degraded_max)
     assert CANONICAL_MARKER in _joined(degraded_max)
     assert QUESTION_VERBATIM in _joined(degraded_max)
-    assert WARMTH_ADOPTED in _joined(degraded_max)
+    assert WARMTH_ADOPTED not in _joined(degraded_max)
 
     # Compact + a huge capability: nothing left to drop → fail, never cut.
     with pytest.raises(AssemblyError):
@@ -762,8 +786,14 @@ def test_branch_capability_moved_not_duplicated(monkeypatch):
     joined = _joined(lines)
     # Same content, moved into the character block: exactly once.
     assert joined.count(block.strip()) == 1
-    # And it sits before the voice region, not downstream.
-    assert joined.index(block.strip()) < joined.index(VOICE_COMPACT_MARKER)
+    # 2026-11-04 revision consequence: with capability attached, the
+    # lengthened block no longer fits WITH the voice unit, so the
+    # ladder drops voice whole — there is no voice region for the
+    # capability to sit before on this path. The capability still
+    # sits inside the character block (not downstream), and the
+    # revised judgment still renders.
+    assert VOICE_COMPACT_MARKER not in joined
+    assert "You notice floors first" in joined
 
 
 def test_branch_downstream_sections_preserved_on_path(monkeypatch):

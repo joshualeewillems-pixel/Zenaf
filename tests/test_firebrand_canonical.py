@@ -29,8 +29,8 @@ Scope notes (read before "fixing" a failure by weakening a test):
   this plan (ordinary renderer only) and is pinned here so it
   cannot silently grow.
 - The §2 rendering form of the ideal is a PARAPHRASED conviction
-  sentence ("You fight for what costs something — cheap fights
-  don't interest you, ..."): the verbatim ideal ("Courage through
+  sentence ("You ask whether a commitment is deserved before you
+  ask whether it can be won — ..."): the verbatim ideal ("Courage through
   conviction — ...") does NOT appear in §2. The record preserves
   the verbatim ideal as canonical-but-unrendered, and the renderer
   composes the worldview from conviction_paraphrase +
@@ -67,12 +67,14 @@ from local_ai.council.archetypes import (
     ANTI_PRESUMPTION_STYLE,
     build_archetype_prompt_lines,
 )
+from local_ai.council.canonical.bear import BEAR_RECORD
 from local_ai.council.canonical.firebrand import FIREBRAND_RECORD
 from local_ai.council.render import (
     CHARACTER_CEILING,
     AssemblyError,
     eligible_field,
     eligible_fields,
+    render_bear_ordinary,
     render_firebrand_ordinary,
 )
 
@@ -120,24 +122,32 @@ IDEAL_VERBATIM = (
     "something can be lost."
 )
 CONVICTION_PARAPHRASE = (
-    "You fight for what costs something — cheap fights don't interest "
-    "you, and you will tell the visitor plainly when a hill isn't "
-    "worth dying on."
+    "You ask whether a commitment is deserved before you ask whether "
+    "it can be won — a worthy cause can justify a hopeless stand, "
+    "but it does not automatically require one. Judge by meaning, "
+    "cost, and consequence, above all by what a course costs the "
+    "people holding it, and decide what victory would actually mean "
+    "before committing."
 )
 QUESTION_VERBATIM = "What is worth fighting for?"
 TEMPERAMENT_SENTENCE = (
-    "You are fierce and direct: when a fight is real, you refuse to "
-    "let them dither; when it isn't, you refuse to manufacture one."
+    "Press for change when conviction warrants action; weigh its "
+    "human cost without pretending every worthy cause demands a "
+    "fight. Do not manufacture a fight where none is needed, and do "
+    "not mistake upkeep for a fight."
 )
 PERSONALITY = (
-    "You pick the hill, and you name the price. You speak with the "
-    "authority of a battle-worn commander who no longer mistakes "
-    "orders for conviction."
+    "You are fierce and direct, fast and forward-leaning: you get to "
+    "the verb early, and you notice first what is at stake, what it "
+    "will cost, and the moment deliberation tips into avoidance."
 )
 VOICE_COMPACT_MARKER = "You speak in short declarative sentences"
 WARMTH_ADOPTED = (
-    "Your warmth is sparing and direct: you acknowledge briefly, then "
-    "move to substance — the fight, the hill, the next step."
+    "Your warmth is sparing: acknowledge briefly, then move to the "
+    "next concrete step. Let circumstance set the register: gather "
+    "missing information before judging; do upkeep cleanly, since "
+    "unattended maintenance costs attention and morale; slow down "
+    "and name the next step when the visitor is exhausted or uncertain."
 )
 FULLER_ADDITIONAL_MARKERS = (
     "You notice first the hill, the price",
@@ -147,29 +157,46 @@ FULLER_ADDITIONAL_MARKERS = (
 
 COMPACT_PROSE = (
     "You are the Firebrand, who occupies the Champion seat in the Fellowship. "
-    "You pick the hill, and you name the price. "
-    "You speak with the authority of a battle-worn commander who no longer "
-    "mistakes orders for conviction. "
-    "You fight for what costs something — cheap fights don't interest you, and "
-    "you will tell the visitor plainly when a hill isn't worth dying on. "
+    "You are fierce and direct, fast and forward-leaning: you get to "
+    "the verb early, and you notice first what is at stake, what it "
+    "will cost, and the moment deliberation tips into avoidance. "
+    "You ask whether a commitment is deserved before you ask whether "
+    "it can be won — a worthy cause can justify a hopeless stand, "
+    "but it does not automatically require one. Judge by meaning, "
+    "cost, and consequence, above all by what a course costs the "
+    "people holding it, and decide what victory would actually mean "
+    "before committing. "
     "What is worth fighting for? "
-    "You are fierce and direct: when a fight is real, you refuse to let them "
-    "dither; when it isn't, you refuse to manufacture one. "
-    "You speak in short declarative sentences, in plain words, prices named, "
-    "hills named. "
-    "Your warmth is sparing and direct: you acknowledge briefly, then move to "
-    "substance — the fight, the hill, the next step."
+    "Press for change when conviction warrants action; weigh its "
+    "human cost without pretending every worthy cause demands a "
+    "fight. Do not manufacture a fight where none is needed, and do "
+    "not mistake upkeep for a fight. "
+    "You speak in short declarative sentences, in plain words; "
+    "strategy is shop talk, available when it illuminates, never a "
+    "required list. "
+    "Your humor is dry and brief. "
+    "Your warmth is sparing: acknowledge briefly, then move to the "
+    "next concrete step. Let circumstance set the register: gather "
+    "missing information before judging; do upkeep cleanly, since "
+    "unattended maintenance costs attention and morale; slow down "
+    "and name the next step when the visitor is exhausted or uncertain."
 )
 FULLER_PROSE = (
     "You are the Firebrand, who occupies the Champion seat in the Fellowship. "
-    "You pick the hill, and you name the price. "
-    "You speak with the authority of a battle-worn commander who no longer "
-    "mistakes orders for conviction. "
-    "You fight for what costs something — cheap fights don't interest you, and "
-    "you will tell the visitor plainly when a hill isn't worth dying on. "
+    "You are fierce and direct, fast and forward-leaning: you get to "
+    "the verb early, and you notice first what is at stake, what it "
+    "will cost, and the moment deliberation tips into avoidance. "
+    "You ask whether a commitment is deserved before you ask whether "
+    "it can be won — a worthy cause can justify a hopeless stand, "
+    "but it does not automatically require one. Judge by meaning, "
+    "cost, and consequence, above all by what a course costs the "
+    "people holding it, and decide what victory would actually mean "
+    "before committing. "
     "What is worth fighting for? "
-    "You are fierce and direct: when a fight is real, you refuse to let them "
-    "dither; when it isn't, you refuse to manufacture one. "
+    "Press for change when conviction warrants action; weigh its "
+    "human cost without pretending every worthy cause demands a "
+    "fight. Do not manufacture a fight where none is needed, and do "
+    "not mistake upkeep for a fight. "
     "You notice first the hill, the price, and the moment deliberation tips "
     "into avoidance. "
     "You ask whether a fight is deserved before you ask whether it is winnable "
@@ -442,14 +469,15 @@ def test_renderer_order_identity_personality_worldview_capability():
 
 def test_renderer_budgets_compact_and_fuller_exact():
     """Assembled blocks reproduce exemplar §2 exactly (same sentences,
-    same order, byte-identical prose): compact 719 chars, fuller 1,066
-    chars, both under the 1,500 ceiling."""
+    same order, byte-identical prose): compact 1,306 chars, fuller 1,382
+    chars, both under the 1,500 ceiling (2026-11-04 characterization
+    revision: governing judgment promoted into the compact core)."""
     compact = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
     fuller = render_firebrand_ordinary(FIREBRAND_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 719, len(_joined(compact))
-    assert len(_joined(fuller)) == 1066, len(_joined(fuller))
+    assert len(_joined(compact)) == 1306, len(_joined(compact))
+    assert len(_joined(fuller)) == 1382, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # The verbatim ideal is canonical-but-unrendered: its prefix must
     # NOT appear (the §2 paraphrase replaces it), while the defining
@@ -471,9 +499,11 @@ def test_renderer_budgets_compact_and_fuller_exact():
     assert VOICE_COMPACT_MARKER not in _joined(fuller)
     assert WARMTH_ADOPTED in _joined(compact)
     assert WARMTH_ADOPTED not in _joined(fuller)
-    # The qualified deserved-before-winnable sentence is fuller-only.
+    # The qualified deserved-before-winnable sentence is in BOTH:
+    # promoted into the compact core by the 2026-11-04 revision, and
+    # still present in the fuller additional (untouched).
     assert "does not automatically require one" in _joined(fuller)
-    assert "does not automatically require one" not in _joined(compact)
+    assert "does not automatically require one" in _joined(compact)
 
 
 def test_renderer_exclusions():
@@ -553,34 +583,46 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Compact + typical (signed-in) guidance: fits with voice intact.
+    # Compact + typical (signed-in) guidance: the 2026-11-04 revision
+    # lengthened the compact core (1,306), so core + signed guidance
+    # (283) no longer fits WITH the voice unit — the ladder drops
+    # voice whole and keeps core + capability, never truncated.
+    # KNOWN CONSEQUENCE, flagged for founder review: on
+    # capability-attached turns the new voice/range lines do not
+    # render; the revised judgment (personality + worldview) does.
     compact_typical = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="compact", resolved_capability=signed
     )
     assert len(_joined(compact_typical)) <= CHARACTER_CEILING
     assert signed in _joined(compact_typical)  # capability never truncated
-    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice kept
+    assert WARMTH_ADOPTED not in _joined(compact_typical)  # voice dropped whole
+    assert VOICE_COMPACT_MARKER not in _joined(compact_typical)
+    assert CANONICAL_MARKER in _joined(compact_typical)
 
-    # Fuller + typical guidance: fits with additional intact.
+    # Fuller + typical guidance: same ladder — additional AND voice
+    # both drop; core + capability survives.
     full_typical = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=signed
     )
     assert len(_joined(full_typical)) <= CHARACTER_CEILING
     for marker in FULLER_ADDITIONAL_MARKERS:
-        assert marker in _joined(full_typical), marker
+        assert marker not in _joined(full_typical), marker
+    assert WARMTH_ADOPTED not in _joined(full_typical)
     assert signed in _joined(full_typical)
 
-    # Fuller + maximal (unsigned) guidance: still fits with additional intact.
+    # Fuller + maximal (unsigned) guidance: same ladder.
     full_max = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=unsigned
     )
     assert len(_joined(full_max)) <= CHARACTER_CEILING
     for marker in FULLER_ADDITIONAL_MARKERS:
-        assert marker in _joined(full_max), marker
+        assert marker not in _joined(full_max), marker
+    assert WARMTH_ADOPTED not in _joined(full_max)
     assert unsigned in _joined(full_max)
 
     # Mid-size capability (600 chars): fuller overflows, compact fits
-    # with voice — fuller→compact is valid ladder operation, not failure.
+    # as core + capability only — additional AND voice drop whole.
+    # Fuller→core is valid ladder operation, not failure.
     mid = "y" * 600
     degraded = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=mid
@@ -589,23 +631,18 @@ def test_renderer_budget_degrades_then_fails_validation():
     assert len(joined) <= CHARACTER_CEILING
     for marker in FULLER_ADDITIONAL_MARKERS:
         assert marker not in joined, marker  # additional dropped whole
-    assert WARMTH_ADOPTED in joined  # compact voice kept
+    assert WARMTH_ADOPTED not in joined  # voice dropped whole
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
     assert mid in joined  # capability never truncated
 
-    # Large capability (900 chars): compact overflows too, voice
-    # drops, core + capability still fits.
+    # Large capability (900 chars): even core + capability overflows
+    # the lengthened 2026-11-04 core — fail, never cut.
     large = "z" * 900
-    core_only = render_firebrand_ordinary(
-        FIREBRAND_RECORD, detail="compact", resolved_capability=large
-    )
-    joined_core = _joined(core_only)
-    assert len(joined_core) <= CHARACTER_CEILING
-    assert large in joined_core
-    assert WARMTH_ADOPTED not in joined_core
-    assert VOICE_COMPACT_MARKER not in joined_core
-    assert CANONICAL_MARKER in joined_core
+    with pytest.raises(AssemblyError):
+        render_firebrand_ordinary(
+            FIREBRAND_RECORD, detail="compact", resolved_capability=large
+        )
 
     # Compact + a huge capability: nothing left to drop → fail, never cut.
     with pytest.raises(AssemblyError):
@@ -748,8 +785,14 @@ def test_branch_capability_moved_not_duplicated(monkeypatch):
     joined = _joined(lines)
     # Same content, moved into the character block: exactly once.
     assert joined.count(block.strip()) == 1
-    # And it sits before the voice region, not downstream.
-    assert joined.index(block.strip()) < joined.index(VOICE_COMPACT_MARKER)
+    # 2026-11-04 revision consequence: with capability attached, the
+    # lengthened block no longer fits WITH the voice unit, so the
+    # ladder drops voice whole — there is no voice region for the
+    # capability to sit before on this path. The capability still
+    # sits inside the character block (not downstream), and the
+    # revised judgment still renders.
+    assert VOICE_COMPACT_MARKER not in joined
+    assert "Press for change when conviction warrants action" in joined
 
 
 def test_branch_downstream_sections_preserved_on_path(monkeypatch):
@@ -927,3 +970,82 @@ def test_weights_untouched_and_no_vector_in_record():
     weights_field = FIREBRAND_RECORD["identity"]["strand_weights"]
     assert isinstance(weights_field["text"], str)
     assert not isinstance(weights_field.get("vector"), (dict, list))
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-04 characterization revision (Firebrand + Bear)
+# ---------------------------------------------------------------------------
+
+
+def test_characterization_revision_2026_11_04_assembled_prompts():
+    """Pins the founder-authorized 2026-11-04 revision, checked on the
+    ACTUAL assembled compact prompts (not just the edited records):
+    revised judgment present, old compulsory instructions absent,
+    both blocks under the ceiling, no cross-seat naming, protected
+    material excluded. Covers both seats in one test because the
+    revision was authorized as a pair.
+
+    Known consequence, pinned explicitly rather than hidden: with
+    capability guidance attached (the ordinary signed-in Talk path),
+    the lengthened blocks exceed the ceiling WITH guidance, so the
+    ladder drops the voice unit whole — judgment survives, voice and
+    range lines do not render on those turns. No renderer change was
+    made; the consequence is flagged for founder review.
+    """
+    fb = _joined(render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact"))
+    br = _joined(render_bear_ordinary(BEAR_RECORD, detail="compact"))
+
+    # Revised judgment present — Firebrand (incl. refinement 1).
+    assert "a worthy cause can justify a hopeless stand" in fb
+    assert (
+        "Press for change when conviction warrants action; weigh its "
+        "human cost without pretending every worthy cause demands a fight."
+    ) in fb
+    assert "do not mistake upkeep for a fight" in fb
+    assert "do upkeep cleanly" in fb
+    assert "What is worth fighting for?" in fb
+    # Revised judgment present — Bear (incl. refinements 2 and 3).
+    assert "You notice floors first" in br
+    assert "who holds a key" in br and "quietly draining" in br
+    assert "who gets hurt if it fails" in br
+    assert (
+        "once you have named a floor, you do not quietly lower it; "
+        "but you will reconsider where that floor belongs when the facts change."
+    ) in br
+    assert "with the easy warmth and unhurried rhythm of Southern hospitality" in br
+    assert "what are we responsible for keeping safe?" in br
+    assert "welcome warmly and unhurriedly when someone arrives needing shelter" in br
+    assert "hold a named floor steady when it is crossed" in br
+
+    # Old compulsory instructions absent from BOTH compact blocks.
+    for phrase in (
+        "You pick the hill, and you name the price",
+        "prices named, hills named",
+        "cheap fights don't interest you",
+        "hill isn't worth dying on",
+        "supper on the table, a roof over everybody's head",
+        "I'm not going anywhere",
+        "battle-worn commander",
+        "Obedience is not conviction",
+    ):
+        assert phrase not in fb, phrase
+        assert phrase not in br, phrase
+
+    # No cross-seat naming; relationship stays implicit.
+    assert "Bear" not in fb
+    assert "Firebrand" not in br
+
+    # Ceiling (exact lengths are pinned by the budgets tests).
+    assert len(fb) < CHARACTER_CEILING
+    assert len(br) < CHARACTER_CEILING
+
+    # Capability-attached turns: judgment survives, voice drops whole.
+    signed_br = CAP.continuation_block(
+        "guardian", CAP.VisitorState(signed_in=True, consent_acknowledged=True)
+    ).strip()
+    with_cap = _joined(
+        render_bear_ordinary(BEAR_RECORD, detail="compact", resolved_capability=signed_br)
+    )
+    assert "You notice floors first" in with_cap
+    assert "Southern hospitality" not in with_cap
+    assert "welcome warmly and unhurriedly" not in with_cap

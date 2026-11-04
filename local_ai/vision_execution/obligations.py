@@ -65,7 +65,23 @@ PROPOSAL_INSTRUCTION = (
     "claim a task was created — creation happens only when the user "
     "approves the card. If the user agrees in prose, re-emit the block "
     "so the card can appear; prose agreement alone never creates "
-    "anything."
+    "anything.\n"
+    "The block MUST be JSON — not a list, not YAML — with exactly this "
+    "shape:\n"
+    "```task-proposal\n"
+    '{"proposals": [{"title": "Call the clinic", "parent_task_id": null, '
+    '"timeframe_commitment": "tentative", "due_date": null, '
+    '"notes": "Ask about the November referral"}]}\n'
+    "```\n"
+    "Field types: title is a non-empty string; parent_task_id is a task "
+    "id copied exactly from the task list above, or null for a top-level "
+    "task — never a title, never inferred or guessed; "
+    "timeframe_commitment is \"tentative\" or null; due_date is "
+    "\"YYYY-MM-DD\" or null; notes is a string. "
+    "timeframe_commitment is a timeframe dimension, NOT the task's "
+    "status: approved tasks are always created with status \"Todo\". "
+    "Never emit a \"status\" field to express tentativeness — use "
+    "timeframe_commitment \"tentative\" instead."
 )
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -140,6 +156,17 @@ def _parent_clause(task: dict[str, Any], by_id: dict[str, str]) -> str:
     return f" (under: {_safe_line(parent)})" if parent else ""
 
 
+def _id_clause(task: dict[str, Any]) -> str:
+    """Machine-reference id for a record line, or nothing when absent.
+
+    Titles stay for human readability; the bracketed id is what a nested
+    proposal's parent_task_id must copy. Without it the model can only
+    offer a parent title, which server ownership validation rejects.
+    """
+    task_id = str(task.get("id") or "").strip()
+    return f" [id: {_safe_line(task_id)}]" if task_id else ""
+
+
 def render_obligation_block(
     buckets: dict[str, list[dict[str, Any]]] | None, status: str
 ) -> str:
@@ -149,7 +176,10 @@ def render_obligation_block(
     an empty list); status "ok" with all buckets empty yields the exact
     empty header; otherwise the dated + provisional sections. The
     proposal instruction follows in every state: proposing a new task
-    does not depend on the read succeeding.
+    does not depend on the read succeeding. Truncation guarantee: the
+    record body alone is capped (BLOCK_CHAR_CAP); the proposal
+    instruction is appended AFTER the cap, so trimming removes task
+    record lines only and the contract text always survives intact.
     """
     if status == "failed":
         return f"{UNAVAILABLE_NOTICE}\n\n{PROPOSAL_INSTRUCTION}"
@@ -182,7 +212,7 @@ def render_obligation_block(
         d = _parse_date(task.get("due_date"))
         overdue_lines.append(
             f"• {_safe_line(task.get('title'))} — OVERDUE since "
-            f"{d.isoformat() if d else ''}{_parent_clause(task, by_id)}"
+            f"{d.isoformat() if d else ''}{_id_clause(task)}{_parent_clause(task, by_id)}"
         )
     for task in due_soon:
         if remaining <= 0:
@@ -191,7 +221,7 @@ def render_obligation_block(
         d = _parse_date(task.get("due_date"))
         due_lines.append(
             f"• {_safe_line(task.get('title'))} — due "
-            f"{d.isoformat() if d else ''}{_parent_clause(task, by_id)}"
+            f"{d.isoformat() if d else ''}{_id_clause(task)}{_parent_clause(task, by_id)}"
         )
     omitted += max(0, len(dated) - DATED_LINE_CAP)
     prov_lines: list[str] = []
@@ -201,12 +231,12 @@ def render_obligation_block(
             prov_lines.append(
                 f"• {_safe_line(task.get('title'))} — provisional, "
                 f"proposed date {d.isoformat()} (not firm)"
-                f"{_parent_clause(task, by_id)}"
+                f"{_id_clause(task)}{_parent_clause(task, by_id)}"
             )
         else:
             prov_lines.append(
                 f"• {_safe_line(task.get('title'))} — provisional, no date yet"
-                f"{_parent_clause(task, by_id)}"
+                f"{_id_clause(task)}{_parent_clause(task, by_id)}"
             )
     omitted += max(0, len(tentative) - PROVISIONAL_LINE_CAP)
     sections: list[str] = []

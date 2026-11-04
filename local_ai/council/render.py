@@ -629,8 +629,8 @@ def render_firebrand_ordinary(
     then either the fuller additional unit (which DELETES the
     compact voice-close entirely — no voice sentence, no warmth
     sentence in the fuller) or the compact voice + warmth passage.
-    Assembled blocks reproduce exemplar §2 exactly (compact 719
-    chars, fuller 1,066 chars, no capability).
+    Assembled blocks reproduce exemplar §2 exactly (compact 1,306
+    chars, fuller 1,382 chars, no capability).
     """
     if detail not in ("compact", "fuller"):
         raise ValueError(f"Unknown detail: {detail!r}")
@@ -659,9 +659,11 @@ def render_firebrand_ordinary(
             "Firebrand core unit (personality/worldview) is not eligible"
         )
     worldview = " ".join(worldview_parts)
-    core = [identity, personality, worldview]
-    if capability:
-        core.append(capability)
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # the ceiling measures character content ALONE. Capability is not
+    # part of the measured candidate set; it is re-inserted at the
+    # same position (after worldview) in the returned list below.
+    character = [identity, personality, worldview]
 
     additional = eligible_field(record, "characterization", "fuller_additional")
     voice = eligible_field(record, "characterization", "voice_and_humor")
@@ -677,17 +679,22 @@ def render_firebrand_ordinary(
 
     candidates: list[list[str]] = []
     if detail == "fuller" and additional is not None:
-        candidates.append([*core, additional])
+        candidates.append([*character, additional])
     if voice_compact is not None:
-        candidates.append([*core, voice_compact])
-    candidates.append(core)
+        candidates.append([*character, voice_compact])
+    candidates.append(character)
     for units in candidates:
         if not over_budget(units):
-            return units
-    raise AssemblyError(
-        f"Firebrand character block still over the {CHARACTER_CEILING}-char "
-        "ceiling after dropping all optional units; refusing to truncate"
-    )
+            chosen = units
+            break
+    else:
+        raise AssemblyError(
+            f"Firebrand character block still over the {CHARACTER_CEILING}-char "
+            "ceiling after dropping all optional units; refusing to truncate"
+        )
+    if capability:
+        return chosen[:3] + [capability] + chosen[3:]
+    return chosen
 
 
 def render_bear_ordinary(
@@ -705,8 +712,9 @@ def render_bear_ordinary(
     ENTIRELY different from the compact voice-close: joy/welcome +
     warmth response, no compact voice sentence, no compact warmth
     sentence) or the compact voice + warmth passage. Assembled
-    blocks reproduce exemplar §2 exactly (compact 767 chars,
-    fuller 1,298 chars, no capability). Semicolon sentences are
+    blocks reproduce exemplar §2 exactly (compact 1,443 chars,
+    fuller degrades to compact 1,443 chars, no capability).
+    Semicolon sentences are
     single units, never split; em-dashes are preserved exactly.
     """
     if detail not in ("compact", "fuller"):
@@ -736,9 +744,11 @@ def render_bear_ordinary(
             "Bear core unit (personality/worldview) is not eligible"
         )
     worldview = " ".join(worldview_parts)
-    core = [identity, personality, worldview]
-    if capability:
-        core.append(capability)
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # the ceiling measures character content ALONE. Capability is not
+    # part of the measured candidate set; it is re-inserted at the
+    # same position (after worldview) in the returned list below.
+    character = [identity, personality, worldview]
 
     middle = eligible_field(record, "characterization", "fuller_middle")
     voice = eligible_field(record, "characterization", "voice_and_humor")
@@ -755,20 +765,25 @@ def render_bear_ordinary(
 
     candidates: list[list[str]] = []
     if detail == "fuller" and middle is not None:
-        fuller_units = [*core, middle]
+        fuller_units = [*character, middle]
         if voice_fuller is not None:
             fuller_units.append(voice_fuller)
         candidates.append(fuller_units)
     if voice_compact is not None:
-        candidates.append([*core, voice_compact])
-    candidates.append(core)
+        candidates.append([*character, voice_compact])
+    candidates.append(character)
     for units in candidates:
         if not over_budget(units):
-            return units
-    raise AssemblyError(
-        f"Bear character block still over the {CHARACTER_CEILING}-char "
-        "ceiling after dropping all optional units; refusing to truncate"
-    )
+            chosen = units
+            break
+    else:
+        raise AssemblyError(
+            f"Bear character block still over the {CHARACTER_CEILING}-char "
+            "ceiling after dropping all optional units; refusing to truncate"
+        )
+    if capability:
+        return chosen[:3] + [capability] + chosen[3:]
+    return chosen
 
 
 def render_crane_ordinary(

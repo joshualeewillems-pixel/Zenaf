@@ -283,8 +283,43 @@ def get_keystone_attention(current_user: dict = Depends(get_current_user)):
     still light — observations come from conversations, not seeding).
     """
     from local_ai.fellowship import attention
+    from local_ai.vision_execution import obligations as _obligations
 
-    return attention.attention_for_user(current_user["id"])
+    result = attention.attention_for_user(current_user["id"])
+    # Firebrand obligation source (trial, champion-only): merged here at
+    # the route level, never in attention.py, so the fellowship read
+    # model keeps its pure keystone + observation contract. Keystone
+    # reason precedence is untouched: the obligation reason applies
+    # only when neither keystone nor observation lit the marker.
+    markers = result.get("markers") or {}
+    champ = markers.get("champion")
+    if champ is None:
+        champ = {
+            "attention": False,
+            "reason": None,
+            "keystone_reason": None,
+            "observation_reason": None,
+            "observation_ids": [],
+            "observation_count": 0,
+        }
+        markers["champion"] = champ
+    try:
+        att = _obligations.obligation_attention(current_user["id"])
+    except Exception:
+        att = {"obligation_status": "unknown"}
+    champ["obligation_status"] = att["obligation_status"]
+    if att["obligation_status"] == "ok":
+        champ["overdue_count"] = att["overdue_count"]
+        champ["due_soon_count"] = att["due_soon_count"]
+        champ["next_due"] = att["next_due"]
+        if (att["overdue_count"] or 0) + (att["due_soon_count"] or 0) > 0:
+            champ["attention"] = True
+            if not champ.get("reason"):
+                champ["reason"] = "obligation"
+    # On "unknown" the obligation fields stay omitted: unavailable data
+    # is never rendered as an authoritative empty result, and the
+    # marker's attention reflects keystone/observation sources only.
+    return result
 
 
 # --- Core profiles ---
@@ -1331,8 +1366,11 @@ def delete_project(project_id: str, current_user: dict = Depends(get_current_use
 
 # --- Tasks ---
 @router.get("/tasks")
-def list_tasks(project_id: str | None = None, current_user: dict = Depends(get_current_user)):
-    return S.list_tasks(current_user["id"], project_id)
+def list_tasks(project_id: str | None = None, timeframe_commitment: str | None = None, current_user: dict = Depends(get_current_user)):
+    try:
+        return S.list_tasks(current_user["id"], project_id, timeframe_commitment=timeframe_commitment)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/tasks/{task_id}")
@@ -1359,6 +1397,108 @@ def update_task(task_id: str, body: M.TaskUpdate, current_user: dict = Depends(g
         raise HTTPException(status_code=400, detail=str(e))
     if out is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    return out
+
+
+# --- Seat task proposals (Firebrand task-context, server-owned) -----------
+#
+# The seat proposes in prose + a fenced block; the client forwards the
+# block; the server records a pending proposal only after C1 provenance
+# verification (source message belongs to the caller's conversation,
+# is a champion assistant message, contains the block, submission
+# matches). Approval is the ONLY path from proposal to task. Every
+# query is predicated on the caller's id; a foreign record reads as
+# 404, never a leak.
+
+
+def _conversation_store():
+    """Conversation store for C1 provenance checks. Lazy import (leaf
+    module) and a module-level factory so tests can monkeypatch it to
+    a tmp store, the same pattern as conversation_routes._store."""
+    from local_ai.conversation.store import ConversationStore
+
+    return ConversationStore()
+
+
+class TaskProposalRecordBody(BaseModel):
+    conversation_id: str
+    source_message_id: str
+    block_index: int
+    proposal_index: int
+    title: str
+    parent_task_id: str | None = None
+    timeframe_commitment: str | None = None
+    due_date: str | None = None
+    notes: str = ""
+
+
+class TaskProposalPatchBody(BaseModel):
+    title: str | None = None
+    parent_task_id: str | None = None
+    timeframe_commitment: str | None = None
+    due_date: str | None = None
+    notes: str | None = None
+
+
+def _proposal_error(e: Exception) -> HTTPException:
+    if isinstance(e, VEStorage.ProposalNotFound):
+        return HTTPException(status_code=404, detail=str(e))
+    if isinstance(e, VEStorage.ProposalConflict):
+        return HTTPException(status_code=409, detail=str(e))
+    if isinstance(e, ValueError):
+        return HTTPException(status_code=400, detail=str(e))
+    raise e
+
+
+@router.post("/task-proposals")
+def record_task_proposal(body: TaskProposalRecordBody, current_user: dict = Depends(get_current_user)):
+    try:
+        return VEStorage.record_task_proposal(
+            current_user["id"], body.model_dump(), conversation_store=_conversation_store()
+        )
+    except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
+        raise _proposal_error(e)
+
+
+@router.get("/task-proposals")
+def list_task_proposals(
+    conversation_id: str = Query(...),
+    state: str | None = None,
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        return {"proposals": VEStorage.list_task_proposals(
+            current_user["id"], conversation_id, state=state, limit=limit
+        )}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/task-proposals/{proposal_id}")
+def update_task_proposal(proposal_id: str, body: TaskProposalPatchBody, current_user: dict = Depends(get_current_user)):
+    try:
+        return VEStorage.update_task_proposal(
+            current_user["id"], proposal_id, body.model_dump(exclude_unset=True)
+        )
+    except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
+        raise _proposal_error(e)
+
+
+@router.post("/task-proposals/{proposal_id}/approve")
+def approve_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        return VEStorage.approve_task_proposal(current_user["id"], proposal_id)
+    except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
+        raise _proposal_error(e)
+
+
+@router.post("/task-proposals/{proposal_id}/decline")
+def decline_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        return VEStorage.decline_task_proposal(current_user["id"], proposal_id)
+    except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
+        raise _proposal_error(e)
     return out
 
 

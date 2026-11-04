@@ -239,6 +239,7 @@ def build_voice_prompt(
     canonical: bool = True,
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
+    obligation_context: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
 
@@ -635,6 +636,15 @@ def build_voice_prompt(
         ]
     if context_hint:
         prompt += ["", f"Live context: {context_hint.strip()[:300]}"]
+    if obligation_context:
+        # Firebrand task records: its own section, after the live
+        # context line and before history. Governing instructions
+        # already precede it (character block above); the block itself
+        # delimits user data from instructions and collapses record
+        # text to single lines so a hostile title cannot visually
+        # escape the section. Absent (None) = section absent, so
+        # non-champion turns and meetings are byte-identical to before.
+        prompt += ["", obligation_context.strip()]
 
     turns = (history or [])[-10:]
     if turns:
@@ -687,6 +697,7 @@ def generate_voice_reply(
     canonical: bool = True,
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
+    obligation_context: str | None = None,
 ) -> VoiceReply:
     """One exchange with a single council voice. Raises RuntimeError on LLM failure."""
     prompt, meta = build_voice_prompt(
@@ -702,6 +713,7 @@ def generate_voice_reply(
         canonical=canonical,
         capability_context=capability_context,
         fellowship_reference=fellowship_reference,
+        obligation_context=obligation_context,
     )
     gen = generate_fn or _default_generate
     reply = sanitize_weave(

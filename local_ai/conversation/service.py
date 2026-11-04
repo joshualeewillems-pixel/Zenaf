@@ -21,6 +21,7 @@ from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype
 from local_ai.council.naming import get_display_name
 from local_ai.fellowship import events as fellowship_events
+from local_ai.vision_execution import obligations as _obligations
 
 from .reply import VoiceReply, generate_voice_reply
 from .store import ConversationStore
@@ -136,6 +137,16 @@ class ConversationService:
                 )
                 steward_block = None
 
+        # Firebrand task context (trial, champion-only): server-side,
+        # from the caller's own scoped tasks — the client cannot inject
+        # or forge obligations. A failed read yields the failure notice
+        # block, never an empty list; other seats get no block.
+        obligation_context = None
+        if arch_id == "champion":
+            obligation_context, _obligation_status = (
+                _obligations.build_obligation_context(user_id)
+            )
+
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -144,6 +155,7 @@ class ConversationService:
             mode=mode,
             question=question,
             context_hint=context_hint_for(context),
+            obligation_context=obligation_context,
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,
             # Phase 2 steward context (Weaver only): prepared

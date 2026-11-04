@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
+import TaskProposalCards from './TaskProposalCards'
+import { stripTaskProposalBlocks } from './taskProposals'
 import VoiceFeedback from './VoiceFeedback'
 
 /**
@@ -600,8 +602,27 @@ export default function CouncilChat({
                     {m.voiceName}
                   </div>
                 )}
-                <WeaveText text={m.content} />
+                {/* Store path only: fenced proposal blocks are replaced
+                    by cards below; the raw JSON is never chat text.
+                    Client-history path keeps the full text (no cards
+                    there in this slice). */}
+                <WeaveText
+                  text={
+                    conversationId && m.messageId && !m.messageId.startsWith('local-')
+                      ? stripTaskProposalBlocks(m.content)
+                      : m.content
+                  }
+                />
               </div>
+              {conversationId && m.messageId && !m.messageId.startsWith('local-') && m.voiceId && (
+                <TaskProposalCards
+                  base={base}
+                  conversationId={conversationId}
+                  messageId={m.messageId}
+                  seat={m.voiceId}
+                  content={m.content}
+                />
+              )}
               {m.messageId && m.voiceId && (
                 <div className="max-w-[88%] w-full">
                   <VoiceFeedback

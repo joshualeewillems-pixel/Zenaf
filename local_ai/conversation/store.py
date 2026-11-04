@@ -207,6 +207,23 @@ class ConversationStore:
             ).fetchall()
         return _message_dicts(rows)
 
+    def get_message(
+        self, user_id: str, conversation_id: str, message_id: str
+    ) -> dict[str, Any] | None:
+        """Single message row, strictly per-user. None when missing or
+        foreign — a foreign id is indistinguishable from a missing one,
+        so callers cannot probe another user's conversations."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, user_id, conversation_id, archetype_id, role, body, "
+                "mode, context_json, created_at FROM messages "
+                "WHERE user_id = ? AND conversation_id = ? AND id = ?",
+                (user_id, conversation_id, message_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _message_dicts([row])[0]
+
     def count_messages(self, user_id: str, conversation_id: str) -> int:
         """Count of live message rows for one user conversation. Read-only."""
         with self._lock:

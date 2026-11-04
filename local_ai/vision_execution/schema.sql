@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   completion_criteria TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
   seat_ref TEXT NOT NULL DEFAULT '',
+  timeframe_commitment TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (project_id) REFERENCES projects(id),

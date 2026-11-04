@@ -477,8 +477,8 @@ def delete_project(project_id: str, user_id: str):
 
 
 # Tasks
-def list_tasks(user_id: str, project_id: str | None = None):
-    return S.list_tasks(user_id, project_id)
+def list_tasks(user_id: str, project_id: str | None = None, timeframe_commitment: str | None = None):
+    return S.list_tasks(user_id, project_id, timeframe_commitment=timeframe_commitment)
 
 
 def get_task(task_id: str, user_id: str):

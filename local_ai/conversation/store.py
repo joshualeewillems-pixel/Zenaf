@@ -15,6 +15,13 @@ Tables:
   suggestion_runs  — cached suggestion-engine output, watermarked by the
                      latest message id so GET /conversation/suggestions
                      doesn't re-run the LLM on every call.
+  invitations      — Capability C S1: selective-participation records.
+                     One pending invitation per (user, conversation,
+                     seat); a tap OPENS a conversation but never
+                     accepts — only a sent turn to the invited seat
+                     accepts (service.turn wires that). Statuses:
+                     pending | accepted | expired. No dismiss status
+                     in v1: untapped means deferred, not rejected.
 
 Threading: one connection guarded by a lock is enough for user-triggered use.
 """
@@ -25,7 +32,7 @@ import json
 import sqlite3
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -72,11 +79,65 @@ CREATE TABLE IF NOT EXISTS suggestion_runs (
   created_at TEXT NOT NULL,
   PRIMARY KEY (user_id, conversation_id)
 );
+CREATE TABLE IF NOT EXISTS invitations (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  seat TEXT NOT NULL,
+  observation_ids TEXT NOT NULL DEFAULT '[]',
+  reason TEXT NOT NULL DEFAULT '',
+  evidence_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  accepted_message_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_invitations_user_conv_seat
+  ON invitations (user_id, conversation_id, seat, status);
+CREATE INDEX IF NOT EXISTS idx_invitations_user_expiry
+  ON invitations (user_id, status, expires_at);
 """
 
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+#: Capability C S1 — invitation lifetime backstop (verdict Q2, provisional).
+#: Seven days is a cleanup backstop, NOT a relevance claim: an invitation
+#: may be invalidated earlier when its evidence is demonstrably
+#: superseded or addressed, and expiry never means the underlying
+#: concern was resolved. No per-seat TTL in v1 (verdict Q7).
+INVITATION_TTL_DAYS = 7
+
+
+def _invitation_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """Invitation row to API dict. Corrupt JSON degrades to empty."""
+    try:
+        observation_ids = json.loads(row["observation_ids"] or "[]")
+    except Exception:
+        observation_ids = []
+    if not isinstance(observation_ids, list):
+        observation_ids = []
+    try:
+        evidence = json.loads(row["evidence_json"] or "{}")
+    except Exception:
+        evidence = {}
+    if not isinstance(evidence, dict):
+        evidence = {}
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "conversation_id": row["conversation_id"],
+        "seat": row["seat"],
+        "observation_ids": observation_ids,
+        "reason": row["reason"],
+        "evidence": evidence,
+        "status": row["status"],
+        "created_at": row["created_at"],
+        "expires_at": row["expires_at"],
+        "accepted_message_id": row["accepted_message_id"],
+    }
 
 
 def _message_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
@@ -506,3 +567,240 @@ class ConversationStore:
                 ),
             )
             self._conn.commit()
+
+    # -- invitations (Capability C S1) ---------------------------------------
+
+    def create_or_refresh_invitation(
+        self,
+        user_id: str,
+        conversation_id: str,
+        seat: str,
+        reason: str,
+        evidence: dict[str, Any] | None = None,
+        observation_ids: list[str] | None = None,
+        ttl_days: int = INVITATION_TTL_DAYS,
+    ) -> dict[str, Any]:
+        """Create or refresh the ONE pending invitation for a triple.
+
+        Refresh-not-stack: if a pending, unexpired row already exists
+        for (user_id, conversation_id, seat), it is updated in place
+        (same id; new reason / evidence / observation ids; expiry
+        extended to now + TTL) and returned. Expired rows are history,
+        never revived — a new row is created instead. One pending
+        invitation per (conversation, seat) is the invariant; callers
+        never stack rows.
+
+        `evidence` is the completed exchange that justified the
+        invitation (verbatim user message, responding seat, verbatim
+        assistant reply, limited context). The record must carry it:
+        selection comes from exchanges, not only observations, so
+        observation_ids may be empty. `reason` is the selection's
+        short reason, carried as that selection's reading — S5 renders
+        it labeled as such; it is never presented as fact.
+
+        The store validates shape only (non-empty user, conversation,
+        seat, reason); seat vocabulary is the selection contract's
+        job (S2), not this store's. Raises ValueError on empty input.
+        """
+        user_id = (user_id or "").strip()
+        conversation_id = (conversation_id or "").strip()
+        seat = (seat or "").strip().lower()
+        reason = (reason or "").strip()
+        if not user_id or not conversation_id or not seat or not reason:
+            raise ValueError("invitation requires user, conversation, seat, reason")
+        now = _utcnow()
+        expires = (
+            datetime.now(timezone.utc) + timedelta(days=ttl_days)
+        ).isoformat()
+        evidence_json = json.dumps(evidence or {}, ensure_ascii=True)
+        observation_json = json.dumps(list(observation_ids or []), ensure_ascii=True)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM invitations WHERE user_id = ? AND conversation_id = ? "
+                "AND seat = ? AND status = 'pending' AND expires_at > ? "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (user_id, conversation_id, seat, now),
+            ).fetchone()
+            if row is not None:
+                self._conn.execute(
+                    "UPDATE invitations SET reason = ?, evidence_json = ?, "
+                    "observation_ids = ?, expires_at = ? WHERE id = ? AND user_id = ?",
+                    (reason, evidence_json, observation_json, expires, row["id"], user_id),
+                )
+                self._conn.commit()
+                inv_id = row["id"]
+            else:
+                inv_id = uuid.uuid4().hex
+                self._conn.execute(
+                    "INSERT INTO invitations (id, user_id, conversation_id, seat, "
+                    "observation_ids, reason, evidence_json, status, created_at, "
+                    "expires_at, accepted_message_id) VALUES (?, ?, ?, ?, ?, ?, ?, "
+                    "'pending', ?, ?, NULL)",
+                    (
+                        inv_id,
+                        user_id,
+                        conversation_id,
+                        seat,
+                        observation_json,
+                        reason,
+                        evidence_json,
+                        now,
+                        expires,
+                    ),
+                )
+                self._conn.commit()
+        # Outside the lock: get_invitation takes the same lock (the
+        # file's established pattern — never call it while holding it).
+        return self.get_invitation(user_id, inv_id)  # type: ignore[return-value]
+
+    def list_pending_invitations(
+        self, user_id: str, conversation_id: str | None = None, now: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Pending invitations for one user: status pending AND unexpired.
+
+        Strictly per-user: another user's rows can never match, and a
+        foreign conversation_id simply yields nothing. The time filter
+        is the semantic gate (a past-expiry row is not pending even
+        before a sweep materializes its status); expire_due_* is
+        bookkeeping, not the gate.
+        """
+        now = now or _utcnow()
+        with self._lock:
+            if conversation_id:
+                rows = self._conn.execute(
+                    "SELECT id, user_id, conversation_id, seat, observation_ids, "
+                    "reason, evidence_json, status, created_at, expires_at, "
+                    "accepted_message_id FROM invitations WHERE user_id = ? "
+                    "AND conversation_id = ? AND status = 'pending' AND expires_at > ? "
+                    "ORDER BY created_at ASC, id ASC",
+                    (user_id, conversation_id, now),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT id, user_id, conversation_id, seat, observation_ids, "
+                    "reason, evidence_json, status, created_at, expires_at, "
+                    "accepted_message_id FROM invitations WHERE user_id = ? "
+                    "AND status = 'pending' AND expires_at > ? "
+                    "ORDER BY created_at ASC, id ASC",
+                    (user_id, now),
+                ).fetchall()
+        return [_invitation_dict(r) for r in rows]
+
+    def get_invitation(
+        self, user_id: str, invitation_id: str
+    ) -> dict[str, Any] | None:
+        """One invitation, strictly per-user. A foreign id returns None,
+        indistinguishable from a missing one — the same fail-closed
+        pattern as get_message, so callers cannot probe another
+        user's invitations."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, user_id, conversation_id, seat, observation_ids, "
+                "reason, evidence_json, status, created_at, expires_at, "
+                "accepted_message_id FROM invitations "
+                "WHERE user_id = ? AND id = ?",
+                (user_id, invitation_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _invitation_dict(row)
+
+    def accept_invitation(
+        self, user_id: str, invitation_id: str, message_id: str
+    ) -> dict[str, Any] | None:
+        """Pending + unexpired → accepted, recorded against message_id.
+
+        The ONLY accept semantics: a sent turn to the invited seat
+        (service.turn wires this). Tap/opening never calls this —
+        opening is a UI action, not a state transition (verdict:
+        Pending → Opened → Joined; open-and-leave stays pending).
+        Returns None, with no state change, for missing, foreign,
+        already-accepted, or expired rows.
+        """
+        now = _utcnow()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM invitations WHERE user_id = ? AND id = ? "
+                "AND status = 'pending' AND expires_at > ?",
+                (user_id, invitation_id, now),
+            ).fetchone()
+            if row is None:
+                return None
+            self._conn.execute(
+                "UPDATE invitations SET status = 'accepted', "
+                "accepted_message_id = ? WHERE id = ? AND user_id = ?",
+                (message_id, invitation_id, user_id),
+            )
+            self._conn.commit()
+        return self.get_invitation(user_id, invitation_id)
+
+    def accept_pending_for_seat(
+        self, user_id: str, conversation_id: str, seat: str, message_id: str
+    ) -> list[dict[str, Any]]:
+        """Accept every pending, unexpired invitation for one triple.
+
+        Normally at most one (refresh-not-stack invariant); accept-all
+        is defensive, not a second path. Called by the turn path after
+        a completed turn — never by tap/open. Returns the accepted rows
+        (empty when nothing was pending).
+        """
+        now = _utcnow()
+        seat = (seat or "").strip().lower()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM invitations WHERE user_id = ? AND conversation_id = ? "
+                "AND seat = ? AND status = 'pending' AND expires_at > ?",
+                (user_id, conversation_id, seat, now),
+            ).fetchall()
+            for r in rows:
+                self._conn.execute(
+                    "UPDATE invitations SET status = 'accepted', "
+                    "accepted_message_id = ? WHERE id = ? AND user_id = ?",
+                    (message_id, r["id"], user_id),
+                )
+            self._conn.commit()
+            ids = [r["id"] for r in rows]
+        return [self.get_invitation(user_id, i) for i in ids]  # type: ignore[misc]
+
+    def expire_due_invitations(self, user_id: str, now: str | None = None) -> int:
+        """Materialize expiry: pending rows with expires_at <= now → expired.
+
+        Bookkeeping only — list_pending already excludes past-expiry
+        rows. Returns the number of rows transitioned.
+        """
+        now = now or _utcnow()
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE invitations SET status = 'expired' WHERE user_id = ? "
+                "AND status = 'pending' AND expires_at <= ?",
+                (user_id, now),
+            )
+            self._conn.commit()
+            return cur.rowcount if cur.rowcount is not None else 0
+
+    def invalidate_invitation(
+        self, user_id: str, invitation_id: str
+    ) -> dict[str, Any] | None:
+        """Evidence-specific invalidation hook (verdict Q2): a pending
+        invitation whose evidence is demonstrably superseded or
+        addressed expires early. This is EXPIRY, not a new status —
+        v1 has only pending | accepted | expired — and it must never
+        be driven by a topic change or by the user talking to another
+        seat (neither is evidence of resolution). Returns None for
+        missing, foreign, or non-pending rows.
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id FROM invitations WHERE user_id = ? AND id = ? "
+                "AND status = 'pending'",
+                (user_id, invitation_id),
+            ).fetchone()
+            if row is None:
+                return None
+            self._conn.execute(
+                "UPDATE invitations SET status = 'expired' "
+                "WHERE id = ? AND user_id = ?",
+                (invitation_id, user_id),
+            )
+            self._conn.commit()
+        return self.get_invitation(user_id, invitation_id)

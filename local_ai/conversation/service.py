@@ -118,8 +118,12 @@ class ConversationService:
         recent = self.store.history(user_id, conversation_id, limit=_HISTORY_FOR_REPLY + 1)
         # recent includes the just-stored user turn; the reply builder appends
         # the new user message itself, so hand it everything before it.
+        # Capability C S0: history_turns carry archetype_id so the reply
+        # builder can label voice turns by their ACTUAL speaker. The
+        # window is unchanged (last 10) — attribution, not more context.
         history_turns = [
-            {"role": m["role"], "content": m["body"]} for m in recent[:-1]
+            {"role": m["role"], "content": m["body"], "archetype_id": m.get("archetype_id")}
+            for m in recent[:-1]
         ][-_HISTORY_FOR_REPLY:]
 
         thread = self.store.get_thread_state(user_id, conversation_id, arch_id)
@@ -181,6 +185,20 @@ class ConversationService:
         )
 
         self._touch_thread(user_id, conversation_id, arch_id, voice_reply.display_name)
+
+        # Capability C S1: joining is a sent turn, never a tap. A
+        # completed turn addressed to an invited seat accepts that
+        # seat's pending invitation(s) for this conversation, recorded
+        # against the user message. Bookkeeping only — a failure here
+        # must never break the turn, and with no invitation pending
+        # this is a no-op, so one-on-one flows are unaffected.
+        # Question-mode turns count: the user sent a turn to the seat.
+        try:
+            self.store.accept_pending_for_seat(
+                user_id, conversation_id, arch_id, user_msg["id"]
+            )
+        except Exception:
+            logger.exception("invitations: accept-on-turn failed")
 
         result = TurnResult(
             user_message=user_msg,

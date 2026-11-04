@@ -22,6 +22,38 @@ export type ConversationMessage = {
   messageId?: string | null
 }
 
+/** Server message row → thread message. Shared by hydration and
+ *  load-earlier so both paths map identically. */
+function mapServerMessages(
+  rows: unknown,
+  names: Record<string, string>,
+): ConversationMessage[] {
+  const mapped: ConversationMessage[] = []
+  if (!Array.isArray(rows)) return mapped
+  for (const m of rows) {
+    if (!m || typeof m !== 'object') continue
+    const body = String((m as Record<string, unknown>).body ?? '').trim()
+    if (!body) continue
+    const role = (m as Record<string, unknown>).role === 'user' ? 'user' : 'voice'
+    const aid =
+      typeof (m as Record<string, unknown>).archetype_id === 'string'
+        ? ((m as Record<string, unknown>).archetype_id as string)
+        : null
+    mapped.push({
+      role,
+      content: body,
+      messageId:
+        typeof (m as Record<string, unknown>).id === 'string'
+          ? ((m as Record<string, unknown>).id as string)
+          : null,
+      voiceId: role === 'voice' ? aid : null,
+      voiceName: role === 'voice' ? names[aid ?? ''] ?? aid ?? undefined : undefined,
+      voiceColor: role === 'voice' && aid ? voiceColor(aid) : undefined,
+    })
+  }
+  return mapped
+}
+
 /** Session-scoped response ref for threads that live in component state
  *  only (no server message id exists there). The `local-` prefix never
  *  collides with server ids, which are bare hex. */
@@ -47,6 +79,9 @@ function newLocalRef(): string {
  * GET /conversation and each turn persists via POST /conversation/turn
  * (carrying the sheet's live `context`). Without it, the thread lives in
  * component state and sends go to POST /voice/chat with client history.
+ * Tree Talk (Slice A) always passes a `talk-` conversation id resolved
+ * through GET /conversation/list, so Tree threads are server-backed;
+ * the workspace console still mounts without one and keeps client history.
  *
  * - Sheet seat tab → pre-selected seat (character header rendered above by
  *   the sheet, from PR #147's merged Talk+Character tab).
@@ -135,57 +170,84 @@ export default function CouncilChat({
   // is the server's. Hydrate once per key; an empty store thread falls back
   // to seedMessages (folded-in open questions), then to initialMessages.
   // Seeds apply only while the user hasn't written yet — never clobbering.
+  //
+  // Send gating (Slice A, correction C2): send is disabled while
+  // hydrating, enabled on success or on a confirmed empty thread, and
+  // disabled on hydration failure until a SUCCESSFUL retry — never
+  // merely because the error was acknowledged. A failed hydration must
+  // never present as an empty thread, and a late response for a
+  // previous conversation must never overwrite the current one
+  // (request sequence + cleanup invalidation).
   const namesRef = useRef(names)
   namesRef.current = names
+  const conversationIdRef = useRef(conversationId)
+  conversationIdRef.current = conversationId
+  const hydrateSeqRef = useRef(0)
+  const sendSeqRef = useRef(0)
   const [storeEmpty, setStoreEmpty] = useState<boolean | null>(null)
+  const [hydrating, setHydrating] = useState(false)
+  const [hydrateError, setHydrateError] = useState(false)
+  const [hydrateNonce, setHydrateNonce] = useState(0)
+  const [totalMessages, setTotalMessages] = useState<number | null>(null)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
+  const [loadEarlierError, setLoadEarlierError] = useState(false)
   useEffect(() => {
     if (!conversationId) return
+    const seq = ++hydrateSeqRef.current
     let cancelled = false
+    // A new conversation starts from its own server thread, never from
+    // the previous conversation's displayed messages.
+    setMessages([])
     setStoreEmpty(null)
+    setHydrateError(false)
+    setSignedOut(false)
+    setHydrating(true)
+    setTotalMessages(null)
     fetch(
-      `${base}/conversation?conversation_id=${encodeURIComponent(conversationId)}&limit=50`,
+      `${base}/conversation?conversation_id=${encodeURIComponent(conversationId)}&limit=200`,
       { credentials: 'include' },
     )
-      .then((r) => (r.ok ? r.json() : null))
+      .then(async (r) => {
+        if (r.status === 401) return { auth: true as const }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return (await r.json()) as Record<string, unknown>
+      })
       .then((data) => {
-        if (cancelled) return
-        const rows = data && Array.isArray(data.messages) ? data.messages : []
-        const mapped: ConversationMessage[] = []
-        for (const m of rows) {
-          if (!m || typeof m !== 'object') continue
-          const body = String((m as Record<string, unknown>).body ?? '').trim()
-          if (!body) continue
-          const role = (m as Record<string, unknown>).role === 'user' ? 'user' : 'voice'
-          const aid =
-            typeof (m as Record<string, unknown>).archetype_id === 'string'
-              ? ((m as Record<string, unknown>).archetype_id as string)
-              : null
-          mapped.push({
-            role,
-            content: body,
-            messageId:
-              typeof (m as Record<string, unknown>).id === 'string'
-                ? ((m as Record<string, unknown>).id as string)
-                : null,
-            voiceId: role === 'voice' ? aid : null,
-            voiceName: role === 'voice' ? namesRef.current[aid ?? ''] ?? aid ?? undefined : undefined,
-            voiceColor: role === 'voice' && aid ? voiceColor(aid) : undefined,
-          })
+        if (cancelled || hydrateSeqRef.current !== seq) return
+        if ((data as { auth?: boolean }).auth) {
+          setSignedOut(true)
+          setHydrateError(true)
+          setHydrating(false)
+          return
         }
+        const mapped = mapServerMessages(
+          (data as { messages?: unknown }).messages,
+          namesRef.current,
+        )
         if (mapped.length > 0) {
           setMessages(mapped)
           setStoreEmpty(false)
         } else {
           setStoreEmpty(true)
         }
+        setTotalMessages(
+          typeof (data as { total?: unknown }).total === 'number'
+            ? ((data as { total: number }).total as number)
+            : null,
+        )
+        setHydrating(false)
       })
       .catch(() => {
-        if (!cancelled) setStoreEmpty(true)
+        if (cancelled || hydrateSeqRef.current !== seq) return
+        // Failure is NOT an empty thread: banner + retry, send stays
+        // disabled until a retry succeeds.
+        setHydrateError(true)
+        setHydrating(false)
       })
     return () => {
       cancelled = true
     }
-  }, [conversationId, base])
+  }, [conversationId, base, hydrateNonce])
 
   useEffect(() => {
     if (!conversationId || storeEmpty !== true) return
@@ -194,7 +256,38 @@ export default function CouncilChat({
     setMessages((prev) => (prev.length === 0 ? seedMessages : prev))
   }, [conversationId, storeEmpty, seedMessages, messages])
 
-  // External draft injection (what's-next chips): take the text, don't send.
+  /** Load earlier messages via the stable (created_at, id) cursor:
+   *  the oldest displayed server message. New arrivals can never
+   *  shift, duplicate, or skip rows in earlier pages; merges dedupe
+   *  by server id as a second guard. */
+  const loadEarlier = useCallback(async () => {
+    if (!conversationId || loadingEarlier) return
+    const oldest = messages.find((m) => m.messageId && !m.messageId.startsWith('local-'))
+    if (!oldest?.messageId) return
+    setLoadingEarlier(true)
+    setLoadEarlierError(false)
+    try {
+      const r = await fetch(
+        `${base}/conversation?conversation_id=${encodeURIComponent(conversationId)}&limit=200&before=${encodeURIComponent(oldest.messageId)}`,
+        { credentials: 'include' },
+      )
+      if (r.status === 401) {
+        setSignedOut(true)
+        return
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const data = (await r.json()) as Record<string, unknown>
+      const mapped = mapServerMessages(data.messages, namesRef.current)
+      const seen = new Set(messages.map((m) => m.messageId).filter(Boolean))
+      const fresh = mapped.filter((m) => !m.messageId || !seen.has(m.messageId))
+      setMessages((prev) => [...fresh, ...prev])
+      if (typeof data.total === 'number') setTotalMessages(data.total)
+    } catch {
+      setLoadEarlierError(true)
+    } finally {
+      setLoadingEarlier(false)
+    }
+  }, [conversationId, messages, loadingEarlier, base])
   const prefillNonce = prefill?.nonce ?? 0
   useEffect(() => {
     if (prefill && prefillNonce > 0) setInput(prefill.text)
@@ -237,6 +330,11 @@ export default function CouncilChat({
       if (r.status === 401) return 'auth'
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       const data = await r.json()
+      // The turn echoes its conversation_id: a reply for another thread
+      // must never land in this one.
+      if (useStore && data.conversation_id && data.conversation_id !== conversationId) {
+        throw new Error('conversation mismatch')
+      }
       return {
         role: 'voice',
         content: data.reply,
@@ -257,6 +355,15 @@ export default function CouncilChat({
     if (loading) return
     if (!councilMode && !activeId) return
     if (!text && !questionMode) return
+    // The Enter key path bypasses the disabled button: enforce the
+    // hydration gate here too — never send into a thread whose
+    // history hasn't loaded.
+    if (conversationId && (hydrating || hydrateError)) return
+    // A send must never target a stale conversation: capture the
+    // thread this send belongs to, and only append its results while
+    // the user is still on it.
+    const targetId = conversationIdRef.current
+    const seq = ++sendSeqRef.current
     setMessages((prev) => [...prev, { role: 'user', content: text }])
     setInput('')
     setLoading(true)
@@ -279,6 +386,7 @@ export default function CouncilChat({
             }
           }),
         )
+        if (conversationIdRef.current !== targetId) return
         if (results.every((x) => x === 'auth')) {
           setSignedOut(true)
           setMessages((prev) => prev.slice(0, -1))
@@ -290,6 +398,7 @@ export default function CouncilChat({
         ])
       } else if (activeId) {
         const reply = await askSeat(activeId, text)
+        if (conversationIdRef.current !== targetId) return
         if (reply === 'auth') {
           setSignedOut(true)
           setMessages((prev) => prev.slice(0, -1))
@@ -298,6 +407,7 @@ export default function CouncilChat({
         setMessages((prev) => [...prev, reply])
       }
     } catch {
+      if (conversationIdRef.current !== targetId) return
       if (!councilMode && activeId) {
         setMessages((prev) => [
           ...prev,
@@ -310,11 +420,15 @@ export default function CouncilChat({
         ])
       }
     } finally {
-      setLoading(false)
+      if (sendSeqRef.current === seq) setLoading(false)
     }
-  }, [input, loading, activeId, councilMode, askSeat, activeName, names])
+  }, [input, loading, activeId, councilMode, askSeat, activeName, names, conversationId, hydrating, hydrateError])
 
-  const sendDisabled = loading || (!activeId && !councilMode) || (!input.trim() && !questionMode)
+  const sendDisabled =
+    loading ||
+    (!activeId && !councilMode) ||
+    (!input.trim() && !questionMode) ||
+    (conversationId ? hydrating || hydrateError : false)
 
   return (
     <div className="flex flex-col gap-3" data-conversation={conversationKey}>
@@ -406,6 +520,24 @@ export default function CouncilChat({
         </div>
       )}
 
+      {/* Hydration failure is not an empty thread: banner + retry, and
+       *  send stays disabled until a retry succeeds. */}
+      {conversationId && hydrateError && (
+        <div className="rounded-2xl border border-red-800/60 bg-red-950/30 px-3 py-2 text-sm text-red-200">
+          Couldn&apos;t load this conversation — sending is disabled until it loads.
+          <button
+            type="button"
+            onClick={() => setHydrateNonce((n) => n + 1)}
+            className="ml-2 underline font-medium"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {conversationId && hydrating && (
+        <p className="text-xs text-stone-500">Loading conversation…</p>
+      )}
+
       {/* The persistent thread. */}
       <div
         className={`${
@@ -413,6 +545,26 @@ export default function CouncilChat({
         } overflow-y-auto space-y-2`}
         aria-live="polite"
       >
+        {conversationId &&
+          totalMessages !== null &&
+          messages.length < totalMessages &&
+          !hydrating && (
+            <div className="px-1 py-1">
+              <button
+                type="button"
+                onClick={loadEarlier}
+                disabled={loadingEarlier}
+                className="text-xs text-stone-400 underline disabled:opacity-40"
+              >
+                {loadingEarlier ? 'Loading earlier…' : 'Load earlier messages'}
+              </button>
+              {loadEarlierError && (
+                <span className="text-xs text-red-300 ml-2">
+                  Couldn&apos;t load earlier messages — try again.
+                </span>
+              )}
+            </div>
+          )}
         {!activeId && !councilMode && (
           <p className="text-sm text-stone-400 leading-relaxed px-1 py-2">
             Pick a voice above to begin — one conversation, tap a seat to

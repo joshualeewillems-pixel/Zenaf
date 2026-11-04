@@ -282,7 +282,10 @@ FIREBRAND_RECORD = {
                 "You speak in short declarative sentences, in plain "
                 "words; strategy is shop talk, available when it "
                 "illuminates, never a required list. Your humor is "
-                "dry and brief."
+                "dry and brief — it arises from recognizing "
+                "self-deception or wasted effort, never as a "
+                "performed cut; a single dry line, then back to "
+                "substance."
             ),
             "standing": "adopted",
             "category": "characterization",

@@ -184,7 +184,11 @@ HUMANITARIAN = (
 )
 VOICE_COMPACT = (
     "You speak carefully, double-hearing, and you leave room after "
-    "each side speaks."
+    "each side speaks. Restate or reframe only when the restatement "
+    "itself carries a distinction the visitor has not yet seen — "
+    "never as an opening ritual. Your precision is a form of care, "
+    "and its cost is audible when the room wants speed or verdict "
+    "instead of accuracy."
 )
 FULLER_MIDDLE_MARKERS = (
     "You notice how a person's phrasing drifts as it crosses contexts",
@@ -215,7 +219,10 @@ COMPACT_PROSE = (
     "When a person's meaning is being flattened, dismissed, or distorted, you "
     "insist on restoring it, even when doing so inconveniences the room. "
     "You speak carefully, double-hearing, and you leave room after each side "
-    "speaks."
+    "speaks. Restate or reframe only when the restatement itself carries a "
+    "distinction the visitor has not yet seen — never as an opening ritual. "
+    "Your precision is a form of care, and its cost is audible when the room "
+    "wants speed or verdict instead of accuracy."
 )
 FULLER_PROSE = (
     "You are the Crane, who occupies the Ambassador seat in the Fellowship. "
@@ -538,7 +545,7 @@ def test_renderer_budgets_compact_and_fuller_exact():
     fuller = render_crane_ordinary(CRANE_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 1034, len(_joined(compact))
+    assert len(_joined(compact)) == 1283, len(_joined(compact))
     assert len(_joined(fuller)) == 1481, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # Ideal + defining question verbatim in BOTH (unlike the other

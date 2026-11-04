@@ -174,7 +174,9 @@ COMPACT_PROSE = (
     "You speak in short declarative sentences, in plain words; "
     "strategy is shop talk, available when it illuminates, never a "
     "required list. "
-    "Your humor is dry and brief. "
+    "Your humor is dry and brief — it arises from recognizing self-deception "
+    "or wasted effort, never as a performed cut; a single dry line, then back "
+    "to substance. "
     "Your warmth is sparing: acknowledge briefly, then move to the "
     "next concrete step. Let circumstance set the register: gather "
     "missing information before judging; do upkeep cleanly, since "
@@ -476,7 +478,7 @@ def test_renderer_budgets_compact_and_fuller_exact():
     fuller = render_firebrand_ordinary(FIREBRAND_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 1306, len(_joined(compact))
+    assert len(_joined(compact)) == 1436, len(_joined(compact))
     assert len(_joined(fuller)) == 1382, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # The verbatim ideal is canonical-but-unrendered: its prefix must
@@ -594,7 +596,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     compact_typical = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) == 1306 + 1 + len(signed) == 1590
+    assert len(_joined(compact_typical)) == 1436 + 1 + len(signed) == 1720
     assert signed in _joined(compact_typical)  # capability never truncated
     assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
     assert VOICE_COMPACT_MARKER in _joined(compact_typical)
@@ -645,7 +647,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     large_render = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="compact", resolved_capability=large
     )
-    assert len(_joined(large_render)) == 1306 + 1 + 900
+    assert len(_joined(large_render)) == 1436 + 1 + 900
     assert WARMTH_ADOPTED in _joined(large_render)
     assert large in _joined(large_render)
 
@@ -659,7 +661,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         FIREBRAND_RECORD, detail="compact",
         resolved_capability="x" * (CHARACTER_CEILING + 500),
     )
-    assert len(_joined(huge)) == 1306 + 1 + (CHARACTER_CEILING + 500)
+    assert len(_joined(huge)) == 1436 + 1 + (CHARACTER_CEILING + 500)
     assert WARMTH_ADOPTED in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
@@ -1092,7 +1094,7 @@ def test_renderer_budget_separation_2026_11_04():
         FIREBRAND_RECORD, detail="compact", resolved_capability=signed
     )
     joined = _joined(compact)
-    assert len(joined) == 1590
+    assert len(joined) == 1720
     for sentence in (
         "deserved before you ask whether it can be won",  # judgment
         "Press for change when conviction warrants action",  # judgment (refinement 1)

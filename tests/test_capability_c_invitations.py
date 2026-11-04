@@ -21,6 +21,8 @@ service tests use a fake generate_fn.
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -241,5 +243,119 @@ def test_turn_does_not_accept_expired_invitation(tmp_path):
     svc.turn("u1", "guardian", "hello there", conversation_id="talk-1")
     after = store.get_invitation("u1", inv["id"])
     assert after["status"] == "expired"
+    assert after["accepted_message_id"] is None
+    store.close()
+
+
+# -- clear expires pending invitations (founder PR #315 item 1) -----------------
+
+
+def test_clear_conversation_expires_pending_but_keeps_history(tmp_path):
+    """Clearing expires pending invitations for that (user, conversation)
+    — history preserved as 'expired', never deleted — and leaves
+    accepted history and other users/conversations untouched."""
+    store = _store(tmp_path)
+    pending = _create(store, seat="guardian")
+    accepted = _create(store, seat="conductor")
+    store.accept_invitation("u1", accepted["id"], "msg-1")
+    other_conv = _create(store, conv="talk-2", seat="guardian")
+    other_user = _create(store, user="u2", seat="guardian")
+    store.clear_conversation("u1", "talk-1")
+    # Nothing actionable for the cleared conversation...
+    assert store.list_pending_invitations("u1", "talk-1") == []
+    # ...but the row survives as expired history, not deleted.
+    row = store.get_invitation("u1", pending["id"])
+    assert row is not None
+    assert row["status"] == "expired"
+    assert row["accepted_message_id"] is None
+    # Accepted history is untouched.
+    assert store.get_invitation("u1", accepted["id"])["status"] == "accepted"
+    # Other conversations and other users are untouched.
+    assert store.get_invitation("u1", other_conv["id"])["status"] == "pending"
+    assert store.get_invitation("u2", other_user["id"])["status"] == "pending"
+    assert len(store.list_pending_invitations("u1", "talk-2")) == 1
+    store.close()
+
+
+def test_turn_after_clear_does_not_accept_cleared_invitation(tmp_path):
+    """A cleared conversation cannot produce an actionable invitation
+    afterward: even a turn to the invited seat leaves the cleared row
+    expired, never accepted."""
+    store = _store(tmp_path)
+    inv = _create(store)
+    store.clear_conversation("u1", "talk-1")
+    svc = ConversationService(store, generate_fn=_fake_generate)
+    svc.turn("u1", "guardian", "hello there", conversation_id="talk-1")
+    after = store.get_invitation("u1", inv["id"])
+    assert after["status"] == "expired"
+    assert after["accepted_message_id"] is None
+    store.close()
+
+
+# -- accept bookkeeping failure stays diagnosable (founder PR #315 addendum) ----
+
+
+def test_turn_survives_accept_bookkeeping_failure_and_stays_pending(
+    tmp_path, monkeypatch, caplog
+):
+    """The turn path guards accept bookkeeping: a persistent store
+    failure must not break the turn, must not falsely accept the
+    invitation, and must leave a diagnosable exception record."""
+    store = _store(tmp_path)
+    inv = _create(store)
+    svc = ConversationService(store, generate_fn=_fake_generate)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated persistent store failure")
+
+    monkeypatch.setattr(store, "accept_pending_for_seat", _boom)
+    with caplog.at_level(logging.ERROR, logger="local_ai.conversation.service"):
+        result = svc.turn("u1", "guardian", "hello there", conversation_id="talk-1")
+    assert result.user_message is not None
+    assert result.assistant_message is not None
+    after = store.get_invitation("u1", inv["id"])
+    assert after["status"] == "pending"
+    assert after["accepted_message_id"] is None
+    assert any(
+        r.name == "local_ai.conversation.service"
+        and "accept-on-turn failed" in r.getMessage()
+        and r.exc_info is not None
+        for r in caplog.records
+    )
+    store.close()
+
+
+def test_accept_rolls_back_when_commit_fails(tmp_path):
+    """Atomicity: if the commit fails after the UPDATEs are staged, the
+    row must still read pending — never half-accepted. The store
+    rolls back on failure instead of leaving a dangling transaction
+    that same-connection reads would mistake for accepted."""
+    store = _store(tmp_path)
+    inv = _create(store)
+    real_conn = store._conn
+
+    class _FailingCommit:
+        """Proxy that delegates everything except commit, which fails."""
+
+        def __init__(self, real):
+            self._real = real
+
+        def execute(self, *args, **kwargs):
+            return self._real.execute(*args, **kwargs)
+
+        def commit(self):
+            raise sqlite3.OperationalError("simulated commit failure")
+
+        def __getattr__(self, name):
+            return getattr(self._real, name)
+
+    store._conn = _FailingCommit(real_conn)
+    try:
+        with pytest.raises(sqlite3.OperationalError):
+            store.accept_pending_for_seat("u1", "talk-1", "guardian", "msg-1")
+    finally:
+        store._conn = real_conn
+    after = store.get_invitation("u1", inv["id"])
+    assert after["status"] == "pending"
     assert after["accepted_message_id"] is None
     store.close()

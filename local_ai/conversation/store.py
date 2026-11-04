@@ -425,7 +425,12 @@ class ConversationStore:
         meeting store before this runs; only then is the live
         conversation cleared. Clearing deletes EVERY message row for
         the conversation, including any row not in the archive — never
-        call this unless completeness has been verified."""
+        call this unless completeness has been verified.
+
+        Capability C S1: pending invitations for the conversation are
+        EXPIRED, not deleted — history is preserved, but nothing the
+        clear leaves behind stays actionable. Accepted rows are already
+        history and stay as-is."""
         with self._lock:
             self._conn.execute(
                 "DELETE FROM messages WHERE user_id = ? AND conversation_id = ?",
@@ -437,6 +442,11 @@ class ConversationStore:
             )
             self._conn.execute(
                 "DELETE FROM suggestion_runs WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            )
+            self._conn.execute(
+                "UPDATE invitations SET status = 'expired' "
+                "WHERE user_id = ? AND conversation_id = ? AND status = 'pending'",
                 (user_id, conversation_id),
             )
             self._conn.commit()
@@ -743,6 +753,13 @@ class ConversationStore:
         is defensive, not a second path. Called by the turn path after
         a completed turn — never by tap/open. Returns the accepted rows
         (empty when nothing was pending).
+
+        Atomicity: the UPDATEs and the commit are one unit. On any
+        failure the transaction is rolled back before re-raising, so a
+        commit failure can never leave a half-accepted row visible to
+        later same-connection reads (which would mistake staged,
+        uncommitted UPDATEs for a real acceptance). The turn-path guard
+        logs the re-raised failure; the invitation stays pending.
         """
         now = _utcnow()
         seat = (seat or "").strip().lower()
@@ -752,13 +769,17 @@ class ConversationStore:
                 "AND seat = ? AND status = 'pending' AND expires_at > ?",
                 (user_id, conversation_id, seat, now),
             ).fetchall()
-            for r in rows:
-                self._conn.execute(
-                    "UPDATE invitations SET status = 'accepted', "
-                    "accepted_message_id = ? WHERE id = ? AND user_id = ?",
-                    (message_id, r["id"], user_id),
-                )
-            self._conn.commit()
+            try:
+                for r in rows:
+                    self._conn.execute(
+                        "UPDATE invitations SET status = 'accepted', "
+                        "accepted_message_id = ? WHERE id = ? AND user_id = ?",
+                        (message_id, r["id"], user_id),
+                    )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
             ids = [r["id"] for r in rows]
         return [self.get_invitation(user_id, i) for i in ids]  # type: ignore[misc]
 

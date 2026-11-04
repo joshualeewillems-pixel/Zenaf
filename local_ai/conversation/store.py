@@ -79,6 +79,30 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _message_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
+    """Message rows to API dicts, oldest-first. Shared by history readers."""
+    out: list[dict[str, Any]] = []
+    for r in reversed(rows):
+        try:
+            context = json.loads(r["context_json"] or "{}")
+        except Exception:
+            context = {}
+        out.append(
+            {
+                "id": r["id"],
+                "user_id": r["user_id"],
+                "conversation_id": r["conversation_id"],
+                "archetype_id": r["archetype_id"],
+                "role": r["role"],
+                "body": r["body"],
+                "mode": r["mode"],
+                "context": context,
+                "created_at": r["created_at"],
+            }
+        )
+    return out
+
+
 class ConversationStore:
     """SQLite-backed store for the conversation skeleton."""
 
@@ -181,26 +205,7 @@ class ConversationStore:
                 "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
                 (user_id, conversation_id, limit, offset),
             ).fetchall()
-        out: list[dict[str, Any]] = []
-        for r in reversed(rows):
-            try:
-                context = json.loads(r["context_json"] or "{}")
-            except Exception:
-                context = {}
-            out.append(
-                {
-                    "id": r["id"],
-                    "user_id": r["user_id"],
-                    "conversation_id": r["conversation_id"],
-                    "archetype_id": r["archetype_id"],
-                    "role": r["role"],
-                    "body": r["body"],
-                    "mode": r["mode"],
-                    "context": context,
-                    "created_at": r["created_at"],
-                }
-            )
-        return out
+        return _message_dicts(rows)
 
     def count_messages(self, user_id: str, conversation_id: str) -> int:
         """Count of live message rows for one user conversation. Read-only."""
@@ -210,6 +215,119 @@ class ConversationStore:
                 (user_id, conversation_id),
             ).fetchone()
         return int(row[0]) if row else 0
+
+    def list_conversations(
+        self, user_id: str, limit: int = 20
+    ) -> list[dict[str, Any]]:
+        """Talk conversations for one user, newest message activity first.
+
+        Discovery only: the ``seats`` array is derived from message rows
+        (distinct archetype_id values) so the client can resume a talk a
+        seat has already spoken in. It is NOT a participation or
+        authorization record — no invite, join, or membership state is
+        implied by it, and no participant table exists. Every aggregate
+        and preview subquery below carries the same user_id predicate
+        as the outer query, so another user's rows can never match.
+
+        Ordering uses the latest message time, NOT conversations
+        .updated_at: ensure_conversation refreshes updated_at on every
+        read and write, so it records last touch, not last message.
+        The query is driven by message rows (not the conversations
+        table) so a talk with messages is discoverable even if its
+        conversation row was never ensured; zero-message rows are
+        excluded by construction, since hydration-on-mount creates a
+        row before anything is sent and such rows are not
+        conversations the user can rediscover.
+        """
+        limit = max(1, min(int(limit or 20), 100))
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT m.conversation_id, c.kind, c.created_at, c.updated_at, "
+                "COUNT(*) AS message_count, "
+                "MAX(m.created_at) AS last_message_at, "
+                "(SELECT m2.body FROM messages m2 WHERE m2.user_id = m.user_id "
+                "AND m2.conversation_id = m.conversation_id "
+                "ORDER BY m2.created_at DESC, m2.id DESC LIMIT 1) AS last_message_preview "
+                "FROM messages m LEFT JOIN conversations c "
+                "ON c.user_id = m.user_id AND c.conversation_id = m.conversation_id "
+                "WHERE m.user_id = ? AND m.conversation_id LIKE 'talk-%' "
+                "GROUP BY m.conversation_id "
+                "ORDER BY last_message_at DESC, m.conversation_id ASC LIMIT ?",
+                (user_id, limit),
+            ).fetchall()
+            seat_rows = self._conn.execute(
+                "SELECT m.conversation_id, m.archetype_id, MIN(m.created_at) AS first_seen "
+                "FROM messages m WHERE m.user_id = ? AND m.archetype_id IS NOT NULL "
+                "AND m.conversation_id LIKE 'talk-%' "
+                "GROUP BY m.conversation_id, m.archetype_id "
+                "ORDER BY m.conversation_id, first_seen",
+                (user_id,),
+            ).fetchall()
+        seats: dict[str, list[str]] = {}
+        for r in seat_rows:
+            seats.setdefault(r["conversation_id"], []).append(r["archetype_id"])
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            out.append(
+                {
+                    "conversation_id": r["conversation_id"],
+                    "kind": r["kind"],
+                    "created_at": r["created_at"],
+                    "updated_at": r["updated_at"],
+                    "message_count": int(r["message_count"]),
+                    "seats": seats.get(r["conversation_id"], []),
+                    "last_message_at": r["last_message_at"],
+                    "last_message_preview": r["last_message_preview"],
+                }
+            )
+        return out
+
+    def history_before(
+        self,
+        user_id: str,
+        conversation_id: str = "skeleton",
+        before_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Messages strictly older than the cursor message, oldest-first.
+
+        Stable snapshot boundary for "load earlier" paging: the cursor
+        is the (created_at, id) pair of the oldest message the client
+        already shows. Message ids are random hex and carry no
+        ordering, so the id alone cannot be the boundary — but the
+        pair is unique (ids are unique) and immune to new arrivals:
+        appended messages have newer timestamps and can never shift,
+        duplicate, or skip rows in earlier pages. An unknown cursor —
+        including one from another user or conversation, since the
+        lookup is scoped — fails closed to an empty page.
+        """
+        limit = max(1, min(int(limit or 50), 200))
+        if not before_id:
+            return []
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT created_at, id FROM messages WHERE user_id = ? "
+                "AND conversation_id = ? AND id = ?",
+                (user_id, conversation_id, before_id),
+            ).fetchone()
+            if cur is None:
+                return []
+            rows = self._conn.execute(
+                "SELECT id, user_id, conversation_id, archetype_id, role, body, "
+                "mode, context_json, created_at FROM messages "
+                "WHERE user_id = ? AND conversation_id = ? "
+                "AND (created_at < ? OR (created_at = ? AND id < ?)) "
+                "ORDER BY created_at DESC, id DESC LIMIT ?",
+                (
+                    user_id,
+                    conversation_id,
+                    cur["created_at"],
+                    cur["created_at"],
+                    cur["id"],
+                    limit,
+                ),
+            ).fetchall()
+        return _message_dicts(rows)
 
     def message_ids(self, user_id: str, conversation_id: str) -> list[str]:
         """Live message ids in original order. Read-only, ids only."""

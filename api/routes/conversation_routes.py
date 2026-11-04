@@ -135,19 +135,55 @@ def conversation_turn(
     )
 
 
+@router.get("/list")
+def list_conversations(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """List the caller's talk conversations, newest message activity first.
+
+    Discovery only: the ``seats`` array in each entry is derived from
+    message rows (seats that have already spoken in the conversation)
+    so the client can resume a talk. It is NOT a participation or
+    authorization record — no invite, join, or membership state is
+    implied, and no participant table exists. Every aggregate and
+    preview subquery carries the caller's user_id predicate, so
+    another user's rows can never match.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    return {"conversations": _store().list_conversations(user_id, limit=limit)}
+
+
 @router.get("")
 def get_conversation(
     conversation_id: str = Query(default="skeleton", max_length=64),
     limit: int = Query(default=50, ge=1, le=200),
+    before: str | None = Query(default=None, max_length=64),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    """Hydrate the ongoing conversation (oldest first)."""
+    """Hydrate the ongoing conversation (oldest first).
+
+    ``before`` is a stable paging cursor: the id of the oldest message
+    the client already shows. When present, the response holds only
+    messages strictly older than that message's (created_at, id) pair,
+    so messages appended after the snapshot can never shift, duplicate,
+    or skip rows in earlier pages. An unknown cursor — including one
+    from another user or conversation — returns an empty page.
+    ``total`` is the live message count for the conversation.
+    """
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
     cid = (conversation_id or "skeleton").strip() or "skeleton"
-    messages = _service().history(user_id, cid, limit=limit)
-    return {"conversation_id": cid, "messages": messages}
+    svc = _service()
+    if before:
+        messages = svc.history_before(user_id, cid, before_id=before, limit=limit)
+    else:
+        messages = svc.history(user_id, cid, limit=limit)
+    total = svc.store.count_messages(user_id, cid)
+    return {"conversation_id": cid, "messages": messages, "total": total}
 
 
 # ---------------------------------------------------------------------------

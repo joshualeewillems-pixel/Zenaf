@@ -222,6 +222,20 @@ class ConversationService:
         self.store.ensure_conversation(user_id, conversation_id)
         return self.store.history(user_id, conversation_id, limit=limit)
 
+    def history_before(
+        self,
+        user_id: str,
+        conversation_id: str = "skeleton",
+        before_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        # No ensure_conversation here: a cursor page is only meaningful
+        # for an existing thread, and an unknown cursor must stay an
+        # empty page (fail-closed) rather than creating a row.
+        return self.store.history_before(
+            user_id, conversation_id, before_id=before_id, limit=limit
+        )
+
     def thread_state(
         self, user_id: str, conversation_id: str, archetype_id: str
     ) -> dict[str, Any]:

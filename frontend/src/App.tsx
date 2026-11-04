@@ -176,7 +176,7 @@ import { ContentFrontDoor } from './content'
 import AgentIntakeView from './agent-intake/AgentIntakeView'
 import ReviewView from './agent-intake/ReviewView'
 import TodayView from './today/TodayView'
-import CouncilChat from './chat/CouncilChat'
+import TreeTalkSheet from './chat/TreeTalkSheet'
 import SignalReviewView from './presence-review/SignalReviewView'
 import type { VeRadarBucketId } from './vision-execution/veRadarAwareness'
 import { DomainProvider } from './domain/DomainContext'
@@ -5008,19 +5008,20 @@ function App() {
       ) : null
     }
     if (item === 'talk') {
-      // The unified 1:1 conversation. Seat sheets pre-select the seat (the
-      // character header is rendered above by the tree, PR #147); the
-      // you-node offers the chips with no pre-selection — one persistent
-      // conversation, tap a seat to branch it.
+      // Durable Tree Talk (Slice A): the sheet always mounts a
+      // server-backed conversation. A seat sheet auto-resumes the most
+      // recent conversation involving that seat (or holds a fresh
+      // talk- id); the you-node is the rediscovery surface (recent
+      // talks + Start new). No client-history fallback from the Tree:
+      // if the list cannot be fetched, the sheet shows an error.
       return node.kind === 'seat' ? (
-        <CouncilChat
+        <TreeTalkSheet
           key={`talk-${node.seatKey}`}
-          environment="sheet"
-          initialArchetypeId={node.seatKey}
+          seatKey={node.seatKey}
           displayName={node.fellowshipName}
         />
       ) : (
-        <CouncilChat key="talk-you" environment="sheet" />
+        <TreeTalkSheet key="talk-you" seatKey={null} />
       )
     }
     if (node.kind !== 'you') return null

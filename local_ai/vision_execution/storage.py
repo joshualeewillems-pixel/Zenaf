@@ -325,6 +325,24 @@ def _migrate_keystone_columns(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_tasks_timeframe_commitment(conn: sqlite3.Connection) -> None:
+    """Add timeframe_commitment to tasks if missing (existing DBs).
+
+    NULL = unspecified (the default for every pre-existing row — nothing
+    is retroactively tentative). The only other accepted value is
+    "tentative"; enforcement lives in create_task / update_task, not
+    in the column, so the migration stays a plain nullable TEXT column
+    in the repo's PRAGMA-checked ALTER TABLE pattern.
+    """
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'")
+    if cur.fetchone() is None:
+        return
+    info = conn.execute("PRAGMA table_info(tasks)")
+    if not any(r[1] == "timeframe_commitment" for r in info.fetchall()):
+        conn.execute("ALTER TABLE tasks ADD COLUMN timeframe_commitment TEXT")
+    conn.commit()
+
+
 def _migrate_checklist_person_asset_columns(conn: sqlite3.Connection) -> None:
     """Add person_id / asset_id to checklist_items if missing (existing DBs)."""
     cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='checklist_items'")
@@ -959,6 +977,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_aspiration_tables(conn)
     _migrate_strand_weightings_table(conn)
     _migrate_keystone_columns(conn)
+    _migrate_tasks_timeframe_commitment(conn)
+    _migrate_task_proposals(conn)
     _ensure_default_owner_and_backfill(conn)
     conn.commit()
 
@@ -4681,51 +4701,76 @@ def delete_project(project_id: str, user_id: str) -> bool:
 
 # --- Tasks ---
 
+def _timeframe_filter_clause(column: str, value: str | None) -> tuple[str, tuple]:
+    """SQL fragment + params for the timeframe_commitment list filter.
+
+    None = no filter (all tasks). "tentative" = tentative only.
+    "unspecified" = NULL rows only. Anything else is a caller error:
+    absent and "unspecified" are different filters and must not be
+    conflated, and no other value exists in the closed value set.
+    """
+    if value is None:
+        return "", ()
+    if value == "tentative":
+        return f" AND {column} = ?", ("tentative",)
+    if value == "unspecified":
+        return f" AND {column} IS NULL", ()
+    raise ValueError(f"Invalid timeframe_commitment filter: {value!r}")
+
+
 def list_tasks(
     user_id: str | None = None,
     project_id: str | None = None,
     initiative_id: str | None = None,
+    timeframe_commitment: str | None = None,
 ) -> list[dict[str, Any]]:
     conn = get_connection()
     if initiative_id and user_id is not None:
+        frag, fparams = _timeframe_filter_clause("t.timeframe_commitment", timeframe_commitment)
         cur = conn.execute(
             """
             SELECT t.id, t.project_id, t.parent_task_id, t.title, t.description, t.assignee_id, t.status, t.priority,
-            t.estimated_hours, t.due_date, t.dependency_ids, t.required_asset_ids, t.completion_criteria, t.notes, t.created_at, t.updated_at, t.seat_ref
+            t.estimated_hours, t.due_date, t.dependency_ids, t.required_asset_ids, t.completion_criteria, t.notes, t.created_at, t.updated_at, t.seat_ref, t.timeframe_commitment
             FROM tasks t
             INNER JOIN projects p ON p.id = t.project_id AND p.user_id = t.user_id
-            WHERE p.initiative_id = ? AND t.user_id = ?
+            WHERE p.initiative_id = ? AND t.user_id = ?""" + frag + """
             ORDER BY t.updated_at DESC
             """,
-            (initiative_id, user_id),
+            (initiative_id, user_id) + fparams,
         )
         return [M.row_to_task(tuple(r)) for r in cur.fetchall()]
     if project_id and user_id is not None:
+        frag, fparams = _timeframe_filter_clause("timeframe_commitment", timeframe_commitment)
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
-            "FROM tasks WHERE project_id = ? AND user_id = ? ORDER BY updated_at DESC",
-            (project_id, user_id),
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "FROM tasks WHERE project_id = ? AND user_id = ?" + frag + " ORDER BY updated_at DESC",
+            (project_id, user_id) + fparams,
         )
     elif project_id:
+        frag, fparams = _timeframe_filter_clause("timeframe_commitment", timeframe_commitment)
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
-            "FROM tasks WHERE project_id = ? ORDER BY updated_at DESC",
-            (project_id,),
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "FROM tasks WHERE project_id = ?" + frag + " ORDER BY updated_at DESC",
+            (project_id,) + fparams,
         )
     elif user_id is not None:
+        frag, fparams = _timeframe_filter_clause("timeframe_commitment", timeframe_commitment)
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
-            "FROM tasks WHERE user_id = ? ORDER BY updated_at DESC",
-            (user_id,),
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "FROM tasks WHERE user_id = ?" + frag + " ORDER BY updated_at DESC",
+            (user_id,) + fparams,
         )
     else:
+        frag, fparams = _timeframe_filter_clause("timeframe_commitment", timeframe_commitment)
+        where = (" WHERE " + frag[5:]) if frag else ""
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
-            "FROM tasks ORDER BY updated_at DESC"
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "FROM tasks" + where + " ORDER BY updated_at DESC",
+            fparams,
         )
     return [M.row_to_task(tuple(r)) for r in cur.fetchall()]
 
@@ -4735,14 +4780,14 @@ def get_task(task_id: str, user_id: str | None = None) -> dict[str, Any] | None:
     if user_id is None:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
             "FROM tasks WHERE id = ?",
             (task_id,),
         )
     else:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
             "FROM tasks WHERE id = ? AND user_id = ?",
             (task_id, user_id),
         )
@@ -4750,10 +4795,24 @@ def get_task(task_id: str, user_id: str | None = None) -> dict[str, Any] | None:
     return M.row_to_task(tuple(row)) if row else None
 
 
-def create_task(data: M.TaskCreate, user_id: str) -> dict[str, Any]:
-    conn = get_connection()
-    tid = M.new_id()
-    now = _now()
+def _validate_timeframe_commitment(value: str | None) -> None:
+    """Closed value set for the timeframe dimension: None (unspecified)
+    or "tentative". Anything else is rejected, never stored — a new
+    dimension stays a dimension only if its value set stays closed."""
+    if value is not None and value != "tentative":
+        raise ValueError(
+            f"Invalid timeframe_commitment: {value!r} (expected null or 'tentative')"
+        )
+
+
+def _insert_task(conn: sqlite3.Connection, data: M.TaskCreate, user_id: str) -> str:
+    """Validate + INSERT one task row. No commit, no read-back, no log.
+
+    Shared by create_task and approve_task_proposal so the approve path
+    reuses the exact write path instead of duplicating validation or
+    SQL. Callers commit (or roll back) and do read-back + logging.
+    """
+    _validate_timeframe_commitment(data.timeframe_commitment)
     if data.project_id:
         _ensure_owned_reference(
             conn,
@@ -4769,18 +4828,26 @@ def create_task(data: M.TaskCreate, user_id: str) -> dict[str, Any]:
         user_id=user_id,
         field_name="parent_task_id",
     )
+    tid = M.new_id()
+    now = _now()
     conn.execute(
         """INSERT INTO tasks (
           id, user_id, project_id, parent_task_id, title, description, assignee_id, status, priority,
-          estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, seat_ref, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+          estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, seat_ref, timeframe_commitment, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             tid, user_id, data.project_id, data.parent_task_id, data.title, data.description, data.assignee_id,
             data.status, data.priority, data.estimated_hours, data.due_date,
             M._json_dumps_list(data.dependency_ids), M._json_dumps_list(data.required_asset_ids),
-            data.completion_criteria, data.notes, data.seat_ref, now, now,
+            data.completion_criteria, data.notes, data.seat_ref, data.timeframe_commitment, now, now,
         ),
     )
+    return tid
+
+
+def create_task(data: M.TaskCreate, user_id: str) -> dict[str, Any]:
+    conn = get_connection()
+    tid = _insert_task(conn, data, user_id)
     conn.commit()
     out = get_task(tid, user_id) or {}
     _log_ve_entity_activity(
@@ -4794,6 +4861,453 @@ def create_task(data: M.TaskCreate, user_id: str) -> dict[str, Any]:
     return out
 
 
+# --- Seat task proposals (Firebrand task-context, server-owned) -----------
+#
+# A model proposes; a user authorizes; the application executes. The
+# proposal record is the durable transaction record — never the reply
+# text, never mutable task notes. C1 provenance (revision review
+# 2026-11-03): recording verifies the source message belongs to the
+# caller's conversation, is an assistant message attributed to
+# champion, and contains the identified block, and the submitted
+# proposal must match that block. C3: PATCH / decline / approve are
+# conditional on state='pending' under the same transactional
+# discipline, so no transition can silently race another.
+
+
+class ProposalNotFound(Exception):
+    """Proposal missing or foreign. Routes map this to 404, never a leak."""
+
+
+class ProposalConflict(Exception):
+    """Proposal in a terminal state for the requested transition. Routes
+    map this to 409; nothing changes."""
+
+
+_PROPOSAL_FENCE_RE = re.compile(r"```task-proposal\s*\n(.*?)```", re.DOTALL)
+_PROPOSAL_STATES = ("pending", "approved", "declined")
+_PROPOSAL_COLUMNS = (
+    "id, user_id, conversation_id, source_message_id, block_index, proposal_index, "
+    "seat, title, parent_task_id, timeframe_commitment, due_date, notes, state, "
+    "created_task_id, created_at, updated_at, decided_at"
+)
+
+
+def _migrate_task_proposals(conn: sqlite3.Connection) -> None:
+    """Create the task_proposals table if missing (fresh and existing DBs).
+
+    The UNIQUE triple is the re-attachment identity: re-recording the
+    same triple is idempotent and must never overwrite stored contents
+    (an edit or terminal decision survives re-recording).
+    """
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS task_proposals (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          conversation_id TEXT NOT NULL,
+          source_message_id TEXT NOT NULL,
+          block_index INTEGER NOT NULL,
+          proposal_index INTEGER NOT NULL,
+          seat TEXT NOT NULL,
+          title TEXT NOT NULL,
+          parent_task_id TEXT,
+          timeframe_commitment TEXT,
+          due_date TEXT,
+          notes TEXT NOT NULL DEFAULT '',
+          state TEXT NOT NULL DEFAULT 'pending',
+          created_task_id TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          decided_at TEXT,
+          UNIQUE(user_id, source_message_id, block_index, proposal_index)
+        )"""
+    )
+    conn.commit()
+
+
+def _parse_task_proposal_blocks(body: str | None) -> list[list[dict[str, Any]] | None]:
+    """Parse fenced ```task-proposal blocks from reply text, in order.
+
+    One entry per block: a list of raw proposal objects, or None when
+    the block's JSON is malformed or lacks a proposals list. Malformed
+    blocks can never record — provenance fails on them.
+    """
+    blocks: list[list[dict[str, Any]] | None] = []
+    for m in _PROPOSAL_FENCE_RE.finditer(body or ""):
+        try:
+            data = json.loads(m.group(1))
+        except Exception:
+            blocks.append(None)
+            continue
+        proposals = data.get("proposals") if isinstance(data, dict) else None
+        if not isinstance(proposals, list):
+            blocks.append(None)
+            continue
+        blocks.append([p for p in proposals if isinstance(p, dict)])
+    return blocks
+
+
+def _strict_due_date(value: Any) -> str | None:
+    """Normalize a due-date value: None or strict %Y-%m-%d, else ValueError."""
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+        raise ValueError(f"Invalid due_date: {value!r} (expected YYYY-MM-DD or null)")
+    try:
+        datetime.strptime(s, "%Y-%m-%d")
+    except ValueError:
+        raise ValueError(f"Invalid due_date: {value!r} (expected YYYY-MM-DD or null)")
+    return s
+
+
+def _normalize_proposal(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one proposal to stored shape, validating as we go.
+    Unknown fields are ignored (forward-compatible)."""
+    if not isinstance(raw, dict):
+        raise ValueError("Proposal must be an object")
+    title = str(raw.get("title") or "").strip()
+    if not title:
+        raise ValueError("Proposal title must be non-empty")
+    timeframe = raw.get("timeframe_commitment")
+    if timeframe is not None and timeframe != "tentative":
+        raise ValueError(
+            f"Invalid timeframe_commitment: {timeframe!r} (expected null or 'tentative')"
+        )
+    parent = raw.get("parent_task_id")
+    parent = str(parent).strip() if parent else None
+    return {
+        "title": title,
+        "parent_task_id": parent,
+        "timeframe_commitment": timeframe,
+        "due_date": _strict_due_date(raw.get("due_date")),
+        "notes": str(raw.get("notes") or ""),
+    }
+
+
+def _proposal_row_to_dict(row: tuple) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "conversation_id": row[2],
+        "source_message_id": row[3],
+        "block_index": row[4],
+        "proposal_index": row[5],
+        "seat": row[6],
+        "title": row[7],
+        "parent_task_id": row[8],
+        "timeframe_commitment": row[9],
+        "due_date": row[10],
+        "notes": row[11],
+        "state": row[12],
+        "created_task_id": row[13],
+        "created_at": row[14],
+        "updated_at": row[15],
+        "decided_at": row[16],
+    }
+
+
+def _get_proposal_row(
+    conn: sqlite3.Connection, proposal_id: str, user_id: str
+) -> tuple | None:
+    return conn.execute(
+        f"SELECT {_PROPOSAL_COLUMNS} FROM task_proposals WHERE id = ? AND user_id = ?",
+        (proposal_id, user_id),
+    ).fetchone()
+
+
+def record_task_proposal(
+    user_id: str,
+    payload: dict[str, Any],
+    conversation_store: Any = None,
+) -> dict[str, Any]:
+    """Validate + provenance-verify + record a pending proposal.
+
+    Order matters: field validation, then the triple lookup (an
+    existing triple returns the STORED record untouched — re-recording
+    never undoes an edit or terminal decision), then C1 provenance
+    verification against the source message, then parent ownership,
+    then insert. A fabricated source id reads as 404; a real message
+    that is not a champion assistant message, or a block that does not
+    match the submission, reads as 400.
+    """
+    try:
+        block_index = int(payload.get("block_index"))
+        proposal_index = int(payload.get("proposal_index"))
+    except (TypeError, ValueError):
+        raise ValueError("block_index and proposal_index must be integers")
+    if block_index < 0 or proposal_index < 0:
+        raise ValueError("block_index and proposal_index must be non-negative")
+    conversation_id = str(payload.get("conversation_id") or "").strip()
+    source_message_id = str(payload.get("source_message_id") or "").strip()
+    if not conversation_id or not source_message_id:
+        raise ValueError("conversation_id and source_message_id are required")
+    submitted = _normalize_proposal(payload)
+
+    conn = get_connection()
+    existing = conn.execute(
+        "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+        "WHERE user_id = ? AND source_message_id = ? AND block_index = ? AND proposal_index = ?",
+        (user_id, source_message_id, block_index, proposal_index),
+    ).fetchone()
+    if existing is not None:
+        # Idempotent re-record: return stored contents, never overwrite.
+        return _proposal_row_to_dict(tuple(existing))
+
+    if conversation_store is None:
+        from local_ai.conversation.store import ConversationStore
+
+        conversation_store = ConversationStore()
+    msg = conversation_store.get_message(user_id, conversation_id, source_message_id)
+    if msg is None:
+        raise ProposalNotFound("Source message not found")
+    if msg.get("role") != "voice":
+        raise ValueError("Source message is not an assistant message")
+    if msg.get("archetype_id") != "champion":
+        raise ValueError("Source message is not attributed to champion")
+    blocks = _parse_task_proposal_blocks(msg.get("body"))
+    if block_index >= len(blocks) or blocks[block_index] is None:
+        raise ValueError("Source message does not contain the identified proposal block")
+    block = blocks[block_index]
+    if proposal_index >= len(block):
+        raise ValueError("Proposal index out of range in the source block")
+    if _normalize_proposal(block[proposal_index]) != submitted:
+        raise ValueError("Submitted proposal does not match the source block")
+
+    _ensure_owned_reference(
+        conn,
+        table="tasks",
+        ref_id=submitted["parent_task_id"],
+        user_id=user_id,
+        field_name="parent_task_id",
+    )
+    now = _now()
+    pid = M.new_id()
+    conn.execute(
+        """INSERT INTO task_proposals (
+          id, user_id, conversation_id, source_message_id, block_index, proposal_index,
+          seat, title, parent_task_id, timeframe_commitment, due_date, notes, state,
+          created_task_id, created_at, updated_at, decided_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL)""",
+        (
+            pid, user_id, conversation_id, source_message_id, block_index, proposal_index,
+            msg.get("archetype_id"), submitted["title"], submitted["parent_task_id"],
+            submitted["timeframe_commitment"], submitted["due_date"], submitted["notes"],
+            now, now,
+        ),
+    )
+    conn.commit()
+    row = _get_proposal_row(conn, pid, user_id)
+    return _proposal_row_to_dict(tuple(row)) if row else {}
+
+
+def list_task_proposals(
+    user_id: str,
+    conversation_id: str,
+    state: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Proposals for one user conversation, oldest first. Card hydration
+    reads this — never client memory. Every row is predicated on the
+    caller's id, so another user's rows can never match."""
+    if state is not None and state not in _PROPOSAL_STATES:
+        raise ValueError(f"Invalid proposal state filter: {state!r}")
+    try:
+        limit = max(1, min(int(limit), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    conn = get_connection()
+    if state is None:
+        cur = conn.execute(
+            "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+            "WHERE user_id = ? AND conversation_id = ? ORDER BY created_at ASC, rowid ASC LIMIT ?",
+            (user_id, conversation_id, limit),
+        )
+    else:
+        cur = conn.execute(
+            "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+            "WHERE user_id = ? AND conversation_id = ? AND state = ? ORDER BY created_at ASC, rowid ASC LIMIT ?",
+            (user_id, conversation_id, state, limit),
+        )
+    return [_proposal_row_to_dict(tuple(r)) for r in cur.fetchall()]
+
+
+def update_task_proposal(
+    user_id: str, proposal_id: str, patch: dict[str, Any]
+) -> dict[str, Any]:
+    """Edit a PENDING proposal in place, fully re-validated.
+
+    Conditional update: succeeds only while state='pending'. A
+    terminal record yields 409 (via ProposalConflict) and changes
+    nothing; a missing or foreign id yields 404.
+    """
+    allowed = ("title", "parent_task_id", "timeframe_commitment", "due_date", "notes")
+    values: dict[str, Any] = {}
+    for key in allowed:
+        if key in patch:
+            values[key] = patch[key]
+    if "title" in values:
+        values["title"] = str(values["title"] or "").strip()
+        if not values["title"]:
+            raise ValueError("Proposal title must be non-empty")
+    if "timeframe_commitment" in values:
+        _validate_timeframe_commitment(values["timeframe_commitment"])
+    if "due_date" in values:
+        values["due_date"] = _strict_due_date(values["due_date"])
+    if "parent_task_id" in values:
+        parent = values["parent_task_id"]
+        values["parent_task_id"] = str(parent).strip() if parent else None
+    if "notes" in values:
+        values["notes"] = str(values["notes"] or "")
+    if not values:
+        row = _get_proposal_row(get_connection(), proposal_id, user_id)
+        if row is None:
+            raise ProposalNotFound("Proposal not found")
+        return _proposal_row_to_dict(tuple(row))
+
+    conn = get_connection()
+    _ensure_owned_reference(
+        conn,
+        table="tasks",
+        ref_id=values.get("parent_task_id"),
+        user_id=user_id,
+        field_name="parent_task_id",
+    )
+    sets = ", ".join(f"{k} = ?" for k in values) + ", updated_at = ?"
+    args = list(values.values()) + [_now(), proposal_id, user_id]
+    cur = conn.execute(
+        f"UPDATE task_proposals SET {sets} WHERE id = ? AND user_id = ? AND state = 'pending'",
+        args,
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        row = _get_proposal_row(conn, proposal_id, user_id)
+        if row is None:
+            raise ProposalNotFound("Proposal not found")
+        raise ProposalConflict(f"Proposal is already {row[12]}")
+    row = _get_proposal_row(conn, proposal_id, user_id)
+    return _proposal_row_to_dict(tuple(row)) if row else {}
+
+
+def decline_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
+    """Decline a proposal. Conditional on pending, but idempotent:
+    re-declining an already-declined proposal returns the same record
+    with 200, not an error. Declining an approved proposal is a 409."""
+    conn = get_connection()
+    cur = conn.execute(
+        "UPDATE task_proposals SET state = 'declined', decided_at = ? "
+        "WHERE id = ? AND user_id = ? AND state = 'pending'",
+        (_now(), proposal_id, user_id),
+    )
+    conn.commit()
+    if cur.rowcount == 0:
+        row = _get_proposal_row(conn, proposal_id, user_id)
+        if row is None:
+            raise ProposalNotFound("Proposal not found")
+        d = _proposal_row_to_dict(tuple(row))
+        if d["state"] == "declined":
+            return d
+        raise ProposalConflict(f"Proposal is already {d['state']}")
+    row = _get_proposal_row(conn, proposal_id, user_id)
+    return _proposal_row_to_dict(tuple(row)) if row else {}
+
+
+def approve_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
+    """Atomically approve a proposal: create the task and record the
+    outcome in ONE transaction. Returns {"task": ..., "proposal": ...}.
+
+    BEGIN IMMEDIATE + compare-and-swap claim: only the session whose
+    UPDATE matches a pending row proceeds to insert; the loser rolls
+    back, re-reads, and returns the winner's task. Approval reads the
+    FINAL edited values inside its transaction, so a concurrent edit
+    cannot silently race approval: either the edit lands first (and
+    approval writes the edited values) or it lands after the claim
+    (and sees a terminal record → 409). Validation failure rolls
+    back the claim too, leaving the proposal pending so the user can
+    edit and retry; nothing is written.
+
+    C2 — approval outcome vs activity log: the durable approval
+    outcome is the proposal row + task row committed together. The
+    task activity log is NOT part of that transaction: it is a
+    file-backed append (activity.log via local_ai.activity), not a
+    database write, so it cannot participate in this SQLite
+    transaction. It stays a post-commit effect exactly as create_task
+    does today, and its failure — already swallowed inside
+    _log_ve_entity_activity — never rolls back or retries the
+    creation. One approved proposal → one created task → one durable
+    approval outcome, independent of the log.
+    """
+    conn = get_connection()
+    now = _now()
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    try:
+        cur = conn.execute(
+            "UPDATE task_proposals SET state = 'approved', decided_at = ? "
+            "WHERE id = ? AND user_id = ? AND state = 'pending'",
+            (now, proposal_id, user_id),
+        )
+        if cur.rowcount == 0:
+            conn.rollback()
+            row = _get_proposal_row(conn, proposal_id, user_id)
+            if row is None:
+                raise ProposalNotFound("Proposal not found")
+            d = _proposal_row_to_dict(tuple(row))
+            if d["state"] == "approved":
+                task = get_task(d["created_task_id"], user_id) if d["created_task_id"] else None
+                return {"task": task or {}, "proposal": d}
+            raise ProposalConflict(f"Proposal is already {d['state']}")
+        row = conn.execute(
+            "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals WHERE id = ? AND user_id = ?",
+            (proposal_id, user_id),
+        ).fetchone()
+        proposal = _proposal_row_to_dict(tuple(row))
+        # Re-validate the final edited values inside the transaction.
+        if not str(proposal["title"] or "").strip():
+            raise ValueError("Proposal title must be non-empty")
+        _validate_timeframe_commitment(proposal["timeframe_commitment"])
+        _strict_due_date(proposal["due_date"])
+        _ensure_owned_reference(
+            conn,
+            table="tasks",
+            ref_id=proposal["parent_task_id"],
+            user_id=user_id,
+            field_name="parent_task_id",
+        )
+        data = M.TaskCreate(
+            title=proposal["title"],
+            parent_task_id=proposal["parent_task_id"],
+            status="Todo",
+            timeframe_commitment=proposal["timeframe_commitment"],
+            due_date=proposal["due_date"],
+            notes=proposal["notes"],
+            seat_ref=proposal["seat"],
+        )
+        tid = _insert_task(conn, data, user_id)
+        conn.execute(
+            "UPDATE task_proposals SET created_task_id = ? WHERE id = ?",
+            (tid, proposal_id),
+        )
+        conn.commit()
+    except Exception:
+        if conn.in_transaction:
+            conn.rollback()
+        raise
+    task = get_task(tid, user_id) or {}
+    _log_ve_entity_activity(
+        type=ActivityType.TASK_CREATED.value,
+        entity_type=ActivityEntityType.TASK.value,
+        entity_id=tid,
+        user_id=user_id,
+        related_entity_id=_ve_activity_related_id(None),
+        detail=f"title={(proposal['title'] or '')[:120]!r}",
+    )
+    row = _get_proposal_row(conn, proposal_id, user_id)
+    proposal = _proposal_row_to_dict(tuple(row)) if row else {}
+    return {"task": task, "proposal": proposal}
+
+
 def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any] | None:
     before = get_task(task_id, user_id)
     if before is None:
@@ -4804,6 +5318,8 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
     args = []
     nullable_fks = ("assignee_id", "parent_task_id", "project_id")
     model_items = data.model_dump(exclude_unset=True)
+    if "timeframe_commitment" in model_items:
+        _validate_timeframe_commitment(model_items.get("timeframe_commitment"))
     if "project_id" in model_items and model_items.get("project_id") is not None:
         _ensure_owned_reference(
             conn,
@@ -4821,7 +5337,10 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
             field_name="parent_task_id",
         )
     for k, v in model_items.items():
-        if v is not None or (k in nullable_fks):
+        # Explicit None clears a nullable field (timeframe_commitment is
+        # set AND cleared via PATCH; absent fields never reach here
+        # because model_dump(exclude_unset=True) omits them).
+        if v is not None or (k in nullable_fks) or k == "timeframe_commitment":
             if k == "dependency_ids":
                 updates.append("dependency_ids = ?")
                 args.append(M._json_dumps_list(v) if v is not None else "[]")

@@ -136,6 +136,7 @@ export function markerTitle(
   if (reason === 'clarify') return `${name} wants to clarify something with you.`
   if (reason === 'challenge') return `${name} has something to challenge you on.`
   if (reason === 'offer') return `${name} has something to offer you.`
+  if (reason === 'obligation') return `${name} has something timely to bring to your attention.`
   if (met) return `${name} has more to discover with you.`
   return `${name} wants to meet you.`
 }

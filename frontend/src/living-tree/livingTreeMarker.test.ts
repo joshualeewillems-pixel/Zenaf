@@ -43,6 +43,12 @@ describe('markerTitle', () => {
     expect(markerTitle('ambassador', 'clarify')).toBe('The Crane wants to clarify something with you.')
   })
 
+  it('obligation reason gets its own timely line (never a crash or a meet claim)', () => {
+    expect(markerTitle('champion', 'obligation')).toBe(
+      'The Firebrand has something timely to bring to your attention.',
+    )
+  })
+
   it('falls back to the meet wording for unknown reasons and seats', () => {
     expect(markerTitle('mentor', null)).toBe('The Gardener wants to meet you.')
     expect(markerTitle('unknown-seat', 'meet')).toBe('A seat wants to meet you.')

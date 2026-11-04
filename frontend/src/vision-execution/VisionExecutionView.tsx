@@ -4387,6 +4387,7 @@ function TaskDetailPanel({
           due_date: data.due_date ?? '',
           completion_criteria: data.completion_criteria ?? '',
           notes: data.notes ?? '',
+          timeframe_commitment: (data as { timeframe_commitment?: string | null }).timeframe_commitment ?? '',
         })
         setDependencyIds(Array.isArray(data.dependency_ids) ? data.dependency_ids : [])
       }
@@ -4436,6 +4437,7 @@ function TaskDetailPanel({
         dependency_ids: dependencyIds,
         completion_criteria: form.completion_criteria,
         notes: form.notes,
+        timeframe_commitment: (form.timeframe_commitment as string) || null,
       })
       onSaved(); onClose()
     } catch (e) { setSaveError(e instanceof Error ? e.message : 'Save failed') } finally { setSaving(false) }
@@ -4515,6 +4517,11 @@ function TaskDetailPanel({
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] uppercase tracking-wide border border-slate-500/60 text-slate-200 bg-slate-950/30">
             {taskStatus}
           </span>
+          {((form.timeframe_commitment as string) ?? (task as { timeframe_commitment?: string | null }).timeframe_commitment ?? '') === 'tentative' && (
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] uppercase tracking-wide border border-amber-500/60 text-amber-200 bg-amber-950/30">
+              Tentative
+            </span>
+          )}
           {taskReadiness !== 'high' ? (
             <span className="text-[11px] text-slate-500">
               <span className={taskReadinessClass}>{taskReadiness}</span>
@@ -4572,6 +4579,13 @@ function TaskDetailPanel({
             onChange={(v) => setForm((p) => ({ ...p, status: v }))}
             options={['Todo', 'In Progress', 'Blocked', 'Done', 'Dropped'].map((s) => ({ value: s, label: s }))}
           />
+          <DetailField
+            label="Timeframe"
+            value={(form.timeframe_commitment as string) ?? ''}
+            onChange={(v) => setForm((p) => ({ ...p, timeframe_commitment: v }))}
+            options={[{ value: '', label: 'Unspecified' }, { value: 'tentative', label: 'Tentative' }]}
+          />
+          <p className="text-[11px] text-slate-500 -mt-1">Timeframe is separate from status: Tentative means the timing is provisional, not a firm deadline.</p>
           <p className="text-[11px] text-slate-500 -mt-1">Use <strong className="text-slate-400">Done</strong> below for quick completion — or change status here (e.g. Blocked, Dropped).</p>
         </DetailSection>
         <DetailSection title="Dependencies" defaultOpen={false}>

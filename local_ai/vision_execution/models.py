@@ -380,6 +380,9 @@ class TaskCreate(BaseModel):
     # "mentor"); empty for ordinary tasks. Lets the frontend deep-link
     # keystone tasks to a seat's conversation.
     seat_ref: str = ""
+    # Timeframe commitment dimension, SEPARATE from status: exactly None
+    # (unspecified) or "tentative". Never inferred from a missing due date.
+    timeframe_commitment: str | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -397,6 +400,7 @@ class TaskUpdate(BaseModel):
     completion_criteria: str | None = None
     notes: str | None = None
     seat_ref: str | None = None
+    timeframe_commitment: str | None = None
 
 
 class SeatRequestCreate(BaseModel):
@@ -945,6 +949,7 @@ def row_to_task(row: tuple) -> dict[str, Any]:
         "completion_criteria": row[12] if n > 12 else "", "notes": row[13] if n > 13 else "",
         "created_at": row[14] if n > 14 else "", "updated_at": row[15] if n > 15 else "",
         "seat_ref": row[16] if n > 16 else "",
+        "timeframe_commitment": row[17] if n > 17 else None,
     }
 
 

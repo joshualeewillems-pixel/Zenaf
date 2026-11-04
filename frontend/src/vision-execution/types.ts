@@ -140,6 +140,9 @@ export interface Task {
   required_asset_ids?: string[]
   completion_criteria: string
   notes: string
+  /** Timeframe commitment dimension, separate from status: null =
+      unspecified, "tentative" = tentative. Backend may omit on old rows. */
+  timeframe_commitment?: string | null
   created_at: string
   updated_at: string
 }

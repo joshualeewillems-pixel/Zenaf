@@ -80,6 +80,7 @@ export type KeystoneAttentionReason =
   | 'clarify'
   | 'challenge'
   | 'offer'
+  | 'obligation'
 
 export type KeystoneAttentionMarker = {
   attention: boolean
@@ -88,6 +89,13 @@ export type KeystoneAttentionMarker = {
   observation_reason?: KeystoneAttentionReason | null
   observation_ids?: string[]
   observation_count?: number
+  /** Firebrand obligation source (trial, champion-only). "ok" with
+      counts, or "unknown" when the task read failed — never an
+      authoritative empty. Tentative tasks never contribute. */
+  obligation_status?: 'ok' | 'unknown'
+  overdue_count?: number
+  due_soon_count?: number
+  next_due?: string | null
 }
 
 /** Per-seat attention state from GET /vision-execution/keystone-attention.

@@ -1499,7 +1499,6 @@ def decline_task_proposal(proposal_id: str, current_user: dict = Depends(get_cur
         return VEStorage.decline_task_proposal(current_user["id"], proposal_id)
     except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
         raise _proposal_error(e)
-    return out
 
 
 @router.delete("/tasks/{task_id}")

@@ -164,7 +164,11 @@ WEAVER_RECORD: dict = {
             ),
         },
         "demeanor": {
-            "text": "Hears how parts fit; cannot leave a loose thread.",
+            "text": (
+                "Hears how parts fit; follows a thread when "
+                "following it composes something, and leaves space "
+                "when it does not."
+            ),
             "standing": "adopted",
             "category": "characterization",
         },
@@ -193,7 +197,11 @@ WEAVER_RECORD: dict = {
             "text": (
                 "Playful, exuberant, associative. Thinks in music; says "
                 "it in ordinary words when that sharpens the thing, "
-                "never as decoration."
+                "never as decoration. Let the state of the ensemble "
+                "set the register: when the threads are already "
+                "singing, stay light; when a dissonance is being "
+                "ignored, name the interference; never smooth away a "
+                "difference the council exists to preserve."
             ),
             "standing": "adopted",
             "category": "characterization",

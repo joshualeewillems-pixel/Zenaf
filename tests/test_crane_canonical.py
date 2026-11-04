@@ -184,7 +184,11 @@ HUMANITARIAN = (
 )
 VOICE_COMPACT = (
     "You speak carefully, double-hearing, and you leave room after "
-    "each side speaks."
+    "each side speaks. Restate or reframe only when the restatement "
+    "itself carries a distinction the visitor has not yet seen — "
+    "never as an opening ritual. Your precision is a form of care, "
+    "and its cost is audible when the room wants speed or verdict "
+    "instead of accuracy."
 )
 FULLER_MIDDLE_MARKERS = (
     "You notice how a person's phrasing drifts as it crosses contexts",
@@ -215,7 +219,10 @@ COMPACT_PROSE = (
     "When a person's meaning is being flattened, dismissed, or distorted, you "
     "insist on restoring it, even when doing so inconveniences the room. "
     "You speak carefully, double-hearing, and you leave room after each side "
-    "speaks."
+    "speaks. Restate or reframe only when the restatement itself carries a "
+    "distinction the visitor has not yet seen — never as an opening ritual. "
+    "Your precision is a form of care, and its cost is audible when the room "
+    "wants speed or verdict instead of accuracy."
 )
 FULLER_PROSE = (
     "You are the Crane, who occupies the Ambassador seat in the Fellowship. "
@@ -538,7 +545,7 @@ def test_renderer_budgets_compact_and_fuller_exact():
     fuller = render_crane_ordinary(CRANE_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 1034, len(_joined(compact))
+    assert len(_joined(compact)) == 1283, len(_joined(compact))
     assert len(_joined(fuller)) == 1481, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # Ideal + defining question verbatim in BOTH (unlike the other
@@ -662,47 +669,71 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Compact + typical (signed-in) guidance: fits with voice intact.
+    # Compact + typical (signed-in) guidance: under budget separation
+    # (renderer-budget separation design 2026-11-04), the ceiling
+    # measures character content ALONE, so the 1,283-char compact
+    # block keeps its voice unit with the 382-char signed guidance
+    # attached: total 1,666, voice renders.
+    # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
+    # block previously asserted the voice-drop (voice absent, total
+    # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_crane_ordinary(
         CRANE_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) <= CHARACTER_CEILING
+    assert len(_joined(compact_typical)) == 1283 + 1 + len(signed) == 1666
     assert signed in _joined(compact_typical)  # capability never truncated
-    assert VOICE_COMPACT in _joined(compact_typical)  # voice kept
+    assert VOICE_COMPACT in _joined(compact_typical)  # voice survives whole
+    # Capability sits at index 3 (after worldview), voice last.
+    assert compact_typical[3] == signed
+    assert VOICE_COMPACT in compact_typical[6]
 
-    # Fuller + typical guidance: fuller (1,481) + guidance (382) does
-    # NOT fit, so it degrades to compact with voice kept — valid
-    # ladder operation, not failure. Crane fuller is reachable only
-    # with no capability guidance (the §2 fuller itself, 1,481).
+    # Fuller + typical guidance: under budget separation the fuller
+    # character block (1,481) fits on its own, so it NO LONGER
+    # degrades to compact — middle and conviction survive, guidance
+    # appended whole: total 1,864. (Reversal of the old degradation
+    # expectation: guidance length no longer affects the ladder.)
+    # The fuller has NO voice unit by design (compact-only voice),
+    # so its absence here is not a drop.
     degraded = render_crane_ordinary(
         CRANE_RECORD, detail="fuller", resolved_capability=signed
     )
     joined = _joined(degraded)
-    assert len(joined) <= CHARACTER_CEILING
+    assert len(joined) == 1481 + 1 + len(signed) == 1864
     for marker in FULLER_MIDDLE_MARKERS:
-        assert marker not in joined, marker  # middle dropped whole
-    assert CONVICTION_CONDUCT not in joined  # conviction dropped whole
-    assert VOICE_COMPACT in joined  # compact voice kept
+        assert marker in joined, marker  # middle survives (character-only)
+    assert CONVICTION_CONDUCT in joined  # conviction survives
+    assert VOICE_COMPACT not in joined  # fuller has no voice unit, by design
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
     assert signed in joined  # capability never truncated
 
-    # Fuller + maximal (unsigned) guidance: same ladder, still fits.
+    # Fuller + maximal (unsigned) guidance: same — fuller survives,
+    # unsigned guidance appended whole regardless of length.
+    # (Reversal of the old degradation expectation.)
     degraded_max = render_crane_ordinary(
         CRANE_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(degraded_max)) <= CHARACTER_CEILING
+    assert len(_joined(degraded_max)) == 1481 + 1 + len(unsigned) == 1872
+    for marker in FULLER_MIDDLE_MARKERS:
+        assert marker in _joined(degraded_max), marker
+    assert CONVICTION_CONDUCT in _joined(degraded_max)
+    assert VOICE_COMPACT not in _joined(degraded_max)  # fuller has no voice, by design
     assert unsigned in _joined(degraded_max)
     assert CANONICAL_MARKER in _joined(degraded_max)
     assert QUESTION_VERBATIM in _joined(degraded_max)
-    assert VOICE_COMPACT in _joined(degraded_max)
 
-    # Compact + a huge capability: nothing left to drop → fail, never cut.
-    with pytest.raises(AssemblyError):
-        render_crane_ordinary(
-            CRANE_RECORD, detail="compact",
-            resolved_capability="x" * (CHARACTER_CEILING + 500),
-        )
+    # Compact + a huge capability: guidance-length independence
+    # (design §(e) test 5) — a 2,000-char guidance string no longer
+    # raises AssemblyError and is appended whole. INTENTIONAL
+    # REVERSAL of the old huge-guidance failure, documented here
+    # rather than hidden: guidance has no size backstop after
+    # separation, per the design's §(c) consequence.
+    huge = render_crane_ordinary(
+        CRANE_RECORD, detail="compact",
+        resolved_capability="x" * (CHARACTER_CEILING + 500),
+    )
+    assert len(_joined(huge)) == 1283 + 1 + (CHARACTER_CEILING + 500)
+    assert VOICE_COMPACT in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
     for line in degraded:

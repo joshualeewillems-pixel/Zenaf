@@ -124,7 +124,12 @@ PERSONALITY = "You are patient and unhurried; you see seasons, not days."
 VOICE_COMPACT_MARKER = "You speak with the quiet precision of a practiced gardener"
 WARMTH_ADOPTED = (
     "Your warmth is warm-patient: what someone is growing matters "
-    "more than how fast it grows."
+    "more than how fast it grows. Let the season set the register: "
+    "when an insight is close, protect the conditions and wait; when "
+    "something has been forced out of season, name the forcing "
+    "plainly; when the visitor demands certainty, remain precisely "
+    "unhurried. When something is ripe, say so plainly and lightly, "
+    "and act — harvest is part of the season, not a break from it."
 )
 FULLER_MIDDLE_MARKERS = (
     "You notice what is ripening and what lies fallow",
@@ -145,7 +150,12 @@ COMPACT_PROSE = (
     "You do not hurry another person's understanding simply because the answer "
     "seems obvious to you. "
     "Your warmth is warm-patient: what someone is growing matters more than "
-    "how fast it grows."
+    "how fast it grows. Let the season set the register: when an insight is "
+    "close, protect the conditions and wait; when something has been forced "
+    "out of season, name the forcing plainly; when the visitor demands "
+    "certainty, remain precisely unhurried. When something is ripe, say so "
+    "plainly and lightly, and act — harvest is part of the season, not a "
+    "break from it."
 )
 FULLER_PROSE = (
     "You are the Gardener, who occupies the Mentor seat in the Fellowship. "
@@ -432,7 +442,7 @@ def test_renderer_budgets_compact_and_fuller_exact():
     fuller = render_gardener_ordinary(GARDENER_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 670, len(_joined(compact))
+    assert len(_joined(compact)) == 1012, len(_joined(compact))
     assert len(_joined(fuller)) == 921, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # The verbatim ideal is canonical-but-unrendered: its prefix must
@@ -536,18 +546,29 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Compact + typical (signed-in) guidance: fits with voice intact.
+    # Compact + typical (signed-in) guidance: under budget separation
+    # (renderer-budget separation design 2026-11-04), the ceiling
+    # measures character content ALONE, so the 1,012-char compact
+    # block keeps its voice unit with the 576-char signed guidance
+    # attached: total 1,589, voice renders.
+    # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
+    # block previously asserted the voice-drop (voice absent, total
+    # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_gardener_ordinary(
         GARDENER_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) <= CHARACTER_CEILING
+    assert len(_joined(compact_typical)) == 1012 + 1 + len(signed) == 1589
     assert signed in _joined(compact_typical)  # capability never truncated
-    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice kept
+    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
+    # Capability sits at index 3 (after worldview), voice last.
+    assert compact_typical[3] == signed
+    assert WARMTH_ADOPTED in compact_typical[4]
 
-    # Fuller + typical guidance: fits ENTIRELY (1,498 chars, 2 of
-    # headroom) — middle and tempo both kept. Fuller reachability
-    # with typical guidance is a real, measured property here, not
-    # an assumption.
+    # Fuller + typical guidance: fits ENTIRELY (1,498 chars) — middle
+    # and tempo both kept. Fuller reachability with typical guidance
+    # is a real, measured property here, not an assumption. (Under
+    # separation the total is unchanged: character 921 + guidance
+    # appended whole; the ceiling now measures character alone.)
     full_typical = render_gardener_ordinary(
         GARDENER_RECORD, detail="fuller", resolved_capability=signed
     )
@@ -558,34 +579,48 @@ def test_renderer_budget_degrades_then_fails_validation():
     assert TEMPO_CLOSE in joined_full
     assert signed in joined_full  # capability never truncated
 
-    # Fuller + maximal (unsigned) guidance: fuller middle degrades
-    # to compact, voice kept — valid ladder operation, not failure.
+    # Fuller + maximal (unsigned) guidance: under budget separation
+    # the fuller character block (921) fits on its own, so it NO
+    # LONGER degrades to compact — middle and tempo survive,
+    # unsigned guidance appended whole: total 1,689. (Reversal of
+    # the old degradation expectation: guidance length no longer
+    # affects the ladder.) The fuller has NO voice unit by design
+    # (it swaps voice out), so warmth's absence here is not a drop.
     degraded = render_gardener_ordinary(
         GARDENER_RECORD, detail="fuller", resolved_capability=unsigned
     )
     joined = _joined(degraded)
-    assert len(joined) <= CHARACTER_CEILING
+    assert len(joined) == 921 + 1 + len(unsigned) == 1689
     for marker in FULLER_MIDDLE_MARKERS:
-        assert marker not in joined, marker  # middle dropped whole
-    assert WARMTH_ADOPTED in joined  # compact voice kept
+        assert marker in joined, marker  # middle survives (character-only)
+    assert TEMPO_CLOSE in joined  # tempo survives
+    assert WARMTH_ADOPTED not in joined  # fuller has no voice unit, by design
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
     assert unsigned in joined  # capability never truncated
 
-    # Compact + maximal guidance: fits with voice intact.
+    # Compact + maximal guidance: voice intact, unsigned guidance
+    # appended whole regardless of length. (Reversal of the old
+    # ceiling-capped expectation.)
     compact_max = render_gardener_ordinary(
         GARDENER_RECORD, detail="compact", resolved_capability=unsigned
     )
-    assert len(_joined(compact_max)) <= CHARACTER_CEILING
+    assert len(_joined(compact_max)) == 1012 + 1 + len(unsigned) == 1780
     assert unsigned in _joined(compact_max)
     assert WARMTH_ADOPTED in _joined(compact_max)
 
-    # Compact + a huge capability: nothing left to drop → fail, never cut.
-    with pytest.raises(AssemblyError):
-        render_gardener_ordinary(
-            GARDENER_RECORD, detail="compact",
-            resolved_capability="x" * (CHARACTER_CEILING + 500),
-        )
+    # Compact + a huge capability: guidance-length independence
+    # (design §(e) test 5) — a 2,000-char guidance string no longer
+    # raises AssemblyError and is appended whole. INTENTIONAL
+    # REVERSAL of the old huge-guidance failure, documented here
+    # rather than hidden: guidance has no size backstop after
+    # separation, per the design's §(c) consequence.
+    huge = render_gardener_ordinary(
+        GARDENER_RECORD, detail="compact",
+        resolved_capability="x" * (CHARACTER_CEILING + 500),
+    )
+    assert len(_joined(huge)) == 1012 + 1 + (CHARACTER_CEILING + 500)
+    assert WARMTH_ADOPTED in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
     for line in degraded:

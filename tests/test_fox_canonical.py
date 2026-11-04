@@ -189,7 +189,10 @@ COMPACT_PROSE = (
     "You don't need to win the conversation; you enjoy discovering where it goes. "
     "You greet a fellow traveler's unconventional possibilities with "
     "conspiratorial enthusiasm, briefly and directly, then move to substance: "
-    "the rule worth breaking, the door worth opening."
+    "the rule worth breaking, the door worth opening. When the confinement "
+    "is thick — a rule nobody chose pressing close — your language may bend "
+    "and flash for a sentence, then snap back to a clean observation; when a "
+    "clean exit simply needs naming, name it plainly and step back."
 )
 FULLER_PROSE = (
     "You are the Fox, who occupies the Maverick seat in the Fellowship. "
@@ -504,7 +507,7 @@ def test_renderer_budgets_compact_and_fuller_exact():
     fuller = render_fox_ordinary(FOX_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 1164, len(_joined(compact))
+    assert len(_joined(compact)) == 1391, len(_joined(compact))
     assert len(_joined(fuller)) == 1489, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # Ideal + defining question verbatim in BOTH (no truncation here).

@@ -464,10 +464,12 @@ def render_raven_ordinary(
         else None
     )
 
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # the ceiling measures character content ALONE. Capability is not
+    # part of the measured candidate set; it is re-inserted at the
+    # same position (after worldview) after the ladder below.
     def assemble(personality_text: str, include_voice: bool) -> list[str]:
         units = [identity, personality_text, worldview]
-        if capability is not None:
-            units.append(capability)
         if include_voice and voice_close is not None:
             units.append(voice_close)
         return units
@@ -489,6 +491,8 @@ def render_raven_ordinary(
             f"Raven character block still over the {CHARACTER_CEILING}-char "
             "ceiling after dropping all optional units; refusing to truncate"
         )
+    if capability is not None:
+        units = units[:3] + [capability] + units[3:]
     return units
 
 
@@ -580,9 +584,11 @@ def render_gardener_ordinary(
             "Gardener core unit (personality/worldview) is not eligible"
         )
     worldview = " ".join(worldview_parts)
-    core = [identity, personality, worldview]
-    if capability:
-        core.append(capability)
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # the ceiling measures character content ALONE. Capability is not
+    # part of the measured candidate set; it is re-inserted at the
+    # same position (after worldview) in the returned list below.
+    character = [identity, personality, worldview]
 
     middle = eligible_field(record, "characterization", "fuller_middle")
     voice = eligible_field(record, "characterization", "voice_and_humor")
@@ -599,20 +605,25 @@ def render_gardener_ordinary(
 
     candidates: list[list[str]] = []
     if detail == "fuller" and middle is not None:
-        fuller_units = [*core, middle]
+        fuller_units = [*character, middle]
         if tempo is not None:
             fuller_units.append(tempo)
         candidates.append(fuller_units)
     if voice_compact is not None:
-        candidates.append([*core, voice_compact])
-    candidates.append(core)
+        candidates.append([*character, voice_compact])
+    candidates.append(character)
     for units in candidates:
         if not over_budget(units):
-            return units
-    raise AssemblyError(
-        f"Gardener character block still over the {CHARACTER_CEILING}-char "
-        "ceiling after dropping all optional units; refusing to truncate"
-    )
+            chosen = units
+            break
+    else:
+        raise AssemblyError(
+            f"Gardener character block still over the {CHARACTER_CEILING}-char "
+            "ceiling after dropping all optional units; refusing to truncate"
+        )
+    if capability:
+        return chosen[:3] + [capability] + chosen[3:]
+    return chosen
 
 
 def render_firebrand_ordinary(
@@ -844,6 +855,11 @@ def render_crane_ordinary(
         )
     worldview = " ".join(worldview_parts)
 
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # the ceiling measures character content ALONE. Candidates are
+    # built WITHOUT capability and measured as such; capability is
+    # re-inserted at the same position (after worldview) in the
+    # returned list below, via with_capability.
     def with_capability(units: list[str]) -> list[str]:
         if capability:
             return [*units[:3], capability, *units[3:]]
@@ -868,19 +884,19 @@ def render_crane_ordinary(
         ]
         if conviction is not None:
             fuller_units.append(conviction)
-        candidates.append(with_capability(fuller_units))
+        candidates.append(fuller_units)
     compact_units = [
         identity, personality_compact, worldview, hearing, humanitarian,
     ]
     if voice is not None:
         compact_units.append(voice)
-    candidates.append(with_capability(compact_units))
-    candidates.append(with_capability(
+    candidates.append(compact_units)
+    candidates.append(
         [identity, personality_compact, worldview, hearing, humanitarian]
-    ))
+    )
     for units in candidates:
         if not over_budget(units):
-            return units
+            return with_capability(units)
     raise AssemblyError(
         f"Crane character block still over the {CHARACTER_CEILING}-char "
         "ceiling after dropping all optional units; refusing to truncate"

@@ -125,11 +125,16 @@ SUPERSEDED_TENSION = (
 WARMTH_ADOPTED = (
     "You rarely express warmth directly. Concern appears through "
     "exacting attention, reluctant assistance, and questions worth "
-    "asking — not reassurance or easy agreement."
+    "asking — not reassurance or easy agreement. Let the state of "
+    "the claim set the register: when the premises are clean, move "
+    "on; when an elegant theory is failing, allow the dry delight; "
+    "never manufacture certainty or soften a necessary finding."
 )
 EXAMINATION_PREFERENCE = (
     "You favor penetrating questions, but a precise observation can "
-    "be more devastating than an interrogation."
+    "be more devastating than an interrogation. Macabre or forensic "
+    "notes appear only when a real seam has been found; they are "
+    "never atmosphere."
 )
 TEMPO_CLOSE = 'Slow at the claim, fast everywhere else, with a pause before "are we sure?"'
 MACABRE_SENTENCE = (
@@ -405,12 +410,21 @@ def test_renderer_order_identity_personality_worldview_capability():
 
 def test_renderer_budgets_compact_and_fuller_exact():
     """Assembled blocks reproduce exemplar §2 exactly (same sentences,
-    same order): compact 942 chars, fuller 1,490 chars, both under
+    same order): compact 1,240 chars, fuller 1,490 chars, both under
     the 1,500 ceiling. Byte-length equality is the conformance check,
-    not a coincidence target — the unit texts are the exemplar texts."""
+    not a coincidence target — the unit texts are the exemplar texts.
+    NOTE (budget-separation fix, founder decision 2026-11-04): the
+    compact pin is updated to the true 1,240-char compact block, but
+    the fuller pin and development markers are INTENTIONALLY left at
+    the non-degraded values — the fuller character block overruns the
+    ceiling on its own and falls back, which is out of scope for the
+    signed-in voice fix (same class as Bear's fuller). This test
+    therefore still fails on the fuller assertions; that failure is
+    the known residual, not a regression. Do NOT update the fuller
+    pin to the degraded value (that would bless the degradation)."""
     compact = render_raven_ordinary(RAVEN_RECORD, detail="compact")
     fuller = render_raven_ordinary(RAVEN_RECORD, detail="fuller")
-    assert len(_joined(compact)) == 942, len(_joined(compact))
+    assert len(_joined(compact)) == 1240, len(_joined(compact))
     assert len(_joined(fuller)) == 1490, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # Ideal + defining question verbatim in both.
@@ -514,43 +528,66 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Compact + typical (signed-in) guidance: fits with voice intact.
+    # Compact + typical (signed-in) guidance: under budget separation
+    # (renderer-budget separation design 2026-11-04), the ceiling
+    # measures character content ALONE, so the 1,240-char compact
+    # block keeps its voice-close unit with the 543-char signed
+    # guidance attached: total 1,784, voice renders.
+    # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
+    # block previously asserted the voice-drop (voice absent, total
+    # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_raven_ordinary(
         RAVEN_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) <= CHARACTER_CEILING
+    assert len(_joined(compact_typical)) == 1240 + 1 + len(signed) == 1784
     assert signed in _joined(compact_typical)  # capability never truncated
-    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice kept
+    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
+    # Capability sits at index 3 (after worldview), voice-close last.
+    assert compact_typical[3] == signed
+    assert WARMTH_ADOPTED in compact_typical[4]
 
     # Fuller + typical guidance: fuller personality degrades to
-    # compact, then voice drops — valid ladder operation, not failure.
+    # compact — a CHARACTER-only overrun, unchanged by separation —
+    # but the voice-close now SURVIVES in the fallback (compact
+    # 1,316 + guidance appended whole: total 1,860). (Reversal of
+    # the old voice-drop expectation; the development drop itself
+    # is unchanged.)
     degraded = render_raven_ordinary(
         RAVEN_RECORD, detail="fuller", resolved_capability=signed
     )
     joined = _joined(degraded)
-    assert len(joined) <= CHARACTER_CEILING
+    assert len(joined) == 1316 + 1 + len(signed) == 1860
     for marker in FULLER_DEVELOPMENT_MARKERS:
-        assert marker not in joined, marker  # development dropped whole
-    assert WARMTH_ADOPTED not in joined  # voice dropped whole
+        assert marker not in joined, marker  # development dropped whole (character-only)
+    assert WARMTH_ADOPTED in joined  # voice survives in the fallback
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
     assert signed in joined  # capability never truncated
 
-    # Fuller + maximal (unsigned) guidance: same ladder, still fits.
+    # Fuller + maximal (unsigned) guidance: same fallback, voice
+    # present, unsigned guidance appended whole regardless of
+    # length. (Reversal of the old ceiling-capped expectation.)
     degraded_max = render_raven_ordinary(
         RAVEN_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(degraded_max)) <= CHARACTER_CEILING
+    assert len(_joined(degraded_max)) == 1316 + 1 + len(unsigned) == 1954
     assert unsigned in _joined(degraded_max)
     assert CANONICAL_MARKER in _joined(degraded_max)
     assert QUESTION_VERBATIM in _joined(degraded_max)
+    assert WARMTH_ADOPTED in _joined(degraded_max)  # voice survives in the fallback
 
-    # Compact + a huge capability: nothing left to drop → fail, never cut.
-    with pytest.raises(AssemblyError):
-        render_raven_ordinary(
-            RAVEN_RECORD, detail="compact",
-            resolved_capability="x" * (CHARACTER_CEILING + 500),
-        )
+    # Compact + a huge capability: guidance-length independence
+    # (design §(e) test 5) — a 2,000-char guidance string no longer
+    # raises AssemblyError and is appended whole. INTENTIONAL
+    # REVERSAL of the old huge-guidance failure, documented here
+    # rather than hidden: guidance has no size backstop after
+    # separation, per the design's §(c) consequence.
+    huge = render_raven_ordinary(
+        RAVEN_RECORD, detail="compact",
+        resolved_capability="x" * (CHARACTER_CEILING + 500),
+    )
+    assert len(_joined(huge)) == 1240 + 1 + (CHARACTER_CEILING + 500)
+    assert WARMTH_ADOPTED in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
     for line in degraded:

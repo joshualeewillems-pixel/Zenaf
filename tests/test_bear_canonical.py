@@ -601,53 +601,67 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Compact + typical (signed-in) guidance: the 2026-11-04 revision
-    # lengthened the compact core (1,443), so core + signed guidance
-    # (491) no longer fits WITH the voice unit — the ladder drops
-    # voice whole and keeps core + capability, never truncated.
-    # KNOWN CONSEQUENCE, flagged for founder review: on
-    # capability-attached turns the new voice/range lines do not
-    # render; the revised judgment (personality + worldview) does.
+    # Compact + typical (signed-in) guidance: under budget separation
+    # (renderer-budget separation design 2026-11-04), the ceiling
+    # measures character content ALONE, so the 1,443-char compact
+    # block keeps its voice unit with the 491-char signed guidance
+    # attached: total 1,935, voice and range lines render.
+    # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
+    # block previously asserted the voice-drop (voice absent, total
+    # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_bear_ordinary(
         BEAR_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) <= CHARACTER_CEILING
+    assert len(_joined(compact_typical)) == 1443 + 1 + len(signed) == 1935
     assert signed in _joined(compact_typical)  # capability never truncated
-    assert WARMTH_ADOPTED not in _joined(compact_typical)  # voice dropped whole
+    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
+    assert VOICE_COMPACT_MARKER in _joined(compact_typical)
+    # Capability sits at index 3 (after worldview), voice last.
+    assert compact_typical[3] == signed
+    assert VOICE_COMPACT_MARKER in compact_typical[4]
 
-    # Fuller + typical guidance: fuller is no longer reachable even
-    # bare (see budgets test), so this degrades to core + capability
-    # — valid ladder operation, not failure.
+    # Fuller + typical guidance: fuller degradation is a CHARACTER-only
+    # overrun, unchanged by separation — detail="fuller" still falls
+    # back to compact, now WITH guidance appended whole: total 1,935.
+    # (The old block asserted the same fallback but capped at the
+    # ceiling; the total now exceeds it by exactly the guidance.)
     degraded = render_bear_ordinary(
         BEAR_RECORD, detail="fuller", resolved_capability=signed
     )
     joined = _joined(degraded)
-    assert len(joined) <= CHARACTER_CEILING
+    assert len(joined) == 1443 + 1 + len(signed) == 1935
     for marker in FULLER_MIDDLE_MARKERS:
-        assert marker not in joined, marker  # middle dropped whole
+        assert marker not in joined, marker  # middle dropped whole (character-only)
     for marker in FULLER_VOICE_MARKERS:
-        assert marker not in joined, marker  # fuller voice dropped whole
-    assert WARMTH_ADOPTED not in joined  # compact voice dropped whole too
+        assert marker not in joined, marker  # fuller voice dropped whole (character-only)
+    assert WARMTH_ADOPTED in joined  # compact voice survives (not a character overrun)
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
     assert signed in joined  # capability never truncated
 
-    # Fuller + maximal (unsigned) guidance: same ladder, still fits.
+    # Fuller + maximal (unsigned) guidance: same fallback, unsigned
+    # guidance appended whole regardless of length. (Reversal of the
+    # old ceiling-capped expectation.)
     degraded_max = render_bear_ordinary(
         BEAR_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(degraded_max)) <= CHARACTER_CEILING
     assert unsigned in _joined(degraded_max)
     assert CANONICAL_MARKER in _joined(degraded_max)
     assert QUESTION_VERBATIM in _joined(degraded_max)
-    assert WARMTH_ADOPTED not in _joined(degraded_max)
+    assert WARMTH_ADOPTED in _joined(degraded_max)
 
-    # Compact + a huge capability: nothing left to drop → fail, never cut.
-    with pytest.raises(AssemblyError):
-        render_bear_ordinary(
-            BEAR_RECORD, detail="compact",
-            resolved_capability="x" * (CHARACTER_CEILING + 500),
-        )
+    # Compact + a huge capability: guidance-length independence
+    # (design §(e) test 5) — a 2,000-char guidance string no longer
+    # raises AssemblyError and is appended whole. INTENTIONAL
+    # REVERSAL of the old huge-guidance failure, documented here
+    # rather than hidden: guidance has no size backstop after
+    # separation, per the design's §(c) consequence.
+    huge = render_bear_ordinary(
+        BEAR_RECORD, detail="compact",
+        resolved_capability="x" * (CHARACTER_CEILING + 500),
+    )
+    assert len(_joined(huge)) == 1443 + 1 + (CHARACTER_CEILING + 500)
+    assert WARMTH_ADOPTED in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
     for line in degraded:
@@ -786,13 +800,13 @@ def test_branch_capability_moved_not_duplicated(monkeypatch):
     joined = _joined(lines)
     # Same content, moved into the character block: exactly once.
     assert joined.count(block.strip()) == 1
-    # 2026-11-04 revision consequence: with capability attached, the
-    # lengthened block no longer fits WITH the voice unit, so the
-    # ladder drops voice whole — there is no voice region for the
-    # capability to sit before on this path. The capability still
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # with capability attached, the voice unit now SURVIVES — this
+    # assertion previously pinned the voice-drop and is intentionally
+    # reversed here, citing the design doc. The capability still
     # sits inside the character block (not downstream), and the
     # revised judgment still renders.
-    assert VOICE_COMPACT_MARKER not in joined
+    assert VOICE_COMPACT_MARKER in joined
     assert "You notice floors first" in joined
 
 
@@ -977,3 +991,67 @@ def test_weights_untouched_and_no_vector_in_record():
     weights_field = BEAR_RECORD["identity"]["strand_weights"]
     assert isinstance(weights_field["text"], str)
     assert not isinstance(weights_field.get("vector"), (dict, list))
+
+
+def test_renderer_budget_separation_2026_11_04():
+    """Pins renderer-budget separation (design 2026-11-04) §(e) 2, 4,
+    6, 7, 8 for Bear, with REAL continuation guidance: judgment +
+    voice + range survive with guidance attached; order is
+    identity → personality → worldview → capability → voice;
+    fuller + guidance still falls back to compact (a character-only
+    overrun, unchanged by separation); no old compulsory phrases,
+    no cross-seat naming, protected material excluded; and the
+    character-only ceiling still raises AssemblyError independent
+    of guidance.
+    """
+    signed = CAP.continuation_block(
+        "guardian", CAP.VisitorState(signed_in=True, consent_acknowledged=True)
+    ).strip()
+    assert len(signed) == 491, len(signed)
+
+    # §(e)2: compact + guidance, total exactly 1,935.
+    compact = render_bear_ordinary(
+        BEAR_RECORD, detail="compact", resolved_capability=signed
+    )
+    joined = _joined(compact)
+    assert len(joined) == 1935
+    for sentence in (
+        "what must survive, who holds a key, what is quietly draining",  # judgment
+        "reconsider where that floor belongs when the facts change",  # judgment (refinement 3)
+        "easy warmth and unhurried rhythm of Southern hospitality",  # voice (refinement 2)
+        "welcome warmly and unhurriedly",  # range
+        "hold a named floor steady when it is crossed",  # range
+    ):
+        assert sentence in joined, sentence
+    # §(e)6: order, compact and fuller-fallback.
+    assert compact[3] == signed
+    assert VOICE_COMPACT_MARKER in compact[4]
+    fuller = render_bear_ordinary(
+        BEAR_RECORD, detail="fuller", resolved_capability=signed
+    )
+    assert len(_joined(fuller)) == 1935  # §(e)7: compact + guidance
+    assert fuller[3] == signed
+    for marker in FULLER_MIDDLE_MARKERS:
+        assert marker not in _joined(fuller), marker
+    # §(e)8: no old compulsory phrases, no cross-seat naming, protected excluded.
+    for phrase in (
+        "supper on the table, a roof over everybody's head",
+        "I'm not going anywhere",
+        "tremendously joyful in welcome",
+    ):
+        assert phrase not in joined, phrase
+    assert "Firebrand" not in joined
+    for phrase in PROTECTED_PHRASES:
+        assert phrase not in joined, phrase
+
+    # §(e)4: character-only ceiling still holds, with and without guidance.
+    bloated = copy.deepcopy(BEAR_RECORD)
+    bloated["characterization"]["personality"]["render_text"] = (
+        "A very long personality sentence. " * 100
+    )
+    with pytest.raises(AssemblyError):
+        render_bear_ordinary(bloated, detail="compact")
+    with pytest.raises(AssemblyError):
+        render_bear_ordinary(
+            bloated, detail="compact", resolved_capability=signed
+        )

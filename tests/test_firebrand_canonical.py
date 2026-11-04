@@ -583,73 +583,84 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Compact + typical (signed-in) guidance: the 2026-11-04 revision
-    # lengthened the compact core (1,306), so core + signed guidance
-    # (283) no longer fits WITH the voice unit — the ladder drops
-    # voice whole and keeps core + capability, never truncated.
-    # KNOWN CONSEQUENCE, flagged for founder review: on
-    # capability-attached turns the new voice/range lines do not
-    # render; the revised judgment (personality + worldview) does.
+    # Compact + typical (signed-in) guidance: under budget separation
+    # (renderer-budget separation design 2026-11-04), the ceiling
+    # measures character content ALONE, so the 1,306-char compact
+    # block keeps its voice unit with the 283-char signed guidance
+    # attached: total 1,590, voice and range lines render.
+    # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
+    # block previously asserted the voice-drop (voice absent, total
+    # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) <= CHARACTER_CEILING
+    assert len(_joined(compact_typical)) == 1306 + 1 + len(signed) == 1590
     assert signed in _joined(compact_typical)  # capability never truncated
-    assert WARMTH_ADOPTED not in _joined(compact_typical)  # voice dropped whole
-    assert VOICE_COMPACT_MARKER not in _joined(compact_typical)
+    assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
+    assert VOICE_COMPACT_MARKER in _joined(compact_typical)
     assert CANONICAL_MARKER in _joined(compact_typical)
+    # Capability sits at index 3 (after worldview), voice last.
+    assert compact_typical[3] == signed
+    assert VOICE_COMPACT_MARKER in compact_typical[4]
 
-    # Fuller + typical guidance: same ladder — additional AND voice
-    # both drop; core + capability survives.
+    # Fuller + typical guidance: additional survives too; total
+    # 1,382 + 1 + 283 = 1,666. (Reversal of the old drop expectation.)
     full_typical = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=signed
     )
-    assert len(_joined(full_typical)) <= CHARACTER_CEILING
+    assert len(_joined(full_typical)) == 1382 + 1 + len(signed) == 1666
     for marker in FULLER_ADDITIONAL_MARKERS:
-        assert marker not in _joined(full_typical), marker
-    assert WARMTH_ADOPTED not in _joined(full_typical)
+        assert marker in _joined(full_typical), marker
     assert signed in _joined(full_typical)
 
-    # Fuller + maximal (unsigned) guidance: same ladder.
+    # Fuller + maximal (unsigned) guidance: guidance length no longer
+    # affects the ladder at all — additional survives, unsigned
+    # guidance appended whole. (Reversal of the old drop expectation.)
     full_max = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(full_max)) <= CHARACTER_CEILING
     for marker in FULLER_ADDITIONAL_MARKERS:
-        assert marker not in _joined(full_max), marker
-    assert WARMTH_ADOPTED not in _joined(full_max)
+        assert marker in _joined(full_max), marker
     assert unsigned in _joined(full_max)
 
-    # Mid-size capability (600 chars): fuller overflows, compact fits
-    # as core + capability only — additional AND voice drop whole.
-    # Fuller→core is valid ladder operation, not failure.
+    # Mid-size capability (600 chars): fuller keeps additional; the
+    # guidance is appended whole, never measured against the ceiling.
+    # (Reversal: additional previously dropped whole here.)
     mid = "y" * 600
     degraded = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=mid
     )
     joined = _joined(degraded)
-    assert len(joined) <= CHARACTER_CEILING
+    assert len(joined) == 1382 + 1 + 600
     for marker in FULLER_ADDITIONAL_MARKERS:
-        assert marker not in joined, marker  # additional dropped whole
-    assert WARMTH_ADOPTED not in joined  # voice dropped whole
+        assert marker in joined, marker  # additional survives
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
     assert mid in joined  # capability never truncated
 
-    # Large capability (900 chars): even core + capability overflows
-    # the lengthened 2026-11-04 core — fail, never cut.
+    # Large capability (900 chars): no longer fails — the character
+    # block fits on its own, so voice survives and guidance appends
+    # whole. (Reversal: core + capability previously overflowed.)
     large = "z" * 900
-    with pytest.raises(AssemblyError):
-        render_firebrand_ordinary(
-            FIREBRAND_RECORD, detail="compact", resolved_capability=large
-        )
+    large_render = render_firebrand_ordinary(
+        FIREBRAND_RECORD, detail="compact", resolved_capability=large
+    )
+    assert len(_joined(large_render)) == 1306 + 1 + 900
+    assert WARMTH_ADOPTED in _joined(large_render)
+    assert large in _joined(large_render)
 
-    # Compact + a huge capability: nothing left to drop → fail, never cut.
-    with pytest.raises(AssemblyError):
-        render_firebrand_ordinary(
-            FIREBRAND_RECORD, detail="compact",
-            resolved_capability="x" * (CHARACTER_CEILING + 500),
-        )
+    # Compact + a huge capability: guidance-length independence
+    # (design §(e) test 5) — a 2,000-char guidance string no longer
+    # raises AssemblyError and is appended whole. INTENTIONAL
+    # REVERSAL of the old huge-guidance failure, documented here
+    # rather than hidden: guidance has no size backstop after
+    # separation, per the design's §(c) consequence.
+    huge = render_firebrand_ordinary(
+        FIREBRAND_RECORD, detail="compact",
+        resolved_capability="x" * (CHARACTER_CEILING + 500),
+    )
+    assert len(_joined(huge)) == 1306 + 1 + (CHARACTER_CEILING + 500)
+    assert WARMTH_ADOPTED in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
     for line in degraded:
@@ -785,13 +796,13 @@ def test_branch_capability_moved_not_duplicated(monkeypatch):
     joined = _joined(lines)
     # Same content, moved into the character block: exactly once.
     assert joined.count(block.strip()) == 1
-    # 2026-11-04 revision consequence: with capability attached, the
-    # lengthened block no longer fits WITH the voice unit, so the
-    # ladder drops voice whole — there is no voice region for the
-    # capability to sit before on this path. The capability still
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # with capability attached, the voice unit now SURVIVES — this
+    # assertion previously pinned the voice-drop and is intentionally
+    # reversed here, citing the design doc. The capability still
     # sits inside the character block (not downstream), and the
     # revised judgment still renders.
-    assert VOICE_COMPACT_MARKER not in joined
+    assert VOICE_COMPACT_MARKER in joined
     assert "Press for change when conviction warrants action" in joined
 
 
@@ -991,6 +1002,13 @@ def test_characterization_revision_2026_11_04_assembled_prompts():
     ladder drops the voice unit whole — judgment survives, voice and
     range lines do not render on those turns. No renderer change was
     made; the consequence is flagged for founder review.
+
+    NOTE (renderer-budget separation, 2026-11-04): the consequence
+    above is SUPERSEDED for the two seats' renderers — the separation
+    design moves capability out of the measured set, so voice and
+    range lines now render on capability-attached turns too. The
+    assertions below pin the NEW invariant; see the budget tests
+    for the deliberate expectation reversals citing the design doc.
     """
     fb = _joined(render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact"))
     br = _joined(render_bear_ordinary(BEAR_RECORD, detail="compact"))
@@ -1039,7 +1057,9 @@ def test_characterization_revision_2026_11_04_assembled_prompts():
     assert len(fb) < CHARACTER_CEILING
     assert len(br) < CHARACTER_CEILING
 
-    # Capability-attached turns: judgment survives, voice drops whole.
+    # Capability-attached turns: judgment, voice, AND range survive
+    # under budget separation (design 2026-11-04) — the old
+    # voice-drop expectation is intentionally reversed here.
     signed_br = CAP.continuation_block(
         "guardian", CAP.VisitorState(signed_in=True, consent_acknowledged=True)
     ).strip()
@@ -1047,5 +1067,74 @@ def test_characterization_revision_2026_11_04_assembled_prompts():
         render_bear_ordinary(BEAR_RECORD, detail="compact", resolved_capability=signed_br)
     )
     assert "You notice floors first" in with_cap
-    assert "Southern hospitality" not in with_cap
-    assert "welcome warmly and unhurriedly" not in with_cap
+    assert "Southern hospitality" in with_cap
+    assert "welcome warmly and unhurriedly" in with_cap
+    assert len(with_cap) == 1443 + 1 + len(signed_br) == 1935
+
+
+def test_renderer_budget_separation_2026_11_04():
+    """Pins renderer-budget separation (design 2026-11-04) §(e) 1, 4,
+    6, 7, 8 for Firebrand, with REAL continuation guidance: judgment
+    + voice + range survive with guidance attached; order is
+    identity → personality → worldview → capability → voice;
+    fuller + guidance keeps the additional unit; no old compulsory
+    phrases, no cross-seat naming, protected material excluded; and
+    the character-only ceiling still raises AssemblyError
+    independent of guidance.
+    """
+    signed = CAP.continuation_block(
+        "champion", CAP.VisitorState(signed_in=True, consent_acknowledged=True)
+    ).strip()
+    assert len(signed) == 283, len(signed)
+
+    # §(e)1: compact + guidance, total exactly 1,590.
+    compact = render_firebrand_ordinary(
+        FIREBRAND_RECORD, detail="compact", resolved_capability=signed
+    )
+    joined = _joined(compact)
+    assert len(joined) == 1590
+    for sentence in (
+        "deserved before you ask whether it can be won",  # judgment
+        "Press for change when conviction warrants action",  # judgment (refinement 1)
+        "short declarative sentences",  # voice
+        "dry and brief",  # voice
+        "gather missing information before judging",  # range
+        "do upkeep cleanly",  # range
+        "slow down and name the next step",  # range
+    ):
+        assert sentence in joined, sentence
+    # §(e)6: order, compact and fuller.
+    assert compact[3] == signed
+    assert VOICE_COMPACT_MARKER in compact[4]
+    fuller = render_firebrand_ordinary(
+        FIREBRAND_RECORD, detail="fuller", resolved_capability=signed
+    )
+    assert len(_joined(fuller)) == 1666  # §(e)7
+    assert fuller[3] == signed
+    for marker in FULLER_ADDITIONAL_MARKERS:
+        assert marker in _joined(fuller), marker
+    # §(e)8: no old compulsory phrases, no cross-seat naming, protected excluded.
+    for phrase in (
+        "You pick the hill, and you name the price",
+        "prices named, hills named",
+        "cheap fights don't interest you",
+        "hill isn't worth dying on",
+        "battle-worn commander",
+        "Obedience is not conviction",
+    ):
+        assert phrase not in joined, phrase
+    assert "Bear" not in joined
+    for phrase in PROTECTED_PHRASES:
+        assert phrase not in joined, phrase
+
+    # §(e)4: character-only ceiling still holds, with and without guidance.
+    bloated = copy.deepcopy(FIREBRAND_RECORD)
+    bloated["characterization"]["personality"]["render_text"] = (
+        "A very long personality sentence. " * 100
+    )
+    with pytest.raises(AssemblyError):
+        render_firebrand_ordinary(bloated, detail="compact")
+    with pytest.raises(AssemblyError):
+        render_firebrand_ordinary(
+            bloated, detail="compact", resolved_capability=signed
+        )

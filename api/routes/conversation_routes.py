@@ -143,6 +143,7 @@ def conversation_turn(
 @router.get("/list")
 def list_conversations(
     limit: int = Query(default=20, ge=1, le=100),
+    seat: str | None = Query(default=None, max_length=64),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """List the caller's talk conversations, newest message activity first.
@@ -154,11 +155,16 @@ def list_conversations(
     implied, and no participant table exists. Every aggregate and
     preview subquery carries the caller's user_id predicate, so
     another user's rows can never match.
+
+    When ``seat`` is given, only conversations that seat has spoken
+    in are returned, via an EXISTS membership predicate applied
+    before the limit (see ConversationStore.list_conversations).
+    An absent or empty seat returns today's unfiltered list.
     """
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
-    return {"conversations": _store().list_conversations(user_id, limit=limit)}
+    return {"conversations": _store().list_conversations(user_id, limit=limit, seat=seat)}
 
 
 @router.get("")

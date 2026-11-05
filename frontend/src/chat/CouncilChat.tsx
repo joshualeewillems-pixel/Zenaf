@@ -5,6 +5,11 @@ import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
 import TaskProposalCards from './TaskProposalCards'
 import { stripTaskProposalBlocks } from './taskProposals'
 import VoiceFeedback from './VoiceFeedback'
+import {
+  useDraftStore,
+  COUNCIL_DRAFT_SEAT,
+  UNSELECTED_DRAFT_SEAT,
+} from './draftStore'
 
 /**
  * One message in the persistent conversation. Voice turns carry the
@@ -140,6 +145,13 @@ export default function CouncilChat({
 }) {
   const base = apiBase()
   const { names } = useSeatMeta()
+  // Draft store (Tree sheet subtree only; null on workspace/console
+  // mounts, which keep purely local composer state). When present,
+  // the store is the SOLE restore path for this composer: mount-time
+  // initialization reads it, every keystroke writes through to it,
+  // and the prefill prop never restores over it.
+  const draftCtx = useDraftStore()
+  const draftUserId = draftCtx?.userId ?? null
 
   // The persistent thread — initialized once from the hydration seam.
   // Switching seats never touches this list.
@@ -147,7 +159,22 @@ export default function CouncilChat({
   const [activeId, setActiveId] = useState<string | null>(initialArchetypeId ?? null)
   /** Ask-the-council fan-out: the next send goes to every seat at once. */
   const [councilMode, setCouncilMode] = useState(false)
-  const [input, setInput] = useState('')
+  // Mount-time initialization from the draft store, never an effect
+  // restore: on every remount (seat/conversation switch, sheet reopen,
+  // invitation shortcut) the composer starts from the store entry for
+  // (user, conversation, initial seat) — or the adopted unselected
+  // draft when the mount arrives with no seat selected. Mounts with a
+  // null conversationId ('local') never touch the store.
+  const [input, setInput] = useState(() => {
+    if (!draftCtx || !draftCtx.userId || !conversationId) return ''
+    return (
+      draftCtx.store.adopt(
+        draftCtx.userId,
+        conversationId,
+        initialArchetypeId ?? UNSELECTED_DRAFT_SEAT,
+      ) ?? ''
+    )
+  })
   const [loading, setLoading] = useState(false)
   /** Demo's "Respond / Question me" toggle, brought to the authenticated chat. */
   const [questionMode, setQuestionMode] = useState(false)
@@ -191,6 +218,26 @@ export default function CouncilChat({
   namesRef.current = names
   const conversationIdRef = useRef(conversationId)
   conversationIdRef.current = conversationId
+  // Latest composer text for the send-failure restore decision (the
+  // send closure's `input` is the pre-send value, not the current
+  // one). Updated SYNCHRONOUSLY by setComposer at every write site —
+  // a passive-effect mirror would lag by one flush, and the failure
+  // restore would read stale text.
+  const inputRef = useRef(input)
+  const setComposer = (v: string) => {
+    inputRef.current = v
+    setInput(v)
+  }
+  // Auth change while mounted: the provider purges the store, so the
+  // composer must not keep displaying the previous user's text.
+  const draftUserRef = useRef<string | null | undefined>(draftUserId)
+  useEffect(() => {
+    if (draftCtx && draftUserRef.current !== draftUserId) {
+      draftUserRef.current = draftUserId
+      setComposer('')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftCtx, draftUserId])
   const hydrateSeqRef = useRef(0)
   const sendSeqRef = useRef(0)
   const [storeEmpty, setStoreEmpty] = useState<boolean | null>(null)
@@ -299,9 +346,37 @@ export default function CouncilChat({
   }, [conversationId, messages, loadingEarlier, base])
   const prefillNonce = prefill?.nonce ?? 0
   useEffect(() => {
-    if (prefill && prefillNonce > 0) setInput(prefill.text)
+    // Single-owner rule: when the draft store is present (Tree sheet
+    // mounts) the store is the sole restore path, so prefill never
+    // restores over a stored draft or newer typing. Workspace/console
+    // mounts have no store, and prefill works exactly as before.
+    if (!draftCtx && prefill && prefillNonce > 0) setComposer(prefill.text)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillNonce])
+
+  /** Synchronous composer swap for a seat/council switch (store mounts
+   *  only; without a store the input is shared, exactly as today).
+   *  The outgoing draft is already saved by write-through; this only
+   *  LOADS the incoming key's draft (or ''). When the outgoing
+   *  identity is 'unselected', the first selection adopts its text
+   *  (a move — see DraftStore.adopt) instead of a plain load. */
+  const swapComposer = (destSeat: string) => {
+    if (!draftCtx || !draftCtx.userId || !conversationId) return
+    const outgoing = councilMode
+      ? COUNCIL_DRAFT_SEAT
+      : (activeId ?? UNSELECTED_DRAFT_SEAT)
+    if (outgoing === UNSELECTED_DRAFT_SEAT) {
+      setComposer(draftCtx.store.adopt(draftCtx.userId, conversationId, destSeat) ?? '')
+    } else {
+      setComposer(
+        draftCtx.store.get({
+          userId: draftCtx.userId,
+          conversationId,
+          seat: destSeat,
+        }) ?? '',
+      )
+    }
+  }
 
   const activeName =
     displayName ?? (activeId ? names[activeId] ?? activeId : null) ?? 'a voice'
@@ -373,8 +448,32 @@ export default function CouncilChat({
     // the user is still on it.
     const targetId = conversationIdRef.current
     const seq = ++sendSeqRef.current
+    // C3 precise send boundary: capture the draft key (and the raw
+    // composer text) WHEN Send is pressed. A later completion — success
+    // or failure — acts only on this captured key, never on whichever
+    // draft happens to be active when the response lands. Nothing is
+    // cleared before the request has been accepted for persistence.
+    const sendDraftKey =
+      draftCtx && draftCtx.userId && conversationId
+        ? {
+            userId: draftCtx.userId,
+            conversationId,
+            seat: councilMode
+              ? COUNCIL_DRAFT_SEAT
+              : (activeId ?? UNSELECTED_DRAFT_SEAT),
+          }
+        : null
+    const sentRaw = input
+    const clearSentDraftIfUnchanged = () => {
+      if (!sendDraftKey || !draftCtx) return
+      // Only clear when the store still holds exactly what was sent:
+      // text typed while the response was in flight must survive.
+      if (draftCtx.store.get(sendDraftKey) === sentRaw) {
+        draftCtx.store.clear(sendDraftKey)
+      }
+    }
     setMessages((prev) => [...prev, { role: 'user', content: text }])
-    setInput('')
+    setComposer('')
     setLoading(true)
     setSignedOut(false)
     try {
@@ -395,8 +494,10 @@ export default function CouncilChat({
             }
           }),
         )
+        const accepted = !results.every((x) => x === 'auth')
+        if (accepted) clearSentDraftIfUnchanged()
         if (conversationIdRef.current !== targetId) return
-        if (results.every((x) => x === 'auth')) {
+        if (!accepted) {
           setSignedOut(true)
           setMessages((prev) => prev.slice(0, -1))
           return
@@ -408,6 +509,7 @@ export default function CouncilChat({
         onTurnSent()
       } else if (activeId) {
         const reply = await askSeat(activeId, text)
+        if (reply !== 'auth') clearSentDraftIfUnchanged()
         if (conversationIdRef.current !== targetId) return
         if (reply === 'auth') {
           setSignedOut(true)
@@ -419,6 +521,24 @@ export default function CouncilChat({
       }
     } catch {
       if (conversationIdRef.current !== targetId) return
+      // Failed submission clears nothing: the sent draft stays in the
+      // store. Restore it into the composer only when the composer is
+      // currently empty and the active key is still the captured key,
+      // so a stale restore never overwrites in-flight typing and a
+      // switch-while-pending leaves the new draft intact.
+      if (sendDraftKey && draftCtx) {
+        const currentSeat = councilMode
+          ? COUNCIL_DRAFT_SEAT
+          : (activeId ?? UNSELECTED_DRAFT_SEAT)
+        if (
+          inputRef.current === '' &&
+          currentSeat === sendDraftKey.seat &&
+          conversationIdRef.current === sendDraftKey.conversationId
+        ) {
+          const saved = draftCtx.store.get(sendDraftKey)
+          if (saved !== undefined) setComposer(saved)
+        }
+      }
       if (!councilMode && activeId) {
         setMessages((prev) => [
           ...prev,
@@ -433,7 +553,7 @@ export default function CouncilChat({
     } finally {
       if (sendSeqRef.current === seq) setLoading(false)
     }
-  }, [input, loading, activeId, councilMode, askSeat, activeName, names, conversationId, hydrating, hydrateError, onTurnSent])
+  }, [input, loading, activeId, councilMode, askSeat, activeName, names, conversationId, hydrating, hydrateError, onTurnSent, draftCtx, setComposer])
 
   const sendDisabled =
     loading ||
@@ -447,6 +567,7 @@ export default function CouncilChat({
       <SeatChips
         activeId={councilMode ? null : activeId}
         onSelect={(id) => {
+          swapComposer(id)
           setActiveId(id)
           setCouncilMode(false)
         }}
@@ -456,7 +577,14 @@ export default function CouncilChat({
       <div className="flex flex-wrap items-center gap-3 -mt-1">
         <button
           type="button"
-          onClick={() => setCouncilMode((v) => !v)}
+          onClick={() => {
+            // Toggle destination: ON → the 'council' key; OFF → the
+            // active seat, or 'unselected' when no seat is picked.
+            swapComposer(
+              councilMode ? (activeId ?? UNSELECTED_DRAFT_SEAT) : COUNCIL_DRAFT_SEAT,
+            )
+            setCouncilMode((v) => !v)
+          }}
           aria-pressed={councilMode}
           className={`min-h-[44px] px-4 rounded-full border text-sm font-medium ${
             councilMode
@@ -691,7 +819,25 @@ export default function CouncilChat({
           <div className="flex gap-2">
             <input
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value
+                setComposer(v)
+                // Write-through: every keystroke lands under the
+                // CURRENT key synchronously. There is no save-on-
+                // unmount step (one could overwrite a newer draft).
+                if (draftCtx && draftCtx.userId && conversationId) {
+                  draftCtx.store.set(
+                    {
+                      userId: draftCtx.userId,
+                      conversationId,
+                      seat: councilMode
+                        ? COUNCIL_DRAFT_SEAT
+                        : (activeId ?? UNSELECTED_DRAFT_SEAT),
+                    },
+                    v,
+                  )
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault()

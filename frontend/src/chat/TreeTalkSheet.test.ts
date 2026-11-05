@@ -57,7 +57,7 @@ function ok(payload: unknown) {
 let container: HTMLDivElement
 let root: Root
 let calls: string[]
-let listBehavior: 'ok' | 'fail'
+let listBehavior: 'ok' | 'fail' | 'fail-seat'
 
 function installFetch() {
   calls = []
@@ -67,17 +67,18 @@ function installFetch() {
       return Promise.resolve(ok({ archetypes: [] }))
     }
     if (url.includes('/conversation/list')) {
-      if (listBehavior === 'fail') {
+      const seat = new URL(url, 'http://x').searchParams.get('seat')
+      if (listBehavior === 'fail' || (listBehavior === 'fail-seat' && seat)) {
         return Promise.reject(new Error('list down'))
       }
-      return Promise.resolve(
-        ok({
-          conversations: [
-            talk(TALK_CHAMPION, ['champion'], 'champion preview'),
-            talk(TALK_MENTOR, ['mentor'], 'mentor preview'),
-          ],
-        }),
-      )
+      // The server applies the seat filter before the limit: a
+      // seat-scoped fetch returns only that seat's threads.
+      const all = [
+        talk(TALK_CHAMPION, ['champion'], 'champion preview'),
+        talk(TALK_MENTOR, ['mentor'], 'mentor preview'),
+      ]
+      const conversations = seat ? all.filter((t) => t.seats.includes(seat)) : all
+      return Promise.resolve(ok({ conversations }))
     }
     if (url.includes('/conversation/invitations')) {
       return Promise.resolve(ok({ conversation_id: CONV_OVERRIDE, invitations: [] }))
@@ -275,5 +276,126 @@ describe('list failure', () => {
     expect(container.textContent).toContain("Couldn't load your conversations")
     expect(container.querySelector('input')).toBeNull()
     expect(calls.some((u) => u.includes('/voice/chat'))).toBe(false)
+  })
+})
+
+describe('seat-scoped lookup (navigation correction §1)', () => {
+  it('seat mounts fetch seat=<seat>&limit=1 and take the first row, never a capped general list', async () => {
+    renderSheet({ seatKey: 'mentor', displayName: 'Gardener' })
+    await flush()
+    const scoped = calls.find(
+      (u) => u.includes('/conversation/list') && u.includes('seat=mentor') && u.includes('limit=1'),
+    )
+    expect(scoped).toBeDefined()
+    // The seat fetch must not populate the list-mode cache: no
+    // general (unfiltered) list call happens on a seat mount.
+    expect(
+      calls.some((u) => {
+        if (!u.includes('/conversation/list')) return false
+        return !new URL(u, 'http://x').searchParams.has('seat')
+      }),
+    ).toBe(false)
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${TALK_MENTOR}`)),
+    ).toBe(true)
+  })
+
+  it('pick-mode seat selection uses the same seat-scoped lookup', async () => {
+    renderSheet({ seatKey: null })
+    await flush()
+    await click(buttonByText('Start new'))
+    const chip = Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('mentor'),
+    )
+    if (!chip) throw new Error('mentor chip not found')
+    await click(chip)
+    expect(
+      calls.some((u) => u.includes('/conversation/list') && u.includes('seat=mentor')),
+    ).toBe(true)
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${TALK_MENTOR}`)),
+    ).toBe(true)
+  })
+
+  it('pick-mode lookup failure shows the error state, never a fresh thread', async () => {
+    listBehavior = 'fail-seat'
+    renderSheet({ seatKey: null })
+    await flush()
+    await click(buttonByText('Start new'))
+    const chip = Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('mentor'),
+    )
+    if (!chip) throw new Error('mentor chip not found')
+    await click(chip)
+    expect(container.textContent).toContain("Couldn't load your conversations")
+    expect(container.querySelector('input')).toBeNull()
+    expect(calls.some((u) => u.includes('/voice/chat'))).toBe(false)
+  })
+})
+
+describe('override mount conversation-list return path (C2)', () => {
+  const overrideProps = {
+    seatKey: 'mentor',
+    displayName: 'Gardener',
+    conversationOverride: { conversationId: CONV_OVERRIDE, seat: 'guardian' },
+  }
+
+  it('override mounts offer ← Conversations, and it reaches the general list', async () => {
+    renderSheet(overrideProps)
+    await flush()
+    expect(container.textContent).toContain('thread talk-cccc')
+    expect(container.textContent).toContain('← Conversations')
+    await click(buttonByText('← Conversations'))
+    // List entry fetches the GENERAL list lazily (no seat param).
+    expect(
+      calls.some((u) => {
+        if (!u.includes('/conversation/list')) return false
+        return !new URL(u, 'http://x').searchParams.has('seat')
+      }),
+    ).toBe(true)
+    expect(container.textContent).toContain('mentor preview')
+    expect(container.textContent).toContain('champion preview')
+  })
+
+  it('a fresh mount with a different override lands on the new target (C1 remount mechanism)', async () => {
+    renderSheet(overrideProps)
+    await flush()
+    expect(container.textContent).toContain('thread talk-cccc')
+    // The App remounts TreeTalkSheet under a new key when the header
+    // shortcut fires; a new mount consumes the new override.
+    act(() => {
+      root.render(
+        React.createElement(TreeTalkSheet, {
+          ...overrideProps,
+          conversationOverride: { conversationId: TALK_MENTOR, seat: 'mentor' },
+          key: 'remount-2',
+        } as never),
+      )
+    })
+    await flush()
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${TALK_MENTOR}`)),
+    ).toBe(true)
+    expect(container.textContent).toContain('thread talk-aaaa')
+  })
+
+  it('reports the open conversation id to the Tree (shortcut visibility input)', async () => {
+    const seen: Array<string | null> = []
+    renderSheet({ ...overrideProps, onChatIdChange: (id: string | null) => seen.push(id) })
+    await flush()
+    expect(seen).toContain(CONV_OVERRIDE)
+    const seen2: Array<string | null> = []
+    act(() => {
+      root.render(
+        React.createElement(TreeTalkSheet, {
+          seatKey: 'mentor',
+          displayName: 'Gardener',
+          onChatIdChange: (id: string | null) => seen2.push(id),
+          key: 'seat-mount',
+        } as never),
+      )
+    })
+    await flush()
+    expect(seen2).toContain(TALK_MENTOR)
   })
 })

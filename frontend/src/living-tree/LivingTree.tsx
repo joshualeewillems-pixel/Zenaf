@@ -43,6 +43,7 @@ import {
   type TreePanelThread,
 } from './archetypes'
 import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
+import { DraftStoreProvider } from '../chat/draftStore'
 import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
 import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
 import { NodeSheet } from '../tree/NodeSheet'
@@ -107,10 +108,21 @@ export const OPEN_SEAT_REVIEW_EVENT = 'zenaf:open-seat-review'
 export type NodeSheetContentProvider = (
   node: TreeNodeRef,
   item: NodeMenuItemId,
-  /** Capability C visible-UX slice: invitation navigation target, set
-      only when the user tapped a seat's "Invitations (n)" menu row.
-      Absent = today's behavior, byte-identical. */
-  opts?: { conversationOverride?: { conversationId: string; seat: string } },
+  opts?: {
+    /** Capability C visible-UX slice: invitation navigation target,
+        set only by the header-menu invitation shortcut. Absent =
+        today's behavior. */
+    conversationOverride?: { conversationId: string; seat: string }
+    /** Navigation correction C1: bumped by the header-menu shortcut
+        so the App remounts TreeTalkSheet under a new key — the
+        override alone is mount-only and cannot move an already-open
+        conversation. */
+    navNonce?: number
+    /** Reports TreeTalkSheet's open conversation id (chat mode only;
+        null otherwise) so the header menu can hide the invitation
+        shortcut when its target IS the open conversation. */
+    onChatIdChange?: (id: string | null) => void
+  },
 ) => ReactNode | null
 
 /** Engine seat key -> fellowship display name (mirrors TodayView's map). */
@@ -268,11 +280,12 @@ const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
 ]
 
-/** The one grammar: a seat node's menu. Talk carries the seat's character card
-    as its header — who you're talking to, then the conversation. */
+/** The one grammar: a seat node's secondary menu (the compact-head
+    "Other actions" menu). Talk is NOT listed: tapping the node IS
+    talk — the conversation opens directly, no menu interstitial.
+    The you-node keeps its Talk entry (YOU_MENU, untouched). */
 const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'today', title: 'Today', desc: 'The day through this seat’s eyes.' },
-  { id: 'talk', title: 'Talk', desc: 'Meet the seat, then talk it through.' },
   { id: 'review', title: 'Review', desc: 'This seat’s moments awaiting your verdict.' },
   { id: 'upload', title: 'Upload', desc: 'Add source material from this seat — sorted by content; what reaches this seat lands in its review.' },
 ]
@@ -293,6 +306,54 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
   guardian: [
     { id: 'provenance', title: 'Provenance', desc: 'Where your material came from — and where it went.', nav: 'provenance' },
   ],
+}
+
+/**
+ * The compact-head "Other actions" menu (M3, navigation correction
+ * §2): sheet destinations, seat-owned destinations, and the
+ * conditional invitation shortcut — pure function of its inputs so
+ * the visibility rules are unit-testable without rendering the tree.
+ *
+ * Never contains Talk (tapping the node IS talk), Full character
+ * (already a head disclosure), or the first-meeting door (a direct
+ * header button). The shortcut appears ONLY when the seat has a
+ * pending invitation AND its most-recent invitation conversation is
+ * not the open one — when the target IS the open conversation, the
+ * in-chat list already shows it. Its label says "View", never
+ * "Accept": viewing never consumes an invitation.
+ */
+export type SeatHeaderMenuItem =
+  | { kind: 'sheet'; id: NodeMenuItemId; title: string; desc: string }
+  | { kind: 'nav'; id: string; title: string; desc: string; nav: SheetNavView }
+  | { kind: 'shortcut'; title: string; desc: string }
+
+export function buildSeatHeaderMenu(args: {
+  seatKey: string
+  invitationCount: number
+  invitationTarget?: string
+  currentChatId: string | null
+}): SeatHeaderMenuItem[] {
+  const items: SeatHeaderMenuItem[] = SEAT_MENU.map((m) => ({
+    kind: 'sheet' as const,
+    id: m.id,
+    title: m.title,
+    desc: m.desc,
+  }))
+  for (const nav of SEAT_NAV_ITEMS[args.seatKey] ?? []) {
+    items.push({ kind: 'nav', id: nav.id, title: nav.title, desc: nav.desc, nav: nav.nav })
+  }
+  if (
+    args.invitationCount > 0 &&
+    args.invitationTarget &&
+    args.invitationTarget !== args.currentChatId
+  ) {
+    items.push({
+      kind: 'shortcut',
+      title: 'View invitation in another conversation',
+      desc: 'Open the most recent conversation this seat was invited into.',
+    })
+  }
+  return items
 }
 
 /**
@@ -813,6 +874,7 @@ export function LivingTreeView({
   onNavigate,
   initials,
   renderSheetContent,
+  currentUserId,
 }: {
   /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
   onNavigate: (view: SheetNavView) => void
@@ -820,6 +882,9 @@ export function LivingTreeView({
   initials?: string
   /** App-shell provider: the mounted view for a (node, menu item) pair. */
   renderSheetContent?: NodeSheetContentProvider
+  /** Signed-in user id (null when signed out): keys the draft store
+      and purges it on auth change. */
+  currentUserId?: string | null
 }) {
   const [sel, setSel] = useState<string | null>(null)
   const [exp, setExp] = useState<Record<string, boolean>>({})
@@ -828,13 +893,24 @@ export function LivingTreeView({
   /** Null = the node's menu; otherwise the mounted menu item. */
   const [sheetItem, setSheetItem] = useState<NodeMenuItemId | null>(null)
   /** Capability C visible-UX slice: invitation navigation target, set
-      ONLY by tapping a seat's "Invitations (n)" menu row. Cleared on
-      sheet close and whenever any other menu row is tapped, so a
-      stale override can never resurrect. */
+      ONLY by the header-menu invitation shortcut. Cleared on sheet
+      close and whenever any other menu row is tapped, so a stale
+      override can never resurrect. */
   const [talkOverride, setTalkOverride] = useState<{
     conversationId: string
     seat: string
   } | null>(null)
+  /** Navigation correction C1: bumping this remounts TreeTalkSheet
+      under a new App key, so the shortcut lands from an already-open
+      conversation — the override alone is mount-only and cannot move
+      an open conversation. */
+  const [talkNavNonce, setTalkNavNonce] = useState(0)
+  /** Current chat conversation id reported by TreeTalkSheet (chat
+      mode only; null otherwise). The shortcut hides when its target
+      IS the open conversation. Cleared on sheet close. */
+  const [talkChatId, setTalkChatId] = useState<string | null>(null)
+  /** Seat whose compact-head "Other actions" menu is open. */
+  const [headerMenuSeat, setHeaderMenuSeat] = useState<string | null>(null)
   /** Seat whose full character panel is expanded inside its Talk tab. */
   const [charExpandedSeat, setCharExpandedSeat] = useState<string | null>(null)
 
@@ -989,6 +1065,8 @@ export function LivingTreeView({
     // An invitation navigation episode ends with the sheet: a stale
     // override must never resurrect on the next open.
     setTalkOverride(null)
+    setTalkChatId(null)
+    setHeaderMenuSeat(null)
     // Minimum attention refresh: a joined invitation's Tree indicator
     // must not linger until the next mount fetch.
     refreshAttention()
@@ -1018,8 +1096,11 @@ export function LivingTreeView({
     const datum = live?.datum ?? findDatum(id, up)
     const arch = datum?.archetype
     if (arch) {
-      // Seat branches open their sheet (menu: Today / Talk / Review).
+      // Navigation correction: a seat tap opens the seat's ongoing
+      // conversation directly — no menu interstitial. Any stale
+      // invitation override is cleared so it can never resurrect.
       setSel(id)
+      setTalkOverride(null)
       openSheet({
         kind: 'seat',
         seatKey: arch.id,
@@ -1027,6 +1108,7 @@ export function LivingTreeView({
         archetypeName: arch.display_name,
         avatarUrl: arch.avatar_url,
       })
+      setSheetItem('talk')
       return
     }
     // Strand roots keep their inline narrative panels.
@@ -1138,6 +1220,120 @@ export function LivingTreeView({
           {expanded ? 'Hide full character ↑' : 'Full character →'}
         </button>
         {expanded && renderSeatCharacterBody(arch)}
+        <button
+          type="button"
+          aria-label="Other actions"
+          aria-expanded={headerMenuSeat === arch.id}
+          onClick={() => setHeaderMenuSeat(headerMenuSeat === arch.id ? null : arch.id)}
+          style={{
+            minWidth: 44,
+            minHeight: 44,
+            marginTop: 8,
+            padding: '0 12px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(245,240,232,.06)',
+            border: '1px solid rgba(201,168,106,.25)',
+            borderRadius: 12,
+            color: '#f5f0e8',
+            fontSize: 20,
+            lineHeight: 1,
+            cursor: 'pointer',
+          }}
+        >
+          ···
+        </button>
+        {headerMenuSeat === arch.id && renderSeatHeaderMenu(arch)}
+      </div>
+    )
+  }
+
+  /** The compact-head "Other actions" menu (M3). Destinations behave
+      exactly as today's menu rows: sheet items mount via the App
+      provider, seat-owned destinations navigate the app shell. The
+      invitation shortcut (C1) sets the override AND bumps the
+      navigation nonce so TreeTalkSheet remounts onto the target even
+      from an already-open conversation; the outgoing draft is already
+      preserved by write-through under its own key, and navigating
+      clears nothing. */
+  const renderSeatHeaderMenu = (arch: ArchetypeStatus) => {
+    const marker = attention?.markers[arch.id]
+    const inviteCount = marker?.invitation_count ?? 0
+    const inviteTarget =
+      inviteCount > 0 ? marker?.invitation_conversation_ids?.[0] : undefined
+    const items = buildSeatHeaderMenu({
+      seatKey: arch.id,
+      invitationCount: inviteCount,
+      invitationTarget: inviteTarget,
+      currentChatId: talkChatId,
+    })
+    return (
+      <div>
+        {items.map((m) => {
+          if (m.kind === 'sheet') {
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className="lrow"
+                onClick={() => {
+                  // Any non-invitation row ends an invitation
+                  // navigation episode: a stale override must never
+                  // resurrect.
+                  setTalkOverride(null)
+                  setHeaderMenuSeat(null)
+                  setSheetItem(m.id)
+                }}
+              >
+                <span>
+                  <span className="lrow-t">{m.title}</span>
+                  <span className="lrow-d">{m.desc}</span>
+                </span>
+                <span className="lchev">›</span>
+              </button>
+            )
+          }
+          if (m.kind === 'nav') {
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className="lrow"
+                onClick={() => {
+                  setHeaderMenuSeat(null)
+                  closeSheet()
+                  onNavigate(m.nav)
+                }}
+              >
+                <span>
+                  <span className="lrow-t">{m.title}</span>
+                  <span className="lrow-d">{m.desc}</span>
+                </span>
+                <span className="lchev">›</span>
+              </button>
+            )
+          }
+          return (
+            <button
+              key="shortcut"
+              type="button"
+              className="lrow"
+              onClick={() => {
+                if (!inviteTarget) return
+                setTalkOverride({ conversationId: inviteTarget, seat: arch.id })
+                setTalkNavNonce((n) => n + 1)
+                setHeaderMenuSeat(null)
+              }}
+            >
+              <span>
+                <span className="lrow-t">{m.title}</span>
+                <span className="lrow-d">{m.desc}</span>
+              </span>
+              <span className="lchev">›</span>
+            </button>
+          )
+        })}
       </div>
     )
   }
@@ -1288,18 +1484,13 @@ export function LivingTreeView({
 
   /** The node's menu — the one grammar. Tapping a row mounts its view. */
   const renderNodeMenu = (node: TreeNodeRef) => {
+    // Navigation correction: seat nodes open their conversation
+    // directly, so the seat menu is unreachable in practice; the
+    // seat's secondary menu now lives in the compact head (M3). The
+    // old seat-menu invitation row is deleted (its shortcut lives in
+    // the head menu). The you-node menu is unchanged, Talk included.
     const items = node.kind === 'you' ? YOU_MENU : SEAT_MENU
     const navItems = node.kind === 'seat' ? (SEAT_NAV_ITEMS[node.seatKey] ?? []) : []
-    // Capability C visible-UX slice: invitation navigation for this
-    // seat only (never the you-node). Presence comes from the new
-    // additive fields alone; absent fields mean "unknown", never
-    // "none", so no row renders then. The row navigates to the most
-    // recent invitation conversation — the conversation-scoped list
-    // lives in the chat view, not here.
-    const inviteMarker = node.kind === 'seat' ? attention?.markers[node.seatKey] : undefined
-    const inviteCount = inviteMarker?.invitation_count ?? 0
-    const inviteTarget =
-      inviteCount > 0 ? inviteMarker?.invitation_conversation_ids?.[0] : undefined
     return (
       <div>
         {items.map((m) => (
@@ -1321,25 +1512,6 @@ export function LivingTreeView({
             <span className="lchev">›</span>
           </button>
         ))}
-        {inviteTarget && node.kind === 'seat' && (
-          <button
-            key="invitations"
-            type="button"
-            className="lrow"
-            onClick={() => {
-              setTalkOverride({ conversationId: inviteTarget, seat: node.seatKey })
-              setSheetItem('talk')
-            }}
-          >
-            <span>
-              <span className="lrow-t">Invitations ({inviteCount})</span>
-              <span className="lrow-d">
-                Open the most recent conversation this seat was invited into.
-              </span>
-            </span>
-            <span className="lchev">›</span>
-          </button>
-        )}
         {navItems.map((m) => (
           <button
             key={m.id}
@@ -1408,11 +1580,11 @@ export function LivingTreeView({
       // Merged Talk + Character: the seat's character card heads the conversation.
       const arch = archetypes.find((a) => a.id === sheetNode.seatKey)
       if (!arch) return renderStillGrowing(sheetNode, sheetItem)
-      const chat = renderSheetContent?.(
-        sheetNode,
-        'talk',
-        talkOverride ? { conversationOverride: talkOverride } : undefined,
-      )
+      const chat = renderSheetContent?.(sheetNode, 'talk', {
+        ...(talkOverride ? { conversationOverride: talkOverride } : {}),
+        navNonce: talkNavNonce,
+        onChatIdChange: setTalkChatId,
+      })
       return (
         <div>
           {renderCompactSeatHead(arch)}
@@ -1714,16 +1886,27 @@ export function LivingTreeView({
         Training first, rent later —<br />
         the tree is yours; the marketplace is a lens on it, one tap deep.
       </div>
-      <NodeSheet
-        open={!!sheetNode}
-        onClose={closeSheet}
-        onBack={sheetItem ? () => setSheetItem(null) : null}
-        backLabel="Back to menu"
-        title={sheetTitle}
-        subtitle={sheetSubtitle}
-      >
-        {renderSheetBody()}
-      </NodeSheet>
+      {/* The draft store provider wraps the sheet (not the sheet
+          body): NodeSheet renders nothing when closed, so a provider
+          inside it would die on every close and lose every draft.
+          Placed here it survives close/reopen, sheet-item switches,
+          and seat switches — and it covers ONLY the Tree sheet
+          subtree, so workspace/console mounts never see it. */}
+      <DraftStoreProvider userId={currentUserId ?? null}>
+        <NodeSheet
+          open={!!sheetNode}
+          onClose={closeSheet}
+          // Seat sheets have no menu to return to (direct navigation):
+          // the back control is gone and X closes to the Tree. The
+          // you-node keeps its menu-back.
+          onBack={sheetNode?.kind === 'you' && sheetItem ? () => setSheetItem(null) : null}
+          backLabel="Back to menu"
+          title={sheetTitle}
+          subtitle={sheetSubtitle}
+        >
+          {renderSheetBody()}
+        </NodeSheet>
+      </DraftStoreProvider>
       {meetingSeat && (
         <MeetingView
           archetypeId={meetingSeat}

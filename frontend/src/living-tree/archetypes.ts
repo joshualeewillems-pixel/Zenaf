@@ -96,6 +96,33 @@ export type KeystoneAttentionMarker = {
   overdue_count?: number
   due_soon_count?: number
   next_due?: string | null
+  /** Capability C invitation presence (visible-UX slice, additive
+      only). Pending, unexpired invitations for this seat across all
+      conversations; ids most-recent-first, deduplicated. ABSENT
+      fields mean the read failed ("unknown"), never "none" —
+      authoritative empty is count 0 with an empty list. Presence is
+      read from invitation_count > 0 ONLY, never from attention or
+      reason. */
+  invitation_count?: number
+  invitation_conversation_ids?: string[]
+}
+
+/** Neutral presence copy for a seat's invitation indicator. Presence
+    language only — never urgency copy ("waiting", "needs you",
+    "unread", "urgent", "don't miss") and never a nagging counter.
+    Returns null when the fields are absent (read failed → unknown)
+    or the count is 0 (nothing to indicate); count 0 is authoritative
+    empty, absent fields are not. */
+export function invitationIndicatorLabel(
+  seatName: string,
+  marker: KeystoneAttentionMarker | undefined | null,
+): string | null {
+  if (!marker) return null
+  const count = marker.invitation_count
+  if (typeof count !== 'number' || count <= 0) return null
+  return count === 1
+    ? `${seatName} has an invitation to discuss`
+    : `${seatName} has ${count} invitations to discuss`
 }
 
 /** Per-seat attention state from GET /vision-execution/keystone-attention.

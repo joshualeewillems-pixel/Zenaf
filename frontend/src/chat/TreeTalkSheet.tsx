@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import CouncilChat from './CouncilChat'
+import InvitationList, { INVITATIONS_CHANGED_EVENT } from './InvitationList'
 import SeatChips, { useSeatMeta } from './SeatChips'
 
 /**
@@ -76,22 +77,52 @@ function formatWhen(iso: string | null): string {
 export default function TreeTalkSheet({
   seatKey,
   displayName,
+  conversationOverride,
 }: {
   /** Seat node id, or null for the you-node rediscovery surface. */
   seatKey: string | null
   /** Seat fellowship name override for the composer placeholder. */
   displayName?: string
+  /** Invitation navigation target (Capability C visible-UX slice).
+      When present on mount, the sheet mounts this conversation + seat
+      directly and skips the talks fetch (fetched lazily on list-mode
+      entry). Override wins over seatKey for the initial mount. It is
+      cleared by startNew and by list/pick transitions, so
+      back-navigation never resurrects a stale override. If the
+      override conversation is gone or its invitation expired, the
+      mount still succeeds as an ordinary chat and the in-chat list
+      shows its empty state. */
+  conversationOverride?: { conversationId: string; seat: string }
 }) {
   const base = apiBase()
   const { names } = useSeatMeta()
   const [mode, setMode] = useState<'loading' | 'chat' | 'list' | 'pick' | 'error' | 'signedout'>(
-    'loading',
+    conversationOverride ? 'chat' : 'loading',
   )
-  const [chatId, setChatId] = useState<string | null>(null)
-  const [chatSeat, setChatSeat] = useState<string | null>(seatKey)
+  const [chatId, setChatId] = useState<string | null>(
+    conversationOverride?.conversationId ?? null,
+  )
+  const [chatSeat, setChatSeat] = useState<string | null>(
+    conversationOverride?.seat ?? seatKey,
+  )
   const [fromList, setFromList] = useState(false)
   const [talks, setTalks] = useState<TalkListItem[]>([])
+  const [talksFetched, setTalksFetched] = useState(false)
   const [nonce, setNonce] = useState(0)
+  /** Bumped after every completed turn so the invitation list
+      refetches — joining is observed by the entry disappearing. */
+  const [inviteRefreshKey, setInviteRefreshKey] = useState(0)
+  /** Stable signal for the Tree: a list refetch dropped a row. The
+      Tree refetches attention; nothing navigates, nothing transitions. */
+  const dispatchInvitationsChanged = useCallback(() => {
+    window.dispatchEvent(new CustomEvent(INVITATIONS_CHANGED_EVENT))
+  }, [])
+  /** Mount-time override (captured once). The override is consumed
+      at mount (initial state above + the mount effect's early
+      return); startNew and list/pick transitions never re-read it,
+      so a stale override can never resurrect — clearing is by
+      construction, not by a flag. */
+  const mountOverrideRef = useRef(conversationOverride ?? null)
 
   const resolveSeat = useCallback(
     (list: TalkListItem[], seat: string): string => {
@@ -102,6 +133,12 @@ export default function TreeTalkSheet({
   )
 
   useEffect(() => {
+    // Override mount: the conversation + seat are already in initial
+    // state, so the talks fetch is skipped entirely (fetched lazily
+    // on list-mode entry below). The override conversation may be
+    // gone or its invitation expired — the mount still succeeds as
+    // an ordinary chat and the in-chat list shows its empty state.
+    if (mountOverrideRef.current) return
     let cancelled = false
     setMode('loading')
     fetch(`${base}/conversation/list`, { credentials: 'include' })
@@ -122,6 +159,7 @@ export default function TreeTalkSheet({
           ? ((data as { conversations: TalkListItem[] }).conversations as TalkListItem[])
           : []
         setTalks(list)
+        setTalksFetched(true)
         if (seatKey) {
           setChatSeat(seatKey)
           setFromList(false)
@@ -138,6 +176,42 @@ export default function TreeTalkSheet({
       cancelled = true
     }
   }, [base, seatKey, nonce, resolveSeat])
+
+  // Lazy talks fetch for override mounts that later reach list mode
+  // (the mount fetch was skipped). Never fires after a normal mount
+  // fetch, which sets talksFetched.
+  useEffect(() => {
+    if (mode !== 'list' || talksFetched) return
+    let cancelled = false
+    setMode('loading')
+    fetch(`${base}/conversation/list`, { credentials: 'include' })
+      .then(async (r) => {
+        if (r.status === 401) return { auth: true as const }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return (await r.json()) as { conversations?: TalkListItem[] }
+      })
+      .then((data) => {
+        if (cancelled) return
+        if ((data as { auth?: boolean }).auth) {
+          setMode('signedout')
+          return
+        }
+        const list = Array.isArray(
+          (data as { conversations?: unknown }).conversations,
+        )
+          ? ((data as { conversations: TalkListItem[] }).conversations as TalkListItem[])
+          : []
+        setTalks(list)
+        setTalksFetched(true)
+        setMode('list')
+      })
+      .catch(() => {
+        if (!cancelled) setMode('error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [mode, talksFetched, base])
 
   const startNew = useCallback(() => {
     setChatId(newTalkId())
@@ -264,13 +338,29 @@ export default function TreeTalkSheet({
         )}
       </div>
       {chatId && (
-        <CouncilChat
-          key={chatId}
-          environment="sheet"
-          conversationId={chatId}
-          initialArchetypeId={chatSeat}
-          displayName={displayName}
-        />
+        <>
+          <InvitationList
+            conversationId={chatId}
+            onInviteSelected={(seat) => {
+              // Makes the invited seat the active seat; the user's
+              // send does the rest. Tapping the already-active seat
+              // is a no-op (key unchanged). Remounting CouncilChat
+              // rehydrates messages from GET /conversation; the only
+              // loss is an unsent composer draft at tap time.
+              setChatSeat(seat)
+            }}
+            refreshKey={inviteRefreshKey}
+            onRowDisappeared={dispatchInvitationsChanged}
+          />
+          <CouncilChat
+            key={`${chatId}:${chatSeat ?? ''}`}
+            environment="sheet"
+            conversationId={chatId}
+            initialArchetypeId={chatSeat}
+            displayName={displayName}
+            onTurnSent={() => setInviteRefreshKey((k) => k + 1)}
+          />
+        </>
       )}
     </div>
   )

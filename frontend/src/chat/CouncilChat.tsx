@@ -108,6 +108,7 @@ export default function CouncilChat({
   context = null,
   prefill = null,
   seedMessages = null,
+  onTurnSent = () => {},
 }: {
   /** 'sheet' = compact, with the Zenaf/You side switch. 'workspace' = roomier + version toggle. */
   environment: 'sheet' | 'workspace'
@@ -130,6 +131,12 @@ export default function CouncilChat({
    *  open questions). Client-side only; the store stays the source of truth
    *  once it has turns. */
   seedMessages?: ConversationMessage[] | null
+  /** Capability C visible-UX slice: invoked on SUCCESS arms of the send
+   *  handler only (council-results and single-seat), after the reply
+   *  lands — never on 'auth', never in the catch arm, never on a
+   *  target-mismatch early return. The sheet uses it to refetch the
+   *  invitation list, observing a join by the entry disappearing. */
+  onTurnSent?: () => void
 }) {
   const base = apiBase()
   const { names } = useSeatMeta()
@@ -398,6 +405,7 @@ export default function CouncilChat({
           ...prev,
           ...results.filter((x): x is ConversationMessage => x !== 'auth'),
         ])
+        onTurnSent()
       } else if (activeId) {
         const reply = await askSeat(activeId, text)
         if (conversationIdRef.current !== targetId) return
@@ -407,6 +415,7 @@ export default function CouncilChat({
           return
         }
         setMessages((prev) => [...prev, reply])
+        onTurnSent()
       }
     } catch {
       if (conversationIdRef.current !== targetId) return
@@ -424,7 +433,7 @@ export default function CouncilChat({
     } finally {
       if (sendSeqRef.current === seq) setLoading(false)
     }
-  }, [input, loading, activeId, councilMode, askSeat, activeName, names, conversationId, hydrating, hydrateError])
+  }, [input, loading, activeId, councilMode, askSeat, activeName, names, conversationId, hydrating, hydrateError, onTurnSent])
 
   const sendDisabled =
     loading ||

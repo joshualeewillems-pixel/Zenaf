@@ -2633,93 +2633,35 @@ def _council_inspect_prompt_before_generate(
     return None
 
 
-def _get_recent_decision_context(max_items: int = 8) -> str | None:
+def _collect_decision_rows(user_id: str | None, limit: int = 32) -> list[dict]:
+    """Internal helper: get a small window of recent decisions owned by ``user_id``.
+
+    Fail-closed: a missing owner (anonymous council run) returns no rows
+    — never an unscoped read. The storage layer also rejects an empty
+    owner, so this check is the first of two boundaries, not the only one.
     """
-    Load a small set of recent Vision Execution decisions for council context.
-
-    Only minimal fields are included (decision_id, entity_type, summary/title, outcome/state if available, timestamp).
-    No new persistence or analytics layer is introduced.
-    """
-    try:
-        from local_ai.vision_execution import storage as ve_storage
-    except Exception:
-        return None
-
-    try:
-        decisions = ve_storage.list_decisions(entity_type=None, entity_id=None, limit=max_items)
-    except Exception:
-        return None
-    if not decisions:
-        return None
-
-    lines: list[str] = []
-    for d in decisions:
-        decision_id = d.get("id") or ""
-        entity_type = (d.get("entity_type") or "").strip()
-        entity_id = (d.get("entity_id") or "").strip()
-        decision_type = (d.get("decision_type") or "").strip()
-        created_at = (d.get("created_at") or "").strip()
-
-        summary = ""
-        outcome = ""
-        try:
-            if entity_type == "task":
-                task = ve_storage.get_task(entity_id)
-                if task:
-                    summary = (task.get("title") or "").strip()
-                    outcome = (task.get("status") or "").strip()
-            elif entity_type == "project":
-                project = ve_storage.get_project(entity_id)
-                if project:
-                    summary = (project.get("title") or "").strip()
-                    outcome = (project.get("status") or "").strip()
-            elif entity_type == "initiative":
-                init = ve_storage.get_initiative(entity_id)
-                if init:
-                    summary = (init.get("title") or "").strip()
-                    outcome = (init.get("status") or "").strip()
-        except Exception:
-            # Best-effort only; missing entities just fall back to decision_type.
-            pass
-
-        if not summary:
-            summary = decision_type or f"{entity_type or 'entity'} {entity_id or ''}".strip()
-
-        parts: list[str] = []
-        if created_at:
-            parts.append(f"[{created_at}]")
-        if entity_type:
-            parts.append(f"({entity_type})")
-        if summary:
-            parts.append(summary)
-        if outcome:
-            parts.append(f"state={outcome}")
-        if decision_id:
-            parts.append(f"id={decision_id}")
-        if parts:
-            lines.append(" ".join(parts))
-
-    if not lines:
-        return None
-    return "Recent decisions:\n" + "\n".join(f"- {ln}" for ln in lines)
-
-
-def _collect_decision_rows(limit: int = 32) -> list[dict]:
-    """Internal helper: get a small window of recent decisions from Vision Execution."""
+    if not user_id or not str(user_id).strip():
+        return []
     try:
         from local_ai.vision_execution import storage as ve_storage
     except Exception:
         return []
     try:
-        return ve_storage.list_decisions(entity_type=None, entity_id=None, limit=limit) or []
+        return ve_storage.list_decisions(str(user_id), entity_type=None, entity_id=None, limit=limit) or []
     except Exception:
         return []
 
 
-def _decision_row_to_minimal(row: dict) -> dict[str, str]:
+def _decision_row_to_minimal(row: dict, user_id: str | None = None) -> dict[str, str]:
     """
     Map a raw decision row to minimal fields:
     decision_id, entity_type, summary/title, created_at, state/outcome if available.
+
+    The entity title/state enrichment is an owner-scoped lookup: the
+    ``user_id`` is passed to the storage getters, which enforce ownership
+    in SQL. When no owner is available the enrichment is omitted entirely
+    (the summary falls back to the decision type) — never an unscoped
+    lookup, never another user's entity details.
     """
     decision_id = str(row.get("id") or "")
     entity_type = (row.get("entity_type") or "").strip()
@@ -2729,27 +2671,28 @@ def _decision_row_to_minimal(row: dict) -> dict[str, str]:
 
     summary = ""
     state = ""
-    try:
-        from local_ai.vision_execution import storage as ve_storage  # local import to avoid hard coupling
+    if user_id and str(user_id).strip():
+        try:
+            from local_ai.vision_execution import storage as ve_storage  # local import to avoid hard coupling
 
-        if entity_type == "task":
-            task = ve_storage.get_task(entity_id)
-            if task:
-                summary = (task.get("title") or "").strip()
-                state = (task.get("status") or "").strip()
-        elif entity_type == "project":
-            project = ve_storage.get_project(entity_id)
-            if project:
-                summary = (project.get("title") or "").strip()
-                state = (project.get("status") or "").strip()
-        elif entity_type == "initiative":
-            init = ve_storage.get_initiative(entity_id)
-            if init:
-                summary = (init.get("title") or "").strip()
-                state = (init.get("status") or "").strip()
-    except Exception:
-        # Best-effort only; fall back to decision_type if lookups fail.
-        pass
+            if entity_type == "task":
+                task = ve_storage.get_task(entity_id, str(user_id))
+                if task:
+                    summary = (task.get("title") or "").strip()
+                    state = (task.get("status") or "").strip()
+            elif entity_type == "project":
+                project = ve_storage.get_project(entity_id, str(user_id))
+                if project:
+                    summary = (project.get("title") or "").strip()
+                    state = (project.get("status") or "").strip()
+            elif entity_type == "initiative":
+                init = ve_storage.get_initiative(entity_id, str(user_id))
+                if init:
+                    summary = (init.get("title") or "").strip()
+                    state = (init.get("status") or "").strip()
+        except Exception:
+            # Best-effort only; fall back to decision_type if lookups fail.
+            pass
 
     if not summary:
         summary = decision_type or f"{entity_type or 'entity'} {entity_id or ''}".strip()
@@ -2763,18 +2706,22 @@ def _decision_row_to_minimal(row: dict) -> dict[str, str]:
     }
 
 
-def collect_decision_context(perspective_name: str, limit: int = 8) -> list[dict[str, str]]:
+def collect_decision_context(perspective_name: str, limit: int = 8, user_id: str | None = None) -> list[dict[str, str]]:
     """
-    Perspective-specific lens over recent decisions.
+    Perspective-specific lens over recent decisions owned by ``user_id``.
 
     - Strategist: prioritize initiatives/projects/roadmap decisions.
     - Operator: prioritize tasks/execution decisions.
     - Governance: prioritize reversals/exceptions/risky decisions.
     - Analyst: prioritize where overrides/evaluations occur (rough heuristic).
     - Brand: prioritize initiatives/projects.
+
+    Fail-closed: a missing owner returns no rows, never an unscoped read.
     """
+    if not user_id or not str(user_id).strip():
+        return []
     name = (perspective_name or "").strip().lower()
-    rows = _collect_decision_rows(limit=limit * 4)
+    rows = _collect_decision_rows(str(user_id), limit=limit * 4)
     if not rows:
         return []
 
@@ -2815,19 +2762,22 @@ def collect_decision_context(perspective_name: str, limit: int = 8) -> list[dict
 
     if not filtered:
         filtered = rows
-    minimal = [_decision_row_to_minimal(r) for r in filtered[:limit]]
+    minimal = [_decision_row_to_minimal(r, str(user_id)) for r in filtered[:limit]]
     return [m for m in minimal if any(m.values())]
 
 
-def _format_decision_context_block(perspective_name: str, limit: int = 5) -> str | None:
+def _format_decision_context_block(perspective_name: str, limit: int = 5, user_id: str | None = None) -> str | None:
     """
     Render a small, perspective-specific decision context block for council prompts.
 
-    - Retrieves up to `limit` decisions relevant to the given perspective.
+    - Retrieves up to `limit` decisions relevant to the given perspective,
+      owned by ``user_id``.
     - Instructs the model to cite at most 2 decisions in its reply using:
       \"Decision <short_id>: <short summary>\".
+
+    A missing owner yields no block, never an unscoped read.
     """
-    items = collect_decision_context(perspective_name, limit=limit)
+    items = collect_decision_context(perspective_name, limit=limit, user_id=user_id)
     if not items:
         return None
 
@@ -2862,11 +2812,16 @@ def _build_working_memory_block(
     object_snapshot: Optional[Dict[str, object]],
     max_related: int = 3,
     max_chars: int = MAX_WORKING_MEMORY_CHARS,
+    user_id: str | None = None,
 ) -> Optional[str]:
     """
     Build a compact working-memory block for council: subject snapshot + up to N related VE decisions.
     Used only when subject_ref is provided. Whole block is truncated to max_chars.
     See docs/COUNCIL_WORKING_MEMORY_DESIGN.md.
+
+    Related decisions are owner-scoped to ``user_id``; a missing owner
+    omits the decision lines entirely (the subject snapshot itself is
+    unaffected) — never an unscoped read, never another user's rows.
     """
     subj = normalize_subject_ref(subject_ref)
     if not subj:
@@ -2882,7 +2837,7 @@ def _build_working_memory_block(
                 if val:
                     parts.append(f"{key.capitalize()}: {val}")
                     break
-    if subj.entity_type and subj.entity_id:
+    if subj.entity_type and subj.entity_id and user_id and str(user_id).strip():
         try:
             from local_ai.vision_execution import storage as ve_storage
         except Exception:
@@ -2890,6 +2845,7 @@ def _build_working_memory_block(
         else:
             try:
                 rows = ve_storage.list_decisions(
+                    str(user_id),
                     entity_type=subj.entity_type,
                     entity_id=subj.entity_id,
                     limit=max_related,
@@ -2900,7 +2856,7 @@ def _build_working_memory_block(
                 decision_lines: List[str] = []
                 try:
                     for row in rows[:max_related]:
-                        m = _decision_row_to_minimal(row)
+                        m = _decision_row_to_minimal(row, str(user_id))
                         created = (m.get("created_at") or "")[:10]
                         summary = (m.get("summary") or "").strip()[:40]
                         state = (m.get("state") or "").strip()
@@ -2936,12 +2892,16 @@ def build_council_decision_packet(
     object_snapshot: Optional[Dict[str, object]] = None,
     working_memory_max_chars: int = MAX_WORKING_MEMORY_CHARS,
     omit_operator_priorities: bool = False,
+    user_id: str | None = None,
 ) -> str:
     """
     Build a compact decision packet for council mode. No conversation history.
     Block order: task (context + question) first, then working memory (if subject_ref set),
     then system summary, constraints (hard bounds), operator priorities (preference).
     When omit_operator_priorities is True (e.g. folder workflow), operator priorities are not included.
+
+    ``user_id`` scopes the working-memory decision lines to that owner's
+    rows; a missing owner omits them, never an unscoped read.
     """
     q = question.strip() or "What should we consider?"
     parts: List[str] = []
@@ -2955,6 +2915,7 @@ def build_council_decision_packet(
         object_snapshot=object_snapshot,
         max_related=3,
         max_chars=working_memory_max_chars,
+        user_id=user_id,
     )
     if working_memory:
         parts.append(working_memory)
@@ -2983,10 +2944,14 @@ def build_council_secondary_packet(
     object_snapshot: Optional[Dict[str, object]] = None,
     working_memory_max_chars: int = MAX_WORKING_MEMORY_CHARS,
     omit_operator_priorities: bool = False,
+    user_id: str | None = None,
 ) -> str:
     """
     Blocks that follow PRIMARY + Question + persona in the seat prompt: secondary context (truncated),
     working memory, tool summary, constraints, operator priorities.
+
+    ``user_id`` scopes the working-memory decision lines to that owner's
+    rows; a missing owner omits them, never an unscoped read.
     """
     parts: List[str] = []
     if secondary_context and secondary_context.strip():
@@ -2999,6 +2964,7 @@ def build_council_secondary_packet(
         object_snapshot=object_snapshot,
         max_related=3,
         max_chars=working_memory_max_chars,
+        user_id=user_id,
     )
     if working_memory:
         parts.append(working_memory)
@@ -4036,6 +4002,7 @@ def run_council(
         key_constraints=key_constraints,
         subject_ref=subj,
         object_snapshot=context_ref.get("object_snapshot"),
+        user_id=council_user_id,
     )
     role_limit = _council_seat_role_limit_for_context(ctx_eff)
     clarify_only = _council_context_is_clarify_only(ctx_eff)
@@ -4051,6 +4018,7 @@ def run_council(
         subject_ref=subj,
         object_snapshot=context_ref.get("object_snapshot"),
         omit_operator_priorities=False,
+        user_id=council_user_id,
     )
     overlay_suffix = ""
     if seat_prompt_overlay and str(seat_prompt_overlay).strip():
@@ -4225,7 +4193,7 @@ def run_council(
                 defn, personality=_council_personality, council_clarify_only=clarify_only,
                 user_id=council_user_id,
             )
-            decisions_block = _format_decision_context_block(role_name, limit=5) or ""
+            decisions_block = _format_decision_context_block(role_name, limit=5, user_id=council_user_id) or ""
             prompt = _assemble_council_seat_prompt(
                 primary_context_block=primary_block,
                 user_question=q_seat,
@@ -4691,6 +4659,7 @@ def run_council_stream(
             subject_ref=normalize_subject_ref(subject_ref),
             object_snapshot=object_snapshot,
             omit_operator_priorities=True,
+            user_id=council_user_id,
         )
         prompt = f"{FOLDER_ADVISOR_SYSTEM}\n\n{packet}{FOLDER_COUNCIL_ROLE_LIMIT}"
         _idx, chunk = _run_one_role(0, "Folder advisor", prompt, provider, filter_instruction_leaks=False)
@@ -4759,6 +4728,7 @@ def run_council_stream(
         key_constraints=key_constraints,
         subject_ref=subj,
         object_snapshot=context_ref.get("object_snapshot"),
+        user_id=council_user_id,
     )
     role_limit = _council_seat_role_limit_for_context(ctx_eff)
     clarify_only = _council_context_is_clarify_only(ctx_eff)
@@ -4820,6 +4790,7 @@ def run_council_stream(
         subject_ref=subj,
         object_snapshot=context_ref.get("object_snapshot"),
         omit_operator_priorities=False,
+        user_id=council_user_id,
     )
     seat_shared_constraints = _compose_council_seat_shared_constraints(role_limit, clarify_only=clarify_only)
 
@@ -4910,7 +4881,7 @@ def run_council_stream(
                 defn, personality=_council_personality, council_clarify_only=clarify_only,
                 user_id=council_user_id,
             )
-                decisions_block = _format_decision_context_block(role_name, limit=5) or ""
+                decisions_block = _format_decision_context_block(role_name, limit=5, user_id=council_user_id) or ""
                 prompt = _assemble_council_seat_prompt(
                     primary_context_block=primary_block,
                     user_question=q_seat,

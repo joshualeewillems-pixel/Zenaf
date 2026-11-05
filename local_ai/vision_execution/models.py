@@ -608,8 +608,31 @@ class AssetUpdate(BaseModel):
 
 
 # --- Decision record (for future personality learning; append-only) ---
+class DecisionCreateRequest(BaseModel):
+    """Client request body for recording a decision.
+
+    Carries no ownership: the route stamps the authenticated user as
+    the owner. A payload that still includes ``user_id`` (including
+    ``user_id: null``, which older clients send) is accepted — the
+    field is not part of this model and is ignored, never trusted.
+    """
+    entity_type: str  # e.g. "initiative", "project"
+    entity_id: str
+    decision_type: str  # e.g. "evaluation_applied", "initiative_approved", "initiative_rejected", "priority_change", "manual_score_override"
+    ai_proposal_snapshot: dict[str, Any] | None = None
+    final_values_snapshot: dict[str, Any] | None = None
+
+
 class DecisionCreate(BaseModel):
-    user_id: str | None = None
+    """Internal write model: ownership is required and trusted.
+
+    Only ever constructed server-side from the authenticated principal
+    (the POST route) or in tests with an explicit owner. Never parsed
+    directly from a client payload. ``storage.create_decision`` also
+    rejects an empty ``user_id`` at the boundary, so a NULL-owner row
+    cannot be written through any path.
+    """
+    user_id: str
     entity_type: str  # e.g. "initiative", "project"
     entity_id: str
     decision_type: str  # e.g. "evaluation_applied", "initiative_approved", "initiative_rejected", "priority_change", "manual_score_override"

@@ -1240,14 +1240,20 @@ def delete_initiative(initiative_id: str, current_user: dict = Depends(get_curre
 
 # --- Decisions (append-only; for personality learning / decision analysis) ---
 @router.post("/decisions")
-def create_decision(body: M.DecisionCreate, current_user: dict = Depends(get_current_user)):
-    """Record a user decision when profile-learning permission is enabled."""
+def create_decision(body: M.DecisionCreateRequest, current_user: dict = Depends(get_current_user)):
+    """Record a user decision when profile-learning permission is enabled.
+
+    Ownership comes from the authenticated session, never from the
+    client payload: the request model carries no ``user_id`` field, and
+    the internal write model is built here with the session user.
+    Payloads that still send ``user_id: null`` are accepted unchanged.
+    """
     _require_user_permission(
         current_user,
         _PERMISSION_PROFILE_LEARNING,
         detail="Permission required: profile learning from usage.",
     )
-    payload = body.model_copy(update={"user_id": current_user["id"]})
+    payload = M.DecisionCreate(user_id=current_user["id"], **body.model_dump())
     return S.create_decision(payload)
 
 
@@ -1258,13 +1264,16 @@ def list_decisions(
     limit: int = 500,
     current_user: dict = Depends(get_current_user),
 ):
-    """List decision records, optionally filtered by entity. For analysis/export."""
+    """List decision records, optionally filtered by entity. For analysis/export.
+
+    Owner-scoped: only the authenticated user's own rows are returned.
+    """
     _require_user_permission(
         current_user,
         _PERMISSION_PROFILE_LEARNING,
         detail="Permission required: profile learning from usage.",
     )
-    return S.list_decisions(entity_type=entity_type, entity_id=entity_id, limit=limit)
+    return S.list_decisions(current_user["id"], entity_type=entity_type, entity_id=entity_id, limit=limit)
 
 
 @router.post("/coordination/client-checkpoint")

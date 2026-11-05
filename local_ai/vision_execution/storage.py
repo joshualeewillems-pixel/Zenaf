@@ -5767,7 +5767,20 @@ def delete_asset(asset_id: str) -> bool:
 
 # --- Decisions (append-only; for personality learning / decision analysis) ---
 
+def _require_owner_id(user_id: str | None) -> str:
+    """Validate an owner identity at the data-access boundary.
+
+    A required parameter is not a valid identity: empty strings and
+    ``None`` are rejected here, never trusted. Ownership is enforced
+    by the SQL predicate in the caller, never by a downstream filter.
+    """
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise ValueError("user_id must be a non-empty string")
+    return user_id
+
+
 def create_decision(data: M.DecisionCreate) -> dict[str, Any]:
+    _require_owner_id(data.user_id)
     conn = get_connection()
     did = M.new_id()
     now = _now()
@@ -5781,7 +5794,7 @@ def create_decision(data: M.DecisionCreate) -> dict[str, Any]:
         ),
     )
     conn.commit()
-    out = get_decision(did) or {}
+    out = get_decision(did, data.user_id) or {}
     # Fellowship Runtime P1: the append-only decision record is adopted
     # as an event source — the event references this decision by id
     # and never duplicates the record.
@@ -5821,37 +5834,69 @@ def create_decision(data: M.DecisionCreate) -> dict[str, Any]:
     return out
 
 
-def get_decision(decision_id: str) -> dict[str, Any] | None:
+def get_decision(decision_id: str, user_id: str) -> dict[str, Any] | None:
+    """Return one decision row owned by ``user_id``, else None.
+
+    A foreign id is indistinguishable from a missing one (404, not 403):
+    existence is never confirmed to a non-owner. ``user_id`` is required
+    and must be a non-empty string — see ``_require_owner_id``.
+    """
+    _require_owner_id(user_id)
     conn = get_connection()
     cur = conn.execute(
-        "SELECT id, user_id, entity_type, entity_id, decision_type, ai_proposal_snapshot, final_values_snapshot, created_at FROM decisions WHERE id = ?",
-        (decision_id,),
+        "SELECT id, user_id, entity_type, entity_id, decision_type, ai_proposal_snapshot, final_values_snapshot, created_at FROM decisions WHERE id = ? AND user_id = ?",
+        (decision_id, user_id),
     )
     row = cur.fetchone()
     return M.row_to_decision(tuple(row)) if row else None
 
 
-def list_decisions(entity_type: str | None = None, entity_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+def list_decisions(user_id: str, entity_type: str | None = None, entity_id: str | None = None, limit: int = 500) -> list[dict[str, Any]]:
+    """List decision rows owned by ``user_id`` (all filter branches).
+
+    Ownership is enforced by the SQL predicate, so filtering happens
+    BEFORE the LIMIT — a post-query filter could not make that guarantee.
+    ``user_id`` is required and must be a non-empty string.
+    """
+    _require_owner_id(user_id)
     conn = get_connection()
     if entity_type and entity_id:
         cur = conn.execute(
             "SELECT id, user_id, entity_type, entity_id, decision_type, ai_proposal_snapshot, final_values_snapshot, created_at "
-            "FROM decisions WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC LIMIT ?",
-            (entity_type, entity_id, limit),
+            "FROM decisions WHERE user_id = ? AND entity_type = ? AND entity_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, entity_type, entity_id, limit),
         )
     elif entity_type:
         cur = conn.execute(
             "SELECT id, user_id, entity_type, entity_id, decision_type, ai_proposal_snapshot, final_values_snapshot, created_at "
-            "FROM decisions WHERE entity_type = ? ORDER BY created_at DESC LIMIT ?",
-            (entity_type, limit),
+            "FROM decisions WHERE user_id = ? AND entity_type = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, entity_type, limit),
         )
     else:
         cur = conn.execute(
             "SELECT id, user_id, entity_type, entity_id, decision_type, ai_proposal_snapshot, final_values_snapshot, created_at "
-            "FROM decisions ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            "FROM decisions WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+            (user_id, limit),
         )
     return [M.row_to_decision(tuple(r)) for r in cur.fetchall()]
+
+
+def migrate_decisions_user_created_index(connection: sqlite3.Connection | None = None) -> None:
+    """Explicit-call migration: index the scoped decision-list query.
+
+    Adds ``idx_decisions_user_created`` on ``decisions (user_id, created_at)``.
+    Idempotent (``CREATE INDEX IF NOT EXISTS``). Explicit-call only — this
+    function is never invoked by ``init_db`` or any import path, and it
+    must never be executed against staging without its own authorization.
+    Pass a connection to apply it to a specific database (tests); otherwise
+    the module's default connection is used.
+    """
+    conn = connection if connection is not None else get_connection()
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_decisions_user_created "
+        "ON decisions (user_id, created_at)"
+    )
+    conn.commit()
 
 
 # --- Radar feed (meeting signals, etc.) ---

@@ -341,8 +341,9 @@ def test_decision_record_adopted_as_event_source(ve_ctx, activity_records):
     detail = json.loads(record["detail"])
     assert detail["payload"]["decision_type"] == "priority_change"
     assert detail["payload"]["about_entity_id"] == "project-1"
-    # The canonical record is still the VE one, readable as before.
-    assert ve.list_decisions("project", "project-1")[0]["id"] == out["id"]
+    # The canonical record is still the VE one, readable as before
+    # (owner-scoped: the creating owner's id is required).
+    assert ve.list_decisions(uid, "project", "project-1")[0]["id"] == out["id"]
 
 
 # -- chokepoint: meeting completion ------------------------------------------------

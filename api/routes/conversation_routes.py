@@ -70,6 +70,13 @@ class LiveContext(BaseModel):
     sheet_id: str | None = Field(default=None, max_length=128)
     entity_type: str | None = Field(default=None, max_length=64)
     entity_id: str | None = Field(default=None, max_length=128)
+    # Weaver strand interviews (rev2 §6): one optional additive field,
+    # set ONLY by the strand panel for conductor turns in strand
+    # threads, never inferred, ignored for other seats and threads.
+    # Validated server-side on every turn (unknown key or a thread
+    # that is not the caller's mapped thread for the strand fails
+    # closed with a 422).
+    strand_key: str | None = Field(default=None, max_length=32)
 
 
 class ConversationTurnBody(BaseModel):
@@ -255,6 +262,244 @@ def list_invitations(
     return {
         "conversation_id": cid,
         "invitations": [_invitation_api_item(inv) for inv in pending],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Weaver strand interviews (rev2, as accepted).
+#
+# One ordinary Weaver (conductor) Talk thread per strand, opened from
+# the Tree's strand roots. Conversation-first: resolve opens the thread
+# immediately with a pattern-copy orientation — NO model call happens
+# on open (T1b). The first generated Weaver question arrives via the
+# standard POST /conversation/turn path, with strand_key carried on
+# LiveContext and validated server-side there.
+#
+# Strand keys are the design keys (heart, hands, logic, voice, ear,
+# compass, eye). The server never trusts a client-supplied strand_key:
+# unknown keys and threads that are not the caller's mapped thread for
+# the strand fail closed with a 422. No first-meeting gate: strand
+# threads never touch meeting state (rev2 §6, OQ5).
+# ---------------------------------------------------------------------------
+
+
+def _ingest_store():
+    """Presence-ingest store (file-source sessions). Lazily imported
+    so this module never depends on the ingest pipeline at import
+    time; monkeypatchable in tests."""
+    from local_ai.presence_ingest.store import PresenceStore
+
+    return PresenceStore()
+
+
+def _check_strand(strand_key: str) -> str:
+    """Validate a design strand key (fail closed, 422 on unknown)."""
+    from local_ai.strand_interviews.keys import validate_strand_key
+
+    try:
+        return validate_strand_key(strand_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _strand_source_api_item(source: dict) -> dict:
+    """Read-surface shape for one linked strand source. Paste excerpts
+    travel redacted (they were redacted at capture); file sources carry
+    no excerpt here — their redacted events are read at turn time."""
+    excerpt = str(source.get("excerpt_redacted") or "")
+    return {
+        "id": source.get("id"),
+        "strand_key": source.get("strand_key"),
+        "conversation_id": source.get("conversation_id"),
+        "kind": source.get("kind"),
+        "ref": source.get("ref"),
+        "label": source.get("label"),
+        "excerpt": excerpt[:500] if excerpt else "",
+        "created_at": source.get("created_at"),
+    }
+
+
+def _strand_resolve_payload(user_id: str, strand_key: str) -> dict:
+    """Resolve payload for one strand: mapping + orientation + boundaries
+    + sources. Storage only — no model call, no generation."""
+    from local_ai.strand_interviews.keys import STRAND_DEFINITIONS
+    from local_ai.strand_interviews.orientation import orientation_for
+
+    store = _store()
+    resolved = store.resolve_strand_thread(user_id, strand_key)
+    definition = STRAND_DEFINITIONS[strand_key]
+    return {
+        "strand_key": strand_key,
+        "strand_name": definition["agent_name"],
+        "definition": definition["definition"],
+        "conversation_id": resolved["conversation_id"],
+        "is_fresh": bool(resolved["is_fresh"]),
+        "orientation": orientation_for(
+            strand_key, is_fresh=bool(resolved["is_fresh"])
+        ),
+        "boundaries": store.list_topic_boundaries(user_id, strand_key),
+        "sources": [
+            _strand_source_api_item(s)
+            for s in store.list_strand_sources(user_id, strand_key)
+        ],
+    }
+
+
+@router.get("/strand/{strand_key}")
+def resolve_strand(strand_key: str, current_user: dict = Depends(get_current_user)) -> dict:
+    """Resolve-or-create the caller's strand thread (rev2 T1/T1b).
+
+    Returns the mapped conversation_id, the pattern-copy orientation
+    (fresh vs returning), active topic boundaries, and linked sources.
+    Performs ZERO model calls: opening a strand thread never
+    generates. The first generated Weaver question comes from the
+    standard turn endpoint once the user sends a message.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    key = _check_strand(strand_key)
+    return _strand_resolve_payload(user_id, key)
+
+
+class StrandBoundaryBody(BaseModel):
+    topic: str = Field(max_length=120)
+
+
+@router.post("/strand/{strand_key}/boundaries")
+def add_strand_boundary(
+    strand_key: str,
+    body: StrandBoundaryBody,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Record an explicit topic boundary ("never ask me about this").
+
+    Only the user's explicit boundary-setting words create a boundary
+    (rev2 C2); this endpoint is the explicit user action for it. The
+    turn path also recognizes explicit boundary words in strand-thread
+    messages. Ordinary declines are never recorded here. Idempotent by
+    normalized topic.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    key = _check_strand(strand_key)
+    try:
+        return _store().add_topic_boundary(user_id, key, body.topic)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.delete("/strand/{strand_key}/boundaries/{boundary_id}")
+def delete_strand_boundary(
+    strand_key: str,
+    boundary_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Reopen a bounded topic: questions on it may be asked again (C2)."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    _check_strand(strand_key)
+    deleted = _store().delete_topic_boundary(user_id, boundary_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Unknown topic boundary.")
+    return {"deleted": True}
+
+
+class StrandSourceBody(BaseModel):
+    kind: str = Field(max_length=16)
+    text: str | None = Field(default=None, max_length=20000)
+    ingest_session_id: str | None = Field(default=None, max_length=128)
+    label: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/strand/{strand_key}/sources")
+def add_strand_source(
+    strand_key: str,
+    body: StrandSourceBody,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Link a source to a strand thread (rev2 §7, P2).
+
+    Paste: text is redacted at capture (emails, phones, SSNs, long
+    digit runs) and the redacted excerpt is stored, capped at 2000
+    chars. File: the ingest session id must name an EXISTING session
+    (unknown ids fail closed); the session's redacted events are read
+    at turn time, never duplicated here. The source is always linked
+    to the caller's OWN mapped thread for the strand — the client
+    supplies no conversation id. Share links are paste-fallback in
+    this slice (rev2 OQ2): the panel offers paste as the guaranteed
+    path; server-side share-link fetching exists in the intake
+    pipeline but strand-targeted share-link import is out of scope.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    key = _check_strand(strand_key)
+    store = _store()
+    resolved = store.resolve_strand_thread(user_id, key)
+    kind = (body.kind or "").strip().lower()
+    try:
+        if kind == "paste":
+            from local_ai.presence_ingest.redact import redact_text
+
+            text = (body.text or "").strip()
+            if not text:
+                raise HTTPException(status_code=422, detail="Pasted text is empty.")
+            excerpt = redact_text(text)[:2000]
+            source = store.add_strand_source(
+                user_id,
+                key,
+                resolved["conversation_id"],
+                "paste",
+                "paste",
+                label=(body.label or "").strip() or "Pasted text",
+                excerpt_redacted=excerpt,
+            )
+        elif kind == "file":
+            session_id = (body.ingest_session_id or "").strip()
+            if not session_id:
+                raise HTTPException(status_code=422, detail="Ingest session id is empty.")
+            session = _ingest_store().get_session(session_id)
+            if session is None:
+                raise HTTPException(status_code=404, detail="Unknown import session.")
+            source = store.add_strand_source(
+                user_id,
+                key,
+                resolved["conversation_id"],
+                "file",
+                session_id,
+                label=(body.label or "").strip() or str(session.file_name or ""),
+            )
+        else:
+            raise HTTPException(
+                status_code=422, detail=f"Unknown strand source kind: {body.kind!r}"
+            )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return _strand_source_api_item(source)
+
+
+@router.get("/strand/{strand_key}/sources")
+def list_strand_sources(
+    strand_key: str, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Linked sources for one strand (per-strand scoping: a Hands
+    source is never evidence in a Heart conversation)."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    key = _check_strand(strand_key)
+    store = _store()
+    return {
+        "strand_key": key,
+        "sources": [
+            _strand_source_api_item(s)
+            for s in store.list_strand_sources(user_id, key)
+        ],
     }
 
 

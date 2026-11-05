@@ -96,6 +96,40 @@ CREATE INDEX IF NOT EXISTS idx_invitations_user_conv_seat
   ON invitations (user_id, conversation_id, seat, status);
 CREATE INDEX IF NOT EXISTS idx_invitations_user_expiry
   ON invitations (user_id, status, expires_at);
+CREATE TABLE IF NOT EXISTS strand_threads (
+  user_id TEXT NOT NULL,
+  strand_key TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, strand_key),
+  UNIQUE (user_id, conversation_id)
+);
+CREATE TABLE IF NOT EXISTS strand_topic_boundaries (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  strand_key TEXT NOT NULL,
+  topic TEXT NOT NULL,
+  topic_normalized TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  created_by_message_id TEXT,
+  UNIQUE (user_id, strand_key, topic_normalized)
+);
+CREATE INDEX IF NOT EXISTS idx_strand_boundaries_user_strand
+  ON strand_topic_boundaries (user_id, strand_key, created_at);
+CREATE TABLE IF NOT EXISTS strand_sources (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  strand_key TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  ref TEXT NOT NULL,
+  label TEXT NOT NULL DEFAULT '',
+  excerpt_redacted TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_strand_sources_user_strand
+  ON strand_sources (user_id, strand_key, created_at);
 """
 
 
@@ -847,3 +881,284 @@ class ConversationStore:
             )
             self._conn.commit()
         return self.get_invitation(user_id, invitation_id)
+
+    # -- Weaver strand interviews (rev2) -------------------------------------
+    #
+    # One ordinary Weaver (conductor) Talk thread per strand. The mapping
+    # is the ONLY new store the strand design requires: one row per
+    # (user_id, strand_key) with a conversation_id. Every read and write
+    # here is per-user; a foreign strand_key or conversation_id can
+    # never resolve. Strand keys are the design keys (heart, hands,
+    # logic, voice, ear, compass, eye) — validated, never trusted from
+    # the client (see local_ai/strand_interviews/keys.py).
+
+    def get_strand_thread(
+        self, user_id: str, strand_key: str
+    ) -> dict[str, Any] | None:
+        """Mapping row for (user, strand), or None when never resolved."""
+        from local_ai.strand_interviews.keys import validate_strand_key
+
+        key = validate_strand_key(strand_key)
+        row = self._conn.execute(
+            "SELECT user_id, strand_key, conversation_id, created_at, updated_at "
+            "FROM strand_threads WHERE user_id = ? AND strand_key = ?",
+            (user_id, key),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def get_strand_key_for_conversation(
+        self, user_id: str, conversation_id: str
+    ) -> str | None:
+        """Reverse lookup: which strand (if any) a conversation belongs to."""
+        row = self._conn.execute(
+            "SELECT strand_key FROM strand_threads "
+            "WHERE user_id = ? AND conversation_id = ?",
+            (user_id, conversation_id),
+        ).fetchone()
+        return str(row["strand_key"]) if row is not None else None
+
+    def resolve_strand_thread(
+        self, user_id: str, strand_key: str
+    ) -> dict[str, Any]:
+        """Get-or-create the strand thread for (user, strand).
+
+        Returns the mapping row plus ``is_fresh`` (True when the thread
+        has no messages yet). The mapped conversation row is validated:
+        if it is missing (clear keeps the row, so this should not
+        happen — but a row deleted by any other path must never leave
+        the mapping pointing at a missing thread), a fresh thread is
+        created and the mapping is updated. No model call happens here:
+        resolution is storage only; the opening orientation is pattern
+        copy rendered by the client.
+        """
+        from local_ai.strand_interviews.keys import validate_strand_key
+
+        key = validate_strand_key(strand_key)
+        now = _utcnow()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT user_id, strand_key, conversation_id, created_at, updated_at "
+                "FROM strand_threads WHERE user_id = ? AND strand_key = ?",
+                (user_id, key),
+            ).fetchone()
+            if row is not None:
+                conversation_id = str(row["conversation_id"])
+                exists = self._conn.execute(
+                    "SELECT 1 FROM conversations "
+                    "WHERE user_id = ? AND conversation_id = ?",
+                    (user_id, conversation_id),
+                ).fetchone()
+                if exists is None:
+                    conversation_id = f"talk-{uuid.uuid4().hex}"
+                    self._conn.execute(
+                        "UPDATE strand_threads SET conversation_id = ?, updated_at = ? "
+                        "WHERE user_id = ? AND strand_key = ?",
+                        (conversation_id, now, user_id, key),
+                    )
+                    self._conn.execute(
+                        "INSERT OR IGNORE INTO conversations "
+                        "(user_id, conversation_id, kind, created_at, updated_at) "
+                        "VALUES (?, ?, 'talk', ?, ?)",
+                        (user_id, conversation_id, now, now),
+                    )
+                    self._conn.commit()
+                    return {
+                        "user_id": user_id,
+                        "strand_key": key,
+                        "conversation_id": conversation_id,
+                        "is_fresh": True,
+                    }
+                is_fresh = (
+                    self._conn.execute(
+                        "SELECT COUNT(*) AS n FROM messages "
+                        "WHERE user_id = ? AND conversation_id = ?",
+                        (user_id, conversation_id),
+                    ).fetchone()["n"]
+                    == 0
+                )
+                return {
+                    "user_id": user_id,
+                    "strand_key": key,
+                    "conversation_id": conversation_id,
+                    "is_fresh": bool(is_fresh),
+                }
+            conversation_id = f"talk-{uuid.uuid4().hex}"
+            self._conn.execute(
+                "INSERT INTO strand_threads "
+                "(user_id, strand_key, conversation_id, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, key, conversation_id, now, now),
+            )
+            self._conn.execute(
+                "INSERT OR IGNORE INTO conversations "
+                "(user_id, conversation_id, kind, created_at, updated_at) "
+                "VALUES (?, ?, 'talk', ?, ?)",
+                (user_id, conversation_id, now, now),
+            )
+            self._conn.commit()
+            return {
+                "user_id": user_id,
+                "strand_key": key,
+                "conversation_id": conversation_id,
+                "is_fresh": True,
+            }
+
+    # -- strand topic boundaries (rev2 C2) ------------------------------------
+    #
+    # "Never ask me about this" is the ONLY decline level that
+    # prohibits future questions on a topic, and it requires the user's
+    # explicit boundary-setting words. Boundaries persist across
+    # sessions; ordinary declines are never recorded here.
+
+    def add_topic_boundary(
+        self,
+        user_id: str,
+        strand_key: str,
+        topic: str,
+        created_by_message_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Record an explicit topic boundary (idempotent by normalized topic)."""
+        from local_ai.strand_interviews.boundaries import normalize_topic
+        from local_ai.strand_interviews.keys import validate_strand_key
+
+        key = validate_strand_key(strand_key)
+        display = (topic or "").strip().strip(" .!?,;:\"'()[]")
+        if not display:
+            raise ValueError("Topic is empty.")
+        normalized = normalize_topic(display)
+        now = _utcnow()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT id, user_id, strand_key, topic, topic_normalized, "
+                "created_at, created_by_message_id FROM strand_topic_boundaries "
+                "WHERE user_id = ? AND strand_key = ? AND topic_normalized = ?",
+                (user_id, key, normalized),
+            ).fetchone()
+            if existing is not None:
+                return dict(existing)
+            boundary_id = f"stb-{uuid.uuid4().hex[:16]}"
+            self._conn.execute(
+                "INSERT INTO strand_topic_boundaries "
+                "(id, user_id, strand_key, topic, topic_normalized, "
+                "created_at, created_by_message_id) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    boundary_id,
+                    user_id,
+                    key,
+                    display,
+                    normalized,
+                    now,
+                    created_by_message_id,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT id, user_id, strand_key, topic, topic_normalized, "
+                "created_at, created_by_message_id FROM strand_topic_boundaries "
+                "WHERE id = ? AND user_id = ?",
+                (boundary_id, user_id),
+            ).fetchone()
+        return dict(row)
+
+    def list_topic_boundaries(
+        self, user_id: str, strand_key: str
+    ) -> list[dict[str, Any]]:
+        """Active topic boundaries for (user, strand), oldest first."""
+        from local_ai.strand_interviews.keys import validate_strand_key
+
+        key = validate_strand_key(strand_key)
+        rows = self._conn.execute(
+            "SELECT id, user_id, strand_key, topic, topic_normalized, "
+            "created_at, created_by_message_id FROM strand_topic_boundaries "
+            "WHERE user_id = ? AND strand_key = ? ORDER BY created_at, id",
+            (user_id, key),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_topic_boundary(
+        self, user_id: str, boundary_id: str
+    ) -> bool:
+        """Reopen a bounded topic. False for missing or foreign rows."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM strand_topic_boundaries WHERE id = ? AND user_id = ?",
+                (boundary_id, user_id),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+
+    # -- strand sources (rev2 §7) ----------------------------------------------
+    #
+    # Durable source-to-interview linkage: a source is a pasted-text
+    # excerpt (redacted at capture, stored here) or an ingest session
+    # id (content lives in the presence-ingest store, redacted at
+    # capture there). Per-thread, per-strand scoping: a Hands source
+    # is never evidence in a Heart conversation. Uploaded content is
+    # user DATA, never instructions.
+
+    def add_strand_source(
+        self,
+        user_id: str,
+        strand_key: str,
+        conversation_id: str,
+        kind: str,
+        ref: str,
+        label: str = "",
+        excerpt_redacted: str = "",
+    ) -> dict[str, Any]:
+        """Link a source to a strand thread. The caller must already
+        have validated that the conversation is the caller's mapped
+        thread for the strand, and that a file ``ref`` names an
+        existing ingest session."""
+        from local_ai.strand_interviews.keys import validate_strand_key
+
+        key = validate_strand_key(strand_key)
+        kind = (kind or "").strip().lower()
+        if kind not in ("paste", "file"):
+            raise ValueError(f"Unknown strand source kind: {kind!r}")
+        if not (ref or "").strip():
+            raise ValueError("Source ref is empty.")
+        now = _utcnow()
+        source_id = f"sts-{uuid.uuid4().hex[:16]}"
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO strand_sources "
+                "(id, user_id, strand_key, conversation_id, kind, ref, "
+                "label, excerpt_redacted, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    source_id,
+                    user_id,
+                    key,
+                    conversation_id,
+                    kind,
+                    ref.strip(),
+                    (label or "").strip(),
+                    (excerpt_redacted or "").strip(),
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT id, user_id, strand_key, conversation_id, kind, ref, "
+                "label, excerpt_redacted, created_at FROM strand_sources "
+                "WHERE id = ? AND user_id = ?",
+                (source_id, user_id),
+            ).fetchone()
+        return dict(row)
+
+    def list_strand_sources(
+        self, user_id: str, strand_key: str
+    ) -> list[dict[str, Any]]:
+        """Linked sources for (user, strand), oldest first."""
+        from local_ai.strand_interviews.keys import validate_strand_key
+
+        key = validate_strand_key(strand_key)
+        rows = self._conn.execute(
+            "SELECT id, user_id, strand_key, conversation_id, kind, ref, "
+            "label, excerpt_redacted, created_at FROM strand_sources "
+            "WHERE user_id = ? AND strand_key = ? ORDER BY created_at, id",
+            (user_id, key),
+        ).fetchall()
+        return [dict(r) for r in rows]

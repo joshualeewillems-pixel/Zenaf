@@ -103,3 +103,61 @@ export function strandForAgentName(agentName: string): Strand | undefined {
   const n = agentName.trim().toLowerCase()
   return STRANDS.find((s) => s.agentName.toLowerCase() === n)
 }
+
+/* ------------------------------------------------------------------ */
+/* Weaver strand interviews (rev2) — design keys                       */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Founder-facing strand names for the strand interviews: Heart, Hands,
+ * Logic, Voice, Ear, Compass, Eye. These are the lowercase agent
+ * names — NOT the canonical taxonomy keys above. The backend strand
+ * interview API speaks design keys only; reconciling the two key
+ * systems is Slice 3 noting work, not strand work. The mapping lives
+ * here, in one place, so no other module guesses it.
+ */
+export type DesignStrandKey =
+  | 'heart'
+  | 'hands'
+  | 'logic'
+  | 'voice'
+  | 'ear'
+  | 'compass'
+  | 'eye'
+
+export const DESIGN_STRAND_KEYS: DesignStrandKey[] = [
+  'heart',
+  'hands',
+  'logic',
+  'voice',
+  'ear',
+  'compass',
+  'eye',
+]
+
+/** Design key → canonical taxonomy key. */
+export const DESIGN_TO_TAXONOMY: Record<DesignStrandKey, StrandKey> = {
+  heart: 'people',
+  hands: 'body',
+  logic: 'number',
+  voice: 'word',
+  ear: 'sound',
+  compass: 'self',
+  eye: 'image',
+}
+
+/** Canonical taxonomy key → design key. */
+export const TAXONOMY_TO_DESIGN: Record<StrandKey, DesignStrandKey> = {
+  people: 'heart',
+  body: 'hands',
+  number: 'logic',
+  word: 'voice',
+  sound: 'ear',
+  self: 'compass',
+  image: 'eye',
+}
+
+/** The design strand key for a tree strand root's taxonomy key. */
+export function designStrandKeyForTaxonomy(key: StrandKey): DesignStrandKey {
+  return TAXONOMY_TO_DESIGN[key]
+}

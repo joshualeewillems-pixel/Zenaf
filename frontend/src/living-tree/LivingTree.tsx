@@ -27,7 +27,7 @@
  * collapse even if the <style> block is ever stripped.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BRAID_ORDER, STRANDS, strandColor, type StrandKey } from './strands'
+import { BRAID_ORDER, STRANDS, designStrandKeyForTaxonomy, strandColor, type DesignStrandKey, type StrandKey } from './strands'
 import {
   STOCK_ARCHETYPE_FALLBACK,
   dominantStrandKey,
@@ -44,6 +44,7 @@ import {
 } from './archetypes'
 import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
 import { DraftStoreProvider } from '../chat/draftStore'
+import StrandPanel from '../chat/StrandPanel'
 import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
 import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
 import { NodeSheet } from '../tree/NodeSheet'
@@ -887,6 +888,10 @@ export function LivingTreeView({
   currentUserId?: string | null
 }) {
   const [sel, setSel] = useState<string | null>(null)
+  /** Weaver strand interview open in the bottom panel (rev2): the
+      design strand key, or null when no strand conversation is open.
+      A strand root tap opens it; a re-tap closes it. */
+  const [strandPanelKey, setStrandPanelKey] = useState<DesignStrandKey | null>(null)
   const [exp, setExp] = useState<Record<string, boolean>>({})
   /** Open node sheet (phase 1: the tree is the app; nodes open in place). */
   const [sheetNode, setSheetNode] = useState<TreeNodeRef | null>(null)
@@ -1081,6 +1086,7 @@ export function LivingTreeView({
   const onTap = (id: string) => {
     if (id === 'you') {
       setSel(null)
+      setStrandPanelKey(null)
       openSheet({ kind: 'you' })
       return
     }
@@ -1100,6 +1106,7 @@ export function LivingTreeView({
       // conversation directly — no menu interstitial. Any stale
       // invitation override is cleared so it can never resurrect.
       setSel(id)
+      setStrandPanelKey(null)
       setTalkOverride(null)
       openSheet({
         kind: 'seat',
@@ -1111,7 +1118,19 @@ export function LivingTreeView({
       setSheetItem('talk')
       return
     }
-    // Strand roots keep their inline narrative panels.
+    // Strand roots (rev2): a root tap opens the Weaver strand
+    // conversation in the bottom panel — conversation-first, no
+    // upload prerequisite. A re-tap closes it back to the narrative
+    // panel. Twig datums share a dominant strand but are not roots
+    // (their ids start with 'twig-'), so they keep the inline panel.
+    if (id.startsWith('agent-') && datum?.strand) {
+      const key = designStrandKeyForTaxonomy(datum.strand)
+      setSel(id)
+      setStrandPanelKey((cur) => (cur === key ? null : key))
+      return
+    }
+    // Other nodes keep their inline narrative panels.
+    setStrandPanelKey(null)
     setSel((s) => (s === id ? null : id))
   }
 
@@ -1467,7 +1486,15 @@ export function LivingTreeView({
         {fallow && (
           <p className="lsub">You used to tend this — it is waiting, not gone. Pick it back up and it returns faster than it first grew.</p>
         )}
-        {d.id !== 'you' && (
+        {d.id !== 'you' && d.strand && d.id.startsWith('agent-') ? (
+          <button
+            type="button"
+            className="lcta"
+            onClick={() => setStrandPanelKey(designStrandKeyForTaxonomy(d.strand!))}
+          >
+            Talk with Weaver about {d.name} ›
+          </button>
+        ) : d.id !== 'you' ? (
           <button
             type="button"
             className="lcta"
@@ -1475,7 +1502,7 @@ export function LivingTreeView({
           >
             Upload source materials to begin training ›
           </button>
-        )}
+        ) : null}
       </div>
     )
   }
@@ -1881,31 +1908,46 @@ export function LivingTreeView({
           })}
         </g>
       </svg>
-      <div className="lnarr">{renderPanel()}</div>
+      {/* The draft store provider wraps the narrative panel AND the
+          sheet (not the sheet body): NodeSheet renders nothing when
+          closed, so a provider inside it would die on every close and
+          lose every draft. Placed here it survives close/reopen,
+          sheet-item switches, and seat switches — and it covers the
+          strand panel's CouncilChat too (T12: the strand composer
+          drafts in the same store as the sheet composer, keyed by its
+          own conversation). It covers ONLY the Tree subtree, so
+          workspace/console mounts never see it. */}
+      <DraftStoreProvider userId={currentUserId ?? null}>
+      <div className="lnarr">
+        {strandPanelKey ? (
+          <StrandPanel
+            strandKey={strandPanelKey}
+            onClose={() => {
+              setStrandPanelKey(null)
+              setSel(null)
+            }}
+          />
+        ) : (
+          renderPanel()
+        )}
+      </div>
       <div className="lfoot">
         Training first, rent later —<br />
         the tree is yours; the marketplace is a lens on it, one tap deep.
       </div>
-      {/* The draft store provider wraps the sheet (not the sheet
-          body): NodeSheet renders nothing when closed, so a provider
-          inside it would die on every close and lose every draft.
-          Placed here it survives close/reopen, sheet-item switches,
-          and seat switches — and it covers ONLY the Tree sheet
-          subtree, so workspace/console mounts never see it. */}
-      <DraftStoreProvider userId={currentUserId ?? null}>
-        <NodeSheet
-          open={!!sheetNode}
-          onClose={closeSheet}
-          // Seat sheets have no menu to return to (direct navigation):
-          // the back control is gone and X closes to the Tree. The
-          // you-node keeps its menu-back.
-          onBack={sheetNode?.kind === 'you' && sheetItem ? () => setSheetItem(null) : null}
-          backLabel="Back to menu"
-          title={sheetTitle}
-          subtitle={sheetSubtitle}
-        >
-          {renderSheetBody()}
-        </NodeSheet>
+      <NodeSheet
+        open={!!sheetNode}
+        onClose={closeSheet}
+        // Seat sheets have no menu to return to (direct navigation):
+        // the back control is gone and X closes to the Tree. The
+        // you-node keeps its menu-back.
+        onBack={sheetNode?.kind === 'you' && sheetItem ? () => setSheetItem(null) : null}
+        backLabel="Back to menu"
+        title={sheetTitle}
+        subtitle={sheetSubtitle}
+      >
+        {renderSheetBody()}
+      </NodeSheet>
       </DraftStoreProvider>
       {meetingSeat && (
         <MeetingView

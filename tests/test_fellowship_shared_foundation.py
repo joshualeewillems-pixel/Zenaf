@@ -427,7 +427,17 @@ def test_frontend_complete_promoted_and_hint_rendered():
            / "frontend" / "src" / "living-tree" / "MeetingView.tsx").read_text()
     assert "completion_offered" in src
     assert "She heard you want to finish" in src
-    label_at = src.index("Complete this meeting — we’re done here")
+    # S1 (2026-11-05): the active label is the neutral
+    # "Complete this meeting" — the "we're done here" suffix is gone,
+    # so the label never presumes the visitor's intent (the seat may
+    # invite completion; only the visitor decides). The active button
+    # is identified by its full class (the "Meet again" button shares
+    # the amber border but not the mt-2 primary pattern, and the
+    # paused footer already carried the neutral label).
+    assert "Complete this meeting — we’re done here" not in src
+    active_class = "mt-2 min-h-[44px] px-5 rounded-full border border-amber-600/60"
+    class_at = src.index(active_class)
+    label_at = src.index("Complete this meeting", class_at)
     button_at = src.rfind("<button", 0, label_at)
     active_complete = src[button_at:label_at]
     assert "rounded-full" in active_complete

@@ -460,7 +460,7 @@ export function MeetingView({
               disabled={busy}
               className="mt-2 min-h-[44px] px-5 rounded-full border border-amber-600/60 text-amber-100 text-sm font-semibold disabled:opacity-40"
             >
-              Complete this meeting — we’re done here
+              Complete this meeting
             </button>
           </div>
         )}

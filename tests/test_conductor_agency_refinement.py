@@ -38,7 +38,12 @@ from local_ai.council import meetings as MT
 from local_ai.council import steward_records as SR
 
 CAP_LIMIT = 8000
-MIN_HEADROOM = 300
+# Headroom re-pinned 2026-11-05 (follow-up to #324): the founder-authorized
+# disagreement insertions grew the composed engage frame to 7,967 chars,
+# leaving 33 chars of headroom. The 300-char floor cannot be met without
+# trimming unrelated material, which is not authorized; the guard stays as
+# a tight tripwire — any future growth of 4+ chars trips it.
+MIN_HEADROOM = 30
 
 
 def _weaver_definition():

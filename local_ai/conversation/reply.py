@@ -339,6 +339,7 @@ def build_voice_prompt(
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
     obligation_context: str | None = None,
+    evidence_context: str | None = None,
     invitation_context: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
@@ -761,6 +762,16 @@ def build_voice_prompt(
         # The block itself is bounded to the justifying exchange;
         # the 10-turn window below is NOT enlarged to support it.
         prompt += ["", invitation_context.strip()]
+    if evidence_context:
+        # Bear evidence (S3): guardian-only, server-side, from the
+        # caller's own scoped records. Its own section, after the
+        # invitation section and before history. The block itself
+        # delimits user data from instructions with explicit fences
+        # and keeps every record on one labeled line, so a hostile
+        # title cannot visually escape the section. Absent (None) =
+        # section absent, so non-guardian turns and meetings are
+        # byte-identical to before.
+        prompt += ["", evidence_context.strip()]
 
     turns = (history or [])[-10:]
     if turns:
@@ -819,6 +830,7 @@ def generate_voice_reply(
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
     obligation_context: str | None = None,
+    evidence_context: str | None = None,
     invitation_context: str | None = None,
     # Provider-timing label for the one log line per call (latency
     # instrumentation only): "talk" for ordinary Talk turns,
@@ -841,6 +853,7 @@ def generate_voice_reply(
         capability_context=capability_context,
         fellowship_reference=fellowship_reference,
         obligation_context=obligation_context,
+        evidence_context=evidence_context,
         invitation_context=invitation_context,
     )
     gen = generate_fn or _default_generate

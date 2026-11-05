@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS commitments (
 );
 CREATE INDEX IF NOT EXISTS idx_ft_commitments_user
   ON commitments (user_id, status);
+CREATE INDEX IF NOT EXISTS idx_ft_commitments_user_task
+  ON commitments (user_id, linked_task_id, status);
 
 CREATE TABLE IF NOT EXISTS entity_growth (
   entity_type TEXT NOT NULL,
@@ -295,6 +297,34 @@ class FollowthroughStore:
                 cur = self._conn.execute(
                     "SELECT * FROM commitments WHERE user_id = ? ORDER BY created_at DESC",
                     (user_id,),
+                )
+            return [_row_to_dict(r) for r in cur.fetchall()]
+
+    def list_commitments_for_task(
+        self, user_id: str, task_id: str, status: str | None = "open"
+    ) -> list[dict[str, Any]]:
+        """Commitments directly linked to one task (S3, verdict refinement C).
+
+        Linkage is the column, not inference: a commitment is directly
+        linked to the focused node iff ``linked_task_id == task_id`` AND
+        the status matches (open by default). Unlinked commitments
+        (``linked_task_id IS NULL``) and commitments linked to other
+        tasks never match. Owner-scoped like ``list_commitments``.
+        """
+        with self._lock:
+            if status:
+                cur = self._conn.execute(
+                    "SELECT * FROM commitments "
+                    "WHERE user_id = ? AND linked_task_id = ? AND status = ? "
+                    "ORDER BY created_at DESC",
+                    (user_id, task_id, status),
+                )
+            else:
+                cur = self._conn.execute(
+                    "SELECT * FROM commitments "
+                    "WHERE user_id = ? AND linked_task_id = ? "
+                    "ORDER BY created_at DESC",
+                    (user_id, task_id),
                 )
             return [_row_to_dict(r) for r in cur.fetchall()]
 

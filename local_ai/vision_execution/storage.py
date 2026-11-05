@@ -5015,6 +5015,13 @@ def _migrate_task_proposals(conn: sqlite3.Connection) -> None:
           UNIQUE(user_id, source_message_id, block_index, proposal_index)
         )"""
     )
+    # S3 (verdict OQ5): node-scoped proposal lookup by exact parent.
+    # The table is created here, not in schema.sql, so its index lives
+    # here too — CREATE INDEX IF NOT EXISTS is idempotent on existing DBs.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_proposals_user_parent "
+        "ON task_proposals (user_id, parent_task_id, state)"
+    )
     for column in (
         "evidence_quote",
         "original_title",
@@ -5243,6 +5250,45 @@ def list_task_proposals(
             "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
             "WHERE user_id = ? AND conversation_id = ? AND state = ? ORDER BY created_at ASC, rowid ASC LIMIT ?",
             (user_id, conversation_id, state, limit),
+        )
+    return [_proposal_row_to_dict(tuple(r)) for r in cur.fetchall()]
+
+
+def list_task_proposals_by_parent(
+    user_id: str,
+    parent_task_id: str,
+    state: str | None = "pending",
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Proposals for one parent task, oldest first (S3, verdict OQ5).
+
+    Exact parent match only: ``parent_task_id`` must equal the focused
+    task id. A proposal with ``parent_task_id IS NULL`` or a different
+    parent is omitted, even if it belongs to the same conversation —
+    conversation membership does not establish node relevance. No
+    descendant traversal. ``user_id`` is required (no default); an
+    invalid state raises ValueError, same as ``list_task_proposals``.
+    """
+    if state is not None and state not in _PROPOSAL_STATES:
+        raise ValueError(f"Invalid proposal state filter: {state!r}")
+    try:
+        limit = max(1, min(int(limit), 500))
+    except (TypeError, ValueError):
+        limit = 100
+    conn = get_connection()
+    if state is None:
+        cur = conn.execute(
+            "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+            "WHERE user_id = ? AND parent_task_id = ? "
+            "ORDER BY created_at ASC, rowid ASC LIMIT ?",
+            (user_id, parent_task_id, limit),
+        )
+    else:
+        cur = conn.execute(
+            "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+            "WHERE user_id = ? AND parent_task_id = ? AND state = ? "
+            "ORDER BY created_at ASC, rowid ASC LIMIT ?",
+            (user_id, parent_task_id, state, limit),
         )
     return [_proposal_row_to_dict(tuple(r)) for r in cur.fetchall()]
 

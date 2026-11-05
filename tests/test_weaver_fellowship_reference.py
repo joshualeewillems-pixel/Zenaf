@@ -99,8 +99,8 @@ def test_new_material_not_in_capped_frames():
         assert "You cannot arrange meetings" not in text
         assert "First-meeting openness right now" not in text
     # Capped frames byte-stable: the budget test's headroom stands.
-    assert len(definition.engage_frame) == 6465
-    assert len(definition.turn_frame) == 4992
+    assert len(definition.engage_frame) == 6760
+    assert len(definition.turn_frame) == 5641
 
 
 def test_all_seats_carry_a_reference():

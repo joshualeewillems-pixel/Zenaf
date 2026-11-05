@@ -225,6 +225,26 @@ def test_provenance_migration_noops_without_tasks_table():
     conn.close()
 
 
+def test_legacy_pending_proposal_approves_from_live_values(monkeypatch):
+    """Legacy pending rows approve from live values exactly as today.
+
+    Approve reads live columns only, so a pre-W0B pending proposal
+    approves without any original-handling code, and its NULL originals
+    stay NULL after approval (the approved version is terminal-state
+    immutable, but its ORIGINAL remains honestly unrecorded).
+    """
+    conn = _legacy_conn()
+    monkeypatch.setattr(S, "get_connection", lambda: conn)
+    S.init_db(conn)
+    out = S.approve_task_proposal("u1", "prop-legacy")
+    assert out["proposal"]["state"] == "approved"
+    assert out["proposal"]["title"] == "Legacy proposal"
+    assert out["proposal"]["original_title"] is None
+    assert out["task"]["title"] == "Legacy proposal"
+    assert out["task"]["origin_seat"] is None, "nothing writes origins yet"
+    conn.close()
+
+
 # -- Positional mapping pins ------------------------------------------------------
 
 

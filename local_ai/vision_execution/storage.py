@@ -539,6 +539,15 @@ def _migrate_user_permissions_settings(conn: sqlite3.Connection) -> None:
         )
         """
     )
+    # Permission Slice 1 (foundation): extend the SAME row with the
+    # stance store (stances_json + pause_json columns) and the
+    # append-only stance-history table. Imported lazily so this
+    # module never depends on the permissions package at import
+    # time. Existing rows read the '{}' defaults — no stances, no
+    # pause — exactly as if the user had never set one.
+    from local_ai.permissions.store import ensure_permission_framework_schema
+
+    ensure_permission_framework_schema(conn)
     conn.commit()
 
 
@@ -1484,6 +1493,21 @@ _USER_PERMISSION_DEFAULTS: dict[str, bool] = {
     # entry IS required — normalize_user_permission_prefs filters
     # to these keys and would otherwise drop the flag on write.
     "steward_derivation": False,
+    # Permission Slice 1 (foundation) — R3 DEAD-FLAG REPAIR
+    # (inventory §1.4): steward_coordination existed in
+    # narrative/consent.py and was consumed by coordination.py,
+    # but was absent from this key list AND the frontend defaults,
+    # so normalize_user_permission_prefs dropped it on every read
+    # and write and coordination_allowed was always False in
+    # production. Adding the key here (and to
+    # USER_PERMISSION_DEFAULTS in frontend/src/settings/api.ts)
+    # makes the flag persist at all. Default off; existing rows
+    # read False for it until the visitor turns it on — nobody is
+    # opted in by the repair, and no forced re-acknowledgement.
+    # No Settings UI row is added in Slice 1 (bounds): the flag
+    # persists via the API + defaults, and its row lands with the
+    # Slice 2 Settings surface.
+    "steward_coordination": False,
 }
 
 _USER_PERMISSION_KEYS = tuple(_USER_PERMISSION_DEFAULTS.keys())

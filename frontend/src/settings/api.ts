@@ -256,6 +256,7 @@ export type UserPermissionFlags = {
   aspiration_infer_suggestions: boolean
   aspiration_use_in_guidance: boolean
   steward_derivation: boolean
+  steward_coordination: boolean
 }
 
 export const USER_PERMISSION_DEFAULTS: UserPermissionFlags = {
@@ -273,6 +274,17 @@ export const USER_PERMISSION_DEFAULTS: UserPermissionFlags = {
   // opted in by the addition (permissions-v1 kept, no forced
   // re-acknowledgement).
   steward_derivation: false,
+  // Permission Slice 1 (foundation) — R3 DEAD-FLAG REPAIR
+  // (inventory §1.4): steward_coordination existed in the
+  // consent gate and its consumer but was absent from these
+  // defaults AND the backend key list, so it could never persist
+  // (normalizeUserPermissionFlags drops unknown keys, and the
+  // backend normalize dropped it too). Default off; existing
+  // users are NOT opted in by the repair, and no forced
+  // re-acknowledgement. Slice 1 bound: defaults (data) only —
+  // no Settings UI component change; the coordination row lands
+  // with the Slice 2 Settings surface.
+  steward_coordination: false,
 }
 
 export type UserPermissionsSettings = {

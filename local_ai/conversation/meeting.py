@@ -752,6 +752,7 @@ class MeetingService:
             # instruction exists on any path anymore (removed
             # 2026-11-02, Step 2).
             canonical=False,
+            timing_label="meeting",
         )
         return reply.reply
 

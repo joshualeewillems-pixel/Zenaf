@@ -14,6 +14,8 @@ Two additive inputs exist only here (the voice route ignores them):
 
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -46,6 +48,8 @@ from local_ai.council.render import (
     render_raven_ordinary,
     render_weaver_ordinary,
 )
+
+logger = logging.getLogger(__name__)
 
 _MSG_MAX = 2000
 _HISTORY_MAX = 20
@@ -762,6 +766,11 @@ def generate_voice_reply(
     fellowship_reference: str | None = None,
     obligation_context: str | None = None,
     invitation_context: str | None = None,
+    # Provider-timing label for the one log line per call (latency
+    # instrumentation only): "talk" for ordinary Talk turns,
+    # "meeting" for first-meeting turns. The default covers the
+    # /voice/chat demo route, which is a talk-style voice turn.
+    timing_label: str = "talk",
 ) -> VoiceReply:
     """One exchange with a single council voice. Raises RuntimeError on LLM failure."""
     prompt, meta = build_voice_prompt(
@@ -781,15 +790,29 @@ def generate_voice_reply(
         invitation_context=invitation_context,
     )
     gen = generate_fn or _default_generate
-    reply = sanitize_weave(
-        gen(
+    # Provider-timing instrumentation (durations + labels only; no
+    # prompt, response, or user content is ever logged): the monotonic
+    # clock brackets THE provider call only — prompt assembly above
+    # and sanitize_weave below are application time, not provider
+    # time. The finally logs even when the call raises, and the
+    # exception propagates unchanged.
+    _start = time.perf_counter()
+    try:
+        raw = gen(
             "\n".join(prompt),
             provider_id="meta",
             user_id=user_id,
             operation="voice-chat",
             timeout=90,
-        ).strip()
-    )
+        )
+    finally:
+        logger.info(
+            "provider_timing path=%s archetype=%s duration_s=%.3f",
+            timing_label,
+            archetype_id,
+            time.perf_counter() - _start,
+        )
+    reply = sanitize_weave(raw.strip())
     return VoiceReply(
         reply=reply,
         archetype_id=meta["archetype_id"],

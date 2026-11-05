@@ -330,6 +330,7 @@ class ConversationService:
             invitation_context=invitation_context,
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,
+            timing_label="talk",
             # Phase 2 steward context (Weaver only): prepared
             # context travels as extra_instructions inside the
             # existing prompt budget — no new generation, no

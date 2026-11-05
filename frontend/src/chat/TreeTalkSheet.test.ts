@@ -30,6 +30,7 @@ type Talk = {
 
 const TALK_MENTOR = 'talk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const TALK_CHAMPION = 'talk-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+const CONV_OVERRIDE = 'talk-cccccccccccccccccccccccccccccccc'
 
 function talk(
   id: string,
@@ -77,6 +78,9 @@ function installFetch() {
           ],
         }),
       )
+    }
+    if (url.includes('/conversation/invitations')) {
+      return Promise.resolve(ok({ conversation_id: CONV_OVERRIDE, invitations: [] }))
     }
     if (url.includes('/conversation?')) {
       const id = new URL(url, 'http://x').searchParams.get('conversation_id') ?? ''
@@ -215,6 +219,51 @@ describe('you-node rediscovery', () => {
     expect(
       calls.some((u) => u.includes(`/conversation?conversation_id=${TALK_MENTOR}`)),
     ).toBe(true)
+  })
+})
+
+describe('conversation override (invitation navigation)', () => {
+  const overrideProps = {
+    seatKey: 'mentor',
+    displayName: 'Gardener',
+    conversationOverride: { conversationId: CONV_OVERRIDE, seat: 'guardian' },
+  }
+
+  it('mounts the given conversation + seat without the talks fetch', async () => {
+    renderSheet(overrideProps)
+    await flush()
+    // No resolveSeat: the talks fetch never ran, so the list's mentor
+    // talk (TALK_MENTOR) is never the hydration target.
+    expect(calls.some((u) => u.includes('/conversation/list'))).toBe(false)
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${CONV_OVERRIDE}`)),
+    ).toBe(true)
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${TALK_MENTOR}`)),
+    ).toBe(false)
+    expect(container.textContent).toContain('thread talk-cccc')
+    // The in-chat invitation list mounts for the override conversation.
+    expect(
+      calls.some(
+        (u) =>
+          u.includes('/conversation/invitations') &&
+          u.includes(`conversation_id=${CONV_OVERRIDE}`),
+      ),
+    ).toBe(true)
+    expect(container.textContent).toContain('No pending invitations in this conversation.')
+  })
+
+  it('override is cleared on New conversation', async () => {
+    renderSheet(overrideProps)
+    await flush()
+    expect(container.textContent).toContain('thread talk-cccc')
+    await click(buttonByText('New conversation'))
+    const hyds = calls.filter((u) => u.includes('/conversation?conversation_id='))
+    const id = new URL(hyds[hyds.length - 1], 'http://x').searchParams.get(
+      'conversation_id',
+    )
+    expect(id).toMatch(/^talk-[0-9a-f]{32}$/)
+    expect(id).not.toBe(CONV_OVERRIDE)
   })
 })
 

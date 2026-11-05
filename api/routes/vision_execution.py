@@ -319,6 +319,56 @@ def get_keystone_attention(current_user: dict = Depends(get_current_user)):
     # On "unknown" the obligation fields stay omitted: unavailable data
     # is never rendered as an authoritative empty result, and the
     # marker's attention reflects keystone/observation sources only.
+    # Invitation presence (Capability C, visible-UX slice): additive
+    # ONLY, merged here at the route level like obligations, never in
+    # attention.py. Invitations mean a seat has something to DISCUSS;
+    # they never flip `attention` and never set or fall back `reason`
+    # (no new KeystoneAttentionReason member), so the Tree reads
+    # invitation presence from `invitation_count > 0` alone. On read
+    # failure the fields are OMITTED (not zeroed), following the
+    # obligation "unknown" precedent; a successful read with none
+    # pending yields count 0 and an empty list (authoritative empty).
+    try:
+        from local_ai.conversation.store import ConversationStore
+
+        _pending = ConversationStore().list_pending_invitations(
+            current_user["id"], None
+        )
+    except Exception:
+        _pending = None
+    if _pending is not None:
+        _canonical = {
+            "mentor",
+            "champion",
+            "guardian",
+            "maverick",
+            "ambassador",
+            "conductor",
+            "skeptic",
+        }
+        _by_seat: dict[str, list[str]] = {}
+        for _inv in _pending:
+            if not isinstance(_inv, dict):
+                continue
+            _seat = _inv.get("seat")
+            if _seat not in _canonical:
+                continue
+            _cid = _inv.get("conversation_id")
+            if not _cid:
+                continue
+            _by_seat.setdefault(_seat, []).append(_cid)
+        for _seat, _marker in markers.items():
+            _cids = _by_seat.get(_seat, [])
+            # Most-recent-first (reverse of the store's created_at
+            # ASC order), deduplicated: one entry per conversation.
+            _seen: set[str] = set()
+            _ordered: list[str] = []
+            for _cid in reversed(_cids):
+                if _cid not in _seen:
+                    _seen.add(_cid)
+                    _ordered.append(_cid)
+            _marker["invitation_count"] = len(_cids)
+            _marker["invitation_conversation_ids"] = _ordered
     return result
 
 

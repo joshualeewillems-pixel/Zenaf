@@ -165,3 +165,198 @@ def test_route_returns_state(ve_ctx):
     out = get_keystone_attention({"id": user["id"]})
     assert out["seeded"] is True
     assert _lit(out) == {"conductor": "intro"}
+
+
+# ------------------------------------------------------------------ invitations
+# (Capability C visible-UX slice: additive invitation fields on the
+# keystone-attention route. The route must not disturb any pre-existing
+# marker field, must not flip attention or reason for invitations, and
+# must omit (not zero) the new fields when the invitation read fails.)
+
+_NEW_FIELDS = ("invitation_count", "invitation_conversation_ids")
+
+
+def _inv_store(tmp_path, monkeypatch):
+    """Conversation store on an isolated DB, patched in as the class the
+    route lazily imports (so the route's in-function import resolves it)."""
+    import local_ai.conversation.store as store_mod
+    from local_ai.conversation.store import ConversationStore
+
+    store = ConversationStore(db_path=tmp_path / "inv.db")
+    monkeypatch.setattr(store_mod, "ConversationStore", lambda *a, **k: store)
+    return store
+
+
+def _create_inv(store, user_id, conv, seat, reason="a reason"):
+    return store.create_or_refresh_invitation(
+        user_id,
+        conv,
+        seat,
+        reason,
+        evidence={"user_message": "hello", "assistant_reply": "hi"},
+    )
+
+
+def _strip_new(marker):
+    return {k: v for k, v in marker.items() if k not in _NEW_FIELDS}
+
+
+def test_invitation_fields_do_not_disturb_existing_markers(ve_ctx, tmp_path, monkeypatch):
+    from api.routes.vision_execution import get_keystone_attention
+
+    user = _make_user()
+    store = _inv_store(tmp_path, monkeypatch)
+    baseline = get_keystone_attention({"id": user["id"]})
+    assert baseline["markers"]["guardian"]["invitation_count"] == 0
+    assert baseline["markers"]["guardian"]["invitation_conversation_ids"] == []
+
+    _create_inv(store, user["id"], "talk-1", "guardian")
+    _create_inv(store, user["id"], "talk-2", "guardian")
+    _create_inv(store, user["id"], "talk-1", "mentor")
+    out = get_keystone_attention({"id": user["id"]})
+    # Every pre-existing field, for every seat, byte-identical to baseline.
+    for ref in SEAT_REFS:
+        assert _strip_new(out["markers"][ref]) == _strip_new(baseline["markers"][ref]), ref
+    assert out["seeded"] == baseline["seeded"]
+    # New fields: count is invitations, ids most-recent-first, deduped.
+    assert out["markers"]["guardian"]["invitation_count"] == 2
+    assert out["markers"]["guardian"]["invitation_conversation_ids"] == ["talk-2", "talk-1"]
+    assert out["markers"]["mentor"]["invitation_count"] == 1
+    assert out["markers"]["mentor"]["invitation_conversation_ids"] == ["talk-1"]
+    assert out["markers"]["conductor"]["invitation_count"] == 0
+    assert out["markers"]["conductor"]["invitation_conversation_ids"] == []
+    store.close()
+
+
+def test_invitation_fields_dedup_duplicate_rows(ve_ctx, tmp_path, monkeypatch):
+    """Defensive dedup: even if duplicate rows ever appear (contrary to
+    refresh-not-stack), one entry per conversation is returned."""
+    import json
+
+    from api.routes.vision_execution import get_keystone_attention
+
+    user = _make_user()
+    store = _inv_store(tmp_path, monkeypatch)
+    _create_inv(store, user["id"], "talk-1", "guardian")
+    # Direct duplicate row (same user/conversation/seat, new id).
+    store._conn.execute(
+        "INSERT INTO invitations (id, user_id, conversation_id, seat, observation_ids,"
+        " reason, evidence_json, status, created_at, expires_at, accepted_message_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, NULL)",
+        (
+            "dup-row-id",
+            user["id"],
+            "talk-1",
+            "guardian",
+            json.dumps([]),
+            "dup reason",
+            json.dumps({}),
+            "2026-01-01T00:00:00+00:00",
+            "2999-01-01T00:00:00+00:00",
+        ),
+    )
+    store._conn.commit()
+    out = get_keystone_attention({"id": user["id"]})
+    assert out["markers"]["guardian"]["invitation_count"] == 2
+    assert out["markers"]["guardian"]["invitation_conversation_ids"] == ["talk-1"]
+    store.close()
+
+
+def test_invitation_fields_are_per_user(ve_ctx, tmp_path, monkeypatch):
+    from api.routes.vision_execution import get_keystone_attention
+
+    u1 = _make_user("one@example.com")
+    u2 = _make_user("two@example.com")
+    store = _inv_store(tmp_path, monkeypatch)
+    _create_inv(store, u1["id"], "talk-1", "guardian")
+    out = get_keystone_attention({"id": u2["id"]})
+    assert out["markers"]["guardian"]["invitation_count"] == 0
+    assert out["markers"]["guardian"]["invitation_conversation_ids"] == []
+    store.close()
+
+
+def test_invitation_unknown_seat_creates_no_marker(ve_ctx, tmp_path, monkeypatch):
+    from api.routes.vision_execution import get_keystone_attention
+
+    user = _make_user()
+    store = _inv_store(tmp_path, monkeypatch)
+    _create_inv(store, user["id"], "talk-1", "not-a-seat")
+    out = get_keystone_attention({"id": user["id"]})
+    assert set(out["markers"].keys()) == set(SEAT_REFS)
+    for ref in SEAT_REFS:
+        assert out["markers"][ref]["invitation_count"] == 0
+        assert out["markers"][ref]["invitation_conversation_ids"] == []
+    store.close()
+
+
+def test_invitation_read_failure_omits_fields(ve_ctx, tmp_path, monkeypatch):
+    import local_ai.conversation.store as store_mod
+    from api.routes.vision_execution import get_keystone_attention
+
+    user = _make_user()
+    _seed(user["id"])
+
+    def _boom(*a, **k):
+        raise RuntimeError("invitation read down")
+
+    monkeypatch.setattr(store_mod, "ConversationStore", _boom)
+    out = get_keystone_attention({"id": user["id"]})
+    # Unavailable data is never rendered as authoritative empty: the
+    # fields are absent, while everything else is intact.
+    for ref in SEAT_REFS:
+        assert "invitation_count" not in out["markers"][ref]
+        assert "invitation_conversation_ids" not in out["markers"][ref]
+    assert _lit(out) == {"conductor": "intro"}
+
+
+def test_obligation_merge_unchanged_with_invitations(ve_ctx, tmp_path, monkeypatch):
+    import local_ai.vision_execution.obligations as obligations_mod
+    from api.routes.vision_execution import get_keystone_attention
+
+    user = _make_user()
+    store = _inv_store(tmp_path, monkeypatch)
+    _create_inv(store, user["id"], "talk-1", "guardian")
+    monkeypatch.setattr(
+        obligations_mod,
+        "obligation_attention",
+        lambda user_id: {
+            "obligation_status": "ok",
+            "overdue_count": 1,
+            "due_soon_count": 2,
+            "next_due": "2026-11-20",
+        },
+    )
+    out = get_keystone_attention({"id": user["id"]})
+    champ = out["markers"]["champion"]
+    # Obligation merge behaves exactly as before (counts, reason
+    # fallback only when reason empty), alongside invitation fields.
+    assert champ["obligation_status"] == "ok"
+    assert champ["overdue_count"] == 1
+    assert champ["due_soon_count"] == 2
+    assert champ["next_due"] == "2026-11-20"
+    assert champ["attention"] is True
+    assert champ["reason"] == "obligation"
+    assert out["markers"]["guardian"]["invitation_count"] == 1
+    store.close()
+
+
+def test_obligation_unknown_still_omits_with_invitations(ve_ctx, tmp_path, monkeypatch):
+    import local_ai.vision_execution.obligations as obligations_mod
+    from api.routes.vision_execution import get_keystone_attention
+
+    user = _make_user()
+    store = _inv_store(tmp_path, monkeypatch)
+    _create_inv(store, user["id"], "talk-1", "guardian")
+
+    def _boom(user_id):
+        raise RuntimeError("obligation read down")
+
+    monkeypatch.setattr(obligations_mod, "obligation_attention", _boom)
+    out = get_keystone_attention({"id": user["id"]})
+    champ = out["markers"]["champion"]
+    assert champ["obligation_status"] == "unknown"
+    assert "overdue_count" not in champ
+    assert "due_soon_count" not in champ
+    assert "next_due" not in champ
+    assert out["markers"]["guardian"]["invitation_count"] == 1
+    store.close()

@@ -34,6 +34,7 @@ import {
   fetchArchetypeStatus,
   fetchKeystoneAttention,
   fetchTreePanels,
+  invitationIndicatorLabel,
   treePanelMeta,
   treePanelThreads,
   type ArchetypeStatus,
@@ -41,6 +42,7 @@ import {
   type KeystoneAttentionReason,
   type TreePanelThread,
 } from './archetypes'
+import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
 import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
 import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
 import { NodeSheet } from '../tree/NodeSheet'
@@ -105,6 +107,10 @@ export const OPEN_SEAT_REVIEW_EVENT = 'zenaf:open-seat-review'
 export type NodeSheetContentProvider = (
   node: TreeNodeRef,
   item: NodeMenuItemId,
+  /** Capability C visible-UX slice: invitation navigation target, set
+      only when the user tapped a seat's "Invitations (n)" menu row.
+      Absent = today's behavior, byte-identical. */
+  opts?: { conversationOverride?: { conversationId: string; seat: string } },
 ) => ReactNode | null
 
 /** Engine seat key -> fellowship display name (mirrors TodayView's map). */
@@ -821,6 +827,14 @@ export function LivingTreeView({
   const [sheetNode, setSheetNode] = useState<TreeNodeRef | null>(null)
   /** Null = the node's menu; otherwise the mounted menu item. */
   const [sheetItem, setSheetItem] = useState<NodeMenuItemId | null>(null)
+  /** Capability C visible-UX slice: invitation navigation target, set
+      ONLY by tapping a seat's "Invitations (n)" menu row. Cleared on
+      sheet close and whenever any other menu row is tapped, so a
+      stale override can never resurrect. */
+  const [talkOverride, setTalkOverride] = useState<{
+    conversationId: string
+    seat: string
+  } | null>(null)
   /** Seat whose full character panel is expanded inside its Talk tab. */
   const [charExpandedSeat, setCharExpandedSeat] = useState<string | null>(null)
 
@@ -879,6 +893,16 @@ export function LivingTreeView({
       cancelled = true
     }
   }, [])
+  // Capability C visible-UX slice: when a chat list observes an
+  // invitation row disappear (joined, expired, or cleared), refetch
+  // attention so the Tree indicator tracks backend truth. Same
+  // window-CustomEvent precedent as the review event above; the only
+  // effect is a data refresh — never navigation.
+  useEffect(() => {
+    const onInvitationsChanged = () => refreshAttention()
+    window.addEventListener(INVITATIONS_CHANGED_EVENT, onInvitationsChanged)
+    return () => window.removeEventListener(INVITATIONS_CHANGED_EVENT, onInvitationsChanged)
+  }, [refreshAttention])
   // Phase 5 — live thread state per seat for the character panels.
   // Null (backend unreachable, unseeded account) simply means no
   // section renders; the panel stays identical to its static frame.
@@ -962,6 +986,12 @@ export function LivingTreeView({
     setSheetNode(null)
     setSheetItem(null)
     setLegacyOpen(null)
+    // An invitation navigation episode ends with the sheet: a stale
+    // override must never resurrect on the next open.
+    setTalkOverride(null)
+    // Minimum attention refresh: a joined invitation's Tree indicator
+    // must not linger until the next mount fetch.
+    refreshAttention()
     // A seat's character now lives in its sheet — clear its highlight too.
     setSel((s) => {
       if (!s) return s
@@ -1260,6 +1290,16 @@ export function LivingTreeView({
   const renderNodeMenu = (node: TreeNodeRef) => {
     const items = node.kind === 'you' ? YOU_MENU : SEAT_MENU
     const navItems = node.kind === 'seat' ? (SEAT_NAV_ITEMS[node.seatKey] ?? []) : []
+    // Capability C visible-UX slice: invitation navigation for this
+    // seat only (never the you-node). Presence comes from the new
+    // additive fields alone; absent fields mean "unknown", never
+    // "none", so no row renders then. The row navigates to the most
+    // recent invitation conversation — the conversation-scoped list
+    // lives in the chat view, not here.
+    const inviteMarker = node.kind === 'seat' ? attention?.markers[node.seatKey] : undefined
+    const inviteCount = inviteMarker?.invitation_count ?? 0
+    const inviteTarget =
+      inviteCount > 0 ? inviteMarker?.invitation_conversation_ids?.[0] : undefined
     return (
       <div>
         {items.map((m) => (
@@ -1267,7 +1307,12 @@ export function LivingTreeView({
             key={m.id}
             type="button"
             className="lrow"
-            onClick={() => setSheetItem(m.id)}
+            onClick={() => {
+              // Any non-invitation row ends an invitation navigation
+              // episode: a stale override must never resurrect.
+              setTalkOverride(null)
+              setSheetItem(m.id)
+            }}
           >
             <span>
               <span className="lrow-t">{m.title}</span>
@@ -1276,6 +1321,25 @@ export function LivingTreeView({
             <span className="lchev">›</span>
           </button>
         ))}
+        {inviteTarget && node.kind === 'seat' && (
+          <button
+            key="invitations"
+            type="button"
+            className="lrow"
+            onClick={() => {
+              setTalkOverride({ conversationId: inviteTarget, seat: node.seatKey })
+              setSheetItem('talk')
+            }}
+          >
+            <span>
+              <span className="lrow-t">Invitations ({inviteCount})</span>
+              <span className="lrow-d">
+                Open the most recent conversation this seat was invited into.
+              </span>
+            </span>
+            <span className="lchev">›</span>
+          </button>
+        )}
         {navItems.map((m) => (
           <button
             key={m.id}
@@ -1344,7 +1408,11 @@ export function LivingTreeView({
       // Merged Talk + Character: the seat's character card heads the conversation.
       const arch = archetypes.find((a) => a.id === sheetNode.seatKey)
       if (!arch) return renderStillGrowing(sheetNode, sheetItem)
-      const chat = renderSheetContent?.(sheetNode, 'talk')
+      const chat = renderSheetContent?.(
+        sheetNode,
+        'talk',
+        talkOverride ? { conversationOverride: talkOverride } : undefined,
+      )
       return (
         <div>
           {renderCompactSeatHead(arch)}
@@ -1530,6 +1598,17 @@ export function LivingTreeView({
             // the full node stays the tap target (44px rule untouched).
             const attnMarker = p.datum.archetype ? attention?.markers[p.datum.archetype.id] : undefined
             const showMarker = !!attnMarker?.attention
+            // Capability C visible-UX slice: invitation presence —
+            // driven ONLY by invitation_count > 0, never by attention
+            // or reason. Absent fields mean "unknown" (no indicator),
+            // count 0 means authoritatively none (no indicator).
+            const inviteLabel = p.datum.archetype
+              ? invitationIndicatorLabel(
+                  FELLOWSHIP_NAMES[p.datum.archetype.id] ?? p.datum.archetype.display_name,
+                  attnMarker,
+                )
+              : null
+            const inviteCount = attnMarker?.invitation_count ?? 0
             return (
               <g
                 key={p.datum.id}
@@ -1560,6 +1639,18 @@ export function LivingTreeView({
                     <title>{markerTitle(p.datum.archetype!.id, attnMarker.reason, p.datum.archetype!.face_revealed === true)}</title>
                     <circle className="attndot" r={7.5} fill={USER_WEAVE_COLOR} stroke="#0b0a09" strokeWidth={1.5} />
                     <text className="attnt" y={3.8} style={{ fontSize: '10.5px', fontWeight: 800, fill: '#0b0a09' }}>!</text>
+                  </g>
+                )}
+                {inviteLabel && (
+                  <g
+                    className="inv"
+                    transform={`translate(${-faceR * 0.78}, ${-faceR * 0.78})`}
+                    role="img"
+                    aria-label={inviteLabel}
+                  >
+                    <title>{inviteLabel}</title>
+                    <circle className="invdot" r={7.5} fill="#5aa897" stroke="#0b0a09" strokeWidth={1.5} />
+                    <text className="invt" y={3.8} style={{ fontSize: '10.5px', fontWeight: 800, fill: '#0b0a09' }}>{inviteCount > 9 ? '9+' : String(inviteCount)}</text>
                   </g>
                 )}
                 {collapsed && (

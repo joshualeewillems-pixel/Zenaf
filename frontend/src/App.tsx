@@ -4964,6 +4964,7 @@ function App() {
   const renderTreeSheetContent: NodeSheetContentProvider = (
     node: TreeNodeRef,
     item: NodeMenuItemId,
+    opts,
   ) => {
     if (item === 'today') {
       return (
@@ -5019,6 +5020,7 @@ function App() {
           key={`talk-${node.seatKey}`}
           seatKey={node.seatKey}
           displayName={node.fellowshipName}
+          conversationOverride={opts?.conversationOverride}
         />
       ) : (
         <TreeTalkSheet key="talk-you" seatKey={null} />

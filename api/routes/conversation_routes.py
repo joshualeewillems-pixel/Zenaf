@@ -6,7 +6,12 @@ POST /conversation/turn   — one turn: persist user message, reply through the
                             archetype_id tags; history carries across seats.
 GET  /conversation        — hydrate: oldest-first message history. This is
                             what replaces the client-sent `history` array.
-GET  /conversation/suggestions — the suggestion engine's three kinds
+GET  /conversation/invitations — pending invitations for one
+                            conversation (Capability C S4): the "!"
+                            markers a seat-sheet list or Tree badge
+                            reads from. Reads never consume: tapping
+                            an invitation opens it, only a sent turn
+                            to the invited seat accepts it (S1).
                             (trainable moments, project proposals, mint
                             suggestions), all drafts, never filed, never
                             pushed. Cached per message watermark.
@@ -184,6 +189,67 @@ def get_conversation(
         messages = svc.history(user_id, cid, limit=limit)
     total = svc.store.count_messages(user_id, cid)
     return {"conversation_id": cid, "messages": messages, "total": total}
+
+
+# ---------------------------------------------------------------------------
+# Capability C S4 — invitation read surface.
+# ---------------------------------------------------------------------------
+
+#: Verdict Q5: the reason is the inviting selection's reading, never
+#: presented as fact. Every item carries this attribution explicitly
+#: so no client can render the reason as an established claim about
+#: the conversation.
+INVITATION_REASON_ATTRIBUTION = (
+    "The inviting selection's reading of the exchange — an "
+    "interpretation, not an established fact."
+)
+
+
+def _invitation_api_item(inv: dict) -> dict:
+    """Read-surface shape for one invitation (Capability C S4).
+
+    The caller's user_id is not echoed (the endpoint is strictly
+    per-user already); the stored evidence travels verbatim, and the
+    reason travels with its attribution attached. Pure shaping — no
+    store reads, no status changes.
+    """
+    return {
+        "id": inv.get("id"),
+        "conversation_id": inv.get("conversation_id"),
+        "seat": inv.get("seat"),
+        "reason": inv.get("reason"),
+        "reason_attribution": INVITATION_REASON_ATTRIBUTION,
+        "evidence": inv.get("evidence") or {},
+        "status": inv.get("status"),
+        "created_at": inv.get("created_at"),
+        "expires_at": inv.get("expires_at"),
+    }
+
+
+@router.get("/invitations")
+def list_invitations(
+    conversation_id: str = Query(default="skeleton", max_length=64),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Pending invitations for one conversation (Capability C S4).
+
+    READ-ONLY: listing never changes invitation status. Tapping an
+    invitation opens the seat's sheet (a client action, not a state
+    transition); only a sent turn to the invited seat accepts it
+    (S1 accept-on-turn). A cleared conversation yields nothing: clear
+    expires its pending rows, and the pending filter excludes expired
+    rows even before any sweep. Strictly per-user: another user's
+    rows, and foreign conversation ids, yield nothing.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    cid = (conversation_id or "skeleton").strip() or "skeleton"
+    pending = _store().list_pending_invitations(user_id, cid)
+    return {
+        "conversation_id": cid,
+        "invitations": [_invitation_api_item(inv) for inv in pending],
+    }
 
 
 # ---------------------------------------------------------------------------

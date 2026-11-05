@@ -287,6 +287,7 @@ def build_voice_prompt(
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
     obligation_context: str | None = None,
+    invitation_context: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
 
@@ -692,6 +693,16 @@ def build_voice_prompt(
         # escape the section. Absent (None) = section absent, so
         # non-champion turns and meetings are byte-identical to before.
         prompt += ["", obligation_context.strip()]
+    if invitation_context:
+        # Capability C S5: first joining turn only. The service
+        # passes this block only when a pending invitation exists
+        # for this (user, conversation, seat) at turn start; the S1
+        # accept wiring consumes the invitation when the turn
+        # completes, so later turns get no block. Absent (None) =
+        # section absent, exactly like obligation_context above.
+        # The block itself is bounded to the justifying exchange;
+        # the 10-turn window below is NOT enlarged to support it.
+        prompt += ["", invitation_context.strip()]
 
     turns = (history or [])[-10:]
     if turns:
@@ -750,6 +761,7 @@ def generate_voice_reply(
     capability_context: str | None = None,
     fellowship_reference: str | None = None,
     obligation_context: str | None = None,
+    invitation_context: str | None = None,
 ) -> VoiceReply:
     """One exchange with a single council voice. Raises RuntimeError on LLM failure."""
     prompt, meta = build_voice_prompt(
@@ -766,6 +778,7 @@ def generate_voice_reply(
         capability_context=capability_context,
         fellowship_reference=fellowship_reference,
         obligation_context=obligation_context,
+        invitation_context=invitation_context,
     )
     gen = generate_fn or _default_generate
     reply = sanitize_weave(

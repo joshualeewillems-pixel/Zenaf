@@ -295,7 +295,7 @@ class ConversationStore:
         return int(row[0]) if row else 0
 
     def list_conversations(
-        self, user_id: str, limit: int = 20
+        self, user_id: str, limit: int = 20, seat: str | None = None
     ) -> list[dict[str, Any]]:
         """Talk conversations for one user, newest message activity first.
 
@@ -316,8 +316,29 @@ class ConversationStore:
         excluded by construction, since hydration-on-mount creates a
         row before anything is sent and such rows are not
         conversations the user can rediscover.
+
+        When ``seat`` is a non-empty archetype id, the result is
+        restricted to conversations that seat has spoken in, via an
+        EXISTS membership predicate applied to the outer WHERE
+        BEFORE the LIMIT — never a filter applied after a capped
+        fetch, and never a row filter on the outer query (which
+        would redefine last_message_at as the seat's own latest
+        message and drift the recency rule). Ordering, shape, and
+        clamping are unchanged; an absent or empty seat means
+        today's unfiltered behavior exactly.
         """
         limit = max(1, min(int(limit or 20), 100))
+        seat_filter = seat if seat else None
+        seat_clause = (
+            "AND EXISTS (SELECT 1 FROM messages m2 WHERE m2.user_id = m.user_id "
+            "AND m2.conversation_id = m.conversation_id "
+            "AND m2.archetype_id = ?) "
+            if seat_filter
+            else ""
+        )
+        params: tuple = (
+            (user_id, seat_filter, limit) if seat_filter else (user_id, limit)
+        )
         with self._lock:
             rows = self._conn.execute(
                 "SELECT m.conversation_id, c.kind, c.created_at, c.updated_at, "
@@ -329,9 +350,10 @@ class ConversationStore:
                 "FROM messages m LEFT JOIN conversations c "
                 "ON c.user_id = m.user_id AND c.conversation_id = m.conversation_id "
                 "WHERE m.user_id = ? AND m.conversation_id LIKE 'talk-%' "
-                "GROUP BY m.conversation_id "
+                + seat_clause
+                + "GROUP BY m.conversation_id "
                 "ORDER BY last_message_at DESC, m.conversation_id ASC LIMIT ?",
-                (user_id, limit),
+                params,
             ).fetchall()
             seat_rows = self._conn.execute(
                 "SELECT m.conversation_id, m.archetype_id, MIN(m.created_at) AS first_seen "

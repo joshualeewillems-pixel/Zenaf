@@ -5017,10 +5017,11 @@ function App() {
       // if the list cannot be fetched, the sheet shows an error.
       return node.kind === 'seat' ? (
         <TreeTalkSheet
-          key={`talk-${node.seatKey}`}
+          key={`talk-${node.seatKey}-${opts?.navNonce ?? 0}`}
           seatKey={node.seatKey}
           displayName={node.fellowshipName}
           conversationOverride={opts?.conversationOverride}
+          onChatIdChange={opts?.onChatIdChange}
         />
       ) : (
         <TreeTalkSheet key="talk-you" seatKey={null} />
@@ -5901,6 +5902,7 @@ function App() {
             <LivingTreeView
               onNavigate={(view) => setMainView(view)}
               renderSheetContent={renderTreeSheetContent}
+              currentUserId={currentUser?.id ?? null}
             />
           </div>
         ) : mainView === 'perspectives' ? (

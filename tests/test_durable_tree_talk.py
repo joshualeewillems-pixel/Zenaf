@@ -256,3 +256,79 @@ def test_t7_unknown_conversation_hydrates_empty_and_keeps_ensure(client):
         ("user-alice", "talk-ffffffffffffffffffffffffffffffff"),
     ).fetchone()
     assert row is not None
+
+
+def _insert_message(store, user_id, cid, seat, created_at):
+    """Direct row insert with a pinned timestamp (ordering fixtures)."""
+    store._conn.execute(
+        "INSERT INTO messages (id, user_id, conversation_id, archetype_id, "
+        "role, body, mode, context_json, created_at) "
+        "VALUES (?, ?, ?, ?, 'user', 'x', 'trained', '{}', ?)",
+        (f"m-{cid[-4:]}-{created_at[11:19]}", user_id, cid, seat, created_at),
+    )
+    store._conn.commit()
+
+
+def test_nav_seat_lookup_returns_newest_seat_thread(client):
+    """T2 companion: seat-scoped lookup with limit=1 returns the seat's
+    newest thread (recency rule, not first-created or first-listed)."""
+    c, store = client
+    old = "talk-11111111111111111111111111111111"
+    mid = "talk-22222222222222222222222222222222"
+    new = "talk-33333333333333333333333333333333"
+    _insert_message(store, "user-alice", old, "mentor", "2026-10-01T00:00:00+00:00")
+    _insert_message(store, "user-alice", mid, "mentor", "2026-10-15T00:00:00+00:00")
+    _insert_message(store, "user-alice", new, "mentor", "2026-11-01T00:00:00+00:00")
+    _insert_message(store, "user-alice", TALK_B, "champion", "2026-11-03T00:00:00+00:00")
+    r = c.get("/conversation/list", params={"seat": "mentor", "limit": 1})
+    assert r.status_code == 200, r.text
+    assert [x["conversation_id"] for x in r.json()["conversations"]] == [new]
+    # A seat with no spoken thread returns an empty list, not an error.
+    r = c.get("/conversation/list", params={"seat": "skeptic", "limit": 1})
+    assert r.status_code == 200
+    assert r.json()["conversations"] == []
+    # Absent seat keeps today's unfiltered behavior exactly.
+    r = c.get("/conversation/list", params={"limit": 1})
+    assert [x["conversation_id"] for x in r.json()["conversations"]] == [TALK_B]
+
+
+def test_nav_seat_filter_before_limit_trap(client):
+    """T3: a seat's old thread must survive 25 newer non-seat threads.
+
+    A filter-after-limit implementation would fetch the capped general
+    list (all 25 newer threads, none containing the seat) and return
+    empty; the EXISTS-before-LIMIT predicate returns the old thread.
+    The general list in the same fixture stays capped and ordered.
+    """
+    c, store = client
+    old = "talk-99999999999999999999999999999999"
+    _insert_message(store, "user-alice", old, "mentor", "2026-10-01T00:00:00+00:00")
+    for i in range(25):
+        cid = f"talk-{i:032d}"
+        _insert_message(
+            store, "user-alice", cid, "champion",
+            f"2026-11-01T00:{i:02d}:00+00:00",
+        )
+    r = c.get("/conversation/list", params={"seat": "mentor", "limit": 1})
+    assert r.status_code == 200, r.text
+    assert [x["conversation_id"] for x in r.json()["conversations"]] == [old]
+    # The seat's thread still reports the full seats derivation.
+    row = r.json()["conversations"][0]
+    assert row["seats"] == ["mentor"]
+    # General list untouched: still capped, still newest-first.
+    r = c.get("/conversation/list", params={"limit": 20})
+    general = r.json()["conversations"]
+    assert len(general) == 20
+    times = [x["last_message_at"] for x in general]
+    assert times == sorted(times, reverse=True)
+    assert old not in [x["conversation_id"] for x in general]
+
+
+def test_nav_seat_lookup_is_owner_scoped(client):
+    """Another user's seat thread never matches the caller's lookup."""
+    c, store = client
+    _insert_message(store, "user-bob", TALK_A, "mentor", "2026-11-02T00:00:00+00:00")
+    _insert_message(store, "user-alice", TALK_B, "champion", "2026-11-01T00:00:00+00:00")
+    r = c.get("/conversation/list", params={"seat": "mentor", "limit": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["conversations"] == []

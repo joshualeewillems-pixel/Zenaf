@@ -7,23 +7,35 @@ import SeatChips, { useSeatMeta } from './SeatChips'
 /**
  * Durable Tree Talk (Slice A): the Tree sheet's conversation mount.
  *
- * Resolution rules (founder-approved, 2026-11-03):
+ * Resolution rules (founder-approved, 2026-11-03; lookup refined by
+ * the 2026-11-04 navigation correction):
  * - A seat sheet auto-resumes the MOST RECENT conversation involving
  *   that seat — by conversation, never a seat-owned copy: a seat that
  *   already participates in a multi-seat conversation eventually
  *   reopens that conversation, because identity belongs to the
  *   conversation and the seats array is only discovery data.
- * - Otherwise it holds a freshly generated `talk-` id (not yet
- *   persisted — the server row is created on first send).
+ *   The lookup is SERVER-side and seat-scoped
+ *   (GET /conversation/list?seat=<seat>&limit=1): the server applies
+ *   an EXISTS membership predicate BEFORE the limit, so the seat's
+ *   thread is found even when newer non-seat threads would fill a
+ *   capped general list. Client-side first-match over a capped list
+ *   is forbidden — it reintroduces the silent cliff.
+ * - Empty lookup → a freshly generated `talk-` id (not yet
+ *   persisted — the server row is created on first send). A failed
+ *   lookup → the error state, never a fabricated fresh thread.
  * - "New conversation" is always visible and is the only way a new
  *   thread starts; the user — never the system — decides.
  * - The you-node is the rediscovery surface: the recent-talks list
  *   plus "Start new". Picking a talk opens it; starting new offers
- *   the seat chips and then follows seat-sheet resolution.
+ *   the seat chips and then follows seat-sheet resolution (the same
+ *   seat-scoped lookup, async; failure → error, not a fresh thread).
  * - If the list cannot be fetched, the sheet shows an error state.
  *   It NEVER falls back to client-history chat from the Tree: an
  *   unresolvable Tree Talk is an error, not a silent ephemeral thread.
  *   (The workspace console keeps its own client-history mount.)
+ * - An override mount (invitation shortcut) is a chat mount, so the
+ *   conversation list stays reachable via ← Conversations (C2: the
+ *   user is never trapped in the shortcut's target).
  */
 
 /** One entry of GET /conversation/list. `seats` is message-derived
@@ -78,6 +90,7 @@ export default function TreeTalkSheet({
   seatKey,
   displayName,
   conversationOverride,
+  onChatIdChange,
 }: {
   /** Seat node id, or null for the you-node rediscovery surface. */
   seatKey: string | null
@@ -93,6 +106,10 @@ export default function TreeTalkSheet({
       mount still succeeds as an ordinary chat and the in-chat list
       shows its empty state. */
   conversationOverride?: { conversationId: string; seat: string }
+  /** Reports the current chat conversation id to the Tree (chat mode
+      only; null otherwise) so the header menu can hide the invitation
+      shortcut when its target IS the open conversation. */
+  onChatIdChange?: (id: string | null) => void
 }) {
   const base = apiBase()
   const { names } = useSeatMeta()
@@ -105,7 +122,10 @@ export default function TreeTalkSheet({
   const [chatSeat, setChatSeat] = useState<string | null>(
     conversationOverride?.seat ?? seatKey,
   )
-  const [fromList, setFromList] = useState(false)
+  // C2 return path: an override mount IS a chat mount reached from a
+  // navigation action, so ← Conversations stays reachable from it —
+  // the user is never trapped in the shortcut's target conversation.
+  const [fromList, setFromList] = useState(!!conversationOverride)
   const [talks, setTalks] = useState<TalkListItem[]>([])
   const [talksFetched, setTalksFetched] = useState(false)
   const [nonce, setNonce] = useState(0)
@@ -124,12 +144,48 @@ export default function TreeTalkSheet({
       construction, not by a flag. */
   const mountOverrideRef = useRef(conversationOverride ?? null)
 
-  const resolveSeat = useCallback(
-    (list: TalkListItem[], seat: string): string => {
-      const found = list.find((t) => t.seats.includes(seat))
-      return found ? found.conversation_id : newTalkId()
+  // Reports the open conversation to the Tree (chat mode only).
+  const lastReportedChatRef = useRef<string | null | undefined>(undefined)
+  useEffect(() => {
+    if (!onChatIdChange) return
+    const current = mode === 'chat' ? chatId : null
+    if (lastReportedChatRef.current !== current) {
+      lastReportedChatRef.current = current
+      onChatIdChange(current)
+    }
+  }, [mode, chatId, onChatIdChange])
+
+  // Seat-scoped lookup shared by the seat mount and pick-mode seat
+  // selection: one server fetch, EXISTS-before-LIMIT, limit 1.
+  // Empty → fresh id (allowed); failure → error (never fresh id).
+  // A superseded lookup resolves 'stale' and callers ignore it —
+  // never an error, never a clobbering navigation.
+  type SeatLookup =
+    | { kind: 'ok'; list: TalkListItem[] }
+    | { kind: 'auth' }
+    | { kind: 'error' }
+    | { kind: 'stale' }
+  const lookupSeqRef = useRef(0)
+  const lookupSeat = useCallback(
+    async (seat: string): Promise<SeatLookup> => {
+      const seq = ++lookupSeqRef.current
+      try {
+        const r = await fetch(
+          `${base}/conversation/list?seat=${encodeURIComponent(seat)}&limit=1`,
+          { credentials: 'include' },
+        )
+        if (r.status === 401) return { kind: 'auth' }
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const data = (await r.json()) as { conversations?: TalkListItem[] }
+        const list = Array.isArray(data.conversations) ? data.conversations : []
+        if (lookupSeqRef.current !== seq) return { kind: 'stale' }
+        return { kind: 'ok', list }
+      } catch {
+        if (lookupSeqRef.current !== seq) return { kind: 'stale' }
+        return { kind: 'error' }
+      }
     },
-    [],
+    [base],
   )
 
   useEffect(() => {
@@ -141,49 +197,68 @@ export default function TreeTalkSheet({
     if (mountOverrideRef.current) return
     let cancelled = false
     setMode('loading')
-    fetch(`${base}/conversation/list`, { credentials: 'include' })
-      .then(async (r) => {
-        if (r.status === 401) return { auth: true as const }
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return (await r.json()) as { conversations?: TalkListItem[] }
-      })
-      .then((data) => {
-        if (cancelled) return
-        if ((data as { auth?: boolean }).auth) {
+    if (seatKey) {
+      // Seat mount: the seat-scoped lookup only. It must NOT populate
+      // the list-mode cache — list mode still fetches the general
+      // unfiltered list lazily on entry.
+      lookupSeat(seatKey).then((result) => {
+        if (cancelled || result.kind === 'stale') return
+        if (result.kind === 'auth') {
           setMode('signedout')
           return
         }
-        const list = Array.isArray(
-          (data as { conversations?: unknown }).conversations,
-        )
-          ? ((data as { conversations: TalkListItem[] }).conversations as TalkListItem[])
-          : []
-        setTalks(list)
-        setTalksFetched(true)
-        if (seatKey) {
-          setChatSeat(seatKey)
-          setFromList(false)
-          setChatId(resolveSeat(list, seatKey))
-          setMode('chat')
-        } else {
-          setMode('list')
+        if (result.kind === 'error') {
+          setMode('error')
+          return
         }
+        setChatSeat(seatKey)
+        setFromList(false)
+        setChatId(result.list.length > 0 ? result.list[0].conversation_id : newTalkId())
+        setMode('chat')
       })
-      .catch(() => {
-        if (!cancelled) setMode('error')
-      })
+    } else {
+      // You-node mount: the general list is the rediscovery surface.
+      fetch(`${base}/conversation/list`, { credentials: 'include' })
+        .then(async (r) => {
+          if (r.status === 401) return { auth: true as const }
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return (await r.json()) as { conversations?: TalkListItem[] }
+        })
+        .then((data) => {
+          if (cancelled) return
+          if ((data as { auth?: boolean }).auth) {
+            setMode('signedout')
+            return
+          }
+          const list = Array.isArray(
+            (data as { conversations?: unknown }).conversations,
+          )
+            ? ((data as { conversations: TalkListItem[] }).conversations as TalkListItem[])
+            : []
+          setTalks(list)
+          setTalksFetched(true)
+          setMode('list')
+        })
+        .catch(() => {
+          if (!cancelled) setMode('error')
+        })
+    }
     return () => {
       cancelled = true
     }
-  }, [base, seatKey, nonce, resolveSeat])
+  }, [base, seatKey, nonce, lookupSeat])
 
   // Lazy talks fetch for override mounts that later reach list mode
   // (the mount fetch was skipped). Never fires after a normal mount
-  // fetch, which sets talksFetched.
+  // fetch, which sets talksFetched. NOTE: this effect must NOT set
+  // mode to 'loading' — mode is an effect dep, so that would retrigger
+  // the effect and its cleanup would cancel the in-flight fetch
+  // (the component would hang on "Loading conversation…" forever).
+  // Instead the list render shows a loading line while talksFetched
+  // is false; mode stays 'list' throughout the fetch.
   useEffect(() => {
     if (mode !== 'list' || talksFetched) return
     let cancelled = false
-    setMode('loading')
     fetch(`${base}/conversation/list`, { credentials: 'include' })
       .then(async (r) => {
         if (r.status === 401) return { auth: true as const }
@@ -251,10 +326,24 @@ export default function TreeTalkSheet({
         <SeatChips
           activeId={null}
           onSelect={(id) => {
-            setChatSeat(id)
-            setFromList(true)
-            setChatId(resolveSeat(talks, id))
-            setMode('chat')
+            // Same seat-scoped lookup as the seat mount (async);
+            // failure → error, never a fabricated fresh thread.
+            setMode('loading')
+            lookupSeat(id).then((result) => {
+              if (result.kind === 'stale') return
+              if (result.kind === 'auth') {
+                setMode('signedout')
+                return
+              }
+              if (result.kind === 'error') {
+                setMode('error')
+                return
+              }
+              setChatSeat(id)
+              setFromList(true)
+              setChatId(result.list.length > 0 ? result.list[0].conversation_id : newTalkId())
+              setMode('chat')
+            })
           }}
         />
         <button
@@ -271,7 +360,9 @@ export default function TreeTalkSheet({
   if (mode === 'list') {
     return (
       <div className="flex flex-col gap-3">
-        {talks.length === 0 ? (
+        {!talksFetched ? (
+          <p className="text-sm text-stone-400 px-1 py-2">Loading conversation…</p>
+        ) : talks.length === 0 ? (
           <p className="text-sm text-stone-400 px-1 py-2">
             No conversations yet — start one below.
           </p>
@@ -345,8 +436,9 @@ export default function TreeTalkSheet({
               // Makes the invited seat the active seat; the user's
               // send does the rest. Tapping the already-active seat
               // is a no-op (key unchanged). Remounting CouncilChat
-              // rehydrates messages from GET /conversation; the only
-              // loss is an unsent composer draft at tap time.
+              // rehydrates messages from GET /conversation; the
+              // outgoing composer draft is preserved in the draft
+              // store under its own key (navigation correction §3).
               setChatSeat(seat)
             }}
             refreshKey={inviteRefreshKey}

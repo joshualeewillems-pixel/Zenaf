@@ -343,6 +343,55 @@ def _migrate_tasks_timeframe_commitment(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_tasks_provenance_columns(conn: sqlite3.Connection) -> None:
+    """W0B: add weave provenance columns to tasks if missing (existing DBs).
+
+    Additive schema only — NO behavior change. All six columns are
+    nullable TEXT with no default, so every pre-existing row reads NULL
+    (absent = absent). NO backfill: legacy origins are unknowable, and
+    copying any existing value into an origin column would fabricate
+    provenance. Nothing writes these columns yet; the W1 producer will
+    populate them at task creation, and the population rule is:
+
+    - origin_seat: the proposing seat's archetype id (required for
+      producer-created tasks). It is NOT stewardship.
+    - origin_conversation_id / origin_message_id / origin_claim_id:
+      the conversation, turn, and (nullable) review claim the proposal
+      came from.
+    - origin_decision_id: the user decision that authorized creation.
+      Under the W0B anchor decision this is the approving PROPOSAL ROW
+      itself (proposal id + decided_at + user_id); the column is a
+      generic nullable TEXT reference with no foreign key, so a future
+      authoritative transition record could anchor it instead WITHOUT
+      a schema change — repointing the anchor convention is a
+      separately authorized lifecycle-slice decision, not a migration.
+      W0B implements no transition record of any kind.
+    - responsible_seat: the seat currently stewarding execution, if
+      assigned. Set ONLY by the user via task PATCH, NEVER by the
+      producer, NEVER defaulted from origin_seat.
+
+    seat_ref is deliberately UNTOUCHED by this migration: it stays
+    keystone-scoped (written only by keystone seeding and, until W1
+    removes it, the Capability B approve path) and is never the
+    provenance field. The producer never writes seat_ref.
+    """
+    cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='tasks'")
+    if cur.fetchone() is None:
+        return
+    for column in (
+        "origin_seat",
+        "origin_conversation_id",
+        "origin_message_id",
+        "origin_claim_id",
+        "origin_decision_id",
+        "responsible_seat",
+    ):
+        info = conn.execute("PRAGMA table_info(tasks)")
+        if not any(r[1] == column for r in info.fetchall()):
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {column} TEXT")
+    conn.commit()
+
+
 def _migrate_checklist_person_asset_columns(conn: sqlite3.Connection) -> None:
     """Add person_id / asset_id to checklist_items if missing (existing DBs)."""
     cur = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='checklist_items'")
@@ -978,6 +1027,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_strand_weightings_table(conn)
     _migrate_keystone_columns(conn)
     _migrate_tasks_timeframe_commitment(conn)
+    _migrate_tasks_provenance_columns(conn)
     _migrate_task_proposals(conn)
     _ensure_default_owner_and_backfill(conn)
     conn.commit()
@@ -4730,7 +4780,7 @@ def list_tasks(
         cur = conn.execute(
             """
             SELECT t.id, t.project_id, t.parent_task_id, t.title, t.description, t.assignee_id, t.status, t.priority,
-            t.estimated_hours, t.due_date, t.dependency_ids, t.required_asset_ids, t.completion_criteria, t.notes, t.created_at, t.updated_at, t.seat_ref, t.timeframe_commitment
+            t.estimated_hours, t.due_date, t.dependency_ids, t.required_asset_ids, t.completion_criteria, t.notes, t.created_at, t.updated_at, t.seat_ref, t.timeframe_commitment, t.origin_seat, t.origin_conversation_id, t.origin_message_id, t.origin_claim_id, t.origin_decision_id, t.responsible_seat
             FROM tasks t
             INNER JOIN projects p ON p.id = t.project_id AND p.user_id = t.user_id
             WHERE p.initiative_id = ? AND t.user_id = ?""" + frag + """
@@ -4743,7 +4793,7 @@ def list_tasks(
         frag, fparams = _timeframe_filter_clause("timeframe_commitment", timeframe_commitment)
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment, origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat "
             "FROM tasks WHERE project_id = ? AND user_id = ?" + frag + " ORDER BY updated_at DESC",
             (project_id, user_id) + fparams,
         )
@@ -4751,7 +4801,7 @@ def list_tasks(
         frag, fparams = _timeframe_filter_clause("timeframe_commitment", timeframe_commitment)
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment, origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat "
             "FROM tasks WHERE project_id = ?" + frag + " ORDER BY updated_at DESC",
             (project_id,) + fparams,
         )
@@ -4759,7 +4809,7 @@ def list_tasks(
         frag, fparams = _timeframe_filter_clause("timeframe_commitment", timeframe_commitment)
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment, origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat "
             "FROM tasks WHERE user_id = ?" + frag + " ORDER BY updated_at DESC",
             (user_id,) + fparams,
         )
@@ -4768,7 +4818,7 @@ def list_tasks(
         where = (" WHERE " + frag[5:]) if frag else ""
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment, origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat "
             "FROM tasks" + where + " ORDER BY updated_at DESC",
             fparams,
         )
@@ -4780,14 +4830,14 @@ def get_task(task_id: str, user_id: str | None = None) -> dict[str, Any] | None:
     if user_id is None:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment, origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat "
             "FROM tasks WHERE id = ?",
             (task_id,),
         )
     else:
         cur = conn.execute(
             "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
-            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment "
+            "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment, origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat "
             "FROM tasks WHERE id = ? AND user_id = ?",
             (task_id, user_id),
         )
@@ -4888,7 +4938,9 @@ _PROPOSAL_STATES = ("pending", "approved", "declined")
 _PROPOSAL_COLUMNS = (
     "id, user_id, conversation_id, source_message_id, block_index, proposal_index, "
     "seat, title, parent_task_id, timeframe_commitment, due_date, notes, state, "
-    "created_task_id, created_at, updated_at, decided_at"
+    "created_task_id, created_at, updated_at, decided_at, "
+    "evidence_quote, original_title, original_parent_task_id, "
+    "original_timeframe_commitment, original_due_date, original_notes"
 )
 
 
@@ -4898,6 +4950,18 @@ def _migrate_task_proposals(conn: sqlite3.Connection) -> None:
     The UNIQUE triple is the re-attachment identity: re-recording the
     same triple is idempotent and must never overwrite stored contents
     (an edit or terminal decision survives re-recording).
+
+    W0B adds six nullable columns (evidence_quote + the original_*
+    snapshot columns). Fresh DBs get them from the CREATE TABLE below;
+    existing DBs get them from the PRAGMA-checked ALTERs after it.
+    Columns are NULLABLE with no default and are NEVER backfilled:
+    legacy originals are unknowable (live values may already have been
+    edited in place), so copying live values into original_* would
+    fabricate an original. Nothing populates these columns yet — the
+    W1 record path will copy submitted values into original_* in the
+    SAME INSERT as the live values, and the server will verify the
+    evidence_quote against the source message. Until then they read
+    NULL (absent = absent).
     """
     conn.execute(
         """CREATE TABLE IF NOT EXISTS task_proposals (
@@ -4918,9 +4982,26 @@ def _migrate_task_proposals(conn: sqlite3.Connection) -> None:
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           decided_at TEXT,
+          evidence_quote TEXT,
+          original_title TEXT,
+          original_parent_task_id TEXT,
+          original_timeframe_commitment TEXT,
+          original_due_date TEXT,
+          original_notes TEXT,
           UNIQUE(user_id, source_message_id, block_index, proposal_index)
         )"""
     )
+    for column in (
+        "evidence_quote",
+        "original_title",
+        "original_parent_task_id",
+        "original_timeframe_commitment",
+        "original_due_date",
+        "original_notes",
+    ):
+        info = conn.execute("PRAGMA table_info(task_proposals)")
+        if not any(r[1] == column for r in info.fetchall()):
+            conn.execute(f"ALTER TABLE task_proposals ADD COLUMN {column} TEXT")
     conn.commit()
 
 
@@ -5005,6 +5086,15 @@ def _proposal_row_to_dict(row: tuple) -> dict[str, Any]:
         "created_at": row[14],
         "updated_at": row[15],
         "decided_at": row[16],
+        # W0B provenance/snapshot columns (nullable; NULL on legacy rows).
+        # Nothing populates them yet; W1 copies submitted values into
+        # original_* at INSERT and verifies evidence_quote server-side.
+        "evidence_quote": row[17],
+        "original_title": row[18],
+        "original_parent_task_id": row[19],
+        "original_timeframe_commitment": row[20],
+        "original_due_date": row[21],
+        "original_notes": row[22],
     }
 
 

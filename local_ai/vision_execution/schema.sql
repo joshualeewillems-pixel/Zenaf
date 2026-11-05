@@ -183,6 +183,15 @@ CREATE TABLE IF NOT EXISTS tasks (
   timeframe_commitment TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  -- W0B (weave provenance, additive, nullable): origin_* record where a task
+  -- came from once a producer exists (W1); responsible_seat is user-assigned
+  -- stewardship, NEVER defaulted from origin_seat. Nothing writes these yet.
+  origin_seat TEXT,
+  origin_conversation_id TEXT,
+  origin_message_id TEXT,
+  origin_claim_id TEXT,
+  origin_decision_id TEXT,
+  responsible_seat TEXT,
   FOREIGN KEY (project_id) REFERENCES projects(id),
   FOREIGN KEY (parent_task_id) REFERENCES tasks(id),
   FOREIGN KEY (assignee_id) REFERENCES persons(id)

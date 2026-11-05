@@ -1055,3 +1055,115 @@ def test_renderer_budget_separation_2026_11_04():
         render_bear_ordinary(
             bloated, detail="compact", resolved_capability=signed
         )
+
+
+# ---------------------------------------------------------------------------
+# S2 — Bear flow-loop guidance (flow architecture §3 S2, level (a) only)
+# ---------------------------------------------------------------------------
+# The loop is prompt guidance, not canonical content: it rides in
+# reply.py gated on bear_canonical (ordinary Talk only), never in
+# BEAR_RECORD, never on the meeting path, never on another seat.
+# Deterministic prompt inspection only — no model calls, no trial.
+# "decision" is deliberately NOT in the forbidden list below: the
+# guidance says "a decision already reached and left to stand" —
+# the user's decision in the conversation, not the decisions table.
+
+S2_GUIDANCE = R._BEAR_FLOW_LOOP_GUIDANCE
+
+
+def test_s2_guidance_present_once_on_bear_talk(monkeypatch):
+    import local_ai.council.naming as N
+
+    monkeypatch.setattr(N, "get_display_name", lambda uid, aid: "Guardian")
+    lines, _ = build_voice_prompt("u1", "guardian", "hello", [], mode="base")
+    joined = _joined(lines)
+    assert joined.count(S2_GUIDANCE) == 1
+    # Assembly order: after the character block, before the
+    # no-training note — guidance sits with how Bear works, not
+    # with the transcript.
+    assert lines.index(S2_GUIDANCE) < lines.index(NO_TRAINING_NOTE)
+    assert lines[0].startswith(CANONICAL_MARKER)
+
+
+def test_s2_guidance_length_pinned():
+    # 1,498 chars. Pinned so a silent edit to the guidance is
+    # caught here, not discovered in a trial.
+    assert len(S2_GUIDANCE) == 1498, len(S2_GUIDANCE)
+
+
+def test_s2_guidance_not_in_canonical_record():
+    # Insertion-point decision, pinned: the loop is guidance, not
+    # character. The renderer output is unchanged by S2.
+    assert S2_GUIDANCE not in _joined(
+        render_bear_ordinary(BEAR_RECORD, detail="compact")
+    )
+    assert S2_GUIDANCE not in _joined(
+        render_bear_ordinary(BEAR_RECORD, detail="fuller")
+    )
+
+
+def test_s2_guidance_content_fences():
+    # Functions, not a sequence; both directions, no default; no
+    # mandatory classification; no complete loop required; Rest /
+    # Release / Continue in Bear's own words.
+    for required in (
+        "none of them a sequence and none of them required",
+        "Skip or combine these as the moment calls for",
+        "press harder where the circumstances warrant it",
+        "never default to one direction",
+        "You need not name their state",
+        "you need not assess on every turn",
+        "let an insight stand",
+        "let the exchange rest",
+        "let the visitor go",
+        "a turn that ends after one useful suggestion is complete",
+        "work from that alone",
+        "Never re-ask what the visitor has already established",
+    ):
+        assert required in S2_GUIDANCE, required
+    # No node-record evidence, no score, no stage, no procedure
+    # language, no protected material.
+    for forbidden in (
+        "due date",
+        "commitment",
+        "proposal",
+        "vitality",
+        "execution_flow_reading",
+        "score",
+        "stage",
+        "Step 1",
+        "step 1",
+        "checklist",
+        "must complete",
+    ):
+        assert forbidden not in S2_GUIDANCE, forbidden
+    for phrase in PROTECTED_PHRASES:
+        assert phrase not in S2_GUIDANCE, phrase
+
+
+def test_s2_guidance_absent_on_meeting_path(monkeypatch):
+    for cutover in (True, False):
+        monkeypatch.setattr(R, "BEAR_CANONICAL_CUTOVER", cutover)
+        lines, _ = build_voice_prompt(
+            "u1", "guardian", "hello", [], mode="base", canonical=False
+        )
+        assert S2_GUIDANCE not in _joined(lines)
+
+
+def test_s2_guidance_absent_on_other_seats(monkeypatch):
+    for seat in (
+        "mentor",
+        "champion",
+        "maverick",
+        "ambassador",
+        "conductor",
+        "skeptic",
+    ):
+        lines, _ = build_voice_prompt("u1", seat, "hello", [], mode="base")
+        assert S2_GUIDANCE not in _joined(lines), seat
+
+
+def test_s2_guidance_absent_when_cutover_off(monkeypatch):
+    monkeypatch.setattr(R, "BEAR_CANONICAL_CUTOVER", False)
+    lines, _ = build_voice_prompt("u1", "guardian", "hello", [], mode="base")
+    assert S2_GUIDANCE not in _joined(lines)

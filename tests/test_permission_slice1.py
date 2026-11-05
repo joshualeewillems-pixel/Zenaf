@@ -562,6 +562,49 @@ def test_migration_never_overwrites_a_user_set_stance():
     )
 
 
+def test_migration_is_one_time_baseline_not_ongoing_sync():
+    """Founder review 2026-11-04, Check 2: migration is a one-time
+    baseline conversion, NOT an ongoing synchronization mechanism.
+
+    Exact sequence: migrate → legacy boolean flag changes → migrate
+    runs again → the earlier stance is PRESERVED and the newer flag
+    value is NOT applied. Any later reconciliation after legacy
+    toggles must be explicitly handled by the wiring slice (Slice 6).
+    """
+    conn = _full_conn(
+        {"u1": {"steward_derivation": True, "steward_coordination": False}}
+    )
+    written = S.migrate_flags_to_stances("u1", connection=conn)
+    assert written == {"R2": R.JUST_DO_IT, "R3": R.DONT_DO_IT}
+    # The user subsequently changes the legacy booleans via Settings:
+    # derivation OFF, coordination ON — the opposite of the baseline.
+    conn.execute(
+        "UPDATE user_permissions_settings SET permissions_json = ? "
+        "WHERE user_id = ?",
+        (
+            json.dumps(
+                {
+                    "steward_derivation": False,
+                    "steward_coordination": True,
+                }
+            ),
+            "u1",
+        ),
+    )
+    conn.commit()
+    # Re-migration writes nothing: the earlier stances stand, and the
+    # newer flag values are NOT applied.
+    assert S.migrate_flags_to_stances("u1", connection=conn) == {}
+    assert S.get_stance("u1", "R2", "all", connection=conn)["stance"] == (
+        R.JUST_DO_IT
+    )
+    assert S.get_stance("u1", "R3", "all", connection=conn)["stance"] == (
+        R.DONT_DO_IT
+    )
+    # No new history rows: nothing was written on the second run.
+    assert len(S.stance_history("u1", connection=conn)) == 2
+
+
 def test_migration_unknown_user_is_noop():
     conn = _full_conn()
     assert S.migrate_flags_to_stances("ghost", connection=conn) == {}
@@ -630,6 +673,65 @@ def test_coordination_flag_survives_write_read_roundtrip(ve_ctx):
         assert coordination_allowed(user_id, connection=raw) is True
     finally:
         raw.close()
+
+
+def test_legacy_row_without_coordination_key_reads_false(ve_ctx):
+    """Founder review 2026-11-04, Check 3: the R3 repair cannot
+    activate historical consent.
+
+    A pre-fix-shaped row — a blob with NO steward_coordination key
+    at all — must read False through BOTH production paths post-fix:
+    the normalized settings read and the raw-blob steward gate. No
+    production writer could have stored True pre-fix (upsert and the
+    get read-rewrite both normalize through the key list, which
+    lacked the key; the consent gate is read-only), so a legacy row
+    is key-absent, and key-absent is False everywhere.
+    """
+    import local_ai.vision_execution.storage as ve_store
+    from local_ai.narrative.consent import (
+        coordination_allowed,
+        steward_coordination_allowed,
+    )
+
+    user_id = "u-legacy"
+    ve_store.upsert_user_permissions_settings(
+        user_id,
+        permissions={"steward_derivation": True},
+        consent_acknowledged=False,
+        consent_version="",
+    )
+    # Rewrite the stored blob to the pre-fix shape: the key absent
+    # entirely (as every row stored before Slice 1 is).
+    conn = sqlite3.connect(str(ve_ctx._DB_PATH))
+    try:
+        conn.execute(
+            "UPDATE user_permissions_settings SET permissions_json = ? "
+            "WHERE user_id = ?",
+            (json.dumps({"steward_derivation": True}), user_id),
+        )
+        conn.commit()
+        # Raw-blob gate: absent key is False, even with derivation on.
+        assert steward_coordination_allowed(user_id, connection=conn) is False
+        assert coordination_allowed(user_id, connection=conn) is False
+    finally:
+        conn.close()
+    # Normalized settings read: absent key defaults to False, and the
+    # read-rewrite stores the normalized False — it never invents True.
+    settings = ve_store.get_user_permissions_settings(user_id)
+    assert settings["permissions"]["steward_coordination"] is False
+    assert settings["permissions"]["steward_derivation"] is True
+    raw = sqlite3.connect(str(ve_ctx._DB_PATH))
+    try:
+        stored = json.loads(
+            raw.execute(
+                "SELECT permissions_json FROM user_permissions_settings "
+                "WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()[0]
+        )
+    finally:
+        raw.close()
+    assert stored["steward_coordination"] is False
 
 
 def test_boolean_toggles_keep_working_against_migrated_store(ve_ctx):

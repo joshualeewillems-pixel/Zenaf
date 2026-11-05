@@ -50,6 +50,19 @@ decision; act only on yes/correction), "confirm" (per-transaction
 confirmation with justification, step 4), "deny" (do not act).
 "proceed" with ``instance_only=True`` is the I.1 rule-1 case only:
 honored for that instance, never a standing authorization.
+
+Temporary authority rule (founder review 2026-11-04, pre-merge
+verification): until a capability is migrated and wired, the legacy
+boolean flags are authoritative for existing steward behavior;
+stance records are inert baseline data and must not be treated as
+authoritative for any capability before synchronization and wiring
+are complete. In Slice 1 the framework check has no production call
+sites (tests and the package export only) and
+``migrate_flags_to_stances`` is explicit-call only, so no
+conflicting authority is operational: the steward gates keep reading
+the flags (``local_ai/narrative/consent.py``) and the framework reads
+stances only where a caller asks it to. Reconciliation after legacy
+toggles is the wiring slice's (Slice 6) job.
 """
 
 from __future__ import annotations

@@ -449,6 +449,16 @@ def migrate_flags_to_stances(
     This function is deliberately NOT auto-run on any read or gate
     path (no subsystem wiring in Slice 1): it runs when a caller
     explicitly migrates a user. Returns the stances it wrote.
+
+    One-time baseline, NOT ongoing synchronization (founder review
+    2026-11-04, pre-merge verification): this conversion runs once
+    per row and only writes rows with no existing stance record. If a
+    user subsequently changes a legacy boolean flag and migration runs
+    again, the earlier stance is PRESERVED and the newer flag value is
+    NOT applied — the flag and the stance can diverge until the wiring
+    slice (Slice 6) explicitly reconciles them. Until a capability is
+    migrated and wired, the legacy flags remain authoritative for
+    existing steward behavior; stance records are inert baseline data.
     """
     conn = _conn(connection)
     row = conn.execute(

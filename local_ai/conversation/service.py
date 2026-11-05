@@ -21,6 +21,9 @@ from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype
 from local_ai.council.naming import get_display_name
 from local_ai.fellowship import events as fellowship_events
+from local_ai.strand_interviews.boundaries import recognize_explicit_boundary
+from local_ai.strand_interviews.guidance import strand_guidance_block
+from local_ai.strand_interviews.keys import validate_strand_key
 from local_ai.vision_execution import obligations as _obligations
 
 from .reply import VoiceReply, generate_voice_reply
@@ -40,22 +43,58 @@ _HISTORY_FOR_REPLY = 10
 
 
 def context_hint_for(context: dict[str, Any] | None) -> str | None:
-    """One factual line about what the user is doing right now. No inference."""
+    """One factual line about what the user is doing right now. No inference.
+
+    A strand_key here has already been validated server-side by
+    ConversationService.turn (conductor turn in that strand's mapped
+    thread) or scrubbed from the context — never trusted from the
+    client. Other seats never carry one.
+    """
     if not context:
         return None
     sheet_type = str(context.get("sheet_type") or "").strip()
     entity_type = str(context.get("entity_type") or "").strip()
     entity_id = str(context.get("entity_id") or "").strip()
-    if not sheet_type and not entity_type:
+    strand_key = str(context.get("strand_key") or "").strip()
+    if not sheet_type and not entity_type and not strand_key:
         return None
     parts = []
     if sheet_type:
         parts.append(f"the '{sheet_type}' sheet open")
     if entity_type:
         parts.append(f"focusing on {entity_type}" + (f" ({entity_id})" if entity_id else ""))
+    if strand_key:
+        from local_ai.strand_interviews.keys import STRAND_DEFINITIONS
+
+        definition = STRAND_DEFINITIONS.get(strand_key, {})
+        agent = definition.get("agent_name", strand_key)
+        parts.append(f"talking with Weaver about the {agent} strand")
     if not parts:
         return None
     return "the user currently has " + " and ".join(parts) + "."
+
+
+#: Weaver strand interviews (rev2): bounded file-source excerpts for the
+#: strand guidance block. At most this many events per file source, each
+#: capped by the guidance builder. Presence events are redacted at
+#: capture; a failed read omits the excerpts, never breaks the turn.
+_STRAND_FILE_EVENTS_CAP = 3
+
+
+def _read_file_source_excerpts(session_id: str) -> list[str]:
+    """Redacted event texts for one ingest session, bounded. Never raises."""
+    try:
+        from local_ai.presence_ingest.store import PresenceStore
+
+        events = PresenceStore().list_events(session_id)
+    except Exception:
+        return []
+    out: list[str] = []
+    for event in events[:_STRAND_FILE_EVENTS_CAP]:
+        text = (getattr(event, "text", "") or "").strip()
+        if text:
+            out.append(text)
+    return out
 
 
 #: Capability C S5 — join-context caps. The block is bounded to the
@@ -176,6 +215,17 @@ class ConversationService:
         self.store.ensure_conversation(user_id, conversation_id)
         context = dict(context or {})
 
+        # Weaver strand interviews (rev2 P2): the server validates
+        # strand identity on every strand request — never trusts a
+        # client-supplied strand_key. A conductor turn carrying a
+        # strand_key must name a known strand AND the caller's mapped
+        # thread for that strand; anything else fails closed (ValueError
+        # -> 422 at the route). Other seats never carry strand context:
+        # the key is scrubbed, not honored, for them (rev2 §6).
+        strand_key = self._validated_strand_key(
+            user_id, conversation_id, arch_id, context
+        )
+
         user_msg = self.store.append_message(
             user_id, conversation_id, arch_id, "user", message,
             mode=mode, context=context,
@@ -206,6 +256,34 @@ class ConversationService:
                     "steward: prepared context failed; continuing without it"
                 )
                 steward_block = None
+
+        # Weaver strand interviews (rev2 §6): a conductor turn in a
+        # validated strand thread carries the strand guidance block —
+        # strand identity, the §3 curiosity pattern, the §2.5 pressure
+        # rules, the C1 thresholds, active topic boundaries, and linked
+        # sources. Same pattern as the steward block: prepared context
+        # inside the existing prompt budget, no new generation, no
+        # second call. An explicit topic boundary in this very message
+        # is recorded first (guarded: never breaks the turn) so the
+        # reply can acknowledge it warmly.
+        strand_block = None
+        if strand_key is not None:
+            try:
+                topic = recognize_explicit_boundary(message)
+                if topic:
+                    self.store.add_topic_boundary(
+                        user_id,
+                        strand_key,
+                        topic,
+                        created_by_message_id=user_msg["id"],
+                    )
+            except Exception:
+                logger.exception("strand: boundary recognition failed")
+            try:
+                strand_block = self._strand_block(user_id, conversation_id, strand_key)
+            except Exception:
+                logger.exception("strand: guidance block failed")
+                strand_block = None
 
         # Firebrand task context (trial, champion-only): server-side,
         # from the caller's own scoped tasks — the client cannot inject
@@ -255,8 +333,13 @@ class ConversationService:
             # Phase 2 steward context (Weaver only): prepared
             # context travels as extra_instructions inside the
             # existing prompt budget — no new generation, no
-            # second call. Other seats never receive it.
-            extra_instructions=steward_block,
+            # second call. Other seats never receive it. The strand
+            # guidance block rides the same channel, after the
+            # steward block, for conductor turns in strand threads.
+            extra_instructions="\n\n".join(
+                block for block in (steward_block, strand_block) if block
+            )
+            or None,
             # Continuation background knowledge (demonstration spec
             # §6): this seat's slice, resolved from the visitor's
             # actual state — no intention line, no offer instruction.
@@ -303,6 +386,62 @@ class ConversationService:
         # failures are the sink's problem, never the turn's.
         self._emit_turn_event(user_id, conversation_id, arch_id, message, user_msg)
         return result
+
+    def _validated_strand_key(
+        self,
+        user_id: str,
+        conversation_id: str,
+        arch_id: str,
+        context: dict[str, Any],
+    ) -> str | None:
+        """Validate a strand_key carried on a turn, or return None.
+
+        Rev2 §6 + P2: the key is set ONLY by the strand panel for
+        conductor turns in strand threads, never inferred, ignored
+        for other seats and threads. A conductor turn naming an
+        unknown strand, or a strand whose mapped thread is not this
+        conversation, raises ValueError (fail closed — the route
+        turns it into a 422). A non-conductor seat's key is scrubbed
+        from the context so it can never be rendered as strand
+        context. The context dict is mutated in place: a validated
+        key stays (so context_hint_for may state it factually); any
+        other key is removed.
+        """
+        raw = context.get("strand_key")
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            context.pop("strand_key", None)
+            return None
+        if arch_id != "conductor":
+            context.pop("strand_key", None)
+            return None
+        key = validate_strand_key(raw)
+        mapped = self.store.get_strand_thread(user_id, key)
+        if mapped is None or str(mapped.get("conversation_id") or "") != conversation_id:
+            raise ValueError(
+                "Strand conversation mismatch: this thread is not "
+                f"the mapped thread for the {key!r} strand."
+            )
+        context["strand_key"] = key
+        return key
+
+    def _strand_block(
+        self, user_id: str, conversation_id: str, strand_key: str
+    ) -> str | None:
+        """Guidance block for a validated conductor turn in a strand thread."""
+        boundaries = self.store.list_topic_boundaries(user_id, strand_key)
+        sources = []
+        for source in self.store.list_strand_sources(user_id, strand_key):
+            entry = dict(source)
+            if entry.get("kind") == "file":
+                excerpts = _read_file_source_excerpts(str(entry.get("ref") or ""))
+                entry["excerpt"] = "\n".join(excerpts)
+            else:
+                entry["excerpt"] = entry.get("excerpt_redacted") or ""
+            sources.append(entry)
+        block = strand_guidance_block(
+            strand_key, boundaries=boundaries, sources=sources
+        )
+        return block or None
 
     def _emit_turn_event(
         self,

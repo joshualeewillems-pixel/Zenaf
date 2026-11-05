@@ -107,6 +107,7 @@ function newLocalRef(): string {
 export default function CouncilChat({
   environment,
   initialArchetypeId = null,
+  lockArchetypeId = null,
   displayName,
   conversationId = null,
   initialMessages,
@@ -119,6 +120,10 @@ export default function CouncilChat({
   environment: 'sheet' | 'workspace'
   /** Pre-selected seat (seat-branch sheets). Omit → chips, no selection. */
   initialArchetypeId?: string | null
+  /** Weaver strand interviews (rev2): when set, the chat is locked to
+   *  this seat — SeatChips and "Ask the council" are hidden, the seat
+   *  can never change, and the draft is keyed to the locked seat. */
+  lockArchetypeId?: string | null
   /** Seat fellowship name override for the composer placeholder. */
   displayName?: string
   /** Backend conversation-store key. When present, the thread hydrates from
@@ -156,9 +161,15 @@ export default function CouncilChat({
   // The persistent thread — initialized once from the hydration seam.
   // Switching seats never touches this list.
   const [messages, setMessages] = useState<ConversationMessage[]>(initialMessages ?? [])
-  const [activeId, setActiveId] = useState<string | null>(initialArchetypeId ?? null)
+  const [activeId, setActiveId] = useState<string | null>(lockArchetypeId ?? initialArchetypeId ?? null)
   /** Ask-the-council fan-out: the next send goes to every seat at once. */
   const [councilMode, setCouncilMode] = useState(false)
+  // A locked seat stays locked: the chips (the only UI path that calls
+  // setActiveId) are hidden when locked, and this effect re-forces the
+  // lock if anything else ever moves it.
+  useEffect(() => {
+    if (lockArchetypeId) setActiveId(lockArchetypeId)
+  }, [lockArchetypeId])
   // Mount-time initialization from the draft store, never an effect
   // restore: on every remount (seat/conversation switch, sheet reopen,
   // invitation shortcut) the composer starts from the store entry for
@@ -171,7 +182,7 @@ export default function CouncilChat({
       draftCtx.store.adopt(
         draftCtx.userId,
         conversationId,
-        initialArchetypeId ?? UNSELECTED_DRAFT_SEAT,
+        lockArchetypeId ?? initialArchetypeId ?? UNSELECTED_DRAFT_SEAT,
       ) ?? ''
     )
   })
@@ -563,43 +574,49 @@ export default function CouncilChat({
 
   return (
     <div className="flex flex-col gap-3" data-conversation={conversationKey}>
-      {/* Seat switcher — tapping branches the ongoing conversation. */}
-      <SeatChips
-        activeId={councilMode ? null : activeId}
-        onSelect={(id) => {
-          swapComposer(id)
-          setActiveId(id)
-          setCouncilMode(false)
-        }}
-      />
+      {/* Seat switcher — tapping branches the ongoing conversation.
+          Hidden when the chat is locked to one seat (strand interviews):
+          there is nothing to switch to, and no fan-out. */}
+      {!lockArchetypeId && (
+        <>
+          <SeatChips
+            activeId={councilMode ? null : activeId}
+            onSelect={(id) => {
+              swapComposer(id)
+              setActiveId(id)
+              setCouncilMode(false)
+            }}
+          />
 
-      {/* Ask the council — one message, every seat answers in this thread. */}
-      <div className="flex flex-wrap items-center gap-3 -mt-1">
-        <button
-          type="button"
-          onClick={() => {
-            // Toggle destination: ON → the 'council' key; OFF → the
-            // active seat, or 'unselected' when no seat is picked.
-            swapComposer(
-              councilMode ? (activeId ?? UNSELECTED_DRAFT_SEAT) : COUNCIL_DRAFT_SEAT,
-            )
-            setCouncilMode((v) => !v)
-          }}
-          aria-pressed={councilMode}
-          className={`min-h-[44px] px-4 rounded-full border text-sm font-medium ${
-            councilMode
-              ? 'bg-amber-950/40 text-amber-300 border-amber-700/50'
-              : 'border-stone-700 text-stone-400'
-          }`}
-        >
-          Ask the council
-        </button>
-        {councilMode && (
-          <p className="text-[11px] text-stone-500">
-            One message — every seat answers here, under its own name.
-          </p>
-        )}
-      </div>
+          {/* Ask the council — one message, every seat answers in this thread. */}
+          <div className="flex flex-wrap items-center gap-3 -mt-1">
+            <button
+              type="button"
+              onClick={() => {
+                // Toggle destination: ON → the 'council' key; OFF → the
+                // active seat, or 'unselected' when no seat is picked.
+                swapComposer(
+                  councilMode ? (activeId ?? UNSELECTED_DRAFT_SEAT) : COUNCIL_DRAFT_SEAT,
+                )
+                setCouncilMode((v) => !v)
+              }}
+              aria-pressed={councilMode}
+              className={`min-h-[44px] px-4 rounded-full border text-sm font-medium ${
+                councilMode
+                  ? 'bg-amber-950/40 text-amber-300 border-amber-700/50'
+                  : 'border-stone-700 text-stone-400'
+              }`}
+            >
+              Ask the council
+            </button>
+            {councilMode && (
+              <p className="text-[11px] text-stone-500">
+                One message — every seat answers here, under its own name.
+              </p>
+            )}
+          </div>
+        </>
+      )}
 
       {environment === 'workspace' && (
         <div className="flex flex-wrap items-center gap-3">

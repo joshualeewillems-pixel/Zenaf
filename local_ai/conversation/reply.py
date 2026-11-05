@@ -117,6 +117,54 @@ FIREBRAND_CANONICAL_CUTOVER = True
 BEAR_CANONICAL_CUTOVER = True
 
 
+# Bear flow-loop guidance (flow architecture §3 S2, 2026-11-05) — prompt
+# guidance for ordinary Bear Talk turns ONLY, gated on bear_canonical
+# at the assembly site below. It is deliberately NOT part of the
+# canonical record: BEAR_RECORD is character definition, and the
+# renderer reproduces exemplar §2 exactly — the loop is a way of
+# working, not character, so it rides here as guidance, in the
+# pattern of _WEAVER_REFINEMENT_GUIDANCE (prompt-local guidance,
+# not canonical content). Meetings run canonical=False, so the
+# meeting path never sees it; no other seat ever sees it.
+# Content fences (architecture §2.2, §2.4, §2.7): the five steps are
+# available conversational functions, never a required sequence —
+# Bear may skip or combine them, or simply acknowledge what is
+# already established, and a complete loop is never required; both
+# directions of adjustment are offered (reduce friction AND push
+# harder) and neither is the default; Rest / Release / Continue
+# apply to Bear's ordinary Talk; evidence is user expression + the
+# focus hint only — no node records, no score, no persisted stage,
+# no auto-action. Level (a) only: no capture, derivation, or
+# standing need rides on this text.
+_BEAR_FLOW_LOOP_GUIDANCE = (
+    "Flow and capacity — how you work with someone and their work. "
+    "You help the visitor find a sustainable relationship with the "
+    "work in front of them — not by measuring them, but by noticing "
+    "together what the work asks and what they have to give. Your "
+    "evidence is what the visitor tells you, and the node they are "
+    "focused on; work from that alone. You need not name their "
+    "state, and you need not assess on every turn: a plain "
+    "observation, a boundary recognized, a decision already reached "
+    "and left to stand — any of these may be the whole of your "
+    "contribution. When something in the work is hard to carry, you "
+    "have five ways of working with it, none of them a sequence and "
+    "none of them required: notice what is straining or inviting — "
+    "what must survive, what is quietly draining; understand by "
+    "asking only what has not already been said; offer an adjustment "
+    "— simplify, deepen, vary, support, pause, continue, or press "
+    "harder where the circumstances warrant it, and never default to "
+    "one direction; observe whether it helped, only when the visitor "
+    "has not already told you; and return to it only when they bring "
+    "it up again. Skip or combine these as the moment calls for. "
+    "Never re-ask what the visitor has already established, and "
+    "never manufacture a question merely to keep talking: when they "
+    "have answered, recognize the answer. Sometimes the most useful "
+    "thing you can do is let an insight stand, let the exchange "
+    "rest, or let the visitor go — a turn that ends after one useful "
+    "suggestion is complete."
+)
+
+
 # Crane canonical cutover — CODE-LEVEL, not a persistent feature flag.
 # True: ordinary Crane turns (canonical=True) render the canonical
 # character block instead of the legacy archetype block. False
@@ -615,6 +663,12 @@ def build_voice_prompt(
             "",
             *prompt_lines,
         ]
+    if bear_canonical:
+        # S2: Bear's flow-loop guidance — ordinary Talk only.
+        # bear_canonical is True only for ordinary Bear turns
+        # (canonical=True); meetings (canonical=False) and every
+        # other seat never take this branch.
+        prompt += ["", _BEAR_FLOW_LOOP_GUIDANCE]
     if sections:
         prompt += [
             "",

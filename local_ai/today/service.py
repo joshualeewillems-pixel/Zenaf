@@ -53,6 +53,25 @@ KIND_TIER = {
     "growth_stall": TIER_COULD,
 }
 
+#: W3 §7: the internal kind-based ranking hint. The kind IS the seat hint
+#: for ranking/dismissal — it never leaves the server as an assigned
+#: responsibility. The public `suggested_seat` on the nudge is null for
+#: unassigned provenance tasks (W3 §2.9), so ranking, dismissal
+#: weighting, the people-waiting lens, and the sort key read THIS map,
+#: never the public seat. The map is the same hint the engine stored on
+#: the nudge row before W3 (Conductor for dates, Guardian for
+#: stalled/commitments, Gardener for growth stalls). It lives only on the
+#: enriched dict inside this module; it is never serialized in
+#: `_public_item` or `_public_nudge`, never sent to the client, and never
+#: stored as a new column.
+_RANKING_SEAT_BY_KIND = {
+    "date_overdue": "Conductor",
+    "date_approaching": "Conductor",
+    "stalled": "Guardian",
+    "commitment_open": "Guardian",
+    "growth_stall": "Gardener",
+}
+
 #: Exactly one pre-chewed next action per nudge kind. The briefing minimizes
 #: decisions, not just items.
 NEXT_ACTIONS: dict[str, tuple[str, str]] = {
@@ -155,10 +174,12 @@ class TodayService:
             enriched.append(self._enrich(user_id, n))
 
         # Dismissal pattern -> live seat down-weighting ("not my mode").
+        # W3 §7: keyed by the INTERNAL kind hint, never the public seat
+        # (null for unassigned provenance tasks).
         seat_dismissals: dict[str, int] = {}
         for did in dismissed:
             n = by_id.get(did)
-            seat = (n or {}).get("suggested_seat")
+            seat = _RANKING_SEAT_BY_KIND.get((n or {}).get("kind"))
             if seat:
                 seat_dismissals[seat] = seat_dismissals.get(seat, 0) + 1
 
@@ -168,16 +189,18 @@ class TodayService:
 
         # People-waiting promotion (see _enrich): unconditional in the
         # council briefing; inside a seat's lens, only the lens seat's own
-        # people-waiting items promote to must.
+        # people-waiting items promote to must. W3 §7: the lens reads the
+        # INTERNAL kind hint, never the public seat.
         for e in enriched:
             if e["people_waiting"] and e["tier"] == TIER_SHOULD:
-                seat = (e["nudge"].get("suggested_seat") or "").strip().lower()
+                seat = (e.get("ranking_seat") or "").strip().lower()
                 if not mode_norm or seat == mode_norm:
                     e["tier"] = TIER_MUST
 
         def sort_key(e: dict[str, Any]):
             n = e["nudge"]
-            seat = n.get("suggested_seat") or ""
+            # W3 §7: the sort-key lens reads the internal kind hint.
+            seat = e.get("ranking_seat") or ""
             return (
                 TIER_ORDER[e["tier"]],
                 # The lens (Joshua, 2026-10-23): inside a tier, the mode
@@ -254,36 +277,41 @@ class TodayService:
             "people_waiting": people_waiting,
             "envelope_score": score,
             "next_action": {"code": code, "label": label},
+            # W3 §7: the internal ranking seat — the kind hint, read
+            # from the kind, never from the public suggested_seat
+            # (which is null for unassigned provenance tasks).
+            "ranking_seat": _RANKING_SEAT_BY_KIND.get(kind),
         }
 
     def _people_waiting(self, user_id: str, n: dict[str, Any]) -> bool:
         """V1 heuristic: the entity links a person. Tasks via assignee_id;
         projects via supporting_owner_ids. Commitments carry no person link
-        in v1."""
+        in v1. A missing entity (None) is not waiting — False. A storage
+        exception propagates (W3 §2.6): an error must fail visibly, never
+        masquerade as 'nobody waiting'."""
         etype, eid = n.get("entity_type"), n.get("entity_id")
-        try:
-            if etype == "task":
-                t = self.ve.get_task(eid, user_id)
-                return bool(t and (t.get("assignee_id") or "").strip())
-            if etype == "project":
-                p = self.ve.get_project(eid, user_id)
-                if not p:
-                    return False
-                raw = p.get("supporting_owner_ids") or "[]"
+        if etype == "task":
+            t = self.ve.get_task(eid, user_id)
+            return bool(t and (t.get("assignee_id") or "").strip())
+        if etype == "project":
+            p = self.ve.get_project(eid, user_id)
+            if not p:
+                return False
+            raw = p.get("supporting_owner_ids") or "[]"
+            try:
                 ids = json.loads(raw) if isinstance(raw, str) else raw
-                return bool(ids)
-        except Exception:
-            return False
+            except (ValueError, TypeError):
+                return False
+            return bool(ids)
         return False
 
     def _due_today(self, user_id: str, n: dict[str, Any]) -> bool:
+        """A missing entity (None) is not due today — False. A storage
+        exception propagates (W3 §2.6)."""
         if n.get("entity_type") != "task":
             return False
-        try:
-            t = self.ve.get_task(n.get("entity_id"), user_id)
-            due = _parse_day((t or {}).get("due_date"))
-        except Exception:
-            return False
+        t = self.ve.get_task(n.get("entity_id"), user_id)
+        due = _parse_day((t or {}).get("due_date"))
         return due is not None and due == datetime.now(timezone.utc).date()
 
     @staticmethod
@@ -298,7 +326,7 @@ class TodayService:
     @staticmethod
     def _public_item(e: dict[str, Any]) -> dict[str, Any]:
         n = e["nudge"]
-        return {
+        item = {
             "id": n["id"],
             "kind": n.get("kind"),
             "tier": e["tier"],
@@ -310,3 +338,10 @@ class TodayService:
             "people_waiting": e["people_waiting"],
             "next_action": e["next_action"],
         }
+        # W3 §4.3 / Q1: both surfaces carry the origin identically.
+        # The key is present only when the nudge carries provenance
+        # (and the kill switch is ON) — a legacy/manual task carries
+        # no origin key at all, byte-identical to today's shape.
+        if "origin" in n:
+            item["origin"] = n["origin"]
+        return item

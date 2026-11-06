@@ -77,6 +77,16 @@ class GrowthBody(BaseModel):
 
 @router.get("/nudges")
 def get_nudges(user: dict = Depends(get_current_user)):
+    """The live nudge feed.
+
+    NOTE: GET is not entirely read-only (W3 §2.1, U-D1 RULED). The
+    compute persists genuinely new nudges (nudge-once dedup) and
+    auto-resolves nudges whose condition cleared — those writes are
+    the engine's normal operation, not side effects of the read. The
+    RENDER step itself performs no writes: condition wording is
+    recomputed from current state at feed time, and provenance is
+    resolved from the frozen approved proposal, never re-recorded.
+    """
     try:
         return {"nudges": _svc().compute_nudges(_uid(user))}
     except Exception as exc:  # noqa: BLE001 — thin translation layer

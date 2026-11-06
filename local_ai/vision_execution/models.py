@@ -974,7 +974,7 @@ def row_to_task(row: tuple) -> dict[str, Any]:
         "seat_ref": row[16] if n > 16 else "",
         "timeframe_commitment": row[17] if n > 17 else None,
         # W0B provenance columns (nullable; None on legacy/manual rows).
-        # Nothing writes them yet; W1 populates them at task creation.
+        # W1 populates them at task creation via approve_task_proposal.
         # seat_ref above is UNCHANGED and stays keystone-scoped.
         "origin_seat": row[18] if n > 18 else None,
         "origin_conversation_id": row[19] if n > 19 else None,

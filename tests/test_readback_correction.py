@@ -130,6 +130,23 @@ STRICT_ACK_NEAR_MISSES = [
     "true",
     "nailed it",
     "Mostly right — except I protect mornings first.",
+    # Pass tokens and empty input: none of these may take the ack-only
+    # reply frame ("The user has agreed with your first impression" —
+    # founder review 2026-11-06). The turn function routes them to
+    # the no-generation pass branch instead. "not sure" is the sharp
+    # case: "sure" is an ack phrase, but "not" is not a residue word,
+    # so the positive-composition check rejects it.
+    "",
+    "pass",
+    "skip",
+    "next",
+    "next question",
+    "another question",
+    "different question",
+    "idk",
+    "i don't know",
+    "not sure",
+    "nope",
 ]
 
 
@@ -427,13 +444,14 @@ def test_engage_frames_fit_the_prompt_cap():
     the full readback frame as prepared context). The Weaver frame hit
     8375 chars — past the old 8000 cap, which silently truncated the
     capability block's intention line and honesty guard off every
-    Weaver engage turn. The cap is 9000; every seat's engage frame
-    must fit it with the intention line and honesty guard intact."""
+    Weaver engage turn. The cap is _EXTRA_INSTRUCTIONS_CAP; every
+    seat's engage frame must fit it with the intention line and
+    honesty guard intact."""
     from local_ai.conversation import encounter as ENC
+    from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP as cap
     from local_ai.council import capabilities as CAP
     from local_ai.council import meetings as MT
 
-    cap = 9000
     for arch in ("conductor", "mentor", "champion", "ambassador", "skeptic", "maverick", "guardian"):
         definition = ENC.get_definition(MT.get_script(arch, 1))
         frame = ENC.EncounterRuntime(definition)._engage_frame()
@@ -441,6 +459,55 @@ def test_engage_frames_fit_the_prompt_cap():
         capped = frame[:cap]
         assert CAP.INTENTION_LINE in capped, f"{arch}: intention line truncated"
         assert CAP.HONESTY_GUARD in capped, f"{arch}: honesty guard truncated"
+
+
+def test_truncated_section_logs_loudly(caplog):
+    """Founder review (2026-11-06): silently truncating a section was
+    the worse finding; raising the cap treats the symptom. Any slice
+    that actually cuts content now emits one warning log line naming
+    the section, the archetype, the original length, and the cap —
+    and the turn still runs with the sliced section (a log, not an
+    assertion: a truncated section degrades the turn but must never
+    crash it). Under-cap prompts log nothing."""
+    import logging
+
+    from local_ai.conversation import reply as R
+
+    with caplog.at_level(logging.WARNING, logger="local_ai.conversation.reply"):
+        prompt, _ = R.build_voice_prompt(
+            "u1", "champion", "hello", [],
+            extra_instructions="x" * (R._EXTRA_INSTRUCTIONS_CAP + 500),
+        )
+    lines = prompt
+    assert any(len(line) == R._EXTRA_INSTRUCTIONS_CAP for line in lines)
+    warnings = [
+        rec for rec in caplog.records
+        if "prompt section truncated" in rec.getMessage()
+    ]
+    assert len(warnings) == 1
+    msg = warnings[0].getMessage()
+    assert "section=extra_instructions" in msg
+    assert "archetype=champion" in msg
+    assert f"original_chars={R._EXTRA_INSTRUCTIONS_CAP + 500}" in msg
+    assert f"cap={R._EXTRA_INSTRUCTIONS_CAP}" in msg
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger="local_ai.conversation.reply"):
+        prompt, _ = R.build_voice_prompt(
+            "u1", "champion", "hello", [],
+            extra_instructions="short frame",
+            thread_summary="s" * (R._THREAD_SUMMARY_CAP + 100),
+            context_hint="c" * (R._CONTEXT_HINT_CAP + 50),
+        )
+    joined = "\n".join(prompt)
+    assert "short frame" in joined
+    truncated = [
+        rec.getMessage() for rec in caplog.records
+        if "prompt section truncated" in rec.getMessage()
+    ]
+    assert any("section=thread_summary" in m for m in truncated)
+    assert any("section=context_hint" in m for m in truncated)
+    assert not any("section=extra_instructions" in m for m in truncated)
 
 
 # --------------------------------------------------------------------------
@@ -681,6 +748,48 @@ def test_service_revised_affirmed_is_valid(ve_ctx, tmp_path):
     assert row["readback_claim"].startswith("A revised read:")
 
 
+def test_service_archived_agreement_with_new_information_revises_affirmed(ve_ctx, tmp_path):
+    """End-to-end fixture for the founder's revised x affirmed check
+    (review item 1): archived reply #6 agrees AND volunteers new
+    substantive information ("I do like to be helpful"), and the live
+    fixture run produced [[impression:revised:affirmed]] through the
+    real correction frame. The deterministic half pins the path: the
+    real frame reaches the generator, the marker parses, and the row
+    stores revised/affirmed with the original preserved."""
+    gen = MarkerGen(
+        "That tracks — a standing habit of pitching in makes holding a single line more sustainable.\n"
+        "---\n"
+        "A revised read: you have wider range than the single spot you're holding now, narrowed here by pressure rather than preference. Liking to be helpful reads as a steady part of you, not just cover for the moment.\n"
+        "Strands: Heart, Compass\n"
+        "[[impression:revised:affirmed]]\n"
+        "[[thread:settled]]\n"
+    )
+    svc = _svc(tmp_path, gen)
+    uid = _seeded_user()
+    original = _to_readback(svc, uid)["readback_claim"]
+    state = svc.turn(
+        uid, "conductor",
+        "This does feel like extraordinary circumstances but I do like to be helpful",
+    )
+    row = svc.meetings.get(uid, "conductor", 1)
+    assert row["readback_seat_outcome"] == "revised"
+    assert row["readback_visitor_response"] == "affirmed"
+    assert row["readback_claim"].startswith("A revised read:")
+    assert row["readback_original_claim"] == original
+    assert row["readback_strands"] == '["Heart", "Compass"]'
+    # The generation went through the REAL correction frame, not just
+    # any prompt: the frame's revise-on-agreement sentence is in the
+    # prompt the generator received.
+    assert any(
+        "If their agreement volunteers additional substantive information "
+        "that materially changes the interpretation, revise the impression "
+        "on that new information: agreement does not forbid revision." in p
+        for p in gen.prompts
+    )
+    bodies = _bodies(state)
+    assert not any("[[impression:" in b for b in bodies)
+
+
 def test_service_fail_safe_writes_unjudged_unresolved(ve_ctx, tmp_path):
     gen = MarkerGen("A plain reply with no marker at all.\n[[thread:settled]]\n")
     svc = _svc(tmp_path, gen)
@@ -725,6 +834,44 @@ def test_service_pass_writes_retained_unresolved(ve_ctx, tmp_path):
     )
     assert not any(
         "The user has agreed with your first impression" in p for p in gen.prompts
+    )
+
+
+def test_service_fox_pass_speaks_fallback(ve_ctx, tmp_path):
+    """Fox fallback line (founder review 2026-11-06): the Maverick
+    had no fallback line — the generic base sets fallback_line=""
+    and the k1 builder copied it, so an empty/pass reply spoke
+    nothing this turn. A pass on Fox now speaks the Fox fallback
+    line and records retained x unresolved — and never reaches the
+    ack-only frame (the strict-ack allowlist cannot match "pass")."""
+    gen = MarkerGen("UNUSED — a pass never generates.")
+    svc = _svc(tmp_path, gen)
+    uid = _seeded_user()
+    # The Weaver opens the council: complete her first meeting,
+    # then the Fox's opens.
+    _to_readback(svc, uid)
+    svc.turn(uid, "conductor", "Yeah, that's right.")
+    svc.complete(uid, "conductor")
+    svc.start(uid, "maverick")
+    # Drive the Fox meeting until the read-back is offered.
+    for _ in range(6):
+        row = svc.meetings.get(uid, "maverick", 1)
+        if row and row["readback_claim"]:
+            break
+        svc.turn(uid, "maverick", "I triage by what breaks first if I ignore it.")
+    row = svc.meetings.get(uid, "maverick", 1)
+    assert row["readback_claim"].startswith("A first impression")
+    prompts_before_fox_pass = len(gen.prompts)
+    state = svc.turn(uid, "maverick", "pass")
+    row = svc.meetings.get(uid, "maverick", 1)
+    assert row["readback_seat_outcome"] == "retained"
+    assert row["readback_visitor_response"] == "unresolved"
+    assert any("slipped through the hedge" in b for b in _bodies(state))
+    # The conductor's own ack turn earlier in this test legitimately
+    # used the ack-only frame; the assertion covers only the Fox pass.
+    assert not any(
+        "The user has agreed with your first impression" in p
+        for p in gen.prompts[prompts_before_fox_pass:]
     )
 
 

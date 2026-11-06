@@ -140,6 +140,8 @@ def _seed_proposal(conv_store: ConversationStore, user: str, parent_id: str, tit
             "source_message_id": msg["id"],
             "block_index": 0,
             "proposal_index": 0,
+            # W1 (C-1): the body prose is "Prose here.".
+            "evidence_quote": "Prose here.",
         },
         conversation_store=conv_store,
     )

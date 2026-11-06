@@ -88,6 +88,8 @@ def _record_payload(msg, **over):
         "timeframe_commitment": "tentative",
         "due_date": None,
         "notes": "Ask about referral",
+        # W1 (C-1): the preceding prose paragraph of CHAMPION_BLOCK.
+        "evidence_quote": "Prose here.",
     }
     payload.update(over)
     return payload
@@ -378,7 +380,14 @@ def test_t4_record_approve_decline_lifecycle_via_routes(client, ve_conn, conv_st
     assert r.json()["task"]["title"] == "Call the clinic"
     assert r.json()["task"]["status"] == "Todo"
     assert r.json()["task"]["timeframe_commitment"] == "tentative"
-    assert r.json()["task"]["seat_ref"] == "champion"
+    # W1 Guard A: the deliberation-path write to seat_ref is removed;
+    # approval writes provenance origins instead.
+    assert r.json()["task"]["seat_ref"] == ""
+    assert r.json()["task"]["origin_seat"] == "champion"
+    assert r.json()["task"]["origin_conversation_id"] == "talk-1"
+    assert r.json()["task"]["origin_message_id"] == msg["id"]
+    assert r.json()["task"]["origin_decision_id"] is None
+    assert r.json()["task"]["responsible_seat"] is None
     assert r.json()["proposal"]["state"] == "approved"
     tasks = client.get("/vision-execution/tasks").json()
     assert len(tasks) == 1 and tasks[0]["id"] == r.json()["task"]["id"]
@@ -458,7 +467,7 @@ def test_t16_unauthorized_parent_rejected_at_record_and_approve(client, ve_conn,
     msg2 = _champion_message(conv_store, body=block)
     rec = client.post(
         "/vision-execution/task-proposals",
-        json=_record_payload(msg2, title="Child", parent_task_id=parent["id"], timeframe_commitment=None, notes=""),
+        json=_record_payload(msg2, title="Child", parent_task_id=parent["id"], timeframe_commitment=None, notes="", evidence_quote="Prose."),
     )
     assert rec.status_code == 200, rec.text
     S.delete_task(parent["id"], "u1")
@@ -542,6 +551,8 @@ def _seed_proposal(conv_store, title="Orig"):
             "block_index": 0,
             "proposal_index": 0,
             "title": title,
+            # W1 (C-1): the body prose is "Prose.".
+            "evidence_quote": "Prose.",
         },
         conversation_store=conv_store,
     )
@@ -729,6 +740,7 @@ def test_nested_proposal_by_id_records_and_approves_exactly_once(client, ve_conn
             title="Confirm dentist slot",
             parent_task_id=parent["id"],
             notes="Call to confirm",
+            evidence_quote="Prose.",
         ),
     )
     assert r.status_code == 200, r.text

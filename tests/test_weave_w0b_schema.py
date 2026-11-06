@@ -231,7 +231,10 @@ def test_legacy_pending_proposal_approves_from_live_values(monkeypatch):
     Approve reads live columns only, so a pre-W0B pending proposal
     approves without any original-handling code, and its NULL originals
     stay NULL after approval (the approved version is terminal-state
-    immutable, but its ORIGINAL remains honestly unrecorded).
+    immutable, but its ORIGINAL remains honestly unrecorded). W1 adds
+    one thing: approval now writes provenance origins from the row
+    (seat / conversation / message) and leaves seat_ref empty — the
+    deliberation-path seat_ref write is removed.
     """
     conn = _legacy_conn()
     monkeypatch.setattr(S, "get_connection", lambda: conn)
@@ -241,7 +244,12 @@ def test_legacy_pending_proposal_approves_from_live_values(monkeypatch):
     assert out["proposal"]["title"] == "Legacy proposal"
     assert out["proposal"]["original_title"] is None
     assert out["task"]["title"] == "Legacy proposal"
-    assert out["task"]["origin_seat"] is None, "nothing writes origins yet"
+    assert out["task"]["origin_seat"] == "champion"
+    assert out["task"]["origin_conversation_id"] == "conv-1"
+    assert out["task"]["origin_message_id"] == "msg-1"
+    assert out["task"]["origin_decision_id"] is None
+    assert out["task"]["responsible_seat"] is None
+    assert out["task"]["seat_ref"] == ""
     conn.close()
 
 

@@ -72,6 +72,42 @@ export function stripTaskProposalBlocks(text: string): string {
 }
 
 /**
+ * W1 (C-1, Q3): the evidence quote for the Nth fenced block — the
+ * last paragraph of the prose preceding it (paragraphs split on
+ * blank lines), truncated to 500 raw chars. A raw prefix stays a
+ * substring after the server's whitespace normalization, so this is
+ * always a valid C-1 quote when prose precedes the block. '' when
+ * there is no preceding prose (the server then rejects the record
+ * with 400 — a block with no prose before it has no evidence).
+ */
+export function precedingParagraph(text: string, blockIndex: number): string {
+  // FENCE_RE is module-shared and global: reset its lastIndex on
+  // every exit, or the next parse would start mid-text and miss
+  // blocks. The earlier fenced blocks are stripped from the text
+  // before the Nth block, so only prose paragraphs remain.
+  FENCE_RE.lastIndex = 0
+  try {
+    let match: RegExpExecArray | null = null
+    for (let i = 0; i <= blockIndex; i += 1) {
+      match = FENCE_RE.exec(text)
+      if (!match) return ''
+    }
+    const before = text.slice(0, (match as RegExpExecArray).index)
+    FENCE_RE.lastIndex = 0
+    const proseBefore = before.replace(FENCE_RE, '')
+    const paragraphs = proseBefore
+      .split(/\n\s*\n/)
+      .map((p) => p.trim())
+      .filter(Boolean)
+    const last = paragraphs[paragraphs.length - 1]
+    if (!last) return ''
+    return last.slice(0, 500)
+  } finally {
+    FENCE_RE.lastIndex = 0
+  }
+}
+
+/**
  * Parse every fenced block in reply text. A malformed block yields one
  * invalid entry (blockIndex, proposalIndex -1) so the UI can show the
  * error card; a well-formed block yields one entry per proposal, valid

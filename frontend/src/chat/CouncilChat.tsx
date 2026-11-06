@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import { useAutoGrowTextarea } from '../components/useAutoGrowTextarea'
+import { isCoarsePointer } from '../components/isCoarsePointer'
 import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
 import TaskProposalCards from './TaskProposalCards'
@@ -859,7 +860,10 @@ export default function CouncilChat({
                 }
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                // Desktop: Enter sends, Shift+Enter inserts a newline.
+                // Phone/tablet (coarse pointer): there is no Shift key,
+                // so Enter inserts a newline and only Send sends.
+                if (e.key === 'Enter' && !e.shiftKey && !isCoarsePointer()) {
                   e.preventDefault()
                   send()
                 }

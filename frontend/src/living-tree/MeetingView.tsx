@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import { useAutoGrowTextarea } from '../components/useAutoGrowTextarea'
+import { isCoarsePointer } from '../components/isCoarsePointer'
 import { normalizeWeave, WeaveText, voiceColor } from '../components/VoiceWeave'
 
 /* ------------------------------------------------------------------ */
@@ -426,7 +427,10 @@ export function MeetingView({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  // Desktop: Enter sends, Shift+Enter inserts a newline.
+                  // Phone/tablet (coarse pointer): there is no Shift key,
+                  // so Enter inserts a newline and only Send sends.
+                  if (e.key === 'Enter' && !e.shiftKey && !isCoarsePointer()) {
                     e.preventDefault()
                     void send()
                   }

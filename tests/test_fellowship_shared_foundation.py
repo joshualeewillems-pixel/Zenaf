@@ -29,7 +29,10 @@ import pytest
 from local_ai.agent_intake.store import AgentStore
 from local_ai.conversation import encounter as ENC
 from local_ai.conversation.meeting import MeetingService, MeetingStore
-from local_ai.conversation.reply import build_voice_prompt
+from local_ai.conversation.reply import (
+    _EXTRA_INSTRUCTIONS_CAP,
+    build_voice_prompt,
+)
 from local_ai.conversation.store import ConversationStore
 from local_ai.council import capabilities as CAP
 from local_ai.council import meetings as MT
@@ -369,7 +372,7 @@ def test_engage_frame_guarded_honesty_guard_position():
     definition = _weaver_definition()
     runtime = ENC.EncounterRuntime(definition)
     frame = runtime._engage_frame()
-    assert len(frame) <= 9000
+    assert len(frame) <= _EXTRA_INSTRUCTIONS_CAP
     assert len(frame) >= 300  # sanity: a real frame, not an empty one
     assert CAP.HONESTY_GUARD in frame
     guard_at = frame.index(CAP.HONESTY_GUARD)
@@ -377,7 +380,7 @@ def test_engage_frame_guarded_honesty_guard_position():
     assert guard_at < naming_at
     # Budget (measured here, reported in the PR description):
     # engage frame must leave >= 300 chars of headroom.
-    assert 9000 - len(frame) >= 300
+    assert _EXTRA_INSTRUCTIONS_CAP - len(frame) >= 300
 
 
 def test_fellowship_reference_is_an_uncapped_section():
@@ -390,7 +393,7 @@ def test_fellowship_reference_is_an_uncapped_section():
     joined = "\n".join(lines)
     assert long_reference.strip() in joined  # NOT truncated
     assert ("x" * 10000) not in joined  # the frame cap still applies
-    assert any(len(line) == 9000 for line in lines)  # cap raised 8000 -> 9000 (read-back, 2026-11-06)
+    assert any(len(line) == _EXTRA_INSTRUCTIONS_CAP for line in lines)  # cap raised 8000 -> 9000 (read-back, 2026-11-06)
     # Empty reference = section absent (byte-identical prompt shape).
     lines2, _ = build_voice_prompt("u1", "conductor", "hello", [])
     assert not any("Fellowship reference" in line for line in lines2)

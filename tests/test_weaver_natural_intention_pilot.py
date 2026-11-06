@@ -25,7 +25,10 @@ from local_ai.conversation.encounter import (
     _WEAVER_NATURAL_INTENTION_LINE,
     _WEAVER_NATURAL_INTENTION_SHARED,
 )
-from local_ai.conversation.reply import build_voice_prompt
+from local_ai.conversation.reply import (
+    _EXTRA_INSTRUCTIONS_CAP,
+    build_voice_prompt,
+)
 from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import ConversationStore
 from local_ai.council import meetings as MT
@@ -82,8 +85,8 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
     assert len(engage_frame) == 8375
-    assert 9000 - len(engage_frame) >= 30
-    assert 9000 - len(turn_frame) >= 30
+    assert _EXTRA_INSTRUCTIONS_CAP - len(engage_frame) >= 30
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) >= 30
     assert _WEAVER_NATURAL_INTENTION not in turn_frame
     assert _WEAVER_NATURAL_INTENTION not in engage_frame
     # Pinned render: the assembled meeting prompt carries it verbatim.
@@ -129,10 +132,10 @@ def test_talk_path_weaver_carries_pilot_other_seats_do_not(tmp_path):
 
 
 def test_talk_pilot_fits_the_extra_instructions_cap():
-    """Pilot alone: 1,170 chars, 6,830 headroom under the 8,000 cap."""
+    """Pilot alone: 1,170 chars, headroom under the extra-instructions cap."""
     lines, _ = build_voice_prompt(
         "u1", "conductor", "hello", [], extra_instructions=_WEAVER_NATURAL_INTENTION,
     )
     assert _WEAVER_NATURAL_INTENTION in "\n".join(lines)
     assert len(_WEAVER_NATURAL_INTENTION) == 1170
-    assert 8000 - len(_WEAVER_NATURAL_INTENTION) == 6830
+    assert _EXTRA_INSTRUCTIONS_CAP - len(_WEAVER_NATURAL_INTENTION) == 7830

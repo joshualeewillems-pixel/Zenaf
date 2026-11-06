@@ -36,6 +36,7 @@ import threading
 import pytest
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.conversation.meeting import (
     MeetingError,
     MeetingService,
@@ -319,8 +320,8 @@ def test_frame_sizes_fit_the_voice_builder_cap():
         ("turn", definition.turn_frame),
         ("engage", definition.engage_frame),
     ):
-        assert len(text) < 8000, name
-        assert 8000 - len(text) >= 300, name
+        assert len(text) < _EXTRA_INSTRUCTIONS_CAP, name
+        assert _EXTRA_INSTRUCTIONS_CAP - len(text) >= 300, name
 
 
 # ------------------------------------------- restart / supersede (2026-10-28)

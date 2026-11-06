@@ -35,7 +35,7 @@ meeting cannot begin. What this file pins:
   Done. Registering the script is the availability flip, proven
   by the monkeypatched control (reverted after the test).
 - Budget: both composed runtime frames fit the voice builder's
-  8000-char extra_instructions cap with at least 300 chars
+  extra-instructions cap (_EXTRA_INSTRUCTIONS_CAP) with at least 300 chars
   headroom on the engage path at the none-met baseline (the same
   basis as Weaver's 7613), and fit the 12500 fallback cap with
   room to spare — so no frame is silently truncated and the
@@ -60,6 +60,7 @@ import threading
 import pytest
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.conversation.meeting import (
     MeetingError,
     MeetingService,
@@ -459,7 +460,7 @@ def test_runtime_composition_carries_standing_notes():
 
 
 # ---------------------------------------------------------------------------
-# Budget: both composed frames fit the voice builder's 9000 cap.
+# Budget: both composed frames fit the voice builder's cap (_EXTRA_INSTRUCTIONS_CAP).
 # (Cap raised 8000 -> 9000 for the read-back frames, 2026-11-06.)
 # ---------------------------------------------------------------------------
 
@@ -468,13 +469,13 @@ def test_composed_frames_fit_the_voice_builder_cap():
     definition = _definition()
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
-    assert len(turn_frame) < 9000
+    assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     engage = _runtime_engage(definition)
     # Proposal gate: at least 300 chars headroom, and the honesty
     # guard — last line of the capability block — is never the
     # first content lost (it survives at the tail of the frame).
     assert len(engage) <= 8700, len(engage)
-    assert len(engage) < 9000
+    assert len(engage) < _EXTRA_INSTRUCTIONS_CAP
     assert engage.rstrip().endswith(CAP.HONESTY_GUARD.strip())
     assert "Your system slice, PROPOSED" in engage
     # And the 12500 fallback cap, with room to spare.

@@ -967,10 +967,10 @@ def test_budget_notice_on_shortfall(caplog):
     assert len(block) == 500
     notice = R._EXECUTION_BUDGET_NOTICE
     # Base length must satisfy: block does NOT fit
-    # (base > 8000 - 502) but the notice DOES
-    # (base <= 8000 - len(notice) - 2). Aim 10 chars inside the
-    # notice-fits boundary.
-    target_base = 8000 - len(notice) - 2 - 10
+    # (base > _VOICE_PROMPT_BUDGET - 502) but the notice DOES
+    # (base <= _VOICE_PROMPT_BUDGET - len(notice) - 2). Aim 10 chars
+    # inside the notice-fits boundary.
+    target_base = R._VOICE_PROMPT_BUDGET - len(notice) - 2 - 10
     history = _sized_history(target_base)
     with caplog.at_level(logging.WARNING, logger="local_ai.conversation.reply"):
         prompt, _ = R.build_voice_prompt(
@@ -998,7 +998,7 @@ def test_budget_omit_when_notice_does_not_fit(caplog):
     block = "EXECUTION-BLOCK-MARKER " + "X" * 477
     notice = R._EXECUTION_BUDGET_NOTICE
     # Base length past the point where even the notice fits.
-    target_base = 8000 - len(notice) - 2 + 50
+    target_base = R._VOICE_PROMPT_BUDGET - len(notice) - 2 + 50
     history = _sized_history(target_base)
     with caplog.at_level(logging.WARNING, logger="local_ai.conversation.reply"):
         prompt, _ = R.build_voice_prompt(
@@ -1031,10 +1031,16 @@ def test_prompt_budget_verification():
     # the W2 gate's own local variable).
     assert re.search(r"\bMIN_HEADROOM\s*=", src) is None
     assert re.search(r"(?<!_)HEADROOM\s*=", src) is None
-    # The only [:8000] in reply.py is the extra_instructions slice.
-    assert src.count("[:8000]") == 1
-    assert "extra_instructions" in src[src.index("[:8000]") - 200:
-                                        src.index("[:8000]")]
+    # No literal [:8000] slice remains in reply.py: the
+    # extra_instructions section is capped by _EXTRA_INSTRUCTIONS_CAP
+    # (9000) via _cap_section, and the 8,000-char figure lives only
+    # in _VOICE_PROMPT_BUDGET, the Talk policy threshold for this
+    # gate. The two numbers govern different paths (W2 Talk assembly
+    # vs the meeting-frame section cap) and do not collide
+    # (founder review, 2026-11-06).
+    assert src.count("[:8000]") == 0
+    assert "_EXTRA_INSTRUCTIONS_CAP = 9000" in src
+    assert "_VOICE_PROMPT_BUDGET = 8000" in src
 
 
 # ---------------------------------------------------------------------------

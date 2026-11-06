@@ -37,7 +37,7 @@ from local_ai.council import capabilities as CAP
 from local_ai.council import meetings as MT
 from local_ai.council import steward_records as SR
 
-CAP_LIMIT = 9000
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP as CAP_LIMIT
 # Headroom re-pinned 2026-11-05 (follow-up to #324): the founder-authorized
 # disagreement insertions grew the composed engage frame to 7,967 chars,
 # leaving 33 chars of headroom. The 300-char floor cannot be met without

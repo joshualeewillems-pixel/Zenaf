@@ -34,6 +34,7 @@ No model calls anywhere.
 from __future__ import annotations
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.council import meetings as MT
 
 
@@ -139,10 +140,10 @@ def test_new_material_not_in_capped_frames():
         assert "First-meeting openness right now" not in text
         assert "I break for a cause; he breaks from a frame" not in text
     # Capped frames byte-stable under the budget test's headroom.
-    assert len(definition.engage_frame) < 8000
-    assert 8000 - len(definition.engage_frame) >= 300
-    assert len(definition.turn_frame) < 8000
-    assert 8000 - len(definition.turn_frame) >= 300
+    assert len(definition.engage_frame) < _EXTRA_INSTRUCTIONS_CAP
+    assert _EXTRA_INSTRUCTIONS_CAP - len(definition.engage_frame) >= 300
+    assert len(definition.turn_frame) < _EXTRA_INSTRUCTIONS_CAP
+    assert _EXTRA_INSTRUCTIONS_CAP - len(definition.turn_frame) >= 300
 
 
 def test_other_seats_carry_their_own_references_and_weaver_untouched():

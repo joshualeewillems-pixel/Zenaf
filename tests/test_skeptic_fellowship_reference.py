@@ -29,6 +29,7 @@ No model calls anywhere.
 from __future__ import annotations
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.council import meetings as MT
 
 
@@ -148,7 +149,7 @@ def test_new_material_not_in_capped_frames():
         assert "mark it in the margin" not in text
     # Capped frames stay within the voice builder's budget.
     assert len(definition.engage_frame) <= 7700
-    assert len(definition.turn_frame) < 8000
+    assert len(definition.turn_frame) < _EXTRA_INSTRUCTIONS_CAP
 
 
 def test_other_seats_carry_their_own_references():

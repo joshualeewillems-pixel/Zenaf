@@ -114,9 +114,9 @@ async function flush(ms: number) {
   }
 }
 
-function setInputValue(input: HTMLInputElement, value: string) {
+function setInputValue(input: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
+    window.HTMLTextAreaElement.prototype,
     'value',
   )?.set
   setter?.call(input, value)
@@ -156,7 +156,7 @@ describe('MeetingView closing batch', () => {
     await flush(30000)
     expect(container.textContent).toContain('Seven parts on this bench')
 
-    const input = container.querySelector('input') as HTMLInputElement
+    const input = container.querySelector('textarea') as HTMLTextAreaElement
     expect(input).toBeTruthy()
     await act(async () => setInputValue(input, 'Well, they could all be right at different times.'))
     const sendBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Send')
@@ -166,7 +166,7 @@ describe('MeetingView closing batch', () => {
     await flush(30000)
     expect(container.textContent).toContain('My first impression of you')
 
-    const input2 = container.querySelector('input') as HTMLInputElement
+    const input2 = container.querySelector('textarea') as HTMLTextAreaElement
     await act(async () => setInputValue(input2, "I definitely think you're understanding what I'm saying"))
     const sendBtn2 = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Send')
     await act(async () => {
@@ -262,5 +262,79 @@ describe('MeetingView user completion', () => {
     expect(container.textContent).toContain('Seven parts on this bench')
     expect(container.textContent).toContain("we've actually met now")
     expect(container.textContent).toContain('Meet again')
+  })
+})
+
+describe('MeetingView composer Enter key', () => {
+  // REGRESSION (2026-11-05, Joshua): the auto-growing composer sent on
+  // any Enter without Shift — and a phone has no Shift key, so the
+  // return key sent instead of inserting a newline, making a second
+  // paragraph impossible. Rule: on a coarse-pointer (touch) device
+  // Enter inserts a newline and only the Send button sends; on desktop
+  // Enter sends and Shift+Enter inserts a newline.
+  function stubMatchMedia(coarse: boolean) {
+    vi.stubGlobal(
+      'matchMedia',
+      (query: string) =>
+        ({
+          matches: coarse && query === '(pointer: coarse)',
+          media: query,
+          addEventListener: () => {},
+          removeEventListener: () => {},
+          addListener: () => {},
+          removeListener: () => {},
+          dispatchEvent: () => false,
+          onchange: null,
+        }) as MediaQueryList,
+    )
+  }
+
+  async function beginMeeting() {
+    await act(async () => {
+      root.render(React.createElement(MeetingView, { archetypeId: 'conductor', onClose: () => {} }))
+    })
+    await flush(100)
+    const beginBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Begin the meeting'),
+    )
+    expect(beginBtn).toBeTruthy()
+    await act(async () => {
+      beginBtn!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    await flush(30000)
+  }
+
+  function pressEnter(input: HTMLTextAreaElement) {
+    input.dispatchEvent(
+      new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+  }
+
+  it('on a touch device Enter does not send — only the Send button does', async () => {
+    stubMatchMedia(true)
+    await beginMeeting()
+    const input = container.querySelector('textarea') as HTMLTextAreaElement
+    expect(input).toBeTruthy()
+    await act(async () => setInputValue(input, 'A first line.'))
+    await act(async () => pressEnter(input))
+    await flush(100)
+    expect(turnCount).toBe(0)
+    const sendBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Send')
+    await act(async () => {
+      sendBtn!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    await flush(100)
+    expect(turnCount).toBe(1)
+  })
+
+  it('on a desktop Enter sends', async () => {
+    stubMatchMedia(false)
+    await beginMeeting()
+    const input = container.querySelector('textarea') as HTMLTextAreaElement
+    expect(input).toBeTruthy()
+    await act(async () => setInputValue(input, 'A first line.'))
+    await act(async () => pressEnter(input))
+    await flush(100)
+    expect(turnCount).toBe(1)
   })
 })

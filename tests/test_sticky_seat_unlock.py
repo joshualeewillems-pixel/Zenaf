@@ -299,4 +299,7 @@ def test_rerecord_is_idempotent_and_recompletion_reopens(ve_ctx):
     assert all(_lit(uid)[ref] == "meet" for ref in SIX)
     _set_task(uid, "conductor", 0, "Done")
     assert all(_lit(uid)[ref] == "meet" for ref in SIX)
-    assert _lit(uid)["conductor"] == "meet"
+    # The conductor is mid-chain after recompletion ([Done, Todo, Todo,
+    # Todo]) and carries no marker — "meet" lights only while a seat's
+    # first keystone is undone (deliberate semantics change, 2026-11-05).
+    assert "conductor" not in _lit(uid)

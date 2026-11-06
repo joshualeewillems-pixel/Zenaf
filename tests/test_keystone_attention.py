@@ -7,7 +7,9 @@ route:
 - no initiative seeded → seeded=False, no markers, no error
 - fresh account → ONLY the Conductor (entry seat), reason "intro"
 - conductor's first keystone Done → the other six light up ("meet"),
-  conductor itself becomes "meet" (mid-chain)
+  conductor itself goes dark until recognition (a mid-chain seat
+  carries no marker — "meet" lights only while a seat's first
+  keystone is undone)
 - a seat with keystones 1–3 Done and 4 open → reason "recognition"
 - a seat with all four Done → no marker
 - per-user isolation
@@ -100,10 +102,16 @@ def test_conductor_intro_done_lights_the_rest(ve_ctx):
     _complete(user["id"], "conductor", 1)
     state = keystone_seeding.keystone_attention(user["id"])
     lit = _lit(state)
-    # The other six now carry "meet"; the conductor is mid-chain → "meet".
+    # The other six now carry "meet"; the conductor is mid-chain and
+    # goes dark until recognition — a completed first meeting must not
+    # keep "!" over the seat. (Deliberate semantics change, 2026-11-05:
+    # "meet" lights only while a seat's first keystone is undone.)
     for ref in SEAT_REFS:
-        assert lit[ref] == "meet", ref
-    assert len(lit) == 7
+        if ref == "conductor":
+            assert ref not in lit, ref
+        else:
+            assert lit[ref] == "meet", ref
+    assert len(lit) == 6
 
 
 def test_recognition_when_only_keystone_four_remains(ve_ctx):

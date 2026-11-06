@@ -122,9 +122,9 @@ function sendButton(): HTMLButtonElement {
   return btn as HTMLButtonElement
 }
 
-function setInputValue(input: HTMLInputElement, value: string) {
+function setInputValue(input: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
+    window.HTMLTextAreaElement.prototype,
     'value',
   )?.set
   setter?.call(input, value)
@@ -132,7 +132,7 @@ function setInputValue(input: HTMLInputElement, value: string) {
 }
 
 function typeText(text: string) {
-  const input = container.querySelector('input')
+  const input = container.querySelector('textarea')
   if (!input) throw new Error('composer input not found')
   act(() => setInputValue(input, text))
 }

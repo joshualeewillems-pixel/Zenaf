@@ -21,8 +21,9 @@ fake generate_fn. Covers the implementation plan's §9:
       0 proposals — block still renders, thin, no invention)
 
 Conventions: ALICE = "u1" (owner), BOB = "u2" (other user).
-Dates are relative to TODAY = 2026-11-05 so due/overdue/stall
-boundaries are stable. Followthrough growth constants are
+Dates are relative to TODAY, the live UTC date (matching the
+implementation's datetime.now(timezone.utc)), so due/overdue/stall
+boundaries are stable. A pinned date would drift at UTC midnight. Followthrough growth constants are
 APPROACH_DAYS=3, STALL_DAYS=7, GROWTH_STALL_DAYS=14.
 """
 
@@ -30,7 +31,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -47,7 +48,7 @@ from local_ai.vision_execution import storage as S
 
 ALICE = "u1"
 BOB = "u2"
-TODAY = date(2026, 11, 5)
+TODAY = datetime.now(timezone.utc).date()
 
 
 def _iso(d: date) -> str:
@@ -264,13 +265,13 @@ def test_retrieval_full_block_all_kinds(services, ve_conn, conv_store):
     assert block is not None
     assert block.startswith(E.BEGIN_FENCE)
     assert block.endswith(E.END_FENCE)
-    assert "• FOCUS: Ship the MVP — In Progress, due 2026-11-07" in block
-    assert "• DEPENDENCY: Vendor reply — Todo, due 2026-11-06" in block
+    assert f"• FOCUS: Ship the MVP — In Progress, due {_iso(TODAY + timedelta(days=2))}" in block
+    assert f"• DEPENDENCY: Vendor reply — Todo, due {_iso(TODAY + timedelta(days=1))}" in block
     assert "• COMMITMENT: Ship by Friday" in block
     assert "• PROPOSAL: Add the onboarding tour" in block
     # Both rows are due within APPROACH_DAYS=3.
-    assert "• DUE 2026-11-07: Ship the MVP" in block
-    assert "• DUE 2026-11-06: Vendor reply" in block
+    assert f"• DUE {_iso(TODAY + timedelta(days=2))}: Ship the MVP" in block
+    assert f"• DUE {_iso(TODAY + timedelta(days=1))}: Vendor reply" in block
     # Structured records stay available in-process, not only as text.
     records = E.retrieve_evidence(ALICE, E.BEAR_VIEW, "task", node["id"], ve=ve, ft=ft)
     assert {r.kind for r in records} == {
@@ -336,7 +337,7 @@ def test_demand_classification_overdue_due_soon_stalled(services, ve_conn):
     ve_conn.commit()
 
     block = _bear_block(ALICE, "task", overdue["id"], services)
-    assert "• OVERDUE 2026-11-03: Overdue item" in block
+    assert f"• OVERDUE {_iso(TODAY - timedelta(days=2))}: Overdue item" in block
     # The overdue row is also stalled (10 days) — both notes appear.
     assert "• STALLED 10 days: Overdue item" in block
 
@@ -439,7 +440,7 @@ def test_compute_nudges_never_called(monkeypatch, services, ve_conn):
     )
     block = _bear_block(ALICE, "task", node["id"], services)
     assert block is not None
-    assert "• DUE 2026-11-06: Ship it" in block
+    assert f"• DUE {_iso(TODAY + timedelta(days=1))}: Ship it" in block
 
 
 def test_view_registry_audit_rejects_unknown_branch_and_kind(monkeypatch):
@@ -762,9 +763,9 @@ def test_live_sparsity_block_renders_thin_without_invention(services, ve_conn):
     )
     block = _bear_block(ALICE, "task", node["id"], services)
     assert block is not None
-    assert "• FOCUS: Lonely node — Todo, due 2026-11-06" in block
+    assert f"• FOCUS: Lonely node — Todo, due {_iso(TODAY + timedelta(days=1))}" in block
     assert "• DEPENDENCY: Dep one — Todo" in block
-    assert "• DUE 2026-11-06: Lonely node" in block
+    assert f"• DUE {_iso(TODAY + timedelta(days=1))}: Lonely node" in block
     assert "COMMITMENT" not in block
     assert "PROPOSAL" not in block
     assert "no commitment" not in block.lower()

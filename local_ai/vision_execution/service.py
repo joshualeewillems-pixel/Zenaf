@@ -518,30 +518,32 @@ def delete_project(project_id: str, user_id: str):
     """Delete a project (W3 §8.2: unlink-first two-step, founder
     verdict + refinement 2026-11-06).
 
-    The cascade deletes the project's tasks, so the unlink covers
-    them too: a task deletion must never permanently strand an open
-    commitment, whichever path deletes the task. Order + failure
-    behavior, same as delete_task: (1) unlink commitments for every
-    task in the project — aborts before any VE write if it raises;
-    (2) delete the project — a failure after step 1 leaves the
-    commitments unlinked (temporarily detached, safe and recoverable
-    — they resurface as commitment_open on the next compute; retry
-    is idempotent); (3) best-effort nudge resolution after the
-    delete commits (project row + each cascade-deleted task row) —
-    a failure here is logged and does not fail the delete.
+    C1a §6: the storage layer no longer cascades — S.delete_project
+    refuses while the project has tasks (ProjectHasTasks 409), so a
+    storage-level cascade would orphan the tasks' node counterparts.
+    The service therefore deletes the tasks first, each via
+    delete_task (which keeps the W3 unlink-first two-step per task:
+    unlink, VE delete, nudge resolution), then deletes the now-empty
+    project. Order + failure behavior: a task delete that raises
+    aborts the project delete (that task stays, so the storage guard
+    refuses the project too); a failure after a task is deleted
+    leaves that task gone and its commitments unlinked (temporarily
+    detached, safe and recoverable — they resurface as
+    commitment_open on the next compute; retry is idempotent).
+    After the project delete commits, the project nudge is resolved
+    best-effort (each task nudge was already resolved by its own
+    delete_task).
     """
     if S.get_project(project_id, user_id) is None:
         return False
     ft_store = _followthrough_store()
     task_ids = [t["id"] for t in S.list_tasks(user_id, project_id)]
     for tid in task_ids:
-        ft_store.unlink_commitments_for_task(user_id, tid)
+        delete_task(tid, user_id)
     deleted = S.delete_project(project_id, user_id)
     if deleted:
         try:
             _resolve_deleted_nudges(user_id, "project", project_id, ft_store)
-            for tid in task_ids:
-                _resolve_deleted_nudges(user_id, "task", tid, ft_store)
         except Exception:
             logger.exception(
                 "W3 deletion cleanup: nudge resolution failed after project "

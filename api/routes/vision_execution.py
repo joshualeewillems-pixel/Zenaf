@@ -785,6 +785,37 @@ def learning_records_export(
     return LC.inspect_learning_buffer(offset=offset, limit=limit, order=order)  # type: ignore[arg-type]
 
 
+# --- C1a §5.4: migration-guard errors → HTTP statuses -------------------
+# SubtreeWriteFrozen (423) is the write-freeze refusal; the other guard
+# refusals are 409s. Unrecognized exceptions are re-raised (never
+# mapped). Each guard-scope handler below catches these BEFORE its
+# ValueError clause so a guard refusal is never flattened to a 400.
+_MIGRATION_ERROR_TYPES = (
+    VEStorage.MigratedNodeWriteRefused,
+    VEStorage.SubtreeWriteFrozen,
+    VEStorage.MigrationPaused,
+    VEStorage.UnresolvedFlipAttempt,
+    VEStorage.ProjectHasTasks,
+)
+
+
+def _migration_error(e: Exception) -> HTTPException:
+    """Map a C1a migration-guard refusal to its HTTP status (§5.4)."""
+    if isinstance(e, VEStorage.SubtreeWriteFrozen):
+        return HTTPException(status_code=423, detail=str(e))
+    if isinstance(
+        e,
+        (
+            VEStorage.MigratedNodeWriteRefused,
+            VEStorage.MigrationPaused,
+            VEStorage.UnresolvedFlipAttempt,
+            VEStorage.ProjectHasTasks,
+        ),
+    ):
+        return HTTPException(status_code=409, detail=str(e))
+    raise e
+
+
 # --- Ideas ---
 @router.get("/ideas")
 def list_ideas(current_user: dict = Depends(get_current_user)):
@@ -803,6 +834,8 @@ def get_idea(idea_id: str, current_user: dict = Depends(get_current_user)):
 def create_idea(body: M.IdeaCreate, current_user: dict = Depends(get_current_user)):
     try:
         return S.create_idea(body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -811,6 +844,8 @@ def create_idea(body: M.IdeaCreate, current_user: dict = Depends(get_current_use
 def update_idea(idea_id: str, body: M.IdeaUpdate, current_user: dict = Depends(get_current_user)):
     try:
         out = S.update_idea(idea_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if out is None:
@@ -820,8 +855,11 @@ def update_idea(idea_id: str, body: M.IdeaUpdate, current_user: dict = Depends(g
 
 @router.delete("/ideas/{idea_id}")
 def delete_idea(idea_id: str, current_user: dict = Depends(get_current_user)):
-    if not S.delete_idea(idea_id, current_user["id"]):
-        raise HTTPException(status_code=404, detail="Idea not found")
+    try:
+        if not S.delete_idea(idea_id, current_user["id"]):
+            raise HTTPException(status_code=404, detail="Idea not found")
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     return {"ok": True}
 
 
@@ -854,6 +892,8 @@ def promote_idea(idea_id: str, body: PromoteIdeaBody, current_user: dict = Depen
     """
     try:
         return S.promote_idea(idea_id, body.target_level, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         msg = str(e)
         raise HTTPException(
@@ -893,6 +933,8 @@ def create_idea_checklist(
     try:
         items = [it.model_dump() for it in body.items]
         return S.create_checklist_items_batch(idea_id, items, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         msg = str(e)
         raise HTTPException(
@@ -935,6 +977,8 @@ def patch_checklist_item(
             person_id=body.person_id, asset_id=body.asset_id,
             _clear_person=body.clear_person, _clear_asset=body.clear_asset,
         )
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if out is None:
@@ -945,8 +989,11 @@ def patch_checklist_item(
 @router.delete("/checklist-items/{item_id}")
 def delete_checklist_item(item_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a checklist item and its descendants (cascade)."""
-    if not S.delete_checklist_item(item_id, current_user["id"]):
-        raise HTTPException(status_code=404, detail="Checklist item not found")
+    try:
+        if not S.delete_checklist_item(item_id, current_user["id"]):
+            raise HTTPException(status_code=404, detail="Checklist item not found")
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     return {"ok": True}
 
 
@@ -962,6 +1009,8 @@ def add_checklist_dependency(
     Rejects self-dependencies and anything that would create a cycle."""
     try:
         return S.add_checklist_dependency(item_id, body.depends_on_id, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         msg = str(e)
         raise HTTPException(
@@ -974,8 +1023,11 @@ def add_checklist_dependency(
 def remove_checklist_dependency(
     item_id: str, depends_on_id: str, current_user: dict = Depends(get_current_user)
 ):
-    if not S.remove_checklist_dependency(item_id, depends_on_id, current_user["id"]):
-        raise HTTPException(status_code=404, detail="Dependency not found")
+    try:
+        if not S.remove_checklist_dependency(item_id, depends_on_id, current_user["id"]):
+            raise HTTPException(status_code=404, detail="Dependency not found")
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     return {"ok": True}
 
 
@@ -1052,6 +1104,8 @@ def get_initiative(initiative_id: str, current_user: dict = Depends(get_current_
 def create_initiative(body: M.InitiativeCreate, current_user: dict = Depends(get_current_user)):
     try:
         return S.create_initiative(body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1060,6 +1114,8 @@ def create_initiative(body: M.InitiativeCreate, current_user: dict = Depends(get
 def update_initiative(initiative_id: str, body: M.InitiativeUpdate, current_user: dict = Depends(get_current_user)):
     try:
         out = S.update_initiative(initiative_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if out is None:
@@ -1142,6 +1198,8 @@ def create_initiative_execution_step(
         raise HTTPException(status_code=404, detail="Initiative not found")
     try:
         return S.create_execution_step_for_initiative(initiative_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise _http_from_execution_value_error(e) from e
 
@@ -1154,6 +1212,8 @@ def materialize_initiative_execution_steps(
         raise HTTPException(status_code=404, detail="Initiative not found")
     try:
         return S.materialize_execution_steps_for_initiative(initiative_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise _http_from_execution_value_error(e) from e
 
@@ -1166,6 +1226,8 @@ def reorder_initiative_execution_steps(
         raise HTTPException(status_code=404, detail="Initiative not found")
     try:
         return S.reorder_execution_steps_for_initiative(initiative_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -1185,6 +1247,8 @@ def create_project_execution_step(
         raise HTTPException(status_code=404, detail="Project not found")
     try:
         return S.create_execution_step_for_project(project_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise _http_from_execution_value_error(e) from e
 
@@ -1197,6 +1261,8 @@ def materialize_project_execution_steps(
         raise HTTPException(status_code=404, detail="Project not found")
     try:
         return S.materialize_execution_steps_for_project(project_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise _http_from_execution_value_error(e) from e
 
@@ -1209,6 +1275,8 @@ def reorder_project_execution_steps(
         raise HTTPException(status_code=404, detail="Project not found")
     try:
         return S.reorder_execution_steps_for_project(project_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
@@ -1217,6 +1285,8 @@ def reorder_project_execution_steps(
 def patch_execution_step(step_id: str, body: M.ExecutionStepUpdate, current_user: dict = Depends(get_current_user)):
     try:
         out = S.update_execution_step(step_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     if out is None:
@@ -1226,15 +1296,21 @@ def patch_execution_step(step_id: str, body: M.ExecutionStepUpdate, current_user
 
 @router.delete("/execution-steps/{step_id}")
 def delete_execution_step_route(step_id: str, current_user: dict = Depends(get_current_user)):
-    if not S.delete_execution_step(step_id, current_user["id"]):
-        raise HTTPException(status_code=404, detail="Execution step not found")
+    try:
+        if not S.delete_execution_step(step_id, current_user["id"]):
+            raise HTTPException(status_code=404, detail="Execution step not found")
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     return {"ok": True}
 
 
 @router.delete("/initiatives/{initiative_id}")
 def delete_initiative(initiative_id: str, current_user: dict = Depends(get_current_user)):
-    if not S.delete_initiative(initiative_id, current_user["id"]):
-        raise HTTPException(status_code=404, detail="Initiative not found")
+    try:
+        if not S.delete_initiative(initiative_id, current_user["id"]):
+            raise HTTPException(status_code=404, detail="Initiative not found")
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     return {"ok": True}
 
 
@@ -1401,6 +1477,8 @@ def project_suggested_work(project_id: str, current_user: dict = Depends(get_cur
 def create_project(body: M.ProjectCreate, current_user: dict = Depends(get_current_user)):
     try:
         return S.create_project(body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1409,6 +1487,8 @@ def create_project(body: M.ProjectCreate, current_user: dict = Depends(get_curre
 def update_project(project_id: str, body: M.ProjectUpdate, current_user: dict = Depends(get_current_user)):
     try:
         out = S.update_project(project_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if out is None:
@@ -1418,8 +1498,11 @@ def update_project(project_id: str, body: M.ProjectUpdate, current_user: dict = 
 
 @router.delete("/projects/{project_id}")
 def delete_project(project_id: str, current_user: dict = Depends(get_current_user)):
-    if not S.delete_project(project_id, current_user["id"]):
-        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        if not S.delete_project(project_id, current_user["id"]):
+            raise HTTPException(status_code=404, detail="Project not found")
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     return {"ok": True}
 
 
@@ -1444,6 +1527,8 @@ def get_task(task_id: str, current_user: dict = Depends(get_current_user)):
 def create_task(body: M.TaskCreate, current_user: dict = Depends(get_current_user)):
     try:
         return S.create_task(body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -1452,6 +1537,8 @@ def create_task(body: M.TaskCreate, current_user: dict = Depends(get_current_use
 def update_task(task_id: str, body: M.TaskUpdate, current_user: dict = Depends(get_current_user)):
     try:
         out = S.update_task(task_id, body, current_user["id"])
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     if out is None:
@@ -1520,6 +1607,8 @@ def record_task_proposal(body: TaskProposalRecordBody, current_user: dict = Depe
         return VEStorage.record_task_proposal(
             current_user["id"], body.model_dump(), conversation_store=_conversation_store()
         )
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
         raise _proposal_error(e)
 
@@ -1545,6 +1634,8 @@ def update_task_proposal(proposal_id: str, body: TaskProposalPatchBody, current_
         return VEStorage.update_task_proposal(
             current_user["id"], proposal_id, body.model_dump(exclude_unset=True)
         )
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
         raise _proposal_error(e)
 
@@ -1553,6 +1644,8 @@ def update_task_proposal(proposal_id: str, body: TaskProposalPatchBody, current_
 def approve_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
     try:
         return VEStorage.approve_task_proposal(current_user["id"], proposal_id)
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
         raise _proposal_error(e)
 
@@ -1561,14 +1654,19 @@ def approve_task_proposal(proposal_id: str, current_user: dict = Depends(get_cur
 def decline_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
     try:
         return VEStorage.decline_task_proposal(current_user["id"], proposal_id)
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     except (ValueError, VEStorage.ProposalNotFound, VEStorage.ProposalConflict) as e:
         raise _proposal_error(e)
 
 
 @router.delete("/tasks/{task_id}")
 def delete_task(task_id: str, current_user: dict = Depends(get_current_user)):
-    if not S.delete_task(task_id, current_user["id"]):
-        raise HTTPException(status_code=404, detail="Task not found")
+    try:
+        if not S.delete_task(task_id, current_user["id"]):
+            raise HTTPException(status_code=404, detail="Task not found")
+    except _MIGRATION_ERROR_TYPES as e:
+        raise _migration_error(e) from e
     return {"ok": True}
 
 

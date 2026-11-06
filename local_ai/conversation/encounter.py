@@ -2814,6 +2814,19 @@ _MAVERICK_GUIDANCE = (
     )
 
 
+#: Fox's fallback line (read-back follow-up, 2026-11-06): the
+#: Maverick had none — the generic base sets fallback_line="" and
+#: the k1 builder copied it, so an empty/pass reply on Fox spoke
+#: nothing this turn. Same pattern as the other seats' lines
+#: ("Forgive me — … Say it again, … so I … it properly"), in
+#: Fox's voice: the mishap is a slip through the hedge, the
+#: recovery is catching it.
+_MAVERICK_FALLBACK_LINE = (
+    "Forgive me — that one slipped through the hedge. Say it again, "
+    "so I catch it properly."
+)
+
+
 def _weaver_allusion_pool(script: MT.MeetingScript) -> tuple[AllusionCue, ...]:
     """All six fellowship allusions as runtime cues — the locked
     lines from the debt registry, their fixtures from
@@ -3844,7 +3857,7 @@ def build_maverick_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
         pulled_where_template=base.pulled_where_template,
         reveal=base.reveal,
         wrap_line=base.wrap_line,
-        fallback_line=base.fallback_line,
+        fallback_line=_MAVERICK_FALLBACK_LINE,
         allusion_pool=base.allusion_pool,
         capability_context=base.capability_context,
         fellowship_reference=(

@@ -25,6 +25,7 @@ from local_ai.fellowship.evidence import build_bear_evidence_block
 from local_ai.strand_interviews.boundaries import recognize_explicit_boundary
 from local_ai.strand_interviews.guidance import strand_guidance_block
 from local_ai.strand_interviews.keys import validate_strand_key
+from local_ai.vision_execution import execution_context as _execution_context
 from local_ai.vision_execution import obligations as _obligations
 
 from .encounter import _WEAVER_NATURAL_INTENTION
@@ -332,6 +333,20 @@ class ConversationService:
             logger.exception("invitations: join context lookup failed")
             invitation_context = None
 
+        # W2 factual execution backflow: all seven seats, ordinary Talk
+        # only. Server-side, from the caller's own scoped tasks — the
+        # client cannot inject or forge execution state. A failed seed
+        # read yields the failure notice, an empty seed set yields no
+        # block; the assembler never raises, so no try/except is needed
+        # here — mirroring the obligation call it sits next to. The
+        # kill switch (off in production, on in staging) means no block
+        # at all; meetings and the voice route never pass one.
+        execution_context = None
+        if _execution_context.execution_context_enabled():
+            execution_context, _execution_status = (
+                _execution_context.build_execution_context(user_id, conversation_id)
+            )
+
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -343,6 +358,8 @@ class ConversationService:
             obligation_context=obligation_context,
             evidence_context=evidence_context,
             invitation_context=invitation_context,
+            execution_context=execution_context,
+            conversation_id=conversation_id,
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,
             timing_label="talk",

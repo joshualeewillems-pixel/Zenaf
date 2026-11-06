@@ -4933,6 +4933,31 @@ def get_task(task_id: str, user_id: str | None = None) -> dict[str, Any] | None:
     return M.row_to_task(tuple(row)) if row else None
 
 
+def list_tasks_by_origin_conversation(
+    user_id: str, conversation_id: str, limit: int = 11
+) -> list[dict[str, Any]]:
+    """W2 seed query: tasks whose origin is this conversation.
+
+    Owner-scoped, same 24-column SELECT list and ``row_to_task``
+    mapping as ``list_tasks`` so no second mapping can drift.
+    ``ORDER BY updated_at DESC, id ASC`` (most recently touched
+    first, id as the deterministic tiebreak) with ``LIMIT 11``: the
+    eleventh row is read only to detect seed overflow and is never
+    rendered. Legacy/manual rows carry NULL origins and never seed.
+    ``user_id`` is required (no default); an empty owner raises.
+    """
+    _require_owner_id(user_id)
+    conn = get_connection()
+    cur = conn.execute(
+        "SELECT id, project_id, parent_task_id, title, description, assignee_id, status, priority, "
+        "estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, created_at, updated_at, seat_ref, timeframe_commitment, origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat "
+        "FROM tasks WHERE user_id = ? AND origin_conversation_id = ? "
+        "ORDER BY updated_at DESC, id ASC LIMIT ?",
+        (user_id, conversation_id, max(1, int(limit))),
+    )
+    return [M.row_to_task(tuple(r)) for r in cur.fetchall()]
+
+
 def _validate_timeframe_commitment(value: str | None) -> None:
     """Closed value set for the timeframe dimension: None (unspecified)
     or "tentative". Anything else is rejected, never stored — a new
@@ -5106,6 +5131,15 @@ def _migrate_task_proposals(conn: sqlite3.Connection) -> None:
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_task_proposals_user_parent "
         "ON task_proposals (user_id, parent_task_id, state)"
+    )
+    # W2: owner-scoped proposal reverse lookup by created task (the
+    # execution block's provenance read). No (user_id, created_task_id)
+    # index existed at 8761278; the lookup is bounded (one per rendered
+    # task, at most 10 per block) but the index keeps it a seek, not a
+    # scan.
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_task_proposals_user_created_task "
+        "ON task_proposals (user_id, created_task_id)"
     )
     for column in (
         "evidence_quote",
@@ -5532,6 +5566,30 @@ def list_task_proposals_by_parent(
             "ORDER BY created_at ASC, rowid ASC LIMIT ?",
             (user_id, parent_task_id, state, limit),
         )
+    return [_proposal_row_to_dict(tuple(r)) for r in cur.fetchall()]
+
+
+def get_proposals_by_created_task(
+    user_id: str, created_task_id: str
+) -> list[dict[str, Any]]:
+    """W2 provenance read: proposals that created one task.
+
+    Owner-scoped reverse lookup by ``created_task_id``. Returns every
+    matching row (normally zero or one); the caller must never choose
+    between multiple matches — ambiguity degrades to weaker wording.
+    ``user_id`` is required (no default); an empty owner raises.
+    ``created_task_id`` empty returns [] (no row can match it).
+    """
+    _require_owner_id(user_id)
+    if not created_task_id:
+        return []
+    conn = get_connection()
+    cur = conn.execute(
+        "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+        "WHERE user_id = ? AND created_task_id = ? "
+        "ORDER BY created_at ASC, rowid ASC",
+        (user_id, created_task_id),
+    )
     return [_proposal_row_to_dict(tuple(r)) for r in cur.fetchall()]
 
 

@@ -325,6 +325,82 @@ def _trained_sections(user_id: str, weights: dict[str, float]) -> tuple[list[str
         return [], False
 
 
+# ---------------------------------------------------------------------------
+# W2 execution-context budget gate (verdict §5).
+#
+# Finding, verified at 8761278: NO enforced overall character cap
+# exists on the assembled Talk prompt. build_voice_prompt appends
+# sections in fixed order with per-section caps only; generate_voice_reply
+# passes the joined prompt to the provider with no truncation; no
+# MIN_HEADROOM / HEADROOM constant exists in local_ai/. The 8,000-char
+# figure belongs to the first-meeting steward-frame records
+# (pre-generated, capped at generation time), not to Talk assembly.
+# The 8,000-char budget below is therefore a POLICY threshold adopted
+# from that frame cap: the execution block yields to it (budget notice,
+# then omission with a warning log line) rather than displacing
+# required character instructions or the [-10:] history window. The
+# block itself is already bounded at 2,000 chars by its builder, so
+# the gate only ever fires on genuinely long prompts.
+# ---------------------------------------------------------------------------
+
+_VOICE_PROMPT_BUDGET = 8000
+
+_EXECUTION_BUDGET_NOTICE = (
+    "Execution records were omitted from this turn for length. Their absence "
+    "from this context does not indicate that no tasks exist."
+)
+
+
+def _insert_execution_block(prompt: list[str], block: str) -> None:
+    """Insert the execution section as the last context section,
+    immediately before history (or before the trailing User line when
+    there is no history section)."""
+    if "Conversation so far:" in prompt:
+        idx = prompt.index("Conversation so far:") - 1  # the "" separator
+    else:
+        idx = len(prompt) - 2  # before the "User: ..." line
+    prompt[idx:idx] = ["", block]
+
+
+def _apply_execution_context(
+    prompt: list[str], execution_context: str, conversation_id: str | None
+) -> None:
+    """Include the execution block, the budget notice, or nothing.
+
+    The gate is computed on the fully assembled prompt (all required
+    sections + history + trailing lines), so the block can never
+    displace them: it is included only when it fits in the headroom
+    left, replaced by the budget notice when only the notice fits,
+    and omitted entirely otherwise. Cases 2 and 3 emit one structured
+    warning log line (conversation id, block length, headroom). No
+    new table or persistence.
+    """
+    block = execution_context.strip()
+    base_len = len("\n".join(prompt))
+    headroom = _VOICE_PROMPT_BUDGET - base_len
+    # Joining ["", block] into the prompt adds exactly len(block) + 2
+    # characters (one newline before each of the two new elements).
+    if len(block) + 2 <= headroom:
+        _insert_execution_block(prompt, block)
+    elif len(_EXECUTION_BUDGET_NOTICE) + 2 <= headroom:
+        _insert_execution_block(prompt, _EXECUTION_BUDGET_NOTICE)
+        logger.warning(
+            "execution_context budget: block omitted for length "
+            "conversation_id=%s block_chars=%d headroom=%d",
+            conversation_id or "unknown",
+            len(block),
+            headroom,
+        )
+    else:
+        logger.warning(
+            "execution_context budget: block and notice omitted for length "
+            "conversation_id=%s block_chars=%d headroom=%d",
+            conversation_id or "unknown",
+            len(block),
+            headroom,
+        )
+
+
 def build_voice_prompt(
     user_id: str,
     archetype_id: str,
@@ -341,6 +417,11 @@ def build_voice_prompt(
     obligation_context: str | None = None,
     evidence_context: str | None = None,
     invitation_context: str | None = None,
+    execution_context: str | None = None,
+    # Conversation id, for the execution-budget warning log only.
+    # None on paths that never carry an execution block (meetings,
+    # voice route); the log only fires when a block was supplied.
+    conversation_id: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     """Assemble the prompt for one voice turn. Returns (lines, meta).
 
@@ -805,6 +886,15 @@ def build_voice_prompt(
     prompt.append(f"User: {message}")
     prompt.append(f"{display_name}:")
 
+    if execution_context:
+        # W2 factual execution backflow: the block is the last context
+        # section before history, so it is inserted here — after the
+        # full prompt is assembled — rather than appended in sequence.
+        # The budget gate needs the true total length (all required
+        # sections + the full [-10:] history window + the trailing
+        # lines) before it can decide include / notice / omit.
+        _apply_execution_context(prompt, execution_context, conversation_id)
+
     meta = {
         "archetype_id": arch_id,
         "display_name": display_name,
@@ -832,6 +922,8 @@ def generate_voice_reply(
     obligation_context: str | None = None,
     evidence_context: str | None = None,
     invitation_context: str | None = None,
+    execution_context: str | None = None,
+    conversation_id: str | None = None,
     # Provider-timing label for the one log line per call (latency
     # instrumentation only): "talk" for ordinary Talk turns,
     # "meeting" for first-meeting turns. The default covers the
@@ -855,6 +947,8 @@ def generate_voice_reply(
         obligation_context=obligation_context,
         evidence_context=evidence_context,
         invitation_context=invitation_context,
+        execution_context=execution_context,
+        conversation_id=conversation_id,
     )
     gen = generate_fn or _default_generate
     # Provider-timing instrumentation (durations + labels only; no

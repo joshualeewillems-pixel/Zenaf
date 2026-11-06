@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
+import { useAutoGrowTextarea } from '../components/useAutoGrowTextarea'
 import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
 import TaskProposalCards from './TaskProposalCards'
@@ -239,6 +240,7 @@ export default function CouncilChat({
     inputRef.current = v
     setInput(v)
   }
+  const composerRef = useAutoGrowTextarea(input)
   // Auth change while mounted: the provider purges the store, so the
   // composer must not keep displaying the previous user's text.
   const draftUserRef = useRef<string | null | undefined>(draftUserId)
@@ -834,7 +836,8 @@ export default function CouncilChat({
           </div>
 
           <div className="flex gap-2">
-            <input
+            <textarea
+              ref={composerRef}
               value={input}
               onChange={(e) => {
                 const v = e.target.value
@@ -869,14 +872,15 @@ export default function CouncilChat({
                     : `Talk to ${activeName}…`
               }
               maxLength={2000}
+              rows={1}
               aria-label={councilMode ? 'Message the whole council' : `Message ${activeName}`}
-              className="flex-1 min-w-0 bg-stone-950 border border-stone-700 rounded-full px-4 min-h-[44px] text-sm text-stone-200 outline-none focus:border-amber-500/60"
+              className="flex-1 min-w-0 resize-none overflow-y-auto bg-stone-950 border border-stone-700 rounded-2xl px-4 py-2.5 min-h-[44px] text-sm text-stone-200 outline-none focus:border-amber-500/60"
             />
             <button
               type="button"
               onClick={send}
               disabled={sendDisabled}
-              className="shrink-0 min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
+              className="shrink-0 self-end min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
             >
               Send
             </button>

@@ -207,6 +207,12 @@ def keystone_attention(user_id: str) -> dict[str, Any]:
     seat_unlocks keeps its marker even after the entry seat's task
     returns to Todo. An unseeded user gets seeded=False with no
     markers lit.
+
+    Marker rules: "intro" while the entry seat's first keystone is
+    undone; "meet" only while a seat's own first keystone is undone
+    (a mid-chain seat — intro Done, chain incomplete — carries no
+    marker until the recognition stage); "recognition" when keystones
+    1-3 are Done and the 4th is pending.
     """
     markers: dict[str, dict[str, Any]] = {
         seat["seat_ref"]: {"attention": False, "reason": None} for seat in KD.SEATS
@@ -258,7 +264,12 @@ def keystone_attention(user_id: str) -> dict[str, Any]:
             continue  # conductor first — the others wait for the intro
         elif len(done) >= 4 and all(done[:3]) and not done[3]:
             markers[ref] = {"attention": True, "reason": "recognition"}
-        else:
+        elif not done[0]:
+            # "meet" lights only while the seat's first keystone is
+            # undone. Once the intro is Done the seat goes dark until
+            # the recognition stage — a mid-chain seat carries no
+            # marker (a completed first meeting must not keep "!"
+            # over the seat until the whole chain is Done).
             markers[ref] = {"attention": True, "reason": "meet"}
 
     return {"seeded": True, "markers": markers}

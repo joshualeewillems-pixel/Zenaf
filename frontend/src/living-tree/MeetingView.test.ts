@@ -114,9 +114,9 @@ async function flush(ms: number) {
   }
 }
 
-function setInputValue(input: HTMLInputElement, value: string) {
+function setInputValue(input: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
+    window.HTMLTextAreaElement.prototype,
     'value',
   )?.set
   setter?.call(input, value)
@@ -156,7 +156,7 @@ describe('MeetingView closing batch', () => {
     await flush(30000)
     expect(container.textContent).toContain('Seven parts on this bench')
 
-    const input = container.querySelector('input') as HTMLInputElement
+    const input = container.querySelector('textarea') as HTMLTextAreaElement
     expect(input).toBeTruthy()
     await act(async () => setInputValue(input, 'Well, they could all be right at different times.'))
     const sendBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Send')
@@ -166,7 +166,7 @@ describe('MeetingView closing batch', () => {
     await flush(30000)
     expect(container.textContent).toContain('My first impression of you')
 
-    const input2 = container.querySelector('input') as HTMLInputElement
+    const input2 = container.querySelector('textarea') as HTMLTextAreaElement
     await act(async () => setInputValue(input2, "I definitely think you're understanding what I'm saying"))
     const sendBtn2 = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Send')
     await act(async () => {

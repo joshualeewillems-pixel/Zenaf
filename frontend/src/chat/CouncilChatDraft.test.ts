@@ -146,15 +146,15 @@ function renderProviderOnly() {
   })
 }
 
-function composer(): HTMLInputElement {
-  const input = container.querySelector('input')
+function composer(): HTMLTextAreaElement {
+  const input = container.querySelector('textarea')
   if (!input) throw new Error('composer input not found')
   return input
 }
 
-function setInputValue(input: HTMLInputElement, value: string) {
+function setInputValue(input: HTMLTextAreaElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLInputElement.prototype,
+    window.HTMLTextAreaElement.prototype,
     'value',
   )?.set
   setter?.call(input, value)
@@ -305,7 +305,7 @@ describe('adoption is a move (C4)', () => {
     renderWithStore(sheet(A, null))
     await flush()
     // No composer until a seat is picked; chips are always visible.
-    expect(container.querySelector('input')).toBeNull()
+    expect(container.querySelector('textarea')).toBeNull()
     await click(chip('mentor'))
     expect(composer().value).toBe('typed before picking')
     expect(storeGet(A, 'mentor')).toBe('typed before picking')

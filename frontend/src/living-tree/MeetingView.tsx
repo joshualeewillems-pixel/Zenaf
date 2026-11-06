@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
+import { useAutoGrowTextarea } from '../components/useAutoGrowTextarea'
 import { normalizeWeave, WeaveText, voiceColor } from '../components/VoiceWeave'
 
 /* ------------------------------------------------------------------ */
@@ -109,6 +110,7 @@ export function MeetingView({
   const [state, setState] = useState<MeetingState | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [input, setInput] = useState('')
+  const composerRef = useAutoGrowTextarea(input)
   const [busy, setBusy] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
 
@@ -419,7 +421,8 @@ export function MeetingView({
         {inRoom && state.status === 'active' && (
           <div className="mtg-foot">
             <div className="flex gap-2">
-              <input
+              <textarea
+                ref={composerRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -430,14 +433,15 @@ export function MeetingView({
                 }}
                 placeholder="Answer in your own words… (or “pass”)"
                 maxLength={2000}
+                rows={1}
                 aria-label="Your reply in the meeting"
-                className="flex-1 min-w-0 bg-stone-950 border border-stone-700 rounded-full px-4 min-h-[44px] text-sm text-stone-200 outline-none focus:border-amber-500/60"
+                className="flex-1 min-w-0 resize-none overflow-y-auto bg-stone-950 border border-stone-700 rounded-2xl px-4 py-2.5 min-h-[44px] text-sm text-stone-200 outline-none focus:border-amber-500/60"
               />
               <button
                 type="button"
                 onClick={() => void send()}
                 disabled={busy || !input.trim()}
-                className="shrink-0 min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
+                className="shrink-0 self-end min-h-[44px] px-4 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
               >
                 Send
               </button>

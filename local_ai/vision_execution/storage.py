@@ -3937,6 +3937,35 @@ def list_checklist_items(
     return items
 
 
+def list_all_checklist_items(user_id: str) -> list[dict[str, Any]]:
+    """All checklist items for a user, any idea, including superseded rows.
+
+    Read-only helper for the unified-node projection (Slice A): reading
+    per idea would silently miss items whose idea was removed
+    (delete_idea leaves checklist items in place). Same dicts as
+    list_checklist_items, with dependency edges attached.
+    """
+    conn = get_connection()
+    cur = conn.execute(
+        f"SELECT {_CHECKLIST_COLS} FROM checklist_items "
+        "WHERE user_id = ? ORDER BY idea_id ASC, position ASC, created_at ASC",
+        (user_id,),
+    )
+    items = [_checklist_row_to_dict(r) for r in cur.fetchall()]
+    dep_cur = conn.execute(
+        "SELECT d.item_id, d.depends_on_item_id FROM checklist_item_dependencies d "
+        "JOIN checklist_items i ON i.id = d.item_id "
+        "WHERE i.user_id = ?",
+        (user_id,),
+    )
+    deps: dict[str, list[str]] = {}
+    for item_id, depends_on in dep_cur.fetchall():
+        deps.setdefault(item_id, []).append(depends_on)
+    for it in items:
+        it["depends_on"] = deps.get(it["id"], [])
+    return items
+
+
 def get_checklist_item(item_id: str, user_id: str) -> dict[str, Any] | None:
     it = _get_checklist_item_any(item_id, user_id)
     if it is None:
@@ -4403,6 +4432,24 @@ def list_execution_steps(scope_type: str, scope_id: str, user_id: str) -> list[d
            WHERE user_id = ? AND scope_type = ? AND scope_id = ?
            ORDER BY sort_order ASC, id ASC""",
         (user_id, scope_type, scope_id),
+    )
+    return [M.row_to_execution_step(tuple(r)) for r in cur.fetchall()]
+
+
+def list_all_execution_steps(user_id: str) -> list[dict[str, Any]]:
+    """All execution steps for a user, any scope.
+
+    Read-only helper for the unified-node projection (Slice A): reading
+    per scope would silently miss a step whose scope row is gone.
+    """
+    conn = get_connection()
+    cur = conn.execute(
+        """SELECT id, user_id, scope_type, scope_id, title, sort_order, is_done, completed_at,
+           source, source_evaluation_id, created_at, updated_at
+           FROM execution_steps
+           WHERE user_id = ?
+           ORDER BY scope_type ASC, scope_id ASC, sort_order ASC, id ASC""",
+        (user_id,),
     )
     return [M.row_to_execution_step(tuple(r)) for r in cur.fetchall()]
 

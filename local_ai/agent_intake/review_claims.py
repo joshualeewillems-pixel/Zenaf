@@ -91,6 +91,13 @@ class ReviewClaim:
     question: str = ""  # confirm question in the user's voice ("Does that sound right to you?")
     scope: str = "moment"  # one of SCOPES — how broad the claim is
     turn_ref: str = ""  # e.g. "Turn 5" — where the evidence comes from
+    # Read-back outcome (meeting_impression claims only; "" = not
+    # recorded — a legacy row, or a ceiling filing that never got an
+    # answer). The training boundary reads readback_visitor_response,
+    # so it must be structural, never inferred from the detail text.
+    readback_visitor_response: str = ""  # affirmed | disputed | unresolved
+    readback_seat_outcome: str = ""  # retained | revised | unjudged (fail-safe)
+    readback_original_claim: str = ""  # the impression as first offered
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -105,6 +112,9 @@ class ReviewClaim:
             "question": self.question,
             "scope": self.scope,
             "turn_ref": self.turn_ref,
+            "readback_visitor_response": self.readback_visitor_response,
+            "readback_seat_outcome": self.readback_seat_outcome,
+            "readback_original_claim": self.readback_original_claim,
         }
 
     @classmethod
@@ -122,6 +132,9 @@ class ReviewClaim:
             question=str(d.get("question", "") or ""),
             scope=scope if scope in SCOPES else "moment",
             turn_ref=str(d.get("turn_ref", "") or ""),
+            readback_visitor_response=str(d.get("readback_visitor_response", "") or ""),
+            readback_seat_outcome=str(d.get("readback_seat_outcome", "") or ""),
+            readback_original_claim=str(d.get("readback_original_claim", "") or ""),
         )
 
 
@@ -703,6 +716,28 @@ def build_insight_claims(insights: list, agent_id: str) -> list[ReviewClaim]:
     return claims
 
 
+def _readback_outcome_detail(seat: str, visitor: str, ceiling_filed: bool) -> str:
+    """One line stating the read-back outcome for the card. Empty
+    dimensions are never rendered as a judgment: a legacy row says
+    'not recorded', a ceiling filing says 'never answered', and a
+    fail-safe says the marker failed to parse."""
+    if seat == "unjudged":
+        seat_text = "the seat's judgment was not recorded (the outcome marker failed to parse)"
+    elif seat in ("retained", "revised"):
+        seat_text = f"the seat {seat} the impression"
+    elif ceiling_filed:
+        seat_text = "the seat's judgment was not recorded (the impression was never answered)"
+    else:
+        seat_text = "the seat's judgment was not recorded (pre-change)"
+    if visitor in ("affirmed", "disputed", "unresolved"):
+        visitor_text = f"the visitor's response was {visitor}"
+    elif ceiling_filed:
+        visitor_text = "the visitor's response was unresolved (the impression was never answered)"
+    else:
+        visitor_text = "the visitor's response was not recorded"
+    return f"Read-back outcome: {seat_text}; {visitor_text}."
+
+
 def build_meeting_impression_claim(
     *,
     agent_id: str,
@@ -711,6 +746,10 @@ def build_meeting_impression_claim(
     readback_response: str,
     strand_keys: list[str],
     run_key: str,
+    readback_original_claim: str = "",
+    readback_seat_outcome: str = "",
+    readback_visitor_response: str = "",
+    ceiling_filed: bool = False,
 ) -> ReviewClaim:
     """The one claim a completed first meeting files: the seat's read-back
     impression, with the user's answer as its verbatim evidence.
@@ -722,6 +761,17 @@ def build_meeting_impression_claim(
     user's answer verbatim, and the detail repeats both in full alongside
     the strands the read-back named, so the filing is inspectable from
     the card alone.
+
+    The filing also carries the read-back outcome structurally: the
+    original impression as first offered, the seat's interpretation, and
+    the visitor's response — as structured fields AND in the detail
+    (defense in depth). A ceiling filing (the impression was never
+    answered) labels its evidence honestly: the longest user turn is
+    evidence the impression was formed from, not an answer to it
+    (verdict amendment 5) — and its visitor response defaults to
+    "unresolved", never "affirmed". A legacy row (empty dimensions,
+    pre-change) records nothing as a judgment: the detail says "not
+    recorded" and the structured fields stay empty — never "retained".
 
     Claim id: "{agent_id}:impression:{strands}:{run_key}". agent_id is
     the meeting's transcript id ("meeting-{seat}-{keystone}"), so the
@@ -738,6 +788,15 @@ def build_meeting_impression_claim(
     plain_claim = strip_weave_markers(readback_claim or "").strip()
     keys = [k for k in (strand_keys or []) if k in _STRAND_NAME]
     strand_segment = "+".join(keys) if keys else "none"
+    seat = (readback_seat_outcome or "").strip()
+    if seat not in ("retained", "revised", "unjudged"):
+        seat = ""
+    visitor = (readback_visitor_response or "").strip()
+    if visitor not in ("affirmed", "disputed", "unresolved"):
+        # A ceiling filing's visitor response defaults to unresolved
+        # (audit §B); a legacy row stays unrecorded, never affirmed.
+        visitor = "unresolved" if ceiling_filed else ""
+    original_plain = strip_weave_markers(readback_original_claim or "").strip()
     detail_parts: list[str] = []
     if keys:
         names = [_STRAND_NAME[k] for k in keys]
@@ -748,7 +807,20 @@ def build_meeting_impression_claim(
                 f"Heard under the {' and '.join(names)} strands."
             )
     detail_parts.append(f"The read-back, word for word:\n{plain_claim}")
-    detail_parts.append(f"Your answer, word for word:\n{readback_response or ''}")
+    if ceiling_filed:
+        detail_parts.append(
+            "The longest turn of the meeting — evidence the impression "
+            "was formed from, not an answer to it:\n"
+            f"{readback_response or ''}"
+        )
+    else:
+        detail_parts.append(f"Your answer, word for word:\n{readback_response or ''}")
+    if original_plain and original_plain != plain_claim:
+        detail_parts.append(
+            "The impression as first offered, word for word:\n"
+            f"{original_plain}"
+        )
+    detail_parts.append(_readback_outcome_detail(seat, visitor, ceiling_filed))
     return ReviewClaim(
         id=f"{agent_id}:impression:{strand_segment}:{run_key}",
         claim_type="meeting_impression",
@@ -759,6 +831,9 @@ def build_meeting_impression_claim(
         question="Does that first impression sound right to you?",
         scope="moment",
         turn_ref="",
+        readback_visitor_response=visitor,
+        readback_seat_outcome=seat,
+        readback_original_claim=original_plain,
     )
 
 
@@ -800,6 +875,9 @@ def supersede_claim(claim: ReviewClaim, superseding_claim_id: str) -> ReviewClai
         question=claim.question,
         scope=claim.scope,
         turn_ref=claim.turn_ref,
+        readback_visitor_response=claim.readback_visitor_response,
+        readback_seat_outcome=claim.readback_seat_outcome,
+        readback_original_claim=claim.readback_original_claim,
     )
 
 

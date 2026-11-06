@@ -34,7 +34,7 @@ What this pins, on origin/main only (no PR #254/#255 code):
   whom script existence alone would otherwise make it begin-able.
   Removing the gate entry is the whole release mechanism.
 - Frame budget: both composed runtime paths fit the voice
-  builder's 8000-character extra-instructions cap, so no frame is
+  builder's extra-instructions cap (_EXTRA_INSTRUCTIONS_CAP), so no frame is
   silently truncated and the honesty guard (last in the capability
   block) is never the content lost. Sizes are asserted as bounds;
   the measured numbers go in the PR description.
@@ -54,6 +54,7 @@ import threading
 import pytest
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.conversation.meeting import (
     _UNRELEASED_MEETINGS,
     MeetingError,
@@ -386,20 +387,20 @@ def test_no_row_without_start_turn_still_refuses(ve_ctx, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Frame budget: measured, both composed paths under the 8000 cap.
+# Frame budget: measured, both composed paths under the cap.
 # ---------------------------------------------------------------------------
 
 def test_composed_frames_fit_the_voice_builder_cap():
     definition = _maverick_definition()
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
-    assert len(turn_frame) < 8000
+    assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     engage_frame = definition.engage_frame
     engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) < 8000
+    assert len(engage_frame) < _EXTRA_INSTRUCTIONS_CAP
     # The honesty guard sits last in the capability block: under the
     # cap, nothing is truncated, so it can never be the content lost.
     assert engage_frame.rstrip().endswith(HONESTY_GUARD)

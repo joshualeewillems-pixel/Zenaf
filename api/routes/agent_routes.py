@@ -914,6 +914,11 @@ def accept_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
             agent.id, claim.id, claim.claim_type, "accepted",
             evidence=claim.evidence, inference=claim.inference,
             claim_title=claim.title, user_id=uid,
+            # Read-back training boundary (verdict amendment 4): the
+            # gate reads the claim's structured visitor response, so
+            # a disputed/unresolved impression accepted here is
+            # recorded, not turned into affirmative training.
+            readback_visitor_response=getattr(claim, "readback_visitor_response", "") or "",
         )
     except Exception:
         logger.exception("claim feedback signal write failed")

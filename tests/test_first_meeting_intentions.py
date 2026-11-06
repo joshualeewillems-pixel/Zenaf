@@ -276,6 +276,7 @@ class _FakeHost:
         self.generated_frames: list[str] = []
         self.gen_output = gen_output
         self.impressions: list[tuple[str, list[str]]] = []
+        self.dimensions: list[tuple[str, str]] = []
         self.closed_with: str | None = None
         self.close_calls = 0
 
@@ -291,6 +292,9 @@ class _FakeHost:
 
     def store_response(self, text: str) -> None:
         pass
+
+    def store_dimensions(self, seat_outcome: str, visitor_response: str) -> None:
+        self.dimensions.append((seat_outcome, visitor_response))
 
     def close(self, wrap_line: str) -> None:
         self.closed_with = wrap_line

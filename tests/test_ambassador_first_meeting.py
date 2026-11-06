@@ -42,6 +42,7 @@ import pytest
 
 from local_ai.agent_intake.store import AgentStore
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.conversation.meeting import (
     MeetingError,
     MeetingService,
@@ -255,10 +256,13 @@ def test_integrity_invariants_verbatim():
     # Grounding + doubt-point + sentence count, read-back only.
     assert "Ground the impression ONLY in their substantive material" in script.readback_frame
     assert "Never ground it in the courtesies of the meeting" in script.readback_frame
-    assert "the part I may have wrong is…" in script.readback_frame
-    assert "never a blanket hedge that names nothing" in script.readback_frame
+    # The doubt-point is optional now, not mandatory: the exact point
+    # of doubt sharpens the read only when genuinely present, and a
+    # blanket hedge naming nothing says nothing.
+    assert "the exact point of doubt" in script.readback_frame
+    assert "a blanket hedge naming nothing says nothing" in script.readback_frame
     assert "Three to five sentences." in script.readback_frame
-    assert "Three to five sentences." in script.correction_frame
+    assert "The revised impression is three to five sentences." in script.correction_frame
     # No invented training.
     assert "Claim no knowledge of this visitor from training" in script.readback_frame
     assert "nothing from this meeting trains anything until it goes through review" in script.readback_frame
@@ -271,7 +275,7 @@ def test_integrity_invariants_verbatim():
     assert strands_form in script.correction_frame
     # Read-back unmandated shape discipline: contrast + doubt are
     # available shapes, and the delimiter + Strands line survive.
-    assert "contrast the read with your own tendency" in script.readback_frame
+    assert "A contrast with your own tendency, or the exact point of doubt" in script.readback_frame
 
 
 def test_parser_contract_delimiter_and_strands():
@@ -306,14 +310,14 @@ def test_parser_contract_delimiter_and_strands():
 # ---------------------------------------------------------------------------
 
 def test_frame_budget_fits_live_cap_with_guard_intact():
-    """Binding cap: reply.py truncates extra_instructions to 8000, and
+    """Binding cap: reply.py truncates extra_instructions at _EXTRA_INSTRUCTIONS_CAP, and
     the meeting path sends the composed engage frame through it. The
     honesty guard rides at the END of the composed frame (capability
     context tail), so it survives only if the composed frame fits.
     Measured here, not asserted from the proposal's arithmetic."""
     definition = _definition()
     composed = _composed_engage(definition)
-    assert len(composed) <= 8000
+    assert len(composed) <= _EXTRA_INSTRUCTIONS_CAP
     # The guard is the last content of the composed frame.
     assert composed.rstrip().endswith("immediately usable.")
     # Worst-case naming note: every other seat already met.
@@ -322,11 +326,11 @@ def test_frame_budget_fits_live_cap_with_guard_intact():
         met_seats=("conductor", "mentor", "champion",
                    "guardian", "skeptic", "maverick"),
     )
-    assert len(_composed_engage(all_met)) <= 8000
+    assert len(_composed_engage(all_met)) <= _EXTRA_INSTRUCTIONS_CAP
     # Turn and post-recognition paths fit with room.
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "hello")
-    assert len(turn_frame) <= 8000
+    assert len(turn_frame) <= _EXTRA_INSTRUCTIONS_CAP
     post_recognition = (
         turn_frame
         + "\n\nNotes on this place, if they ask about it — answer only from these, "
@@ -334,7 +338,7 @@ def test_frame_budget_fits_live_cap_with_guard_intact():
         + definition.orientation_facts
         + ENC._RECOGNITION_NOTE + ENC._THREAD_TRAILER_INSTRUCTION
     )
-    assert len(post_recognition) <= 8000
+    assert len(post_recognition) <= _EXTRA_INSTRUCTIONS_CAP
 
 
 def test_fallback_cap_combined_fit_reported_honestly():

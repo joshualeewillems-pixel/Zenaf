@@ -219,6 +219,9 @@ def test_engage_path_frame_carries_the_block():
         def store_response(self, text):
             pass
 
+        def store_dimensions(self, seat_outcome, visitor_response):
+            pass
+
         def close(self, wrap_line):
             pass
 

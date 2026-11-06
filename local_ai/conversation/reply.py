@@ -345,6 +345,26 @@ def _trained_sections(user_id: str, weights: dict[str, float]) -> tuple[list[str
 
 _VOICE_PROMPT_BUDGET = 8000
 
+# Per-section caps on the assembled prompt (build_voice_prompt).
+# These bound INDIVIDUAL sections; the whole-prompt budget above is
+# a separate quantity — the W2 policy threshold for the Talk
+# execution-context gate (founder final gate verdict, 2026-11-06).
+# The two numbers do not collide (founder review, 2026-11-06):
+# W2's 8,000 applies to Talk assembly only, and these caps apply to
+# sections — the extra_instructions cap carries the meeting frames
+# as prepared context. Meeting turns never carry an execution block
+# (meetings pass no execution_context), so the W2 gate never fires
+# on a meeting turn; Talk turns' extra_instructions (e.g. the
+# Track A pilot line, ~1,170 chars) is counted inside the assembled
+# prompt the W2 gate measures. A section cap and a whole-prompt
+# budget are different quantities; neither is the other's value,
+# and changing one does not change the other. Tests import these
+# constants instead of pinning the numbers.
+_EXTRA_INSTRUCTIONS_CAP = 9000
+_THREAD_SUMMARY_CAP = 1200
+_CONTEXT_HINT_CAP = 300
+_HISTORY_TURN_CAP = 2000
+
 _EXECUTION_BUDGET_NOTICE = (
     "Execution records were omitted from this turn for length. Their absence "
     "from this context does not indicate that no tasks exist."
@@ -399,6 +419,28 @@ def _apply_execution_context(
             len(block),
             headroom,
         )
+
+
+def _cap_section(text: str, cap: int, section: str, archetype_id: str) -> str:
+    """Slice one prompt section to its cap, logging LOUDLY when the
+    slice actually cuts content.
+
+    Founder review (2026-11-06): silently truncating the honesty
+    guard and naming note off every Weaver engage turn was the worse
+    finding; raising the cap treats the symptom. A loud warning log
+    line is the mechanism — NOT an assertion: a truncated section
+    degrades the turn but must never crash it, so the turn still runs
+    with the sliced section and the truncation is visible in the
+    server logs (same pattern as the W2 budget gate's warning lines).
+    """
+    if len(text) <= cap:
+        return text
+    logger.warning(
+        "prompt section truncated section=%s archetype=%s "
+        "original_chars=%d cap=%d",
+        section, archetype_id or "unknown", len(text), cap,
+    )
+    return text[:cap]
 
 
 def build_voice_prompt(
@@ -793,7 +835,24 @@ def build_voice_prompt(
         # objective's guidance, the place's facts, and the turn's
         # bookkeeping instructions (encounter runtime) — truncating
         # any of those silently would corrupt the turn's contract.
-        prompt += ["", extra_instructions.strip()[:8000]]
+        # The cap was 8000 until the read-back frames lengthened
+        # (founder-approved §F.1, 2026-11-06): the Weaver engage
+        # frame reached 8375 chars, and the 8000 cap silently cut
+        # the capability block's intention line and honesty guard
+        # off every Weaver engage turn. _EXTRA_INSTRUCTIONS_CAP
+        # (9000) covers the longest frame (8375) with headroom for
+        # the naming note's growth as more seats are met (~20 chars
+        # per met seat). Any truncation here now logs loudly via
+        # _cap_section — the silent cut must never recur.
+        prompt += [
+            "",
+            _cap_section(
+                extra_instructions.strip(),
+                _EXTRA_INSTRUCTIONS_CAP,
+                "extra_instructions",
+                arch_id,
+            ),
+        ]
     if fellowship_reference and fellowship_reference.strip():
         # Fellowship reference (shared foundation, 2026-10-28): the
         # seat's slice of the shared Fellowship knowledge, as a NEW
@@ -820,10 +879,21 @@ def build_voice_prompt(
             "",
             "Your ongoing thread with this user (background continuity — the "
             "conversation has ranged across seats since):",
-            thread_summary.strip()[:1200],
+            _cap_section(
+                thread_summary.strip(),
+                _THREAD_SUMMARY_CAP,
+                "thread_summary",
+                arch_id,
+            ),
         ]
     if context_hint:
-        prompt += ["", f"Live context: {context_hint.strip()[:300]}"]
+        prompt += [
+            "",
+            "Live context: "
+            + _cap_section(
+                context_hint.strip(), _CONTEXT_HINT_CAP, "context_hint", arch_id
+            ),
+        ]
     if obligation_context:
         # Firebrand task records: its own section, after the live
         # context line and before history. Governing instructions
@@ -858,14 +928,22 @@ def build_voice_prompt(
     if turns:
         prompt.append("")
         prompt.append("Conversation so far:")
-        for turn in turns:
+        for i, turn in enumerate(turns):
             # Capability C S0: voice turns are labeled by their ACTUAL
             # speaker (archetype_id), not by the current seat. User
             # turns stay "User" — their archetype_id is the addressee
             # seat, not the speaker. Unattributed voice turns fall
             # back to the neutral "Voice", never the current seat.
             who = "User" if _turn_role(turn) == "user" else _voice_turn_label(user_id, turn)
-            prompt.append(f"{who}: {_turn_content(turn)[:2000]}")
+            prompt.append(
+                f"{who}: "
+                + _cap_section(
+                    _turn_content(turn),
+                    _HISTORY_TURN_CAP,
+                    f"history_turn[{i}]",
+                    arch_id,
+                )
+            )
     if len(history or []) > 10:
         # Continuity honesty floor (Fellowship shared foundation,
         # 2026-10-28) — SHARED machinery, not a per-seat prompt edit:

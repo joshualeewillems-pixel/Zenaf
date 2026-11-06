@@ -534,7 +534,7 @@ def test_branch_downstream_sections_preserved_on_path():
         "u1", "conductor", "hello",
         [{"role": "user", "content": f"turn {i}"} for i in range(12)],
         mode="base", question=True,
-        extra_instructions="FRAME: " + "x" * 9000,
+        extra_instructions="FRAME: " + "x" * R._EXTRA_INSTRUCTIONS_CAP,
         fellowship_reference="Fellowship knowledge. " * 10,
         thread_summary="Prior thread summary.",
         context_hint="evening, low battery",
@@ -543,8 +543,8 @@ def test_branch_downstream_sections_preserved_on_path():
     assert lines[0].startswith(CANONICAL_MARKER)
     assert "do not answer or respond directly" in joined  # question block
     assert "Fellowship knowledge." in joined  # reference uncapped
-    assert ("x" * 9000) not in joined  # frame cap still applies
-    assert any(len(line) == 8000 for line in lines)
+    assert ("x" * R._EXTRA_INSTRUCTIONS_CAP) not in joined  # frame cap still applies
+    assert any(len(line) == R._EXTRA_INSTRUCTIONS_CAP for line in lines)  # cap raised 8000 -> 9000 (read-back, 2026-11-06)
     assert "Prior thread summary." in joined
     assert "Live context: evening, low battery" in joined
     assert "don't remember" in joined  # continuity floor, long history

@@ -48,6 +48,7 @@ class FakeHost:
         self.close_calls: list[str] = []
         self.stored_impressions: list[str] = []
         self.stored_responses: list[str] = []
+        self.stored_dimensions: list[tuple[str, str]] = []
         self.reply = reply
         self.intro = intro
 
@@ -65,6 +66,9 @@ class FakeHost:
 
     def store_response(self, text: str) -> None:
         self.stored_responses.append(text)
+
+    def store_dimensions(self, seat_outcome: str, visitor_response: str) -> None:
+        self.stored_dimensions.append((seat_outcome, visitor_response))
 
     def close(self, wrap_line: str) -> None:
         self.close_calls.append(wrap_line)

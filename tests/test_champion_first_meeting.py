@@ -36,6 +36,7 @@ import threading
 import pytest
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.conversation.meeting import (
     MeetingError,
     MeetingService,
@@ -228,12 +229,14 @@ def test_invariants_verbatim_in_frames():
         script.readback_frame
     )
     # Doubt held at the exact point, never a blanket hedge.
-    assert "name THAT part as the guess" in script.readback_frame
-    assert "Never offer a blanket hedge that names nothing" in script.readback_frame
-    # Correction replaces; acknowledgment leaves standing.
-    assert "The revised impression REPLACES the earlier one" in script.correction_frame
-    assert "do not explain any system or bookkeeping" in script.correction_frame
-    assert "their answer completes the recognition in itself" in (
+    assert "When part of the read is a guess, name that part" in script.readback_frame
+    assert "a blanket hedge naming nothing says nothing" in script.readback_frame
+    # Revision is separated from the reply by --- and carried by the
+    # outcome marker — the correction no longer REPLACES by fiat.
+    assert "line with exactly three dashes on its own" in script.correction_frame
+    assert "[[impression:<seat>:<visitor>]]" in script.correction_frame
+    assert "Do not explain any system or bookkeeping" in script.correction_frame
+    assert "Their agreement completes the recognition in itself" in (
         script.readback_reply_frame
     )
     # No invented training: a first impression is a proposal, never a claim.
@@ -317,8 +320,8 @@ def test_frame_sizes_fit_the_voice_builder_cap():
         ("turn", definition.turn_frame),
         ("engage", definition.engage_frame),
     ):
-        assert len(text) < 8000, name
-        assert 8000 - len(text) >= 300, name
+        assert len(text) < _EXTRA_INSTRUCTIONS_CAP, name
+        assert _EXTRA_INSTRUCTIONS_CAP - len(text) >= 300, name
 
 
 # ------------------------------------------- restart / supersede (2026-10-28)

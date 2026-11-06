@@ -49,6 +49,7 @@ import threading
 import pytest
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.conversation.encounter import (
     EncounterRuntime,
     EncounterState,
@@ -342,12 +343,13 @@ def _composed_engage(definition, capability_block):
 def test_frame_sizes_measured_with_headroom():
     """Measured, not claimed (see PR description for the table).
     The composed engage frame — exactly as handle_turn builds it —
-    fits the live 8,000-char frame cap (reply.py) with >= 300 chars
+    fits the live frame cap (reply.py, _EXTRA_INSTRUCTIONS_CAP) with >= 300 chars
     headroom in the default, worst-case capability (signed-out),
     and fully-met naming variants; the composed turn frame fits
     with room for an allusion cue (~300 chars). The honesty guard,
     the capability block's last line, is therefore never the first
-    content lost to truncation."""
+    content lost to truncation. Cap raised 8000 -> 9000 for the
+    read-back frames (2026-11-06)."""
     definition = ENC.get_definition(MT.get_script("guardian", 1))
     cap_default = CAP.first_meeting_block("guardian", CAP.VisitorState())
     cap_worst = CAP.first_meeting_block(
@@ -368,12 +370,12 @@ def test_frame_sizes_measured_with_headroom():
         ),
     }
     for name, frame in variants.items():
-        assert len(frame) <= 8000, (name, len(frame))
-        assert 8000 - len(frame) >= 300, (name, len(frame))
+        assert len(frame) <= _EXTRA_INSTRUCTIONS_CAP, (name, len(frame))
+        assert _EXTRA_INSTRUCTIONS_CAP - len(frame) >= 300, (name, len(frame))
         assert CAP.HONESTY_GUARD in frame, name
         assert len(frame) <= 12500, (name, len(frame))
     runtime = EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(EncounterState(), "test message")
-    assert len(turn_frame) <= 8000
-    assert 8000 - len(turn_frame) >= 300
+    assert len(turn_frame) <= _EXTRA_INSTRUCTIONS_CAP
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) >= 300
     assert CAP.HONESTY_GUARD in turn_frame

@@ -37,12 +37,17 @@ from local_ai.council import capabilities as CAP
 from local_ai.council import meetings as MT
 from local_ai.council import steward_records as SR
 
-CAP_LIMIT = 8000
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP as CAP_LIMIT
 # Headroom re-pinned 2026-11-05 (follow-up to #324): the founder-authorized
 # disagreement insertions grew the composed engage frame to 7,967 chars,
 # leaving 33 chars of headroom. The 300-char floor cannot be met without
 # trimming unrelated material, which is not authorized; the guard stays as
 # a tight tripwire — any future growth of 4+ chars trips it.
+# Re-pinned 2026-11-06 (read-back correction): the founder-approved §F.1
+# readback frames lengthened the Weaver engage frame to 8,375 chars, past
+# the old 8000 cap — which silently truncated the capability block's
+# intention line and honesty guard. The cap in reply.build_voice_prompt
+# was raised to 9000; headroom is now 625 chars.
 MIN_HEADROOM = 30
 
 
@@ -93,7 +98,7 @@ def test_readback_formula_is_shapes_not_mandatory_moves():
     # Grounding + attribution + correctability stay.
     assert "Ground the impression ONLY in their substantive material" in readback
     assert "Say it in YOUR OWN words" in readback
-    assert "invite correction of it specifically" in readback
+    assert "Invite correction of the read as a whole" in readback
     # Contrast / doubt-point are available shapes, never mandates.
     assert "neither is required" in readback
     assert "Then contrast the read with your own tendency" not in readback

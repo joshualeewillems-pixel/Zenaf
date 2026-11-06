@@ -72,12 +72,27 @@ class FakeGen:
 
     def __call__(self, prompt, **kwargs):
         self.prompts.append(prompt)
-        if "has just corrected your first impression" in prompt:
-            return (
-                "Say it again, properly: in you, [[u]]planning comes "
-                "first[[/u]] — everything arranged before anything moves."
-                "\nStrands: Logic"
-            )
+        if "The user has replied to your first impression of them" in prompt:
+            # Merged correction-capable frame (read-back correction,
+            # 2026-11-06): the old correction frame's route. The fake
+            # distinguishes a genuine correction from an "other" reply
+            # by the visitor's own words in the history: a correction
+            # carries a revised read with a valid marker; anything
+            # else is a brief engaged reply with no marker (fail-safe:
+            # the original stands).
+            if "planning comes first" in prompt:
+                return (
+                    "A brief engaged reply."
+                    "\n---\n"
+                    "Say it again, properly: in you, [[u]]planning comes "
+                    "first[[/u]] — everything arranged before anything moves."
+                    "\nStrands: Logic"
+                    "\n[[impression:revised:disputed]]"
+                )
+            return "A brief engaged reply; the impression stands."
+        if "The user has agreed with your first impression of them" in prompt:
+            # Ack-only reply frame (read-back correction, 2026-11-06).
+            return "A brief engaged reply; the impression stands."
         if "READ-BACK" in prompt:
             return (
                 "A first read, held lightly: you [[u]]listen to whoever "
@@ -86,8 +101,6 @@ class FakeGen:
             )
         if "ENCOUNTER" in prompt:
             return "An engaged reply from the bench."
-        if "Whatever its valence" in prompt:
-            return "A brief engaged reply; the impression stands."
         return "A plain reply."
 
 
@@ -211,9 +224,12 @@ def test_readback_frame_demands_a_position_with_contrast(ve_ctx, tmp_path):
     # Conductor agency refinement, 2026-10-28). The hedge
     # discipline survives: name the guessed part, invite correction
     # of it specifically — no blanket "I may have that wrong".
+    # Read-back §F.1 (2026-11-06) splits the old combined sentence;
+    # the discipline is unchanged.
     assert "after the shared work" in frame
     assert "neither is required" in frame
-    assert "name that part and invite correction of it specifically" in frame
+    assert "When part of the read is a guess, name that part" in frame
+    assert "Invite correction of the read as a whole" in frame
     assert "blanket hedge" in frame
     assert "name THAT part as the guess" not in frame
     # And the position actually flows: shared work → read-back stage.
@@ -265,7 +281,12 @@ def test_correction_replaces_the_stored_impression(ve_ctx, tmp_path):
     # The revision was spoken in the room, not just filed silently.
     bodies = [m["body"] for m in state["messages"]]
     assert any(b.startswith("Say it again, properly") for b in bodies)
-    assert any("has just corrected your first impression" in p for p in gen.prompts)
+    # The merged correction-capable frame ran (read-back correction,
+    # 2026-11-06 — it replaced the old correction frame).
+    assert any(
+        "The user has replied to your first impression of them" in p
+        for p in gen.prompts
+    )
 
 
 def test_acknowledgment_leaves_the_impression_untouched(ve_ctx, tmp_path):

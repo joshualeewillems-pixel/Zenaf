@@ -23,13 +23,14 @@ What this pins, per v3:
 - Tree/capability wording limited to verified functionality: planned
   means planned; unverified workflows are never described as verified;
   the meeting itself is not a Tree record.
-- Both composed generation paths stay under the voice builder's 8000
-  character extra-instructions cap, so no frame is silently truncated.
+- Both composed generation paths stay under the voice builder's
+  extra-instructions cap (_EXTRA_INSTRUCTIONS_CAP), so no frame is silently truncated.
 """
 
 from __future__ import annotations
 
 from local_ai.conversation import encounter as ENC
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
 from local_ai.council import meetings as MT
 from local_ai.council import steward_records as SR
 
@@ -171,17 +172,18 @@ def test_no_per_generation_duplicates_with_refinement():
 
 
 def test_composed_frames_fit_the_voice_builder_cap():
-    # reply.build_voice_prompt truncates extra_instructions at 8000
-    # characters; a frame past the cap would corrupt the turn's
+    # reply.build_voice_prompt truncates extra_instructions at _EXTRA_INSTRUCTIONS_CAP
+    # characters (raised from 8000 for the read-back frames,
+    # 2026-11-06); a frame past the cap would corrupt the turn's
     # contract silently. Both composed runtime paths stay under it.
     definition = _weaver_definition()
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(
         ENC.EncounterState(), "Hello.")
-    assert len(turn_frame) < 8000
+    assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     engage_frame = definition.engage_frame
     engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) < 8000
+    assert len(engage_frame) < _EXTRA_INSTRUCTIONS_CAP

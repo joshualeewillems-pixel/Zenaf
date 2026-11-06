@@ -187,14 +187,20 @@ def _classify_readback_reply(message: str) -> str:
     """Three-way classification of the user's reply to the read-back:
     "ack" (the impression stands, agreed), "correction" (the user is
     amending it — the stored impression gets replaced), or "other"
-    (neither — the impression stands as the character's own)."""
-    if _is_acknowledgment(message):
+    (neither — the impression stands as the character's own).
+
+    The ack branch is the STRICT read-back allowlist
+    (_is_strict_readback_ack), not the shared _is_acknowledgment:
+    only a complete, unambiguous acknowledgment takes the fast
+    path. Everything else substantive enters the merged
+    correction-capable frame, which judges it. The correction/other
+    distinction is retained for the write-only state field; routing
+    no longer branches on it."""
+    if _is_strict_readback_ack(message):
         return "ack"
     norm = " ".join((message or "").strip().lower().strip(".! ").split())
     if not norm:
         return "other"
-    if norm in ("no problem", "no worries", "no complaints"):
-        return "ack"
     if norm == "no" or norm.startswith(("no ", "no,", "no —", "no -", "nope")):
         return "correction"
     if any(phrase in norm for phrase in _CORRECTION_PHRASES):
@@ -203,6 +209,316 @@ def _classify_readback_reply(message: str) -> str:
     if "but" in words:
         return "correction"
     return "other"
+
+
+#: The residue words a strict read-back acknowledgment may carry
+#: after its acknowledgment phrase. The audit's qualifier set
+#: ("mostly", "relatively", "kind of", "not exactly", "probably",
+#: "almost", "generally", "i guess", "for the most part", and the
+#: rest) is honored BY EXCLUSION: no qualifier word is in this
+#: set, so any reply carrying one fails the positive composition
+#: check below — no separate negative filter is needed, and no
+#: negative filter is written (verdict amendment 3: a positive
+#: allowlist of complete patterns, not a wrapper with negative
+#: filters). Over-strictness here only routes a reply to the
+#: correction-capable frame; under-strictness would record a false
+#: affirmation — the exact failure the invariant forbids.
+_READBACK_ACK_RESIDUE = frozenset(
+    {
+        "right", "about", "exactly", "totally", "completely",
+        "absolutely", "definitely", "that's", "that", "it", "is",
+        "so", "very", "much", "true", "correct", "spot", "on",
+        "fair", "yes", "yeah", "indeed", "nailed", "nail", "head",
+    }
+)
+
+#: Complete, unambiguous acknowledgment patterns that take the fast
+#: path even though they carry no acknowledgment phrase: a polite
+#: "no problem" is agreement, not a correction (the shared matcher
+#: already treats it that way, and the leading-"no" correction rule
+#: below would otherwise misroute it).
+_READBACK_ACK_COMPLETE = frozenset(
+    {"no problem", "no worries", "no complaints"}
+)
+
+
+def _is_strict_readback_ack(message: str) -> bool:
+    """Positive allowlist for the read-back fast path (verdict
+    amendment 3): True ONLY for a complete, unambiguous
+    acknowledgment — a short, question-free reply composed entirely
+    of an acknowledgment phrase plus residue-allowlist words, or
+    one of the complete patterns above. Every other non-empty reply
+    enters the merged correction-capable frame, where the character
+    judges it. This is deliberately stricter than
+    `_is_acknowledgment` (which stays UNCHANGED: it also serves
+    detect_move and completion-confirmation, where a looser ack is
+    harmless)."""
+    norm = " ".join((message or "").strip().lower().strip(".! ").split())
+    if not norm or "?" in norm:
+        return False
+    if norm in _READBACK_ACK_COMPLETE:
+        return True
+    words = norm.split()
+    if len(words) > 6:
+        return False
+    # Positive composition: remove acknowledgment-phrase matches as
+    # word sequences (longest phrases first, so "sounds good" is
+    # removed whole and "okay" is removed before "ok" can match
+    # inside it); what remains must be residue-allowlist words only,
+    # and at least one acknowledgment phrase must have matched.
+    remaining = words[:]
+    matched = False
+    for phrase in sorted(_ACK_PHRASES, key=len, reverse=True):
+        phrase_words = phrase.split()
+        count = len(phrase_words)
+        index = 0
+        while index + count <= len(remaining):
+            stripped = [
+                word.strip(".,!?:;—-…") for word in remaining[index : index + count]
+            ]
+            if stripped == phrase_words:
+                del remaining[index : index + count]
+                matched = True
+            else:
+                index += 1
+    if not matched:
+        return False
+    residue = [
+        word.strip(".,!?:;—-…") for word in remaining
+    ]
+    residue = [word for word in residue if word]
+    return all(word in _READBACK_ACK_RESIDUE for word in residue)
+
+
+#: The impression-outcome marker the merged correction-capable frame
+#: emits: [[impression:<seat>:<visitor>]], one line on its own.
+#: seat = the seat's interpretation (retained | revised); visitor =
+#: the visitor's response (affirmed | disputed | unresolved). Both
+#: dimensions are explicit — the runtime never derives either from
+#: the reply's shape (audit §A: derivation fails the N2 mixed
+#: reply and every qualified-agreement case).
+_IMPRESSION_MARKER_RE = re.compile(
+    r"\[\[impression:(retained|revised):(affirmed|disputed|unresolved)\]\]"
+)
+
+#: Marker-like lines in generated speech: any line containing the
+#: marker opener, well-formed or not. Bookkeeping never reaches the
+#: visitor (verdict amendment 1).
+_IMPRESSION_MARKER_LIKE = "[[impression:"
+
+
+def _is_valid_impression_marker(seat: str, visitor: str) -> bool:
+    """The ONE place that judges a seat x visitor combination.
+    (Founder ruling, 2026-11-06 ~00:47 PT: revised x affirmed is
+    VALID — amendment 2 governs; follow-up change 4, which would
+    have made it invalid, is superseded on this point. Agreement
+    does not automatically forbid revision: additional substantive
+    information volunteered in an agreeing reply may materially
+    change the interpretation. If that ruling ever flips, this
+    function is the only place to change — the parser calls it and
+    nothing else judges combinations.)"""
+    return seat in ("retained", "revised") and visitor in (
+        "affirmed",
+        "disputed",
+        "unresolved",
+    )
+
+
+def split_impression_marker(text: str) -> tuple[str, str | None, str | None, bool]:
+    """Split the impression-outcome marker off generated text.
+
+    Returns (clean_body, seat, visitor, failed). The marker must be
+    exactly one line on its own, matching _IMPRESSION_MARKER_RE.
+    Fail-closed (verdict amendment 1): duplicate, missing,
+    malformed, misplaced, or invalid markers all fail — failed=True,
+    seat/visitor None — and the caller records the fail-safe
+    (unjudged x unresolved) instead of any judgment. Every
+    marker-like line is dropped from the returned body either way,
+    so bookkeeping never reaches the visitor; a marker glued to a
+    spoken line does NOT count (malformed), and its text is stripped
+    from that line."""
+    markers: list[tuple[str, str]] = []
+    malformed = False
+    kept: list[str] = []
+    for line in (text or "").split("\n"):
+        if _IMPRESSION_MARKER_LIKE not in line:
+            kept.append(line)
+            continue
+        stripped = line.strip()
+        match = _IMPRESSION_MARKER_RE.fullmatch(stripped)
+        if match:
+            markers.append((match.group(1), match.group(2)))
+            continue
+        # Malformed or glued: strip the marker-like text, keep any
+        # spoken words on the line.
+        malformed = True
+        cleaned = re.sub(r"\[\[impression:[^\]\n]*\]\]?", "", line)
+        cleaned = re.sub(r"\[\[impression:[^\n]*$", "", cleaned)
+        cleaned = cleaned.strip()
+        if cleaned:
+            kept.append(cleaned)
+    body = "\n".join(kept).strip()
+    if malformed or len(markers) != 1:
+        return body, None, None, True
+    seat, visitor = markers[0]
+    if not _is_valid_impression_marker(seat, visitor):
+        return body, None, None, True
+    return body, seat, visitor, False
+
+
+def split_reply_and_impression(raw: str) -> tuple[str, str, bool]:
+    """Split a two-movement generation on its delimiter line. No
+    delimiter: the whole output is the second movement (the frames
+    ask for the impression last; a reply-only output carries no
+    strands trailer and degrades in the caller). Shared by the
+    engage path and the read-back response parse."""
+    lines = (raw or "").split("\n")
+    for i, line in enumerate(lines):
+        if line.strip() == _DELIMITER:
+            reply = "\n".join(lines[:i]).strip()
+            impression = "\n".join(lines[i + 1:]).strip()
+            return reply, impression, True
+    return "", (raw or "").strip(), False
+
+
+@dataclass
+class ImpressionResponseParse:
+    """The deterministic parse of one merged correction-capable
+    frame generation. No model judgment here — only structure.
+    `strands` is the strand list to STORE on a revision (the
+    original strands when the frame kept them, the parsed ones
+    when it replaced them); `revised_claim` is "" when the
+    impression was not revised. `failed` means the fail-safe fired:
+    seat "unjudged", visitor "unresolved", the original stands."""
+    spoken_reply: str = ""
+    revised_claim: str = ""
+    strands: list[str] = field(default_factory=list)
+    seat_outcome: str = ""
+    visitor_response: str = ""
+    failed: bool = False
+    thread_verdict: str | None = None
+
+
+def parse_impression_response(
+    raw: str, original_strands: list[str]
+) -> ImpressionResponseParse:
+    """Deterministic parse of the merged correction-capable frame's
+    single generation. Tail order (frame-instructed): the spoken
+    reply, then — on revision only — a `---` line, the revised
+    impression, a `Strands:` line, then the marker line, then the
+    thread-trailer line. On retain: reply, marker, thread line (no
+    `---` block, no repeated impression, no `Strands:` line — the
+    stored text and strands stand).
+
+    Fail-closed: any structural failure — missing / malformed /
+    duplicate / misplaced marker, a `revised` marker with no `---`
+    separator (the revised impression cannot be identified
+    separately from the reply), an empty revised-impression block —
+    records the fail-safe (unjudged x unresolved, original stands)
+    instead of a judgment. The spoken reply is always the reply
+    portion with marker-like lines stripped; it is never stored as
+    the impression and never reaches the claim."""
+    original = list(original_strands)
+    body, thread_verdict = split_thread_trailer(raw or "")
+    reply, tail, found_delim = split_reply_and_impression(body)
+    if _IMPRESSION_MARKER_LIKE in reply:
+        # A marker-like line in the reply portion is misplaced: the
+        # marker belongs in the tail, after any `---`.
+        clean_reply, _, _, _ = split_impression_marker(reply)
+        return ImpressionResponseParse(
+            spoken_reply=_spoken(clean_reply),
+            strands=original,
+            seat_outcome="unjudged",
+            visitor_response="unresolved",
+            failed=True,
+            thread_verdict=thread_verdict,
+        )
+    if found_delim:
+        tail_clean, seat, visitor, failed = split_impression_marker(tail)
+        if failed:
+            return ImpressionResponseParse(
+                spoken_reply=_spoken(reply),
+                strands=original,
+                seat_outcome="unjudged",
+                visitor_response="unresolved",
+                failed=True,
+                thread_verdict=thread_verdict,
+            )
+        if seat == "retained":
+            # The `---` block is not stored; the stored text and
+            # strands stand.
+            return ImpressionResponseParse(
+                spoken_reply=_spoken(reply),
+                strands=original,
+                seat_outcome="retained",
+                visitor_response=visitor,
+                failed=False,
+                thread_verdict=thread_verdict,
+            )
+        claim, strands = split_strands_trailer(tail_clean)
+        # A Strands: line anywhere else in the block is bookkeeping,
+        # not impression text.
+        claim = "\n".join(
+            line
+            for line in claim.split("\n")
+            if not line.strip().lower().startswith("strands:")
+        )
+        claim = _spoken(claim)
+        if not claim:
+            return ImpressionResponseParse(
+                spoken_reply=_spoken(reply),
+                strands=original,
+                seat_outcome="unjudged",
+                visitor_response="unresolved",
+                failed=True,
+                thread_verdict=thread_verdict,
+            )
+        if not strands:
+            # Missing Strands: on a revision keeps the ORIGINAL
+            # strands — never store an empty set (follow-up change 3).
+            strands = original
+        return ImpressionResponseParse(
+            spoken_reply=_spoken(reply),
+            revised_claim=claim,
+            strands=strands,
+            seat_outcome="revised",
+            visitor_response=visitor,
+            failed=False,
+            thread_verdict=thread_verdict,
+        )
+    clean, seat, visitor, failed = split_impression_marker(body)
+    if failed:
+        return ImpressionResponseParse(
+            spoken_reply=_spoken(clean),
+            strands=original,
+            seat_outcome="unjudged",
+            visitor_response="unresolved",
+            failed=True,
+            thread_verdict=thread_verdict,
+        )
+    if seat == "revised":
+        # A revised marker with no `---` separator: the revised
+        # impression cannot be identified separately from the reply,
+        # so the revision cannot be stored honestly.
+        return ImpressionResponseParse(
+            spoken_reply=_spoken(clean),
+            strands=original,
+            seat_outcome="unjudged",
+            visitor_response="unresolved",
+            failed=True,
+            thread_verdict=thread_verdict,
+        )
+    # Retained without a `---` block: strip any Strands: line from
+    # the spoken reply (bookkeeping, not speech).
+    spoken, _ = split_strands_trailer(clean)
+    return ImpressionResponseParse(
+        spoken_reply=_spoken(spoken),
+        strands=original,
+        seat_outcome="retained",
+        visitor_response=visitor,
+        failed=False,
+        thread_verdict=thread_verdict,
+    )
 
 
 def _is_acknowledgment(message: str) -> bool:
@@ -281,7 +597,8 @@ _THREAD_TRAILER_RE = re.compile(r"\[\[thread:(open|settled)\]\]")
 #: open-door judgment (the impression-response turn and every
 #: post-recognition turn).
 _THREAD_TRAILER_INSTRUCTION = (
-    "\n\nAfter everything else (including any 'Strands:' line), end "
+    "\n\nAfter everything else (including any '---' separator, any "
+    "'Strands:' line and any '[[impression:...]]' line), end "
     "with exactly one final line, on its own: [[thread:open]] if "
     "their last message leaves something genuinely hanging — a "
     "question still awaiting its answer, an offer on the table, a "
@@ -903,6 +1220,7 @@ class EncounterHost(Protocol):
     def generate(self, frame: str) -> str: ...
     def store_impression(self, claim: str, strands: list[str]) -> None: ...
     def store_response(self, text: str) -> None: ...
+    def store_dimensions(self, seat_outcome: str, visitor_response: str) -> None: ...
     def close(self, wrap_line: str) -> None: ...
 
 
@@ -965,13 +1283,7 @@ class EncounterRuntime:
         No delimiter: the whole output is treated as the impression
         movement (the frames ask for the impression last; a reply-only
         output carries no strands trailer and degrades in the caller)."""
-        lines = (raw or "").split("\n")
-        for i, line in enumerate(lines):
-            if line.strip() == _DELIMITER:
-                reply = "\n".join(lines[:i]).strip()
-                impression = "\n".join(lines[i + 1:]).strip()
-                return reply, impression, True
-        return "", (raw or "").strip(), False
+        return split_reply_and_impression(raw)
 
     def _deliver_pending_if_clear(self, host: EncounterHost,
                                   state: EncounterState,
@@ -1408,16 +1720,37 @@ class EncounterRuntime:
         """The turn that answers the impression — the recognition.
 
         Any genuine answer completes the recognition, whatever its
-        valence (refinement: recognition is not agreement). A
-        correction still REPLACES the stored impression — the user
-        is authoritative about themselves — and every other kind,
-        acknowledgments included, gets one brief generated reply,
-        because the close decision must be semantic: the reply's
-        generation carries the open-door trailer, and only a
-        settled verdict closes the meeting at this turn's end. An
-        open verdict moves the encounter into ordinary conversation
-        (the post-recognition phase) — nothing is delivered as a
-        block, and no agenda resumes."""
+        valence (refinement: recognition is not agreement). The
+        route is decided by the strict read-back allowlist, and
+        every path records both dimensions of the outcome — the
+        seat's interpretation (retained | revised) and the visitor's
+        response (affirmed | disputed | unresolved) — on the row,
+        so the filing and the training boundary read structure, not
+        prose.
+
+        Routes:
+        * Strict acknowledgment (positive allowlist only): the
+          ack-only reply frame; the impression stands; the row
+          records retained x affirmed.
+        * Empty message or pass ("skip", "not sure", ...): no
+          generation — a pass is navigation, not material. The
+          fallback line speaks when the definition has one (Fox
+          has none — a pass there speaks nothing this turn); the
+          row records retained x unresolved. The thread verdict
+          falls back to the deterministic estimate, since no
+          generation ran to carry a trailer.
+        * Everything else: ONE generation against the merged
+          correction-capable frame, whose marker carries both
+          dimensions. The parse is deterministic and fail-closed:
+          a missing, duplicate, malformed, misplaced, or invalid
+          marker records unjudged x unresolved and the original
+          stands; a valid `revised` marker stores ONLY the
+          revised-impression block (the spoken reply never becomes
+          the impression); a valid `retained` marker leaves the
+          stored text and strands standing. A degraded (empty)
+          generation keeps the original claim rather than blanking
+          the record, and records unjudged x unresolved.
+        """
         d = self.definition
         # The user's response to the impression is part of the record —
         # verbatim, uninterpreted. Filing it is the review flow's job.
@@ -1428,28 +1761,10 @@ class EncounterRuntime:
         kind = _classify_readback_reply(message)
         state.impression_answer_kind = kind
         verdict: str | None = None
-        if kind == "correction" and d.correction_frame:
-            # Correction is real: the corrected understanding REPLACES
-            # the stored impression, and is spoken in the room. A
-            # degraded (empty) generation keeps the original claim
-            # rather than blanking the record.
-            raw = host.generate(
-                d.correction_frame
-                + "\n\n" + _naming_note(d)
-                + _THREAD_TRAILER_INSTRUCTION
-            )
-            body, verdict = split_thread_trailer(raw)
-            claim, strands = split_strands_trailer(body)
-            claim = _spoken(claim)
-            if claim:
-                host.store_impression(claim, strands)
-                state.impression_text = claim
-                state.impression_strands = strands
-                host.say(claim)
-        else:
-            # Acknowledgment, rejection, uncertainty, "other": one
-            # brief engaged reply; the impression stands as the
-            # character's own read, their answer beside it.
+        if kind == "ack":
+            # Strict acknowledgment only: the ack-only reply frame.
+            # No marker is emitted on this path; the route writes
+            # the dimensions.
             frame = d.impression_reply_frame
             if frame:
                 raw = host.generate(
@@ -1466,6 +1781,38 @@ class EncounterRuntime:
                     host.say(_fallback_line(d, state))
             elif _has_fallback(d):
                 host.say(_fallback_line(d, state))
+            host.store_dimensions("retained", "affirmed")
+        elif not (message or "").strip() or _is_pass(message):
+            # Empty message or pass: no generation. The fallback
+            # line speaks when the definition has one.
+            if _has_fallback(d):
+                host.say(_fallback_line(d, state))
+            host.store_dimensions("retained", "unresolved")
+        else:
+            raw = host.generate(
+                d.correction_frame
+                + "\n\n" + _naming_note(d)
+                + _THREAD_TRAILER_INSTRUCTION
+            )
+            parsed = parse_impression_response(raw, state.impression_strands)
+            verdict = parsed.thread_verdict
+            if parsed.spoken_reply:
+                host.say(parsed.spoken_reply)
+            elif _has_fallback(d):
+                host.say(_fallback_line(d, state))
+            if parsed.failed:
+                # Fail-safe: the original stands; the record says
+                # the seat did not judge.
+                logger.info(
+                    "meeting: read-back marker fail-safe fired; "
+                    "original stands"
+                )
+            elif parsed.revised_claim:
+                host.store_impression(parsed.revised_claim, parsed.strands)
+                state.impression_text = parsed.revised_claim
+                state.impression_strands = parsed.strands
+                host.say(parsed.revised_claim)
+            host.store_dimensions(parsed.seat_outcome, parsed.visitor_response)
         state.impression_answered = True
         self._deliver_introduction_if_due(host, state)
         check_objectives(d, state)
@@ -2465,6 +2812,19 @@ _MAVERICK_GUIDANCE = (
 "rules and untried routes — which doors nobody chose, the repurposed tool, the reframed " 
 "question, and the defaults quietly choosing on the user's behalf. "
     )
+
+
+#: Fox's fallback line (read-back follow-up, 2026-11-06): the
+#: Maverick had none — the generic base sets fallback_line="" and
+#: the k1 builder copied it, so an empty/pass reply on Fox spoke
+#: nothing this turn. Same pattern as the other seats' lines
+#: ("Forgive me — … Say it again, … so I … it properly"), in
+#: Fox's voice: the mishap is a slip through the hedge, the
+#: recovery is catching it.
+_MAVERICK_FALLBACK_LINE = (
+    "Forgive me — that one slipped through the hedge. Say it again, "
+    "so I catch it properly."
+)
 
 
 def _weaver_allusion_pool(script: MT.MeetingScript) -> tuple[AllusionCue, ...]:
@@ -3497,7 +3857,7 @@ def build_maverick_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
         pulled_where_template=base.pulled_where_template,
         reveal=base.reveal,
         wrap_line=base.wrap_line,
-        fallback_line=base.fallback_line,
+        fallback_line=_MAVERICK_FALLBACK_LINE,
         allusion_pool=base.allusion_pool,
         capability_context=base.capability_context,
         fellowship_reference=(

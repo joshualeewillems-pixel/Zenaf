@@ -105,11 +105,17 @@ class PatternGen:
 
     def __call__(self, prompt, **kwargs):
         self.prompts.append(prompt)
-        if "has just corrected your first impression" in prompt:
-            return "A revised read, in her own words.\nStrands: Logic\n[[thread:settled]]"
-        if "Whatever its valence" in prompt:
+        if "The user has replied to your first impression of them" in prompt:
+            # Merged correction-capable frame (read-back correction,
+            # 2026-11-06): the response turn's generation is a reply.
             return self._next(
-                self.reply, "A brief engaged reply.\n[[thread:settled]]"
+                self.reply, "A brief engaged reply.\\n[[thread:settled]]"
+            )
+        if "The user has agreed with your first impression of them" in prompt:
+            # Ack-only reply frame (read-back correction, 2026-11-06):
+            # the response turn's generation is a reply.
+            return self._next(
+                self.reply, "A brief engaged reply.\\n[[thread:settled]]"
             )
         if "ENCOUNTER" in prompt and "READ-BACK" in prompt:
             return self._next(self.engage, "An engaged reply from the bench.")
@@ -539,7 +545,12 @@ def test_hedge_instruction_names_its_claim(ve_ctx, tmp_path):
     # scripted phrase. What survives is the discipline: name the
     # guessed part, invite correction of it specifically, and never
     # hide behind a blanket hedge naming nothing.
-    assert "name that part and invite correction of it specifically" in frame
+    # Read-back §F.1 (2026-11-06) splits the old combined sentence:
+    # the name-the-part and invite-correction clauses are separate
+    # sentences now; the discipline is unchanged.
+    assert "When part of the read is a guess, name that part" in frame
+    assert "Invite correction of the read as a whole" in frame
+    assert "a blanket hedge naming nothing says nothing" in frame
     assert "blanket hedge" in frame
     assert "neither is required" in frame
     assert "name THAT part as the guess" not in frame
@@ -560,6 +571,7 @@ class _FakeHost:
         self.generated_frames: list[str] = []
         self.gen_output = gen_output
         self.impressions: list[tuple[str, list[str]]] = []
+        self.dimensions: list[tuple[str, str]] = []
         self.closed_with: str | None = None
 
     def say(self, body: str) -> None:
@@ -574,6 +586,9 @@ class _FakeHost:
 
     def store_response(self, text: str) -> None:
         pass
+
+    def store_dimensions(self, seat_outcome: str, visitor_response: str) -> None:
+        self.dimensions.append((seat_outcome, visitor_response))
 
     def close(self, wrap_line: str) -> None:
         self.closed_with = wrap_line

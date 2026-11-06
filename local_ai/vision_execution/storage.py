@@ -5530,6 +5530,27 @@ def list_task_proposals(
     return [_proposal_row_to_dict(tuple(r)) for r in cur.fetchall()]
 
 
+def count_pending_task_proposals(
+    user_id: str, connection: sqlite3.Connection | None = None
+) -> int:
+    """User-wide count of pending task proposals (Slice 2 retained count).
+
+    ``list_task_proposals`` is per-conversation only; the framework
+    surface needs the user-wide pending count (Rev2 §4.2 retained
+    information for R5). Count-only, owner-scoped, no rows returned.
+    ``connection`` is injectable for tests; otherwise the default
+    vision-execution connection is used.
+    """
+    conn = connection if connection is not None else get_connection()
+    cur = conn.execute(
+        "SELECT COUNT(*) FROM task_proposals "
+        "WHERE user_id = ? AND state = 'pending'",
+        (user_id,),
+    )
+    row = cur.fetchone()
+    return int(row[0]) if row is not None else 0
+
+
 def list_task_proposals_by_parent(
     user_id: str,
     parent_task_id: str,

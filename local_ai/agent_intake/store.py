@@ -63,6 +63,9 @@ CREATE TABLE IF NOT EXISTS review_claims (
     question TEXT NOT NULL DEFAULT '',
     scope TEXT NOT NULL DEFAULT 'moment',
     turn_ref TEXT NOT NULL DEFAULT '',
+    readback_visitor_response TEXT NOT NULL DEFAULT '',
+    readback_seat_outcome TEXT NOT NULL DEFAULT '',
+    readback_original_claim TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     user_id TEXT NOT NULL DEFAULT ''
@@ -159,6 +162,9 @@ class AgentStore:
                 ("question", "ALTER TABLE review_claims ADD COLUMN question TEXT NOT NULL DEFAULT ''"),
                 ("scope", "ALTER TABLE review_claims ADD COLUMN scope TEXT NOT NULL DEFAULT 'moment'"),
                 ("turn_ref", "ALTER TABLE review_claims ADD COLUMN turn_ref TEXT NOT NULL DEFAULT ''"),
+                ("readback_visitor_response", "ALTER TABLE review_claims ADD COLUMN readback_visitor_response TEXT NOT NULL DEFAULT ''"),
+                ("readback_seat_outcome", "ALTER TABLE review_claims ADD COLUMN readback_seat_outcome TEXT NOT NULL DEFAULT ''"),
+                ("readback_original_claim", "ALTER TABLE review_claims ADD COLUMN readback_original_claim TEXT NOT NULL DEFAULT ''"),
             ):
                 if claim_cols and col not in claim_cols:
                     self._conn.execute(ddl)
@@ -285,14 +291,20 @@ class AgentStore:
                     "INSERT OR REPLACE INTO review_claims "
                     "(claim_id, agent_id, claim_type, title, evidence, inference, "
                     " detail, status, user_note, question, scope, turn_ref, "
+                    " readback_visitor_response, readback_seat_outcome, "
+                    " readback_original_claim, "
                     " created_at, updated_at, user_id) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                    " ?, ?, ?, "
                     " COALESCE((SELECT created_at FROM review_claims WHERE claim_id = ?), ?),"
                     " ?, ?)",
                     (
                         c.id, agent_id, c.claim_type, c.title, c.evidence,
                         c.inference, c.detail, c.status, c.user_note,
                         c.question, c.scope, c.turn_ref,
+                        getattr(c, "readback_visitor_response", "") or "",
+                        getattr(c, "readback_seat_outcome", "") or "",
+                        getattr(c, "readback_original_claim", "") or "",
                         c.id, now, now, owner,
                     ),
                 )
@@ -345,6 +357,9 @@ class AgentStore:
                 question=r["question"] if "question" in r.keys() else "",
                 scope=r["scope"] if "scope" in r.keys() else "moment",
                 turn_ref=r["turn_ref"] if "turn_ref" in r.keys() else "",
+                readback_visitor_response=r["readback_visitor_response"] if "readback_visitor_response" in r.keys() else "",
+                readback_seat_outcome=r["readback_seat_outcome"] if "readback_seat_outcome" in r.keys() else "",
+                readback_original_claim=r["readback_original_claim"] if "readback_original_claim" in r.keys() else "",
             )
             for r in rows
         ]

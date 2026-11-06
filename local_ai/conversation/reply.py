@@ -793,7 +793,14 @@ def build_voice_prompt(
         # objective's guidance, the place's facts, and the turn's
         # bookkeeping instructions (encounter runtime) — truncating
         # any of those silently would corrupt the turn's contract.
-        prompt += ["", extra_instructions.strip()[:8000]]
+        # The cap was 8000 until the read-back frames lengthened
+        # (founder-approved §F.1, 2026-11-06): the Weaver engage
+        # frame reached 8375 chars, and the 8000 cap silently cut
+        # the capability block's intention line and honesty guard
+        # off every Weaver engage turn. 9000 covers the longest
+        # frame (8375) with headroom for the naming note's growth
+        # as more seats are met (~20 chars per met seat).
+        prompt += ["", extra_instructions.strip()[:9000]]
     if fellowship_reference and fellowship_reference.strip():
         # Fellowship reference (shared foundation, 2026-10-28): the
         # seat's slice of the shared Fellowship knowledge, as a NEW

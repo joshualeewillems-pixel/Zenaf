@@ -122,6 +122,9 @@ def claim_feedback_signal(
     inference: str = "",
     note: str = "",
     strand_override: str = "",
+    valence_override: str | None = None,
+    layer_override: str | None = None,
+    readback_visitor_response: str = "",
 ) -> TrainingSignal:
     """Build the canonical signal for one reviewed intake claim.
 
@@ -133,12 +136,34 @@ def claim_feedback_signal(
     strands (a meeting impression) can land one signal per strand
     without the per-strand rows overwriting each other. Without an
     override, behavior is exactly as before.
+
+    valence_override / layer_override let the caller downgrade the
+    signal's training weight without changing the action the user took:
+    the read-back training boundary (verdict amendment 4) writes an
+    accepted-but-disputed/unresolved impression as "observed"/"guidance"
+    (recorded, no training weight) while the provenance action stays
+    "accepted" — the user accepted the claim; only its training effect
+    is gated. The visitor response is recorded in provenance when
+    provided, so the gate is inspectable in the stored signal.
     """
     valence, layer = _CLAIM_ACTION_MAP.get(action, ("observed", "guidance"))
+    if valence_override:
+        valence = valence_override
+    if layer_override:
+        layer = layer_override
     strand = strand_override or _strand_from_claim(claim_id, claim_type, claim_title)
     signal_id = f"intake:{claim_id}:{action}"
     if strand_override:
         signal_id = f"{signal_id}:{strand_override}"
+    provenance: dict[str, Any] = {
+        "source": "agent_intake",
+        "agent_id": agent_id,
+        "claim_id": claim_id,
+        "claim_type": claim_type,
+        "action": action,
+    }
+    if readback_visitor_response:
+        provenance["readback_visitor_response"] = readback_visitor_response
     return TrainingSignal(
         signal_id=signal_id,
         ts_ms=int(time.time() * 1000),
@@ -151,13 +176,7 @@ def claim_feedback_signal(
         valence=valence,  # type: ignore[typeddict-item]
         correction_diff=note if note else None,
         kind="claim_feedback",
-        provenance={
-            "source": "agent_intake",
-            "agent_id": agent_id,
-            "claim_id": claim_id,
-            "claim_type": claim_type,
-            "action": action,
-        },
+        provenance=provenance,
         supersedes=None,
         status="approved",
         session_id="",

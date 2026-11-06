@@ -323,6 +323,7 @@ def log_claim_feedback(
     claim_title: str = "",
     user_id: str | None = None,
     presence_store=None,
+    readback_visitor_response: str = "",
 ) -> None:
     """Log a per-claim review decision as a canonical training signal.
 
@@ -330,6 +331,17 @@ def log_claim_feedback(
     "unresolved". The user's note (correction or explanation of *why*) is
     the training signal, linked to the original evidence quote and the
     system's inference. "unresolved" is recorded with no training weight.
+
+    Read-back training boundary (verdict amendment 4): a
+    meeting-impression claim whose visitor response was disputed or
+    unresolved must NOT become affirmative characterization training
+    merely because the user accepted the claim. Accepting still succeeds
+    and still records the verdict — but the signal is written with
+    valence "observed", layer "guidance" (the "unresolved" precedent:
+    recorded, no training weight), and a note naming the standing. An
+    affirmed impression, and every non-meeting-impression claim, behave
+    exactly as before. An empty visitor response (a legacy row, never
+    recorded) does not trigger the gate.
     """
     from local_ai.agent_intake import signals as intake_signals
     from local_ai.presence_ingest import migrate as _migrate
@@ -337,6 +349,18 @@ def log_claim_feedback(
 
     store = presence_store or PresenceStore()
     _migrate.ensure_migrated(store)
+    gated = (
+        claim_type == "meeting_impression"
+        and action == "accepted"
+        and (readback_visitor_response or "") in ("disputed", "unresolved")
+    )
+    gate_note = ""
+    if gated:
+        gate_note = (
+            "Read-back visitor response was "
+            f"{readback_visitor_response} — accepted as a claim, not as "
+            "affirmative characterization."
+        )
     # A meeting impression is filed under every strand its read-back
     # named (up to two): the verdict lands one signal per strand, each
     # zoned to that strand, so the approved impression becomes evidence
@@ -353,8 +377,11 @@ def log_claim_feedback(
                 user_id=user_id or "",
                 evidence=evidence,
                 inference=inference,
-                note=note,
+                note=note or gate_note,
                 strand_override=strand,
+                valence_override="observed" if gated else None,
+                layer_override="guidance" if gated else None,
+                readback_visitor_response=readback_visitor_response or "",
             )
             intake_signals.save_intake_signal(signal, store)
     else:
@@ -367,7 +394,10 @@ def log_claim_feedback(
             user_id=user_id or "",
             evidence=evidence,
             inference=inference,
-            note=note,
+            note=note or gate_note,
+            valence_override="observed" if gated else None,
+            layer_override="guidance" if gated else None,
+            readback_visitor_response=readback_visitor_response or "",
         )
         intake_signals.save_intake_signal(signal, store)
     # Fellowship Runtime P1: a verdict is a shared-reality event (the

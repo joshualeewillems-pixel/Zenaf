@@ -111,6 +111,9 @@ CREATE TABLE IF NOT EXISTS meetings (
   readback_claim TEXT NOT NULL DEFAULT '',
   readback_response TEXT NOT NULL DEFAULT '',
   readback_strands TEXT NOT NULL DEFAULT '[]',
+  readback_original_claim TEXT NOT NULL DEFAULT '',
+  readback_seat_outcome TEXT NOT NULL DEFAULT '',
+  readback_visitor_response TEXT NOT NULL DEFAULT '',
   state_json TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
@@ -125,6 +128,9 @@ CREATE TABLE IF NOT EXISTS meeting_archives (
   readback_claim TEXT NOT NULL DEFAULT '',
   readback_response TEXT NOT NULL DEFAULT '',
   readback_strands TEXT NOT NULL DEFAULT '[]',
+  readback_original_claim TEXT NOT NULL DEFAULT '',
+  readback_seat_outcome TEXT NOT NULL DEFAULT '',
+  readback_visitor_response TEXT NOT NULL DEFAULT '',
   meeting_created_at TEXT NOT NULL DEFAULT '',
   archived_at TEXT NOT NULL
 );
@@ -197,6 +203,31 @@ class MeetingStore:
                     "ALTER TABLE meetings ADD COLUMN state_json "
                     "TEXT NOT NULL DEFAULT ''"
                 )
+            for column in (
+                "readback_original_claim",
+                "readback_seat_outcome",
+                "readback_visitor_response",
+            ):
+                if column not in cols:
+                    self._conn.execute(
+                        f"ALTER TABLE meetings ADD COLUMN {column} "
+                        "TEXT NOT NULL DEFAULT ''"
+                    )
+            # The archives table has no migration block of its own
+            # yet; existing databases get the same three columns.
+            archive_cols = {
+                r[1] for r in self._conn.execute("PRAGMA table_info(meeting_archives)")
+            }
+            for column in (
+                "readback_original_claim",
+                "readback_seat_outcome",
+                "readback_visitor_response",
+            ):
+                if column not in archive_cols:
+                    self._conn.execute(
+                        f"ALTER TABLE meeting_archives ADD COLUMN {column} "
+                        "TEXT NOT NULL DEFAULT ''"
+                    )
             self._conn.commit()
 
     def close(self) -> None:
@@ -225,7 +256,7 @@ class MeetingStore:
         return self.get(user_id, archetype_id, keystone_index)  # type: ignore[return-value]
 
     def update(self, user_id: str, archetype_id: str, keystone_index: int, **fields: Any) -> dict[str, Any]:
-        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response", "readback_strands", "state_json"}
+        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response", "readback_strands", "readback_original_claim", "readback_seat_outcome", "readback_visitor_response", "state_json"}
         sets = {k: v for k, v in fields.items() if k in allowed}
         if sets:
             cols = ", ".join(f"{k} = ?" for k in sets)
@@ -237,6 +268,40 @@ class MeetingStore:
                 )
                 self._conn.commit()
         return self.get(user_id, archetype_id, keystone_index)  # type: ignore[return-value]
+
+    def store_impression(self, user_id: str, archetype_id: str, keystone_index: int,
+                         claim: str, strands: list[str]) -> None:
+        """Store an impression: the claim and strands are always
+        written; the original text is written only the first time
+        (set-if-empty), at offer time, and never overwritten — a
+        later revision replaces the claim but leaves the original
+        standing, so the filing can carry both. Read + conditional
+        write under one lock (the store's lock is a plain Lock, so
+        this does its own SQL rather than calling update())."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT readback_original_claim FROM meetings WHERE user_id = ? "
+                "AND archetype_id = ? AND keystone_index = ?",
+                (user_id, archetype_id, keystone_index),
+            ).fetchone()
+            original = (row[0] if row else "") or ""
+            if original:
+                self._conn.execute(
+                    "UPDATE meetings SET readback_claim = ?, readback_strands = ?, "
+                    "updated_at = ? WHERE user_id = ? AND archetype_id = ? "
+                    "AND keystone_index = ?",
+                    (claim, json.dumps(strands), _utcnow(),
+                     user_id, archetype_id, keystone_index),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE meetings SET readback_claim = ?, readback_strands = ?, "
+                    "readback_original_claim = ?, updated_at = ? WHERE user_id = ? "
+                    "AND archetype_id = ? AND keystone_index = ?",
+                    (claim, json.dumps(strands), claim, _utcnow(),
+                     user_id, archetype_id, keystone_index),
+                )
+            self._conn.commit()
 
     def delete(self, user_id: str, archetype_id: str, keystone_index: int) -> None:
         """Remove the live meeting row. Only ever called by restart, AFTER
@@ -298,8 +363,9 @@ class MeetingStore:
             cur = self._conn.execute(
                 "INSERT INTO meeting_archives (user_id, archetype_id, "
                 "keystone_index, transcript_json, readback_claim, "
-                "readback_response, readback_strands, meeting_created_at, "
-                "archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "readback_response, readback_strands, readback_original_claim, "
+                "readback_seat_outcome, readback_visitor_response, meeting_created_at, "
+                "archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     user_id,
                     archetype_id,
@@ -308,6 +374,9 @@ class MeetingStore:
                     row.get("readback_claim") or "",
                     row.get("readback_response") or "",
                     row.get("readback_strands") or "[]",
+                    row.get("readback_original_claim") or "",
+                    row.get("readback_seat_outcome") or "",
+                    row.get("readback_visitor_response") or "",
                     row.get("created_at") or "",
                     _utcnow(),
                 ),
@@ -401,9 +470,9 @@ class _MeetingHost:
             return ""
 
     def store_impression(self, claim: str, strands: list[str]) -> None:
-        self._svc.meetings.update(
+        self._svc.meetings.store_impression(
             self._user_id, self._arch_id, self._keystone_index,
-            readback_claim=claim, readback_strands=json.dumps(strands),
+            claim, strands,
         )
 
     def store_response(self, text: str) -> None:
@@ -412,12 +481,43 @@ class _MeetingHost:
             readback_response=text,
         )
 
+    def store_dimensions(self, seat_outcome: str, visitor_response: str) -> None:
+        """Record both dimensions of the read-back outcome on the
+        row — the seat's interpretation and the visitor's response.
+        The response turn writes these on every path, so the filing
+        and the training boundary read structure, not prose. The
+        fail-safe is the only writer of (unjudged, unresolved)."""
+        self._svc.meetings.update(
+            self._user_id, self._arch_id, self._keystone_index,
+            readback_seat_outcome=seat_outcome,
+            readback_visitor_response=visitor_response,
+        )
+
     def close(self, wrap_line: str) -> None:
         self._svc._do_reveal(
             self._user_id, self._arch_id, self._keystone_index,
             self._script, wrap_line=wrap_line,
             silent_close=self._decoupled_recognition,
         )
+
+
+def _is_ceiling_filed(row: dict[str, Any]) -> bool:
+    """Whether this run's impression was filed by the ceiling wrap
+    without ever being answered — the longest user turn is evidence
+    the impression was formed from, not an answer to it (verdict
+    amendment 5). The encounter state's `impression_answered` says
+    so directly when the runtime ran: present and False means the
+    response turn never ran. Present and True means a genuine
+    answer. Absent or unparseable (a legacy pre-runtime row) means
+    a genuine answer: the ceiling wrap is a runtime feature, so a
+    row that predates the runtime only ever stored genuine answers."""
+    try:
+        state = json.loads(row.get("state_json") or "")
+    except Exception:
+        return False
+    if not isinstance(state, dict) or "impression_answered" not in state:
+        return False
+    return state.get("impression_answered") is False
 
 
 class MeetingService:
@@ -820,6 +920,7 @@ class MeetingService:
         except Exception:
             logger.exception("fellowship: meeting-completed event failed")
 
+
     def _file_impression(self, user_id: str, arch_id: str, keystone_index: int,
                          script: MT.MeetingScript) -> None:
         """File the completed meeting's read-back impression as a review
@@ -881,6 +982,10 @@ class MeetingService:
                 readback_response=row.get("readback_response") or "",
                 strand_keys=strand_keys,
                 run_key=run_key,
+                readback_original_claim=row.get("readback_original_claim") or "",
+                readback_seat_outcome=row.get("readback_seat_outcome") or "",
+                readback_visitor_response=row.get("readback_visitor_response") or "",
+                ceiling_filed=_is_ceiling_filed(row),
             )
             existing = store.get_claims(agent_id)
             is_new = claim.id not in {c.id for c in existing}

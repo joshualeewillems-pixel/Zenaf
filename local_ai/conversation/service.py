@@ -27,6 +27,7 @@ from local_ai.strand_interviews.guidance import strand_guidance_block
 from local_ai.strand_interviews.keys import validate_strand_key
 from local_ai.vision_execution import obligations as _obligations
 
+from .encounter import _WEAVER_NATURAL_INTENTION
 from .reply import VoiceReply, generate_voice_reply
 from .store import ConversationStore
 
@@ -351,8 +352,20 @@ class ConversationService:
             # second call. Other seats never receive it. The strand
             # guidance block rides the same channel, after the
             # steward block, for conductor turns in strand threads.
+            # Track A pilot (rev2 §4.1, Weaver only): the shared
+            # prompt + Weaver line ride the same channel, last —
+            # 1,170 chars against the 8,000-char cap in
+            # reply.build_voice_prompt.
             extra_instructions="\n\n".join(
-                block for block in (steward_block, strand_block) if block
+                block
+                for block in (
+                    steward_block,
+                    strand_block,
+                    _WEAVER_NATURAL_INTENTION
+                    if arch_id == "conductor"
+                    else None,
+                )
+                if block
             )
             or None,
             # Continuation background knowledge (demonstration spec

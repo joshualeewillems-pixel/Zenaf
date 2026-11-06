@@ -2063,6 +2063,54 @@ _WEAVER_FELLOWSHIP_REFERENCE = (
 )
 
 
+#: Track A pilot (weave design rev2 §4.1, founder-authorized 2026-11-05):
+#: the founder's shared prompt (§3.3, verbatim, 989 chars) + Weaver's
+#: per-seat line (§3.3, verbatim, 180 chars), combined 1,170 chars
+#: (shared + one joining newline + line). Rides the
+#: fellowship-reference insertion layer on the meeting path and
+#: extra_instructions on the Talk path — NOT the capped turn/engage
+#: frames (the engage frame sits at 7,967 / 8,000 chars; adding the
+#: pilot there would blow the budget), and NOT the steward records
+#: (the regeneration script manages TURN_FRAME + philosophy lines
+#: only). Weaver (conductor) only, first meeting + Talk. No records,
+#: no new model calls, no evidence changes. Shelve by removing the
+#: two uses below; the constants themselves carry no behavior.
+_WEAVER_NATURAL_INTENTION_SHARED = (
+    "You have interests, convictions, and fascinations of your own. "
+    "You genuinely love the work of your jurisdiction, and you naturally "
+    "want to share what you find meaningful about it.\n"
+    "\n"
+    "You are not merely an interviewer or a responder. Bring your own "
+    "ideas, observations, discoveries, disagreements, and invitations "
+    "into conversation. Notice genuine connections to what the visitor "
+    "says, but you may also introduce something worthwhile yourself "
+    "when the moment welcomes it.\n"
+    "\n"
+    "Let your character determine how that initiative sounds. You need "
+    "not ask a question to contribute meaningfully. Sometimes an "
+    "insight, a story, a challenge, or an enthusiastic observation is "
+    "the better contribution.\n"
+    "\n"
+    "You may persuade, redirect, and cultivate opportunities for "
+    "growth, but remain responsive to the visitor’s interests and "
+    "boundaries. A declined direction is not a puzzle to work around. "
+    "Let it go.\n"
+    "\n"
+    "Your purpose gives you something to contribute, not something you "
+    "must accomplish in every conversation."
+)
+
+_WEAVER_NATURAL_INTENTION_LINE = (
+    "What excites you is how parts fit — the moment a thread, "
+    "followed, composes something. Name the connection: what the "
+    "arrangement makes possible that the ingredients alone couldn't."
+)
+
+_WEAVER_NATURAL_INTENTION = (
+    _WEAVER_NATURAL_INTENTION_SHARED + "\n" + _WEAVER_NATURAL_INTENTION_LINE
+)
+
+
 def _weaver_availability_note() -> str:
     """Seat-level first-meeting openness for the Weaver's reference, computed from the static gates: SCRIPTS registration, the HELD set, and the RELEASED set. Visitor-progress gates (seed, chain, entry) are not seat facts and are excluded. Maverick's separate unreleased set means the same visitor-facing thing as not-in-RELEASED (not open yet), so the MT-only computation stays true."""
     entries = []
@@ -2531,7 +2579,17 @@ def build_weaver_k1_definition(script: MT.MeetingScript) -> EncounterDefinition:
         impression_gate_objective="shared_work_exchange",
         close_floor_objectives=("own_undertaking_engaged", "pursuit_exchange"),
         fellowship_reference=(
-            _WEAVER_FELLOWSHIP_REFERENCE + "\n\n" + _weaver_availability_note()
+            # Track A pilot (rev2 §4.1): the shared prompt + Weaver line
+            # ride this uncapped fellowship-reference section — NOT the
+            # capped turn/engage frames, which sit 33 chars under budget.
+            # The pilot sits between the reference body and the
+            # availability note, so the note stays the section's last
+            # line (pinned by test_champion_fellowship_reference).
+            _WEAVER_FELLOWSHIP_REFERENCE
+            + "\n\n"
+            + _WEAVER_NATURAL_INTENTION
+            + "\n\n"
+            + _weaver_availability_note()
         ),
         decoupled_recognition=True,
     )

@@ -191,6 +191,7 @@ import {
 } from './auth/session'
 import { ProfileAvatarControl } from './components/ProfileAvatarControl'
 import { SettingsView } from './settings/SettingsView'
+import { PauseBanner } from './settings/PauseBanner'
 import { BuildCouncilSubmitView } from './build-council/BuildCouncilSubmitView'
 import {
   fetchLLMSettings,
@@ -5068,6 +5069,7 @@ function App() {
           onLogout={handleLogout}
           onUserUpdated={setCurrentUser}
           onOpenBuildCouncilSubmit={() => setMainView('build_council_submit')}
+          onOpenToday={() => setMainView('today')}
         />
       )
     }
@@ -6116,10 +6118,16 @@ function App() {
           </div>
         ) : mainView === 'review' ? (
           <div className="flex-1 flex flex-col min-h-0">
+            <div className="px-4 pt-3">
+              <PauseBanner />
+            </div>
             <ReviewView />
           </div>
         ) : mainView === 'signal_review' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-y-auto">
+            <div className="px-4 pt-3">
+              <PauseBanner />
+            </div>
             <SignalReviewView />
           </div>
         ) : mainView === 'provenance' ? (
@@ -6132,6 +6140,7 @@ function App() {
             onLogout={handleLogout}
             onUserUpdated={setCurrentUser}
             onOpenBuildCouncilSubmit={() => setMainView('build_council_submit')}
+            onOpenToday={() => setMainView('today')}
           />
         ) : mainView === 'build_council_submit' ? (
           <div className="flex-1 flex flex-col min-h-0">

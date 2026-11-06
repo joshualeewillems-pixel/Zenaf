@@ -14,9 +14,11 @@ type Props = {
   onLogout: () => void
   onUserUpdated: (u: CurrentUser) => void
   onOpenBuildCouncilSubmit: () => void
+  /** Navigate to the Today deck (R6 Review in the permissions surface). */
+  onOpenToday: () => void
 }
 
-export function SettingsView({ user, onLogout, onUserUpdated, onOpenBuildCouncilSubmit }: Props) {
+export function SettingsView({ user, onLogout, onUserUpdated, onOpenBuildCouncilSubmit, onOpenToday }: Props) {
   return (
     <div className="flex-1 overflow-auto p-6 max-w-3xl mx-auto space-y-6">
       <div>
@@ -25,7 +27,7 @@ export function SettingsView({ user, onLogout, onUserUpdated, onOpenBuildCouncil
       </div>
       <AccountSection user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />
       <IdentitySection />
-      <PermissionsSection />
+      <PermissionsSection onOpenToday={onOpenToday} />
       <PrivacySection />
       <CouncilIntegrityReviewSection />
       <ModelConnectionsSection />

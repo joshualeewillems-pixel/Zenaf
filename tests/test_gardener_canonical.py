@@ -779,7 +779,7 @@ def test_branch_downstream_sections_preserved_on_path(monkeypatch):
     assert "do not answer or respond directly" in joined  # question block
     assert "Fellowship knowledge." in joined  # reference uncapped
     assert ("x" * 9000) not in joined  # frame cap still applies
-    assert any(len(line) == 8000 for line in lines)
+    assert any(len(line) == 9000 for line in lines)  # cap raised 8000 -> 9000 (read-back, 2026-11-06)
     assert "Prior thread summary." in joined
     assert "Live context: evening, low battery" in joined
     assert "don't remember" in joined  # continuity floor, long history

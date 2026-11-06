@@ -70,8 +70,10 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     assert "First-meeting openness right now" in reference
     assert reference.splitlines()[-1].startswith("First-meeting openness right now")
     # Capped frames: byte-identical budget to before the pilot.
-    # Engage frame 7,967 chars, 33 headroom vs the 8,000 cap
+    # Engage frame 8,375 chars, 625 headroom vs the 9,000 cap
     # (MIN_HEADROOM 30, test_conductor_agency_refinement.py).
+    # Re-measured 2026-11-06: the read-back frames lengthened the
+    # engage frame (was 7,967) and the cap rose 8000 -> 9000.
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     engage_frame = definition.engage_frame
@@ -79,9 +81,9 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) == 7967
-    assert 8000 - len(engage_frame) >= 30
-    assert 8000 - len(turn_frame) >= 30
+    assert len(engage_frame) == 8375
+    assert 9000 - len(engage_frame) >= 30
+    assert 9000 - len(turn_frame) >= 30
     assert _WEAVER_NATURAL_INTENTION not in turn_frame
     assert _WEAVER_NATURAL_INTENTION not in engage_frame
     # Pinned render: the assembled meeting prompt carries it verbatim.

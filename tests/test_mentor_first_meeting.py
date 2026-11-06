@@ -389,15 +389,17 @@ def test_frame_sizes_and_headroom_measured():
     # (298 chars + separator = 300), so the composed turn frame is
     # 300 smaller than originally measured; definition frame unchanged.
     assert len(turn_frame) == 5287
-    assert len(turn_frame) < 8000
-    assert 8000 - len(turn_frame) == 2713
-    # #262's P1 rewrites tightened one engage impression instruction
-    # (243 chars shorter); re-measured. Headroom grew, still >= 300.
-    assert len(definition.engage_frame) == 6128
-    assert len(engage) == 7404
-    assert len(engage) < 8000
-    assert 8000 - len(engage) == 596
-    assert 8000 - len(engage) >= 300
+    assert len(turn_frame) < 9000
+    assert 9000 - len(turn_frame) == 3713
+    # Read-back correction (2026-11-06): the founder-approved §F.1
+    # readback frames lengthened the engage frame (Mentor 6128 -> 6563
+    # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->
+    # 9000 the same day, so headroom is measured against 9000 now.
+    assert len(definition.engage_frame) == 6563
+    assert len(engage) == 7839
+    assert len(engage) < 9000
+    assert 9000 - len(engage) == 1161
+    assert 9000 - len(engage) >= 300
     # Proposal fallback cap, for the record: reference + slice together
     # exceed 12,500 (PR #254 warning) — this branch carries the slice
     # only, prompt-locally, and fits both caps; the full reference

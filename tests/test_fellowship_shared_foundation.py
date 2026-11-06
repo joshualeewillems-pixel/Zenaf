@@ -110,6 +110,7 @@ class _FakeHost:
         self.said: list[str] = []
         self.stored: list[str] = []
         self.responses: list[str] = []
+        self.dimensions: list[tuple[str, str]] = []
         self.closed_with: list[str] = []
         self.gen_output = gen_output
 
@@ -124,6 +125,9 @@ class _FakeHost:
 
     def store_response(self, text):
         self.responses.append(text)
+
+    def store_dimensions(self, seat_outcome, visitor_response):
+        self.dimensions.append((seat_outcome, visitor_response))
 
     def close(self, wrap_line):
         self.closed_with.append(wrap_line)
@@ -355,14 +359,17 @@ def test_state_json_round_trip_for_new_fields():
 
 def test_engage_frame_guarded_honesty_guard_position():
     # Weaver's current frames, composed for real: the engage frame
-    # fits the 8,000-char cap with headroom, and the honesty guard
+    # fits the 9,000-char cap with headroom, and the honesty guard
     # is no longer the last content — the variable-length naming
     # note sits after the capability block, so truncation would eat
     # the naming note first, never the guard.
+    # Cap raised 8000 -> 9000 for the read-back frames (2026-11-06):
+    # the Weaver engage frame is 8,375 chars (625 headroom), where
+    # the old cap left 33 — this test FAILED on the old cap.
     definition = _weaver_definition()
     runtime = ENC.EncounterRuntime(definition)
     frame = runtime._engage_frame()
-    assert len(frame) <= 8000
+    assert len(frame) <= 9000
     assert len(frame) >= 300  # sanity: a real frame, not an empty one
     assert CAP.HONESTY_GUARD in frame
     guard_at = frame.index(CAP.HONESTY_GUARD)
@@ -370,20 +377,20 @@ def test_engage_frame_guarded_honesty_guard_position():
     assert guard_at < naming_at
     # Budget (measured here, reported in the PR description):
     # engage frame must leave >= 300 chars of headroom.
-    assert 8000 - len(frame) >= 300
+    assert 9000 - len(frame) >= 300
 
 
 def test_fellowship_reference_is_an_uncapped_section():
     long_reference = "Fellowship knowledge. " * 1000  # 21,000 chars
     lines, _ = build_voice_prompt(
         "u1", "conductor", "hello", [],
-        extra_instructions="x" * 9000,
+        extra_instructions="x" * 10000,
         fellowship_reference=long_reference,
     )
     joined = "\n".join(lines)
     assert long_reference.strip() in joined  # NOT truncated
-    assert ("x" * 9000) not in joined  # the frame cap still applies
-    assert any(len(line) == 8000 for line in lines)
+    assert ("x" * 10000) not in joined  # the frame cap still applies
+    assert any(len(line) == 9000 for line in lines)  # cap raised 8000 -> 9000 (read-back, 2026-11-06)
     # Empty reference = section absent (byte-identical prompt shape).
     lines2, _ = build_voice_prompt("u1", "conductor", "hello", [])
     assert not any("Fellowship reference" in line for line in lines2)

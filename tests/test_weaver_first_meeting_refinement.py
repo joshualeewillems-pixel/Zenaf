@@ -171,17 +171,18 @@ def test_no_per_generation_duplicates_with_refinement():
 
 
 def test_composed_frames_fit_the_voice_builder_cap():
-    # reply.build_voice_prompt truncates extra_instructions at 8000
-    # characters; a frame past the cap would corrupt the turn's
+    # reply.build_voice_prompt truncates extra_instructions at 9000
+    # characters (raised from 8000 for the read-back frames,
+    # 2026-11-06); a frame past the cap would corrupt the turn's
     # contract silently. Both composed runtime paths stay under it.
     definition = _weaver_definition()
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(
         ENC.EncounterState(), "Hello.")
-    assert len(turn_frame) < 8000
+    assert len(turn_frame) < 9000
     engage_frame = definition.engage_frame
     engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) < 8000
+    assert len(engage_frame) < 9000

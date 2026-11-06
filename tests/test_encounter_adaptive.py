@@ -532,7 +532,10 @@ def test_no_frame_on_the_encounter_path_requires_weaving(ve_ctx, tmp_path):
     # engages the correction's implications, not a summary of it.
     assert "Say it in YOUR OWN words" in frames["impression"]
     assert "never let their first-person words" in frames["impression"]
-    assert "your own words" in frames["correction"]
+    # The merged frame states the implications engagement directly
+    # (read-back correction, 2026-11-06); the old "your own words"
+    # phrasing lived in the retired correction frame.
+    assert "engage its implications" in frames["correction"]
     assert "implications" in frames["correction"]
     assert "do not splice" in frames["correction"]
     # The runtime's own record-quoting machinery is gone.

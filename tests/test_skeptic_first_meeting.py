@@ -311,8 +311,13 @@ def test_readback_unmandated_but_strands_kept():
 def test_recognition_note_in_reply_frame():
     reply = MT.SKEPTIC_FIRST_MEETING.readback_reply_frame
     assert "completes the recognition in itself" in reply
-    assert "do not soften a rejection into assent" in reply
-    assert "do not reframe their words more flatteringly" in reply
+    # Read-back §F.3 (2026-11-06): the ack-only frame's guards are
+    # restated for an agreement-only input — rejections route to the
+    # merged frame, so the old "do not soften a rejection" phrasing
+    # is gone; the guard against over-reading the agreement and
+    # against reframing it survives in the new wording.
+    assert "Do not make more of their agreement than they offered" in reply
+    assert "Respond to what they actually said" in reply
     # The runtime's own recognition note (appended on the
     # recognition paths) says the same, independently.
     assert "completes the recognition in itself" in ENC._RECOGNITION_NOTE
@@ -454,7 +459,8 @@ def test_runtime_composition_carries_standing_notes():
 
 
 # ---------------------------------------------------------------------------
-# Budget: both composed frames fit the voice builder's 8000 cap.
+# Budget: both composed frames fit the voice builder's 9000 cap.
+# (Cap raised 8000 -> 9000 for the read-back frames, 2026-11-06.)
 # ---------------------------------------------------------------------------
 
 
@@ -462,13 +468,13 @@ def test_composed_frames_fit_the_voice_builder_cap():
     definition = _definition()
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
-    assert len(turn_frame) < 8000
+    assert len(turn_frame) < 9000
     engage = _runtime_engage(definition)
     # Proposal gate: at least 300 chars headroom, and the honesty
     # guard — last line of the capability block — is never the
     # first content lost (it survives at the tail of the frame).
-    assert len(engage) <= 7700, len(engage)
-    assert len(engage) < 8000
+    assert len(engage) <= 8700, len(engage)
+    assert len(engage) < 9000
     assert engage.rstrip().endswith(CAP.HONESTY_GUARD.strip())
     assert "Your system slice, PROPOSED" in engage
     # And the 12500 fallback cap, with room to spare.

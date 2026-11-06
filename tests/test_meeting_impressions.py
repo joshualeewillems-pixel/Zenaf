@@ -251,7 +251,9 @@ def test_replay_files_a_second_distinct_claim(ve_ctx, tmp_path):
 
 def _verdict(tmp_path, uid, claim, action):
     """What the claim verdict routes do: persist the status, then log
-    the feedback signal through the shared machinery."""
+    the feedback signal through the shared machinery — including the
+    claim's structured visitor response, as the accept endpoint does
+    (the read-back training boundary reads it)."""
     store = _agents(tmp_path, uid)
     store.update_claim(claim.id, status="accepted" if action == "accepted" else "rejected")
     presence = PresenceStore(tmp_path / "signals.db")
@@ -265,6 +267,7 @@ def _verdict(tmp_path, uid, claim, action):
         evidence=claim.evidence,
         inference=claim.inference,
         presence_store=presence,
+        readback_visitor_response=getattr(claim, "readback_visitor_response", "") or "",
     )
     return presence.list_signals_by_kind("claim_feedback")
 
@@ -272,7 +275,10 @@ def _verdict(tmp_path, uid, claim, action):
 def test_acceptance_lands_evidence_under_both_readback_strands(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    _run_conductor_to_completion(svc, uid, response=RESPONSE)
+    # An affirmed read-back: the strict ack routes to the ack-only
+    # frame, so the filed claim records affirmed — and accepting it
+    # lands endorsed signals, as before.
+    _run_conductor_to_completion(svc, uid, response="Yeah, that's right.")
 
     store = _agents(tmp_path, uid)
     claim = store.get_claims("meeting-conductor-1")[0]
@@ -285,9 +291,32 @@ def test_acceptance_lands_evidence_under_both_readback_strands(ve_ctx, tmp_path)
     assert {s.zone for s in signals} == {"self", "number"}
     for s in signals:
         assert s.valence == "endorsed"  # the claim-feedback map's accept valence
-        assert s.payload_redacted == RESPONSE
+        assert s.payload_redacted == "Yeah, that's right."
         assert s.summary == READBACK_STRIPPED + "\n" + _TEACHING_SENTENCE
         assert s.provenance["claim_type"] == "meeting_impression"
+
+
+def test_acceptance_of_unresolved_readback_is_recorded_not_endorsed(ve_ctx, tmp_path):
+    """The training boundary (verdict amendment 4): a read-back the
+    visitor never affirmed must not become affirmative characterization
+    training merely because the user accepted the claim. The accept
+    itself still succeeds; the signals are observed, not endorsed."""
+    uid = _seeded_user()
+    svc = _svc(tmp_path)
+    _run_conductor_to_completion(svc, uid, response=RESPONSE)
+
+    store = _agents(tmp_path, uid)
+    claim = store.get_claims("meeting-conductor-1")[0]
+    assert claim.readback_visitor_response == "unresolved"
+    signals = _verdict(tmp_path, uid, claim, "accepted")
+
+    assert len(signals) == 2
+    for s in signals:
+        assert s.valence == "observed"
+        assert s.layer == "guidance"
+        assert s.provenance["action"] == "accepted"
+        assert s.provenance["readback_visitor_response"] == "unresolved"
+    assert store.get_claims("meeting-conductor-1")[0].status == "accepted"
 
 
 def test_rejection_dismisses_under_both_strands(ve_ctx, tmp_path):

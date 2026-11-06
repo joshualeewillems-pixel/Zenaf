@@ -228,12 +228,14 @@ def test_invariants_verbatim_in_frames():
         script.readback_frame
     )
     # Doubt held at the exact point, never a blanket hedge.
-    assert "name THAT part as the guess" in script.readback_frame
-    assert "Never offer a blanket hedge that names nothing" in script.readback_frame
-    # Correction replaces; acknowledgment leaves standing.
-    assert "The revised impression REPLACES the earlier one" in script.correction_frame
-    assert "do not explain any system or bookkeeping" in script.correction_frame
-    assert "their answer completes the recognition in itself" in (
+    assert "When part of the read is a guess, name that part" in script.readback_frame
+    assert "a blanket hedge naming nothing says nothing" in script.readback_frame
+    # Revision is separated from the reply by --- and carried by the
+    # outcome marker — the correction no longer REPLACES by fiat.
+    assert "line with exactly three dashes on its own" in script.correction_frame
+    assert "[[impression:<seat>:<visitor>]]" in script.correction_frame
+    assert "Do not explain any system or bookkeeping" in script.correction_frame
+    assert "Their agreement completes the recognition in itself" in (
         script.readback_reply_frame
     )
     # No invented training: a first impression is a proposal, never a claim.

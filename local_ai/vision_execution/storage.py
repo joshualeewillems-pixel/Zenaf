@@ -11,8 +11,9 @@ import threading
 import hashlib
 import hmac
 import secrets
+from contextlib import contextmanager
 from datetime import datetime, timezone, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 from . import models as M
 from local_ai.hosted_config import is_prod as _is_prod
@@ -1055,6 +1056,8 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_tasks_timeframe_commitment(conn)
     _migrate_tasks_provenance_columns(conn)
     _migrate_task_proposals(conn)
+    _migrate_migration_ledger(conn)
+    _migrate_node_store(conn)
     _ensure_default_owner_and_backfill(conn)
     conn.commit()
 
@@ -1094,6 +1097,2150 @@ def get_connection() -> sqlite3.Connection:
 
 def _now() -> str:
     return M._now_iso()
+
+
+# ======================================================================
+# C1a — Write-authority infrastructure (unified-node cutover, C1a).
+#
+# Governing design: ~/workspace/your_files/zenaf-ve-unified-node-
+# c1a-design-brief-2026-11-06.md (§§2-17), accepted 2026-11-06.
+# This section builds ONLY the C1a mechanisms: the migration ledger
+# (§2), the node-store tables (§3), the shared write-transaction
+# helper (§4), the writer guards (§5), the delete_project cascade
+# guard (§6), the durable pause + operator controls (§7), the
+# flip-attempt tracking + recovery procedure (§§8-9), the write
+# freeze (§10), the in-transaction fingerprint (§11), and the
+# contention behavior (§12). It builds NO flip, NO read shim, NO
+# node-write CRUD, and NO migrated-node deletion (C1b/C2 scope).
+# With zero flipped subtrees the guard never refuses and no read
+# changes: the guard is dormant in production behavior in C1a.
+# ======================================================================
+
+# --- C1a §5.2: named refusal errors ------------------------------------
+# Following the existing precedent (ProposalNotFound, ProposalConflict
+# at storage.py:5056,5060). A refused flip or write is an expected,
+# named outcome — mapped by _migration_error in
+# api/routes/vision_execution.py, never a 500.
+
+
+class MigratedNodeWriteRefused(Exception):
+    """A legacy write targets a flipped subtree. API mapping: 409."""
+
+    def __init__(self, message: str, *, subtree_id: str | None = None,
+                 target_id: str | None = None) -> None:
+        super().__init__(message)
+        self.subtree_id = subtree_id
+        self.target_id = target_id
+
+
+class SubtreeWriteFrozen(Exception):
+    """Any write targets a subtree with an unresolved failed_after_commit
+    attempt (§10). API mapping: 423."""
+
+    def __init__(self, message: str, *, subtree_id: str | None = None,
+                 target_id: str | None = None,
+                 attempt_id: str | None = None) -> None:
+        super().__init__(message)
+        self.subtree_id = subtree_id
+        self.target_id = target_id
+        self.attempt_id = attempt_id
+
+
+class MigrationPaused(Exception):
+    """A flip is attempted while the pause is engaged (or while no
+    release exists for the subtree). API mapping: 409."""
+
+    def __init__(self, message: str, *, subtree_id: str | None = None) -> None:
+        super().__init__(message)
+        self.subtree_id = subtree_id
+
+
+class UnresolvedFlipAttempt(Exception):
+    """A flip is attempted while an unresolved attempt exists (a
+    `recorded` attempt blocks ALL subtrees; a `failed_*` attempt
+    blocks its own subtree). API mapping: 409."""
+
+    def __init__(self, message: str, *, subtree_id: str | None = None,
+                 attempt_id: str | None = None,
+                 attempt_state: str | None = None) -> None:
+        super().__init__(message)
+        self.subtree_id = subtree_id
+        self.attempt_id = attempt_id
+        self.attempt_state = attempt_state
+
+
+class ProjectHasTasks(Exception):
+    """§6: delete_project refused while the project has tasks.
+    API mapping: 409. Detail names the count."""
+
+    def __init__(self, message: str, *, project_id: str | None = None,
+                 task_count: int | None = None) -> None:
+        super().__init__(message)
+        self.project_id = project_id
+        self.task_count = task_count
+
+
+# --- C1a §4.1: the shared write-transaction helper -----------------------
+# Owner token, not SAVEPOINT (record §3.7): savepoints silently change
+# failure semantics. The token is thread-local (the connection is
+# thread-local); it holds token_id, purpose, depth, and the connection
+# object itself (holding the conn prevents id-reuse confusion).
+
+
+class _WriteTransactionHandle(NamedTuple):
+    """Yielded by ve_write_transaction: `.is_owner` (bool), `.depth` (int)."""
+
+    is_owner: bool
+    depth: int
+
+
+def _write_tokens() -> dict[int, dict[str, Any]]:
+    """The thread's active helper-transaction tokens, keyed by id(conn).
+
+    Lazily created: test fixtures replace `_thread_local` with a fresh
+    threading.local(), so the attribute must never be assumed present.
+    """
+    tokens = getattr(_thread_local, "ve_write_tokens", None)
+    if tokens is None:
+        tokens = {}
+        _thread_local.ve_write_tokens = tokens
+    return tokens
+
+
+def _active_write_token(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    """The helper token for this connection on this thread, if any."""
+    token = _write_tokens().get(id(conn))
+    if token is not None and token.get("conn") is conn:
+        return token
+    return None
+
+
+@contextmanager
+def ve_write_transaction(conn: sqlite3.Connection, purpose: str):
+    """Open a helper transaction (BEGIN IMMEDIATE) if the thread does not
+    already own one on this connection; otherwise join the existing one.
+    On clean exit the OWNER commits; on exception the OWNER rolls back.
+    Yields a handle with `.is_owner` (bool) and `.depth` (int).
+
+    Rules (§4.2): BEGIN IMMEDIATE before any authority read; one owner
+    per connection per thread; re-entrant nesting, never a second BEGIN;
+    only the owner commits or rolls back. A nested commit is a no-op; a
+    nested rollback raises (see _rollback_if_owner).
+
+    Ambient-transaction adoption (brief-ambiguity resolution, §4.1):
+    the brief does not name the case where no token exists but the
+    connection already has an implicit transaction open (e.g. a prior
+    uncommitted write on the thread-local connection). The helper
+    ADOPTS that transaction as the owner's — mirroring the approve
+    path's pre-existing `if not conn.in_transaction` guard — rather
+    than raising or issuing a second BEGIN (SQLite would raise).
+    """
+    tokens = _write_tokens()
+    key = id(conn)
+    token = tokens.get(key)
+    if token is not None and token.get("conn") is conn:
+        token["depth"] += 1
+        handle = _WriteTransactionHandle(is_owner=False, depth=token["depth"])
+        try:
+            yield handle
+        except BaseException:
+            token["depth"] -= 1
+            raise
+        else:
+            token["depth"] -= 1
+        return
+    adopted = bool(conn.in_transaction)
+    if not adopted:
+        conn.execute("BEGIN IMMEDIATE")
+    token = {
+        "token_id": M.new_id(),
+        "purpose": purpose,
+        "depth": 1,
+        "conn": conn,
+        "adopted": adopted,
+    }
+    tokens[key] = token
+    try:
+        yield _WriteTransactionHandle(is_owner=True, depth=1)
+    except BaseException as exc:
+        try:
+            conn.rollback()
+        except sqlite3.Error:
+            pass
+        tokens.pop(key, None)
+        _maybe_record_write_refusal(conn, exc)
+        raise
+    else:
+        try:
+            conn.commit()
+        finally:
+            tokens.pop(key, None)
+
+
+def _commit_if_owner(conn: sqlite3.Connection) -> None:
+    """Commit only if the caller owns the helper transaction on this
+    connection. A nested call is a no-op.
+
+    No-token case (brief-ambiguity resolution, §4.1): the brief's
+    docstring does not cover a call with no helper transaction active.
+    The class-B requirement forces it — the signals functions call
+    `_commit_if_owner` without entering a helper — so with no token
+    the caller owns the ambient transaction and the call commits.
+
+    Caller contract (pinned finding, T-O1–T-O3): this must only be
+    called from inside a helper the CALLER owns (a class-A function
+    inside its own `with`, or a standalone writer with no token).
+    "Depth == 1" means the OUTERMOST helper is at depth 1 — it does
+    NOT mean the caller owns it. A writer that never opens a helper
+    (upsert_node_vitality, append_node_judgment) called while an
+    outer helper is open would commit that outer transaction; such
+    writers use `_commit_if_standalone` instead.
+    """
+    token = _active_write_token(conn)
+    if token is None:
+        conn.commit()
+        return
+    if token["depth"] == 1:
+        conn.commit()
+    # Nested (depth > 1): no-op — only the owner commits.
+
+
+def _commit_if_standalone(conn: sqlite3.Connection) -> None:
+    """Commit only if NO helper transaction is active on this
+    connection. For writers that never open a helper (class-D
+    upsert_node_vitality / append_node_judgment, reached via the
+    post-commit log path): if a helper token exists, the transaction
+    belongs to someone else — an outer helper — and this call must
+    not commit it; the owner commits (the write joins that
+    transaction). With no token the caller owns the ambient
+    transaction and the call commits (the pre-C1a behavior).
+
+    Pinned finding (T-O1–T-O3): `_commit_if_owner` is wrong here —
+    its depth==1 branch commits the OUTERMOST helper, which the
+    class-D writer does not own. The log path runs after the inner
+    `with` exits but inside an outer `with` when a class-A function
+    is called nested, so the depth==1 commit fired and the outer
+    transaction became visible before the owner committed.
+    """
+    if _active_write_token(conn) is None:
+        conn.commit()
+    # A helper token exists: no-op — the helper owner commits.
+
+
+def _rollback_if_owner(conn: sqlite3.Connection) -> None:
+    """Roll back only if the caller owns the helper transaction.
+    A nested call RAISES (it does not roll back) — the error propagates
+    to the owner, which rolls back the whole transaction.
+
+    No-token case: mirror of _commit_if_owner — with no token the
+    caller owns the ambient transaction, so the call rolls it back.
+    """
+    token = _active_write_token(conn)
+    if token is None:
+        conn.rollback()
+        return
+    if token["depth"] == 1:
+        conn.rollback()
+        return
+    raise RuntimeError(
+        "nested _rollback_if_owner refused: an inner function cannot roll "
+        "back its caller's helper transaction; the error propagates to "
+        "the owner, which rolls back the whole transaction"
+    )
+
+
+def _require_helper_transaction(conn: sqlite3.Connection) -> None:
+    """Rule 1 (§4.2): a guarded write that finds itself outside a helper
+    transaction raises rather than proceeding — the helper is the only
+    entry point. The brief names no error type for this; RuntimeError
+    with a precise message (pinned finding)."""
+    if _active_write_token(conn) is None:
+        raise RuntimeError(
+            "write-authority guard called outside a helper transaction: "
+            "guarded writes must enter through ve_write_transaction"
+        )
+
+
+def _maybe_record_write_refusal(
+    conn: sqlite3.Connection, exc: BaseException
+) -> None:
+    """Record a guard refusal in ledger_history (§2.3 `write_refused` /
+    `write_frozen_refusal`) after the owner's rollback, in its own
+    short transaction. Called only from the helper owner's exception
+    path, so a refusal is recorded exactly once, regardless of caller.
+
+    The record must never mask the original exception: any failure
+    here is logged and swallowed. T-D1 pins that a delete_project
+    refusal is recorded; T-FZ1/T-G1 pin the refusal errors themselves.
+    """
+    event: str | None = None
+    if isinstance(exc, SubtreeWriteFrozen):
+        event = "write_frozen_refusal"
+    elif isinstance(exc, (MigratedNodeWriteRefused, ProjectHasTasks)):
+        event = "write_refused"
+    if event is None:
+        return
+    try:
+        detail: dict[str, Any] = {
+            "error": type(exc).__name__,
+            "reason": str(exc),
+        }
+        subtree_id = getattr(exc, "subtree_id", None)
+        target_id = getattr(exc, "target_id", None)
+        if subtree_id is not None:
+            detail["subtree_id"] = subtree_id
+        if target_id is not None:
+            detail["target_id"] = target_id
+        attempt_id = getattr(exc, "attempt_id", None)
+        if attempt_id is not None:
+            detail["attempt_id"] = attempt_id
+        if isinstance(exc, ProjectHasTasks):
+            if getattr(exc, "project_id", None) is not None:
+                detail["project_id"] = exc.project_id
+            if getattr(exc, "task_count", None) is not None:
+                detail["task_count"] = exc.task_count
+        _append_ledger_history(
+            conn,
+            subtree_id=str(subtree_id) if subtree_id is not None else None,
+            event=event,
+            actor="system",
+            detail=detail,
+        )
+        conn.commit()
+    except Exception:
+        _logger.exception("failed to record write refusal in ledger_history")
+
+
+# --- C1a §2/§3: ledger + node-store migrations (class C) --------------
+# New migration functions in the class-C pattern: CREATE TABLE IF NOT
+# EXISTS (+ indexes), then conn.commit(). They run from init_db under
+# _init_lock, before any authority exists. The class grows by these
+# two functions; T-O4c covers them like the other migrations.
+
+_LEDGER_EVENTS = frozenset(
+    {
+        "attempt_recorded",
+        "flip_committed",
+        "flip_failed_before_commit",
+        "flip_failed_after_commit",
+        "verification_passed",
+        "verification_failed",
+        "pause_engaged",
+        "pause_released",
+        "attempt_reconciled",
+        "write_refused",
+        "write_frozen_refusal",
+        "rollback_committed",
+        # §9.2 requires a `recovery_blocked` history entry for the
+        # inconsistent-ledger case; §2.3's list omits it. The §9.2
+        # instruction governs (pinned finding): the set includes it.
+        "recovery_blocked",
+    }
+)
+
+_LEDGER_EXCEPTION_NAMES = frozenset(
+    {
+        "LEGACY_TASK_DELETE_ORPHANS_CHILDREN",
+        "LEGACY_INITIATIVE_DELETE_UNANCHORS_PROJECTS",
+    }
+)
+
+
+def _migrate_migration_ledger(conn: sqlite3.Connection) -> None:
+    """§2: migration_ledger, flip_attempts, ledger_history,
+    ledger_exceptions, migration_pause, pause_releases.
+
+    Fresh databases start PAUSED: the migration_pause row is created
+    `paused`, and no startup code ever releases it (§7.3). The
+    ledger_history append-only rule (§2.3) is enforced twice: no
+    UPDATE/DELETE statement against the table exists in the code
+    (static test T-L4), AND two BEFORE triggers make a runtime
+    attempt fail (T-L4 requires the runtime attempt to raise; a
+    trigger is the mechanism — §2.3 names only the static half).
+    """
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS migration_ledger (
+          subtree_id TEXT PRIMARY KEY,
+          authority TEXT NOT NULL,
+          version INTEGER NOT NULL,
+          fingerprint_sha256 TEXT,
+          fingerprint_canonical_json TEXT,
+          flipped_at TEXT,
+          flip_authorization_ref TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS flip_attempts (
+          attempt_id TEXT PRIMARY KEY,
+          subtree_id TEXT NOT NULL,
+          state TEXT NOT NULL,
+          authorization_ref TEXT NOT NULL,
+          release_id TEXT,
+          operator TEXT,
+          started_at TEXT NOT NULL,
+          ended_at TEXT,
+          failure_detail TEXT,
+          verification_entry TEXT,
+          resolution TEXT,
+          ledger_ref TEXT
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flip_attempts_subtree "
+        "ON flip_attempts(subtree_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_flip_attempts_state "
+        "ON flip_attempts(state)"
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS ledger_history (
+          history_id TEXT PRIMARY KEY,
+          subtree_id TEXT,
+          event TEXT NOT NULL,
+          actor TEXT NOT NULL,
+          at TEXT NOT NULL,
+          detail_json TEXT
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ledger_history_subtree "
+        "ON ledger_history(subtree_id)"
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS ledger_exceptions (
+          exception_id TEXT PRIMARY KEY,
+          subtree_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          recorded_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS migration_pause (
+          id TEXT PRIMARY KEY,
+          state TEXT NOT NULL,
+          engaged_at TEXT,
+          engaged_by TEXT,
+          engaged_reason TEXT
+        )"""
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS pause_releases (
+          release_id TEXT PRIMARY KEY,
+          subtree_id TEXT NOT NULL,
+          authorization_ref TEXT NOT NULL,
+          operator TEXT NOT NULL,
+          released_at TEXT NOT NULL,
+          consumed_by_attempt_id TEXT
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_pause_releases_subtree "
+        "ON pause_releases(subtree_id)"
+    )
+    # Append-only enforcement (runtime half of T-L4). Corrections are
+    # new history entries, never edits (§2.3).
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS trg_ledger_history_no_update
+           BEFORE UPDATE ON ledger_history
+           BEGIN
+             SELECT RAISE(ABORT, 'ledger_history is append-only');
+           END"""
+    )
+    conn.execute(
+        """CREATE TRIGGER IF NOT EXISTS trg_ledger_history_no_delete
+           BEFORE DELETE ON ledger_history
+           BEGIN
+             SELECT RAISE(ABORT, 'ledger_history is append-only');
+           END"""
+    )
+    now = _now()
+    conn.execute(
+        "INSERT OR IGNORE INTO migration_pause "
+        "(id, state, engaged_at, engaged_by, engaged_reason) "
+        "VALUES ('global', 'paused', ?, 'system', 'fresh database: paused by default')",
+        (now,),
+    )
+    conn.commit()
+
+
+def _migrate_node_store(conn: sqlite3.Connection) -> None:
+    """§3: nodes, node_bullets, node_seats. Created empty; the guard
+    refuses node writes to unflipped subtrees, and with zero flipped
+    subtrees there is no authorized node write (T-L1 pins the
+    empty-store invariant). Kind-specific fields are nullable columns;
+    a field meaningless for a kind stays NULL, never a backfilled
+    default. No delete_node exists (§1.2, §5.5)."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS nodes (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          parent_id TEXT,
+          status TEXT NOT NULL,
+          original_status TEXT NOT NULL,
+          title TEXT NOT NULL,
+          description TEXT,
+          notes TEXT,
+          priority TEXT,
+          estimated_hours REAL,
+          due_date TEXT,
+          timeframe_commitment TEXT,
+          dependency_ids TEXT NOT NULL DEFAULT '[]',
+          origin_seat TEXT,
+          origin_conversation_id TEXT,
+          origin_message_id TEXT,
+          origin_claim_id TEXT,
+          origin_decision_id TEXT,
+          seat_ref TEXT,
+          responsible_seat TEXT,
+          position INTEGER,
+          source_table TEXT NOT NULL,
+          visibility TEXT NOT NULL DEFAULT 'visible',
+          completion_criteria TEXT,
+          deliverables TEXT,
+          brief TEXT,
+          current_focus TEXT,
+          next_step_ai TEXT,
+          seed_key TEXT,
+          tags TEXT,
+          evaluation_priority TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_nodes_parent ON nodes(parent_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_nodes_user ON nodes(user_id)"
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS node_bullets (
+          id TEXT PRIMARY KEY,
+          node_id TEXT NOT NULL,
+          content TEXT NOT NULL,
+          standing TEXT NOT NULL,
+          position INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_node_bullets_node "
+        "ON node_bullets(node_id)"
+    )
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS node_seats (
+          id TEXT PRIMARY KEY,
+          node_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          assigned_person_id TEXT,
+          estimated_effort TEXT,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_node_seats_node "
+        "ON node_seats(node_id)"
+    )
+    conn.commit()
+
+
+# --- C1a §2: ledger read/write helpers (conn-passing) --------------------
+
+def _append_ledger_history(
+    conn: sqlite3.Connection,
+    subtree_id: str | None,
+    event: str,
+    actor: str,
+    detail: dict[str, Any] | None = None,
+) -> str:
+    """Append one ledger_history row. No commit — the caller commits.
+    The event must be in the closed set (§2.3 + `recovery_blocked`
+    per §9.2); a new event kind needs a design review, not a code
+    change, so an unknown event raises here. Detail never carries
+    subtree content — events, not rows."""
+    if event not in _LEDGER_EVENTS:
+        raise ValueError(f"unknown ledger_history event: {event!r}")
+    history_id = M.new_id()
+    conn.execute(
+        "INSERT INTO ledger_history "
+        "(history_id, subtree_id, event, actor, at, detail_json) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            history_id,
+            subtree_id,
+            event,
+            actor,
+            _now(),
+            json.dumps(detail or {}, ensure_ascii=False, sort_keys=True),
+        ),
+    )
+    return history_id
+
+
+def _ledger_authority(conn: sqlite3.Connection, subtree_id: str) -> str | None:
+    """The authority for a subtree: 'legacy', 'node', or None (no row —
+    legacy by default, §2.1)."""
+    row = conn.execute(
+        "SELECT authority FROM migration_ledger WHERE subtree_id = ?",
+        (subtree_id,),
+    ).fetchone()
+    return str(row[0]) if row is not None else None
+
+
+def _ledger_row(conn: sqlite3.Connection, subtree_id: str) -> dict[str, Any] | None:
+    """The full migration_ledger row for a subtree, or None."""
+    row = conn.execute(
+        "SELECT subtree_id, authority, version, fingerprint_sha256, "
+        "fingerprint_canonical_json, flipped_at, flip_authorization_ref, "
+        "created_at, updated_at FROM migration_ledger WHERE subtree_id = ?",
+        (subtree_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "subtree_id": row[0],
+        "authority": row[1],
+        "version": row[2],
+        "fingerprint_sha256": row[3],
+        "fingerprint_canonical_json": row[4],
+        "flipped_at": row[5],
+        "flip_authorization_ref": row[6],
+        "created_at": row[7],
+        "updated_at": row[8],
+    }
+
+
+def _unresolved_failed_after_commit(
+    conn: sqlite3.Connection, subtree_id: str
+) -> dict[str, Any] | None:
+    """The unresolved `failed_after_commit` attempt for a subtree, if
+    any — the freeze (§10). Returns the attempt dict or None."""
+    row = conn.execute(
+        "SELECT attempt_id, subtree_id, state, authorization_ref, "
+        "release_id, operator, started_at, ended_at, failure_detail, "
+        "verification_entry, resolution, ledger_ref FROM flip_attempts "
+        "WHERE subtree_id = ? AND state = 'failed_after_commit'",
+        (subtree_id,),
+    ).fetchone()
+    return _attempt_row_to_dict(row) if row is not None else None
+
+
+def _read_pause_row(conn: sqlite3.Connection) -> dict[str, Any]:
+    """The single migration_pause row (id='global')."""
+    row = conn.execute(
+        "SELECT id, state, engaged_at, engaged_by, engaged_reason "
+        "FROM migration_pause WHERE id = 'global'",
+    ).fetchone()
+    if row is None:
+        return {
+            "id": "global",
+            "state": "paused",
+            "engaged_at": None,
+            "engaged_by": None,
+            "engaged_reason": None,
+        }
+    return {
+        "id": row[0],
+        "state": row[1],
+        "engaged_at": row[2],
+        "engaged_by": row[3],
+        "engaged_reason": row[4],
+    }
+
+
+def _live_release_for_subtree(
+    conn: sqlite3.Connection, subtree_id: str
+) -> dict[str, Any] | None:
+    """The oldest live (unconsumed) pause release for a subtree, if any."""
+    row = conn.execute(
+        "SELECT release_id, subtree_id, authorization_ref, operator, "
+        "released_at, consumed_by_attempt_id FROM pause_releases "
+        "WHERE subtree_id = ? AND consumed_by_attempt_id IS NULL "
+        "ORDER BY released_at ASC LIMIT 1",
+        (subtree_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return {
+        "release_id": row[0],
+        "subtree_id": row[1],
+        "authorization_ref": row[2],
+        "operator": row[3],
+        "released_at": row[4],
+        "consumed_by_attempt_id": row[5],
+    }
+
+
+def _attempt_row_to_dict(row: Any) -> dict[str, Any]:
+    return {
+        "attempt_id": row[0],
+        "subtree_id": row[1],
+        "state": row[2],
+        "authorization_ref": row[3],
+        "release_id": row[4],
+        "operator": row[5],
+        "started_at": row[6],
+        "ended_at": row[7],
+        "failure_detail": row[8],
+        "verification_entry": row[9],
+        "resolution": row[10],
+        "ledger_ref": row[11],
+    }
+
+
+def _get_attempt_row(
+    conn: sqlite3.Connection, attempt_id: str
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT attempt_id, subtree_id, state, authorization_ref, "
+        "release_id, operator, started_at, ended_at, failure_detail, "
+        "verification_entry, resolution, ledger_ref FROM flip_attempts "
+        "WHERE attempt_id = ?",
+        (attempt_id,),
+    ).fetchone()
+    return _attempt_row_to_dict(row) if row is not None else None
+
+
+def _list_unresolved_attempt_rows(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT attempt_id, subtree_id, state, authorization_ref, "
+        "release_id, operator, started_at, ended_at, failure_detail, "
+        "verification_entry, resolution, ledger_ref FROM flip_attempts "
+        "WHERE state IN ('recorded', 'failed_before_commit', "
+        "'failed_after_commit') ORDER BY started_at ASC",
+    ).fetchall()
+    return [_attempt_row_to_dict(r) for r in rows]
+
+
+# --- C1a §5: subtree resolution + the writer guards ---------------------
+# The guard resolves a write's subtree, then checks in the fixed
+# order (§5.1, §10.3): (1) freeze first — an unresolved
+# failed_after_commit attempt refuses with SubtreeWriteFrozen (423);
+# (2) authority — a legacy write to a 'node' subtree refuses with
+# MigratedNodeWriteRefused (409); no row or 'legacy' proceeds.
+# All resolution reads are owner-scoped and run inside the caller's
+# helper transaction (the guard raises if called outside one).
+
+_MAX_PARENT_CHAIN = 100
+
+
+def _resolve_task_subtree(
+    conn: sqlite3.Connection, task_id: str | None, user_id: str
+) -> str | None:
+    """A task's subtree: walk the parent_task_id chain (the immediate
+    parent wins, §3.2) to the root task, then its project_id's
+    initiative. A dangling parent (missing, or another user's) falls
+    back to the task's own project_id; a cycle falls back the same
+    way. A root task with no project belongs to no subtree yet (§5.1
+    step 1: root creates are legacy writes)."""
+    if not task_id:
+        return None
+    seen: set[str] = set()
+    current_id: str | None = task_id
+    own_project_id: str | None = None
+    depth = 0
+    while current_id and depth < _MAX_PARENT_CHAIN:
+        if current_id in seen:
+            break
+        seen.add(current_id)
+        row = conn.execute(
+            "SELECT parent_task_id, project_id FROM tasks "
+            "WHERE id = ? AND user_id = ?",
+            (current_id, user_id),
+        ).fetchone()
+        if row is None:
+            break
+        if own_project_id is None:
+            own_project_id = row[1]
+        parent_id = row[0]
+        if not parent_id:
+            # Root of the chain: its project decides the subtree.
+            return _resolve_project_subtree(conn, row[1], user_id)
+        current_id = parent_id
+        depth += 1
+    # Dangling parent, cycle, or depth cap: fall back to the task's own
+    # project (the most local available anchor).
+    return _resolve_project_subtree(conn, own_project_id, user_id)
+
+
+def _resolve_project_subtree(
+    conn: sqlite3.Connection, project_id: str | None, user_id: str
+) -> str | None:
+    """A project's subtree is its initiative_id (None → no subtree)."""
+    if not project_id:
+        return None
+    row = conn.execute(
+        "SELECT initiative_id FROM projects WHERE id = ? AND user_id = ?",
+        (project_id, user_id),
+    ).fetchone()
+    if row is None or not row[0]:
+        return None
+    return str(row[0])
+
+
+def _resolve_task_payload_subtree(
+    conn: sqlite3.Connection,
+    parent_task_id: str | None,
+    project_id: str | None,
+    user_id: str,
+) -> str | None:
+    """Resolve the subtree a task CREATE belongs to, from the create
+    payload's parent fields (§5.1 step 1): the immediate parent task
+    wins; otherwise the project. No parent and no project → None
+    (root create; the T-G3 refusal half is an open question)."""
+    if parent_task_id:
+        return _resolve_task_subtree(conn, parent_task_id, user_id)
+    if project_id:
+        return _resolve_project_subtree(conn, project_id, user_id)
+    return None
+
+
+def _resolve_idea_subtrees(
+    conn: sqlite3.Connection, idea_id: str | None, user_id: str
+) -> list[str]:
+    """The subtrees an idea resolves to: the initiatives claiming it
+    via source_idea_id (the only idea↔initiative link in the schema;
+    Slice A treats it as an origin edge, not parentage — the guard
+    treats it as the idea's subtree membership, because an idea's
+    checklist children flip with the claiming initiative's subtree).
+    A write to the idea refuses if ANY claiming subtree is
+    flipped/frozen (fail-closed). No claim → no subtree → legacy
+    write proceeds. The flip's census (C1b) is the authority on
+    row→subtree assignment at flip time and must confirm this rule
+    (open question, pinned in the build report)."""
+    if not idea_id:
+        return []
+    rows = conn.execute(
+        "SELECT id FROM initiatives WHERE source_idea_id = ? AND user_id = ?",
+        (idea_id, user_id),
+    ).fetchall()
+    return [str(r[0]) for r in rows]
+
+
+def _resolve_checklist_subtree(
+    conn: sqlite3.Connection, item_id: str | None, user_id: str
+) -> list[str]:
+    """A checklist item resolves via its idea (§5.1 step 1)."""
+    if not item_id:
+        return []
+    row = conn.execute(
+        "SELECT idea_id FROM checklist_items WHERE id = ? AND user_id = ?",
+        (item_id, user_id),
+    ).fetchone()
+    if row is None:
+        return []
+    return _resolve_idea_subtrees(conn, row[0], user_id)
+
+
+def _resolve_step_subtree(
+    conn: sqlite3.Connection,
+    scope_type: str | None,
+    scope_id: str | None,
+    user_id: str,
+) -> str | None:
+    """An execution step resolves via its scope (§5.1 step 1)."""
+    if not scope_id:
+        return None
+    if scope_type == EXECUTION_STEPS_SCOPE_INITIATIVE:
+        return str(scope_id)
+    if scope_type == EXECUTION_STEPS_SCOPE_PROJECT:
+        return _resolve_project_subtree(conn, scope_id, user_id)
+    return None
+
+
+def _resolve_proposal_subtree(
+    conn: sqlite3.Connection, proposal_id: str | None, user_id: str
+) -> str | None:
+    """A proposal resolves via its parent task (§5.1 step 1).
+    Parentless → no subtree → legacy write proceeds."""
+    if not proposal_id:
+        return None
+    row = conn.execute(
+        "SELECT parent_task_id FROM task_proposals "
+        "WHERE id = ? AND user_id = ?",
+        (proposal_id, user_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return _resolve_task_subtree(conn, row[0], user_id)
+
+
+def _guard_legacy_write(
+    conn: sqlite3.Connection,
+    subtree_id: str | None,
+    *,
+    target_id: str | None = None,
+    target_kind: str = "node",
+) -> None:
+    """§5.1: the legacy-write guard. No subtree → proceed (a root
+    create/write has no subtree until the flip assigns it one).
+    Otherwise, inside the caller's helper transaction: freeze first,
+    then authority. Raises the named refusal errors (§5.2)."""
+    _require_helper_transaction(conn)
+    if subtree_id is None:
+        return
+    frozen = _unresolved_failed_after_commit(conn, subtree_id)
+    if frozen is not None:
+        raise SubtreeWriteFrozen(
+            f"subtree {subtree_id} is write-frozen: flip attempt "
+            f"{frozen['attempt_id']} failed after commit; recovery "
+            f"review required; see attempt {frozen['attempt_id']}",
+            subtree_id=subtree_id,
+            target_id=target_id,
+            attempt_id=frozen["attempt_id"],
+        )
+    authority = _ledger_authority(conn, subtree_id)
+    if authority == "node":
+        raise MigratedNodeWriteRefused(
+            f"subtree {subtree_id} has flipped to node authority; "
+            f"legacy writes are refused (target {target_kind} "
+            f"{target_id or '?'})",
+            subtree_id=subtree_id,
+            target_id=target_id,
+        )
+    # No row or 'legacy': proceed with the mutation.
+
+
+def _guard_node_write(
+    conn: sqlite3.Connection,
+    subtree_id: str | None,
+    *,
+    target_id: str | None = None,
+    target_kind: str = "node",
+) -> None:
+    """§5.5: the node-write branch of the guard. Used by the flip's
+    conn-passing test helpers in C1a (no production node-write CRUD
+    exists yet — the C2 interface is specified below). A node write to
+    a subtree whose authority is 'legacy' (or has no row) is refused;
+    a node write to a frozen subtree refuses with SubtreeWriteFrozen;
+    a node write to a flipped subtree proceeds (the version bump
+    happens in the same transaction as the write). The legacy-refusal
+    error type is not named in the brief; ValueError with a precise
+    message (pinned finding)."""
+    _require_helper_transaction(conn)
+    if subtree_id is None:
+        raise ValueError(
+            "node write refused: target has no subtree (node writes "
+            "require a flipped subtree)"
+        )
+    frozen = _unresolved_failed_after_commit(conn, subtree_id)
+    if frozen is not None:
+        raise SubtreeWriteFrozen(
+            f"subtree {subtree_id} is write-frozen: flip attempt "
+            f"{frozen['attempt_id']} failed after commit; recovery "
+            f"review required; see attempt {frozen['attempt_id']}",
+            subtree_id=subtree_id,
+            target_id=target_id,
+            attempt_id=frozen["attempt_id"],
+        )
+    authority = _ledger_authority(conn, subtree_id)
+    if authority != "node":
+        raise ValueError(
+            f"node write refused: subtree {subtree_id} is legacy "
+            f"authority; the node store is not authoritative there "
+            f"(target {target_kind} {target_id or '?'})"
+        )
+
+
+def _guard_idea_write(
+    conn: sqlite3.Connection,
+    idea_id: str | None,
+    user_id: str,
+    *,
+    target_id: str | None = None,
+    target_kind: str = "idea",
+) -> None:
+    """The idea guard: an idea resolves to every subtree claiming it
+    (§5.1 step 1 via _resolve_idea_subtrees). Refuse if ANY claiming
+    subtree is frozen or flipped. Two passes, so the freeze check
+    comes first for every claiming subtree before any authority
+    check (§10.3's fixed order, applied across subtrees). No claim
+    → proceed."""
+    _require_helper_transaction(conn)
+    subtree_ids = _resolve_idea_subtrees(conn, idea_id, user_id)
+    for subtree_id in subtree_ids:
+        frozen = _unresolved_failed_after_commit(conn, subtree_id)
+        if frozen is not None:
+            raise SubtreeWriteFrozen(
+                f"subtree {subtree_id} is write-frozen: flip attempt "
+                f"{frozen['attempt_id']} failed after commit; recovery "
+                f"review required; see attempt {frozen['attempt_id']}",
+                subtree_id=subtree_id,
+                target_id=target_id,
+                attempt_id=frozen["attempt_id"],
+            )
+    for subtree_id in subtree_ids:
+        _guard_legacy_write(
+            conn, subtree_id, target_id=target_id, target_kind=target_kind
+        )
+
+
+def _guard_checklist_write(
+    conn: sqlite3.Connection,
+    item_id: str | None,
+    user_id: str,
+    *,
+    target_id: str | None = None,
+    target_kind: str = "checklist_item",
+) -> None:
+    """Guard for a checklist-item write: read the item's idea inside
+    the helper transaction, then apply the idea guard (two-pass:
+    freeze first, then authority, across all claiming subtrees)."""
+    if not item_id:
+        return
+    row = conn.execute(
+        "SELECT idea_id FROM checklist_items WHERE id = ? AND user_id = ?",
+        (item_id, user_id),
+    ).fetchone()
+    idea_id = row[0] if row is not None else None
+    _guard_idea_write(
+        conn, idea_id, user_id,
+        target_id=target_id if target_id is not None else item_id,
+        target_kind=target_kind,
+    )
+
+
+def _guard_step_write(
+    conn: sqlite3.Connection,
+    step_id: str | None,
+    user_id: str,
+    *,
+    target_id: str | None = None,
+    target_kind: str = "execution_step",
+) -> None:
+    """Guard for an execution-step write: read the step's scope inside
+    the helper transaction, then apply the legacy guard on the
+    resolved subtree."""
+    if not step_id:
+        return
+    row = conn.execute(
+        "SELECT scope_type, scope_id FROM execution_steps "
+        "WHERE id = ? AND user_id = ?",
+        (step_id, user_id),
+    ).fetchone()
+    if row is None:
+        return
+    subtree_id = _resolve_step_subtree(conn, row[0], row[1], user_id)
+    _guard_legacy_write(
+        conn,
+        subtree_id,
+        target_id=target_id if target_id is not None else step_id,
+        target_kind=target_kind,
+    )
+
+
+# --- C1a §5.5: node-write CRUD — interface specified, NOT implemented ----
+# C2 builds these against this interface; C1a specifies it only.
+#   create_node(conn, data, user_id) / update_node(conn, node_id, patch,
+#   user_id) — conn-passing helpers (following the _insert_task
+#   precedent), called only inside a helper transaction, only for a
+#   target whose subtree authority is 'node' (guarded by
+#   _guard_node_write above). They increment the subtree version in
+#   the same transaction as the write (record §7.2(1)).
+#   delete_node does NOT exist: migrated-node deletion remains refused
+#   fail-closed until the descendant-disposition workflow is
+#   separately authorized (§1.2). When that workflow is authorized,
+#   its design specifies the delete path; until then there is no
+#   node-delete function to call.
+# The route wiring (which API endpoints call the node-write functions
+# after a flip) is C2/Slice B scope, not C1a. C1a's tests exercise
+# node writes only through the flip's conn-passing helpers in
+# fixture databases.
+
+
+# --- C1a §7: the durable migration pause + operator controls -----------
+# Surface chosen (R-D2): storage functions + the established
+# flyctl machine-exec operator channel. NO API endpoint, NO manual-SQL
+# path, NO env flag, NO in-app UI (§7.2). The global state stays
+# 'paused'; a release is the scoped, single-use exception to it.
+# These functions take no conn (brief §7.1 signatures): they open
+# their own connection via get_connection(), which the test fixtures
+# point at an isolated database by monkeypatching _DB_PATH.
+
+
+def _pause_status_dict(conn: sqlite3.Connection) -> dict[str, Any]:
+    """The operator's status read: global state, live releases, and
+    unresolved attempts (§7.1). Read-only."""
+    pause = _read_pause_row(conn)
+    live = conn.execute(
+        "SELECT release_id, subtree_id, authorization_ref, operator, "
+        "released_at, consumed_by_attempt_id FROM pause_releases "
+        "WHERE consumed_by_attempt_id IS NULL ORDER BY released_at ASC",
+    ).fetchall()
+    return {
+        "state": pause["state"],
+        "engaged_at": pause["engaged_at"],
+        "engaged_by": pause["engaged_by"],
+        "engaged_reason": pause["engaged_reason"],
+        "live_releases": [
+            {
+                "release_id": r[0],
+                "subtree_id": r[1],
+                "authorization_ref": r[2],
+                "operator": r[3],
+                "released_at": r[4],
+                "consumed_by_attempt_id": r[5],
+            }
+            for r in live
+        ],
+        "unresolved_attempts": _list_unresolved_attempt_rows(conn),
+    }
+
+
+def migration_pause_status() -> dict[str, Any]:
+    """Read-only: global state, the list of live releases, the list of
+    unresolved attempts. The operator's status read (and the read
+    C1b's diagnostics formalize under R-D3)."""
+    return _pause_status_dict(get_connection())
+
+
+def engage_migration_pause(operator: str, reason: str) -> dict[str, Any]:
+    """Set migration_pause.state = 'paused' (own short transaction),
+    writing a `pause_engaged` history entry (operator, time, reason).
+    Idempotent: engaging an already-engaged pause records the
+    (redundant) engagement in history but changes nothing."""
+    conn = get_connection()
+    with ve_write_transaction(conn, purpose="engage_migration_pause"):
+        now = _now()
+        conn.execute(
+            "UPDATE migration_pause SET state = 'paused', engaged_at = ?, "
+            "engaged_by = ?, engaged_reason = ? WHERE id = 'global'",
+            (now, operator, reason),
+        )
+        _append_ledger_history(
+            conn,
+            subtree_id=None,
+            event="pause_engaged",
+            actor=operator,
+            detail={"reason": reason},
+        )
+        _commit_if_owner(conn)
+    return _pause_status_dict(conn)
+
+
+def release_migration_pause_for_subtree(
+    subtree_id: str, authorization_ref: str, operator: str
+) -> dict[str, Any]:
+    """Append a pause_releases row (single-use, §2.5) and write a
+    `pause_released` history entry. Does NOT flip the global pause
+    state — the global state stays 'paused'; the release is the
+    scoped exception to it. The flip path checks: global pause
+    engaged AND a live (unconsumed) release exists for this subtree,
+    else refuse with MigrationPaused."""
+    conn = get_connection()
+    release_id = M.new_id()
+    with ve_write_transaction(conn, purpose="release_migration_pause_for_subtree"):
+        now = _now()
+        conn.execute(
+            "INSERT INTO pause_releases (release_id, subtree_id, "
+            "authorization_ref, operator, released_at, "
+            "consumed_by_attempt_id) VALUES (?, ?, ?, ?, ?, NULL)",
+            (release_id, subtree_id, authorization_ref, operator, now),
+        )
+        _append_ledger_history(
+            conn,
+            subtree_id=subtree_id,
+            event="pause_released",
+            actor=operator,
+            detail={
+                "release_id": release_id,
+                "authorization_ref": authorization_ref,
+            },
+        )
+        _commit_if_owner(conn)
+    return {
+        "release_id": release_id,
+        "subtree_id": subtree_id,
+        "authorization_ref": authorization_ref,
+        "operator": operator,
+        "released_at": now,
+        "consumed_by_attempt_id": None,
+    }
+
+
+def _engage_pause_in_transaction(
+    conn: sqlite3.Connection, operator: str, reason: str
+) -> None:
+    """Engage the pause inside an already-open helper transaction
+    (used by the attempt-marking functions, §8.1: the flip path
+    records the failure in a post-rollback transaction and engages
+    the pause). Idempotent; records the engagement in history."""
+    now = _now()
+    conn.execute(
+        "UPDATE migration_pause SET state = 'paused', engaged_at = ?, "
+        "engaged_by = ?, engaged_reason = ? WHERE id = 'global'",
+        (now, operator, reason),
+    )
+    _append_ledger_history(
+        conn,
+        subtree_id=None,
+        event="pause_engaged",
+        actor=operator,
+        detail={"reason": reason},
+    )
+
+
+# --- C1a §§8-9: flip-attempt tracking + the recovery procedure --------
+# The attempt row is committed in its own transaction BEFORE the
+# migration transaction begins (§2.2). The flip PATH itself (the C2
+# migration transaction that moves rows) is NOT built in C1a — only
+# the attempt record, the states, the enforcement, and the recovery
+# procedure's storage functions. No flip may run in C1a.
+# A `recorded` attempt blocks ALL flips globally (§8.2); a
+# `failed_before_commit` / `failed_after_commit` attempt blocks flips
+# for its own subtree only. Only `failed_after_commit` freezes writes
+# (§10).
+
+
+def record_flip_attempt(
+    subtree_id: str, authorization_ref: str, operator: str
+) -> dict[str, Any]:
+    """Record a flip attempt (own transaction, committed) BEFORE the
+    migration transaction begins. Check-then-record atomically in one
+    transaction: (1) a live (unconsumed) release must exist for this
+    subtree — else MigrationPaused; (2) no unresolved attempt may
+    exist — a `recorded` attempt anywhere blocks ALL flips, a
+    `failed_*` attempt for this subtree blocks this subtree — else
+    UnresolvedFlipAttempt. The release is consumed by the recording
+    (consumed_by_attempt_id set); a refused flip consumes no release
+    and records no attempt (§11.3 step order is loose; §8 + §14
+    window (a) govern — pinned finding)."""
+    conn = get_connection()
+    attempt_id = M.new_id()
+    with ve_write_transaction(conn, purpose="record_flip_attempt"):
+        release = _live_release_for_subtree(conn, subtree_id)
+        if release is None:
+            raise MigrationPaused(
+                f"flip of subtree {subtree_id} refused: the migration "
+                f"pause is engaged and no live release exists for this "
+                f"subtree",
+                subtree_id=subtree_id,
+            )
+        unresolved = _list_unresolved_attempt_rows(conn)
+        for other in unresolved:
+            if other["state"] == "recorded":
+                raise UnresolvedFlipAttempt(
+                    f"flip of subtree {subtree_id} refused: attempt "
+                    f"{other['attempt_id']} (subtree "
+                    f"{other['subtree_id']}) is recorded and unresolved; "
+                    f"a recorded attempt blocks all flips globally",
+                    subtree_id=subtree_id,
+                    attempt_id=other["attempt_id"],
+                    attempt_state="recorded",
+                )
+            if other["subtree_id"] == subtree_id:
+                raise UnresolvedFlipAttempt(
+                    f"flip of subtree {subtree_id} refused: attempt "
+                    f"{other['attempt_id']} is {other['state']} and "
+                    f"unresolved for this subtree",
+                    subtree_id=subtree_id,
+                    attempt_id=other["attempt_id"],
+                    attempt_state=other["state"],
+                )
+        now = _now()
+        conn.execute(
+            "INSERT INTO flip_attempts (attempt_id, subtree_id, state, "
+            "authorization_ref, release_id, operator, started_at, "
+            "ended_at, failure_detail, verification_entry, resolution, "
+            "ledger_ref) VALUES (?, ?, 'recorded', ?, ?, ?, ?, NULL, "
+            "NULL, NULL, NULL, NULL)",
+            (
+                attempt_id,
+                subtree_id,
+                authorization_ref,
+                release["release_id"],
+                operator,
+                now,
+            ),
+        )
+        conn.execute(
+            "UPDATE pause_releases SET consumed_by_attempt_id = ? "
+            "WHERE release_id = ?",
+            (attempt_id, release["release_id"]),
+        )
+        _append_ledger_history(
+            conn,
+            subtree_id=subtree_id,
+            event="attempt_recorded",
+            actor=operator,
+            detail={
+                "attempt_id": attempt_id,
+                "authorization_ref": authorization_ref,
+                "release_id": release["release_id"],
+            },
+        )
+        _commit_if_owner(conn)
+    row = _get_attempt_row(conn, attempt_id)
+    return row if row is not None else {}
+
+
+def _mark_attempt_failed(
+    conn: sqlite3.Connection,
+    attempt_id: str,
+    state: str,
+    failure_detail: str,
+    operator: str,
+) -> dict[str, Any]:
+    """Shared marking path for failed_before_commit /
+    failed_after_commit (§8.1): the attempt must be `recorded`; the
+    marking + pause engagement happen in one post-rollback
+    transaction; the failure is recorded in history. The freeze (§10)
+    engages automatically via the guard reading the attempt state —
+    no separate flag."""
+    row = _get_attempt_row(conn, attempt_id)
+    if row is None:
+        raise ValueError(f"flip attempt not found: {attempt_id}")
+    if row["state"] != "recorded":
+        raise ValueError(
+            f"flip attempt {attempt_id} is {row['state']}, not recorded; "
+            f"only a recorded attempt can be marked failed"
+        )
+    now = _now()
+    event = (
+        "flip_failed_before_commit"
+        if state == "failed_before_commit"
+        else "flip_failed_after_commit"
+    )
+    conn.execute(
+        "UPDATE flip_attempts SET state = ?, ended_at = ?, "
+        "failure_detail = ? WHERE attempt_id = ?",
+        (state, now, failure_detail, attempt_id),
+    )
+    _engage_pause_in_transaction(
+        conn, operator, f"flip attempt {attempt_id} marked {state}"
+    )
+    _append_ledger_history(
+        conn,
+        subtree_id=row["subtree_id"],
+        event=event,
+        actor=operator,
+        detail={"attempt_id": attempt_id, "failure_detail": failure_detail},
+    )
+    updated = _get_attempt_row(conn, attempt_id)
+    return updated if updated is not None else {}
+
+
+def mark_attempt_failed_before_commit(
+    attempt_id: str, failure_detail: str, operator: str = "system"
+) -> dict[str, Any]:
+    """§8.1: the migration transaction rolled back while the process
+    was alive; the flip path records the failure in a post-rollback
+    transaction and engages the pause. The subtree is unchanged
+    (legacy authority). Blocks flips for that subtree only."""
+    conn = get_connection()
+    with ve_write_transaction(conn, purpose="mark_attempt_failed_before_commit"):
+        out = _mark_attempt_failed(
+            conn, attempt_id, "failed_before_commit", failure_detail, operator
+        )
+        _commit_if_owner(conn)
+    return out
+
+
+def mark_attempt_failed_after_commit(
+    attempt_id: str, failure_detail: str, operator: str = "system"
+) -> dict[str, Any]:
+    """§8.1: the migration transaction committed, but a post-commit
+    verification failed. Node authority is preserved; the pause is
+    engaged; the subtree is write-frozen (§10). The flip is NOT
+    reversed automatically."""
+    conn = get_connection()
+    with ve_write_transaction(conn, purpose="mark_attempt_failed_after_commit"):
+        out = _mark_attempt_failed(
+            conn, attempt_id, "failed_after_commit", failure_detail, operator
+        )
+        _commit_if_owner(conn)
+    return out
+
+
+def determine_recorded_attempt(
+    attempt_id: str, operator: str = "system"
+) -> dict[str, Any]:
+    """§9 Steps 1–4: the operator recovery procedure's determination,
+    for a `recorded` attempt whose flip invocation is no longer
+    running. Reads the attempt row, the ledger authority row, and the
+    ledger history — the ONLY determinant — and marks the attempt:
+    authority 'node' + a `flip_committed` event for this attempt →
+    failed_after_commit (the flip committed; the subtree is now
+    write-frozen); authority 'legacy' + no event → failed_before_commit
+    (the flip did not commit; the subtree is unchanged). Disagreement
+    (node without event, or legacy with event) → INCONSISTENT: stop,
+    mark nothing, engage nothing; record a `recovery_blocked` history
+    entry and return the inconsistency. Never auto-retries, never
+    reverses authority, never assumes failure (§9.4)."""
+    conn = get_connection()
+    attempt = _get_attempt_row(conn, attempt_id)
+    if attempt is None:
+        raise ValueError(f"flip attempt not found: {attempt_id}")
+    if attempt["state"] != "recorded":
+        raise ValueError(
+            f"flip attempt {attempt_id} is {attempt['state']}, not "
+            f"recorded; the recovery procedure does not apply"
+        )
+    subtree_id = attempt["subtree_id"]
+    ledger = _ledger_row(conn, subtree_id)
+    authority = ledger["authority"] if ledger is not None else "legacy"
+    history = conn.execute(
+        "SELECT event, detail_json FROM ledger_history "
+        "WHERE subtree_id = ? ORDER BY at ASC",
+        (subtree_id,),
+    ).fetchall()
+    flip_event = False
+    for event, detail_json in history:
+        if event != "flip_committed":
+            continue
+        try:
+            detail = json.loads(detail_json or "{}")
+        except (TypeError, ValueError):
+            detail = {}
+        if detail.get("attempt_id") == attempt_id:
+            flip_event = True
+            break
+    if authority == "node" and flip_event:
+        out = mark_attempt_failed_after_commit(
+            attempt_id,
+            "flip committed; outcome determined by recovery review of "
+            "a recorded attempt; post-commit verification status: "
+            f"{attempt.get('verification_entry') or 'never ran'}",
+            operator,
+        )
+        return {
+            "attempt_id": attempt_id,
+            "subtree_id": subtree_id,
+            "determination": "failed_after_commit",
+            "attempt": out,
+        }
+    if authority == "legacy" and not flip_event:
+        out = mark_attempt_failed_before_commit(
+            attempt_id,
+            "flip did not commit; determined by recovery review of "
+            "a recorded attempt",
+            operator,
+        )
+        return {
+            "attempt_id": attempt_id,
+            "subtree_id": subtree_id,
+            "determination": "failed_before_commit",
+            "attempt": out,
+        }
+    # INCONSISTENT — stop. Record the inconsistency; change nothing.
+    with ve_write_transaction(conn, purpose="determine_recorded_attempt_blocked"):
+        _append_ledger_history(
+            conn,
+            subtree_id=subtree_id,
+            event="recovery_blocked",
+            actor=operator,
+            detail={
+                "attempt_id": attempt_id,
+                "authority": authority,
+                "flip_committed_event": flip_event,
+            },
+        )
+        _commit_if_owner(conn)
+    return {
+        "attempt_id": attempt_id,
+        "subtree_id": subtree_id,
+        "determination": "inconsistent",
+        "authority": authority,
+        "flip_committed_event": flip_event,
+        "attempt": attempt,
+    }
+
+
+def close_attempt_reconciled(
+    attempt_id: str, resolution: str, operator: str = "system"
+) -> dict[str, Any]:
+    """§9 Step 6: close the attempt to `reconciled` with the recorded
+    resolution. Allowed from `flipped`, `failed_before_commit`, and
+    `failed_after_commit` (NOT from `recorded` — the outcome must be
+    determined first — and not twice). The attempt row is never
+    deleted. Closing lifts the freeze (the guard keys the freeze to
+    an UNRESOLVED failed_after_commit attempt) but NEVER releases
+    the pause (§10.4)."""
+    conn = get_connection()
+    with ve_write_transaction(conn, purpose="close_attempt_reconciled"):
+        row = _get_attempt_row(conn, attempt_id)
+        if row is None:
+            raise ValueError(f"flip attempt not found: {attempt_id}")
+        if row["state"] == "recorded":
+            raise ValueError(
+                f"flip attempt {attempt_id} is still recorded; determine "
+                f"its outcome before closing it"
+            )
+        if row["state"] == "reconciled":
+            raise ValueError(
+                f"flip attempt {attempt_id} is already reconciled"
+            )
+        now = _now()
+        conn.execute(
+            "UPDATE flip_attempts SET state = 'reconciled', ended_at = ?, "
+            "resolution = ? WHERE attempt_id = ?",
+            (now, resolution, attempt_id),
+        )
+        _append_ledger_history(
+            conn,
+            subtree_id=row["subtree_id"],
+            event="attempt_reconciled",
+            actor=operator,
+            detail={"attempt_id": attempt_id, "resolution": resolution},
+        )
+        _commit_if_owner(conn)
+    updated = _get_attempt_row(conn, attempt_id)
+    return updated if updated is not None else {}
+
+
+def record_verification_result(
+    attempt_id: str, passed: bool, summary: str, operator: str = "system"
+) -> dict[str, Any]:
+    """§11.3 step 13 / §14 windows (d)–(e): record a post-commit
+    verification result on the attempt (`verification_entry`) plus a
+    `verification_passed` / `verification_failed` history event. A
+    failure on a `flipped` attempt transitions it to
+    `failed_after_commit` (pause engaged, subtree frozen — the flip
+    is NOT reversed). A pass on a `flipped` attempt records the
+    entry and leaves the attempt flipped. On a `failed_after_commit`
+    attempt a re-run pass records the entry; the freeze lifts only
+    when the attempt is closed to `reconciled` (§10.5)."""
+    conn = get_connection()
+    with ve_write_transaction(conn, purpose="record_verification_result"):
+        row = _get_attempt_row(conn, attempt_id)
+        if row is None:
+            raise ValueError(f"flip attempt not found: {attempt_id}")
+        if row["state"] not in ("flipped", "failed_after_commit"):
+            raise ValueError(
+                f"cannot record a verification result for attempt "
+                f"{attempt_id} in state {row['state']}"
+            )
+        entry = ("passed: " if passed else "failed: ") + summary
+        now = _now()
+        if row["state"] == "flipped" and not passed:
+            conn.execute(
+                "UPDATE flip_attempts SET state = 'failed_after_commit', "
+                "ended_at = ?, failure_detail = ?, verification_entry = ? "
+                "WHERE attempt_id = ?",
+                (now, entry, entry, attempt_id),
+            )
+            _engage_pause_in_transaction(
+                conn, operator,
+                f"post-commit verification failed for attempt {attempt_id}",
+            )
+            _append_ledger_history(
+                conn,
+                subtree_id=row["subtree_id"],
+                event="flip_failed_after_commit",
+                actor=operator,
+                detail={"attempt_id": attempt_id, "failure_detail": entry},
+            )
+        else:
+            conn.execute(
+                "UPDATE flip_attempts SET verification_entry = ? "
+                "WHERE attempt_id = ?",
+                (entry, attempt_id),
+            )
+        _append_ledger_history(
+            conn,
+            subtree_id=row["subtree_id"],
+            event="verification_passed" if passed else "verification_failed",
+            actor=operator,
+            detail={"attempt_id": attempt_id, "summary": summary},
+        )
+        _commit_if_owner(conn)
+    updated = _get_attempt_row(conn, attempt_id)
+    return updated if updated is not None else {}
+
+
+def get_flip_attempt(attempt_id: str) -> dict[str, Any] | None:
+    """Read one flip attempt row, or None."""
+    return _get_attempt_row(get_connection(), attempt_id)
+
+
+def list_unresolved_attempts() -> list[dict[str, Any]]:
+    """Attempts in `recorded` / `failed_before_commit` /
+    `failed_after_commit` — the flip path's block set (§8.2)."""
+    return _list_unresolved_attempt_rows(get_connection())
+
+
+# --- C1a §11: the fingerprint, computed inside the transaction ---------
+# Compute-inside adopted (§11.2): the canonical document is assembled
+# from rows read AFTER BEGIN IMMEDIATE, so no concurrent writer can
+# interleave a change between the hash and the flip. The validation
+# alternative stays a paragraph in the brief, not code.
+#
+# The canonical document (§11.4) is one JSON object per subtree:
+# records sorted deterministically; within a record, keys sorted;
+# dependency_ids sorted; compact separators; strings as UTF-8. The
+# fingerprint is SHA-256 of the canonical bytes, stored as hex.
+# Included: every authoritative stored content field per node (§3.1)
+# + bullets + seats + the ledger authority row (subtree id, version,
+# flip time). Excluded: ONLY created_at / updated_at (R-D9).
+#
+# Two sources, one form: at flip time the document is built from the
+# LEGACY rows projected into node form (canonicalize_legacy_subtree);
+# at rollback time it is rebuilt from the NODE rows
+# (canonicalize_subtree). Both produce identical node-form dicts, so
+# the hashes agree exactly when the content agrees. The node-form
+# field set is the §11.4 list; the mapper is shared by both paths.
+#
+# Fields the §3.1 node columns do NOT carry (pinned finding, not a
+# C1a deviation): an idea's summary / desired_outcome / linked_people
+# / linked_assets / linked_ideas / created_by; a checklist item's
+# person_id / asset_id; an execution step's source /
+# source_evaluation_id; a project's estimated_weekly_hours (not the
+# node's estimated_hours). Those legacy fields are not in the node
+# store and therefore not in the fingerprint; the legacy rows retain
+# them (the rollback path). The C1b reverse projection cannot
+# round-trip them — a design question for C1b/C2.
+
+_NODE_FORM_FIELDS = (
+    "id", "kind", "parent_id", "status", "original_status", "title",
+    "description", "notes", "priority", "estimated_hours", "due_date",
+    "timeframe_commitment", "dependency_ids", "origin_seat",
+    "origin_conversation_id", "origin_message_id", "origin_claim_id",
+    "origin_decision_id", "seat_ref", "responsible_seat", "position",
+    "source_table", "visibility", "completion_criteria", "deliverables",
+    "brief", "current_focus", "next_step_ai", "seed_key", "tags",
+    "evaluation_priority",
+)
+
+
+def _json_list_or_none(raw: Any) -> list[str] | None:
+    """Parse a stored JSON array column (dependency_ids, tags) to a
+    sorted list, or None when the column is NULL/empty. A malformed
+    stored value raises — the fingerprint must not silently normalize
+    corrupt content (the census refuses such rows before a flip)."""
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        return sorted(str(v) for v in raw)
+    text = str(raw).strip()
+    if not text:
+        return None
+    parsed = json.loads(text)
+    if not isinstance(parsed, list):
+        raise ValueError(f"expected a JSON array, got: {text[:80]!r}")
+    return sorted(str(v) for v in parsed)
+
+
+def _node_form_base() -> dict[str, Any]:
+    """A node-form dict with every §11.4 field present (None/[] until
+    the mapper fills it). Both sources build the same keys, so a
+    missing key can never make two equal contents hash differently."""
+    form: dict[str, Any] = {key: None for key in _NODE_FORM_FIELDS}
+    form["dependency_ids"] = []
+    return form
+
+
+def _node_form_from_legacy(kind: str, row: dict[str, Any]) -> dict[str, Any]:
+    """Project one legacy row (as a plain dict of its stored columns)
+    into node form (§3.1 columns, §11.4 field list). Status and
+    visibility follow Slice A's mapping (node_projection.map_status);
+    parentage follows the corrected §3.2 rule (immediate task parent
+    wins; an initiative's source idea is an origin edge, not a
+    parent). `row` must already carry the parentage inputs the kind
+    needs (parent_task_id / project_id / idea_id / scope_* /
+    depends_on); the caller supplies them from the stored row."""
+    # Lazy import: node_projection imports this module at ITS top
+    # level, so a module-level import here would be circular.
+    from local_ai.vision_execution import node_projection as _NP
+
+    form = _node_form_base()
+    form["id"] = row["id"]
+    form["kind"] = kind
+    form["source_table"] = {
+        "idea": "ideas",
+        "initiative": "initiatives",
+        "project": "projects",
+        "task": "tasks",
+        "checklist_item": "checklist_items",
+        "execution_step": "execution_steps",
+    }[kind]
+    form["title"] = row.get("title") or ""
+    if kind == "idea":
+        status, visibility = _NP.map_status("ideas", row["status"])
+        form.update(
+            parent_id=None,
+            status=status,
+            original_status=row["status"],
+            visibility=visibility,
+            description=row.get("description"),
+            notes=row.get("notes"),
+            tags=_json_list_or_none(row.get("tags")),
+        )
+    elif kind == "initiative":
+        status, visibility = _NP.map_status("initiatives", row["status"])
+        form.update(
+            parent_id=None,
+            status=status,
+            original_status=row["status"],
+            visibility=visibility,
+            brief=row.get("brief"),
+            notes=row.get("notes"),
+            next_step_ai=row.get("next_step_ai"),
+            seed_key=row.get("seed_key"),
+            evaluation_priority=row.get("evaluation_priority"),
+        )
+    elif kind == "project":
+        status, visibility = _NP.map_status("projects", row["status"])
+        form.update(
+            parent_id=row.get("initiative_id") or None,
+            status=status,
+            original_status=row["status"],
+            visibility=visibility,
+            brief=row.get("brief"),
+            notes=row.get("notes"),
+            priority=row.get("priority"),
+            current_focus=row.get("current_focus"),
+            next_step_ai=row.get("next_step_ai"),
+        )
+    elif kind == "task":
+        status, visibility = _NP.map_status("tasks", row["status"])
+        parent_id = row.get("parent_task_id") or row.get("project_id") or None
+        form.update(
+            parent_id=parent_id,
+            status=status,
+            original_status=row["status"],
+            visibility=visibility,
+            description=row.get("description"),
+            notes=row.get("notes"),
+            priority=row.get("priority"),
+            estimated_hours=row.get("estimated_hours"),
+            due_date=row.get("due_date"),
+            timeframe_commitment=row.get("timeframe_commitment"),
+            dependency_ids=_json_list_or_none(row.get("dependency_ids")) or [],
+            origin_seat=row.get("origin_seat"),
+            origin_conversation_id=row.get("origin_conversation_id"),
+            origin_message_id=row.get("origin_message_id"),
+            origin_claim_id=row.get("origin_claim_id"),
+            origin_decision_id=row.get("origin_decision_id"),
+            seat_ref=row.get("seat_ref"),
+            responsible_seat=row.get("responsible_seat"),
+            completion_criteria=row.get("completion_criteria"),
+        )
+    elif kind == "checklist_item":
+        original = str(row.get("status") or "")
+        mapped = {"open": "Open", "done": "Done"}.get(original.strip().lower())
+        if mapped is None:
+            raise ValueError(
+                f"unmapped checklist item status {original!r}"
+            )
+        form.update(
+            parent_id=row.get("parent_id") or row.get("idea_id") or None,
+            status=mapped,
+            original_status=original,
+            visibility="archived" if row.get("superseded") else "visible",
+            dependency_ids=sorted(str(v) for v in (row.get("depends_on") or [])),
+            position=row.get("position"),
+        )
+    elif kind == "execution_step":
+        is_done = bool(row.get("is_done"))
+        form.update(
+            parent_id=row.get("scope_id") or None,
+            status="Done" if is_done else "Open",
+            original_status="done" if is_done else "open",
+            visibility="visible",
+            position=row.get("sort_order"),
+        )
+    return form
+
+
+def _node_form_from_node_row(row: Any) -> dict[str, Any]:
+    """A node-table row (sqlite3.Row) into the same node-form dict.
+    The stored dependency_ids / tags JSON is parsed back to sorted
+    lists, so the form matches the legacy projection exactly."""
+    form = _node_form_base()
+    for key in _NODE_FORM_FIELDS:
+        value = row[key]
+        if key == "dependency_ids":
+            form[key] = _json_list_or_none(value) or []
+        elif key == "tags":
+            form[key] = _json_list_or_none(value)
+        else:
+            form[key] = value
+    return form
+
+
+def _canonical_json(doc: dict[str, Any]) -> str:
+    """The canonical serialization (§11.4): keys sorted, compact
+    separators, strings as UTF-8, no trailing newline."""
+    return json.dumps(doc, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _canonical_doc(
+    node_forms: list[dict[str, Any]],
+    bullets: list[dict[str, Any]],
+    seats: list[dict[str, Any]],
+    *,
+    subtree_id: str,
+    version: int,
+    flipped_at: str | None,
+) -> dict[str, Any]:
+    """Assemble the canonical document (§11.4) from node forms +
+    bullets + seats + the authority row. Nodes sort by
+    (parent_id, position, id); bullets by (node_id, position, id);
+    seats by id — deterministic, so the sort cannot mask a content
+    change."""
+    nodes = sorted(
+        node_forms,
+        key=lambda n: (n.get("parent_id") or "", n.get("position") or 0, n["id"]),
+    )
+    ordered_bullets = sorted(
+        bullets,
+        key=lambda b: (b["node_id"], b["position"], b["id"]),
+    )
+    ordered_seats = sorted(seats, key=lambda s: s["id"])
+    return {
+        "authority": {
+            "subtree_id": subtree_id,
+            "version": version,
+            "flipped_at": flipped_at,
+        },
+        "nodes": nodes,
+        "node_bullets": ordered_bullets,
+        "node_seats": ordered_seats,
+    }
+
+
+def _subtree_node_ids_from_rows(
+    conn: sqlite3.Connection, subtree_id: str, user_id: str
+) -> list[str]:
+    """The node ids in a subtree, by walking parent_id links down
+    from the root node (id = subtree_id) over the nodes table. Nodes
+    whose parent chain is broken or belongs to another subtree are
+    not included.
+
+    The walk is seeded with TWO roots: the initiative node AND the
+    initiative's claimed idea node. The idea is a separate root in
+    the node store (its parent_id is None — the source idea is an
+    origin edge, not parentage, per Slice A §3.2), and its checklist
+    items hang off it; yet the idea + its checklist are IN the
+    subtree (the flip-time side, _legacy_subtree_rows, includes
+    them). Seeding only the initiative would silently drop the idea
+    and its checklist from the rollback-time recompute, so the
+    fingerprint could never round-trip for a subtree with a claimed
+    idea (caught by T-F3/T-F4). The link is the legacy
+    initiatives.source_idea_id — the node store carries no
+    source-idea link, and the legacy row is stable post-flip (the
+    guard refuses updates to a flipped initiative's source idea
+    and deletes of its claimed idea)."""
+    rows = conn.execute(
+        "SELECT id, parent_id FROM nodes WHERE user_id = ?", (user_id,)
+    ).fetchall()
+    children: dict[str | None, list[str]] = {}
+    all_ids: set[str] = set()
+    for node_id, parent_id in rows:
+        all_ids.add(str(node_id))
+        children.setdefault(parent_id, []).append(str(node_id))
+    if subtree_id not in all_ids:
+        return []
+    seeds = [subtree_id]
+    idea_row = conn.execute(
+        "SELECT source_idea_id FROM initiatives WHERE id = ?",
+        (subtree_id,),
+    ).fetchone()
+    idea_id = (
+        str(idea_row[0])
+        if idea_row is not None and idea_row[0]
+        else None
+    )
+    if idea_id is not None and idea_id in all_ids and idea_id != subtree_id:
+        seeds.append(idea_id)
+    found: list[str] = []
+    stack = list(seeds)
+    seen: set[str] = set()
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        found.append(current)
+        stack.extend(children.get(current, []))
+    return found
+
+
+def canonicalize_subtree(conn: sqlite3.Connection, subtree_id: str) -> dict[str, Any]:
+    """The canonical document (§11.4) rebuilt from the NODE rows —
+    the rollback-time recompute (§11.5). Reads the authority row for
+    the version + flip time, walks the subtree's node rows, and
+    assembles the document. Raises ValueError when the subtree has
+    no authority row (nothing to recompute against). Callers must
+    hold the rollback transaction (BEGIN IMMEDIATE) before calling,
+    so the recompute cannot miss a concurrent node write."""
+    ledger = _ledger_row(conn, subtree_id)
+    if ledger is None:
+        raise ValueError(
+            f"cannot canonicalize subtree {subtree_id}: no authority row"
+        )
+    initiative = conn.execute(
+        "SELECT user_id FROM initiatives WHERE id = ?", (subtree_id,)
+    ).fetchone()
+    if initiative is None:
+        raise ValueError(
+            f"cannot canonicalize subtree {subtree_id}: no initiative row"
+        )
+    user_id = str(initiative[0])
+    node_ids = _subtree_node_ids_from_rows(conn, subtree_id, user_id)
+    forms: list[dict[str, Any]] = []
+    if node_ids:
+        placeholders = ",".join("?" for _ in node_ids)
+        rows = conn.execute(
+            f"SELECT * FROM nodes WHERE id IN ({placeholders})",
+            tuple(node_ids),
+        ).fetchall()
+        forms = [_node_form_from_node_row(r) for r in rows]
+        bullet_rows = conn.execute(
+            f"SELECT id, node_id, content, standing, position "
+            f"FROM node_bullets WHERE node_id IN ({placeholders})",
+            tuple(node_ids),
+        ).fetchall()
+        seat_rows = conn.execute(
+            f"SELECT id, node_id, role, assigned_person_id, "
+            f"estimated_effort, notes FROM node_seats "
+            f"WHERE node_id IN ({placeholders})",
+            tuple(node_ids),
+        ).fetchall()
+    else:
+        bullet_rows = []
+        seat_rows = []
+    bullets = [
+        {
+            "id": r[0],
+            "node_id": r[1],
+            "content": r[2],
+            "standing": r[3],
+            "position": r[4],
+        }
+        for r in bullet_rows
+    ]
+    seats = [
+        {
+            "id": r[0],
+            "node_id": r[1],
+            "role": r[2],
+            "assigned_person_id": r[3],
+            "estimated_effort": r[4],
+            "notes": r[5],
+        }
+        for r in seat_rows
+    ]
+    return _canonical_doc(
+        forms,
+        bullets,
+        seats,
+        subtree_id=subtree_id,
+        version=int(ledger["version"]),
+        flipped_at=ledger["flipped_at"],
+    )
+
+
+def compute_subtree_fingerprint(
+    conn: sqlite3.Connection, subtree_id: str
+) -> dict[str, str]:
+    """The rollback-time fingerprint: canonicalize from the node rows
+    (§11.5) and SHA-256 the canonical bytes. Returns
+    {"canonical_json", "sha256"}."""
+    doc = canonicalize_subtree(conn, subtree_id)
+    text = _canonical_json(doc)
+    return {"canonical_json": text, "sha256": _sha256_hex(text)}
+
+
+def _task_dict_in_subtree(
+    task: dict[str, Any],
+    tasks_by_id: dict[str, dict[str, Any]],
+    project_ids: set[str],
+) -> bool:
+    """In-memory version of _resolve_task_subtree for the fingerprint:
+    walk the parent chain (immediate parent wins); the root task's
+    project decides membership. A dangling parent or a cycle falls
+    back to the task's own project; depth exhaustion does the same."""
+    seen: set[str] = set()
+    current: dict[str, Any] | None = task
+    own_project = task.get("project_id")
+    depth = 0
+    while current is not None and depth < _MAX_PARENT_CHAIN:
+        current_id = str(current["id"])
+        if current_id in seen:
+            return str(own_project or "") in project_ids
+        seen.add(current_id)
+        parent_id = current.get("parent_task_id")
+        if not parent_id:
+            return str(current.get("project_id") or "") in project_ids
+        parent = tasks_by_id.get(str(parent_id))
+        if parent is None:
+            return str(own_project or "") in project_ids
+        current = parent
+        depth += 1
+    return str(own_project or "") in project_ids
+
+
+def _legacy_subtree_rows(
+    conn: sqlite3.Connection, subtree_id: str
+) -> dict[str, Any]:
+    """The legacy rows in a subtree, read on the passed connection
+    (callers hold the flip transaction). The subtree is the
+    initiative + its projects + tasks whose parent chain leads to it
+    + the claimed idea + that idea's checklist items + execution
+    steps scoped to it or its projects + its initiative seats. The
+    §11.3 step-6 parenthetical omits projects and the claimed idea,
+    but both are in the subtree by the §5.1 parentage rules (pinned
+    note). An idea claimed by several initiatives contributes its
+    checklist items to each claiming subtree's fingerprint; the C1b
+    census is the authority on row→subtree assignment and must
+    confirm the rule."""
+    initiative = conn.execute(
+        "SELECT * FROM initiatives WHERE id = ?", (subtree_id,)
+    ).fetchone()
+    if initiative is None:
+        raise ValueError(f"cannot fingerprint subtree {subtree_id}: no initiative row")
+    init = dict(initiative)
+    user_id = str(init["user_id"])
+    projects = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM projects WHERE initiative_id = ? AND user_id = ?",
+            (subtree_id, user_id),
+        ).fetchall()
+    ]
+    project_ids = {str(p["id"]) for p in projects}
+    all_tasks = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM tasks WHERE user_id = ?", (user_id,)
+        ).fetchall()
+    ]
+    tasks_by_id = {str(t["id"]): t for t in all_tasks}
+    tasks = [
+        task
+        for task in all_tasks
+        if _task_dict_in_subtree(task, tasks_by_id, project_ids)
+    ]
+    idea: dict[str, Any] | None = None
+    items: list[dict[str, Any]] = []
+    source_idea_id = init.get("source_idea_id")
+    if source_idea_id:
+        idea_row = conn.execute(
+            "SELECT * FROM ideas WHERE id = ? AND user_id = ?",
+            (source_idea_id, user_id),
+        ).fetchone()
+        if idea_row is not None:
+            idea = dict(idea_row)
+            items = [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM checklist_items "
+                    "WHERE idea_id = ? AND user_id = ?",
+                    (source_idea_id, user_id),
+                ).fetchall()
+            ]
+            # Attach each item's dependency edges (the mapper reads
+            # them as `depends_on`).
+            dep_rows = conn.execute(
+                "SELECT d.item_id, d.depends_on_item_id "
+                "FROM checklist_item_dependencies d "
+                "JOIN checklist_items i ON i.id = d.item_id "
+                "WHERE i.idea_id = ? AND i.user_id = ?",
+                (source_idea_id, user_id),
+            ).fetchall()
+            deps: dict[str, list[str]] = {}
+            for item_id, depends_on in dep_rows:
+                deps.setdefault(str(item_id), []).append(str(depends_on))
+            for item in items:
+                item["depends_on"] = deps.get(str(item["id"]), [])
+    step_placeholders = ",".join("?" for _ in project_ids) if project_ids else ""
+    step_params: list[Any] = [user_id, subtree_id]
+    step_sql = (
+        "SELECT * FROM execution_steps WHERE user_id = ? AND "
+        "(scope_type = 'initiative' AND scope_id = ?)"
+    )
+    if project_ids:
+        step_sql += (
+            f" OR (scope_type = 'project' AND scope_id IN ({step_placeholders}))"
+        )
+        step_params.extend(sorted(project_ids))
+    steps = [dict(r) for r in conn.execute(step_sql, tuple(step_params)).fetchall()]
+    seats = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM initiative_seats WHERE initiative_id = ?",
+            (subtree_id,),
+        ).fetchall()
+    ]
+    return {
+        "user_id": user_id,
+        "initiative": init,
+        "idea": idea,
+        "projects": projects,
+        "tasks": tasks,
+        "checklist_items": items,
+        "execution_steps": steps,
+        "seats": seats,
+    }
+
+
+def canonicalize_legacy_subtree(
+    conn: sqlite3.Connection, subtree_id: str, *, flipped_at: str | None = None
+) -> dict[str, Any]:
+    """The canonical document (§11.4) built from the LEGACY rows —
+    the flip-time computation (§11.3 steps 6–7). The version is 1
+    (the flip sets it) and flipped_at defaults to now (the flip
+    stores the same value on the authority row). Callers must hold
+    the flip transaction (BEGIN IMMEDIATE) before calling."""
+    content = _legacy_subtree_rows(conn, subtree_id)
+    forms: list[dict[str, Any]] = []
+    forms.append(_node_form_from_legacy("initiative", content["initiative"]))
+    if content["idea"] is not None:
+        forms.append(_node_form_from_legacy("idea", content["idea"]))
+    for project in content["projects"]:
+        forms.append(_node_form_from_legacy("project", project))
+    for task in content["tasks"]:
+        forms.append(_node_form_from_legacy("task", task))
+    for item in content["checklist_items"]:
+        forms.append(_node_form_from_legacy("checklist_item", item))
+    for step in content["execution_steps"]:
+        forms.append(_node_form_from_legacy("execution_step", step))
+    # No bullets exist at flip time (the legacy tables hold no
+    # progressive needs); seats re-key from initiative_id to node_id.
+    seats = [
+        {
+            "id": s["id"],
+            "node_id": subtree_id,
+            "role": s.get("role") or "",
+            "assigned_person_id": s.get("assigned_person_id"),
+            "estimated_effort": s.get("estimated_effort"),
+            "notes": s.get("notes") or "",
+        }
+        for s in content["seats"]
+    ]
+    return _canonical_doc(
+        forms,
+        [],
+        seats,
+        subtree_id=subtree_id,
+        version=1,
+        flipped_at=flipped_at if flipped_at is not None else _now(),
+    )
+
+
+def compute_legacy_subtree_fingerprint(
+    conn: sqlite3.Connection, subtree_id: str, *, flipped_at: str | None = None
+) -> dict[str, str]:
+    """The flip-time fingerprint: canonicalize from the legacy rows
+    and SHA-256 the canonical bytes. Returns {"canonical_json",
+    "sha256"}. The flip stores both on the authority row (§11.3
+    step 9)."""
+    doc = canonicalize_legacy_subtree(conn, subtree_id, flipped_at=flipped_at)
+    text = _canonical_json(doc)
+    return {"canonical_json": text, "sha256": _sha256_hex(text)}
 
 
 # --- Auth (Phase 1A) ---
@@ -2853,7 +5000,7 @@ def upsert_node_vitality(
             """,
             (w, s, fr, sd, laa, las, tev, rv, pjson, vid),
         )
-        conn.commit()
+        _commit_if_standalone(conn)
         return str(vid)
 
     vid = M.new_id()
@@ -2881,7 +5028,7 @@ def upsert_node_vitality(
             payload_out,
         ),
     )
-    conn.commit()
+    _commit_if_standalone(conn)
     return vid
 
 
@@ -2968,7 +5115,7 @@ def append_node_judgment(
             trunk_json,
         ),
     )
-    conn.commit()
+    _commit_if_standalone(conn)
     return jid
 
 
@@ -3769,19 +5916,21 @@ def create_idea(data: M.IdeaCreate, user_id: str) -> dict[str, Any]:
     conn = get_connection()
     iid = M.new_id()
     now = _now()
-    conn.execute(
-        """INSERT INTO ideas (
-          id, user_id, title, summary, description, status, tags, created_by, desired_outcome,
-          linked_people, linked_assets, linked_ideas, created_at, updated_at, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            iid, user_id, data.title, data.summary, data.description, data.status, M._json_dumps_list(data.tags),
-            data.created_by, data.desired_outcome, M._json_dumps_list(data.linked_people),
-            M._json_dumps_list(data.linked_assets), M._json_dumps_list(data.linked_ideas), now, now,
-            data.notes or "",
-        ),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="create_idea"):
+        _guard_idea_write(conn, iid, user_id, target_id=iid, target_kind="idea")
+        conn.execute(
+            """INSERT INTO ideas (
+              id, user_id, title, summary, description, status, tags, created_by, desired_outcome,
+              linked_people, linked_assets, linked_ideas, created_at, updated_at, notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                iid, user_id, data.title, data.summary, data.description, data.status, M._json_dumps_list(data.tags),
+                data.created_by, data.desired_outcome, M._json_dumps_list(data.linked_people),
+                M._json_dumps_list(data.linked_assets), M._json_dumps_list(data.linked_ideas), now, now,
+                data.notes or "",
+            ),
+        )
+        _commit_if_owner(conn)
     out = get_idea(iid, user_id) or {}
     _log_ve_entity_activity(
         type=ActivityType.IDEA_CREATED.value,
@@ -3814,8 +5963,10 @@ def update_idea(idea_id: str, data: M.IdeaUpdate, user_id: str) -> dict[str, Any
     updates.append("updated_at = ?")
     args.append(_now())
     args.append(idea_id)
-    conn.execute(f"UPDATE ideas SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
-    conn.commit()
+    with ve_write_transaction(conn, purpose="update_idea"):
+        _guard_idea_write(conn, idea_id, user_id, target_id=idea_id, target_kind="idea")
+        conn.execute(f"UPDATE ideas SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
+        _commit_if_owner(conn)
     out = get_idea(idea_id, user_id)
     _log_ve_entity_activity(
         type=ActivityType.IDEA_UPDATED.value,
@@ -3832,12 +5983,14 @@ def delete_idea(idea_id: str, user_id: str) -> bool:
     if get_idea(idea_id, user_id) is None:
         return False
     conn = get_connection()
-    conn.execute(
-        "UPDATE initiatives SET source_idea_id = NULL WHERE source_idea_id = ? AND user_id = ?",
-        (idea_id, user_id),
-    )
-    conn.execute("DELETE FROM ideas WHERE id = ? AND user_id = ?", (idea_id, user_id))
-    conn.commit()
+    with ve_write_transaction(conn, purpose="delete_idea"):
+        _guard_idea_write(conn, idea_id, user_id, target_id=idea_id, target_kind="idea")
+        conn.execute(
+            "UPDATE initiatives SET source_idea_id = NULL WHERE source_idea_id = ? AND user_id = ?",
+            (idea_id, user_id),
+        )
+        conn.execute("DELETE FROM ideas WHERE id = ? AND user_id = ?", (idea_id, user_id))
+        _commit_if_owner(conn)
     _log_ve_entity_activity(
         type=ActivityType.IDEA_DELETED.value,
         entity_type=ActivityEntityType.IDEA.value,
@@ -3915,12 +6068,14 @@ def create_checklist_item(
     conn = get_connection()
     iid = M.new_id()
     now = _now()
-    conn.execute(
-        "INSERT INTO checklist_items (id, user_id, idea_id, parent_id, title, status, "
-        "position, superseded, person_id, asset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
-        (iid, user_id, idea_id, parent_id, title, status, position, person_id, asset_id, now, now),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="create_checklist_item"):
+        _guard_idea_write(conn, idea_id, user_id, target_id=iid, target_kind="checklist_item")
+        conn.execute(
+            "INSERT INTO checklist_items (id, user_id, idea_id, parent_id, title, status, "
+            "position, superseded, person_id, asset_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
+            (iid, user_id, idea_id, parent_id, title, status, position, person_id, asset_id, now, now),
+        )
+        _commit_if_owner(conn)
     return _get_checklist_item_any(iid, user_id) or {}
 
 
@@ -4039,11 +6194,13 @@ def update_checklist_item(
     args.append(item_id)
     args.append(user_id)
     conn = get_connection()
-    conn.execute(
-        f"UPDATE checklist_items SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
-        tuple(args),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="update_checklist_item"):
+        _guard_checklist_write(conn, item_id, user_id, target_id=item_id)
+        conn.execute(
+            f"UPDATE checklist_items SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+            tuple(args),
+        )
+        _commit_if_owner(conn)
     return get_checklist_item(item_id, user_id)
 
 
@@ -4071,18 +6228,20 @@ def delete_checklist_item(item_id: str, user_id: str) -> bool:
     if _get_checklist_item_any(item_id, user_id) is None:
         return False
     conn = get_connection()
-    doomed = [item_id] + _checklist_descendant_ids(conn, item_id, user_id)
-    placeholders = ",".join("?" for _ in doomed)
-    conn.execute(
-        f"DELETE FROM checklist_item_dependencies WHERE item_id IN ({placeholders}) "
-        f"OR depends_on_item_id IN ({placeholders})",
-        tuple(doomed) + tuple(doomed),
-    )
-    conn.execute(
-        f"DELETE FROM checklist_items WHERE id IN ({placeholders}) AND user_id = ?",
-        tuple(doomed) + (user_id,),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="delete_checklist_item"):
+        _guard_checklist_write(conn, item_id, user_id, target_id=item_id)
+        doomed = [item_id] + _checklist_descendant_ids(conn, item_id, user_id)
+        placeholders = ",".join("?" for _ in doomed)
+        conn.execute(
+            f"DELETE FROM checklist_item_dependencies WHERE item_id IN ({placeholders}) "
+            f"OR depends_on_item_id IN ({placeholders})",
+            tuple(doomed) + tuple(doomed),
+        )
+        conn.execute(
+            f"DELETE FROM checklist_items WHERE id IN ({placeholders}) AND user_id = ?",
+            tuple(doomed) + (user_id,),
+        )
+        _commit_if_owner(conn)
     return True
 
 
@@ -4130,15 +6289,17 @@ def add_checklist_dependency(
     if item_id == depends_on_id:
         raise ValueError("an item cannot depend on itself")
     conn = get_connection()
-    adj = _checklist_depends_on(conn, item["idea_id"], user_id)
-    if _would_create_cycle(adj, item_id, depends_on_id):
-        raise ValueError("that dependency would create a cycle")
-    conn.execute(
-        "INSERT OR IGNORE INTO checklist_item_dependencies "
-        "(item_id, depends_on_item_id, created_at) VALUES (?, ?, ?)",
-        (item_id, depends_on_id, _now()),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="add_checklist_dependency"):
+        _guard_checklist_write(conn, item_id, user_id, target_id=item_id)
+        adj = _checklist_depends_on(conn, item["idea_id"], user_id)
+        if _would_create_cycle(adj, item_id, depends_on_id):
+            raise ValueError("that dependency would create a cycle")
+        conn.execute(
+            "INSERT OR IGNORE INTO checklist_item_dependencies "
+            "(item_id, depends_on_item_id, created_at) VALUES (?, ?, ?)",
+            (item_id, depends_on_id, _now()),
+        )
+        _commit_if_owner(conn)
     return get_checklist_item(item_id, user_id) or {}
 
 
@@ -4148,23 +6309,27 @@ def remove_checklist_dependency(
     if _get_checklist_item_any(item_id, user_id) is None:
         return False
     conn = get_connection()
-    cur = conn.execute(
-        "DELETE FROM checklist_item_dependencies WHERE item_id = ? AND depends_on_item_id = ?",
-        (item_id, depends_on_id),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="remove_checklist_dependency"):
+        _guard_checklist_write(conn, item_id, user_id, target_id=item_id)
+        cur = conn.execute(
+            "DELETE FROM checklist_item_dependencies WHERE item_id = ? AND depends_on_item_id = ?",
+            (item_id, depends_on_id),
+        )
+        _commit_if_owner(conn)
     return cur.rowcount > 0
 
 
 def mark_checklist_superseded(idea_id: str, user_id: str) -> int:
     """Keep the graduated checklist as provenance; mark it superseded by the work."""
     conn = get_connection()
-    cur = conn.execute(
-        "UPDATE checklist_items SET superseded = 1, updated_at = ? "
-        "WHERE idea_id = ? AND user_id = ? AND superseded = 0",
-        (_now(), idea_id, user_id),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="mark_checklist_superseded"):
+        _guard_idea_write(conn, idea_id, user_id, target_id=idea_id, target_kind="idea")
+        cur = conn.execute(
+            "UPDATE checklist_items SET superseded = 1, updated_at = ? "
+            "WHERE idea_id = ? AND user_id = ? AND superseded = 0",
+            (_now(), idea_id, user_id),
+        )
+        _commit_if_owner(conn)
     return cur.rowcount
 
 
@@ -4318,25 +6483,27 @@ def create_initiative(data: M.InitiativeCreate, user_id: str) -> dict[str, Any]:
         field_name="source_idea_id",
     )
     seats_to_persist: list[M.InitiativeSeat] = list(data.seats or [])
-    conn.execute(
-        """INSERT INTO initiatives (
-          id, user_id, source_idea_id, title, brief, status, owner_id,
-          evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai,
-          required_assets, dependencies, risks, recommendation,
-          kill_criteria, notes, seed_key, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            iid, user_id, data.source_idea_id, data.title, data.brief, data.status, data.owner_id,
-            data.evaluation_priority,
-            data.estimated_cost_ai, data.estimated_timeframe_ai, data.philosophical_alignment_ai, data.next_step_ai,
-            M._json_dumps_list(data.required_assets),
-            data.dependencies, data.risks, data.recommendation,
-            data.kill_criteria, data.notes, data.seed_key, now, now,
-        ),
-    )
-    if seats_to_persist:
-        _upsert_initiative_seats(conn, iid, seats_to_persist)
-    conn.commit()
+    with ve_write_transaction(conn, purpose="create_initiative"):
+        _guard_legacy_write(conn, iid, target_id=iid, target_kind="initiative")
+        conn.execute(
+            """INSERT INTO initiatives (
+              id, user_id, source_idea_id, title, brief, status, owner_id,
+              evaluation_priority, estimated_cost_ai, estimated_timeframe_ai, philosophical_alignment_ai, next_step_ai,
+              required_assets, dependencies, risks, recommendation,
+              kill_criteria, notes, seed_key, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                iid, user_id, data.source_idea_id, data.title, data.brief, data.status, data.owner_id,
+                data.evaluation_priority,
+                data.estimated_cost_ai, data.estimated_timeframe_ai, data.philosophical_alignment_ai, data.next_step_ai,
+                M._json_dumps_list(data.required_assets),
+                data.dependencies, data.risks, data.recommendation,
+                data.kill_criteria, data.notes, data.seed_key, now, now,
+            ),
+        )
+        if seats_to_persist:
+            _upsert_initiative_seats(conn, iid, seats_to_persist)
+        _commit_if_owner(conn)
     out = get_initiative(iid, user_id) or {}
     _log_ve_entity_activity(
         type=ActivityType.INITIATIVE_CREATED.value,
@@ -4383,17 +6550,27 @@ def update_initiative(initiative_id: str, data: M.InitiativeUpdate, user_id: str
                 updates.append(f"{k} = ?")
                 args.append(v)
 
-    if seats_to_persist is not None:
-        _upsert_initiative_seats(conn, initiative_id, seats_to_persist)
-
-    if not updates:
+    if not updates and seats_to_persist is None:
         return get_initiative(initiative_id, user_id)
-
     updates.append("updated_at = ?")
     args.append(_now())
     args.append(initiative_id)
-    conn.execute(f"UPDATE initiatives SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
-    conn.commit()
+    with ve_write_transaction(conn, purpose="update_initiative"):
+        _guard_legacy_write(conn, initiative_id, target_id=initiative_id, target_kind="initiative")
+        if seats_to_persist is not None:
+            _upsert_initiative_seats(conn, initiative_id, seats_to_persist)
+        if not updates:
+            # Seats-only update: the upsert above IS the write. The
+            # owner's clean exit commits it. Previously this path
+            # returned WITHOUT committing (the seat upserts sat in an
+            # open implicit transaction until the next commit on the
+            # connection) — a latent quirk the helper conversion
+            # corrects in the direction of the evident intent (the
+            # caller is returned the updated initiative). Pinned
+            # finding; no test covers the uncommitted behavior.
+            return get_initiative(initiative_id, user_id)
+        conn.execute(f"UPDATE initiatives SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
+        _commit_if_owner(conn)
     out = get_initiative(initiative_id, user_id)
     patch_keys = list(model_items.keys())
     detail = (
@@ -4507,32 +6684,39 @@ def create_execution_step(
     if not title:
         raise ValueError("title is required")
     now = _now()
-    if sort_order is None:
-        cur = conn.execute(
-            "SELECT COALESCE(MAX(sort_order), -1) FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
-            (user_id, scope_type, scope_id),
-        )
-        sort_order = int(cur.fetchone()[0]) + 1
     sid = M.new_id()
-    conn.execute(
-        """INSERT INTO execution_steps (
-          id, user_id, scope_type, scope_id, title, sort_order, is_done, completed_at,
-          source, source_evaluation_id, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)""",
-        (
-            sid,
-            user_id,
-            scope_type,
-            scope_id,
-            title,
-            sort_order,
-            source,
-            source_evaluation_id,
-            now,
-            now,
-        ),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="create_execution_step"):
+        _guard_legacy_write(
+            conn,
+            _resolve_step_subtree(conn, scope_type, scope_id, user_id),
+            target_id=sid,
+            target_kind="execution_step",
+        )
+        if sort_order is None:
+            cur = conn.execute(
+                "SELECT COALESCE(MAX(sort_order), -1) FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
+                (user_id, scope_type, scope_id),
+            )
+            sort_order = int(cur.fetchone()[0]) + 1
+        conn.execute(
+            """INSERT INTO execution_steps (
+              id, user_id, scope_type, scope_id, title, sort_order, is_done, completed_at,
+              source, source_evaluation_id, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, ?, ?, ?)""",
+            (
+                sid,
+                user_id,
+                scope_type,
+                scope_id,
+                title,
+                sort_order,
+                source,
+                source_evaluation_id,
+                now,
+                now,
+            ),
+        )
+        _commit_if_owner(conn)
     return get_execution_step(sid, user_id) or {}
 
 
@@ -4563,11 +6747,13 @@ def update_execution_step(step_id: str, user_id: str, patch: dict[str, Any]) -> 
     args.append(_now())
     args.append(step_id)
     args.append(user_id)
-    conn.execute(
-        f"UPDATE execution_steps SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
-        args,
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="update_execution_step"):
+        _guard_step_write(conn, step_id, user_id, target_id=step_id)
+        conn.execute(
+            f"UPDATE execution_steps SET {', '.join(updates)} WHERE id = ? AND user_id = ?",
+            args,
+        )
+        _commit_if_owner(conn)
     return get_execution_step(step_id, user_id)
 
 
@@ -4575,8 +6761,10 @@ def delete_execution_step(step_id: str, user_id: str) -> bool:
     if get_execution_step(step_id, user_id) is None:
         return False
     conn = get_connection()
-    conn.execute("DELETE FROM execution_steps WHERE id = ? AND user_id = ?", (step_id, user_id))
-    conn.commit()
+    with ve_write_transaction(conn, purpose="delete_execution_step"):
+        _guard_step_write(conn, step_id, user_id, target_id=step_id)
+        conn.execute("DELETE FROM execution_steps WHERE id = ? AND user_id = ?", (step_id, user_id))
+        _commit_if_owner(conn)
     return True
 
 
@@ -4604,21 +6792,28 @@ def materialize_execution_steps(
     if n > 0 and not replace:
         raise ValueError("EXECUTION_STEPS_EXIST")
     now = _now()
-    if replace:
-        conn.execute(
-            "DELETE FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
-            (user_id, scope_type, scope_id),
+    with ve_write_transaction(conn, purpose="materialize_execution_steps"):
+        _guard_legacy_write(
+            conn,
+            _resolve_step_subtree(conn, scope_type, scope_id, user_id),
+            target_id=scope_id,
+            target_kind="execution_step",
         )
-    for i, title in enumerate(cleaned):
-        sid = M.new_id()
-        conn.execute(
-            """INSERT INTO execution_steps (
-              id, user_id, scope_type, scope_id, title, sort_order, is_done, completed_at,
-              source, source_evaluation_id, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)""",
-            (sid, user_id, scope_type, scope_id, title, i, source, now, now),
-        )
-    conn.commit()
+        if replace:
+            conn.execute(
+                "DELETE FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
+                (user_id, scope_type, scope_id),
+            )
+        for i, title in enumerate(cleaned):
+            sid = M.new_id()
+            conn.execute(
+                """INSERT INTO execution_steps (
+                  id, user_id, scope_type, scope_id, title, sort_order, is_done, completed_at,
+                  source, source_evaluation_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 0, NULL, ?, NULL, ?, ?)""",
+                (sid, user_id, scope_type, scope_id, title, i, source, now, now),
+            )
+        _commit_if_owner(conn)
     if scope_type == EXECUTION_STEPS_SCOPE_INITIATIVE:
         et = ActivityEntityType.INITIATIVE.value
         eid = scope_id
@@ -4651,12 +6846,19 @@ def reorder_execution_steps(
     if set(ordered_ids) != existing_ids or len(ordered_ids) != len(existing_ids):
         raise ValueError("ordered_ids must be a permutation of existing step ids")
     now = _now()
-    for i, sid in enumerate(ordered_ids):
-        conn.execute(
-            "UPDATE execution_steps SET sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?",
-            (i, now, sid, user_id),
+    with ve_write_transaction(conn, purpose="reorder_execution_steps"):
+        _guard_legacy_write(
+            conn,
+            _resolve_step_subtree(conn, scope_type, scope_id, user_id),
+            target_id=scope_id,
+            target_kind="execution_step",
         )
-    conn.commit()
+        for i, sid in enumerate(ordered_ids):
+            conn.execute(
+                "UPDATE execution_steps SET sort_order = ?, updated_at = ? WHERE id = ? AND user_id = ?",
+                (i, now, sid, user_id),
+            )
+        _commit_if_owner(conn)
     return list_execution_steps(scope_type, scope_id, user_id)
 
 
@@ -4667,16 +6869,18 @@ def delete_initiative(initiative_id: str, user_id: str) -> bool:
     sid_raw = before.get("source_idea_id")
     src = _ve_activity_related_id(str(sid_raw).strip() if sid_raw is not None else None)
     conn = get_connection()
-    conn.execute(
-        "DELETE FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
-        (user_id, EXECUTION_STEPS_SCOPE_INITIATIVE, initiative_id),
-    )
-    conn.execute(
-        "UPDATE projects SET initiative_id = NULL WHERE initiative_id = ? AND user_id = ?",
-        (initiative_id, user_id),
-    )
-    conn.execute("DELETE FROM initiatives WHERE id = ? AND user_id = ?", (initiative_id, user_id))
-    conn.commit()
+    with ve_write_transaction(conn, purpose="delete_initiative"):
+        _guard_legacy_write(conn, initiative_id, target_id=initiative_id, target_kind="initiative")
+        conn.execute(
+            "DELETE FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
+            (user_id, EXECUTION_STEPS_SCOPE_INITIATIVE, initiative_id),
+        )
+        conn.execute(
+            "UPDATE projects SET initiative_id = NULL WHERE initiative_id = ? AND user_id = ?",
+            (initiative_id, user_id),
+        )
+        conn.execute("DELETE FROM initiatives WHERE id = ? AND user_id = ?", (initiative_id, user_id))
+        _commit_if_owner(conn)
     _log_ve_entity_activity(
         type=ActivityType.INITIATIVE_DELETED.value,
         entity_type=ActivityEntityType.INITIATIVE.value,
@@ -4739,21 +6943,34 @@ def create_project(data: M.ProjectCreate, user_id: str) -> dict[str, Any]:
         user_id=user_id,
         field_name="initiative_id",
     )
-    conn.execute(
-        """INSERT INTO projects (
-          id, user_id, initiative_id, title, brief, status, owner_id, supporting_owner_ids, required_assets, priority,
-          start_date, end_date, estimated_weekly_hours, next_step_ai,
-          notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (
-            pid, user_id, data.initiative_id, data.title, data.brief, data.status, data.owner_id,
-            M._json_dumps_list(data.supporting_owner_ids), M._json_dumps_list(data.required_assets),
-            data.priority, data.start_date, data.end_date,
-            data.estimated_weekly_hours, data.next_step_ai,
-            data.notes, now, now,
-        ),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="create_project"):
+        # The create payload's parent field IS the subtree: the
+        # initiative_id names the subtree root directly. (Do NOT
+        # route it through _resolve_project_subtree — that takes a
+        # PROJECT id; passing an initiative id there looks up a
+        # nonexistent project, returns None, and silently bypasses
+        # the guard. Caught by T-G1.)
+        _guard_legacy_write(
+            conn,
+            data.initiative_id,
+            target_id=pid,
+            target_kind="project",
+        )
+        conn.execute(
+            """INSERT INTO projects (
+              id, user_id, initiative_id, title, brief, status, owner_id, supporting_owner_ids, required_assets, priority,
+              start_date, end_date, estimated_weekly_hours, next_step_ai,
+              notes, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                pid, user_id, data.initiative_id, data.title, data.brief, data.status, data.owner_id,
+                M._json_dumps_list(data.supporting_owner_ids), M._json_dumps_list(data.required_assets),
+                data.priority, data.start_date, data.end_date,
+                data.estimated_weekly_hours, data.next_step_ai,
+                data.notes, now, now,
+            ),
+        )
+        _commit_if_owner(conn)
     out = get_project(pid, user_id) or {}
     _log_ve_entity_activity(
         type=ActivityType.PROJECT_CREATED.value,
@@ -4798,8 +7015,15 @@ def update_project(project_id: str, data: M.ProjectUpdate, user_id: str) -> dict
     updates.append("updated_at = ?")
     args.append(_now())
     args.append(project_id)
-    conn.execute(f"UPDATE projects SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
-    conn.commit()
+    with ve_write_transaction(conn, purpose="update_project"):
+        _guard_legacy_write(
+            conn,
+            _resolve_project_subtree(conn, project_id, user_id),
+            target_id=project_id,
+            target_kind="project",
+        )
+        conn.execute(f"UPDATE projects SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
+        _commit_if_owner(conn)
     out = get_project(project_id, user_id)
     ini = (out or {}).get("initiative_id") if isinstance(out, dict) else None
     _log_ve_entity_activity(
@@ -4819,13 +7043,36 @@ def delete_project(project_id: str, user_id: str) -> bool:
         return False
     ini = _ve_activity_related_id(str(before.get("initiative_id") or "").strip() or None)
     conn = get_connection()
-    conn.execute(
-        "DELETE FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
-        (user_id, EXECUTION_STEPS_SCOPE_PROJECT, project_id),
-    )
-    conn.execute("DELETE FROM tasks WHERE project_id = ? AND user_id = ?", (project_id, user_id))
-    conn.execute("DELETE FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id))
-    conn.commit()
+    with ve_write_transaction(conn, purpose="delete_project"):
+        _guard_legacy_write(
+            conn,
+            _resolve_project_subtree(conn, project_id, user_id),
+            target_id=project_id,
+            target_kind="project",
+        )
+        task_count = int(
+            conn.execute(
+                "SELECT COUNT(*) FROM tasks WHERE project_id = ? AND user_id = ?",
+                (project_id, user_id),
+            ).fetchone()[0]
+        )
+        if task_count > 0:
+            # §6: a project with tasks cannot be deleted while the
+            # unified-node migration is in flight — deleting the
+            # project would orphan its tasks' node counterparts.
+            raise ProjectHasTasks(
+                f"project {project_id} cannot be deleted: it still has "
+                f"{task_count} task(s); delete or move the tasks first",
+                project_id=project_id,
+                task_count=task_count,
+            )
+        conn.execute(
+            "DELETE FROM execution_steps WHERE user_id = ? AND scope_type = ? AND scope_id = ?",
+            (user_id, EXECUTION_STEPS_SCOPE_PROJECT, project_id),
+        )
+        conn.execute("DELETE FROM tasks WHERE project_id = ? AND user_id = ?", (project_id, user_id))
+        conn.execute("DELETE FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id))
+        _commit_if_owner(conn)
     _log_ve_entity_activity(
         type=ActivityType.PROJECT_DELETED.value,
         entity_type=ActivityEntityType.PROJECT.value,
@@ -5026,8 +7273,15 @@ def _insert_task(
 
 def create_task(data: M.TaskCreate, user_id: str) -> dict[str, Any]:
     conn = get_connection()
-    tid = _insert_task(conn, data, user_id)
-    conn.commit()
+    with ve_write_transaction(conn, purpose="create_task"):
+        _guard_legacy_write(
+            conn,
+            _resolve_task_payload_subtree(conn, data.parent_task_id, data.project_id, user_id),
+            target_id=None,
+            target_kind="task",
+        )
+        tid = _insert_task(conn, data, user_id)
+        _commit_if_owner(conn)
     out = get_task(tid, user_id) or {}
     _log_ve_entity_activity(
         type=ActivityType.TASK_CREATED.value,
@@ -5473,28 +7727,49 @@ def record_task_proposal(
     )
     now = _now()
     pid = M.new_id()
-    conn.execute(
-        """INSERT INTO task_proposals (
-          id, user_id, conversation_id, source_message_id, block_index, proposal_index,
-          seat, title, parent_task_id, timeframe_commitment, due_date, notes, state,
-          created_task_id, created_at, updated_at, decided_at,
-          evidence_quote, original_title, original_parent_task_id,
-          original_timeframe_commitment, original_due_date, original_notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL,
-          ?, ?, ?, ?, ?, ?)""",
-        (
-            pid, user_id, conversation_id, source_message_id, block_index, proposal_index,
-            msg.get("archetype_id"), submitted["title"], submitted["parent_task_id"],
-            submitted["timeframe_commitment"], submitted["due_date"], submitted["notes"],
-            now, now,
-            # W1: the quote + the originals are copied in this SAME
-            # INSERT, never editable after. The originals are the
-            # submitted values as recorded, not the live values.
-            evidence_quote, submitted["title"], submitted["parent_task_id"],
-            submitted["timeframe_commitment"], submitted["due_date"], submitted["notes"],
-        ),
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="record_task_proposal"):
+        # Race re-check: a concurrent record of the same triple may
+        # have committed between the pre-check above and the helper
+        # enter. Re-checking inside the transaction makes the
+        # idempotent re-record race-safe (return the stored row
+        # instead of an IntegrityError on the triple).
+        existing = conn.execute(
+            "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+            "WHERE user_id = ? AND source_message_id = ? AND block_index = ? AND proposal_index = ?",
+            (user_id, source_message_id, block_index, proposal_index),
+        ).fetchone()
+        if existing is not None:
+            return _proposal_row_to_dict(tuple(existing))
+        _guard_legacy_write(
+            conn,
+            _resolve_task_subtree(conn, submitted["parent_task_id"], user_id)
+            if submitted["parent_task_id"]
+            else None,
+            target_id=pid,
+            target_kind="task_proposal",
+        )
+        conn.execute(
+            """INSERT INTO task_proposals (
+              id, user_id, conversation_id, source_message_id, block_index, proposal_index,
+              seat, title, parent_task_id, timeframe_commitment, due_date, notes, state,
+              created_task_id, created_at, updated_at, decided_at,
+              evidence_quote, original_title, original_parent_task_id,
+              original_timeframe_commitment, original_due_date, original_notes
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL,
+              ?, ?, ?, ?, ?, ?)""",
+            (
+                pid, user_id, conversation_id, source_message_id, block_index, proposal_index,
+                msg.get("archetype_id"), submitted["title"], submitted["parent_task_id"],
+                submitted["timeframe_commitment"], submitted["due_date"], submitted["notes"],
+                now, now,
+                # W1: the quote + the originals are copied in this SAME
+                # INSERT, never editable after. The originals are the
+                # submitted values as recorded, not the live values.
+                evidence_quote, submitted["title"], submitted["parent_task_id"],
+                submitted["timeframe_commitment"], submitted["due_date"], submitted["notes"],
+            ),
+        )
+        _commit_if_owner(conn)
     row = _get_proposal_row(conn, pid, user_id)
     return _proposal_row_to_dict(tuple(row)) if row else {}
 
@@ -5642,11 +7917,24 @@ def update_task_proposal(
             raise ValueError("Parent task is unavailable")
     sets = ", ".join(f"{k} = ?" for k in values) + ", updated_at = ?"
     args = list(values.values()) + [_now(), proposal_id, user_id]
-    cur = conn.execute(
-        f"UPDATE task_proposals SET {sets} WHERE id = ? AND user_id = ? AND state = 'pending'",
-        args,
-    )
-    conn.commit()
+    with ve_write_transaction(conn, purpose="update_task_proposal"):
+        prow = conn.execute(
+            "SELECT parent_task_id FROM task_proposals WHERE id = ? AND user_id = ?",
+            (proposal_id, user_id),
+        ).fetchone()
+        _guard_legacy_write(
+            conn,
+            _resolve_task_subtree(conn, prow[0], user_id)
+            if prow is not None and prow[0]
+            else None,
+            target_id=proposal_id,
+            target_kind="task_proposal",
+        )
+        cur = conn.execute(
+            f"UPDATE task_proposals SET {sets} WHERE id = ? AND user_id = ? AND state = 'pending'",
+            args,
+        )
+        _commit_if_owner(conn)
     if cur.rowcount == 0:
         row = _get_proposal_row(conn, proposal_id, user_id)
         if row is None:
@@ -5706,101 +7994,120 @@ def approve_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
     """
     conn = get_connection()
     now = _now()
-    if not conn.in_transaction:
-        conn.execute("BEGIN IMMEDIATE")
-    try:
-        cur = conn.execute(
-            "UPDATE task_proposals SET state = 'approved', decided_at = ? "
-            "WHERE id = ? AND user_id = ? AND state = 'pending'",
-            (now, proposal_id, user_id),
-        )
-        if cur.rowcount == 0:
-            conn.rollback()
-            row = _get_proposal_row(conn, proposal_id, user_id)
-            if row is None:
-                raise ProposalNotFound("Proposal not found")
-            d = _proposal_row_to_dict(tuple(row))
-            if d["state"] == "approved":
-                task = get_task(d["created_task_id"], user_id) if d["created_task_id"] else None
-                return {"task": task or {}, "proposal": d}
-            raise ProposalConflict(f"Proposal is already {d['state']}")
-        row = conn.execute(
+    with ve_write_transaction(conn, purpose="approve_task_proposal"):
+        # Pre-read the proposal inside the helper; guard only while
+        # state is 'pending'. A re-approval of an already-decided
+        # proposal writes nothing, so it skips the guard and follows
+        # the existing rowcount==0 return-winner/raise-conflict path
+        # below — the documented idempotent re-approval, preserved
+        # exactly.
+        _prow = conn.execute(
             "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals WHERE id = ? AND user_id = ?",
             (proposal_id, user_id),
         ).fetchone()
-        proposal = _proposal_row_to_dict(tuple(row))
-        # Re-validate the final edited values inside the transaction.
-        if not str(proposal["title"] or "").strip():
-            raise ValueError("Proposal title must be non-empty")
-        _validate_timeframe_commitment(proposal["timeframe_commitment"])
-        _strict_due_date(proposal["due_date"])
-        _ensure_owned_reference(
-            conn,
-            table="tasks",
-            ref_id=proposal["parent_task_id"],
-            user_id=user_id,
-            field_name="parent_task_id",
-        )
-        # W1 (Q1/Q5): the parent-availability check, revalidated
-        # inside the approval transaction. Ownership (400) is already
-        # re-validated above, so reaching here with a reason means
-        # the parent exists but is terminal. 409 with guidance; the
-        # claim rolls back, the proposal stays pending, and the
-        # system never re-parents, never declines, never creates
-        # parentless.
-        if check_parent_available(conn, proposal["parent_task_id"], user_id) is not None:
-            raise ProposalConflict(
-                "Parent task is no longer available. Edit the proposal to "
-                "choose a different parent (or no parent), or decline it."
+        if _prow is not None:
+            _pd = _proposal_row_to_dict(tuple(_prow))
+            if _pd["state"] == "pending":
+                _guard_legacy_write(
+                    conn,
+                    _resolve_task_subtree(conn, _pd["parent_task_id"], user_id)
+                    if _pd["parent_task_id"]
+                    else None,
+                    target_id=proposal_id,
+                    target_kind="task_proposal",
+                )
+        try:
+            cur = conn.execute(
+                "UPDATE task_proposals SET state = 'approved', decided_at = ? "
+                "WHERE id = ? AND user_id = ? AND state = 'pending'",
+                (now, proposal_id, user_id),
             )
-        data = M.TaskCreate(
-            title=proposal["title"],
-            parent_task_id=proposal["parent_task_id"],
-            status="Todo",
-            timeframe_commitment=proposal["timeframe_commitment"],
-            due_date=proposal["due_date"],
-            notes=proposal["notes"],
-            # W1 Guard A: the deliberation-path write to seat_ref is
-            # REMOVED. Keystone seeding is the only seat_ref writer;
-            # a W1-created task carries no seat_ref.
-            seat_ref="",
-        )
-        # W1 Guard B: a W1-created task never lands in a keystone
-        # project. Vacuous today (approve passes no project_id) but
-        # wired so the guard exists if the path ever gains one.
-        _reject_keystone_project(data.project_id, user_id)
-        tid = _insert_task(
-            conn,
-            data,
-            user_id,
-            origin_seat=proposal["seat"],
-            origin_conversation_id=proposal["conversation_id"],
-            origin_message_id=proposal["source_message_id"],
-            # W1 Refinement 2 (Q4): origin_decision_id stays NULL.
-            # There is no proposal-specific column on tasks, and
-            # storing the proposal row's id in the decision field
-            # would make it polymorphic. The proposal row itself is
-            # the anchor: proposal.created_task_id -> created task,
-            # and the task's origin_conversation_id +
-            # origin_message_id -> source message, all owner-scoped.
-            origin_claim_id=None,
-            origin_decision_id=None,
-            responsible_seat=None,
-        )
-        conn.execute(
-            # W3 §0 correction 1: the state guard closes the one
-            # unguarded UPDATE on task_proposals. Vacuous today — this
-            # runs immediately after the compare-and-swap claim inside
-            # the approval transaction — but a future refactor must not
-            # be able to overwrite created_task_id on an approved row.
-            "UPDATE task_proposals SET created_task_id = ? WHERE id = ? AND state = 'approved'",
-            (tid, proposal_id),
-        )
-        conn.commit()
-    except Exception:
-        if conn.in_transaction:
-            conn.rollback()
-        raise
+            if cur.rowcount == 0:
+                _rollback_if_owner(conn)
+                row = _get_proposal_row(conn, proposal_id, user_id)
+                if row is None:
+                    raise ProposalNotFound("Proposal not found")
+                d = _proposal_row_to_dict(tuple(row))
+                if d["state"] == "approved":
+                    task = get_task(d["created_task_id"], user_id) if d["created_task_id"] else None
+                    return {"task": task or {}, "proposal": d}
+                raise ProposalConflict(f"Proposal is already {d['state']}")
+            row = conn.execute(
+                "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals WHERE id = ? AND user_id = ?",
+                (proposal_id, user_id),
+            ).fetchone()
+            proposal = _proposal_row_to_dict(tuple(row))
+            # Re-validate the final edited values inside the transaction.
+            if not str(proposal["title"] or "").strip():
+                raise ValueError("Proposal title must be non-empty")
+            _validate_timeframe_commitment(proposal["timeframe_commitment"])
+            _strict_due_date(proposal["due_date"])
+            _ensure_owned_reference(
+                conn,
+                table="tasks",
+                ref_id=proposal["parent_task_id"],
+                user_id=user_id,
+                field_name="parent_task_id",
+            )
+            # W1 (Q1/Q5): the parent-availability check, revalidated
+            # inside the approval transaction. Ownership (400) is already
+            # re-validated above, so reaching here with a reason means
+            # the parent exists but is terminal. 409 with guidance; the
+            # claim rolls back, the proposal stays pending, and the
+            # system never re-parents, never declines, never creates
+            # parentless.
+            if check_parent_available(conn, proposal["parent_task_id"], user_id) is not None:
+                raise ProposalConflict(
+                    "Parent task is no longer available. Edit the proposal to "
+                    "choose a different parent (or no parent), or decline it."
+                )
+            data = M.TaskCreate(
+                title=proposal["title"],
+                parent_task_id=proposal["parent_task_id"],
+                status="Todo",
+                timeframe_commitment=proposal["timeframe_commitment"],
+                due_date=proposal["due_date"],
+                notes=proposal["notes"],
+                # W1 Guard A: the deliberation-path write to seat_ref is
+                # REMOVED. Keystone seeding is the only seat_ref writer;
+                # a W1-created task carries no seat_ref.
+                seat_ref="",
+            )
+            # W1 Guard B: a W1-created task never lands in a keystone
+            # project. Vacuous today (approve passes no project_id) but
+            # wired so the guard exists if the path ever gains one.
+            _reject_keystone_project(data.project_id, user_id)
+            tid = _insert_task(
+                conn,
+                data,
+                user_id,
+                origin_seat=proposal["seat"],
+                origin_conversation_id=proposal["conversation_id"],
+                origin_message_id=proposal["source_message_id"],
+                # W1 Refinement 2 (Q4): origin_decision_id stays NULL.
+                # There is no proposal-specific column on tasks, and
+                # storing the proposal row's id in the decision field
+                # would make it polymorphic. The proposal row itself is
+                # the anchor: proposal.created_task_id -> created task,
+                # and the task's origin_conversation_id +
+                # origin_message_id -> source message, all owner-scoped.
+                origin_claim_id=None,
+                origin_decision_id=None,
+                responsible_seat=None,
+            )
+            conn.execute(
+                # W3 §0 correction 1: the state guard closes the one
+                # unguarded UPDATE on task_proposals. Vacuous today — this
+                # runs immediately after the compare-and-swap claim inside
+                # the approval transaction — but a future refactor must not
+                # be able to overwrite created_task_id on an approved row.
+                "UPDATE task_proposals SET created_task_id = ? WHERE id = ? AND state = 'approved'",
+                (tid, proposal_id),
+            )
+            _commit_if_owner(conn)
+        except Exception:
+            _rollback_if_owner(conn)
+            raise
     task = get_task(tid, user_id) or {}
     _log_ve_entity_activity(
         type=ActivityType.TASK_CREATED.value,
@@ -5862,8 +8169,15 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
     updates.append("updated_at = ?")
     args.append(_now())
     args.append(task_id)
-    conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
-    conn.commit()
+    with ve_write_transaction(conn, purpose="update_task"):
+        _guard_legacy_write(
+            conn,
+            _resolve_task_subtree(conn, task_id, user_id),
+            target_id=task_id,
+            target_kind="task",
+        )
+        conn.execute(f"UPDATE tasks SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args + [user_id])
+        _commit_if_owner(conn)
     after = get_task(task_id, user_id)
     new_status = str((after or {}).get("status") or "")
     rel_pid = after.get("project_id") if isinstance(after, dict) else None
@@ -5957,12 +8271,19 @@ def delete_task(task_id: str, user_id: str) -> bool:
         return False
     proj = _ve_activity_related_id(str(before.get("project_id") or "").strip() or None)
     conn = get_connection()
-    conn.execute(
-        "UPDATE tasks SET parent_task_id = NULL WHERE parent_task_id = ? AND user_id = ?",
-        (task_id, user_id),
-    )
-    conn.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", (task_id, user_id))
-    conn.commit()
+    with ve_write_transaction(conn, purpose="delete_task"):
+        _guard_legacy_write(
+            conn,
+            _resolve_task_subtree(conn, task_id, user_id),
+            target_id=task_id,
+            target_kind="task",
+        )
+        conn.execute(
+            "UPDATE tasks SET parent_task_id = NULL WHERE parent_task_id = ? AND user_id = ?",
+            (task_id, user_id),
+        )
+        conn.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", (task_id, user_id))
+        _commit_if_owner(conn)
     _log_ve_entity_activity(
         type=ActivityType.TASK_DELETED.value,
         entity_type=ActivityEntityType.TASK.value,

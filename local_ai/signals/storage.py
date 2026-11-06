@@ -94,7 +94,7 @@ def create_signal(data: dict[str, Any]) -> dict[str, Any]:
             now,
         ),
     )
-    conn.commit()
+    V._commit_if_owner(conn)
     out = row_to_signal(
         (
             sid,
@@ -198,7 +198,7 @@ def update_signal(signal_id: str, patch: dict[str, Any]) -> dict[str, Any] | Non
         WHERE id = ?""",
         (status, linked_initiative_id, linked_project_id, linked_task_id, now, signal_id),
     )
-    conn.commit()
+    V._commit_if_owner(conn)
     updated = get_signal(signal_id)
     if updated:
         _log_signal_lifecycle_activity(signal_id, old_status, status, updated)

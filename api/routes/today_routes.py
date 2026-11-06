@@ -48,6 +48,13 @@ def get_today(
     mode: str | None = Query(default=None),
     user: dict = Depends(get_current_user),
 ):
+    """The ranked morning briefing.
+
+    NOTE: GET is not entirely read-only (W3 §2.1, U-D1 RULED) — the
+    briefing consumes the follow-through engine's compute server-side,
+    and the compute persists genuinely new nudges and auto-resolves
+    cleared ones. The render step itself performs no writes.
+    """
     try:
         flat: list[str] = []
         for value in dismissed_ids:

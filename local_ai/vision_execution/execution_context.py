@@ -65,9 +65,17 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from datetime import date, datetime, timezone
 from typing import Any
+
+from local_ai.vision_execution.provenance import (
+    _parse_date,
+    _safe_line,
+    date_part as _date_part,
+    normalize_title as _normalize_title,
+    provenance_clause as _provenance_clause,
+    seat_display as _seat_display,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,14 +116,11 @@ _BLOCK_CHAR_CAP = 2000
 _MAX_TASKS = 10
 _MAX_DEPTH = 3
 _MAX_READS = 20
-_TITLE_MAX_CHARS = 80
 # Policy budget for the assembled Talk prompt (see the module docstring:
 # no enforced runtime cap exists on this path; 8,000 is the
 # steward-frame budget adopted as the threshold the block yields to).
 _VOICE_PROMPT_BUDGET = 8000
 _STALL_DAYS = 7
-
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 _FORBIDDEN_WORDS = ("stuck", "avoiding", "losing momentum")
 
@@ -152,17 +157,6 @@ def execution_context_enabled() -> bool:
 # Small pure helpers
 # ---------------------------------------------------------------------------
 
-def _parse_date(value: Any) -> date | None:
-    """Strict %Y-%m-%d after strip. Anything else is undated, not an error."""
-    s = value.strip() if isinstance(value, str) else ""
-    if not _DATE_RE.match(s):
-        return None
-    try:
-        return date.fromisoformat(s)
-    except ValueError:
-        return None
-
-
 def _parse_dt(raw: Any) -> datetime | None:
     """ISO timestamp to aware datetime; naive reads as UTC. None on garbage."""
     if not raw or not str(raw).strip():
@@ -174,60 +168,6 @@ def _parse_dt(raw: Any) -> datetime | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt
-
-
-def _date_part(raw: Any) -> str | None:
-    """YYYY-MM-DD part of a stored ISO timestamp, or None if not a date."""
-    s = str(raw or "").strip()
-    if len(s) < 10:
-        return None
-    return s[:10] if _parse_date(s[:10]) is not None else None
-
-
-def _safe_line(text: Any) -> str:
-    """Collapse ALL whitespace (including newlines) to single spaces.
-
-    Task text is untrusted data even when formatting the prompt: a
-    title containing newlines or section markers must not visually
-    escape the task-data section. (Same discipline as
-    ``obligations._safe_line``.)
-    """
-    return re.sub(r"\s+", " ", str(text or "")).strip()
-
-
-def _normalize_title(title: Any) -> str:
-    """Display title: whitespace-collapsed, at most 80 chars.
-
-    Verdict ruling 6: deterministic ellipsis when cut; the stored
-    title is unchanged. A hostile or very long title cannot make a
-    task unrenderable.
-    """
-    text = _safe_line(title)
-    if len(text) > _TITLE_MAX_CHARS:
-        return text[: _TITLE_MAX_CHARS - 1] + "…"
-    return text
-
-
-def _seat_display(user_id: str, origin_seat: Any) -> str | None:
-    """Resolvable seat display name, or None.
-
-    The same naming authority the prompt builder uses for history
-    turns (stock role name, e.g. "Champion", or the visitor's chosen
-    name) — never the current seat's name. Unknown seat ids are
-    unresolvable. Never raises.
-    """
-    seat = (origin_seat or "").strip().lower() if isinstance(origin_seat, str) else ""
-    if not seat:
-        return None
-    try:
-        from local_ai.council.archetypes import get_archetype
-        from local_ai.council.naming import get_display_name
-
-        if get_archetype(seat) is None:
-            return None
-        return get_display_name(user_id, seat)
-    except Exception:
-        return None
 
 
 def _is_terminal(status: Any) -> bool:
@@ -246,57 +186,9 @@ def _idle_days(updated_at: Any, now: datetime) -> int | None:
 
 # ---------------------------------------------------------------------------
 # Provenance (verdict correction 3: optional enrichment, never a gate)
+# The hierarchy lives in provenance.py (W3 first commit — mechanical
+# move, no wording change); _provenance_clause is re-exported above.
 # ---------------------------------------------------------------------------
-
-def _provenance_clause(user_id: str, task: dict[str, Any]) -> str:
-    """Weakest verified wording, in order. Never raises, never errors.
-
-    Row 1 needs exactly one APPROVED proposal for this task (owner
-    scoped, by ``created_task_id``) with a valid decision date —
-    ``decided_at`` is set by ``_now()`` in the same UPDATE that flips
-    the proposal to 'approved', inside the same transaction that
-    creates the task, so it IS the approval instant (verified at
-    8761278: ``storage.py:5655``, ``:5733``) — and a resolvable seat.
-    Lookup failure, zero rows, or multiple matches degrade to row 2;
-    the block is never suppressed for a provenance failure.
-    """
-    seat = _seat_display(user_id, task.get("origin_seat"))
-    has_origin = bool((task.get("origin_conversation_id") or "").strip())
-    created_date = _date_part(task.get("created_at"))
-
-    proposals: list[dict[str, Any]] | None = None
-    try:
-        from local_ai.vision_execution import storage as _storage
-
-        proposals = _storage.get_proposals_by_created_task(user_id, task.get("id") or "")
-    except Exception:
-        # Provenance lookup failure degrades; it never takes the block down.
-        logger.exception("execution context: proposal lookup failed; degrading provenance")
-        proposals = None
-
-    if proposals:
-        approved = [
-            p
-            for p in proposals
-            if (p.get("state") or "") == "approved" and p.get("decided_at")
-        ]
-        if len(approved) == 1:
-            decided_date = _date_part(approved[0].get("decided_at"))
-            if decided_date and seat:
-                return (
-                    f"Created from a proposal you approved on {decided_date} "
-                    f"in your conversation with {seat}."
-                )
-    if has_origin and seat and created_date:
-        return (
-            f"Task created on {created_date}, originating from your "
-            f"conversation with {seat}."
-        )
-    if has_origin and seat:
-        return f"Originating from your conversation with {seat}."
-    if created_date:
-        return f"Task created on {created_date}."
-    return ""
 
 
 # ---------------------------------------------------------------------------

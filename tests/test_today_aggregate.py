@@ -208,10 +208,16 @@ def test_bad_cursor_restarts_deck():
 
 
 def test_dismissal_downweights_seat_live():
+    # W3 §7: the dismissal pattern keys off the INTERNAL kind hint,
+    # never the public seat — so the seats here differ by KIND
+    # (date_approaching -> Conductor, stalled -> Guardian), not by a
+    # canned suggested_seat. A provenance task's public seat is null,
+    # so a test that keyed dismissal off the public seat would be
+    # testing the old behavior.
     svc = _svc([
-        _nudge("a", "stalled", seat="Conductor", entity_id="t1"),
-        _nudge("b", "stalled", seat="Conductor", entity_id="t2"),
-        _nudge("c", "stalled", seat="Guardian", entity_id="t3"),
+        _nudge("a", "date_approaching", entity_id="t1"),
+        _nudge("b", "date_approaching", entity_id="t2"),
+        _nudge("c", "stalled", entity_id="t3"),
     ])
     items = svc.briefing("u1", dismissed_ids=["a"])["items"]
     # "a" is out ("not now"); "b" shares its seat so it sinks below "c".
@@ -230,9 +236,12 @@ def test_no_engage_no_mode():
 
 
 def test_mode_param_reranks_around_seat():
+    # W3 §7: the sort-key lens reads the INTERNAL kind hint —
+    # date_approaching -> Conductor, stalled -> Guardian — not the
+    # public suggested_seat.
     svc = _svc([
-        _nudge("a", "stalled", seat="Conductor"),
-        _nudge("b", "stalled", seat="Guardian"),
+        _nudge("a", "date_approaching"),
+        _nudge("b", "stalled"),
     ])
     items = svc.briefing("u1", mode="Guardian")["items"]
     assert [i["id"] for i in items] == ["b", "a"]
@@ -288,9 +297,11 @@ def test_why_carried_through():
 # the deck never shows an entity — or the identical card — twice.
 
 def test_lens_promotes_own_seat_over_people_waiting():
+    # W3 §7: the lens reads the INTERNAL kind hint —
+    # date_approaching -> Conductor, stalled -> Guardian.
     nudges = [
-        _nudge("n-other", "stalled", seat="Conductor", entity_id="t1"),
-        _nudge("n-own", "stalled", seat="Guardian", entity_id="t2"),
+        _nudge("n-other", "date_approaching", entity_id="t1"),
+        _nudge("n-own", "stalled", entity_id="t2"),
     ]
     tasks = [_task("t1", assignee_id="person-1"), _task("t2")]
     svc = _svc(nudges, tasks=tasks)

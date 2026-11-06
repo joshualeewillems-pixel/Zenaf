@@ -32,6 +32,12 @@ records:
                     extended reason vocabulary (discuss | clarify |
                     challenge | offer). Markers only — never a message,
                     never an interruption, never a turn-path cost.
+  evidence.py     — S3: the shared evidence-access contract — one
+                    read-only, owner-scoped, bounded evidence library
+                    with declarative per-seat views (Bear first).
+                    Retrieval returns structured records; rendering
+                    formats them into a bounded prompt block. No
+                    reading store, no reuse engine, no cache.
 
 Control invariants (doctrine §9): observations are proposals, not
 claims; nothing here files into the review queue and nothing writes a

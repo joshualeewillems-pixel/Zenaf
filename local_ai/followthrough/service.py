@@ -151,6 +151,13 @@ class FollowthroughService:
     ) -> list[dict[str, Any]]:
         return self.store.list_commitments(user_id, status)
 
+    def list_commitments_for_task(
+        self, user_id: str, task_id: str, status: str | None = "open"
+    ) -> list[dict[str, Any]]:
+        """Commitments directly linked to one task (S3). Passthrough to
+        the store read of the same name; ``user_id`` required."""
+        return self.store.list_commitments_for_task(user_id, task_id, status)
+
     def link_commitment(
         self, user_id: str, commitment_id: str, task_id: str
     ) -> dict[str, Any]:

@@ -485,6 +485,15 @@ def get_task(task_id: str, user_id: str):
     return S.get_task(task_id, user_id)
 
 
+def list_task_proposals_by_parent(
+    user_id: str, parent_task_id: str, state: str | None = "pending", limit: int = 100
+):
+    """Node-scoped proposal read (S3, verdict OQ5). Passthrough to the
+    storage read of the same name; ``user_id`` required, exact parent
+    match only — see storage for the contract."""
+    return S.list_task_proposals_by_parent(user_id, parent_task_id, state, limit)
+
+
 def create_task(data: M.TaskCreate, user_id: str):
     return S.create_task(data, user_id)
 

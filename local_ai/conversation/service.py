@@ -21,6 +21,7 @@ from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype
 from local_ai.council.naming import get_display_name
 from local_ai.fellowship import events as fellowship_events
+from local_ai.fellowship.evidence import build_bear_evidence_block
 from local_ai.strand_interviews.boundaries import recognize_explicit_boundary
 from local_ai.strand_interviews.guidance import strand_guidance_block
 from local_ai.strand_interviews.keys import validate_strand_key
@@ -295,6 +296,18 @@ class ConversationService:
                 _obligations.build_obligation_context(user_id)
             )
 
+        # Bear evidence (S3): guardian-only, server-side, from the
+        # caller's own scoped records — the client cannot inject or
+        # forge evidence. A failed or empty read yields no block,
+        # never an empty-list claim; other seats get no block. The
+        # assembler never raises, so no try/except is needed here —
+        # mirroring the obligation call it sits next to.
+        evidence_context = None
+        if arch_id == "guardian":
+            evidence_context = build_bear_evidence_block(
+                user_id, (context or {}).get("entity_type"), (context or {}).get("entity_id")
+            )
+
         # Capability C S5: first joining turn only. If a pending,
         # unexpired invitation exists for this (user, conversation,
         # seat) at turn start, the turn carries its evidence +
@@ -327,6 +340,7 @@ class ConversationService:
             question=question,
             context_hint=context_hint_for(context),
             obligation_context=obligation_context,
+            evidence_context=evidence_context,
             invitation_context=invitation_context,
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,

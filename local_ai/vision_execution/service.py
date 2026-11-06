@@ -574,8 +574,13 @@ def create_decision(data: M.DecisionCreate):
     return S.create_decision(data)
 
 
-def list_decisions(entity_type: str | None = None, entity_id: str | None = None, limit: int = 500):
-    return S.list_decisions(entity_type=entity_type, entity_id=entity_id, limit=limit)
+def list_decisions(user_id: str, entity_type: str | None = None, entity_id: str | None = None, limit: int = 500):
+    """List decision rows owned by ``user_id`` — owner-scoped at storage.
+
+    ``user_id`` is required (first positional); an empty or missing owner
+    is rejected at the storage boundary, never silently unscoped.
+    """
+    return S.list_decisions(user_id, entity_type=entity_type, entity_id=entity_id, limit=limit)
 
 
 def log_coordination_client_checkpoint(user_id: str, body: M.CoordinationClientCheckpointCreate) -> str:

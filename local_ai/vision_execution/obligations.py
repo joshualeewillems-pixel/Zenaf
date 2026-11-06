@@ -61,7 +61,9 @@ UNAVAILABLE_NOTICE = (
 )
 PROPOSAL_INSTRUCTION = (
     "When you propose a task, describe it in prose and then include a "
-    "```task-proposal block with one entry per proposed task. Never "
+    "```task-proposal block with one entry per proposed task. Describe "
+    "the proposal in prose first: the card the user approves shows "
+    "those exact words as the evidence for the task. Never "
     "claim a task was created — creation happens only when the user "
     "approves the card. If the user agrees in prose, re-emit the block "
     "so the card can appear; prose agreement alone never creates "

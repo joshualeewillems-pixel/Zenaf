@@ -1489,6 +1489,11 @@ class TaskProposalRecordBody(BaseModel):
     timeframe_commitment: str | None = None
     due_date: str | None = None
     notes: str = ""
+    # W1 (C-1): required by the record path (400 when missing/empty),
+    # but optional at the HTTP layer so the server — not pydantic —
+    # owns the 400. The client sends the preceding prose paragraph;
+    # the server verifies it against the source message's actual prose.
+    evidence_quote: str | None = None
 
 
 class TaskProposalPatchBody(BaseModel):

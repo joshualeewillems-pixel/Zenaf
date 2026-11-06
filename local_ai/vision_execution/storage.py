@@ -90,6 +90,23 @@ def _ve_task_status_done(status: str | None) -> bool:
     return bool(_VE_TASK_DONE_STATUS_RE.search(str(status)))
 
 
+# W1 (Refinement 1, founder verdict 2026-11-05): terminal-parent
+# interpretation for the parent-availability check. The single
+# existing authoritative "done" interpretation is
+# _ve_task_status_done (shared with task-completion events). Dropped
+# is terminal for parenting but NOT "done" — extending the shared
+# regex would fire task_completed events for dropped tasks — so W1's
+# parent check is that helper OR an exact normalized "dropped".
+# No stored status is ever rewritten; no lifecycle machinery.
+def _is_terminal_parent_status(status: str | None) -> bool:
+    """True when a task's status makes it unavailable as a parent."""
+    if status is None:
+        return False
+    if _ve_task_status_done(status):
+        return True
+    return str(status).strip().lower() == "dropped"
+
+
 def _log_ve_entity_activity(
     *,
     type: str,
@@ -4926,12 +4943,25 @@ def _validate_timeframe_commitment(value: str | None) -> None:
         )
 
 
-def _insert_task(conn: sqlite3.Connection, data: M.TaskCreate, user_id: str) -> str:
+def _insert_task(
+    conn: sqlite3.Connection,
+    data: M.TaskCreate,
+    user_id: str,
+    *,
+    origin_seat: str | None = None,
+    origin_conversation_id: str | None = None,
+    origin_message_id: str | None = None,
+    origin_claim_id: str | None = None,
+    origin_decision_id: str | None = None,
+    responsible_seat: str | None = None,
+) -> str:
     """Validate + INSERT one task row. No commit, no read-back, no log.
 
     Shared by create_task and approve_task_proposal so the approve path
     reuses the exact write path instead of duplicating validation or
     SQL. Callers commit (or roll back) and do read-back + logging.
+    The origin_* keyword args are W1 provenance (approve only): the
+    manual create_task path leaves them NULL, as before.
     """
     _validate_timeframe_commitment(data.timeframe_commitment)
     if data.project_id:
@@ -4954,13 +4984,16 @@ def _insert_task(conn: sqlite3.Connection, data: M.TaskCreate, user_id: str) -> 
     conn.execute(
         """INSERT INTO tasks (
           id, user_id, project_id, parent_task_id, title, description, assignee_id, status, priority,
-          estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, seat_ref, timeframe_commitment, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+          estimated_hours, due_date, dependency_ids, required_asset_ids, completion_criteria, notes, seat_ref, timeframe_commitment, created_at, updated_at,
+          origin_seat, origin_conversation_id, origin_message_id, origin_claim_id, origin_decision_id, responsible_seat
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             tid, user_id, data.project_id, data.parent_task_id, data.title, data.description, data.assignee_id,
             data.status, data.priority, data.estimated_hours, data.due_date,
             M._json_dumps_list(data.dependency_ids), M._json_dumps_list(data.required_asset_ids),
             data.completion_criteria, data.notes, data.seat_ref, data.timeframe_commitment, now, now,
+            origin_seat, origin_conversation_id, origin_message_id,
+            origin_claim_id, origin_decision_id, responsible_seat,
         ),
     )
     return tid
@@ -5006,6 +5039,12 @@ class ProposalConflict(Exception):
 
 _PROPOSAL_FENCE_RE = re.compile(r"```task-proposal\s*\n(.*?)```", re.DOTALL)
 _PROPOSAL_STATES = ("pending", "approved", "declined")
+
+# W1 (Q1): the only seats whose assistant messages may carry
+# proposals. The seat is read from the message itself, never from
+# client claims. Firebrand (champion) is the first proposer; other
+# seats join only when their own producer slice authorizes them.
+ENABLED_PROPOSER_SEATS = frozenset({"champion"})
 _PROPOSAL_COLUMNS = (
     "id, user_id, conversation_id, source_message_id, block_index, proposal_index, "
     "seat, title, parent_task_id, timeframe_commitment, due_date, notes, state, "
@@ -5028,11 +5067,10 @@ def _migrate_task_proposals(conn: sqlite3.Connection) -> None:
     Columns are NULLABLE with no default and are NEVER backfilled:
     legacy originals are unknowable (live values may already have been
     edited in place), so copying live values into original_* would
-    fabricate an original. Nothing populates these columns yet — the
-    W1 record path will copy submitted values into original_* in the
-    SAME INSERT as the live values, and the server will verify the
-    evidence_quote against the source message. Until then they read
-    NULL (absent = absent).
+    fabricate an original. The W1 record path copies submitted values
+    into original_* in the SAME INSERT as the live values, and the
+    server verifies the evidence_quote against the source message.
+    Until then they read NULL (absent = absent).
     """
     conn.execute(
         """CREATE TABLE IF NOT EXISTS task_proposals (
@@ -5164,15 +5202,19 @@ def _proposal_row_to_dict(row: tuple) -> dict[str, Any]:
         "created_at": row[14],
         "updated_at": row[15],
         "decided_at": row[16],
-        # W0B provenance/snapshot columns (nullable; NULL on legacy rows).
-        # Nothing populates them yet; W1 copies submitted values into
-        # original_* at INSERT and verifies evidence_quote server-side.
+        # W1: evidence_quote + original_* are populated by the record
+        # path in the SAME INSERT as the live values (never editable
+        # after); NULL on legacy rows, which predate the snapshot.
         "evidence_quote": row[17],
         "original_title": row[18],
         "original_parent_task_id": row[19],
         "original_timeframe_commitment": row[20],
         "original_due_date": row[21],
         "original_notes": row[22],
+        # W1 (C-2): grounding flag, computed on read from the live
+        # title and the stored quote — lexical correspondence only,
+        # never verified meaning. None on legacy rows with no quote.
+        "grounding_flag": _grounding_flag(row[7], row[17]),
     }
 
 
@@ -5185,6 +5227,132 @@ def _get_proposal_row(
     ).fetchone()
 
 
+# -- W1 producer helpers ------------------------------------------------------
+
+_EVIDENCE_QUOTE_MAX_CHARS = 500
+
+
+def _normalize_whitespace(value: Any) -> str:
+    """Collapse every whitespace run to one space and strip. None (or
+    a whitespace-only value) normalizes to the empty string."""
+    if value is None:
+        return ""
+    return " ".join(str(value).split())
+
+
+def _strip_proposal_blocks(text: str | None) -> str:
+    """The proposing turn's prose: the message body with every fenced
+    ```task-proposal block removed. The block itself never counts as
+    evidence — only the prose around it does."""
+    return _PROPOSAL_FENCE_RE.sub("", text or "")
+
+
+# W1 (C-2, founder verdict Refinement 3): grounding is lexical
+# correspondence, never verified meaning. "words_matched" = every
+# significant title word appears in the quote; "summarized" = the
+# title uses wording beyond the quote. The card always shows the
+# exact quote beside the label, so the user sees what the label
+# actually rests on. Known limit, pinned by test: negation is
+# invisible to this check — "not"/"no" and contraction fragments
+# are stopwords, so "Call the clinic" against "don't call the
+# clinic" reads words_matched. That is the documented limit of a
+# lexical check, not a claim about meaning.
+_GROUNDING_STOPWORDS = frozenset(
+    {
+        "a", "an", "the", "and", "or", "of", "to", "for", "in", "on",
+        "at", "by", "with", "from", "is", "are", "was", "were", "be",
+        "been", "it", "its", "this", "that", "these", "those", "i",
+        "you", "he", "she", "we", "they", "my", "our", "your", "his",
+        "her", "their", "me", "him", "us", "them", "please", "let",
+        "lets", "do", "does", "did", "can", "could", "should",
+        "would", "will", "shall", "may", "might", "must", "have",
+        "has", "had", "am", "as", "so", "if", "then", "than", "but",
+        "when", "while", "about", "into", "over", "under", "up",
+        "down", "out", "off", "again", "further", "once", "here",
+        "there", "all", "any", "both", "each", "few", "more", "most",
+        "other", "some", "such", "only", "own", "same", "too",
+        "very", "just", "also", "now", "how", "what", "which",
+        "who", "whom", "why", "where", "not", "no", "nor",
+        # Contraction fragments left by splitting on the apostrophe
+        # ("don't" -> "don", "t"): stopwords so a contraction never
+        # counts as a significant word on either side.
+        "don", "t", "ll", "re", "ve", "s", "d", "m",
+    }
+)
+
+
+def _content_tokens(text: str | None) -> set[str]:
+    """Lowercased alphanumeric tokens minus the stopword list."""
+    return {
+        tok
+        for tok in re.split(r"[^a-z0-9]+", (text or "").lower())
+        if tok and tok not in _GROUNDING_STOPWORDS
+    }
+
+
+def _grounding_flag(title: str | None, evidence_quote: str | None) -> str | None:
+    """Lexical correspondence between a live title and its stored
+    quote: "words_matched" when every significant title word appears
+    in the quote, "summarized" otherwise; None when there is no
+    quote (legacy rows). Computed on read, so an edited title
+    recomputes. A title with no significant words is vacuously
+    words_matched."""
+    if not evidence_quote:
+        return None
+    title_tokens = _content_tokens(title)
+    if not title_tokens:
+        return "words_matched"
+    return (
+        "words_matched"
+        if title_tokens <= _content_tokens(evidence_quote)
+        else "summarized"
+    )
+
+
+def check_parent_available(
+    conn: sqlite3.Connection, parent_task_id: str | None, user_id: str
+) -> str | None:
+    """None when the parent may be used; else the reason it may not.
+
+    Owner-scoped: a parent that does not exist under this user reads
+    as unavailable — the same copy as a terminal parent, never "not
+    yours". Terminal parents (Done/Dropped/completed/Closed — W1
+    Refinement 1) block. Callers decide the error shape: PATCH raises
+    ValueError (400), approval raises ProposalConflict (409).
+    """
+    if parent_task_id is None:
+        return None
+    row = conn.execute(
+        "SELECT status FROM tasks WHERE id = ? AND user_id = ?",
+        (parent_task_id, user_id),
+    ).fetchone()
+    if row is None:
+        return "Parent task is no longer available."
+    if _is_terminal_parent_status(row[0]):
+        return "Parent task is no longer available."
+    return None
+
+
+def _reject_keystone_project(project_id: str | None, user_id: str) -> None:
+    """Guard B (W1): a W1-created task must never land in a keystone
+    project. Raises ValueError when the project belongs to the user's
+    keystone initiative; passes (including project_id=None) otherwise.
+    Called from approve only — NOT from shared _insert_task, so the
+    keystone seeder's own writes are untouched. Vacuous in W1 (the
+    approve path passes no project_id) but wired so the guard exists
+    if the path ever gains one."""
+    if project_id is None:
+        return
+    from local_ai.vision_execution import keystone_seeding
+
+    initiative = keystone_seeding.find_keystone_initiative(user_id)
+    if initiative is None:
+        return
+    project = get_project(project_id, user_id)
+    if project is not None and project.get("initiative_id") == initiative["id"]:
+        raise ValueError("W1 tasks may not be created in a keystone project")
+
+
 def record_task_proposal(
     user_id: str,
     payload: dict[str, Any],
@@ -5194,11 +5362,14 @@ def record_task_proposal(
 
     Order matters: field validation, then the triple lookup (an
     existing triple returns the STORED record untouched — re-recording
-    never undoes an edit or terminal decision), then C1 provenance
-    verification against the source message, then parent ownership,
-    then insert. A fabricated source id reads as 404; a real message
-    that is not a champion assistant message, or a block that does not
-    match the submission, reads as 400.
+    never undoes an edit or terminal decision, and is not re-checked
+    against the quote), then C1 provenance verification against the
+    source message, then C-1 evidence-quote verification against the
+    turn's prose, then parent ownership, then insert. A fabricated
+    source id reads as 404; a real message that is not a champion
+    assistant message, a block that does not match the submission, or
+    a quote that is missing, empty, over-long, or not verbatim reads
+    as 400.
     """
     try:
         block_index = int(payload.get("block_index"))
@@ -5232,8 +5403,8 @@ def record_task_proposal(
         raise ProposalNotFound("Source message not found")
     if msg.get("role") != "voice":
         raise ValueError("Source message is not an assistant message")
-    if msg.get("archetype_id") != "champion":
-        raise ValueError("Source message is not attributed to champion")
+    if msg.get("archetype_id") not in ENABLED_PROPOSER_SEATS:
+        raise ValueError("Source message is not attributed to an enabled proposer")
     blocks = _parse_task_proposal_blocks(msg.get("body"))
     if block_index >= len(blocks) or blocks[block_index] is None:
         raise ValueError("Source message does not contain the identified proposal block")
@@ -5242,6 +5413,22 @@ def record_task_proposal(
         raise ValueError("Proposal index out of range in the source block")
     if _normalize_proposal(block[proposal_index]) != submitted:
         raise ValueError("Submitted proposal does not match the source block")
+
+    # W1 (C-1): the evidence quote must be a verbatim span of the
+    # proposing turn's PROSE — the structured block itself does not
+    # count. The client-supplied quote is a candidate, not trusted
+    # evidence: the server checks it against the source message's
+    # actual prose. Missing, empty, over-long, or non-verbatim
+    # quotes are rejected with 400 and no row is written. The
+    # stored quote is the NORMALIZED form.
+    evidence_quote = _normalize_whitespace(payload.get("evidence_quote"))
+    if not evidence_quote:
+        raise ValueError("evidence_quote is required")
+    if len(evidence_quote) > _EVIDENCE_QUOTE_MAX_CHARS:
+        raise ValueError("evidence_quote exceeds 500 characters")
+    prose = _normalize_whitespace(_strip_proposal_blocks(msg.get("body")))
+    if evidence_quote not in prose:
+        raise ValueError("evidence_quote is not a verbatim span of the proposing turn's prose")
 
     _ensure_owned_reference(
         conn,
@@ -5256,13 +5443,21 @@ def record_task_proposal(
         """INSERT INTO task_proposals (
           id, user_id, conversation_id, source_message_id, block_index, proposal_index,
           seat, title, parent_task_id, timeframe_commitment, due_date, notes, state,
-          created_task_id, created_at, updated_at, decided_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL)""",
+          created_task_id, created_at, updated_at, decided_at,
+          evidence_quote, original_title, original_parent_task_id,
+          original_timeframe_commitment, original_due_date, original_notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', NULL, ?, ?, NULL,
+          ?, ?, ?, ?, ?, ?)""",
         (
             pid, user_id, conversation_id, source_message_id, block_index, proposal_index,
             msg.get("archetype_id"), submitted["title"], submitted["parent_task_id"],
             submitted["timeframe_commitment"], submitted["due_date"], submitted["notes"],
             now, now,
+            # W1: the quote + the originals are copied in this SAME
+            # INSERT, never editable after. The originals are the
+            # submitted values as recorded, not the live values.
+            evidence_quote, submitted["title"], submitted["parent_task_id"],
+            submitted["timeframe_commitment"], submitted["due_date"], submitted["notes"],
         ),
     )
     conn.commit()
@@ -5381,6 +5576,12 @@ def update_task_proposal(
         user_id=user_id,
         field_name="parent_task_id",
     )
+    if "parent_task_id" in values:
+        # W1 (Q1/Q5): a terminal parent blocks the edit. Ownership
+        # (400) is already validated above; this adds terminal status
+        # only. A null parent always passes.
+        if check_parent_available(conn, values["parent_task_id"], user_id) is not None:
+            raise ValueError("Parent task is unavailable")
     sets = ", ".join(f"{k} = ?" for k in values) + ", updated_at = ?"
     args = list(values.values()) + [_now(), proposal_id, user_id]
     cur = conn.execute(
@@ -5482,6 +5683,18 @@ def approve_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
             user_id=user_id,
             field_name="parent_task_id",
         )
+        # W1 (Q1/Q5): the parent-availability check, revalidated
+        # inside the approval transaction. Ownership (400) is already
+        # re-validated above, so reaching here with a reason means
+        # the parent exists but is terminal. 409 with guidance; the
+        # claim rolls back, the proposal stays pending, and the
+        # system never re-parents, never declines, never creates
+        # parentless.
+        if check_parent_available(conn, proposal["parent_task_id"], user_id) is not None:
+            raise ProposalConflict(
+                "Parent task is no longer available. Edit the proposal to "
+                "choose a different parent (or no parent), or decline it."
+            )
         data = M.TaskCreate(
             title=proposal["title"],
             parent_task_id=proposal["parent_task_id"],
@@ -5489,9 +5702,33 @@ def approve_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
             timeframe_commitment=proposal["timeframe_commitment"],
             due_date=proposal["due_date"],
             notes=proposal["notes"],
-            seat_ref=proposal["seat"],
+            # W1 Guard A: the deliberation-path write to seat_ref is
+            # REMOVED. Keystone seeding is the only seat_ref writer;
+            # a W1-created task carries no seat_ref.
+            seat_ref="",
         )
-        tid = _insert_task(conn, data, user_id)
+        # W1 Guard B: a W1-created task never lands in a keystone
+        # project. Vacuous today (approve passes no project_id) but
+        # wired so the guard exists if the path ever gains one.
+        _reject_keystone_project(data.project_id, user_id)
+        tid = _insert_task(
+            conn,
+            data,
+            user_id,
+            origin_seat=proposal["seat"],
+            origin_conversation_id=proposal["conversation_id"],
+            origin_message_id=proposal["source_message_id"],
+            # W1 Refinement 2 (Q4): origin_decision_id stays NULL.
+            # There is no proposal-specific column on tasks, and
+            # storing the proposal row's id in the decision field
+            # would make it polymorphic. The proposal row itself is
+            # the anchor: proposal.created_task_id -> created task,
+            # and the task's origin_conversation_id +
+            # origin_message_id -> source message, all owner-scoped.
+            origin_claim_id=None,
+            origin_decision_id=None,
+            responsible_seat=None,
+        )
         conn.execute(
             "UPDATE task_proposals SET created_task_id = ? WHERE id = ?",
             (tid, proposal_id),

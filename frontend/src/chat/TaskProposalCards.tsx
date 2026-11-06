@@ -13,7 +13,11 @@
  * and approval is the only path from proposal to task.
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { parseTaskProposalBlocks, type ProposalEntry } from './taskProposals'
+import {
+  parseTaskProposalBlocks,
+  precedingParagraph,
+  type ProposalEntry,
+} from './taskProposals'
 
 export type ServerProposal = {
   id: string
@@ -29,6 +33,16 @@ export type ServerProposal = {
   notes: string
   state: 'pending' | 'approved' | 'declined'
   created_task_id: string | null
+  // W1: evidence quote + originals (null on pre-W1 rows), and the
+  // server-computed grounding flag — lexical correspondence only,
+  // never verified meaning; null on rows with no quote.
+  evidence_quote: string | null
+  original_title: string | null
+  original_parent_task_id: string | null
+  original_timeframe_commitment: string | null
+  original_due_date: string | null
+  original_notes: string | null
+  grounding_flag: 'words_matched' | 'summarized' | null
 }
 
 type Props = {
@@ -45,6 +59,16 @@ function tripleKey(p: ServerProposal): string {
   return `${p.source_message_id}#${p.block_index}:${p.proposal_index}`
 }
 
+// W1: display-only terminal check for the parent line (same word
+// list as the server's parent-availability check). The server
+// remains authoritative — approval still returns 409 for a terminal
+// parent even if this display ever disagrees.
+const TERMINAL_STATUS_RE = /\b(done|complete|completed|shipped|closed|won)\b/i
+function isTerminalStatus(status: string | null | undefined): boolean {
+  if (!status) return false
+  return TERMINAL_STATUS_RE.test(status) || status.trim().toLowerCase() === 'dropped'
+}
+
 export default function TaskProposalCards({ base, conversationId, messageId, seat, content }: Props) {
   const entries = useMemo(() => parseTaskProposalBlocks(content, messageId), [content, messageId])
   const [records, setRecords] = useState<Record<string, ServerProposal>>({})
@@ -58,6 +82,13 @@ export default function TaskProposalCards({ base, conversationId, messageId, sea
   const [editDue, setEditDue] = useState('')
   const [editParent, setEditParent] = useState('')
   const [parentOptions, setParentOptions] = useState<TaskOption[] | null>(null)
+  // W1: task id -> { title, status }, for the parent line on pending
+  // cards. null = not loaded (or the fetch failed): no parent line
+  // renders rather than a wrong "no longer available".
+  const [tasksById, setTasksById] = useState<Record<
+    string,
+    { title: string; status: string }
+  > | null>(null)
   const attemptedRef = useRef<Set<string>>(new Set())
   const recordsRef = useRef(records)
   recordsRef.current = records
@@ -84,6 +115,23 @@ export default function TaskProposalCards({ base, conversationId, messageId, sea
       .catch(() => {
         /* list failure is non-fatal: recording POSTs still populate state */
       })
+    // W1: task titles/statuses for the parent line. Non-fatal when it
+    // fails — the parent line simply does not render.
+    void fetch(`${base}/vision-execution/tasks`, { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled || !Array.isArray(data)) return
+        const map: Record<string, { title: string; status: string }> = {}
+        for (const t of data) {
+          if (t && typeof t.id === 'string') {
+            map[t.id] = { title: t.title ?? t.id, status: t.status ?? '' }
+          }
+        }
+        setTasksById(map)
+      })
+      .catch(() => {
+        /* tasks failure is non-fatal: no parent line renders */
+      })
     // Record any block not yet known to the server. Deduped by triple
     // across renders (StrictMode double-effects included): the server
     // is idempotent too, but we never issue a duplicate POST.
@@ -107,6 +155,10 @@ export default function TaskProposalCards({ base, conversationId, messageId, sea
           timeframe_commitment: e.proposal.timeframe_commitment,
           due_date: e.proposal.due_date,
           notes: e.proposal.notes,
+          // W1 (C-1, Q3): the preceding prose paragraph is the
+          // evidence quote; the server verifies it against the
+          // source message's actual prose.
+          evidence_quote: precedingParagraph(content, e.blockIndex),
         }),
       }).then(async (r) => {
         if (cancelled) return
@@ -159,6 +211,8 @@ export default function TaskProposalCards({ base, conversationId, messageId, sea
         timeframe_commitment: e.proposal.timeframe_commitment,
         due_date: e.proposal.due_date,
         notes: e.proposal.notes,
+        // W1 (C-1, Q3): same evidence quote as the mount record.
+        evidence_quote: precedingParagraph(content, e.blockIndex),
       }),
     }).then(async (r) => {
       if (r.ok) {
@@ -195,7 +249,17 @@ export default function TaskProposalCards({ base, conversationId, messageId, sea
           setRecords((prev) => ({ ...prev, [e.key]: p }))
         }
       } else if (r.status === 409) {
-        // State changed elsewhere (another session decided it): refresh.
+        // Blocked approval (W1: e.g. the parent is no longer
+        // available) or a state changed elsewhere: surface the
+        // server's guidance, then refresh server state.
+        let detail = 'This proposal can’t be approved right now — refresh to see its state.'
+        try {
+          const body = (await r.json()) as { detail?: unknown }
+          if (typeof body?.detail === 'string' && body.detail) detail = body.detail
+        } catch {
+          /* keep the fallback */
+        }
+        setActionError((prev) => ({ ...prev, [e.key]: detail }))
         const list = await fetch(
           `${base}/vision-execution/task-proposals?conversation_id=${encodeURIComponent(conversationId)}`,
           { credentials: 'include' },
@@ -313,10 +377,25 @@ export default function TaskProposalCards({ base, conversationId, messageId, sea
                 </button>
               </div>
             ) : rec?.state === 'approved' ? (
-              <p className="text-emerald-200">
-                Created: {title}
-                {rec.created_task_id ? <span className="text-stone-400"> ({rec.created_task_id})</span> : null}
-              </p>
+              <div className="space-y-1">
+                <p className="text-emerald-200">
+                  Created: {title}
+                  {rec.created_task_id ? <span className="text-stone-400"> ({rec.created_task_id})</span> : null}
+                </p>
+                {/* W1: the original proposal, as recorded — never live
+                    values presented as originals. Pre-W1 rows have no
+                    snapshot at all. Shown only when the original
+                    differs from the created title. */}
+                {rec.original_title == null ? (
+                  <p className="text-xs text-stone-400">
+                    Original proposal not recorded (pre-snapshot)
+                  </p>
+                ) : rec.original_title !== title ? (
+                  <p className="text-xs text-stone-400">
+                    Original proposal: {rec.original_title}
+                  </p>
+                ) : null}
+              </div>
             ) : rec?.state === 'declined' ? (
               <p className="text-stone-400">Declined: {title}</p>
             ) : editingKey === e.key ? (
@@ -392,6 +471,45 @@ export default function TaskProposalCards({ base, conversationId, messageId, sea
                   {timeframe === 'tentative' ? 'Tentative timeframe' : 'Unspecified timeframe'}
                   {due ? ` · due ${due}` : ' · no date yet'}
                 </p>
+                {/* W1: the exact quote the card's approval rests on,
+                    with its lexical-correspondence label. Never
+                    "verified" or "confirmed" — the quote proves the
+                    words appeared, not what they mean. */}
+                {rec?.evidence_quote ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-stone-400">
+                      Verbatim words from the proposing turn:
+                    </p>
+                    <p className="text-xs text-stone-300 italic">
+                      &ldquo;{rec.evidence_quote}&rdquo;
+                    </p>
+                    {rec.grounding_flag === 'words_matched' ? (
+                      <p className="text-xs text-stone-400">
+                        Words matched — all significant title words appear in the quote
+                      </p>
+                    ) : rec.grounding_flag === 'summarized' ? (
+                      <p className="text-xs text-stone-400">
+                        Summarized — the title uses wording beyond the quote
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {/* W1: parent line — title (+ recorded status when
+                    terminal), or "no longer available" when the
+                    parent id is absent from the fetched task list.
+                    The server remains authoritative (approve 409s). */}
+                {rec?.parent_task_id && tasksById ? (
+                  tasksById[rec.parent_task_id] ? (
+                    <p className="text-xs text-stone-400">
+                      Under: {tasksById[rec.parent_task_id].title}
+                      {isTerminalStatus(tasksById[rec.parent_task_id].status)
+                        ? ` — ${tasksById[rec.parent_task_id].status}`
+                        : ''}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-amber-300">Parent task no longer available</p>
+                  )
+                ) : null}
                 {actionError[e.key] && <p className="text-xs text-red-300">{actionError[e.key]}</p>}
                 <div className="flex gap-2">
                   <button

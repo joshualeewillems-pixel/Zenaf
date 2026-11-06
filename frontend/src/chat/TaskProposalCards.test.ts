@@ -13,7 +13,11 @@ import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import TaskProposalCards from './TaskProposalCards'
-import { parseTaskProposalBlocks, stripTaskProposalBlocks } from './taskProposals'
+import {
+  parseTaskProposalBlocks,
+  precedingParagraph,
+  stripTaskProposalBlocks,
+} from './taskProposals'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -67,11 +71,55 @@ describe('parseTaskProposalBlocks', () => {
   })
 })
 
+describe('precedingParagraph', () => {
+  it('returns the last paragraph before the block', () => {
+    expect(
+      precedingParagraph(
+        'First para.\n\nSecond para.\n```task-proposal\n{"proposals": []}\n```',
+        0,
+      ),
+    ).toBe('Second para.')
+  })
+
+  it('returns the single paragraph when there is only one', () => {
+    expect(
+      precedingParagraph('Prose.\n```task-proposal\n{"proposals": []}\n```', 0),
+    ).toBe('Prose.')
+  })
+
+  it('returns empty when the block has no preceding prose', () => {
+    expect(
+      precedingParagraph('```task-proposal\n{"proposals": []}\n```', 0),
+    ).toBe('')
+  })
+
+  it('picks the paragraph before the Nth block', () => {
+    const text =
+      'Before one.\n```task-proposal\n{"proposals": []}\n```\nMiddle para.\n```task-proposal\n{"proposals": []}\n```'
+    expect(precedingParagraph(text, 1)).toBe('Middle para.')
+    expect(precedingParagraph(text, 0)).toBe('Before one.')
+  })
+
+  it('truncates to 500 raw chars', () => {
+    const long = 'x'.repeat(600)
+    expect(precedingParagraph(`${long}\n\`\`\`task-proposal\n{"proposals": []}\n\`\`\``, 0)).toHaveLength(500)
+  })
+
+  it('returns empty for an out-of-range block index', () => {
+    expect(precedingParagraph('Prose.\n```task-proposal\n{"proposals": []}\n```', 3)).toBe('')
+  })
+})
+
 describe('TaskProposalCards', () => {
   let container: HTMLDivElement
   let root: Root
   let calls: Array<{ url: string; init?: RequestInit }>
   let recordBehavior: 'ok' | 'bad' | 'fail-once'
+  // W1 mock controls.
+  let tasksResponse: Array<{ id: string; title: string; status: string }>
+  let recordExtra: Record<string, unknown>
+  let approveBehavior: 'ok' | 'conflict'
+  let approveProposalExtra: Record<string, unknown>
 
   const ok = (payload: unknown) => ({ ok: true, status: 200, json: async () => payload }) as Response
   const fail = (status: number) => ({ ok: false, status, json: async () => ({}) }) as Response
@@ -108,10 +156,21 @@ describe('TaskProposalCards', () => {
             notes: 'Ask',
             state: 'pending',
             created_task_id: null,
+            ...recordExtra,
           }),
         )
       }
       if (url.includes('/approve')) {
+        if (approveBehavior === 'conflict') {
+          return Promise.resolve({
+            ok: false,
+            status: 409,
+            json: async () => ({
+              detail:
+                'Parent task is no longer available. Edit the proposal to choose a different parent (or no parent), or decline it.',
+            }),
+          } as Response)
+        }
         return Promise.resolve(
           ok({
             task: { id: 't1', title: 'Call the clinic' },
@@ -123,6 +182,7 @@ describe('TaskProposalCards', () => {
               state: 'approved',
               created_task_id: 't1',
               title: 'Call the clinic',
+              ...approveProposalExtra,
             },
           }),
         )
@@ -141,7 +201,7 @@ describe('TaskProposalCards', () => {
         )
       }
       if (url.includes('/vision-execution/tasks')) {
-        return Promise.resolve(ok([]))
+        return Promise.resolve(ok(tasksResponse))
       }
       return Promise.resolve(ok({}))
     })
@@ -179,6 +239,10 @@ describe('TaskProposalCards', () => {
 
   beforeEach(() => {
     recordBehavior = 'ok'
+    tasksResponse = []
+    recordExtra = {}
+    approveBehavior = 'ok'
+    approveProposalExtra = {}
     installFetch()
   })
 
@@ -260,5 +324,113 @@ describe('TaskProposalCards', () => {
   it('renders nothing when there is no block', async () => {
     await renderCards('Just prose, no proposal.')
     expect(container.textContent).toBe('')
+  })
+
+  // -- W1: evidence quote, grounding flag, parent line, originals --------
+
+  function recordPostBody(): Record<string, unknown> {
+    const post = calls.find(
+      (c) => c.url.includes('/task-proposals') && c.init?.method === 'POST',
+    )
+    expect(post).toBeDefined()
+    return JSON.parse(String(post?.init?.body ?? '{}')) as Record<string, unknown>
+  }
+
+  it('record POST sends the preceding paragraph as evidence_quote', async () => {
+    await renderCards()
+    expect(recordPostBody().evidence_quote).toBe('Prose.')
+  })
+
+  it('renders the exact quote with the Words matched label', async () => {
+    recordExtra = {
+      evidence_quote: 'We should call the clinic today.',
+      grounding_flag: 'words_matched',
+      original_title: 'Call the clinic',
+    }
+    await renderCards()
+    expect(container.textContent).toContain('Verbatim words from the proposing turn')
+    expect(container.textContent).toContain('We should call the clinic today.')
+    expect(container.textContent).toContain('Words matched')
+    expect(container.textContent).not.toContain('verified')
+    expect(container.textContent).not.toContain('confirmed')
+  })
+
+  it('renders the Summarized label when the title uses wording beyond the quote', async () => {
+    recordExtra = {
+      evidence_quote: 'Prose.',
+      grounding_flag: 'summarized',
+      original_title: 'Call the clinic',
+    }
+    await renderCards()
+    expect(container.textContent).toContain('Summarized')
+    expect(container.textContent).toContain('the title uses wording beyond the quote')
+  })
+
+  it('renders the parent title, and its status only when terminal', async () => {
+    tasksResponse = [{ id: 'parent-1', title: 'Dentist follow-up', status: 'Todo' }]
+    recordExtra = { parent_task_id: 'parent-1' }
+    await renderCards()
+    expect(container.textContent).toContain('Under: Dentist follow-up')
+    expect(container.textContent).not.toContain('Todo')
+  })
+
+  it('renders the parent title with a terminal status', async () => {
+    tasksResponse = [{ id: 'parent-1', title: 'Dentist follow-up', status: 'Done' }]
+    recordExtra = { parent_task_id: 'parent-1' }
+    await renderCards()
+    expect(container.textContent).toContain('Under: Dentist follow-up — Done')
+  })
+
+  it('renders Parent task no longer available when the parent is gone', async () => {
+    tasksResponse = []
+    recordExtra = { parent_task_id: 'gone-parent' }
+    await renderCards()
+    expect(container.textContent).toContain('Parent task no longer available')
+  })
+
+  it('approved view shows the pre-snapshot line for legacy rows', async () => {
+    approveProposalExtra = {
+      original_title: null,
+      evidence_quote: null,
+      grounding_flag: null,
+    }
+    await renderCards()
+    await act(async () => {
+      buttonNamed('Approve')?.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(container.textContent).toContain('Created: Call the clinic')
+    expect(container.textContent).toContain('Original proposal not recorded (pre-snapshot)')
+  })
+
+  it('approved view shows the original title when it differs', async () => {
+    approveProposalExtra = { original_title: 'Old title' }
+    await renderCards()
+    await act(async () => {
+      buttonNamed('Approve')?.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(container.textContent).toContain('Original proposal: Old title')
+  })
+
+  it('approve 409 surfaces the server guidance', async () => {
+    approveBehavior = 'conflict'
+    await renderCards()
+    await act(async () => {
+      buttonNamed('Approve')?.click()
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0))
+    })
+    expect(container.textContent).toContain('Parent task is no longer available')
+    expect(container.textContent).toContain('choose a different parent')
+    expect(buttonNamed('Approve')).toBeDefined()
   })
 })

@@ -2,12 +2,54 @@
 Vision Execution Engine — business layer. Phase 1: thin pass-through to storage.
 Phase 2+: derived fields, validation, council/AI orchestration.
 """
+import logging
+
 from local_ai.activity import ActivityEntityType
 
 from . import models as M
 from . import storage as S
 from . import derived as D
 from . import matching as Match
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# W3 §8.2 — deletion-time followthrough cleanup (unlink-first two-step)
+#
+# The VE and followthrough stores are separate SQLite databases with no
+# shared transaction (§0), so there is no cross-database atomicity to
+# rely on. The founder's verdict + refinement (2026-11-06) makes
+# atomicity a DESIRED consistency property, not a mandatory mechanism:
+# the actual requirement is that a task deletion must never permanently
+# strand an open commitment or silently erase its obligation. The
+# operation below is a recoverable, idempotent two-step with a defined
+# order + failure behavior, safe retries, and detection + reconciliation
+# of partial completion — no distributed transaction coordinator.
+# ---------------------------------------------------------------------------
+
+def _followthrough_store():
+    """Followthrough store for the W3 deletion-time cleanup (§8.2).
+
+    A lazy factory (not a singleton) so this module stays importable
+    without the followthrough package at import time, and so tests
+    can substitute a tmp store via monkeypatch.
+    """
+    from local_ai.followthrough.store import FollowthroughStore
+
+    return FollowthroughStore()
+
+
+def _resolve_deleted_nudges(user_id, entity_type, entity_id, ft_store):
+    """Best-effort deletion-time nudge resolution (W3 §8.2): resolve
+    the entity's live nudges after its VE delete commits — including
+    snoozed rows, which the auto-resolve loop cannot see until their
+    snooze expires. Raises propagate to the caller, which logs and
+    continues: the delete already committed, and the read-time
+    exclusion (§8.1) plus the next compute's auto-resolve are the
+    guarantee."""
+    for row in ft_store.list_live_nudges_for_entity(user_id, entity_type, entity_id):
+        ft_store.resolve_nudge(row["id"], user_id)
 
 
 # Core profiles
@@ -473,7 +515,39 @@ def update_project(project_id: str, data: M.ProjectUpdate, user_id: str):
 
 
 def delete_project(project_id: str, user_id: str):
-    return S.delete_project(project_id, user_id)
+    """Delete a project (W3 §8.2: unlink-first two-step, founder
+    verdict + refinement 2026-11-06).
+
+    The cascade deletes the project's tasks, so the unlink covers
+    them too: a task deletion must never permanently strand an open
+    commitment, whichever path deletes the task. Order + failure
+    behavior, same as delete_task: (1) unlink commitments for every
+    task in the project — aborts before any VE write if it raises;
+    (2) delete the project — a failure after step 1 leaves the
+    commitments unlinked (temporarily detached, safe and recoverable
+    — they resurface as commitment_open on the next compute; retry
+    is idempotent); (3) best-effort nudge resolution after the
+    delete commits (project row + each cascade-deleted task row) —
+    a failure here is logged and does not fail the delete.
+    """
+    if S.get_project(project_id, user_id) is None:
+        return False
+    ft_store = _followthrough_store()
+    task_ids = [t["id"] for t in S.list_tasks(user_id, project_id)]
+    for tid in task_ids:
+        ft_store.unlink_commitments_for_task(user_id, tid)
+    deleted = S.delete_project(project_id, user_id)
+    if deleted:
+        try:
+            _resolve_deleted_nudges(user_id, "project", project_id, ft_store)
+            for tid in task_ids:
+                _resolve_deleted_nudges(user_id, "task", tid, ft_store)
+        except Exception:
+            logger.exception(
+                "W3 deletion cleanup: nudge resolution failed after project "
+                "delete; read-time exclusion + next compute cover it"
+            )
+    return deleted
 
 
 # Tasks
@@ -503,7 +577,42 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str):
 
 
 def delete_task(task_id: str, user_id: str):
-    return S.delete_task(task_id, user_id)
+    """Delete a task (W3 §8.2: unlink-first two-step, founder verdict
+    + refinement 2026-11-06).
+
+    Order (defined) + failure behavior:
+      1. Unlink commitments linked to the task (followthrough store,
+         owner-scoped, idempotent). If this raises, the task is NOT
+         deleted — the operation aborts before any VE write.
+      2. Delete the task (VE store). If this raises after step 1,
+         the commitments stay unlinked: temporarily detached, safe
+         and recoverable — they resurface as commitment_open on the
+         next compute, and retrying the delete is safe (step 1 is a
+         no-op on already-unlinked rows, no duplicate attention
+         items: the engine dedups by (kind, entity_type, entity_id)).
+      3. After the delete commits, resolve the task's live nudges
+         (best-effort, including snoozed rows). A failure here is
+         logged and does not fail the delete — the read-time
+         exclusion (§8.1) and the next compute's auto-resolve are
+         the guarantee.
+
+    Children survive as roots (storage NULLs their parent_task_id);
+    their nudges stand — a child is not deleted by this call.
+    """
+    if S.get_task(task_id, user_id) is None:
+        return False
+    ft_store = _followthrough_store()
+    ft_store.unlink_commitments_for_task(user_id, task_id)
+    deleted = S.delete_task(task_id, user_id)
+    if deleted:
+        try:
+            _resolve_deleted_nudges(user_id, "task", task_id, ft_store)
+        except Exception:
+            logger.exception(
+                "W3 deletion cleanup: nudge resolution failed after task "
+                "delete; read-time exclusion + next compute cover it"
+            )
+    return deleted
 
 
 # Sticky seat unlocks (see keystone_seeding.maybe_record_entry_unlock).

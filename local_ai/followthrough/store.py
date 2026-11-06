@@ -342,6 +342,63 @@ class FollowthroughStore:
                 return None
         return self.get_commitment(commitment_id, user_id)
 
+    def unlink_commitments_for_task(
+        self, user_id: str, task_id: str
+    ) -> list[dict[str, Any]]:
+        """W3 §8.2 (founder verdict + refinement 2026-11-06): unlink
+        every commitment linked to one task, owner-scoped.
+
+        Sets ``linked_task_id = NULL``; the commitment survives with
+        its existing ownership, status, content, and provenance —
+        nothing is deleted, no replacement is manufactured. Open
+        commitments become eligible to resurface as
+        ``commitment_open`` under the existing attention rules;
+        terminal commitments remain terminal.
+
+        Idempotent by construction: rows already unlinked (or linked
+        to another task) do not match the WHERE clause, so retrying
+        the unlink is a no-op. Returns the unlinked rows (empty list
+        when nothing was linked).
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                """SELECT * FROM commitments
+                   WHERE user_id = ? AND linked_task_id = ?""",
+                (user_id, task_id),
+            )
+            rows = [_row_to_dict(r) for r in cur.fetchall()]
+            if not rows:
+                return []
+            self._conn.execute(
+                """UPDATE commitments SET linked_task_id = NULL, updated_at = ?
+                   WHERE user_id = ? AND linked_task_id = ?""",
+                (_now_iso(), user_id, task_id),
+            )
+            self._conn.commit()
+            for row in rows:
+                row["linked_task_id"] = None
+            return rows
+
+    def list_live_nudges_for_entity(
+        self, user_id: str, entity_type: str, entity_id: str
+    ) -> list[dict[str, Any]]:
+        """W3 §8.2: live nudge rows for one entity (acked_at IS NULL
+        AND resolved_at IS NULL) — including snoozed rows, which are
+        live but invisible to the auto-resolve loop until their
+        snooze expires. Used by the deletion-time resolution step so
+        a deleted entity's cards (snoozed or not) resolve at delete
+        time instead of lingering.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                """SELECT * FROM followthrough_nudges
+                   WHERE user_id = ? AND entity_type = ? AND entity_id = ?
+                     AND acked_at IS NULL AND resolved_at IS NULL
+                   ORDER BY created_at ASC""",
+                (user_id, entity_type, entity_id),
+            )
+            return [_row_to_dict(r) for r in cur.fetchall()]
+
     def set_commitment_status(
         self, commitment_id: str, user_id: str, status: str
     ) -> dict[str, Any] | None:

@@ -5788,7 +5788,12 @@ def approve_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
             responsible_seat=None,
         )
         conn.execute(
-            "UPDATE task_proposals SET created_task_id = ? WHERE id = ?",
+            # W3 §0 correction 1: the state guard closes the one
+            # unguarded UPDATE on task_proposals. Vacuous today — this
+            # runs immediately after the compare-and-swap claim inside
+            # the approval transaction — but a future refactor must not
+            # be able to overwrite created_task_id on an approved row.
+            "UPDATE task_proposals SET created_task_id = ? WHERE id = ? AND state = 'approved'",
             (tid, proposal_id),
         )
         conn.commit()

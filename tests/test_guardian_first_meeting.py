@@ -243,10 +243,14 @@ def test_parser_contract_delimiter_and_strands_survive():
 
 
 SLICE_MARKERS = [
-    # Ideal + question + shadow.
+    # Ideal + question. (The shadow marker "smothering" was removed
+    # 2026-11-07: the Gardener correction's G4/D1 verdict removed the
+    # Shadow: label from all seven first-meeting slices, so the word
+    # no longer appears in either frame. Its absence is pinned by
+    # test_bear_canonical (count == 0) and the fellowship slice
+    # consistency test, not here.)
     "Love through stewardship",
     "What must be protected?",
-    "smothering",
     # Relational perspective, one line per pair, with pair numbers.
     "growth-pressure is a loosening decision, not a threat. (Pair 2.)",
     "must not call a priced choice irresponsibility. (Pair 7.)",

@@ -47,6 +47,7 @@ import pytest
 
 from local_ai.conversation import encounter as ENC
 from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
+from local_ai.council.canonical.gardener import GARDENER_RECORD
 from local_ai.conversation.meeting import (
     MeetingError,
     MeetingService,
@@ -187,7 +188,16 @@ def test_prompt_control_cleanup():
     assert "say plainly that you don't remember it rather than inventing it" in turn
     # Shadow named as a prohibition, never performed.
     assert "never withhold a straight answer to stay necessary" in definition.engage_frame
-    assert "Never hand over an answer they could arrive at themselves" in definition.engage_frame
+    # Gardener correction (2026-11-07): the flat "never hand over an
+    # answer" invariant is replaced by the founder's invariant verbatim.
+    assert (
+        "Offer knowledge, interpretations, distinctions, and guidance freely "
+        "when useful. Do not substitute your judgment for the visitor's where "
+        "the judgment is theirs to make. Cultivate understanding and "
+        "independence, not dependence on your answers."
+        in definition.engage_frame
+    )
+    assert "Never hand over an answer they could arrive at themselves" not in definition.engage_frame
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +238,16 @@ def test_integrity_invariants_on_runtime_paths():
     assert "completes the recognition in itself" in ENC._RECOGNITION_NOTE
     assert "[[thread:open]]" in ENC._THREAD_TRAILER_INSTRUCTION
     assert "[[thread:settled]]" in ENC._THREAD_TRAILER_INSTRUCTION
+    # Gardener correction (2026-11-07): the founder's invariant renders
+    # verbatim on ordinary meeting turns, not just the engage frame.
+    assert (
+        "Offer knowledge, interpretations, distinctions, and guidance freely "
+        "when useful. Do not substitute your judgment for the visitor's where "
+        "the judgment is theirs to make. Cultivate understanding and "
+        "independence, not dependence on your answers."
+        in turn_frame
+    )
+    assert "Never hand over an answer they could arrive at themselves" not in turn_frame
 
 
 # ---------------------------------------------------------------------------
@@ -270,13 +290,22 @@ def test_reference_slice_prompt_local_on_both_frames():
     for text in (definition.turn_frame, definition.engage_frame):
         assert "Wisdom through cultivation" in text
         assert "What can this teach us?" in text
-        assert "Firebrand: she ends seasons in decisions" in text
-        assert "Bear: he keeps the conditions growth needs" in text
+        assert "Firebrand: he ends seasons in decisions" in text
+        assert "Bear: she keeps the conditions growth needs" in text
         assert "Fox: he tests trellis vs cage" in text
-        assert "Crane: she repairs bridges where I mine lessons" in text
+        assert "Crane: he repairs bridges where I mine lessons" in text
         assert "Weaver: she rebalances the whole where I deepen one thread" in text
-        assert "Raven: he audits whether growth is real" in text
+        assert "Raven: she audits whether growth is real" in text
+        # Gardener correction (2026-11-07, G4/D1): possessives corrected.
+        assert "must not call his urgency mere impatience" in text
+        assert "I ask what her walls keep out" in text
         assert "answer direct questions directly" in text
+        # Gardener correction (2026-11-07): G2 boundary + G6 discernment
+        # render in both frames; "sparingly" and the Shadow: label are gone.
+        assert "Patience is not neglect, rest is not avoidance" in text
+        assert "Never certify an explanation merely because it fits" in text
+        assert "sparingly" not in text
+        assert "Shadow:" not in text
         # System slice marked PROPOSED, never decided.
         assert "a PROPOSED mapping, not decided" in text
         assert "growth over time" in text
@@ -286,6 +315,24 @@ def test_reference_slice_prompt_local_on_both_frames():
     generic = ENC.build_definition(MT.MENTOR_FIRST_MEETING)
     assert "Wisdom through cultivation" not in generic.turn_frame
     assert "Wisdom through cultivation" not in generic.engage_frame
+
+
+def test_g2_boundary_renders_friction_stays_provisional():
+    """T2 (design §10): the G2 boundary (280 chars) renders in both
+    frames; the friction record stays provisional and its
+    "delay may be fear" fragment appears only inside the friction
+    field text, never in a frame (the friction record is not ratified
+    — the verdict leaves it provisional)."""
+    definition = _definition()
+    boundary = GARDENER_RECORD["characterization"]["patience_boundary"]["text"]
+    assert len(boundary) == 280
+    for text in (definition.turn_frame, definition.engage_frame):
+        assert boundary in text
+        assert "delay may be fear" not in text
+    assert GARDENER_RECORD["characterization"]["friction"]["standing"] == "provisional"
+    assert "delay may be fear" in (
+        GARDENER_RECORD["characterization"]["friction"]["text"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -385,28 +432,33 @@ def test_frame_sizes_and_headroom_measured():
     # Binding cap: reply.build_voice_prompt truncates
     # extra_instructions at 8,000 chars. Both composed paths fit with
     # at least 300 chars headroom (proposal minimum).
-    assert len(definition.turn_frame) == 4011
+    assert len(definition.turn_frame) == 4854
     # #262 dropped the appended jurisdiction line from _turn_frame
     # (298 chars + separator = 300), so the composed turn frame is
     # 300 smaller than originally measured; definition frame unchanged.
-    assert len(turn_frame) == 5287
+    # Gardener correction (2026-11-07): the composed turn frame grew
+    # 5,287 -> 6,130 (turn-frame invariant + T2), so the 9,000-cap
+    # headroom is 9,000 - 6,130 = 2,870.
+    assert len(turn_frame) == 6130
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3713
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 2870
     # Read-back correction (2026-11-06): the founder-approved §F.1
     # readback frames lengthened the engage frame (Mentor 6128 -> 6563
     # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->
     # 9000 the same day, so headroom is measured against 9000 now.
-    assert len(definition.engage_frame) == 6563
-    assert len(engage) == 7839
+    # Gardener correction (2026-11-07): definition 6563 -> 7405,
+    # composed 7839 -> 8681, headroom 1161 -> 319 (still >= 300).
+    assert len(definition.engage_frame) == 7405
+    assert len(engage) == 8681
     assert len(engage) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 1161
+    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 319
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage) >= 300
     # Proposal fallback cap, for the record: reference + slice together
     # exceed 12,500 (PR #254 warning) — this branch carries the slice
     # only, prompt-locally, and fits both caps; the full reference
     # awaits the uncapped placement after PR #255 merges.
     assert len(engage) < 12500
-    assert len(ENC._MENTOR_REFERENCE_SLICE) == 2259
+    assert len(ENC._MENTOR_REFERENCE_SLICE) == 2846
 
 
 # ---------------------------------------------------------------------------

@@ -70,7 +70,7 @@ import logging
 import re
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -99,6 +99,12 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = REPO_ROOT / "data" / "conversations"
 DEFAULT_DB_PATH = DATA_DIR / "meetings.db"
+
+#: D5 recovery sweep (2026-11-07): a meeting's conversation must have
+#: been quiet this many days before the sweep files its affirmed
+#: impression. A live conversation is left alone — the close path
+#: files it when it completes.
+AFFIRMATION_RECOVERY_QUIET_DAYS = 7
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS meetings (
@@ -242,6 +248,20 @@ class MeetingStore:
                 (user_id, archetype_id, keystone_index),
             ).fetchone()
         return dict(row) if row else None
+
+    def list_active(self, user_id: str) -> list[dict[str, Any]]:
+        """All of the user's still-active meetings, oldest first.
+
+        D5 (2026-11-07): the recovery sweep's input — the sweep needs
+        every active meeting to find affirmed-but-unfiled impressions,
+        not one row at a time."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM meetings WHERE user_id = ? AND "
+                "status = 'active' ORDER BY created_at ASC",
+                (user_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def create(self, user_id: str, archetype_id: str, keystone_index: int) -> dict[str, Any]:
         now = _utcnow()
@@ -922,7 +942,8 @@ class MeetingService:
 
 
     def _file_impression(self, user_id: str, arch_id: str, keystone_index: int,
-                         script: MT.MeetingScript) -> None:
+                         script: MT.MeetingScript,
+                         filed_via: str = "") -> None:
         """File the completed meeting's read-back impression as a review
         claim — the orientation's promise ("the full text of both waits
         in your review, word for word"), kept.
@@ -986,6 +1007,7 @@ class MeetingService:
                 readback_seat_outcome=row.get("readback_seat_outcome") or "",
                 readback_visitor_response=row.get("readback_visitor_response") or "",
                 ceiling_filed=_is_ceiling_filed(row),
+                filed_via=filed_via,
             )
             existing = store.get_claims(agent_id)
             is_new = claim.id not in {c.id for c in existing}
@@ -1070,8 +1092,160 @@ class MeetingService:
                 if superseded:
                     store.save_claims(agent_id, superseded)
                 store.save_claims(agent_id, [claim])
+            else:
+                # D5 staleness rule (2026-11-07): the same run's
+                # impression was filed once and the meeting's row has
+                # since changed (a revised read-back, a later
+                # affirmation). If the stored claim is still pending —
+                # no verdict recorded — refresh its inference, evidence
+                # and detail in place, under the same claim id. A ruled
+                # claim is never touched here; the verdict stands. The
+                # visitor's own note on the claim is preserved.
+                existing_claim = next(
+                    (c for c in existing if c.id == claim.id), None
+                )
+                if (
+                    existing_claim is not None
+                    and existing_claim.status == "pending"
+                    and claim.inference != existing_claim.inference
+                ):
+                    claim.user_note = existing_claim.user_note
+                    store.save_claims(agent_id, [claim])
         except Exception:
             logger.exception("meeting impression filing failed")
+
+    def recover_affirmed_impressions(self, user_id: str) -> list[str]:
+        """Recovery sweep (D5, 2026-11-07): file affirmed-but-unfiled
+        impressions from meetings that are still active.
+
+        The close path files an impression when the meeting completes,
+        but a meeting that never completes — still active, the visitor
+        long gone — leaves an affirmed impression with no claim. This
+        sweep finds those rows and files them through the same
+        _file_impression path the close uses, with
+        filed_via="affirmation_recovery" so the claim's detail says
+        how it got there.
+
+        A row qualifies only when the meeting is still active, its
+        read-back is non-empty, the visitor's response is 'affirmed',
+        and the meeting's conversation has been quiet for
+        AFFIRMATION_RECOVERY_QUIET_DAYS — a live conversation is left
+        alone; the close path will file it when it completes. If a
+        claim already exists for the run, the sweep does nothing
+        (filing is idempotent per run). A row whose claim is stale —
+        filed once, the row's read-back since revised — is refreshed
+        by _file_impression's pending-only update rule, and is
+        reported as filed only when the claim did not exist before.
+
+        Manual invocation only: the maintenance script under
+        ~/workspace/maintenance/. No schedule, no Review-queue
+        trigger. Returns the claim ids filed, so the sweep is
+        auditable from its own output. Failures are logged per row,
+        never raised — one bad row must not lose the rest."""
+        from local_ai.agent_intake import review_claims
+        from local_ai.agent_intake.store import AgentStore
+
+        filed: list[str] = []
+        try:
+            rows = self.meetings.list_active(user_id)
+        except Exception:
+            logger.exception("affirmation recovery: listing meetings failed")
+            return filed
+        cutoff = datetime.now(timezone.utc) - timedelta(
+            days=AFFIRMATION_RECOVERY_QUIET_DAYS
+        )
+        for row in rows:
+            try:
+                if not (row.get("readback_claim") or "").strip():
+                    continue
+                if (row.get("readback_visitor_response") or "").strip() != "affirmed":
+                    continue
+                if not self._meeting_quiet_since(user_id, row, cutoff):
+                    continue
+                arch_id = (row.get("archetype_id") or "").strip().lower()
+                keystone_index = int(row.get("keystone_index") or 1)
+                script = MT.get_script(arch_id, keystone_index)
+                if script is None:
+                    logger.warning(
+                        "affirmation recovery: no script for %s keystone %s",
+                        arch_id, keystone_index,
+                    )
+                    continue
+                agent_id = conversation_id_for(arch_id, keystone_index)
+                try:
+                    strand_names = json.loads(row.get("readback_strands") or "[]")
+                except Exception:
+                    strand_names = []
+                strand_keys = [
+                    PLAIN_TO_KEY[n] for n in strand_names if n in PLAIN_TO_KEY
+                ]
+                run_key = (
+                    re.sub(r"[^0-9A-Za-z]", "", row.get("created_at") or "") or "run"
+                )
+                # The claim id, computed through the same builder
+                # _file_impression uses, so the pre-check matches the
+                # filing exactly.
+                claim_id = review_claims.build_meeting_impression_claim(
+                    agent_id=agent_id,
+                    seat_name=script.character,
+                    readback_claim=row.get("readback_claim") or "",
+                    readback_response=row.get("readback_response") or "",
+                    strand_keys=strand_keys,
+                    run_key=run_key,
+                    readback_original_claim=row.get("readback_original_claim") or "",
+                    readback_seat_outcome=row.get("readback_seat_outcome") or "",
+                    readback_visitor_response=row.get("readback_visitor_response") or "",
+                    ceiling_filed=_is_ceiling_filed(row),
+                    filed_via="affirmation_recovery",
+                ).id
+                store = (
+                    self._agent_store_factory(user_id)
+                    if self._agent_store_factory is not None
+                    else AgentStore(user_id=user_id)
+                )
+                if any(c.id == claim_id for c in store.get_claims(agent_id)):
+                    continue
+                self._file_impression(
+                    user_id, arch_id, keystone_index, script,
+                    filed_via="affirmation_recovery",
+                )
+                if any(c.id == claim_id for c in store.get_claims(agent_id)):
+                    logger.info(
+                        "affirmation recovery: filed %s from meeting %s keystone %s",
+                        claim_id, arch_id, keystone_index,
+                    )
+                    filed.append(claim_id)
+            except Exception:
+                logger.exception(
+                    "affirmation recovery: row %s keystone %s failed",
+                    row.get("archetype_id"), row.get("keystone_index"),
+                )
+        return filed
+
+    def _meeting_quiet_since(self, user_id: str, row: dict[str, Any],
+                             cutoff: datetime) -> bool:
+        """True when the meeting's conversation has no message newer
+        than `cutoff` — or no messages at all. A message whose
+        timestamp cannot be parsed fails closed: not quiet."""
+        agent_id = conversation_id_for(
+            (row.get("archetype_id") or "").strip().lower(),
+            int(row.get("keystone_index") or 1),
+        )
+        try:
+            history = self.conversations.history(user_id, agent_id, limit=1)
+        except Exception:
+            logger.exception("affirmation recovery: history read failed")
+            return False
+        if not history:
+            return True
+        created = (history[0].get("created_at") or "").strip()
+        try:
+            last = datetime.fromisoformat(created)
+        except Exception:
+            return False
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        return last <= cutoff
 
     def restart(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         """Meet again: reset a COMPLETED meeting so it can be run fresh.
@@ -1240,6 +1414,7 @@ class MeetingService:
             )
             enc_state.impression_pending_text = ""
             enc_state.impression_pending_strands = []
+            enc_state.impression_held_at_pursuit = 0
             enc_state.pending_impression_discarded = (
                 "visitor completed the meeting manually "
                 "(POST /meeting/complete)"

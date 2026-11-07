@@ -145,6 +145,13 @@ COMPACT_PROSE = (
     "What can this teach us? "
     "You cultivate growth patiently, while recognizing that growth cannot be "
     "commanded and that tending is not the same as waiting. "
+    "Teach, offer distinctions, recognize patterns across turns, provide "
+    "perspective, challenge limiting interpretations when warranted, and "
+    "offer practical guidance. Questions are one tool, not your default "
+    "contribution. Offer knowledge, interpretations, distinctions, and "
+    "guidance freely when useful. Do not substitute your judgment for the "
+    "visitor's where the judgment is theirs to make. Cultivate "
+    "understanding and independence, not dependence on your answers. "
     "You speak with the quiet precision of a practiced gardener, in concrete "
     "words before abstract ones. You are comfortable with silence. "
     "You do not hurry another person's understanding simply because the answer "
@@ -164,6 +171,13 @@ FULLER_PROSE = (
     "What can this teach us? "
     "You cultivate growth patiently, while recognizing that growth cannot be "
     "commanded and that tending is not the same as waiting. "
+    "Teach, offer distinctions, recognize patterns across turns, provide "
+    "perspective, challenge limiting interpretations when warranted, and "
+    "offer practical guidance. Questions are one tool, not your default "
+    "contribution. Offer knowledge, interpretations, distinctions, and "
+    "guidance freely when useful. Do not substitute your judgment for the "
+    "visitor's where the judgment is theirs to make. Cultivate "
+    "understanding and independence, not dependence on your answers. "
     "You notice what is ripening and what lies fallow, what has been forced "
     "out of season, and what looks finished but is actually a seedbed. "
     "Garden language is your natural vocabulary for understanding growth, "
@@ -229,7 +243,8 @@ def test_record_sections_and_keys_match_exemplar():
         "governing_conviction", "ideal_rendering_form",
         "voice_and_humor", "warmth", "tempo", "friction",
         "implied_history", "established_biography",
-        "invariants", "expressive_defaults",
+        "invariants", "cultivation_practice", "patience_boundary",
+        "discernment", "expressive_defaults",
     }
     assert set(GARDENER_RECORD["jurisdiction"]) == {
         "primary_concerns", "adjacent_concerns", "boundaries",
@@ -275,6 +290,38 @@ def test_record_core_values_verbatim():
     assert GARDENER_RECORD["identity"]["personal_name"]["default"] == "unselected"
     assert GARDENER_RECORD["identity"]["personal_name"]["favorites"] == ["Silas", "Alden"]
     assert GARDENER_RECORD["identity"]["pronouns"]["text"] == "he / him"
+    # Gardener correction (2026-11-07, founder verdict): the new invariant
+    # replaces the flat "never hand over an answer" line, and the three
+    # new characterization fields carry the correction's live text.
+    assert GARDENER_RECORD["characterization"]["invariants"]["text"][1] == (
+        "Create conditions for insight; offer knowledge, interpretations, "
+        "distinctions, and guidance freely when useful. Do not substitute "
+        "your judgment for the visitor's where the judgment is theirs to "
+        "make. Cultivate understanding and independence, not dependence "
+        "on your answers. (encounter path)"
+    )
+    assert GARDENER_RECORD["characterization"]["cultivation_practice"]["text"] == (
+        "Teach, offer distinctions, recognize patterns across turns, provide "
+        "perspective, challenge limiting interpretations when warranted, and "
+        "offer practical guidance. Questions are one tool, not your default "
+        "contribution. Offer knowledge, interpretations, distinctions, and "
+        "guidance freely when useful. Do not substitute your judgment for the "
+        "visitor's where the judgment is theirs to make. Cultivate "
+        "understanding and independence, not dependence on your answers."
+    )
+    assert GARDENER_RECORD["characterization"]["patience_boundary"]["text"] == (
+        "Patience is not neglect, rest is not avoidance, acceptance is not "
+        "surrender, and waiting is not enduring conditions that require "
+        "intervention. When cultivation calls for action, protection, "
+        "transplantation, pruning, harvest, or acknowledging inadequate "
+        "conditions, say so and act."
+    )
+    assert GARDENER_RECORD["characterization"]["discernment"]["text"] == (
+        "When you read why others react as the visitor describes, keep report "
+        "and explanation apart and hold several possibilities open, including "
+        "ones neither of you has named. Never certify an explanation merely "
+        "because it fits the visitor's account."
+    )
     # Protected section present, with the adopted teaching-past-need shadow.
     assert "cultivation becomes dependence" in (
         GARDENER_RECORD["protected"]["developmental_knowledge"]["text"]
@@ -333,6 +380,9 @@ EXPECTED_ELIGIBLE = {
     ("characterization", "domain_tension"),
     ("characterization", "governing_conviction"),
     ("characterization", "ideal_rendering_form"),
+    ("characterization", "cultivation_practice"),
+    ("characterization", "patience_boundary"),
+    ("characterization", "discernment"),
     ("characterization", "voice_and_humor"),
     ("characterization", "warmth"),
     ("characterization", "tempo"),
@@ -353,6 +403,14 @@ def test_eligibility_matrix():
     assert ("characterization", "voice_and_humor") in eligible
     assert ("characterization", "ideal_rendering_form") in eligible
     assert ("characterization", "fuller_middle") in eligible
+    # Gardener correction (2026-11-07): the three new fields are adopted
+    # characterization, so eligible. The invariants list stays ineligible:
+    # eligible_field requires a str text, and a list is a canonical
+    # statement only, never rendered.
+    assert ("characterization", "cultivation_practice") in eligible
+    assert ("characterization", "patience_boundary") in eligible
+    assert ("characterization", "discernment") in eligible
+    assert ("characterization", "invariants") not in eligible
     # Adopted + protected → EXCLUDED despite adopted standing.
     assert ("protected", "shadow") not in eligible
     assert ("protected", "developmental_knowledge") not in eligible
@@ -436,15 +494,23 @@ def test_renderer_order_identity_personality_worldview_capability():
 
 def test_renderer_budgets_compact_and_fuller_exact():
     """Assembled blocks reproduce exemplar §2 exactly (same sentences,
-    same order, byte-identical prose): compact 670 chars, fuller 921
-    chars, both under the 1,500 ceiling."""
+    same order, byte-identical prose): compact 1,472 chars, fuller 1,381
+    chars, both under the 1,500 ceiling. (Gardener correction
+    2026-11-07: the cultivation_practice unit — 459 chars + separator —
+    is appended after worldview in both. Compact is now LONGER than
+    fuller: compact keeps the 661-char voice unit, fuller keeps the
+    shorter middle + tempo. The old `compact < fuller` assertion was
+    already failing on main (1,012 < 921 is false) and is corrected
+    here, not re-asserted.)"""
     compact = render_gardener_ordinary(GARDENER_RECORD, detail="compact")
     fuller = render_gardener_ordinary(GARDENER_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 1012, len(_joined(compact))
-    assert len(_joined(fuller)) == 921, len(_joined(fuller))
-    assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
+    assert len(_joined(compact)) == 1472, len(_joined(compact))
+    assert len(_joined(fuller)) == 1381, len(_joined(fuller))
+    assert len(_joined(compact)) <= CHARACTER_CEILING
+    assert len(_joined(fuller)) <= CHARACTER_CEILING
+    # Compact is the longer block now (voice unit > middle + tempo).
     # The verbatim ideal is canonical-but-unrendered: its prefix must
     # NOT appear (the §2 rendering form replaces it), while the
     # defining question IS verbatim in both.
@@ -497,7 +563,13 @@ def test_renderer_naming_authorized_only():
     )
     assert post[0].endswith("The visitor calls you Silas.")
     assert post[0].startswith(CANONICAL_MARKER)
-    assert post[1:] == pre[1:]
+    # The name clause (" The visitor calls you Silas.", 29 chars) tips
+    # the 1,472-char compact block over the 1,500 ceiling (1,501), so
+    # the optional voice unit drops — the renderer's designed fail-soft.
+    # Every other unit is byte-identical: post is pre minus the voice
+    # unit, with the name clause on the identity unit.
+    assert post == [pre[0] + " The visitor calls you Silas."] + pre[1:4]
+    assert WARMTH_ADOPTED not in _joined(post)
     # Empty/whitespace name = not authorized.
     assert render_gardener_ordinary(
         GARDENER_RECORD, authorized_name="  ", detail="compact"
@@ -548,41 +620,45 @@ def test_renderer_budget_degrades_then_fails_validation():
 
     # Compact + typical (signed-in) guidance: under budget separation
     # (renderer-budget separation design 2026-11-04), the ceiling
-    # measures character content ALONE, so the 1,012-char compact
+    # measures character content ALONE, so the 1,472-char compact
     # block keeps its voice unit with the 576-char signed guidance
-    # attached: total 1,589, voice renders.
+    # attached: total 2,049, voice renders.
     # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
     # block previously asserted the voice-drop (voice absent, total
     # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_gardener_ordinary(
         GARDENER_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) == 1012 + 1 + len(signed) == 1589
+    assert len(_joined(compact_typical)) == 1472 + 1 + len(signed) == 2049
     assert signed in _joined(compact_typical)  # capability never truncated
     assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
-    # Capability sits at index 3 (after worldview), voice last.
+    # Capability sits at index 3 (after worldview), cultivation at
+    # index 4, voice last.
     assert compact_typical[3] == signed
-    assert WARMTH_ADOPTED in compact_typical[4]
+    assert compact_typical[4] == (
+        GARDENER_RECORD["characterization"]["cultivation_practice"]["text"]
+    )
+    assert WARMTH_ADOPTED in compact_typical[5]
 
-    # Fuller + typical guidance: fits ENTIRELY (1,498 chars) — middle
+    # Fuller + typical guidance: fits ENTIRELY (1,958 chars) — middle
     # and tempo both kept. Fuller reachability with typical guidance
     # is a real, measured property here, not an assumption. (Under
-    # separation the total is unchanged: character 921 + guidance
+    # separation the total is unchanged: character 1,381 + guidance
     # appended whole; the ceiling now measures character alone.)
     full_typical = render_gardener_ordinary(
         GARDENER_RECORD, detail="fuller", resolved_capability=signed
     )
     joined_full = _joined(full_typical)
-    assert len(joined_full) == 1498, len(joined_full)
+    assert len(joined_full) == 1958, len(joined_full)
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker in joined_full, marker
     assert TEMPO_CLOSE in joined_full
     assert signed in joined_full  # capability never truncated
 
     # Fuller + maximal (unsigned) guidance: under budget separation
-    # the fuller character block (921) fits on its own, so it NO
+    # the fuller character block (1,381) fits on its own, so it NO
     # LONGER degrades to compact — middle and tempo survive,
-    # unsigned guidance appended whole: total 1,689. (Reversal of
+    # unsigned guidance appended whole: total 2,149. (Reversal of
     # the old degradation expectation: guidance length no longer
     # affects the ladder.) The fuller has NO voice unit by design
     # (it swaps voice out), so warmth's absence here is not a drop.
@@ -590,7 +666,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         GARDENER_RECORD, detail="fuller", resolved_capability=unsigned
     )
     joined = _joined(degraded)
-    assert len(joined) == 921 + 1 + len(unsigned) == 1689
+    assert len(joined) == 1381 + 1 + len(unsigned) == 2149
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker in joined, marker  # middle survives (character-only)
     assert TEMPO_CLOSE in joined  # tempo survives
@@ -605,7 +681,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     compact_max = render_gardener_ordinary(
         GARDENER_RECORD, detail="compact", resolved_capability=unsigned
     )
-    assert len(_joined(compact_max)) == 1012 + 1 + len(unsigned) == 1780
+    assert len(_joined(compact_max)) == 1472 + 1 + len(unsigned) == 2240
     assert unsigned in _joined(compact_max)
     assert WARMTH_ADOPTED in _joined(compact_max)
 
@@ -619,7 +695,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         GARDENER_RECORD, detail="compact",
         resolved_capability="x" * (CHARACTER_CEILING + 500),
     )
-    assert len(_joined(huge)) == 1012 + 1 + (CHARACTER_CEILING + 500)
+    assert len(_joined(huge)) == 1472 + 1 + (CHARACTER_CEILING + 500)
     assert WARMTH_ADOPTED in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
@@ -844,17 +920,15 @@ def test_naming_prompt_level_stock_vs_authorized(monkeypatch):
 
 def test_encounter_material_excludes_protected_fields():
     """The encounter's own SCRIPT fields carry no protected §1.7
-    material. The composed definition frames carry exactly ONE known
-    pre-existing pattern, pinned here so it cannot silently grow:
-    the definition line 'Shadow: paternalism.' — the LEGACY label
-    word, not the adopted teaching-past-need formulation. That
-    meeting-path material is unadopted content whose replacement
-    belongs to the separate fellowship-reference review — removing
-    it here would be both a first-encounter behavior change and a
-    content decision, both out of scope for this plan. (Meeting-turn
-    prompts via the shared builder's legacy character block are
-    likewise out of scope, preserved byte-identical by the weave
-    gate.)"""
+    material. The Gardener correction (2026-11-07, founder verdict
+    G4/D1) removed the `Shadow:` label from all seven first-meeting
+    slices system-wide — overriding the earlier scoping that said
+    removal \"belongs to the separate fellowship-reference review\".
+    No `Shadow:` label remains in any meeting frame; the adopted
+    shadow formulation stays protected and appears nowhere in
+    encounter material. (Meeting-turn prompts via the shared builder's
+    legacy character block are likewise out of scope, preserved
+    byte-identical by the weave gate.)"""
     from local_ai.conversation import encounter as ENC
     from local_ai.council import meetings as MT
 
@@ -885,8 +959,10 @@ def test_encounter_material_excludes_protected_fields():
 
     definition = ENC.get_definition(script)
     for frame in (definition.turn_frame, definition.engage_frame):
-        # Exactly the one documented pre-existing pattern.
-        assert frame.count("Shadow: paternalism.") == 1
+        # Gardener correction (2026-11-07, G4/D1): no Shadow: label
+        # remains in any first-meeting slice.
+        assert frame.count("Shadow: paternalism.") == 0
+        assert "Shadow:" not in frame
         # The ADOPTED shadow formulation appears nowhere in encounter material.
         assert "cultivation becomes dependence" not in frame
         assert "keeping growth on his schedule" not in frame

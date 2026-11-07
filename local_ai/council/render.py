@@ -552,10 +552,11 @@ def render_gardener_ordinary(
 
     Units (Gardener §2): identity, personality, worldview
     (ideal-rendering-form + defining question + domain tension),
-    capability (resolver-supplied, after worldview), then either
-    the fuller middle + tempo-precision sentence, or the compact
-    voice + warmth passage. Assembled blocks reproduce exemplar §2
-    exactly (compact 670 chars, fuller 921 chars, no capability).
+    cultivation_practice; capability (resolver-supplied) is re-inserted
+    after worldview; then either the fuller middle + tempo-precision
+    sentence, or the compact voice + warmth passage. Assembled blocks
+    reproduce exemplar §2 exactly (compact 1,472 chars, fuller 1,381
+    chars, no capability).
     """
     if detail not in ("compact", "fuller"):
         raise ValueError(f"Unknown detail: {detail!r}")
@@ -583,12 +584,17 @@ def render_gardener_ordinary(
         raise AssemblyError(
             "Gardener core unit (personality/worldview) is not eligible"
         )
+    cultivation = eligible_field(record, "characterization", "cultivation_practice")
+    if cultivation is None:
+        raise AssemblyError(
+            "Gardener core unit (cultivation_practice) is not eligible"
+        )
     worldview = " ".join(worldview_parts)
     # Budget separation (renderer-budget separation design 2026-11-04):
     # the ceiling measures character content ALONE. Capability is not
     # part of the measured candidate set; it is re-inserted at the
     # same position (after worldview) in the returned list below.
-    character = [identity, personality, worldview]
+    character = [identity, personality, worldview, cultivation]
 
     middle = eligible_field(record, "characterization", "fuller_middle")
     voice = eligible_field(record, "characterization", "voice_and_humor")

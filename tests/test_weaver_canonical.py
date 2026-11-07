@@ -115,7 +115,11 @@ def test_record_sections_and_keys_match_exemplar():
     }
     assert set(WEAVER_RECORD["identity"]) == {
         "role", "character", "personal_name", "visual_identity",
+        "pronouns",
     }
+    # Gardener correction (2026-11-07, §4.3): the Weaver record gains
+    # the pronouns field the other six seats already carry.
+    assert WEAVER_RECORD["identity"]["pronouns"]["text"] == "she / her"
     assert set(WEAVER_RECORD["philosophy"]) == {
         "core_conviction", "defining_question", "primary_influences",
         "distilled_contribution", "per_thinker_contributions",
@@ -566,15 +570,13 @@ def test_branch_custom_name_address_line(monkeypatch):
 
 def test_encounter_material_excludes_protected_fields():
     """The encounter's own SCRIPT fields carry no protected §1.7
-    material. The composed definition frames carry exactly ONE known
-    pre-existing exception, pinned here so it cannot silently grow:
-    a hardcoded DRAFT fellowship reference (encounter.py, labeled
-    'DRAFT — canonical text awaits verdict') that names
-    'Shadow: forcing resolution.' That draft is unadopted content
-    whose replacement belongs to the separate fellowship-reference
-    review — removing it here would be both a first-encounter
-    behavior change and a content decision, both out of scope for
-    this plan. (Meeting-turn prompts via _generate_framed still carry
+    material. The Gardener correction (2026-11-07, founder verdict
+    G4/D1) removed the `Shadow:` label from all seven first-meeting
+    slices system-wide — overriding the earlier scoping that said
+    removal \"belongs to the separate fellowship-reference review\".
+    No `Shadow:` label remains in any meeting frame; the adopted
+    shadow formulation stays protected and appears nowhere in
+    encounter material. (Meeting-turn prompts via _generate_framed still carry
     the shared builder's legacy character block — likewise out of
     scope, preserved byte-identical by the canonical=False gate.)"""
     from local_ai.conversation import encounter as ENC
@@ -597,9 +599,10 @@ def test_encounter_material_excludes_protected_fields():
     definition = ENC.get_definition(script)
     for frame in (definition.turn_frame, definition.engage_frame):
         hits = [p for p in PROTECTED_PHRASES if p in frame]
-        # Exactly the one documented draft-reference exception.
-        assert hits == ["forcing resolution"], hits
-        assert frame.count("forcing resolution") == 1
+        # Gardener correction (2026-11-07, G4/D1): the Shadow: label is
+        # gone from the slice, so no protected phrase remains.
+        assert hits == [], hits
+        assert frame.count("forcing resolution") == 0
         assert "DRAFT — canonical text awaits verdict" in frame
         for name in PHILOSOPHER_NAMES:
             assert name not in frame, name

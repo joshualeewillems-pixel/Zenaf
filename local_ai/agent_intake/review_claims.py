@@ -753,6 +753,7 @@ def build_meeting_impression_claim(
     readback_seat_outcome: str = "",
     readback_visitor_response: str = "",
     ceiling_filed: bool = False,
+    filed_via: str = "",
 ) -> ReviewClaim:
     """The one claim a completed first meeting files: the seat's read-back
     impression, with the user's answer as its verbatim evidence.
@@ -824,6 +825,17 @@ def build_meeting_impression_claim(
             f"{original_plain}"
         )
     detail_parts.append(_readback_outcome_detail(seat, visitor, ceiling_filed))
+    if filed_via == "affirmation_recovery":
+        # D5 (2026-11-07): the claim was filed by the recovery sweep
+        # from an affirmed-but-unfiled impression in an active
+        # meeting — not by the meeting's close path.
+        detail_parts.append(
+            "Filed by recovery of an affirmed impression from an "
+            "active meeting. Affirmation is the visitor's response "
+            "to the read-back, not review approval and not training "
+            "authorization — this claim stands pending like any other "
+            "until ruled on."
+        )
     return ReviewClaim(
         id=f"{agent_id}:impression:{strand_segment}:{run_key}",
         claim_type="meeting_impression",

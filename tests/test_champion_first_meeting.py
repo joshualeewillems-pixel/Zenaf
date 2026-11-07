@@ -185,11 +185,11 @@ def test_slice_present_on_both_frames():
         "Firebrand (Champion) — Courage through conviction.",
         "What is worth fighting for?",
         "Gardener: he counsels readiness; I must not read slowness as fear.",
-        "Bear: he prices what must survive",
+        "Bear: she prices what must survive",
         "Fox: he breaks from the frame where I break for a cause",
-        "Crane: she translates where I name a side; translation is not cowardice",
+        "Crane: he translates where I name a side; translation is not cowardice",
         "Weaver: she sequences where I act; sequencing is not dithering",
-        "Raven: he audits whether conviction is earned; evidence-asking is not opposition.",
+        "Raven: she audits whether conviction is earned; evidence-asking is not opposition.",
         "pursue the hill and the tipping point where deliberation becomes avoidance",
     )
     for text in (definition.turn_frame, definition.engage_frame):

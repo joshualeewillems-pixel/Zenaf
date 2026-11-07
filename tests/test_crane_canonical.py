@@ -22,15 +22,17 @@ Scope notes (read before "fixing" a failure by weakening a test):
   including its philosophy lines. The encounter-eligibility test
   pins the encounter's OWN material (scripts + frames): the
   script texts carry no protected formulations, while the
-  composed definition frames carry exactly TWO known pre-existing
-  patterns, pinned here so they cannot silently grow: the
-  definition line "Shadow: appeasement." AND the frame
+  composed definition frames carry exactly ONE known pre-existing
+  pattern, pinned here so it cannot silently grow: the frame
   instruction "Your shadow is appeasement — translating each
   side into what it wants to hear until nobody has actually
-  met; guard against it, ..." — both UNADOPTED draft content.
-  The shadow verdict (2026-11-01) does NOT change that
+  met; guard against it, ..." — UNADOPTED draft content (Crane
+  CC5, undecided). The "Shadow: appeasement." label is gone:
+  the Gardener correction (2026-11-07, founder verdict G4/D1)
+  removed the Shadow: label from all seven first-meeting slices.
+  The shadow verdict (2026-11-01) does NOT change the remaining
   meeting-path material: the frames still carry the unadopted
-  draft, pinned not fixed, because fixing them is a separate
+  draft sentence, pinned not fixed, because fixing it is a separate
   content decision out of scope for this plan (ordinary
   renderer only).
 - CRANE'S SHADOW IS ADOPTED (2026-11-01, Joshua's widget
@@ -998,8 +1000,11 @@ def test_encounter_material_excludes_protected_fields():
 
     definition = ENC.get_definition(script)
     for frame in (definition.turn_frame, definition.engage_frame):
-        # Exactly the two documented pre-existing patterns.
-        assert frame.count("Shadow: appeasement.") == 1
+        # Gardener correction (2026-11-07, G4/D1): the Shadow: label is
+        # gone from the slice. "Your shadow is appeasement" is the
+        # encounter frame's own sentence (Crane CC5 content, undecided)
+        # and stays at 1.
+        assert frame.count("Shadow: appeasement.") == 0
         assert frame.count("Your shadow is appeasement") == 1
         assert (
             "translating each side into what it wants to hear until "

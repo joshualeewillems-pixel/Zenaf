@@ -5,6 +5,7 @@ import { isCoarsePointer } from '../components/isCoarsePointer'
 import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
 import TaskProposalCards from './TaskProposalCards'
+import RoundProposalCard, { type RoundItem } from './RoundProposalCard'
 import { stripTaskProposalBlocks } from './taskProposals'
 import VoiceFeedback from './VoiceFeedback'
 import {
@@ -29,6 +30,11 @@ export type ConversationMessage = {
    *  the store path, a session-scoped `local-` ref otherwise. Absent for
    *  seed/initial messages and failure notices — those get no widget. */
   messageId?: string | null
+  /** Firebrand lightning round (S1): the item this voice message
+   *  presented. Live turns carry the full proposal from the turn
+   *  response; hydration carries only kind + id, and the card
+   *  refetches the proposal by id. Absent on every other message. */
+  roundItem?: RoundItem | null
 }
 
 /** Server message row → thread message. Shared by hydration and
@@ -48,6 +54,21 @@ function mapServerMessages(
       typeof (m as Record<string, unknown>).archetype_id === 'string'
         ? ((m as Record<string, unknown>).archetype_id as string)
         : null
+    // Firebrand lightning round (S1): the assistant message's
+    // context_json carries the round marker — kind + presented
+    // proposal id. The card refetches the proposal by id; the
+    // marker is the authority, never message text.
+    const ctx = (m as Record<string, unknown>).context
+    const roundCtx =
+      ctx && typeof ctx === 'object' ? (ctx as Record<string, unknown>) : null
+    const roundProposalId =
+      roundCtx && typeof roundCtx.round_proposal_id === 'string'
+        ? (roundCtx.round_proposal_id as string)
+        : null
+    const roundItem =
+      roundCtx?.round_kind === 'firebrand' && roundProposalId
+        ? { kind: 'task_proposal', proposal_id: roundProposalId }
+        : null
     mapped.push({
       role,
       content: body,
@@ -58,6 +79,7 @@ function mapServerMessages(
       voiceId: role === 'voice' ? aid : null,
       voiceName: role === 'voice' ? names[aid ?? ''] ?? aid ?? undefined : undefined,
       voiceColor: role === 'voice' && aid ? voiceColor(aid) : undefined,
+      roundItem,
     })
   }
   return mapped
@@ -443,6 +465,9 @@ export default function CouncilChat({
         voiceName:
           data.display_name ?? (seatId === activeId ? activeName : names[seatId] ?? seatId),
         voiceColor: data.voice_color ?? undefined,
+        // Firebrand lightning round (S1): the item this reply
+        // presented, if any — the card renders from it.
+        roundItem: data.round_item ?? null,
       }
     },
     [base, conversationId, context, chatMode, questionMode, messages, names, activeId, activeName],
@@ -778,6 +803,17 @@ export default function CouncilChat({
                   messageId={m.messageId}
                   seat={m.voiceId}
                   content={m.content}
+                />
+              )}
+              {/* Firebrand lightning round (S1): the item this reply
+                  presented, rendered from the server's round_item —
+                  never from message text. Store path only. */}
+              {conversationId && m.messageId && !m.messageId.startsWith('local-') && m.roundItem && (
+                <RoundProposalCard
+                  base={base}
+                  conversationId={conversationId}
+                  messageId={m.messageId}
+                  roundItem={m.roundItem}
                 />
               )}
               {m.messageId && m.voiceId && (

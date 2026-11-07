@@ -460,6 +460,7 @@ def build_voice_prompt(
     evidence_context: str | None = None,
     invitation_context: str | None = None,
     execution_context: str | None = None,
+    round_context: str | None = None,
     # Conversation id, for the execution-budget warning log only.
     # None on paths that never carry an execution block (meetings,
     # voice route); the log only fires when a block was supplied.
@@ -923,6 +924,13 @@ def build_voice_prompt(
         # section absent, so non-guardian turns and meetings are
         # byte-identical to before.
         prompt += ["", evidence_context.strip()]
+    if round_context:
+        # Firebrand lightning round (S1): champion-only, Talk only.
+        # Its own section, after the evidence section and before
+        # history — one item only, the record's own wording as the
+        # authority, the model gloss alongside it. Absent (None) =
+        # section absent, so all other turns are byte-identical.
+        prompt += ["", round_context.strip()]
 
     turns = (history or [])[-10:]
     if turns:
@@ -1001,6 +1009,7 @@ def generate_voice_reply(
     evidence_context: str | None = None,
     invitation_context: str | None = None,
     execution_context: str | None = None,
+    round_context: str | None = None,
     conversation_id: str | None = None,
     # Provider-timing label for the one log line per call (latency
     # instrumentation only): "talk" for ordinary Talk turns,
@@ -1026,6 +1035,7 @@ def generate_voice_reply(
         evidence_context=evidence_context,
         invitation_context=invitation_context,
         execution_context=execution_context,
+        round_context=round_context,
         conversation_id=conversation_id,
     )
     gen = generate_fn or _default_generate

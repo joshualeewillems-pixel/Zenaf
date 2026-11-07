@@ -7826,6 +7826,48 @@ def count_pending_task_proposals(
     return int(row[0]) if row is not None else 0
 
 
+def list_pending_task_proposals(
+    user_id: str, connection: sqlite3.Connection | None = None
+) -> list[dict[str, Any]]:
+    """User-wide pending task proposals, oldest first (Firebrand S1).
+
+    ``list_task_proposals`` is per-conversation only; the lightning
+    round's queue is user-wide (OQ3: any conversation). Owner-scoped,
+    full rows — the same dicts the card hydrates from. ``connection``
+    is injectable for tests; otherwise the default vision-execution
+    connection is used.
+    """
+    conn = connection if connection is not None else get_connection()
+    cur = conn.execute(
+        "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+        "WHERE user_id = ? AND state = 'pending' "
+        "ORDER BY created_at ASC, rowid ASC",
+        (user_id,),
+    )
+    return [_proposal_row_to_dict(tuple(r)) for r in cur.fetchall()]
+
+
+def get_task_proposal(
+    user_id: str, proposal_id: str, connection: sqlite3.Connection | None = None
+) -> dict[str, Any] | None:
+    """One task proposal, strictly per-user (Firebrand S1).
+
+    A foreign id returns None, indistinguishable from a missing one —
+    the same fail-closed pattern as the conversation store's
+    get_message, so callers cannot probe another user's proposals.
+    ``connection`` is injectable for tests.
+    """
+    conn = connection if connection is not None else get_connection()
+    row = conn.execute(
+        "SELECT " + _PROPOSAL_COLUMNS + " FROM task_proposals "
+        "WHERE user_id = ? AND id = ?",
+        (user_id, proposal_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return _proposal_row_to_dict(tuple(row))
+
+
 def list_task_proposals_by_parent(
     user_id: str,
     parent_task_id: str,

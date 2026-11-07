@@ -25,11 +25,14 @@ All routes require auth. Nothing here writes training data.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from api.routes.auth_routes import get_current_user
 from local_ai.conversation import suggestions as sugg
+from local_ai.conversation.firebrand_round import ITEM_KIND, ROUND_KIND
 from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingStore
 from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import ConversationStore
@@ -97,6 +100,10 @@ class ConversationTurnResponse(BaseModel):
     voice_color: str
     mode_used: str
     has_training: bool
+    # Firebrand lightning round (S1): the newly presented item
+    # ({"kind", "proposal_id", "proposal"}), or None when this turn
+    # presented nothing new. Absent from every other turn.
+    round_item: dict | None = None
 
 
 def _check_seat(archetype_id: str) -> str:
@@ -144,7 +151,188 @@ def conversation_turn(
         voice_color=result.reply.voice_color,
         mode_used=result.reply.mode_used,
         has_training=result.reply.has_training,
+        round_item=result.round_item,
     )
+
+
+class RoundActionBody(BaseModel):
+    conversation_id: str = Field(max_length=64)
+    message_id: str = Field(max_length=64)
+    proposal_id: str = Field(max_length=64)
+
+
+class RoundReserveBody(RoundActionBody):
+    # Snooze in days, as picked on the round card: 1 (a day), 7 (a
+    # week), or null (never). The duration is the user's pick (OQ7);
+    # the server only bounds it.
+    snooze_days: int | None = Field(default=None, ge=1, le=365)
+
+
+def _round_presentation_check(
+    store: ConversationStore,
+    user_id: str,
+    conversation_id: str,
+    message_id: str,
+    proposal_id: str,
+) -> None:
+    """The round card's presentation check: the named message must be
+    the one that presented this proposal in the Firebrand round — a
+    tap on any other message cannot park or reserve an item (409,
+    plain copy). Owner-scoped: a foreign message reads as missing,
+    never as another user's record.
+    """
+    msg = store.get_message(user_id, conversation_id, message_id)
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    ctx = msg.get("context") or {}
+    if (
+        ctx.get("round_kind") != ROUND_KIND
+        or ctx.get("round_proposal_id") != proposal_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="That message didn't present this item — refresh to see its state.",
+        )
+
+
+def _round_proposal_for_action(
+    store: ConversationStore,
+    user_id: str,
+    conversation_id: str,
+    message_id: str,
+    proposal_id: str,
+) -> dict:
+    """Shared guards for the round card's tap actions (S1).
+
+    Presentation check first, then the standing check: the proposal
+    must exist and still be pending — a tap that arrives after a
+    decision elsewhere is a 409, and the card re-fetches the server
+    state. Both checks are owner-scoped: a foreign message or
+    proposal reads as missing, never as another user's record.
+    """
+    from local_ai.vision_execution import storage as ve_storage
+
+    _round_presentation_check(store, user_id, conversation_id, message_id, proposal_id)
+    proposal = ve_storage.get_task_proposal(user_id, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    if proposal.get("state") != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="Already decided — refresh to see its state.",
+        )
+    return proposal
+
+
+@router.get("/round/item-state")
+def round_item_state(
+    conversation_id: str = Query(max_length=64),
+    message_id: str = Query(max_length=64),
+    proposal_id: str = Query(max_length=64),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """The round card's hydration read: the proposal plus its round
+    state (parked? reserved?) for one presented item.
+
+    The parked/reserved state lives in the round tables, not on the
+    proposal record, so the bare proposal read cannot show it — a
+    reload would otherwise render a parked or reserved item as a
+    fresh pending card. The presentation check applies, but the
+    standing check does not: a decided proposal still returns its
+    state, so the card shows Created / Declined after a reload.
+    """
+    from local_ai.vision_execution import storage as ve_storage
+
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    _round_presentation_check(store, user_id, conversation_id, message_id, proposal_id)
+    proposal = ve_storage.get_task_proposal(user_id, proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    parked = proposal_id in store.list_parked_round_items(
+        user_id, conversation_id, ROUND_KIND
+    )
+    marker = store.get_reserved_round_item(user_id, ITEM_KIND, proposal_id)
+    return {
+        "proposal": proposal,
+        "parked": parked,
+        "reserved": marker,
+    }
+
+
+@router.post("/round/skip")
+def round_skip(
+    body: RoundActionBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Park the round's current item — "I need to check" (OQ5).
+
+    A park changes no underlying state: the proposal stays pending
+    and returns at the next round. The next user message advances
+    the round (the tap itself sends no turn, per the design's
+    tap-continuation rule).
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    proposal = _round_proposal_for_action(
+        store, user_id, body.conversation_id, body.message_id, body.proposal_id
+    )
+    store.park_round_item(user_id, body.conversation_id, ROUND_KIND, body.proposal_id)
+    return {"parked": True, "proposal": proposal}
+
+
+@router.post("/round/reserve")
+def round_reserve(
+    body: RoundReserveBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Mark one item "don't remind me about this" (OQ7).
+
+    Durable, not round-scoped: a snooze (the duration the user
+    picked) or never. The round skips a reserved item until its
+    snooze expires — never reserved never appears again. A tap,
+    not prose: a durable suppression must never rest on a misread
+    sentence.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    proposal = _round_proposal_for_action(
+        store, user_id, body.conversation_id, body.message_id, body.proposal_id
+    )
+    snooze_until = None
+    if body.snooze_days is not None:
+        snooze_until = (
+            datetime.now(timezone.utc) + timedelta(days=body.snooze_days)
+        ).isoformat()
+    marker = store.reserve_round_item(
+        user_id, ITEM_KIND, body.proposal_id, snooze_until=snooze_until
+    )
+    return {"reserved": True, "proposal": proposal, "marker": marker}
+
+
+@router.post("/round/unreserve")
+def round_unreserve(
+    body: RoundActionBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Lift a reserved marker — the round card's Undo.
+
+    The presentation + standing checks apply here too: only the
+    message that presented the item can lift its marker, and only
+    while the proposal is still pending.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    proposal = _round_proposal_for_action(
+        store, user_id, body.conversation_id, body.message_id, body.proposal_id
+    )
+    store.unreserve_round_item(user_id, ITEM_KIND, body.proposal_id)
+    return {"reserved": False, "proposal": proposal}
 
 
 @router.get("/list")

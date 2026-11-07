@@ -8251,11 +8251,32 @@ def approve_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
 class UploadOutcomeStuckError(Exception):
     """An upload outcome is stuck in 'creating' with no carrier row
     (reconciliation §6.3 R2: crash before the VE commit). The
-    diagnostic surfaces it; there is no authorized retry transition
-    in S1 — the §8.1 CAS claims only 'pending' outcomes, so a
-    re-taken claim is not possible without a new transition (brief
-    §8.1/§8.2 contradiction, surfaced in the PR body, not resolved
-    here). Routes map this to 409 with the diagnostic copy."""
+    diagnostic surfaces it. A retry is refused while the outcome is
+    younger than one hour ('Still creating — check back shortly');
+    an older one may be re-claimed (amendment A4 step 1b). Routes
+    map this to 409 with the diagnostic copy."""
+
+
+#: Amendment A4: the re-claim staleness gate — a 'creating' outcome
+#: younger than this is presumed live, not dead. One hour, the
+#: diagnostic's threshold (reconciliation §6.3).
+_UPLOAD_RECLAIM_STALE_S = 3600
+
+
+def _upload_outcome_age_s(outcome: dict[str, Any]) -> float | None:
+    """An outcome row's age in seconds from its created_at, or None
+    when the timestamp is missing / unparseable. The age is the
+    re-claim gate's input (amendment A4); an unknown age refuses
+    the retry (the safe default — the outcome might be live)."""
+    try:
+        created = datetime.fromisoformat(
+            str(outcome.get("created_at") or "").replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - created).total_seconds()
 
 
 def get_upload_outcome_creation(
@@ -8300,19 +8321,30 @@ def approve_upload_outcome(
        a 'pending' row proceeds. Rowcount 0 → the outcome was
        already decided: a 'created' outcome replays (the carrier
        row returns the existing VE record); a 'creating' outcome
-       WITH a carrier row is R1 (the next read completes it to
-       'created'); a 'creating' outcome WITHOUT a carrier row is
-       R2 — stuck, UploadOutcomeStuckError, no retry transition
-       in S1 (§8.1/§8.2 contradiction, surfaced not resolved).
+       WITH a carrier row is R1 (the retry tap heals it to
+       'created', reconciliation §6.3 R3 — no other read heals it);
+       a 'creating' outcome WITHOUT a carrier row is R2 — the
+       retry re-claim (amendment A4 step 1b) when the outcome is
+       older than one hour, else refused ('Still creating').
     2. Create the VE record + carrier row (VE DB, one
        ve_write_transaction): the _insert_* helper + the
        upload_outcome_creations insert commit together, or neither
        does. A validation failure rolls back the claim too (the
        outcome returns to 'pending' so the user can edit and
-       retry); nothing is written.
+       retry); nothing is written. A carrier-insert PRIMARY KEY
+       failure (a concurrent creation committed first) re-reads
+       the carrier row and returns the existing VE record (case
+       (iii)) instead of surfacing an error.
     3. Mark the outcome 'created' (ConversationStore) with its
        ve_kind / ve_id, and flip the interpretation to 'ruled' —
        the verdict has landed, so the reading leaves the queue.
+
+    R-label mapping footnote (amendment A4): the brief's R1–R4 do
+    not map onto reconciliation §6.3's R1–R4. Brief R1 =
+    reconciliation R3 (crash after VE commit, before outcome
+    'created'); brief R2 = reconciliation R2 (crash before VE
+    commit); brief R3 = reconciliation R4 (duplicate tap during
+    creation); brief R4 is new (the §8.1 step-1 CAS loser).
 
     Parentage (U-4; the VE mapping is the brief's open point — the
     chooser lists recent PROJECTS): a task nests under the chosen
@@ -8341,34 +8373,53 @@ def approve_upload_outcome(
         carrier = get_upload_outcome_creation(user_id, outcome_id)
         record = _upload_outcome_ve_record(user_id, outcome) if carrier else {}
         return {"outcome": outcome, "record": record, "replayed": True}
-    if status != "pending":
-        if status == "creating":
-            carrier = get_upload_outcome_creation(user_id, outcome_id)
-            if carrier is not None:
-                # R1: the VE record + carrier committed, the outcome
-                # never flipped to 'created'. Complete it now.
-                store.set_upload_outcome_status(
-                    user_id,
-                    outcome_id,
-                    "created",
-                    ve_kind=carrier["ve_kind"],
-                    ve_id=carrier["ve_id"],
-                )
-                store.set_upload_interpretation_status(
-                    user_id, outcome["interpretation_id"], "ruled"
-                )
-                outcome = store.get_upload_outcome(user_id, outcome_id) or outcome
-                record = _upload_outcome_ve_record(user_id, outcome)
-                return {"outcome": outcome, "record": record, "replayed": True}
-            raise UploadOutcomeStuckError(
-                "This creation is stuck mid-way with no record of what "
-                "was created. See the stuck-outcomes diagnostic; a retry "
-                "needs a recovery transition S1 does not define."
+    reclaimed = False
+    if status == "creating":
+        carrier = get_upload_outcome_creation(user_id, outcome_id)
+        if carrier is not None:
+            # R1 healing — the RETRY TAP (reconciliation §6.3 R3):
+            # the VE record + carrier committed, the outcome never
+            # flipped to 'created'. Complete it now. No other read
+            # heals it.
+            store.set_upload_outcome_status(
+                user_id,
+                outcome_id,
+                "created",
+                ve_kind=carrier["ve_kind"],
+                ve_id=carrier["ve_id"],
             )
+            store.set_upload_interpretation_status(
+                user_id, outcome["interpretation_id"], "ruled"
+            )
+            outcome = store.get_upload_outcome(user_id, outcome_id) or outcome
+            record = _upload_outcome_ve_record(user_id, outcome)
+            return {"outcome": outcome, "record": record, "replayed": True}
+        # Step 1b (amendment A4): no carrier row — the retry may
+        # re-take the claim, but only when the outcome is older
+        # than one hour. A younger 'creating' outcome is presumed
+        # live, not dead, and the retry is refused with a plain
+        # message. The age is the outcome row's age (created_at —
+        # the claim to 'creating' follows creation in the same
+        # approve call, so creation age approximates claim age).
+        # An unparseable timestamp refuses the retry (safe default).
+        age_s = _upload_outcome_age_s(outcome)
+        if age_s is None or age_s < _UPLOAD_RECLAIM_STALE_S:
+            raise UploadOutcomeStuckError("Still creating — check back shortly.")
+        if not store.reclaim_upload_outcome(user_id, outcome_id):
+            # Another session owns the retry — return the existing
+            # outcome / 409 per §8.2.
+            raise ProposalConflict(
+                "Already decided — refresh to see its state."
+            )
+        # Re-claimed: this session owns the retry. Fall through to
+        # step 2 (carrier lookup first — already done above, no
+        # carrier) and create the VE record + carrier below.
+        reclaimed = True
+    elif status != "pending":
         raise ProposalConflict(
             f"Outcome is already {status} — refresh to see its state."
         )
-    if not store.claim_upload_outcome(user_id, outcome_id):
+    if not reclaimed and not store.claim_upload_outcome(user_id, outcome_id):
         # Lost the race after the read: re-read and replay, or 409.
         fresh = store.get_upload_outcome(user_id, outcome_id) or outcome
         if fresh.get("status") == "created":
@@ -8458,6 +8509,36 @@ def approve_upload_outcome(
                 (outcome_id, user_id, ve_kind, ve_id, _now()),
             )
             _commit_if_owner(conn)
+    except sqlite3.IntegrityError:
+        # Amendment A4, case (iii): the carrier insert failed on
+        # PRIMARY KEY — a concurrent creation committed its carrier
+        # first. Re-read the carrier row and return the existing VE
+        # record instead of surfacing an error. (The
+        # ve_write_transaction owner already rolled this session's
+        # partial VE insert back on the exception exit.)
+        carrier = get_upload_outcome_creation(user_id, outcome_id)
+        if carrier is not None:
+            store.set_upload_outcome_status(
+                user_id,
+                outcome_id,
+                "created",
+                ve_kind=carrier["ve_kind"],
+                ve_id=carrier["ve_id"],
+            )
+            store.set_upload_interpretation_status(
+                user_id, outcome["interpretation_id"], "ruled"
+            )
+            done = store.get_upload_outcome(user_id, outcome_id) or outcome
+            record = _upload_outcome_ve_record(user_id, done)
+            return {"outcome": done, "record": record, "replayed": True}
+        # Not a carrier conflict (or the carrier vanished): fall
+        # through to the generic failure handling below.
+        _rollback_if_owner(conn)
+        try:
+            store.set_upload_outcome_status(user_id, outcome_id, "pending")
+        except Exception:
+            pass
+        raise
     except Exception:
         _rollback_if_owner(conn)
         # Step-4 contract: a validation failure rolls back the claim

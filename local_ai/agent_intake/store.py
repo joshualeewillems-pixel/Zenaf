@@ -72,6 +72,12 @@ CREATE TABLE IF NOT EXISTS review_claims (
 );
 CREATE INDEX IF NOT EXISTS idx_claims_agent ON review_claims(agent_id);
 CREATE INDEX IF NOT EXISTS idx_claims_user ON review_claims(user_id, agent_id);
+-- Weaver rapid fire S1 (brief §13 S2): the pending-impressions queue
+-- query filters on (user_id, claim_type, status) — the round's hot
+-- path on Weaver turns. The only schema change in S1: an index, no
+-- column, no table.
+CREATE INDEX IF NOT EXISTS idx_claims_user_type_status
+  ON review_claims(user_id, claim_type, status);
 """
 
 
@@ -380,16 +386,86 @@ class AgentStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
-    def update_claim(self, claim_id: str, status: str, user_note: str = "") -> bool:
-        """Set a claim's review status and the user's note."""
+    def pending_impressions(self, user_id: str) -> list[dict]:
+        """Pending first-meeting impressions, user-wide, oldest first.
+
+        Weaver rapid fire S1 (brief §2.1): the round's queue is the
+        existing claim records and only them. Full claim dicts (the
+        ``to_dict`` shape) plus the owning ``agent_id`` and
+        ``created_at`` the queue order and the snapshot cutoff read.
+        Owner-scoped by construction; decided, superseded, and
+        non-``meeting_impression`` rows never appear.
+        """
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM review_claims WHERE user_id = ? "
+                "AND claim_type = 'meeting_impression' AND status = 'pending' "
+                "ORDER BY created_at ASC",
+                (user_id,),
+            ).fetchall()
+        from .review_claims import ReviewClaim
+
+        out: list[dict] = []
+        for r in rows:
+            claim = ReviewClaim(
+                id=r["claim_id"],
+                claim_type=r["claim_type"],
+                title=r["title"],
+                evidence=r["evidence"],
+                inference=r["inference"],
+                detail=r["detail"],
+                status=r["status"],
+                user_note=r["user_note"],
+                question=r["question"] if "question" in r.keys() else "",
+                scope=r["scope"] if "scope" in r.keys() else "moment",
+                turn_ref=r["turn_ref"] if "turn_ref" in r.keys() else "",
+                readback_visitor_response=r["readback_visitor_response"]
+                if "readback_visitor_response" in r.keys()
+                else "",
+                readback_seat_outcome=r["readback_seat_outcome"]
+                if "readback_seat_outcome" in r.keys()
+                else "",
+                readback_original_claim=r["readback_original_claim"]
+                if "readback_original_claim" in r.keys()
+                else "",
+            )
+            d = claim.to_dict()
+            d["agent_id"] = r["agent_id"]
+            d["created_at"] = r["created_at"]
+            d["updated_at"] = r["updated_at"]
+            out.append(d)
+        return out
+
+    def update_claim(
+        self,
+        claim_id: str,
+        status: str,
+        user_note: str = "",
+        *,
+        expected_status: str | None = None,
+    ) -> bool:
+        """Set a claim's review status and the user's note.
+
+        Weaver rapid fire S1 (brief §10.2): ``expected_status`` is a
+        compare-and-swap — the UPDATE only lands when the row still
+        carries that status, so a verdict that lost the race to a
+        decision elsewhere writes nothing (rowcount 0 → False). The
+        five verdict endpoints pass ``expected_status="pending"``; the
+        default ``None`` preserves current behavior for the filing-path
+        caller, which marks pending ``alternative`` claims
+        ``unresolved`` and is not a user verdict.
+        """
         from datetime import datetime, timezone
 
         clause, params = self._owner_clause()
         q = "UPDATE review_claims SET status = ?, user_note = ?, updated_at = ? WHERE claim_id = ?"
         if clause:
             q += f" AND {clause}"
-        now = datetime.now(timezone.utc).isoformat()
+        args: list = [status, user_note, datetime.now(timezone.utc).isoformat(), claim_id, *params]
+        if expected_status is not None:
+            q += " AND status = ?"
+            args.append(expected_status)
         with self._lock:
-            cur = self._conn.execute(q, (status, user_note, now, claim_id, *params))
+            cur = self._conn.execute(q, args)
             self._conn.commit()
             return cur.rowcount > 0

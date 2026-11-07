@@ -33,6 +33,7 @@ from pydantic import BaseModel, Field
 from api.routes.auth_routes import get_current_user
 from local_ai.conversation import suggestions as sugg
 from local_ai.conversation.firebrand_round import ITEM_KIND, ROUND_KIND
+from local_ai.conversation.round import ROUND_KIND as WEAVER_ROUND_KIND
 from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingStore
 from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import ConversationStore
@@ -47,6 +48,15 @@ _MSG_MAX = 2000
 
 def _store() -> ConversationStore:
     return ConversationStore()
+
+
+def _agent_store(user_id: str):
+    """The claim store for the Weaver skip path, owner-scoped by
+    construction (the same helper shape as agent_routes._store).
+    Monkeypatched in tests."""
+    from local_ai.agent_intake.store import AgentStore
+
+    return AgentStore(user_id=user_id)
 
 
 def _service() -> ConversationService:
@@ -104,6 +114,10 @@ class ConversationTurnResponse(BaseModel):
     # ({"kind", "proposal_id", "proposal"}), or None when this turn
     # presented nothing new. Absent from every other turn.
     round_item: dict | None = None
+    # Weaver rapid fire (S1): the round state this turn recorded
+    # ("item" | "checkpoint" | "closing" | "offered" | "ended"), or
+    # None when this turn recorded no round state.
+    round_state: str | None = None
 
 
 def _check_seat(archetype_id: str) -> str:
@@ -152,13 +166,21 @@ def conversation_turn(
         mode_used=result.reply.mode_used,
         has_training=result.reply.has_training,
         round_item=result.round_item,
+        round_state=result.round_state,
     )
 
 
 class RoundActionBody(BaseModel):
     conversation_id: str = Field(max_length=64)
     message_id: str = Field(max_length=64)
-    proposal_id: str = Field(max_length=64)
+    # Firebrand S1: the proposal this action targets. Weaver S1:
+    # the claim instead. Exactly one of the two is present — the
+    # skip endpoint branches on which; reserve/unreserve require
+    # proposal_id. One shared skip endpoint because the path is the
+    # same and a skip is a skip: park one presented item, whatever
+    # its kind (brief §7.5).
+    proposal_id: str | None = Field(default=None, max_length=64)
+    claim_id: str | None = Field(default=None, max_length=128)
 
 
 class RoundReserveBody(RoundActionBody):
@@ -266,22 +288,86 @@ def round_item_state(
 def round_skip(
     body: RoundActionBody, current_user: dict = Depends(get_current_user)
 ) -> dict:
-    """Park the round's current item — "I need to check" (OQ5).
+    """Park the round's current item — "I need to check" (Firebrand
+    OQ5; Weaver brief §7).
 
     A park changes no underlying state: the proposal stays pending
-    and returns at the next round. The next user message advances
-    the round (the tap itself sends no turn, per the design's
-    tap-continuation rule).
+    (Firebrand) or the claim stays pending (Weaver) and returns at
+    the next round. The next user message advances the round (the
+    tap itself sends no turn, per the tap-continuation rule). The
+    body carries either proposal_id (Firebrand) or claim_id
+    (Weaver); exactly one must be present.
     """
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
     store = _store()
-    proposal = _round_proposal_for_action(
-        store, user_id, body.conversation_id, body.message_id, body.proposal_id
+    if body.proposal_id:
+        proposal = _round_proposal_for_action(
+            store, user_id, body.conversation_id, body.message_id, body.proposal_id
+        )
+        store.park_round_item(user_id, body.conversation_id, ROUND_KIND, body.proposal_id)
+        return {"parked": True, "proposal": proposal}
+    if body.claim_id:
+        claim = _round_claim_for_action(
+            store, _agent_store(user_id), user_id,
+            body.conversation_id, body.message_id, body.claim_id,
+        )
+        store.park_round_item(
+            user_id, body.conversation_id, WEAVER_ROUND_KIND, body.claim_id
+        )
+        return {"parked": True, "claim": claim}
+    raise HTTPException(
+        status_code=422, detail="skip needs proposal_id or claim_id."
     )
-    store.park_round_item(user_id, body.conversation_id, ROUND_KIND, body.proposal_id)
-    return {"parked": True, "proposal": proposal}
+
+
+def _round_claim_for_action(
+    store: ConversationStore,
+    agent_store,
+    user_id: str,
+    conversation_id: str,
+    message_id: str,
+    claim_id: str,
+) -> dict:
+    """Shared guards for the Weaver round card's skip (brief §7.5).
+
+    Presentation check first, then the standing check: the claim
+    must have been presented in that message and still be pending
+    — a tap that arrives after a decision elsewhere fails with the
+    §10.3 conflict copy, and the card re-fetches the claim to show
+    its actual standing. Both checks are owner-scoped: a foreign
+    message or claim reads as missing, never as another user's
+    record.
+    """
+    msg = store.get_message(user_id, conversation_id, message_id)
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    ctx = msg.get("context") or {}
+    if (
+        ctx.get("round_kind") != WEAVER_ROUND_KIND
+        or ctx.get("round_claim_id") != claim_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="That message didn't present this item — refresh to see its state.",
+        )
+    agent_id = ctx.get("round_agent_id")
+    claim = None
+    if agent_id:
+        for c in agent_store.get_claims(agent_id):
+            if c.id == claim_id:
+                claim = c
+                break
+    if claim is None:
+        raise HTTPException(status_code=404, detail="Claim not found.")
+    if claim.status != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="This one was already decided elsewhere — in your Review, for "
+            "example — so nothing was written here. It's no longer pending.",
+        )
+    return claim.to_dict()
 
 
 @router.post("/round/reserve")
@@ -299,6 +385,10 @@ def round_reserve(
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    if not body.proposal_id:
+        raise HTTPException(
+            status_code=422, detail="reserve needs proposal_id."
+        )
     store = _store()
     proposal = _round_proposal_for_action(
         store, user_id, body.conversation_id, body.message_id, body.proposal_id
@@ -327,6 +417,10 @@ def round_unreserve(
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    if not body.proposal_id:
+        raise HTTPException(
+            status_code=422, detail="unreserve needs proposal_id."
+        )
     store = _store()
     proposal = _round_proposal_for_action(
         store, user_id, body.conversation_id, body.message_id, body.proposal_id

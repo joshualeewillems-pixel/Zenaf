@@ -780,6 +780,22 @@ def _reject_superseded_verdict(claim) -> None:
         )
 
 
+def _verdict_cas(store, claim, status: str, note: str = "") -> None:
+    """Compare-and-swap the verdict write (Weaver rapid fire S1,
+    brief §10.2): the UPDATE only lands while the claim is still
+    pending. A claim decided elsewhere between the read and the
+    write — in ReviewView, or by a second confirm tap — fails with
+    the §10.3 conflict copy and writes nothing: no status change, no
+    training signal. The superseded guard above runs first, so a
+    superseded claim still gets its own specific 409."""
+    if not store.update_claim(claim.id, status, note, expected_status="pending"):
+        raise HTTPException(
+            status_code=409,
+            detail="This one was already decided elsewhere — in your Review, for "
+            "example — so nothing was written here. It's no longer pending.",
+        )
+
+
 # NOTE: claim review verdicts are written to the canonical TrainingSignal
 # store by local_ai.agent_intake.pipeline.log_claim_feedback (kind=
 # "claim_feedback"). The old _claim_to_signal lived here; it moved there
@@ -908,7 +924,7 @@ def accept_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     _reject_superseded_verdict(claim)
-    store.update_claim(claim.id, "accepted")
+    _verdict_cas(store, claim, "accepted")
     try:
         _pipeline_mod.log_claim_feedback(
             agent.id, claim.id, claim.claim_type, "accepted",
@@ -935,7 +951,7 @@ def correct_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     _reject_superseded_verdict(claim)
-    store.update_claim(claim.id, "corrected", body.note)
+    _verdict_cas(store, claim, "corrected", body.note)
     try:
         _pipeline_mod.log_claim_feedback(
             agent.id, claim.id, claim.claim_type, "corrected", note=body.note,
@@ -958,7 +974,7 @@ def explain_claim(agent_id: str, claim_id: str, body: ClaimNoteBody, current_use
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     _reject_superseded_verdict(claim)
-    store.update_claim(claim.id, "explained", body.note)
+    _verdict_cas(store, claim, "explained", body.note)
     try:
         _pipeline_mod.log_claim_feedback(
             agent.id, claim.id, claim.claim_type, "explained", note=body.note,
@@ -985,7 +1001,7 @@ def reject_claim(agent_id: str, claim_id: str, current_user: dict = Depends(get_
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     _reject_superseded_verdict(claim)
-    store.update_claim(claim.id, "rejected")
+    _verdict_cas(store, claim, "rejected")
     try:
         _pipeline_mod.log_claim_feedback(
             agent.id, claim.id, claim.claim_type, "rejected",
@@ -1011,7 +1027,7 @@ def unresolve_claim(agent_id: str, claim_id: str, current_user: dict = Depends(g
     store = _store(uid)
     agent, claim = _get_claim(store, agent_id, claim_id)
     _reject_superseded_verdict(claim)
-    store.update_claim(claim.id, "unresolved")
+    _verdict_cas(store, claim, "unresolved")
     try:
         _pipeline_mod.log_claim_feedback(
             agent.id, claim.id, claim.claim_type, "unresolved",

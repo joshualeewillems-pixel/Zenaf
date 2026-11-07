@@ -14,6 +14,13 @@ export type Claim = {
   question: string
   scope: string
   turn_ref: string
+  // Weaver rapid fire S1 (brief §13 S9): the three read-back
+  // fields the confirmation copy is computed from. "" = not
+  // recorded (a legacy row, or a ceiling filing that never got an
+  // answer). Optional on the wire for older rows.
+  readback_visitor_response?: string
+  readback_seat_outcome?: string
+  readback_original_claim?: string
 }
 
 type Props = {

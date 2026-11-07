@@ -563,6 +563,23 @@ def _on_startup() -> None:
         print(f"  sqlite vision_execution: {resolved_vision_execution_db_path()}")
     except Exception as e:
         print(f"  vision_execution db path check skipped or failed: {e}")
+    # Upload rapid-fire S1 (§3.3): one deterministic reconciler pass
+    # at startup only, never per request. Jobs 'running' (or
+    # 'queued' with a stale claim) whose heartbeat is older than the
+    # 240s stale threshold are marked 'interrupted' with their
+    # in-flight calls failed — never silently resumed mid-call.
+    # Guarded: a reconciler failure must never block startup.
+    # (There is no C1a pause check here: the pause is enforced at
+    # write time, and no startup code ever releases it.)
+    try:
+        from local_ai.conversation.upload_extraction import (
+            reconcile_stale_upload_jobs,
+        )
+
+        interrupted = reconcile_stale_upload_jobs()
+        print(f"  upload extraction reconciler: interrupted {interrupted} stale job(s)")
+    except Exception as e:
+        print(f"  upload extraction reconciler FAILED (startup continues): {e}")
 
 
 @app.exception_handler(Exception)

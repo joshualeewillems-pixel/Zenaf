@@ -634,3 +634,14 @@ CREATE TABLE IF NOT EXISTS seat_unlocks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_seat_unlocks_user ON seat_unlocks(user_id);
+
+-- Upload rapid-fire S1 §2.10 (U-1): the VE idempotency carrier.
+-- Written in the SAME VE transaction as the VE record it records.
+CREATE TABLE IF NOT EXISTS upload_outcome_creations (
+  outcome_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  ve_kind TEXT NOT NULL,
+  ve_id TEXT NOT NULL,
+  node_id TEXT,
+  created_at TEXT NOT NULL
+);

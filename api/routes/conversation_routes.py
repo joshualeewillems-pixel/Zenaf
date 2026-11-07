@@ -25,6 +25,7 @@ All routes require auth. Nothing here writes training data.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -37,11 +38,29 @@ from local_ai.conversation.round import ROUND_KIND as WEAVER_ROUND_KIND
 from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingStore
 from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import ConversationStore
+from local_ai.conversation.upload_extraction import (
+    chunk_index_for_offset,
+    chunk_upload_text,
+    extract_quoted_passages,
+    resolve_quote_in_text,
+    resolve_upload_source_text,
+    start_upload_extraction_job,
+)
+from local_ai.conversation.upload_round import (
+    UPLOAD_ITEM_KIND,
+    UPLOAD_ROUND_KIND,
+    render_upload_interpretation,
+    uncertain_match_for,
+    upload_coverage,
+)
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
+from local_ai.council.naming import get_display_name
 from local_ai.fellowship.events import emit_event as fellowship_emit_event
 from local_ai.narrative.context import weaver_context_provider
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
+
+logger = logging.getLogger(__name__)
 
 _MSG_MAX = 2000
 
@@ -429,6 +448,1164 @@ def round_unreserve(
     return {"reserved": False, "proposal": proposal}
 
 
+# -- upload rapid fire (S1) ---------------------------------------------------
+#
+# The upload round's own namespaced endpoints (brief §§3, 7, 8, 10,
+# 12). The shared /round/* endpoints cannot serve upload: they are
+# Firebrand-specific (presentation check hardcodes ROUND_KIND, the
+# standing check reads VE task proposals; after Weaver's merge,
+# reserve/unreserve REQUIRE proposal_id and skip branches on
+# proposal_id/claim_id). Upload reuses the same shared tables and
+# methods (parked ids kind "upload", reserved ids kind
+# "interpretation") through these endpoints instead. Do NOT modify
+# the shared endpoints for upload.
+
+
+class UploadExtractBody(BaseModel):
+    source_id: str = Field(max_length=128)
+
+
+class UploadPromoteBody(BaseModel):
+    conversation_id: str = Field(max_length=64)
+    message_id: str = Field(max_length=64)
+
+
+class UploadOutcomeBody(BaseModel):
+    conversation_id: str = Field(max_length=64)
+    message_id: str = Field(max_length=64)
+    # Undertaking only: the VE kind (project | task | idea); defaults
+    # to the interpretation's proposed_outcome.
+    kind: str | None = Field(default=None, max_length=16)
+    # Undertaking only: the parent project id from the chooser
+    # (None = root).
+    parent_id: str | None = Field(default=None, max_length=64)
+    # Train only: the seat trained (archetype id); defaults to the
+    # conversation's seat.
+    seat: str | None = Field(default=None, max_length=32)
+    # Artifact only: the artifact kind (required for a transformation;
+    # a kept reading defaults to "kept-reading") and the artifact
+    # text (defaults to the interpretation text, verbatim).
+    artifact_kind: str | None = Field(default=None, max_length=32)
+    artifact_text: str | None = Field(default=None, max_length=20000)
+
+
+class UploadRoundActionBody(BaseModel):
+    conversation_id: str = Field(max_length=64)
+    message_id: str = Field(max_length=64)
+    interpretation_id: str = Field(max_length=64)
+
+
+class UploadRoundReserveBody(UploadRoundActionBody):
+    # Snooze in days, as picked on the round card: 1 (a day), 7 (a
+    # week), or null (never). The duration is the user's pick (the
+    # Remind-me-later picker); the server only bounds it.
+    snooze_days: int | None = Field(default=None, ge=1, le=365)
+    # Archive-it (distinct from a Never snooze): reserve never AND
+    # move the outcome row to 'archived'. The two are the same
+    # request shape (snooze null) but different verdicts, so the
+    # card names the verdict explicitly.
+    archive: bool = False
+
+
+def _upload_presentation_check(
+    store: ConversationStore,
+    user_id: str,
+    conversation_id: str,
+    message_id: str,
+    interpretation_id: str,
+) -> None:
+    """The upload card's presentation check: the named message must
+    be the one that presented this interpretation in the upload
+    round — a tap on any other message cannot act on an item (409,
+    plain copy). Owner-scoped: a foreign message reads as missing,
+    never as another user's record."""
+    msg = store.get_message(user_id, conversation_id, message_id)
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    ctx = msg.get("context") or {}
+    if (
+        ctx.get("round_kind") != UPLOAD_ROUND_KIND
+        or ctx.get("round_interpretation_id") != interpretation_id
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="That message didn't present this item — refresh to see its state.",
+        )
+
+
+def _upload_interpretation_for_action(
+    store: ConversationStore,
+    user_id: str,
+    conversation_id: str,
+    message_id: str,
+    interpretation_id: str,
+) -> dict:
+    """Shared guards for the upload card's QUEUE actions (skip /
+    reserve / unreserve) — not the verdict actions.
+
+    Presentation check first, then the standing check: the
+    interpretation must exist and still be pending — a tap that
+    arrives after a decision elsewhere is a 409, and the card
+    re-fetches the server state. The verdict actions (keep / talk /
+    artifact / undertaking / train) do NOT use this helper: under
+    amendment A2 stacking, a ruled interpretation does not block a
+    different kind's verdict — each verdict action runs its own
+    per-kind guard (replay for its kind, 409 for a same-kind
+    conflict). Both checks are owner-scoped.
+    """
+    _upload_presentation_check(
+        store, user_id, conversation_id, message_id, interpretation_id
+    )
+    interp = store.get_upload_interpretation(user_id, interpretation_id)
+    if interp is None:
+        raise HTTPException(status_code=404, detail="Interpretation not found.")
+    if interp.get("status") != "pending":
+        raise HTTPException(
+            status_code=409,
+            detail="Already decided — refresh to see its state.",
+        )
+    return interp
+
+
+#: The U-3 voice mapping (brief §7.2, amendment A2): the menu
+#: choice determines which seat speaks next. Keep it / Remind me
+#: later / Archive it create NO invitation and have no entry here.
+#: Talk it through's entry names the seat Crane joins the OPEN
+#: THREAD — the invitation brings Crane into this conversation;
+#: there is no next_voice redirect to Crane (U-3 clarification),
+#: so the talk branch invites but returns no next_voice.
+_UPLOAD_VOICE_MAP = {
+    "talk": "ambassador",  # Talk it through — Crane
+    "artifact": "maverick",  # Make an artifact — Fox
+    "undertaking": "champion",  # Mine for projects — Firebrand
+    "train": "conductor",  # Train a model — Weaver
+}
+
+
+def _upload_next_voice(user_id: str, archetype_id: str) -> dict:
+    """The round_item.next_voice payload: the mapped seat for the
+    frontend to switch to for the next turn."""
+    return {
+        "archetype_id": archetype_id,
+        "display_name": get_display_name(user_id, archetype_id),
+    }
+
+
+def _upload_invite(
+    store: ConversationStore,
+    user_id: str,
+    conversation_id: str,
+    seat: str,
+    reason: str,
+) -> dict:
+    """Invite the mapped seat (Capability C, refresh-not-stack —
+    one pending invitation per (conversation, seat))."""
+    return store.create_or_refresh_invitation(
+        user_id, conversation_id, seat, reason
+    )
+
+
+def _upload_conversation_seat(
+    store: ConversationStore, user_id: str, conversation_id: str
+) -> str | None:
+    """The seat the conversation is open in: the latest voice
+    message's archetype id, or None (a fresh conversation)."""
+    for msg in reversed(store.history(user_id, conversation_id, limit=50)):
+        if msg.get("role") == "voice" and msg.get("archetype_id"):
+            return str(msg["archetype_id"]).strip().lower()
+    return None
+
+
+def _upload_first_line(text: str, cap: int = 120) -> str:
+    """The VE record title: the interpretation text's first line,
+    capped (brief §8.3)."""
+    first = (text or "").strip().splitlines()
+    line = first[0].strip() if first else ""
+    return line[:cap] or (text or "").strip()[:cap]
+
+
+@router.post("/upload/extract", status_code=202)
+def upload_extract(
+    body: UploadExtractBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Start an extraction job for one strand source (brief §3).
+
+    Owner + resolvability validation: a foreign source reads as
+    missing (404); a source with no stored text fails closed (422).
+    A live (queued/running) job for the document returns 202 with
+    the existing job — no second job, no duplicate extraction. The
+    version rule: the latest version again when the latest job is
+    'interrupted'/'failed'/'cancelled' (resume / fresh attempt);
+    latest + 1 when a 'complete'/'partial' job exists
+    (re-extraction); else 1. The worker runs on a daemon thread
+    with its own store; the job row + call table are the record.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    source = store.get_strand_source(user_id, body.source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found.")
+    if resolve_upload_source_text(store, user_id, body.source_id) is None:
+        raise HTTPException(
+            status_code=422,
+            detail="This source has no stored text to extract from.",
+        )
+    latest = store.latest_upload_job(user_id, body.source_id)
+    if latest is not None and latest.get("state") in ("queued", "running"):
+        return {
+            "job": latest,
+            "detail": "An extraction is already running for this document.",
+        }
+    if latest is None:
+        version = 1
+    elif latest.get("state") in ("interrupted", "failed", "cancelled"):
+        version = int(latest.get("document_version") or 1)
+    else:
+        version = int(latest.get("document_version") or 1) + 1
+    job = store.create_upload_job(user_id, body.source_id, version)
+    start_upload_extraction_job(job["job_id"], str(store.db_path))
+    return {"job": job}
+
+
+@router.get("/upload/jobs/{job_id}")
+def upload_job(
+    job_id: str, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """One extraction job + its call rows (the durable record)."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    job = store.get_upload_job(user_id, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return {"job": job, "calls": store.list_upload_job_calls(job_id)}
+
+
+@router.post("/upload/jobs/{job_id}/cancel")
+def upload_job_cancel(
+    job_id: str, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Cancel a live extraction job. The worker checks the state
+    between calls; completed chunks are preserved."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    job = store.get_upload_job(user_id, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.get("state") not in ("queued", "running"):
+        raise HTTPException(
+            status_code=409, detail=f"Job is already {job.get('state')}."
+        )
+    store.set_upload_job_state(job_id, "cancelled")
+    return {"job": store.get_upload_job(user_id, job_id) or job}
+
+
+@router.post("/upload/promote")
+def upload_promote(
+    body: UploadPromoteBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Keep a spoken reading as a durable interpretation (brief §10).
+
+    The server reads the spoken reading verbatim from the stored
+    assistant message (never re-typed, never paraphrased), resolves
+    its quoted passages against the stored source text (§10.3 — the
+    noting §2.2/§2.3 rule: normalized for matching only, exactly
+    one contiguous substring or no promotion), and writes one
+    ``upload_interpretations`` row (origin 'promoted', status
+    'pending'). Zero model calls, no re-extraction. A reading that
+    cites no passage still files — ungrounded, with no excerpt.
+    An unresolvable citation files nothing, and the user is told
+    plainly (a 200 with promoted False, not an error — the tap
+    succeeded, nothing was filed).
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    msg = store.get_message(user_id, body.conversation_id, body.message_id)
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Message not found.")
+    if msg.get("role") != "voice":
+        raise HTTPException(
+            status_code=422,
+            detail="Only the seat's spoken turns can be kept as readings.",
+        )
+    lens = store.strand_key_for_conversation(user_id, body.conversation_id)
+    if not lens:
+        raise HTTPException(
+            status_code=422,
+            detail="This conversation has no uploaded document to pin a reading to.",
+        )
+    # The reading, verbatim — minus the round-offer marker line, a
+    # system line the seat never spoke and the visitor never sees.
+    reading = "\n".join(
+        ln for ln in (msg.get("body") or "").splitlines() if ln.strip() != "[[round-offer]]"
+    ).strip()
+    if not reading:
+        raise HTTPException(
+            status_code=422, detail="That message has no reading to keep."
+        )
+    # promotion_turn_id: the latest user message before this
+    # assistant message (fallback: the assistant message itself).
+    history = store.history(user_id, body.conversation_id, limit=100)
+    promotion_turn_id = msg["id"]
+    msg_index = next(
+        (i for i, m in enumerate(history) if m.get("id") == msg["id"]), None
+    )
+    if msg_index is not None:
+        for m in reversed(history[:msg_index]):
+            if m.get("role") == "user":
+                promotion_turn_id = m["id"]
+                break
+    quotes = extract_quoted_passages(reading)
+    sources = store.list_sources_for_conversation(user_id, body.conversation_id)
+    document_id: str | None = None
+    stored_text: str | None = None
+    resolved_spans: list[dict] = []
+    if quotes:
+        for source in sources:
+            candidate_id = source.get("id")
+            if not candidate_id:
+                continue
+            resolved = resolve_upload_source_text(store, user_id, candidate_id)
+            if resolved is None:
+                continue
+            text = resolved[0]
+            spans: list[dict] = []
+            all_resolved = True
+            for quote in quotes:
+                result = resolve_quote_in_text(quote, text)
+                if result.get("status") != "ok":
+                    logger.info(
+                        "upload promote: quote %s (conversation_id=%s, message_id=%s)",
+                        result.get("status"),
+                        body.conversation_id,
+                        body.message_id,
+                    )
+                    all_resolved = False
+                    break
+                spans.append(result)
+            if all_resolved:
+                document_id, stored_text = candidate_id, text
+                resolved_spans = spans
+                break
+        if document_id is None:
+            return {
+                "promoted": False,
+                "detail": "I couldn't pin that reading to one passage in the document — it isn't filed.",
+            }
+    else:
+        # Ungrounded: the newest source with stored text anchors it.
+        for source in sources:
+            candidate_id = source.get("id")
+            if not candidate_id:
+                continue
+            resolved = resolve_upload_source_text(store, user_id, candidate_id)
+            if resolved is not None:
+                document_id, stored_text = candidate_id, resolved[0]
+                break
+        if document_id is None:
+            return {
+                "promoted": False,
+                "detail": "This conversation has no uploaded document yet — add one first.",
+            }
+    assert document_id is not None and stored_text is not None
+    job = store.latest_upload_job(user_id, document_id)
+    version = int(job.get("document_version") or 1) if job is not None else 1
+    # Idempotent replay: the same message promoted before returns
+    # the existing row (any status), never a duplicate.
+    for existing in store.list_upload_interpretations(
+        user_id, document_id, lens=lens
+    ):
+        if (
+            existing.get("origin") == "promoted"
+            and existing.get("promotion_message_id") == msg["id"]
+        ):
+            return {
+                "promoted": True,
+                "interpretation": existing,
+                "replayed": True,
+            }
+    # Span rows, found or created from the stored text (the passage
+    # IS a substring of the stored text by the resolution rule, so
+    # the row is exact by construction). Locations are chunk-relative
+    # (the worker's convention); the span's segment is the chunk
+    # holding its start.
+    evidence_ids: list[dict] = []
+    if resolved_spans:
+        chunks, _total = chunk_upload_text(stored_text)
+        for span in resolved_spans:
+            chunk_index = chunk_index_for_offset(chunks, int(span["start"]))
+            if chunk_index is None:
+                continue
+            segment_id = chunks[chunk_index]["segment_id"]
+            chunk_start = sum(
+                len(c["text"]) + 2 for c in chunks[:chunk_index]
+            )
+            location = (
+                f"{segment_id}:{int(span['start']) - chunk_start}-"
+                f"{int(span['end']) - chunk_start}"
+            )
+            row = store.save_upload_span(
+                user_id,
+                document_id,
+                version,
+                segment_id,
+                str(span["span_text"]),
+                "redacted",
+                location,
+            )
+            evidence_ids.append({"span_id": row["span_id"], "role": "primary"})
+    interp = store.save_upload_interpretation(
+        user_id,
+        document_id,
+        version,
+        lens,
+        "strand",
+        reading,
+        evidence_ids=evidence_ids,
+        observation_ids=[],
+        origin="promoted",
+        is_transformation=False,
+        proposed_outcome=None,
+        promotion_turn_id=promotion_turn_id,
+        promotion_message_id=msg["id"],
+        ungrounded=not evidence_ids,
+    )
+    return {"promoted": True, "interpretation": interp}
+
+
+@router.post("/upload/outcomes/{outcome_id}/{action}")
+def upload_outcome_action(
+    outcome_id: str,
+    action: str,
+    body: UploadOutcomeBody,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Rule on one presented interpretation (brief §§7–9).
+
+    The path value resolves as an outcome id when such a row
+    exists, otherwise as an interpretation id — the outcome row
+    only exists after the tap (and artifact/train/talk create no
+    outcome row at all). The response returns the outcome (with its
+    real outcome_id) so replays can use it. Replay (§8.2): the same
+    outcome already created for the same action returns the
+    existing record, no second write, no error — the replay guard
+    runs BEFORE the standing check, so a double-tap never 409s.
+    Stacking (amendment A2): cross-kind verdicts are allowed — one
+    outcome per (interpretation, kind), and the 409 applies ONLY to
+    a second outcome of the SAME kind. A tap on an already-ruled
+    interpretation for a kind with no standing outcome proceeds.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    action = (action or "").strip().lower()
+    if action not in ("keep", "talk", "artifact", "undertaking", "train"):
+        raise HTTPException(
+            status_code=422, detail=f"Unknown upload outcome action: {action!r}"
+        )
+    store = _store()
+    outcome = store.get_upload_outcome(user_id, outcome_id)
+    if outcome is not None:
+        interp = store.get_upload_interpretation(
+            user_id, outcome["interpretation_id"]
+        )
+        if interp is None:
+            raise HTTPException(status_code=404, detail="Interpretation not found.")
+    else:
+        interp = store.get_upload_interpretation(user_id, outcome_id)
+        if interp is None:
+            raise HTTPException(
+                status_code=404, detail="Interpretation or outcome not found."
+            )
+        outcome = None
+    interpretation_id = str(interp["interpretation_id"])
+    _upload_presentation_check(
+        store, user_id, body.conversation_id, body.message_id, interpretation_id
+    )
+
+    def _invite_reason(label: str) -> str:
+        first = _upload_first_line(str(interp.get("text") or ""), cap=200)
+        return f"{label} — the upload round's reading: {first}"
+
+    def _fresh_interpretation() -> dict:
+        return (
+            store.get_upload_interpretation(user_id, interpretation_id) or interp
+        )
+
+    if action == "talk":
+        # Amendment A2 (routing table): Talk it through records
+        # NOTHING — no outcome row, and the interpretation stays
+        # pending ("talking isn't deciding"). The reconciliation's
+        # §4.2 Talk-it-through outcome (kind 'explore') is STRUCK.
+        # Crane joins the OPEN THREAD (U-3 clarification): the
+        # invitation brings Crane into this conversation; there is
+        # no next_voice redirect to Crane's conversation. A second
+        # talk tap is allowed (it records nothing to conflict with)
+        # and re-invites Crane.
+        seat = _UPLOAD_VOICE_MAP["talk"]
+        _upload_invite(
+            store, user_id, body.conversation_id, seat,
+            _invite_reason("Talk it through"),
+        )
+        return {
+            "interpretation": _fresh_interpretation(),
+            "invited_seat": seat,
+        }
+
+    if action == "keep":
+        kind = "keep"
+        if (
+            outcome is not None
+            and outcome.get("kind") == kind
+            and outcome.get("status") == "created"
+        ):
+            # Replay: the same outcome already created.
+            return {
+                "outcome": outcome,
+                "interpretation": interp,
+                "replayed": True,
+            }
+        # Per-kind standing check (amendment A2 stacking): a keep
+        # outcome of another status blocks a new one, but a ruled
+        # interpretation (ruled by a DIFFERENT kind — "Keep it,
+        # then Mine for projects") does not block Keep. A 'pending'
+        # keep outcome (a crash between create and set-created)
+        # completes below, it is not a conflict.
+        existing = store.get_upload_outcome_by_interp_kind(
+            user_id, interpretation_id, kind
+        )
+        if existing is not None and existing.get("status") not in (
+            "created",
+            "pending",
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Outcome is already {existing.get('status')} — "
+                    "refresh to see its state."
+                ),
+            )
+        interp = _fresh_interpretation()
+        if existing is None:
+            outcome = store.create_upload_outcome(
+                user_id,
+                str(interp["document_id"]),
+                int(interp["document_version"]),
+                interpretation_id,
+                kind,
+            )
+        else:
+            outcome = existing
+        if outcome.get("status") == "pending":
+            # Keep → the outcome IS the verdict (no VE record,
+            # ve_kind/ve_id NULL).
+            store.set_upload_outcome_status(
+                user_id, outcome["outcome_id"], "created"
+            )
+            store.set_upload_interpretation_status(
+                user_id, interpretation_id, "ruled"
+            )
+            outcome = (
+                store.get_upload_outcome(user_id, outcome["outcome_id"]) or outcome
+            )
+        elif outcome.get("status") != "created":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Outcome is already {outcome.get('status')} — refresh to see its state.",
+            )
+        return {"outcome": outcome, "interpretation": _fresh_interpretation()}
+
+    if action == "undertaking":
+        from local_ai.vision_execution.storage import (
+            ProposalConflict,
+            UploadOutcomeStuckError,
+            approve_upload_outcome,
+        )
+
+        kind = None
+        if outcome is not None:
+            kind = str(outcome.get("kind") or "")
+        if not kind:
+            kind = (
+                (body.kind or interp.get("proposed_outcome") or "")
+                .strip()
+                .lower()
+            )
+        if kind not in ("project", "task", "idea"):
+            raise HTTPException(
+                status_code=422,
+                detail="Choose a kind for the undertaking: project, task, or idea.",
+            )
+        if outcome is not None and outcome.get("kind") != kind:
+            raise HTTPException(
+                status_code=409,
+                detail="That item was already decided under a different kind — refresh to see its state.",
+            )
+        if outcome is None:
+            # Resolve the standing outcome for THIS kind (the path
+            # may have been the interpretation id): a second tap for
+            # the same kind must hit the replay / R1 / re-claim
+            # guards below, never a duplicate create (the UNIQUE
+            # (interpretation_id, kind) index). A different kind has
+            # no row here — stacking creates it below.
+            outcome = store.get_upload_outcome_by_interp_kind(
+                user_id, interpretation_id, kind
+            )
+        parent_id = (body.parent_id or "").strip() or None
+        if parent_id is not None:
+            from local_ai.vision_execution import storage as ve_storage
+
+            if ve_storage.get_project(parent_id, user_id) is None:
+                raise HTTPException(
+                    status_code=422, detail="Unknown parent project."
+                )
+        title = _upload_first_line(str(interp.get("text") or ""))
+        detail = (interp.get("text") or "").strip()
+        lens_seat = (
+            _upload_conversation_seat(store, user_id, body.conversation_id)
+            or "conductor"
+        )
+        if outcome is not None and outcome.get("status") == "created":
+            # Replay (or R1 recovery): approve_upload_outcome owns
+            # it — the standing check is skipped here by design.
+            try:
+                approved = approve_upload_outcome(
+                    user_id,
+                    outcome["outcome_id"],
+                    kind=kind,
+                    title=title,
+                    detail=detail,
+                    parent_id=parent_id,
+                    conversation_id=body.conversation_id,
+                    lens_seat=lens_seat,
+                    store=store,
+                )
+            except (ProposalConflict, UploadOutcomeStuckError) as exc:
+                raise HTTPException(status_code=409, detail=str(exc))
+            seat = _UPLOAD_VOICE_MAP["undertaking"]
+            _upload_invite(
+                store, user_id, body.conversation_id, seat,
+                _invite_reason("Mine for projects"),
+            )
+            return {
+                "outcome": approved["outcome"],
+                "record": approved["record"],
+                "replayed": True,
+                "interpretation": interp,
+                "next_voice": _upload_next_voice(user_id, seat),
+            }
+        # Amendment A2 stacking: no global standing check here — a
+        # ruled interpretation (ruled by a DIFFERENT kind) does not
+        # block Mine for projects. The per-kind guards above (replay
+        # for a 'created' outcome of this kind; 409 for a different
+        # kind) are the only standing rules. The presentation check
+        # already ran at the top of this handler.
+        interp = _fresh_interpretation()
+        if outcome is None:
+            outcome = store.create_upload_outcome(
+                user_id,
+                str(interp["document_id"]),
+                int(interp["document_version"]),
+                interpretation_id,
+                kind,
+                parent_id=parent_id,
+            )
+        try:
+            approved = approve_upload_outcome(
+                user_id,
+                outcome["outcome_id"],
+                kind=kind,
+                title=title,
+                detail=detail,
+                parent_id=parent_id,
+                conversation_id=body.conversation_id,
+                lens_seat=lens_seat,
+                store=store,
+            )
+        except UploadOutcomeStuckError as exc:
+            # R2 (§8.1/§8.2, amendment A4): a stuck 'creating'
+            # outcome — a young one is refused ('Still creating'),
+            # an old one is re-claimed by the retry tap. The
+            # diagnostic names it.
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ProposalConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        seat = _UPLOAD_VOICE_MAP["undertaking"]
+        _upload_invite(
+            store, user_id, body.conversation_id, seat,
+            _invite_reason("Mine for projects"),
+        )
+        return {
+            "outcome": approved["outcome"],
+            "record": approved["record"],
+            "replayed": bool(approved.get("replayed")),
+            "interpretation": _fresh_interpretation(),
+            "next_voice": _upload_next_voice(user_id, seat),
+        }
+
+    if action == "artifact":
+        artifact_kind = (body.artifact_kind or "").strip().lower() or None
+        if artifact_kind is None:
+            if interp.get("is_transformation"):
+                raise HTTPException(
+                    status_code=422,
+                    detail="Name the artifact kind for this transformation.",
+                )
+            artifact_kind = "kept-reading"
+        if artifact_kind not in (
+            "poem",
+            "satire",
+            "metaphor",
+            "story",
+            "scene",
+            "name",
+            "kept-reading",
+        ):
+            raise HTTPException(
+                status_code=422, detail=f"Unknown artifact kind: {artifact_kind!r}"
+            )
+        artifact_text = (body.artifact_text or "").strip() or (
+            interp.get("text") or ""
+        ).strip()
+        if not artifact_text:
+            raise HTTPException(status_code=422, detail="Artifact text is empty.")
+        # Replay: the same artifact already filed for this reading.
+        for existing in store.list_upload_artifacts(
+            user_id, str(interp["document_id"])
+        ):
+            if (
+                existing.get("interpretation_id") == interpretation_id
+                and existing.get("artifact_kind") == artifact_kind
+            ):
+                seat = _UPLOAD_VOICE_MAP["artifact"]
+                _upload_invite(
+                    store, user_id, body.conversation_id, seat,
+                    _invite_reason("Make an artifact"),
+                )
+                return {
+                    "artifact": existing,
+                    "interpretation": interp,
+                    "replayed": True,
+                    "next_voice": _upload_next_voice(user_id, seat),
+                }
+        # Amendment A2 stacking: no global standing check — a ruled
+        # interpretation (ruled by a DIFFERENT action) does not block
+        # Make an artifact. The replay guard above (the same artifact
+        # already filed) is the only standing rule. The presentation
+        # check already ran at the top of this handler.
+        interp = _fresh_interpretation()
+        span_ids = [
+            entry.get("span_id")
+            for entry in (interp.get("evidence_ids") or [])
+            if isinstance(entry, dict) and entry.get("span_id")
+        ]
+        artifact = store.create_upload_artifact(
+            user_id,
+            body.conversation_id,
+            str(interp["document_id"]),
+            int(interp["document_version"]),
+            interpretation_id,
+            str(interp.get("lens") or ""),
+            str(interp.get("lens_kind") or "strand"),
+            artifact_kind,
+            artifact_text,
+            source_span_ids=span_ids,
+        )
+        store.set_upload_interpretation_status(
+            user_id, interpretation_id, "ruled"
+        )
+        seat = _UPLOAD_VOICE_MAP["artifact"]
+        _upload_invite(
+            store, user_id, body.conversation_id, seat,
+            _invite_reason("Make an artifact"),
+        )
+        return {
+            "artifact": artifact,
+            "interpretation": _fresh_interpretation(),
+            "next_voice": _upload_next_voice(user_id, seat),
+        }
+
+    # action == "train"
+    from local_ai.agent_intake.review_claims import ReviewClaim
+    from local_ai.agent_intake.schema import (
+        ConnectedAgent,
+        MomentClaim,
+        SortResult,
+        StrandClaim,
+    )
+
+    seat = (
+        (body.seat or "").strip().lower()
+        or _upload_conversation_seat(store, user_id, body.conversation_id)
+        or "conductor"
+    )
+    if get_archetype(seat) is None:
+        raise HTTPException(status_code=422, detail=f"Unknown seat: {seat!r}")
+    agent_id = f"upload-{seat}-{interp['document_id']}"
+    claim_id = f"{agent_id}:upload_interpretation:{interpretation_id}"
+    agent_store = _agent_store(user_id)
+    # Replay: the same claim already filed (the deterministic id
+    # upserts — re-filing never duplicates, and the standing check
+    # is skipped here by design).
+    for existing_claim in agent_store.get_claims(agent_id):
+        if existing_claim.id == claim_id:
+            next_seat = _UPLOAD_VOICE_MAP["train"]
+            _upload_invite(
+                store, user_id, body.conversation_id, next_seat,
+                _invite_reason("Train a model"),
+            )
+            return {
+                "claim": existing_claim.to_dict(),
+                "interpretation": interp,
+                "replayed": True,
+                "next_voice": _upload_next_voice(user_id, next_seat),
+            }
+    # Amendment A2 stacking: no global standing check — a ruled
+    # interpretation (ruled by a DIFFERENT action) does not block
+    # Train a model. The replay guard above (the same claim already
+    # filed) is the only standing rule. The presentation check
+    # already ran at the top of this handler.
+    interp = _fresh_interpretation()
+    spans = [
+        store.get_upload_span(user_id, entry.get("span_id") or "")
+        for entry in (interp.get("evidence_ids") or [])
+        if isinstance(entry, dict) and entry.get("span_id")
+    ]
+    span_texts = [str(s.get("span_text") or "") for s in spans if s]
+    evidence_lines = [f'"{text}"' for text in span_texts if text]
+    evidence_lines.append(f"(from the upload round, message {body.message_id})")
+    lens = str(interp.get("lens") or "")
+    claim = ReviewClaim(
+        id=claim_id,
+        claim_type="upload_interpretation",
+        title=_upload_first_line(str(interp.get("text") or ""), cap=80),
+        evidence="\n".join(evidence_lines),
+        inference=(interp.get("text") or "").strip(),
+        detail=(
+            f"Upload reading ({lens} strand, document "
+            f"{interp['document_id']}); proposed outcome: "
+            f"{interp.get('proposed_outcome') or 'none'}."
+        ),
+        status="pending",
+        turn_ref=body.message_id,
+    )
+    sort = SortResult(
+        primary_strand=lens,
+        claims=[
+            StrandClaim(
+                strand=lens,
+                score=1.0,
+                reasoning="Named by the upload round's reading.",
+            )
+        ],
+        strand_weights={lens: 1.0},
+        kind="undecided",
+        confidence=1.0,
+        needs_probing=False,
+        moments=[
+            MomentClaim(
+                strand=lens,
+                quote=span_texts[0] if span_texts else "",
+                inference=(interp.get("text") or "").strip(),
+            )
+        ],
+    )
+    agent = agent_store.get(agent_id)
+    if agent is None:
+        agent = ConnectedAgent(
+            id=agent_id,
+            name=f"Upload — {seat} — {interp['document_id']}",
+            source_platform="upload",
+            description=(
+                f"An upload reading filed as a training candidate for "
+                f"{seat}'s mirror."
+            ),
+            instructions=None,
+            examples=[],
+            sort=sort,
+            status="pending_review",
+            created_at=datetime.now(timezone.utc).isoformat(),
+            mining_state="skipped",
+        )
+    else:
+        agent.sort = sort
+        agent.status = "pending_review"
+    agent_store.save(agent)
+    agent_store.save_claims(agent_id, [claim])
+    store.set_upload_interpretation_status(user_id, interpretation_id, "ruled")
+    next_seat = _UPLOAD_VOICE_MAP["train"]
+    _upload_invite(
+        store, user_id, body.conversation_id, next_seat,
+        _invite_reason("Train a model"),
+    )
+    return {
+        "claim": claim.to_dict(),
+        "interpretation": _fresh_interpretation(),
+        "next_voice": _upload_next_voice(user_id, next_seat),
+    }
+
+
+@router.post("/upload/round/skip")
+def upload_round_skip(
+    body: UploadRoundActionBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Park the round's current item — "Not now" (brief §7.4).
+
+    A park changes no underlying state: the interpretation stays
+    pending and returns at the next round. The next user message
+    advances the round (the tap itself sends no turn, per the
+    tap-continuation rule)."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    interp = _upload_interpretation_for_action(
+        store, user_id, body.conversation_id, body.message_id, body.interpretation_id
+    )
+    store.park_round_item(
+        user_id, body.conversation_id, UPLOAD_ROUND_KIND, body.interpretation_id
+    )
+    return {"parked": True, "interpretation": interp}
+
+
+@router.post("/upload/round/reserve")
+def upload_round_reserve(
+    body: UploadRoundReserveBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Mark one item "don't remind me about this" (brief §7.4).
+
+    Durable, not round-scoped: a snooze (the duration the user
+    picked) or never. The round skips a reserved item until its
+    snooze expires — never reserved never appears again. A tap,
+    not prose: a durable suppression must never rest on a misread
+    sentence. Archive-it (archive=True) reserves never AND moves
+    the outcome row to 'archived' — reserve first, then the outcome
+    status, so a failure between them leaves the item
+    reserved-never, which is the safe side: it never reappears.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    interp = _upload_interpretation_for_action(
+        store, user_id, body.conversation_id, body.message_id, body.interpretation_id
+    )
+    snooze_until = None
+    if not body.archive and body.snooze_days is not None:
+        snooze_until = (
+            datetime.now(timezone.utc) + timedelta(days=body.snooze_days)
+        ).isoformat()
+    marker = store.reserve_round_item(
+        user_id, UPLOAD_ITEM_KIND, body.interpretation_id, snooze_until=snooze_until
+    )
+    result: dict = {
+        "reserved": True,
+        "interpretation": interp,
+        "marker": marker,
+        "outcome": None,
+    }
+    if body.archive:
+        # The outcome write follows the reserve; a failure here
+        # leaves the item reserved-never (the safe side) and is
+        # logged loudly — the reserve is the user-visible effect.
+        # Amendment A2 (routing table): Archive-it is a verdict —
+        # the outcome write also flips the interpretation to
+        # 'ruled', so the reading leaves the round queue.
+        try:
+            outcome = store.create_upload_outcome(
+                user_id,
+                str(interp["document_id"]),
+                int(interp["document_version"]),
+                body.interpretation_id,
+                "keep",
+            )
+            if outcome.get("status") == "pending":
+                store.set_upload_outcome_status(
+                    user_id, outcome["outcome_id"], "archived"
+                )
+                store.set_upload_interpretation_status(
+                    user_id, body.interpretation_id, "ruled"
+                )
+                outcome = (
+                    store.get_upload_outcome(user_id, outcome["outcome_id"])
+                    or outcome
+                )
+            result["outcome"] = outcome
+            result["interpretation"] = store.get_upload_interpretation(
+                user_id, body.interpretation_id
+            ) or interp
+        except Exception:
+            logger.exception(
+                "upload round: archive outcome write failed (conversation_id=%s)",
+                body.conversation_id,
+            )
+    return result
+
+
+@router.post("/upload/round/unreserve")
+def upload_round_unreserve(
+    body: UploadRoundActionBody, current_user: dict = Depends(get_current_user)
+) -> dict:
+    """Lift a reserved marker — the round card's Undo.
+
+    The presentation + standing checks apply here too: only the
+    message that presented the item can lift its marker, and only
+    while the interpretation is still pending. (An archived
+    outcome row, if one was written, stays as a historical record.)
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    interp = _upload_interpretation_for_action(
+        store, user_id, body.conversation_id, body.message_id, body.interpretation_id
+    )
+    store.unreserve_round_item(user_id, UPLOAD_ITEM_KIND, body.interpretation_id)
+    return {"reserved": False, "interpretation": interp}
+
+
+@router.get("/upload/item-state")
+def upload_item_state(
+    conversation_id: str = Query(max_length=64),
+    message_id: str = Query(max_length=64),
+    interpretation_id: str = Query(max_length=64),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """The upload card's hydration read: the interpretation (fully
+    rendered, as the turn presented it) plus its round state
+    (parked? reserved? outcome?) for one presented item.
+
+    The presentation check applies, but the standing check does
+    not: a decided interpretation still returns its state, so the
+    card shows Created / Ruled after a reload. The uncertain-match
+    marker is read from the row's ``uncertain_match`` column
+    (amendment A3), falling back to a queue-time derivation when
+    the column is NULL (e.g. the prior was ruled after this row
+    was written)."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    _upload_presentation_check(
+        store, user_id, conversation_id, message_id, interpretation_id
+    )
+    interp = store.get_upload_interpretation(user_id, interpretation_id)
+    if interp is None:
+        raise HTTPException(status_code=404, detail="Interpretation not found.")
+    interp = dict(interp)
+    interp["uncertain_match"] = uncertain_match_for(store, user_id, interp)
+    coverage = upload_coverage(
+        store, user_id, str(interp.get("document_id") or "")
+    )
+    try:
+        from local_ai.vision_execution.storage import list_projects
+
+        projects = list_projects(user_id)[:10]
+    except Exception:
+        logger.exception("upload round: parentage options failed")
+        projects = []
+    rendering = render_upload_interpretation(
+        store,
+        user_id,
+        interp,
+        coverage=coverage,
+        parentage_options=[
+            {"id": p.get("id"), "title": p.get("title")}
+            for p in (projects or [])
+            if p.get("id")
+        ],
+    )
+    outcomes = store.list_upload_outcomes(
+        user_id, interpretation_id=interpretation_id
+    )
+    # The standing outcome: a decided one ('created' / 'archived')
+    # if any, else the most recent attempt.
+    outcome = None
+    for candidate in outcomes:
+        if candidate.get("status") in ("created", "archived"):
+            outcome = candidate
+            break
+    if outcome is None and outcomes:
+        outcome = outcomes[-1]
+    parked = interpretation_id in store.list_parked_round_items(
+        user_id, conversation_id, UPLOAD_ROUND_KIND
+    )
+    marker = store.get_reserved_round_item(
+        user_id, UPLOAD_ITEM_KIND, interpretation_id
+    )
+    return {
+        "item": {
+            "kind": UPLOAD_ITEM_KIND,
+            "interpretation_id": interpretation_id,
+            "document_id": interp.get("document_id"),
+            "document_version": interp.get("document_version"),
+            "lens": interp.get("lens"),
+            "rendering": rendering,
+        },
+        "interpretation": interp,
+        "outcome": outcome,
+        "parked": parked,
+        "reserved": marker,
+    }
+
+
+@router.get("/upload/diagnostics/stuck-outcomes")
+def upload_stuck_outcomes(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Read-only: outcomes stuck mid-creation ('creating') with
+    their age, the latest job state for the document, and whether a
+    carrier row exists (R1 vs R2, brief §8.2, amendment A4). A
+    'creating' outcome WITH a carrier row completes on the next
+    approve attempt — the retry tap heals it (R1, reconciliation
+    §6.3 R3). One WITHOUT is stuck: the retry tap re-claims it
+    only when it is older than one hour (R2, step 1b); a younger
+    one is refused ('Still creating — check back shortly')."""
+    from local_ai.vision_execution import storage as ve_storage
+
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    store = _store()
+    now = datetime.now(timezone.utc)
+    outcomes = []
+    for outcome in store.list_upload_outcomes(user_id, status="creating"):
+        created = None
+        try:
+            created = datetime.fromisoformat(
+                str(outcome.get("created_at") or "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            created = None
+        job = store.latest_upload_job(user_id, outcome.get("document_id") or "")
+        outcomes.append(
+            {
+                "outcome_id": outcome.get("outcome_id"),
+                "document_id": outcome.get("document_id"),
+                "interpretation_id": outcome.get("interpretation_id"),
+                "status": outcome.get("status"),
+                "age_s": int((now - created).total_seconds())
+                if created is not None
+                else None,
+                "job_state": job.get("state") if job else None,
+                "carrier_exists": ve_storage.get_upload_outcome_creation(
+                    user_id, outcome.get("outcome_id") or ""
+                )
+                is not None,
+            }
+        )
+    return {"outcomes": outcomes}
+
+
 @router.get("/list")
 def list_conversations(
     limit: int = Query(default=20, ge=1, le=100),
@@ -729,7 +1906,11 @@ def add_strand_source(
             text = (body.text or "").strip()
             if not text:
                 raise HTTPException(status_code=422, detail="Pasted text is empty.")
-            excerpt = redact_text(text)[:2000]
+            # U-2: the full redacted text lives COMPRESSED on the
+            # source row (paste_text_blob); the excerpt stays capped
+            # at 2000 chars, unchanged.
+            redacted = redact_text(text)
+            excerpt = redacted[:2000]
             source = store.add_strand_source(
                 user_id,
                 key,
@@ -738,6 +1919,7 @@ def add_strand_source(
                 "paste",
                 label=(body.label or "").strip() or "Pasted text",
                 excerpt_redacted=excerpt,
+                paste_full_text=redacted,
             )
         elif kind == "file":
             session_id = (body.ingest_session_id or "").strip()

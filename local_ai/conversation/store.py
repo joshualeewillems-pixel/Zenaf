@@ -29,6 +29,7 @@ Threading: one connection guarded by a lock is enough for user-triggered use.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import uuid
@@ -155,6 +156,156 @@ CREATE TABLE IF NOT EXISTS strand_sources (
 );
 CREATE INDEX IF NOT EXISTS idx_strand_sources_user_strand
   ON strand_sources (user_id, strand_key, created_at);
+-- Upload rapid-fire S1 (§2.1–§2.9): nine ConversationStore tables.
+-- The tenth table (upload_outcome_creations) lives in the VE DB
+-- (local_ai/vision_execution/storage.py + schema.sql, U-1).
+CREATE TABLE IF NOT EXISTS upload_spans (
+  span_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  document_version INTEGER NOT NULL,
+  segment_id TEXT NOT NULL,
+  span_text TEXT NOT NULL,
+  redaction_stage TEXT NOT NULL,
+  location TEXT NOT NULL,
+  span_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'current',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_spans_user_doc
+  ON upload_spans (user_id, document_id, document_version, segment_id);
+CREATE INDEX IF NOT EXISTS idx_upload_spans_hash_loc
+  ON upload_spans (span_hash, location);
+CREATE TABLE IF NOT EXISTS upload_observations (
+  observation_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  document_version INTEGER NOT NULL,
+  claim TEXT NOT NULL,
+  span_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'current',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_observations_user_doc
+  ON upload_observations (user_id, document_id, document_version);
+CREATE TABLE IF NOT EXISTS upload_interpretations (
+  interpretation_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  document_version INTEGER NOT NULL,
+  lens TEXT NOT NULL,
+  lens_kind TEXT NOT NULL,
+  text TEXT NOT NULL,
+  evidence_ids TEXT NOT NULL DEFAULT '[]',
+  observation_ids TEXT NOT NULL DEFAULT '[]',
+  origin TEXT NOT NULL,
+  is_transformation INTEGER NOT NULL DEFAULT 0,
+  proposed_outcome TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  uncertain_match TEXT,
+  promotion_turn_id TEXT,
+  promotion_message_id TEXT,
+  ungrounded INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_interpretations_user_doc
+  ON upload_interpretations (user_id, document_id, document_version, lens, status);
+CREATE TABLE IF NOT EXISTS upload_outcomes (
+  outcome_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  document_version INTEGER NOT NULL,
+  interpretation_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  ve_kind TEXT,
+  ve_id TEXT,
+  parent_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_outcomes_user_interp
+  ON upload_outcomes (user_id, interpretation_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_upload_outcomes_interp_kind
+  ON upload_outcomes (interpretation_id, kind);
+CREATE TABLE IF NOT EXISTS upload_rounds (
+  round_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  document_version INTEGER NOT NULL,
+  lens TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'item',
+  segment_presented TEXT NOT NULL DEFAULT '[]',
+  presented_count INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_rounds_user_conv
+  ON upload_rounds (user_id, conversation_id, created_at);
+CREATE TABLE IF NOT EXISTS upload_offers (
+  offer_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  lens TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'offered',
+  coverage TEXT NOT NULL DEFAULT '',
+  decline_snooze_until TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_offers_user_doc
+  ON upload_offers (user_id, document_id, lens, created_at);
+CREATE TABLE IF NOT EXISTS upload_extraction_jobs (
+  job_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  document_version INTEGER NOT NULL,
+  state TEXT NOT NULL DEFAULT 'queued',
+  worker_id TEXT,
+  last_heartbeat_at TEXT,
+  lease_until TEXT,
+  first_interpretation_at TEXT,
+  total_calls INTEGER NOT NULL DEFAULT 0,
+  completed_calls INTEGER NOT NULL DEFAULT 0,
+  failed_calls INTEGER NOT NULL DEFAULT 0,
+  failed_chunks TEXT NOT NULL DEFAULT '[]',
+  interpreted_chunks TEXT NOT NULL DEFAULT '[]',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_jobs_user_doc
+  ON upload_extraction_jobs (user_id, document_id, created_at);
+CREATE TABLE IF NOT EXISTS upload_extraction_job_calls (
+  call_id TEXT PRIMARY KEY,
+  job_id TEXT NOT NULL,
+  chunk_index INTEGER,
+  call_kind TEXT NOT NULL,
+  state TEXT NOT NULL,
+  code TEXT,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  duration_ms INTEGER,
+  rows_written INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_upload_job_calls_job
+  ON upload_extraction_job_calls (job_id, started_at);
+CREATE TABLE IF NOT EXISTS upload_artifacts (
+  artifact_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  document_id TEXT NOT NULL,
+  document_version INTEGER NOT NULL,
+  interpretation_id TEXT,
+  lens TEXT NOT NULL,
+  lens_kind TEXT NOT NULL,
+  artifact_kind TEXT NOT NULL,
+  artifact_text TEXT NOT NULL,
+  source_span_ids TEXT NOT NULL DEFAULT '[]',
+  framing TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_upload_artifacts_user_doc
+  ON upload_artifacts (user_id, document_id, created_at);
 """
 
 
@@ -234,11 +385,97 @@ class ConversationStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            self._migrate_paste_text_columns()
+            self._migrate_upload_amendment_columns()
             self._conn.commit()
 
     def close(self) -> None:
         with self._lock:
             self._conn.close()
+
+    def _migrate_paste_text_columns(self) -> None:
+        """Upload S1 §2.11 (U-2): full redacted paste text, COMPRESSED.
+
+        New columns on strand_sources (not a companion table, so the
+        U-5 inventory stays ten tables): ``paste_text_blob`` holds the
+        zlib-compressed UTF-8 of the full redacted paste text and
+        ``paste_text_encoding`` names the codec ('zlib'). Guarded by
+        PRAGMA table_info — a no-op when the columns already exist
+        (agent_intake precedent). Caller holds the lock.
+        """
+        cols = [
+            r["name"]
+            for r in self._conn.execute(
+                "PRAGMA table_info(strand_sources)"
+            ).fetchall()
+        ]
+        if "paste_text_blob" not in cols:
+            self._conn.execute(
+                "ALTER TABLE strand_sources ADD COLUMN paste_text_blob BLOB"
+            )
+        if "paste_text_encoding" not in cols:
+            self._conn.execute(
+                "ALTER TABLE strand_sources ADD COLUMN "
+                "paste_text_encoding TEXT NOT NULL DEFAULT 'zlib'"
+            )
+
+    def _migrate_upload_amendment_columns(self) -> None:
+        """Upload S1 amendment A3 (2026-11-07): the re-extraction
+        fields the brief's DDL dropped, restored.
+
+        - ``upload_interpretations.uncertain_match`` (TEXT JSON,
+          NULL when no uncertain match).
+        - ``upload_spans.status`` / ``upload_observations.status``
+          (TEXT NOT NULL DEFAULT 'current'; the §5.4 transition
+          moves the old set to 'superseded' at re-extraction).
+        - ``upload_extraction_jobs.interpreted_chunks`` (TEXT JSON
+          list, amendment A1's coverage tracking).
+        - Index on ``upload_spans (span_hash, location)`` — the
+          §5.2/§5.3 matching lookup compares spans by
+          content+location.
+
+        Guarded by PRAGMA table_info / CREATE INDEX IF NOT EXISTS —
+        a no-op when the columns already exist (the paste-text
+        migration's precedent). Caller holds the lock.
+        """
+        for table, column, ddl in (
+            (
+                "upload_interpretations",
+                "uncertain_match",
+                "ALTER TABLE upload_interpretations ADD COLUMN "
+                "uncertain_match TEXT",
+            ),
+            (
+                "upload_spans",
+                "status",
+                "ALTER TABLE upload_spans ADD COLUMN status "
+                "TEXT NOT NULL DEFAULT 'current'",
+            ),
+            (
+                "upload_observations",
+                "status",
+                "ALTER TABLE upload_observations ADD COLUMN status "
+                "TEXT NOT NULL DEFAULT 'current'",
+            ),
+            (
+                "upload_extraction_jobs",
+                "interpreted_chunks",
+                "ALTER TABLE upload_extraction_jobs ADD COLUMN "
+                "interpreted_chunks TEXT NOT NULL DEFAULT '[]'",
+            ),
+        ):
+            cols = [
+                r["name"]
+                for r in self._conn.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()
+            ]
+            if column not in cols:
+                self._conn.execute(ddl)
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_upload_spans_hash_loc "
+            "ON upload_spans (span_hash, location)"
+        )
 
     # -- conversations --------------------------------------------------------
 
@@ -1310,11 +1547,20 @@ class ConversationStore:
         ref: str,
         label: str = "",
         excerpt_redacted: str = "",
+        paste_full_text: str | None = None,
     ) -> dict[str, Any]:
         """Link a source to a strand thread. The caller must already
         have validated that the conversation is the caller's mapped
         thread for the strand, and that a file ``ref`` names an
-        existing ingest session."""
+        existing ingest session.
+
+        Upload S1 §2.11 (U-2): when the source is a paste and
+        ``paste_full_text`` (the FULL redacted text, uncapped) is
+        given, the zlib-compressed text is stored in the same
+        lock/transaction as the source row — the excerpt and the blob
+        commit together or neither does. The 2000-char excerpt is
+        unchanged.
+        """
         from local_ai.strand_interviews.keys import validate_strand_key
 
         key = validate_strand_key(strand_key)
@@ -1343,6 +1589,14 @@ class ConversationStore:
                     now,
                 ),
             )
+            if kind == "paste" and paste_full_text is not None:
+                import zlib
+
+                self._store_paste_full_text_locked(
+                    source_id,
+                    zlib.compress(paste_full_text.encode("utf-8")),
+                    "zlib",
+                )
             self._conn.commit()
             row = self._conn.execute(
                 "SELECT id, user_id, strand_key, conversation_id, kind, ref, "
@@ -1366,3 +1620,1513 @@ class ConversationStore:
             (user_id, key),
         ).fetchall()
         return [dict(r) for r in rows]
+
+    # -- upload rapid-fire S1 (§2, §4, §5) ------------------------------------
+    #
+    # Ten-table inventory (U-5): the nine tables above plus the VE
+    # carrier (upload_outcome_creations, in the VE DB). Every method
+    # is owner-scoped by the authenticated user id; a foreign id
+    # returns nothing, never another user's records.
+
+    def _store_paste_full_text_locked(
+        self, source_id: str, blob: bytes, encoding: str
+    ) -> None:
+        """Write the compressed paste blob. Caller holds the lock
+        (and, from add_strand_source, the same transaction as the
+        source row). No commit here — the caller commits."""
+        self._conn.execute(
+            "UPDATE strand_sources SET paste_text_blob = ?, "
+            "paste_text_encoding = ? WHERE id = ?",
+            (blob, encoding, source_id),
+        )
+
+    def store_paste_full_text(
+        self, source_id: str, blob: bytes, encoding: str = "zlib"
+    ) -> bool:
+        """Store a compressed paste blob for a source row. Returns
+        False when the source does not exist (nothing written)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE strand_sources SET paste_text_blob = ?, "
+                "paste_text_encoding = ? WHERE id = ?",
+                (blob, encoding, source_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) > 0
+
+    def get_paste_full_text(self, source_id: str) -> str | None:
+        """Decompress and return the stored redacted paste text, or
+        None when absent (a paste captured before U-2 has excerpt
+        only). Only the 'zlib' codec is read in S1; an unknown codec
+        fails closed with None rather than a misread. Inactive
+        pastes are never decompressed by callers — this method is
+        the on-demand path (extraction, promotion, display)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT paste_text_blob, paste_text_encoding FROM "
+                "strand_sources WHERE id = ?",
+                (source_id,),
+            ).fetchone()
+        if row is None or row["paste_text_blob"] is None:
+            return None
+        encoding = (row["paste_text_encoding"] or "zlib").strip().lower()
+        if encoding != "zlib":
+            return None
+        import zlib
+
+        try:
+            return zlib.decompress(bytes(row["paste_text_blob"])).decode("utf-8")
+        except Exception:
+            return None
+
+    def get_strand_source(
+        self, user_id: str, source_id: str
+    ) -> dict[str, Any] | None:
+        """One strand source row, owner-scoped. A foreign id reads
+        as missing. The blob is NOT carried — use
+        get_paste_full_text for the text."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id, user_id, strand_key, conversation_id, kind, ref, "
+                "label, excerpt_redacted, paste_text_encoding, created_at "
+                "FROM strand_sources WHERE id = ? AND user_id = ?",
+                (source_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def list_sources_for_conversation(
+        self, user_id: str, conversation_id: str
+    ) -> list[dict[str, Any]]:
+        """Sources linked to one conversation, NEWEST first (the
+        round resolves its document newest-first)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, user_id, strand_key, conversation_id, kind, ref, "
+                "label, excerpt_redacted, paste_text_encoding, created_at "
+                "FROM strand_sources WHERE user_id = ? AND conversation_id = ? "
+                "ORDER BY created_at DESC, id DESC",
+                (user_id, conversation_id),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def strand_key_for_conversation(
+        self, user_id: str, conversation_id: str
+    ) -> str | None:
+        """The strand key a conversation is the mapped thread for,
+        or None (not a strand thread). Reverse of
+        resolve_strand_thread."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT strand_key FROM strand_threads "
+                "WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row["strand_key"])
+
+    # -- upload extraction jobs (§2.7–§2.8, §3) ------------------------------
+
+    def create_upload_job(
+        self, user_id: str, document_id: str, document_version: int
+    ) -> dict[str, Any]:
+        """Create a job row in state 'queued'. One job per
+        (document, document_version, lens-set); the caller checks
+        for a live job first (the extract route)."""
+        job_id = uuid.uuid4().hex
+        now = _utcnow()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO upload_extraction_jobs (job_id, user_id, "
+                "document_id, document_version, state, worker_id, "
+                "last_heartbeat_at, lease_until, first_interpretation_at, "
+                "total_calls, completed_calls, failed_calls, failed_chunks, "
+                "created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', NULL, "
+                "NULL, NULL, NULL, 0, 0, 0, '[]', ?, ?)",
+                (job_id, user_id, document_id, document_version, now, now),
+            )
+            self._conn.commit()
+        row = self.get_upload_job(user_id, job_id)
+        assert row is not None
+        return row
+
+    def get_upload_job(
+        self, user_id: str, job_id: str
+    ) -> dict[str, Any] | None:
+        """One job row, owner-scoped. A foreign id reads as missing."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT job_id, user_id, document_id, document_version, state, "
+                "worker_id, last_heartbeat_at, lease_until, "
+                "first_interpretation_at, total_calls, completed_calls, "
+                "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
+                "FROM upload_extraction_jobs WHERE job_id = ? AND user_id = ?",
+                (job_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _upload_job_dict(row)
+
+    def latest_upload_job(
+        self, user_id: str, document_id: str
+    ) -> dict[str, Any] | None:
+        """The newest job for a document (any state), or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT job_id, user_id, document_id, document_version, state, "
+                "worker_id, last_heartbeat_at, lease_until, "
+                "first_interpretation_at, total_calls, completed_calls, "
+                "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
+                "FROM upload_extraction_jobs WHERE user_id = ? AND document_id = ? "
+                "ORDER BY created_at DESC, job_id DESC LIMIT 1",
+                (user_id, document_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _upload_job_dict(row)
+
+    def list_upload_jobs(
+        self, user_id: str, document_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Jobs for a user (optionally one document), newest first."""
+        with self._lock:
+            if document_id is not None:
+                rows = self._conn.execute(
+                    "SELECT job_id, user_id, document_id, document_version, state, "
+                    "worker_id, last_heartbeat_at, lease_until, "
+                    "first_interpretation_at, total_calls, completed_calls, "
+                    "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
+                    "FROM upload_extraction_jobs WHERE user_id = ? AND document_id = ? "
+                    "ORDER BY created_at DESC, job_id DESC",
+                    (user_id, document_id),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT job_id, user_id, document_id, document_version, state, "
+                    "worker_id, last_heartbeat_at, lease_until, "
+                    "first_interpretation_at, total_calls, completed_calls, "
+                    "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
+                    "FROM upload_extraction_jobs WHERE user_id = ? "
+                    "ORDER BY created_at DESC, job_id DESC",
+                    (user_id,),
+                ).fetchall()
+        return [_upload_job_dict(r) for r in rows]
+
+    def claim_upload_job(
+        self, job_id: str, worker_id: str, now: str, lease_until: str
+    ) -> bool:
+        """Atomic claim (§3.4, C1a record_flip_attempt pattern):
+        one UPDATE whose WHERE refuses anything but 'queued'.
+        Rowcount 1 → claimed; 0 → another worker holds it (or it
+        is not queued), and the caller does nothing."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE upload_extraction_jobs SET state = 'running', "
+                "worker_id = ?, last_heartbeat_at = ?, lease_until = ?, "
+                "updated_at = ? WHERE job_id = ? AND state = 'queued'",
+                (worker_id, now, lease_until, now, job_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def heartbeat_upload_job(
+        self, job_id: str, now: str, lease_until: str
+    ) -> bool:
+        """Renew a running job's heartbeat + lease (after each
+        completed call). False when the job is not running."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE upload_extraction_jobs SET last_heartbeat_at = ?, "
+                "lease_until = ?, updated_at = ? "
+                "WHERE job_id = ? AND state = 'running'",
+                (now, lease_until, now, job_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def set_upload_job_state(
+        self,
+        job_id: str,
+        state: str,
+        *,
+        first_interpretation_at: str | None = None,
+        total_calls: int | None = None,
+        completed_calls: int | None = None,
+        failed_calls: int | None = None,
+        failed_chunks: list[int] | None = None,
+        interpreted_chunks: list[str] | None = None,
+    ) -> bool:
+        """Set a job's state (+ counters). The worker's terminal
+        write and the reconciler's interrupt write both land here.
+        ``first_interpretation_at`` is set once, by the worker, and
+        is never overwritten by a later call (pass None to leave it).
+        ``interpreted_chunks`` (amendment A1) is the job's coverage
+        record — the chunk ids whose rows an interpretation call has
+        covered; the offer's coverage line reads it.
+        """
+        now = _utcnow()
+        sets = ["state = ?", "updated_at = ?"]
+        args: list[Any] = [state, now]
+        if first_interpretation_at is not None:
+            sets.append("first_interpretation_at = ?")
+            args.append(first_interpretation_at)
+        if total_calls is not None:
+            sets.append("total_calls = ?")
+            args.append(total_calls)
+        if completed_calls is not None:
+            sets.append("completed_calls = ?")
+            args.append(completed_calls)
+        if failed_calls is not None:
+            sets.append("failed_calls = ?")
+            args.append(failed_calls)
+        if failed_chunks is not None:
+            sets.append("failed_chunks = ?")
+            args.append(json.dumps([int(c) for c in failed_chunks]))
+        if interpreted_chunks is not None:
+            sets.append("interpreted_chunks = ?")
+            args.append(json.dumps([str(c) for c in interpreted_chunks]))
+        args.append(job_id)
+        with self._lock:
+            cur = self._conn.execute(
+                f"UPDATE upload_extraction_jobs SET {', '.join(sets)} "
+                "WHERE job_id = ?",
+                args,
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def start_upload_job_call(
+        self, job_id: str, chunk_index: int | None, call_kind: str
+    ) -> dict[str, Any]:
+        """Write a 'started' call row BEFORE the model call (§2.8).
+        A crash between the call and the commit leaves it 'started'
+        with a stale heartbeat — never presumed complete."""
+        call_id = uuid.uuid4().hex
+        now = _utcnow()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO upload_extraction_job_calls (call_id, job_id, "
+                "chunk_index, call_kind, state, code, started_at, ended_at, "
+                "duration_ms, rows_written) VALUES (?, ?, ?, ?, 'started', "
+                "NULL, ?, NULL, NULL, 0)",
+                (call_id, job_id, chunk_index, call_kind, now),
+            )
+            self._conn.commit()
+        return {
+            "call_id": call_id,
+            "job_id": job_id,
+            "chunk_index": chunk_index,
+            "call_kind": call_kind,
+            "state": "started",
+            "code": None,
+            "started_at": now,
+            "ended_at": None,
+            "duration_ms": None,
+            "rows_written": 0,
+        }
+
+    def complete_upload_call(
+        self,
+        call_id: str,
+        *,
+        state: str,
+        code: str | None = None,
+        rows_written: int = 0,
+    ) -> bool:
+        """Complete a call row: ended_at + duration_ms from
+        started_at, the wash-contract failure code on failure.
+        Duration is the per-call latency record (P2)."""
+        now = _utcnow()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT started_at FROM upload_extraction_job_calls "
+                "WHERE call_id = ?",
+                (call_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            started = _parse_upload_iso(row["started_at"])
+            ended = _parse_upload_iso(now)
+            duration_ms = None
+            if started is not None and ended is not None:
+                duration_ms = int((ended - started).total_seconds() * 1000)
+            cur = self._conn.execute(
+                "UPDATE upload_extraction_job_calls SET state = ?, code = ?, "
+                "ended_at = ?, duration_ms = ?, rows_written = ? "
+                "WHERE call_id = ?",
+                (state, code, now, duration_ms, rows_written, call_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def list_upload_job_calls(self, job_id: str) -> list[dict[str, Any]]:
+        """Call rows for a job, oldest first. The source of truth
+        per call; the job row's counters are derived summaries."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT call_id, job_id, chunk_index, call_kind, state, code, "
+                "started_at, ended_at, duration_ms, rows_written "
+                "FROM upload_extraction_job_calls WHERE job_id = ? "
+                "ORDER BY started_at ASC, call_id ASC",
+                (job_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def list_stale_upload_jobs(
+        self, stale_before: str
+    ) -> list[dict[str, Any]]:
+        """Jobs the reconciler may interrupt (§3.3): 'running' (or
+        'queued' with a stale claim) whose heartbeat is older than
+        the stale threshold, or NULL with an age beyond it. Owner
+        is carried on the row; the reconciler marks each in its own
+        transaction."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT job_id, user_id, document_id, document_version, state, "
+                "worker_id, last_heartbeat_at, lease_until, "
+                "first_interpretation_at, total_calls, completed_calls, "
+                "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
+                "FROM upload_extraction_jobs WHERE state IN ('running', 'queued') "
+                "AND (last_heartbeat_at IS NULL OR last_heartbeat_at < ?) "
+                "AND created_at < ? ORDER BY created_at ASC",
+                (stale_before, stale_before),
+            ).fetchall()
+        return [_upload_job_dict(r) for r in rows]
+
+    # -- upload evidence + interpretation records (§4, §5) --------------------
+
+    def save_upload_span(
+        self,
+        user_id: str,
+        document_id: str,
+        document_version: int,
+        segment_id: str,
+        span_text: str,
+        redaction_stage: str,
+        location: str,
+    ) -> dict[str, Any]:
+        """Write one verbatim span (§2.1). ``span_text`` is an exact
+        substring of the stored source text at its recorded
+        redaction stage. Identity is content + location (§5.1): a
+        span with the same (span_hash, location) for this document
+        version already on file is returned, never duplicated."""
+        span_hash = _upload_span_hash(span_text, location)
+        now = _utcnow()
+        with self._lock:
+            existing = self._conn.execute(
+                "SELECT span_id, user_id, document_id, document_version, "
+                "segment_id, span_text, redaction_stage, location, span_hash, status, "
+                "created_at FROM upload_spans WHERE user_id = ? AND "
+                "document_id = ? AND document_version = ? AND span_hash = ? "
+                "AND location = ?",
+                (user_id, document_id, document_version, span_hash, location),
+            ).fetchone()
+            if existing is not None:
+                return dict(existing)
+            span_id = uuid.uuid4().hex
+            self._conn.execute(
+                "INSERT INTO upload_spans (span_id, user_id, document_id, "
+                "document_version, segment_id, span_text, redaction_stage, "
+                "location, span_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?)",
+                (
+                    span_id,
+                    user_id,
+                    document_id,
+                    document_version,
+                    segment_id,
+                    span_text,
+                    redaction_stage,
+                    location,
+                    span_hash,
+                    "current",
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT span_id, user_id, document_id, document_version, "
+                "segment_id, span_text, redaction_stage, location, span_hash, status, "
+                "created_at FROM upload_spans WHERE span_id = ?",
+                (span_id,),
+            ).fetchone()
+        assert row is not None
+        return dict(row)
+
+    def get_upload_span(
+        self, user_id: str, span_id: str
+    ) -> dict[str, Any] | None:
+        """One span row, owner-scoped."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT span_id, user_id, document_id, document_version, "
+                "segment_id, span_text, redaction_stage, location, span_hash, status, "
+                "created_at FROM upload_spans WHERE span_id = ? AND user_id = ?",
+                (span_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def list_upload_spans(
+        self,
+        user_id: str,
+        document_id: str,
+        document_version: int,
+        segment_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Spans for a document version (optionally one segment),
+        in location order."""
+        with self._lock:
+            if segment_id is not None:
+                rows = self._conn.execute(
+                    "SELECT span_id, user_id, document_id, document_version, "
+                    "segment_id, span_text, redaction_stage, location, span_hash, status, "
+                    "created_at FROM upload_spans WHERE user_id = ? AND "
+                    "document_id = ? AND document_version = ? AND segment_id = ? "
+                    "ORDER BY location, span_id",
+                    (user_id, document_id, document_version, segment_id),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT span_id, user_id, document_id, document_version, "
+                    "segment_id, span_text, redaction_stage, location, span_hash, status, "
+                    "created_at FROM upload_spans WHERE user_id = ? AND "
+                    "document_id = ? AND document_version = ? "
+                    "ORDER BY location, span_id",
+                    (user_id, document_id, document_version),
+                ).fetchall()
+        return [dict(r) for r in rows]
+
+    def save_upload_observation(
+        self,
+        user_id: str,
+        document_id: str,
+        document_version: int,
+        claim: str,
+        span_ids: list[str],
+    ) -> dict[str, Any]:
+        """Write one derived claim (§2.2). The never-a-quotation
+        rule is enforced here, deterministically (§4.3): a claim
+        that is a substring of any cited span is REJECTED — the
+        write raises ValueError, the row is not created, and the
+        caller records a failed row write (not a model failure).
+        Cited span ids must exist for this document version."""
+        claim = (claim or "").strip()
+        if not claim:
+            raise ValueError("Observation claim is empty.")
+        span_ids = list(span_ids or [])
+        with self._lock:
+            spans: list[dict[str, Any]] = []
+            for sid in span_ids:
+                row = self._conn.execute(
+                    "SELECT span_id, span_text FROM upload_spans "
+                    "WHERE span_id = ? AND user_id = ? AND document_id = ? "
+                    "AND document_version = ?",
+                    (sid, user_id, document_id, document_version),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"Unknown span id: {sid!r}")
+                spans.append(dict(row))
+            normalized_claim = _normalize_upload_text(claim)
+            for span in spans:
+                span_text = span["span_text"] or ""
+                if claim and claim in span_text:
+                    raise ValueError(
+                        "Observation claim is a quotation of its cited span."
+                    )
+                if normalized_claim and normalized_claim in _normalize_upload_text(
+                    span_text
+                ):
+                    raise ValueError(
+                        "Observation claim is a quotation of its cited span."
+                    )
+            observation_id = uuid.uuid4().hex
+            now = _utcnow()
+            self._conn.execute(
+                "INSERT INTO upload_observations (observation_id, user_id, "
+                "document_id, document_version, claim, span_ids, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    observation_id,
+                    user_id,
+                    document_id,
+                    document_version,
+                    claim,
+                    json.dumps(span_ids),
+                    "current",
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT observation_id, user_id, document_id, document_version, "
+                "claim, span_ids, status, created_at FROM upload_observations "
+                "WHERE observation_id = ?",
+                (observation_id,),
+            ).fetchone()
+        assert row is not None
+        return _upload_observation_dict(row)
+
+    def get_upload_observation(
+        self, user_id: str, observation_id: str
+    ) -> dict[str, Any] | None:
+        """One observation row, owner-scoped."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT observation_id, user_id, document_id, document_version, "
+                "claim, span_ids, status, created_at FROM upload_observations "
+                "WHERE observation_id = ? AND user_id = ?",
+                (observation_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _upload_observation_dict(row)
+
+    def list_upload_observations(
+        self, user_id: str, document_id: str, document_version: int
+    ) -> list[dict[str, Any]]:
+        """Observations for a document version, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT observation_id, user_id, document_id, document_version, "
+                "claim, span_ids, status, created_at FROM upload_observations "
+                "WHERE user_id = ? AND document_id = ? AND document_version = ? "
+                "ORDER BY created_at ASC, observation_id ASC",
+                (user_id, document_id, document_version),
+            ).fetchall()
+        return [_upload_observation_dict(r) for r in rows]
+
+    def save_upload_interpretation(
+        self,
+        user_id: str,
+        document_id: str,
+        document_version: int,
+        lens: str,
+        lens_kind: str,
+        text: str,
+        evidence_ids: list[dict[str, Any]] | None = None,
+        observation_ids: list[str] | None = None,
+        origin: str = "extracted",
+        is_transformation: bool = False,
+        proposed_outcome: str | None = None,
+        promotion_turn_id: str | None = None,
+        promotion_message_id: str | None = None,
+        ungrounded: bool = False,
+    ) -> dict[str, Any]:
+        """Write one reading (§2.3). Deterministic checks, in order:
+
+        - lens: a strand key validates as one; a seat validates as
+          a stock archetype id. Anything else fails closed.
+        - evidence roles coerce (same span in two roles collapses
+          to the strongest: primary > supporting > contrast, §4.1).
+        - a transformation requires >=1 cited span and carries
+          observation_ids empty by design (A2, §4.4).
+        - every cited span / observation id must exist for this
+          document version.
+        - proposed_outcome is None or project | task | idea.
+        - auto-link (§5.3, extracted origin only): when the
+          normalized text AND the supporting spans (by
+          content+location) both match a ruled interpretation for
+          the same (document, lens), the new row is written with
+          status 'ruled' — it inherits the standing ruling and
+          never re-enters the queue. Exactly one condition matching
+          writes the uncertain marker on the row (amendment A3:
+          ``uncertain_match`` JSON, {"prior_interpretation_id",
+          "matched": "text" | "spans"}); the queue reads the column
+          and falls back to derivation when it is NULL.
+        """
+        from local_ai.council.archetypes import get_archetype
+        from local_ai.strand_interviews.keys import validate_strand_key
+
+        lens_kind = (lens_kind or "").strip().lower()
+        if lens_kind == "strand":
+            lens = validate_strand_key(lens)
+        elif lens_kind == "seat":
+            if get_archetype((lens or "").strip().lower()) is None:
+                raise ValueError(f"Unknown seat lens: {lens!r}")
+            lens = (lens or "").strip().lower()
+        else:
+            raise ValueError(f"Unknown lens_kind: {lens_kind!r}")
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("Interpretation text is empty.")
+        origin = (origin or "extracted").strip().lower()
+        if origin not in ("extracted", "promoted"):
+            raise ValueError(f"Unknown origin: {origin!r}")
+        if proposed_outcome is not None and proposed_outcome not in (
+            "project",
+            "task",
+            "idea",
+        ):
+            raise ValueError(f"Unknown proposed_outcome: {proposed_outcome!r}")
+        coerced = _coerce_upload_evidence_roles(evidence_ids or [])
+        if is_transformation:
+            if not coerced:
+                raise ValueError(
+                    "A transformation requires at least one cited span."
+                )
+            observation_ids = []
+        else:
+            observation_ids = list(observation_ids or [])
+        with self._lock:
+            for entry in coerced:
+                row = self._conn.execute(
+                    "SELECT 1 FROM upload_spans WHERE span_id = ? AND user_id = ? "
+                    "AND document_id = ? AND document_version = ?",
+                    (entry["span_id"], user_id, document_id, document_version),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"Unknown span id: {entry['span_id']!r}")
+            for oid in observation_ids:
+                row = self._conn.execute(
+                    "SELECT 1 FROM upload_observations WHERE observation_id = ? "
+                    "AND user_id = ? AND document_id = ? AND document_version = ?",
+                    (oid, user_id, document_id, document_version),
+                ).fetchone()
+                if row is None:
+                    raise ValueError(f"Unknown observation id: {oid!r}")
+            status = "pending"
+            uncertain_match_json: str | None = None
+            if origin == "extracted":
+                supporting = self._supporting_span_keys_locked(
+                    user_id, document_id, document_version, coerced
+                )
+                match = self._match_ruled_interpretation_locked(
+                    user_id,
+                    document_id,
+                    lens,
+                    _normalize_upload_text(text),
+                    supporting,
+                )
+                if match is not None and match["kind"] == "exact":
+                    status = "ruled"
+                elif match is not None and match["kind"] in (
+                    "text_only",
+                    "spans_only",
+                ):
+                    # Amendment A3: the uncertain case gets its home
+                    # on the row — a JSON marker naming the prior
+                    # ruled interpretation and which condition
+                    # matched. The queue reads it (via
+                    # uncertain_match_for, which falls back to
+                    # derivation when the column is NULL — e.g. the
+                    # prior was ruled after this row was written).
+                    uncertain_match_json = json.dumps(
+                        {
+                            "prior_interpretation_id": match.get(
+                                "prior_interpretation_id"
+                            ),
+                            "matched": (
+                                "text"
+                                if match["kind"] == "text_only"
+                                else "spans"
+                            ),
+                        }
+                    )
+            interpretation_id = uuid.uuid4().hex
+            now = _utcnow()
+            self._conn.execute(
+                "INSERT INTO upload_interpretations (interpretation_id, "
+                "user_id, document_id, document_version, lens, lens_kind, "
+                "text, evidence_ids, observation_ids, origin, "
+                "is_transformation, proposed_outcome, status, uncertain_match, "
+                "promotion_turn_id, promotion_message_id, ungrounded, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?)",
+                (
+                    interpretation_id,
+                    user_id,
+                    document_id,
+                    document_version,
+                    lens,
+                    lens_kind,
+                    text,
+                    json.dumps(coerced),
+                    json.dumps(observation_ids),
+                    origin,
+                    1 if is_transformation else 0,
+                    proposed_outcome,
+                    status,
+                    uncertain_match_json,
+                    promotion_turn_id,
+                    promotion_message_id,
+                    1 if ungrounded else 0,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT interpretation_id, user_id, document_id, "
+                "document_version, lens, lens_kind, text, evidence_ids, "
+                "observation_ids, origin, is_transformation, "
+                "proposed_outcome, status, uncertain_match, promotion_turn_id, "
+                "promotion_message_id, ungrounded, created_at "
+                "FROM upload_interpretations WHERE interpretation_id = ?",
+                (interpretation_id,),
+            ).fetchone()
+        assert row is not None
+        return _upload_interpretation_dict(row)
+
+    def get_upload_interpretation(
+        self, user_id: str, interpretation_id: str
+    ) -> dict[str, Any] | None:
+        """One interpretation row, owner-scoped."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT interpretation_id, user_id, document_id, "
+                "document_version, lens, lens_kind, text, evidence_ids, "
+                "observation_ids, origin, is_transformation, "
+                "proposed_outcome, status, uncertain_match, promotion_turn_id, "
+                "promotion_message_id, ungrounded, created_at "
+                "FROM upload_interpretations WHERE interpretation_id = ? "
+                "AND user_id = ?",
+                (interpretation_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _upload_interpretation_dict(row)
+
+    def list_upload_interpretations(
+        self,
+        user_id: str,
+        document_id: str,
+        document_version: int | None = None,
+        lens: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Interpretations for a document (optionally one version /
+        lens / status), oldest first."""
+        query = (
+            "SELECT interpretation_id, user_id, document_id, "
+            "document_version, lens, lens_kind, text, evidence_ids, "
+            "observation_ids, origin, is_transformation, "
+            "proposed_outcome, status, uncertain_match, promotion_turn_id, "
+            "promotion_message_id, ungrounded, created_at "
+            "FROM upload_interpretations WHERE user_id = ? AND document_id = ?"
+        )
+        args: list[Any] = [user_id, document_id]
+        if document_version is not None:
+            query += " AND document_version = ?"
+            args.append(document_version)
+        if lens is not None:
+            query += " AND lens = ?"
+            args.append(lens)
+        if status is not None:
+            query += " AND status = ?"
+            args.append(status)
+        query += " ORDER BY created_at ASC, interpretation_id ASC"
+        with self._lock:
+            rows = self._conn.execute(query, args).fetchall()
+        return [_upload_interpretation_dict(r) for r in rows]
+
+    def pending_upload_interpretations(
+        self, user_id: str, document_id: str, lens: str
+    ) -> list[dict[str, Any]]:
+        """Pending interpretations for (document, lens), oldest
+        first — the round's raw queue input (§6.2). The queue
+        composer applies parked / reserved / auto-link filters."""
+        return self.list_upload_interpretations(
+            user_id, document_id, lens=lens, status="pending"
+        )
+
+    def set_upload_interpretation_status(
+        self, user_id: str, interpretation_id: str, status: str
+    ) -> bool:
+        """Flip an interpretation's status ('pending' | 'ruled' |
+        'orphaned'). The ruling paths set 'ruled' when a verdict
+        lands; re-extraction sets 'orphaned' on superseded rows
+        (§5.4 — a status transition, never a content rewrite)."""
+        if status not in ("pending", "ruled", "orphaned"):
+            raise ValueError(f"Unknown interpretation status: {status!r}")
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE upload_interpretations SET status = ? "
+                "WHERE interpretation_id = ? AND user_id = ?",
+                (status, interpretation_id, user_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def match_ruled_interpretation(
+        self,
+        user_id: str,
+        document_id: str,
+        lens: str,
+        normalized_text: str,
+        supporting_keys: list[tuple[str, str]],
+    ) -> dict[str, Any] | None:
+        """Compare a reading against the ruled interpretations for
+        the same (document, lens) (§5.3). Returns the best match:
+        ``{"kind": "exact" | "text_only" | "spans_only",
+        "prior_interpretation_id": ...}`` — 'exact' when both the
+        normalized text and the supporting spans (by
+        content+location) match; 'text_only' / 'spans_only' when
+        exactly one matches (the UNCERTAIN case: no auto-link, the
+        queue names it); None when neither matches. The most
+        recently ruled interpretation wins each comparison."""
+        with self._lock:
+            return self._match_ruled_interpretation_locked(
+                user_id, document_id, lens, normalized_text, supporting_keys
+            )
+
+    def _match_ruled_interpretation_locked(
+        self,
+        user_id: str,
+        document_id: str,
+        lens: str,
+        normalized_text: str,
+        supporting_keys: list[tuple[str, str]],
+    ) -> dict[str, Any] | None:
+        """Locked core of match_ruled_interpretation (caller holds
+        the lock). Ruled rows only, most recent first."""
+        rows = self._conn.execute(
+            "SELECT interpretation_id, text, evidence_ids FROM "
+            "upload_interpretations WHERE user_id = ? AND document_id = ? "
+            "AND lens = ? AND status = 'ruled' "
+            "ORDER BY created_at DESC, interpretation_id DESC",
+            (user_id, document_id, lens),
+        ).fetchall()
+        wanted = sorted(supporting_keys)
+        best_text: dict[str, Any] | None = None
+        best_spans: dict[str, Any] | None = None
+        for row in rows:
+            prior_text_match = (
+                _normalize_upload_text(row["text"] or "") == normalized_text
+            )
+            prior_evidence = _parse_upload_json_list(row["evidence_ids"])
+            prior_keys = self._supporting_span_keys_locked(
+                user_id, document_id, None, prior_evidence
+            )
+            prior_spans_match = sorted(prior_keys) == wanted
+            if prior_text_match and prior_spans_match:
+                return {
+                    "kind": "exact",
+                    "prior_interpretation_id": row["interpretation_id"],
+                }
+            if prior_text_match and best_text is None:
+                best_text = {
+                    "kind": "text_only",
+                    "prior_interpretation_id": row["interpretation_id"],
+                }
+            if prior_spans_match and best_spans is None:
+                best_spans = {
+                    "kind": "spans_only",
+                    "prior_interpretation_id": row["interpretation_id"],
+                }
+        # Exactly one condition: the uncertain case. Text match wins
+        # the naming when both single-condition matches exist on
+        # different priors (deterministic: text first).
+        return best_text if best_text is not None else best_spans
+
+    def _supporting_span_keys_locked(
+        self,
+        user_id: str,
+        document_id: str,
+        document_version: int | None,
+        evidence: list[dict[str, Any]],
+    ) -> list[tuple[str, str]]:
+        """(span_hash, location) for the SUPPORTING spans of an
+        evidence list — roles primary + supporting (contrast argues
+        against the reading and is not support, §5.1). Caller holds
+        the lock. ``document_version`` may be None to match a span
+        across versions (the prior row's version is read from its
+        own evidence resolution)."""
+        keys: list[tuple[str, str]] = []
+        for entry in evidence or []:
+            role = (entry.get("role") or "").strip().lower()
+            if role not in ("primary", "supporting"):
+                continue
+            span_id = entry.get("span_id")
+            if not span_id:
+                continue
+            if document_version is not None:
+                row = self._conn.execute(
+                    "SELECT span_hash, location FROM upload_spans "
+                    "WHERE span_id = ? AND user_id = ? AND document_id = ? "
+                    "AND document_version = ?",
+                    (span_id, user_id, document_id, document_version),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    "SELECT span_hash, location FROM upload_spans "
+                    "WHERE span_id = ? AND user_id = ? AND document_id = ?",
+                    (span_id, user_id, document_id),
+                ).fetchone()
+            if row is not None:
+                keys.append((str(row["span_hash"]), str(row["location"])))
+        return keys
+
+    # -- upload outcomes (§2.4, §8) ------------------------------------------
+
+    def create_upload_outcome(
+        self,
+        user_id: str,
+        document_id: str,
+        document_version: int,
+        interpretation_id: str,
+        kind: str,
+        parent_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a 'pending' outcome row. Idempotent by the UNIQUE
+        (interpretation_id, kind) index (§2.4): a second create for
+        the same pair returns the existing row, never a duplicate —
+        the replay guard (§8.2)."""
+        if kind not in ("keep", "explore", "project", "task", "idea"):
+            raise ValueError(f"Unknown outcome kind: {kind!r}")
+        now = _utcnow()
+        with self._lock:
+            outcome_id = uuid.uuid4().hex
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO upload_outcomes (outcome_id, user_id, "
+                "document_id, document_version, interpretation_id, kind, "
+                "status, ve_kind, ve_id, parent_id, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 'pending', NULL, NULL, ?, ?)",
+                (
+                    outcome_id,
+                    user_id,
+                    document_id,
+                    document_version,
+                    interpretation_id,
+                    kind,
+                    parent_id,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            if (cur.rowcount or 0) == 1:
+                row = self._conn.execute(
+                    "SELECT outcome_id, user_id, document_id, document_version, "
+                    "interpretation_id, kind, status, ve_kind, ve_id, parent_id, "
+                    "created_at FROM upload_outcomes WHERE outcome_id = ?",
+                    (outcome_id,),
+                ).fetchone()
+                assert row is not None
+                return dict(row)
+            existing = self._conn.execute(
+                "SELECT outcome_id, user_id, document_id, document_version, "
+                "interpretation_id, kind, status, ve_kind, ve_id, parent_id, "
+                "created_at FROM upload_outcomes WHERE interpretation_id = ? "
+                "AND kind = ?",
+                (interpretation_id, kind),
+            ).fetchone()
+            assert existing is not None
+            return dict(existing)
+
+    def get_upload_outcome(
+        self, user_id: str, outcome_id: str
+    ) -> dict[str, Any] | None:
+        """One outcome row, owner-scoped."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT outcome_id, user_id, document_id, document_version, "
+                "interpretation_id, kind, status, ve_kind, ve_id, parent_id, "
+                "created_at FROM upload_outcomes WHERE outcome_id = ? "
+                "AND user_id = ?",
+                (outcome_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def get_upload_outcome_by_interp_kind(
+        self, user_id: str, interpretation_id: str, kind: str
+    ) -> dict[str, Any] | None:
+        """The outcome for one (interpretation, kind), if any —
+        the standing-outcome check (§8.2)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT outcome_id, user_id, document_id, document_version, "
+                "interpretation_id, kind, status, ve_kind, ve_id, parent_id, "
+                "created_at FROM upload_outcomes WHERE user_id = ? "
+                "AND interpretation_id = ? AND kind = ?",
+                (user_id, interpretation_id, kind),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def list_upload_outcomes(
+        self,
+        user_id: str,
+        interpretation_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Outcome rows for a user (optionally one interpretation /
+        status), oldest first."""
+        query = (
+            "SELECT outcome_id, user_id, document_id, document_version, "
+            "interpretation_id, kind, status, ve_kind, ve_id, parent_id, "
+            "created_at FROM upload_outcomes WHERE user_id = ?"
+        )
+        args: list[Any] = [user_id]
+        if interpretation_id is not None:
+            query += " AND interpretation_id = ?"
+            args.append(interpretation_id)
+        if status is not None:
+            query += " AND status = ?"
+            args.append(status)
+        query += " ORDER BY created_at ASC, outcome_id ASC"
+        with self._lock:
+            rows = self._conn.execute(query, args).fetchall()
+        return [dict(r) for r in rows]
+
+    def claim_upload_outcome(self, user_id: str, outcome_id: str) -> bool:
+        """The §8.1 step-1 compare-and-swap: only the session whose
+        UPDATE matches a 'pending' row proceeds to create. Rowcount
+        1 → this session owns the creation; 0 → already decided
+        (the caller returns the existing outcome or 409s)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE upload_outcomes SET status = 'creating' "
+                "WHERE outcome_id = ? AND user_id = ? AND status = 'pending'",
+                (outcome_id, user_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def reclaim_upload_outcome(self, user_id: str, outcome_id: str) -> bool:
+        """The §8.1 step-1b retry re-claim (brief amendment A4):
+        a confirmation for an outcome in status 'creating' with no
+        carrier row may re-take the claim — the UPDATE matches a
+        'creating' row, rowcount 1 → this session owns the retry;
+        rowcount 0 → another session owns it (the caller returns the
+        existing outcome or 409s per §8.2). The one-hour staleness
+        gate is the CALLER's job (approve_upload_outcome checks the
+        outcome's age before calling this); this method is the raw
+        compare-and-swap. Setting status to its current value is
+        deliberate: the rowcount, not the value change, is the
+        ownership signal (SQLite counts matched rows)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE upload_outcomes SET status = 'creating' "
+                "WHERE outcome_id = ? AND user_id = ? AND status = 'creating'",
+                (outcome_id, user_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def supersede_upload_versions_before(
+        self, user_id: str, document_id: str, document_version: int
+    ) -> dict[str, int]:
+        """The §5.4 re-extraction transition (amendment A3): when a
+        re-extraction produces a new evidence set, the OLD set
+        becomes 'superseded' — preserved, never deleted, never
+        presented — and its PENDING interpretations become
+        'orphaned' (preserved, never presented). Ruled
+        interpretations stay 'ruled': they are the historical record
+        of what the user decided, readable in history. Returns the
+        counts superseded/orphaned. Idempotent: re-running it
+        matches nothing new."""
+        with self._lock:
+            spans = self._conn.execute(
+                "UPDATE upload_spans SET status = 'superseded' "
+                "WHERE user_id = ? AND document_id = ? "
+                "AND document_version < ? AND status = 'current'",
+                (user_id, document_id, document_version),
+            )
+            observations = self._conn.execute(
+                "UPDATE upload_observations SET status = 'superseded' "
+                "WHERE user_id = ? AND document_id = ? "
+                "AND document_version < ? AND status = 'current'",
+                (user_id, document_id, document_version),
+            )
+            interpretations = self._conn.execute(
+                "UPDATE upload_interpretations SET status = 'orphaned' "
+                "WHERE user_id = ? AND document_id = ? "
+                "AND document_version < ? AND status = 'pending'",
+                (user_id, document_id, document_version),
+            )
+            self._conn.commit()
+            return {
+                "spans": spans.rowcount or 0,
+                "observations": observations.rowcount or 0,
+                "interpretations": interpretations.rowcount or 0,
+            }
+
+    def set_upload_outcome_status(
+        self,
+        user_id: str,
+        outcome_id: str,
+        status: str,
+        ve_kind: str | None = None,
+        ve_id: str | None = None,
+    ) -> bool:
+        """Set an outcome's status (optionally its VE link, the
+        §8.1 step-3 write). Only the outcome-approval path writes
+        'creating' / 'created'; Archive-it writes 'archived'."""
+        if status not in ("pending", "creating", "created", "failed", "archived"):
+            raise ValueError(f"Unknown outcome status: {status!r}")
+        with self._lock:
+            if ve_kind is not None or ve_id is not None:
+                cur = self._conn.execute(
+                    "UPDATE upload_outcomes SET status = ?, ve_kind = ?, "
+                    "ve_id = ? WHERE outcome_id = ? AND user_id = ?",
+                    (status, ve_kind, ve_id, outcome_id, user_id),
+                )
+            else:
+                cur = self._conn.execute(
+                    "UPDATE upload_outcomes SET status = ? "
+                    "WHERE outcome_id = ? AND user_id = ?",
+                    (status, outcome_id, user_id),
+                )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    # -- upload artifacts (§2.9, §9) ------------------------------------------
+
+    def create_upload_artifact(
+        self,
+        user_id: str,
+        conversation_id: str,
+        document_id: str,
+        document_version: int,
+        interpretation_id: str | None,
+        lens: str,
+        lens_kind: str,
+        artifact_kind: str,
+        artifact_text: str,
+        source_span_ids: list[str] | None = None,
+        framing: str | None = None,
+    ) -> dict[str, Any]:
+        """File a creative artifact of the conversation (A6.2). An
+        artifact is never a VE record, never a node, never a
+        commitment — it takes no VE kind and no node kind."""
+        if artifact_kind not in (
+            "poem",
+            "satire",
+            "metaphor",
+            "story",
+            "scene",
+            "name",
+            "kept-reading",
+        ):
+            raise ValueError(f"Unknown artifact kind: {artifact_kind!r}")
+        artifact_text = (artifact_text or "").strip()
+        if not artifact_text:
+            raise ValueError("Artifact text is empty.")
+        artifact_id = uuid.uuid4().hex
+        now = _utcnow()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO upload_artifacts (artifact_id, user_id, "
+                "conversation_id, document_id, document_version, "
+                "interpretation_id, lens, lens_kind, artifact_kind, "
+                "artifact_text, source_span_ids, framing, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    artifact_id,
+                    user_id,
+                    conversation_id,
+                    document_id,
+                    document_version,
+                    interpretation_id,
+                    lens,
+                    lens_kind,
+                    artifact_kind,
+                    artifact_text,
+                    json.dumps(list(source_span_ids or [])),
+                    framing,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT artifact_id, user_id, conversation_id, document_id, "
+                "document_version, interpretation_id, lens, lens_kind, "
+                "artifact_kind, artifact_text, source_span_ids, framing, "
+                "created_at FROM upload_artifacts WHERE artifact_id = ?",
+                (artifact_id,),
+            ).fetchone()
+        assert row is not None
+        out = dict(row)
+        out["source_span_ids"] = _parse_upload_json_list(out.get("source_span_ids"))
+        return out
+
+    def list_upload_artifacts(
+        self, user_id: str, document_id: str
+    ) -> list[dict[str, Any]]:
+        """Artifacts filed under a document, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT artifact_id, user_id, conversation_id, document_id, "
+                "document_version, interpretation_id, lens, lens_kind, "
+                "artifact_kind, artifact_text, source_span_ids, framing, "
+                "created_at FROM upload_artifacts WHERE user_id = ? "
+                "AND document_id = ? ORDER BY created_at ASC, artifact_id ASC",
+                (user_id, document_id),
+            ).fetchall()
+        out: list[dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            d["source_span_ids"] = _parse_upload_json_list(d.get("source_span_ids"))
+            out.append(d)
+        return out
+
+    # -- upload rounds + offers (§2.5–§2.6, §6, §11) --------------------------
+
+    def get_upload_round(
+        self, user_id: str, conversation_id: str
+    ) -> dict[str, Any] | None:
+        """The latest durable round record for a conversation, or
+        None. The record is a durable trace — round STATE is
+        derived per turn from the markers, never read from here."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT round_id, user_id, conversation_id, document_id, "
+                "document_version, lens, state, segment_presented, "
+                "presented_count, created_at, updated_at FROM upload_rounds "
+                "WHERE user_id = ? AND conversation_id = ? "
+                "ORDER BY updated_at DESC, round_id DESC LIMIT 1",
+                (user_id, conversation_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return _upload_round_dict(row)
+
+    def save_upload_round(
+        self,
+        user_id: str,
+        round_id: str,
+        conversation_id: str,
+        document_id: str,
+        document_version: int,
+        lens: str,
+        state: str,
+        segment_presented: list[str],
+        presented_count: int,
+    ) -> dict[str, Any]:
+        """Upsert one round record (§2.5), written after generation
+        succeeds. ``created_at`` is preserved across upserts."""
+        if state not in ("item", "checkpoint", "closing", "ended"):
+            raise ValueError(f"Unknown round state: {state!r}")
+        now = _utcnow()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO upload_rounds (round_id, user_id, "
+                "conversation_id, document_id, document_version, lens, state, "
+                "segment_presented, presented_count, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(round_id) DO UPDATE SET state = excluded.state, "
+                "segment_presented = excluded.segment_presented, "
+                "presented_count = excluded.presented_count, "
+                "updated_at = excluded.updated_at",
+                (
+                    round_id,
+                    user_id,
+                    conversation_id,
+                    document_id,
+                    document_version,
+                    lens,
+                    state,
+                    json.dumps(list(segment_presented)),
+                    presented_count,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT round_id, user_id, conversation_id, document_id, "
+                "document_version, lens, state, segment_presented, "
+                "presented_count, created_at, updated_at FROM upload_rounds "
+                "WHERE round_id = ?",
+                (round_id,),
+            ).fetchone()
+        assert row is not None
+        return _upload_round_dict(row)
+
+    def get_upload_offer(
+        self, user_id: str, document_id: str, lens: str
+    ) -> dict[str, Any] | None:
+        """The latest offer row for (document, lens), or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT offer_id, user_id, document_id, lens, state, coverage, "
+                "decline_snooze_until, created_at, updated_at FROM upload_offers "
+                "WHERE user_id = ? AND document_id = ? AND lens = ? "
+                "ORDER BY created_at DESC, offer_id DESC LIMIT 1",
+                (user_id, document_id, lens),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def save_upload_offer(
+        self,
+        user_id: str,
+        document_id: str,
+        lens: str,
+        state: str,
+        coverage: str = "",
+        decline_snooze_until: str | None = None,
+    ) -> dict[str, Any]:
+        """Record an offer state change (§2.6). Each call writes a
+        new row; the latest row for (document, lens) is the live
+        offer state. 'never' declines carry decline_snooze_until
+        NULL and are permanent for the document's round offers."""
+        if state not in ("offered", "accepted", "declined", "expired"):
+            raise ValueError(f"Unknown offer state: {state!r}")
+        offer_id = uuid.uuid4().hex
+        now = _utcnow()
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO upload_offers (offer_id, user_id, document_id, "
+                "lens, state, coverage, decline_snooze_until, created_at, "
+                "updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    offer_id,
+                    user_id,
+                    document_id,
+                    lens,
+                    state,
+                    coverage or "",
+                    decline_snooze_until,
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT offer_id, user_id, document_id, lens, state, coverage, "
+                "decline_snooze_until, created_at, updated_at FROM upload_offers "
+                "WHERE offer_id = ?",
+                (offer_id,),
+            ).fetchone()
+        assert row is not None
+        return dict(row)
+
+    def set_upload_offer_state(
+        self,
+        user_id: str,
+        offer_id: str,
+        state: str,
+        decline_snooze_until: str | None = None,
+    ) -> bool:
+        """Transition one offer row (accept / decline / expire)."""
+        if state not in ("offered", "accepted", "declined", "expired"):
+            raise ValueError(f"Unknown offer state: {state!r}")
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE upload_offers SET state = ?, decline_snooze_until = ?, "
+                "updated_at = ? WHERE offer_id = ? AND user_id = ?",
+                (state, decline_snooze_until, _utcnow(), offer_id, user_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+
+# -- upload helpers (module-level, pure) --------------------------------------
+
+#: Evidence-role strength for the §4.1 coercion (strongest first).
+_UPLOAD_ROLE_STRENGTH = {"primary": 0, "supporting": 1, "contrast": 2}
+
+
+def _parse_upload_json_list(value: Any) -> list[Any]:
+    """Parse a JSON list column, degrading to [] on bad data."""
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value or "[]")
+    except Exception:
+        return []
+    return parsed if isinstance(parsed, list) else []
+
+
+def _parse_upload_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _normalize_upload_text(text: str) -> str:
+    """Normalization for matching only (noting brief §2.2):
+    lowercase, curly quotes straightened, whitespace collapsed.
+    Stored text is never normalized — only the comparison is."""
+    lowered = (text or "").lower().replace("’", "'").replace("“", '"').replace("”", '"')
+    cleaned = re.sub(r"[^\w\s'\"]", " ", lowered)
+    return " ".join(cleaned.split())
+
+
+def _upload_span_hash(span_text: str, location: str) -> str:
+    """SHA-256 of normalized span + location (reconciliation §2.4).
+    The stable span identity across re-extractions is content +
+    location — never the row id (§5.1)."""
+    import hashlib
+
+    material = f"{_normalize_upload_text(span_text)}\n{location}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _coerce_upload_evidence_roles(
+    evidence: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Collapse duplicate spans to the strongest role (§4.1):
+    primary > supporting > contrast. Unknown roles fail closed.
+    Order is first-seen order, deterministic."""
+    strongest: dict[str, str] = {}
+    order: list[str] = []
+    for entry in evidence or []:
+        span_id = (entry or {}).get("span_id")
+        role = ((entry or {}).get("role") or "").strip().lower()
+        if not span_id or role not in _UPLOAD_ROLE_STRENGTH:
+            raise ValueError(f"Bad evidence entry: {entry!r}")
+        if span_id not in strongest:
+            strongest[span_id] = role
+            order.append(span_id)
+        elif (
+            _UPLOAD_ROLE_STRENGTH[role] < _UPLOAD_ROLE_STRENGTH[strongest[span_id]]
+        ):
+            strongest[span_id] = role
+    return [{"span_id": sid, "role": strongest[sid]} for sid in order]
+
+
+def _upload_job_dict(row: sqlite3.Row) -> dict[str, Any]:
+    d = dict(row)
+    d["failed_chunks"] = _parse_upload_json_list(d.get("failed_chunks"))
+    # Amendment A1: the interpreted-chunks coverage record (a JSON
+    # list of chunk ids; [] when nothing has been interpreted yet).
+    d["interpreted_chunks"] = _parse_upload_json_list(
+        d.get("interpreted_chunks")
+    )
+    return d
+
+
+def _upload_observation_dict(row: sqlite3.Row) -> dict[str, Any]:
+    d = dict(row)
+    d["span_ids"] = _parse_upload_json_list(d.get("span_ids"))
+    return d
+
+
+def _upload_interpretation_dict(row: sqlite3.Row) -> dict[str, Any]:
+    d = dict(row)
+    d["evidence_ids"] = _parse_upload_json_list(d.get("evidence_ids"))
+    d["observation_ids"] = _parse_upload_json_list(d.get("observation_ids"))
+    d["is_transformation"] = bool(d.get("is_transformation"))
+    d["ungrounded"] = bool(d.get("ungrounded"))
+    # Amendment A3: the stored uncertain-match marker (JSON, or None).
+    # Parsed to a dict when present; the queue translates it to the
+    # {kind, prior_interpretation_id} shape via uncertain_match_for.
+    raw_match = d.get("uncertain_match")
+    if isinstance(raw_match, str) and raw_match.strip():
+        try:
+            parsed_match = json.loads(raw_match)
+        except (ValueError, TypeError):
+            parsed_match = None
+        d["uncertain_match"] = (
+            parsed_match if isinstance(parsed_match, dict) else None
+        )
+    else:
+        d["uncertain_match"] = None
+    return d
+
+
+def _upload_round_dict(row: sqlite3.Row) -> dict[str, Any]:
+    d = dict(row)
+    d["segment_presented"] = _parse_upload_json_list(d.get("segment_presented"))
+    return d

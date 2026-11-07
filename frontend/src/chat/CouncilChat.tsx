@@ -6,6 +6,7 @@ import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
 import TaskProposalCards from './TaskProposalCards'
 import RoundProposalCard, { type RoundItem } from './RoundProposalCard'
+import UploadRoundCard, { type UploadRoundItem } from './UploadRoundCard'
 import WeaverRoundClaimCard from './WeaverRoundClaimCard'
 import { stripCorrectionDraft, stripRoundOfferMarker, type WeaverRoundItem } from './weaverRound'
 import { stripTaskProposalBlocks } from './taskProposals'
@@ -39,7 +40,7 @@ export type ConversationMessage = {
    *  Weaver rapid fire (S1): the same field carries a
    *  meeting-impression item instead (kind + agent + claim id, and
    *  the deterministic rendering on live turns). */
-  roundItem?: RoundItem | WeaverRoundItem | null
+  roundItem?: RoundItem | WeaverRoundItem | UploadRoundItem | null
   /** Weaver rapid fire (S1): the round state this turn recorded
    *  ("item" | "checkpoint" | "closing" | "offered" | "ended").
    *  Carried from the turn response; absent on other turns. */
@@ -56,7 +57,11 @@ function mapServerMessages(
   if (!Array.isArray(rows)) return mapped
   for (const m of rows) {
     if (!m || typeof m !== 'object') continue
-    const body = String((m as Record<string, unknown>).body ?? '').trim()
+    // Strip the [[round-offer]] marker from display (live + hydrated
+    // messages): the marker records the offer server-side; it is not
+    // part of the reply the user reads. Applied here at render and
+    // at turn receipt, so both paths agree.
+    const body = stripRoundOfferMarker(String((m as Record<string, unknown>).body ?? ''))
     if (!body) continue
     const role = (m as Record<string, unknown>).role === 'user' ? 'user' : 'voice'
     const aid =
@@ -85,6 +90,10 @@ function mapServerMessages(
       roundCtx && typeof roundCtx.round_agent_id === 'string'
         ? (roundCtx.round_agent_id as string)
         : null
+    const roundInterpretationId =
+      roundCtx && typeof roundCtx.round_interpretation_id === 'string'
+        ? (roundCtx.round_interpretation_id as string)
+        : null
     const roundItem =
       roundCtx?.round_kind === 'firebrand' && roundProposalId
         ? { kind: 'task_proposal', proposal_id: roundProposalId }
@@ -95,7 +104,12 @@ function mapServerMessages(
               claim_id: roundClaimId,
               claim_type: 'meeting_impression',
             }
-          : null
+          : roundCtx?.round_kind === 'upload' && roundInterpretationId
+            ? {
+                kind: 'interpretation' as const,
+                interpretation_id: roundInterpretationId,
+              }
+            : null
     mapped.push({
       role,
       content: body,
@@ -484,7 +498,9 @@ export default function CouncilChat({
       }
       return {
         role: 'voice',
-        content: data.reply,
+        // Strip the [[round-offer]] marker at receipt (the render
+        // path strips it too, so live + hydrated messages agree).
+        content: stripRoundOfferMarker(data.reply),
         // Store path: the server's message id. Local path: no server id
         // exists, so mint a session-scoped ref at receipt time.
         messageId: useStore ? (data.message_id ?? null) : newLocalRef(),
@@ -858,6 +874,20 @@ export default function CouncilChat({
                   messageId={m.messageId}
                   roundItem={m.roundItem}
                   messageContent={m.content}
+                />
+              )}
+              {/* Upload rapid fire (S1): the reading this reply
+                  presented, rendered from the server's round_item —
+                  never from message text. Store path only. */}
+              {conversationId && m.messageId && !m.messageId.startsWith('local-') && m.roundItem && 'interpretation_id' in m.roundItem && (
+                <UploadRoundCard
+                  base={base}
+                  conversationId={conversationId}
+                  messageId={m.messageId}
+                  roundItem={m.roundItem}
+                  seatId={m.voiceId}
+                  seatNames={names}
+                  onNextVoice={(id) => setActiveId(id)}
                 />
               )}
               {m.messageId && m.voiceId && (

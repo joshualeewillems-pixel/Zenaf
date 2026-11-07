@@ -302,10 +302,21 @@ def distill_events(
         model_id = _resolve_default_model_id()
     now_ms = int(time.time() * 1000)
     candidates: list[TrainingSignal] = []
+    # The shared extraction semaphore (amendment A5): the same
+    # instance the upload extraction worker takes — one model call at
+    # a time across both paths. The home is
+    # local_ai/extraction_concurrency.py (neutral — neither path's
+    # module). The wrap is per batch, around complete(prompt) inside
+    # distill_events, not at the route, so the route's hold duration
+    # stays per-batch. Lazy import: extraction_concurrency imports
+    # nothing from this package, so this cannot cycle.
+    from local_ai.extraction_concurrency import extraction_slot
+
     for batch in _group_batches(events):
         batch_claims = _matching_claims(batch, claims or [], session_id)
         prompt = _build_prompt(batch, zone_hint, batch_claims)
-        raw = complete(prompt)  # may raise DistillError — propagated, not swallowed
+        with extraction_slot():
+            raw = complete(prompt)  # may raise DistillError — propagated, not swallowed
         event_ids = [e.event_id for e in batch]
         sources = sorted({e.source for e in batch})
         context_ref: dict = {

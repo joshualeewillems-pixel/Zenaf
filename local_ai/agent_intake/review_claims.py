@@ -43,6 +43,9 @@ CLAIM_TYPES = (
     "project",
     "task",
     "idea",
+    # Upload rapid-fire S1 (§7.3): a training candidate filed from an
+    # upload reading, anchored "upload-{seat}-{document_id}".
+    "upload_interpretation",
     # Atomic insight claims (one moment -> one interpretation + alternatives).
     "value_inference",
     "decision_pattern",

@@ -527,6 +527,30 @@ def _migrate_auth_tables(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_upload_outcome_creations(conn: sqlite3.Connection) -> None:
+    """Upload rapid-fire S1 §2.10 (U-1): the VE idempotency carrier.
+
+    One row per outcome whose VE record was created, written in the
+    SAME VE transaction as the VE record it records (the insert and
+    the create_* insert commit together, or neither does).
+    ``outcome_id`` as PRIMARY KEY is the idempotency guarantee — a
+    replay for the same outcome hits the existing row and returns
+    the existing VE record. ``node_id`` stays NULL in S1 (S-NODE
+    fills it at flip time; U-10 deferred to C1b).
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS upload_outcome_creations (
+          outcome_id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL,
+          ve_kind TEXT NOT NULL,
+          ve_id TEXT NOT NULL,
+          node_id TEXT,
+          created_at TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+
+
 def _migrate_user_admin_column(conn: sqlite3.Connection) -> None:
     cur = conn.execute("PRAGMA table_info(users)")
     cols = {r[1] for r in cur.fetchall()}
@@ -1058,6 +1082,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_task_proposals(conn)
     _migrate_migration_ledger(conn)
     _migrate_node_store(conn)
+    _migrate_upload_outcome_creations(conn)
     _ensure_default_owner_and_backfill(conn)
     conn.commit()
 
@@ -5912,24 +5937,43 @@ def get_idea(idea_id: str, user_id: str) -> dict[str, Any] | None:
     return M.row_to_idea(tuple(row)) if row else None
 
 
+def _insert_idea(
+    conn: sqlite3.Connection,
+    data: M.IdeaCreate,
+    user_id: str,
+    *,
+    iid: str | None = None,
+) -> str:
+    """Validate + INSERT one idea row. No commit, no read-back, no log.
+
+    Shared by create_idea and approve_upload_outcome so the approve
+    path reuses the exact write path instead of duplicating
+    validation or SQL (the _insert_task precedent). Callers commit
+    (or roll back) and do read-back + logging.
+    """
+    iid = iid or M.new_id()
+    now = _now()
+    conn.execute(
+        """INSERT INTO ideas (
+          id, user_id, title, summary, description, status, tags, created_by, desired_outcome,
+          linked_people, linked_assets, linked_ideas, created_at, updated_at, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            iid, user_id, data.title, data.summary, data.description, data.status, M._json_dumps_list(data.tags),
+            data.created_by, data.desired_outcome, M._json_dumps_list(data.linked_people),
+            M._json_dumps_list(data.linked_assets), M._json_dumps_list(data.linked_ideas), now, now,
+            data.notes or "",
+        ),
+    )
+    return iid
+
+
 def create_idea(data: M.IdeaCreate, user_id: str) -> dict[str, Any]:
     conn = get_connection()
     iid = M.new_id()
-    now = _now()
     with ve_write_transaction(conn, purpose="create_idea"):
         _guard_idea_write(conn, iid, user_id, target_id=iid, target_kind="idea")
-        conn.execute(
-            """INSERT INTO ideas (
-              id, user_id, title, summary, description, status, tags, created_by, desired_outcome,
-              linked_people, linked_assets, linked_ideas, created_at, updated_at, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                iid, user_id, data.title, data.summary, data.description, data.status, M._json_dumps_list(data.tags),
-                data.created_by, data.desired_outcome, M._json_dumps_list(data.linked_people),
-                M._json_dumps_list(data.linked_assets), M._json_dumps_list(data.linked_ideas), now, now,
-                data.notes or "",
-            ),
-        )
+        _insert_idea(conn, data, user_id, iid=iid)
         _commit_if_owner(conn)
     out = get_idea(iid, user_id) or {}
     _log_ve_entity_activity(
@@ -6932,10 +6976,42 @@ def get_project(project_id: str, user_id: str | None = None) -> dict[str, Any] |
     return M.row_to_project(tuple(row)) if row else None
 
 
+def _insert_project(
+    conn: sqlite3.Connection,
+    data: M.ProjectCreate,
+    user_id: str,
+    *,
+    pid: str | None = None,
+) -> str:
+    """INSERT one project row. No commit, no read-back, no log, no
+    guard — the caller runs _ensure_owned_reference and
+    _guard_legacy_write inside its transaction first (the
+    _insert_task precedent). Shared by create_project and
+    approve_upload_outcome so the approve path reuses the exact
+    write path instead of duplicating validation or SQL.
+    """
+    pid = pid or M.new_id()
+    now = _now()
+    conn.execute(
+        """INSERT INTO projects (
+          id, user_id, initiative_id, title, brief, status, owner_id, supporting_owner_ids, required_assets, priority,
+          start_date, end_date, estimated_weekly_hours, next_step_ai,
+          notes, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            pid, user_id, data.initiative_id, data.title, data.brief, data.status, data.owner_id,
+            M._json_dumps_list(data.supporting_owner_ids), M._json_dumps_list(data.required_assets),
+            data.priority, data.start_date, data.end_date,
+            data.estimated_weekly_hours, data.next_step_ai,
+            data.notes, now, now,
+        ),
+    )
+    return pid
+
+
 def create_project(data: M.ProjectCreate, user_id: str) -> dict[str, Any]:
     conn = get_connection()
     pid = M.new_id()
-    now = _now()
     _ensure_owned_reference(
         conn,
         table="initiatives",
@@ -6956,20 +7032,7 @@ def create_project(data: M.ProjectCreate, user_id: str) -> dict[str, Any]:
             target_id=pid,
             target_kind="project",
         )
-        conn.execute(
-            """INSERT INTO projects (
-              id, user_id, initiative_id, title, brief, status, owner_id, supporting_owner_ids, required_assets, priority,
-              start_date, end_date, estimated_weekly_hours, next_step_ai,
-              notes, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                pid, user_id, data.initiative_id, data.title, data.brief, data.status, data.owner_id,
-                M._json_dumps_list(data.supporting_owner_ids), M._json_dumps_list(data.required_assets),
-                data.priority, data.start_date, data.end_date,
-                data.estimated_weekly_hours, data.next_step_ai,
-                data.notes, now, now,
-            ),
-        )
+        _insert_project(conn, data, user_id, pid=pid)
         _commit_if_owner(conn)
     out = get_project(pid, user_id) or {}
     _log_ve_entity_activity(
@@ -8183,6 +8246,357 @@ def approve_task_proposal(user_id: str, proposal_id: str) -> dict[str, Any]:
     row = _get_proposal_row(conn, proposal_id, user_id)
     proposal = _proposal_row_to_dict(tuple(row)) if row else {}
     return {"task": task, "proposal": proposal}
+
+
+class UploadOutcomeStuckError(Exception):
+    """An upload outcome is stuck in 'creating' with no carrier row
+    (reconciliation §6.3 R2: crash before the VE commit). The
+    diagnostic surfaces it. A retry is refused while the outcome is
+    younger than one hour ('Still creating — check back shortly');
+    an older one may be re-claimed (amendment A4 step 1b). Routes
+    map this to 409 with the diagnostic copy."""
+
+
+#: Amendment A4: the re-claim staleness gate — a 'creating' outcome
+#: younger than this is presumed live, not dead. One hour, the
+#: diagnostic's threshold (reconciliation §6.3).
+_UPLOAD_RECLAIM_STALE_S = 3600
+
+
+def _upload_outcome_age_s(outcome: dict[str, Any]) -> float | None:
+    """An outcome row's age in seconds from its created_at, or None
+    when the timestamp is missing / unparseable. The age is the
+    re-claim gate's input (amendment A4); an unknown age refuses
+    the retry (the safe default — the outcome might be live)."""
+    try:
+        created = datetime.fromisoformat(
+            str(outcome.get("created_at") or "").replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - created).total_seconds()
+
+
+def get_upload_outcome_creation(
+    user_id: str, outcome_id: str
+) -> dict[str, Any] | None:
+    """The carrier row for one outcome (U-1), owner-scoped — the
+    durable idempotency record for replay / R1 recovery. None when
+    no VE record was ever committed for this outcome."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT outcome_id, user_id, ve_kind, ve_id, node_id, created_at "
+        "FROM upload_outcome_creations WHERE outcome_id = ? AND user_id = ?",
+        (outcome_id, user_id),
+    ).fetchone()
+    if row is None:
+        return None
+    return dict(row)
+
+
+def approve_upload_outcome(
+    user_id: str,
+    outcome_id: str,
+    *,
+    kind: str,
+    title: str,
+    detail: str,
+    parent_id: str | None = None,
+    conversation_id: str | None = None,
+    lens_seat: str | None = None,
+    store: Any | None = None,
+) -> dict[str, Any]:
+    """Approve one upload outcome: create the VE record and record
+    the creation in ONE VE transaction (§8.1, U-1).
+
+    Follows approve_task_proposal's contract shape, adapted to the
+    two-DB reality (W3: the VE and ConversationStore DBs are
+    SEPARATE — no shared transaction; read-time exclusion is the
+    mandatory guarantee):
+
+    1. Claim the outcome (ConversationStore, BEGIN IMMEDIATE via
+       claim_upload_outcome): only the session whose UPDATE matches
+       a 'pending' row proceeds. Rowcount 0 → the outcome was
+       already decided: a 'created' outcome replays (the carrier
+       row returns the existing VE record); a 'creating' outcome
+       WITH a carrier row is R1 (the retry tap heals it to
+       'created', reconciliation §6.3 R3 — no other read heals it);
+       a 'creating' outcome WITHOUT a carrier row is R2 — the
+       retry re-claim (amendment A4 step 1b) when the outcome is
+       older than one hour, else refused ('Still creating').
+    2. Create the VE record + carrier row (VE DB, one
+       ve_write_transaction): the _insert_* helper + the
+       upload_outcome_creations insert commit together, or neither
+       does. A validation failure rolls back the claim too (the
+       outcome returns to 'pending' so the user can edit and
+       retry); nothing is written. A carrier-insert PRIMARY KEY
+       failure (a concurrent creation committed first) re-reads
+       the carrier row and returns the existing VE record (case
+       (iii)) instead of surfacing an error.
+    3. Mark the outcome 'created' (ConversationStore) with its
+       ve_kind / ve_id, and flip the interpretation to 'ruled' —
+       the verdict has landed, so the reading leaves the queue.
+
+    R-label mapping footnote (amendment A4): the brief's R1–R4 do
+    not map onto reconciliation §6.3's R1–R4. Brief R1 =
+    reconciliation R3 (crash after VE commit, before outcome
+    'created'); brief R2 = reconciliation R2 (crash before VE
+    commit); brief R3 = reconciliation R4 (duplicate tap during
+    creation); brief R4 is new (the §8.1 step-1 CAS loser).
+
+    Parentage (U-4; the VE mapping is the brief's open point — the
+    chooser lists recent PROJECTS): a task nests under the chosen
+    project (project_id); a project sits alongside it under the
+    same initiative (initiative_id inherited); an idea takes no VE
+    parent (the choice is recorded on the outcome row only).
+    Default root (parent_id None): top-level task / root project.
+
+    Returns {"outcome": ..., "record": ..., "replayed": bool}.
+    The activity log is a post-commit effect, exactly as
+    create_task does (its failure never rolls back the creation).
+    """
+    from local_ai.conversation.store import ConversationStore
+
+    if kind not in ("project", "task", "idea"):
+        raise ValueError(f"Unknown outcome kind: {kind!r}")
+    title = (title or "").strip()
+    if not title:
+        raise ValueError("Outcome title must be non-empty")
+    store = store if store is not None else ConversationStore()
+    outcome = store.get_upload_outcome(user_id, outcome_id)
+    if outcome is None:
+        raise ValueError(f"Outcome not found: {outcome_id!r}")
+    status = outcome.get("status")
+    if status == "created":
+        carrier = get_upload_outcome_creation(user_id, outcome_id)
+        record = _upload_outcome_ve_record(user_id, outcome) if carrier else {}
+        return {"outcome": outcome, "record": record, "replayed": True}
+    reclaimed = False
+    if status == "creating":
+        carrier = get_upload_outcome_creation(user_id, outcome_id)
+        if carrier is not None:
+            # R1 healing — the RETRY TAP (reconciliation §6.3 R3):
+            # the VE record + carrier committed, the outcome never
+            # flipped to 'created'. Complete it now. No other read
+            # heals it.
+            store.set_upload_outcome_status(
+                user_id,
+                outcome_id,
+                "created",
+                ve_kind=carrier["ve_kind"],
+                ve_id=carrier["ve_id"],
+            )
+            store.set_upload_interpretation_status(
+                user_id, outcome["interpretation_id"], "ruled"
+            )
+            outcome = store.get_upload_outcome(user_id, outcome_id) or outcome
+            record = _upload_outcome_ve_record(user_id, outcome)
+            return {"outcome": outcome, "record": record, "replayed": True}
+        # Step 1b (amendment A4): no carrier row — the retry may
+        # re-take the claim, but only when the outcome is older
+        # than one hour. A younger 'creating' outcome is presumed
+        # live, not dead, and the retry is refused with a plain
+        # message. The age is the outcome row's age (created_at —
+        # the claim to 'creating' follows creation in the same
+        # approve call, so creation age approximates claim age).
+        # An unparseable timestamp refuses the retry (safe default).
+        age_s = _upload_outcome_age_s(outcome)
+        if age_s is None or age_s < _UPLOAD_RECLAIM_STALE_S:
+            raise UploadOutcomeStuckError("Still creating — check back shortly.")
+        if not store.reclaim_upload_outcome(user_id, outcome_id):
+            # Another session owns the retry — return the existing
+            # outcome / 409 per §8.2.
+            raise ProposalConflict(
+                "Already decided — refresh to see its state."
+            )
+        # Re-claimed: this session owns the retry. Fall through to
+        # step 2 (carrier lookup first — already done above, no
+        # carrier) and create the VE record + carrier below.
+        reclaimed = True
+    elif status != "pending":
+        raise ProposalConflict(
+            f"Outcome is already {status} — refresh to see its state."
+        )
+    if not reclaimed and not store.claim_upload_outcome(user_id, outcome_id):
+        # Lost the race after the read: re-read and replay, or 409.
+        fresh = store.get_upload_outcome(user_id, outcome_id) or outcome
+        if fresh.get("status") == "created":
+            record = _upload_outcome_ve_record(user_id, fresh)
+            return {"outcome": fresh, "record": record, "replayed": True}
+        raise ProposalConflict("Already decided — refresh to see its state.")
+
+    conn = get_connection()
+    ve_kind = kind
+    ve_id: str | None = None
+    try:
+        with ve_write_transaction(conn, purpose="approve_upload_outcome"):
+            if kind == "task":
+                project_id = parent_id
+                data = M.TaskCreate(
+                    project_id=project_id,
+                    title=title,
+                    description=detail or "",
+                    status="Todo",
+                    seat_ref="",
+                )
+                _reject_keystone_project(data.project_id, user_id)
+                _guard_legacy_write(
+                    conn,
+                    _resolve_task_payload_subtree(
+                        conn, data.parent_task_id, data.project_id, user_id
+                    ),
+                    target_id=None,
+                    target_kind="task",
+                )
+                ve_id = _insert_task(
+                    conn,
+                    data,
+                    user_id,
+                    origin_seat=lens_seat or "conductor",
+                    origin_conversation_id=conversation_id,
+                    origin_message_id=None,
+                    origin_claim_id=None,
+                    origin_decision_id=None,
+                    responsible_seat=None,
+                )
+            elif kind == "project":
+                initiative_id = None
+                if parent_id:
+                    parent = get_project(parent_id, user_id)
+                    if parent is None:
+                        raise ValueError(
+                            f"Parent project not found: {parent_id!r}"
+                        )
+                    initiative_id = parent.get("initiative_id")
+                pid = M.new_id()
+                data = M.ProjectCreate(
+                    initiative_id=initiative_id,
+                    title=title,
+                    brief=detail or "",
+                    status="Draft",
+                    owner_id=user_id,
+                )
+                _ensure_owned_reference(
+                    conn,
+                    table="initiatives",
+                    ref_id=data.initiative_id,
+                    user_id=user_id,
+                    field_name="initiative_id",
+                )
+                _guard_legacy_write(
+                    conn,
+                    data.initiative_id,
+                    target_id=pid,
+                    target_kind="project",
+                )
+                ve_id = _insert_project(conn, data, user_id, pid=pid)
+            else:  # idea: no VE parent; the choice stays on the outcome row.
+                iid = M.new_id()
+                data = M.IdeaCreate(
+                    title=title,
+                    description=detail or "",
+                    status="Captured",
+                    created_by=user_id,
+                )
+                _guard_idea_write(conn, iid, user_id, target_id=iid, target_kind="idea")
+                ve_id = _insert_idea(conn, data, user_id, iid=iid)
+            assert ve_id is not None
+            conn.execute(
+                "INSERT INTO upload_outcome_creations (outcome_id, user_id, "
+                "ve_kind, ve_id, node_id, created_at) VALUES (?, ?, ?, ?, NULL, ?)",
+                (outcome_id, user_id, ve_kind, ve_id, _now()),
+            )
+            _commit_if_owner(conn)
+    except sqlite3.IntegrityError:
+        # Amendment A4, case (iii): the carrier insert failed on
+        # PRIMARY KEY — a concurrent creation committed its carrier
+        # first. Re-read the carrier row and return the existing VE
+        # record instead of surfacing an error. (The
+        # ve_write_transaction owner already rolled this session's
+        # partial VE insert back on the exception exit.)
+        carrier = get_upload_outcome_creation(user_id, outcome_id)
+        if carrier is not None:
+            store.set_upload_outcome_status(
+                user_id,
+                outcome_id,
+                "created",
+                ve_kind=carrier["ve_kind"],
+                ve_id=carrier["ve_id"],
+            )
+            store.set_upload_interpretation_status(
+                user_id, outcome["interpretation_id"], "ruled"
+            )
+            done = store.get_upload_outcome(user_id, outcome_id) or outcome
+            record = _upload_outcome_ve_record(user_id, done)
+            return {"outcome": done, "record": record, "replayed": True}
+        # Not a carrier conflict (or the carrier vanished): fall
+        # through to the generic failure handling below.
+        _rollback_if_owner(conn)
+        try:
+            store.set_upload_outcome_status(user_id, outcome_id, "pending")
+        except Exception:
+            pass
+        raise
+    except Exception:
+        _rollback_if_owner(conn)
+        # Step-4 contract: a validation failure rolls back the claim
+        # too — the outcome returns to 'pending' so the user can edit
+        # and retry; nothing is written.
+        try:
+            store.set_upload_outcome_status(user_id, outcome_id, "pending")
+        except Exception:
+            pass
+        raise
+    record = _upload_outcome_ve_record(
+        user_id, {"ve_kind": ve_kind, "ve_id": ve_id}
+    )
+    activity_type = {
+        "project": ActivityType.PROJECT_CREATED.value,
+        "task": ActivityType.TASK_CREATED.value,
+        "idea": ActivityType.IDEA_CREATED.value,
+    }[ve_kind]
+    entity_type = {
+        "project": ActivityEntityType.PROJECT.value,
+        "task": ActivityEntityType.TASK.value,
+        "idea": ActivityEntityType.IDEA.value,
+    }[ve_kind]
+    _log_ve_entity_activity(
+        type=activity_type,
+        entity_type=entity_type,
+        entity_id=ve_id,
+        user_id=user_id,
+        related_entity_id=_ve_activity_related_id(
+            parent_id if ve_kind == "task" else None
+        ),
+        detail=f"title={title[:120]!r}",
+    )
+    store.set_upload_outcome_status(
+        user_id, outcome_id, "created", ve_kind=ve_kind, ve_id=ve_id
+    )
+    store.set_upload_interpretation_status(
+        user_id, outcome["interpretation_id"], "ruled"
+    )
+    outcome = store.get_upload_outcome(user_id, outcome_id) or outcome
+    return {"outcome": outcome, "record": record, "replayed": False}
+
+
+def _upload_outcome_ve_record(
+    user_id: str, outcome: dict[str, Any]
+) -> dict[str, Any]:
+    """Read back the VE record an outcome created (or replayed)."""
+    ve_kind = outcome.get("ve_kind")
+    ve_id = outcome.get("ve_id")
+    if not ve_kind or not ve_id:
+        return {}
+    if ve_kind == "project":
+        return get_project(ve_id, user_id) or {}
+    if ve_kind == "task":
+        return get_task(ve_id, user_id) or {}
+    if ve_kind == "idea":
+        return get_idea(ve_id, user_id) or {}
+    return {}
 
 
 def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any] | None:

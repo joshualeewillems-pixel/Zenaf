@@ -97,7 +97,9 @@ export function retainedItemNoun(capabilityId: string): { singular: string; plur
  */
 export function retainedChoiceText(capability: FrameworkCapability): string | null {
   const n = capability.retained_count
-  if (n <= 0) return null
+  // An unavailable count (null) offers no choice: the surface cannot
+  // choose about items it could not count.
+  if (n === null || n <= 0) return null
   const noun = retainedItemNoun(capability.id).plural
   const count = `${n} ${noun}`
   switch (capability.id) {
@@ -125,6 +127,7 @@ export function shouldOfferRetainedChoice(
     lastChange !== null &&
     lastChange.capability === capability.id &&
     lastChange.stance === 'dont_do_it' &&
+    capability.retained_count !== null &&
     capability.retained_count > 0
   )
 }

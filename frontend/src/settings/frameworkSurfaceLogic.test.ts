@@ -41,6 +41,7 @@ function capability(
     supported_stances: ['ask_me', 'just_do_it', 'dont_do_it'],
     exception_classes: [],
     retained_count: 0,
+    retained_count_status: 'available',
     quieted: false,
     paused: false,
     rows,
@@ -174,5 +175,11 @@ describe('retained choice (R.1–R.4)', () => {
     expect(retainedItemNoun('R1')).toEqual({ singular: 'pending note', plural: 'pending notes' })
     expect(pluralize(1, 'pending note', 'pending notes')).toBe('pending note')
     expect(pluralize(3, 'pending note', 'pending notes')).toBe('pending notes')
+  })
+
+  it('S2-L9 an unavailable count offers no choice and no choice text', () => {
+    const cap = capability('R6', [], { retained_count: null, retained_count_status: 'unavailable' })
+    expect(retainedChoiceText(cap)).toBeNull()
+    expect(shouldOfferRetainedChoice(cap, { capability: 'R6', stance: 'dont_do_it' })).toBe(false)
   })
 })

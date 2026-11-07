@@ -134,6 +134,17 @@ export function FrameworkPermissionsSurface({
 
   return (
     <div className="space-y-3">
+      {/* Enforcement honesty (founder verdict check 1a, 2026-11-06):
+          framework_check has no production call sites in Slice 2, so
+          these stances are saved choices, not enforced controls — the
+          switches above are what Zenaf actually follows today. This
+          line lives in the shared surface so it shows in Settings AND
+          in the onboarding gate, the two displays. */}
+      <p className="text-sm text-slate-400 rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+        Saved choices, not yet enforced. These stances are recorded now, but no part of Zenaf
+        follows them yet — the switches above are the controls that actually apply today. Each
+        capability starts following its saved stance when it is wired (Slice 6).
+      </p>
       <PauseBanner
         state={state}
         onResume={() => void togglePause(false)}
@@ -150,9 +161,9 @@ export function FrameworkPermissionsSurface({
           <span>
             <span className="text-sm text-slate-200">Pause all standing behavior</span>
             <span className="block text-sm text-slate-400">
-              Stops anything new from starting. Your stances stay exactly as they are, and
-              un-pausing restores them. Pausing never deletes, trains, publishes, or shares
-              anything.
+              Records that nothing new should start. Work already underway finishes, and pausing
+              cancels nothing. Your stances stay exactly as they are, and un-pausing restores
+              them. Pausing never deletes, trains, publishes, or shares anything.
             </span>
           </span>
         </label>
@@ -271,15 +282,20 @@ function CapabilityBlock({
           </div>
         ))
       )}
+      {/* Retained line, three ways (founder verdict check 2): a
+          verified count, a verified zero, or unavailable — never a
+          bare 0 for a read that failed. */}
       <p className="text-sm text-slate-400">
-        {capability.retained_count > 0
-          ? `${capability.retained_count} ${pluralize(
-              capability.retained_count,
-              retainedItemNoun(capability.id).singular,
-              retainedItemNoun(capability.id).plural,
-            )} retained.`
-          : 'No retained items.'}{' '}
-        {capability.retained_count > 0 ? (
+        {capability.retained_count === null
+          ? 'Retained count unavailable — it could not be read just now.'
+          : capability.retained_count > 0
+            ? `${capability.retained_count} ${pluralize(
+                capability.retained_count,
+                retainedItemNoun(capability.id).singular,
+                retainedItemNoun(capability.id).plural,
+              )} retained.`
+            : 'No retained items.'}{' '}
+        {capability.retained_count !== null && capability.retained_count > 0 ? (
           <button
             type="button"
             onClick={onChoiceOpen}

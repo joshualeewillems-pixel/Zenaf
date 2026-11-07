@@ -97,6 +97,14 @@ describe('PauseBanner', () => {
     expect(container.textContent).toContain('Resume standing behavior')
   })
 
+  it('S2-B5 pause honesty: the banner says pausing cancels nothing', async () => {
+    renderBanner({ state: stateFixture(true) })
+    await flush()
+    expect(container.textContent).toContain('pausing cancels nothing')
+    expect(container.textContent).toContain('Work already underway finishes')
+    expect(container.textContent).not.toContain('nothing new is starting')
+  })
+
   it('S2-B3 Resume in fed mode calls onResume and does not fetch', async () => {
     const onResume = vi.fn()
     renderBanner({ state: stateFixture(true), onResume })

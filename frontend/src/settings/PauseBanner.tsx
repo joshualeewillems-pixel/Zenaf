@@ -70,7 +70,8 @@ export function PauseBanner({
   return (
     <div className="rounded-lg border border-amber-600/60 bg-amber-900/30 p-3">
       <p className="text-sm text-amber-100">
-        Standing behavior is paused — nothing new is starting. Your stances are unchanged.
+        Standing behavior is paused — nothing new should start. Work already underway finishes;
+        pausing cancels nothing. Your stances are unchanged.
       </p>
       <button
         type="button"

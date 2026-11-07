@@ -385,7 +385,14 @@ export type FrameworkCapability = {
   default_stance: FrameworkStance
   supported_stances: FrameworkStance[]
   exception_classes: string[]
-  retained_count: number
+  /**
+   * Retained-item count: a number when the read succeeded, null when
+   * the read failed. A failed read is UNAVAILABLE, never zero —
+   * the surface must render it as unavailable, never as "0 items"
+   * (founder verdict check 2, 2026-11-06).
+   */
+  retained_count: number | null
+  retained_count_status: 'available' | 'unavailable'
   quieted: boolean
   paused: boolean
   rows: FrameworkRow[]
@@ -446,10 +453,22 @@ export function normalizeFrameworkState(raw: unknown): FrameworkState {
         exception_classes: Array.isArray(entry.exception_classes)
           ? (entry.exception_classes as unknown[]).map(String)
           : [],
+        // A failed/unavailable read is null, never 0: the normalizer
+        // must not collapse it into a verified zero. An explicit
+        // 'unavailable' status from the server wins over any number
+        // present (fail-closed direction).
         retained_count:
-          typeof entry.retained_count === 'number' && Number.isFinite(entry.retained_count)
-            ? Math.max(0, Math.floor(entry.retained_count))
-            : 0,
+          entry.retained_count_status === 'unavailable'
+            ? null
+            : typeof entry.retained_count === 'number' && Number.isFinite(entry.retained_count)
+              ? Math.max(0, Math.floor(entry.retained_count))
+              : null,
+        retained_count_status:
+          entry.retained_count_status === 'unavailable'
+            ? 'unavailable'
+            : typeof entry.retained_count === 'number' && Number.isFinite(entry.retained_count)
+              ? 'available'
+              : 'unavailable',
         quieted: Boolean(entry.quieted),
         paused: Boolean(entry.paused),
         rows,
@@ -476,7 +495,8 @@ export async function fetchFrameworkPermissions(): Promise<FrameworkState> {
 
 export type FrameworkStanceResponse = {
   record: Record<string, unknown>
-  retained_count: number
+  retained_count: number | null
+  retained_count_status: 'available' | 'unavailable'
   retained_choice_offered: boolean
   state: FrameworkState
 }
@@ -499,7 +519,18 @@ export async function setFrameworkStance(
   }
   return {
     record: isRecord(body.record) ? body.record : {},
-    retained_count: typeof body.retained_count === 'number' ? body.retained_count : 0,
+    retained_count:
+      body.retained_count_status === 'unavailable'
+        ? null
+        : typeof body.retained_count === 'number'
+          ? body.retained_count
+          : null,
+    retained_count_status:
+      body.retained_count_status === 'unavailable'
+        ? 'unavailable'
+        : typeof body.retained_count === 'number'
+          ? 'available'
+          : 'unavailable',
     retained_choice_offered: Boolean(body.retained_choice_offered),
     state: normalizeFrameworkState(body.state),
   }

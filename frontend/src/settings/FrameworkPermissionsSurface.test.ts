@@ -40,6 +40,7 @@ function capability(id: string, rows: ReturnType<typeof row>[], extra: Partial<F
     supported_stances: ['ask_me', 'just_do_it', 'dont_do_it'],
     exception_classes: [],
     retained_count: 0,
+    retained_count_status: 'available',
     quieted: false,
     paused: false,
     rows,
@@ -270,5 +271,50 @@ describe('FrameworkPermissionsSurface', () => {
     expect(countButtons(ve, 'Ask me')).toBe(1)
     expect(countButtons(ve, 'Just do it')).toBe(2)
     expect(countButtons(ve, "Don't do it")).toBe(2)
+  })
+
+  it('S2-F6 enforcement honesty: the surface says the stances are saved but not yet enforced', async () => {
+    renderSurface()
+    await flush()
+    expect(container.textContent).toContain('Saved choices, not yet enforced')
+    expect(container.textContent).toContain("no part of Zenaf follows them yet")
+    expect(container.textContent).toContain('the switches above are the controls that actually apply today')
+  })
+
+  it('S2-F7 pause honesty: pausing says it cancels nothing, on the control and in the banner', async () => {
+    renderSurface()
+    await flush()
+    expect(container.textContent).toContain('pausing cancels nothing')
+    const checkbox = container.querySelector('input[type="checkbox"]')
+    if (!checkbox) throw new Error('pause checkbox missing')
+    await click(checkbox)
+    expect(container.textContent).toContain('Standing behavior is paused')
+    expect(container.textContent).toContain('pausing cancels nothing')
+    expect(container.textContent).toContain('Work already underway finishes')
+  })
+
+  it('S2-F8 retained-count honesty: an unavailable count renders as unavailable, never as zero', async () => {
+    // Every capability's read failed: no "No retained items." anywhere.
+    serverState = {
+      ...fixtureState(),
+      capabilities: fixtureState().capabilities.map((c) => ({
+        ...c,
+        retained_count: null,
+        retained_count_status: 'unavailable' as const,
+      })),
+    }
+    renderSurface()
+    await flush()
+    expect(container.textContent).toContain('Retained count unavailable')
+    expect(container.textContent).not.toContain('No retained items.')
+    expect(container.textContent).not.toContain('retained.')
+  })
+
+  it('S2-F9 retained-count honesty: a verified zero still renders as zero, distinctly', async () => {
+    renderSurface()
+    await flush()
+    // R2/R3/R4/R5 have verified zero in the fixture.
+    expect(container.textContent).toContain('No retained items.')
+    expect(container.textContent).not.toContain('Retained count unavailable')
   })
 })

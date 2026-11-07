@@ -302,10 +302,19 @@ def distill_events(
         model_id = _resolve_default_model_id()
     now_ms = int(time.time() * 1000)
     candidates: list[TrainingSignal] = []
+    # The shared extraction semaphore (§3.5): the same instance the
+    # upload extraction worker takes — one model call at a time
+    # across both paths. Lazy import: upload_extraction does not
+    # import distill, so this cannot cycle.
+    from local_ai.conversation.upload_extraction import (
+        EXTRACTION_MODEL_SEMAPHORE,
+    )
+
     for batch in _group_batches(events):
         batch_claims = _matching_claims(batch, claims or [], session_id)
         prompt = _build_prompt(batch, zone_hint, batch_claims)
-        raw = complete(prompt)  # may raise DistillError — propagated, not swallowed
+        with EXTRACTION_MODEL_SEMAPHORE:
+            raw = complete(prompt)  # may raise DistillError — propagated, not swallowed
         event_ids = [e.event_id for e in batch]
         sources = sorted({e.source for e in batch})
         context_ref: dict = {

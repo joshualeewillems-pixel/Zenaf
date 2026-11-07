@@ -112,6 +112,15 @@ CREATE TABLE IF NOT EXISTS round_reserved_ids (
   snooze_until TEXT,
   PRIMARY KEY (user_id, kind, item_id)
 );
+-- Weaver rapid fire S1 (brief §7.3/§8.4): the per-user decline-
+-- cooldown timestamp, beside the parked-ids record. One row per
+-- user: the last time the user declined (or ignored) a round offer.
+-- While now < declined_at + 24h, no proactive offer is invited in
+-- any conversation. The cooldown is a read-time gate, never a sweep.
+CREATE TABLE IF NOT EXISTS round_decline_cooldowns (
+  user_id TEXT NOT NULL PRIMARY KEY,
+  declined_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS strand_threads (
   user_id TEXT NOT NULL,
   strand_key TEXT NOT NULL,
@@ -1022,6 +1031,33 @@ class ConversationStore:
             )
             self._conn.commit()
             return (cur.rowcount or 0) > 0
+
+    # -- Weaver rapid fire S1: decline cooldown (brief §8.4) -----------
+    # One timestamp per user, beside the parked-ids record. A decline
+    # (or an ignored offer — the user was offered the mode and did not
+    # take it) writes declined_at = now; while now < declined_at +
+    # 24h no proactive offer is invited in any conversation. The
+    # cooldown is a read-time gate, never a sweep.
+
+    def set_round_declined_at(self, user_id: str, declined_at: str | None = None) -> None:
+        """Record that the user declined (or ignored) a round offer."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO round_decline_cooldowns (user_id, declined_at) "
+                "VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE "
+                "SET declined_at = excluded.declined_at",
+                (user_id, declined_at or _utcnow()),
+            )
+            self._conn.commit()
+
+    def get_round_declined_at(self, user_id: str) -> str | None:
+        """The last decline timestamp for the user, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT declined_at FROM round_decline_cooldowns WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()
+        return row["declined_at"] if row is not None else None
 
     def invalidate_invitation(
         self, user_id: str, invitation_id: str

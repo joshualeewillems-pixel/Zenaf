@@ -6,6 +6,8 @@ import { WeaveText, voiceColor } from '../components/VoiceWeave'
 import SeatChips, { SEAT_ORDER, useSeatMeta } from './SeatChips'
 import TaskProposalCards from './TaskProposalCards'
 import RoundProposalCard, { type RoundItem } from './RoundProposalCard'
+import WeaverRoundClaimCard from './WeaverRoundClaimCard'
+import { stripCorrectionDraft, stripRoundOfferMarker, type WeaverRoundItem } from './weaverRound'
 import { stripTaskProposalBlocks } from './taskProposals'
 import VoiceFeedback from './VoiceFeedback'
 import {
@@ -33,8 +35,15 @@ export type ConversationMessage = {
   /** Firebrand lightning round (S1): the item this voice message
    *  presented. Live turns carry the full proposal from the turn
    *  response; hydration carries only kind + id, and the card
-   *  refetches the proposal by id. Absent on every other message. */
-  roundItem?: RoundItem | null
+   *  refetches the proposal by id. Absent on every other message.
+   *  Weaver rapid fire (S1): the same field carries a
+   *  meeting-impression item instead (kind + agent + claim id, and
+   *  the deterministic rendering on live turns). */
+  roundItem?: RoundItem | WeaverRoundItem | null
+  /** Weaver rapid fire (S1): the round state this turn recorded
+   *  ("item" | "checkpoint" | "closing" | "offered" | "ended").
+   *  Carried from the turn response; absent on other turns. */
+  roundState?: string | null
 }
 
 /** Server message row → thread message. Shared by hydration and
@@ -57,7 +66,10 @@ function mapServerMessages(
     // Firebrand lightning round (S1): the assistant message's
     // context_json carries the round marker — kind + presented
     // proposal id. The card refetches the proposal by id; the
-    // marker is the authority, never message text.
+    // marker is the authority, never message text. Weaver rapid
+    // fire (S1): the same marker shape carries kind + presented
+    // claim id + agent id; the card refetches the claim by id and
+    // the live turn's rendering rides the turn response.
     const ctx = (m as Record<string, unknown>).context
     const roundCtx =
       ctx && typeof ctx === 'object' ? (ctx as Record<string, unknown>) : null
@@ -65,10 +77,25 @@ function mapServerMessages(
       roundCtx && typeof roundCtx.round_proposal_id === 'string'
         ? (roundCtx.round_proposal_id as string)
         : null
+    const roundClaimId =
+      roundCtx && typeof roundCtx.round_claim_id === 'string'
+        ? (roundCtx.round_claim_id as string)
+        : null
+    const roundAgentId =
+      roundCtx && typeof roundCtx.round_agent_id === 'string'
+        ? (roundCtx.round_agent_id as string)
+        : null
     const roundItem =
       roundCtx?.round_kind === 'firebrand' && roundProposalId
         ? { kind: 'task_proposal', proposal_id: roundProposalId }
-        : null
+        : roundCtx?.round_kind === 'weaver' && roundClaimId && roundAgentId
+          ? {
+              kind: 'meeting_impression' as const,
+              agent_id: roundAgentId,
+              claim_id: roundClaimId,
+              claim_type: 'meeting_impression',
+            }
+          : null
     mapped.push({
       role,
       content: body,
@@ -466,8 +493,11 @@ export default function CouncilChat({
           data.display_name ?? (seatId === activeId ? activeName : names[seatId] ?? seatId),
         voiceColor: data.voice_color ?? undefined,
         // Firebrand lightning round (S1): the item this reply
-        // presented, if any — the card renders from it.
+        // presented, if any — the card renders from it. Weaver
+        // rapid fire (S1): the same field carries the claim item,
+        // and round_state says what the turn did for the round.
         roundItem: data.round_item ?? null,
+        roundState: data.round_state ?? null,
       }
     },
     [base, conversationId, context, chatMode, questionMode, messages, names, activeId, activeName],
@@ -791,7 +821,9 @@ export default function CouncilChat({
                 <WeaveText
                   text={
                     conversationId && m.messageId && !m.messageId.startsWith('local-')
-                      ? stripTaskProposalBlocks(m.content)
+                      ? stripCorrectionDraft(
+                          stripRoundOfferMarker(stripTaskProposalBlocks(m.content)),
+                        )
                       : m.content
                   }
                 />
@@ -808,12 +840,24 @@ export default function CouncilChat({
               {/* Firebrand lightning round (S1): the item this reply
                   presented, rendered from the server's round_item —
                   never from message text. Store path only. */}
-              {conversationId && m.messageId && !m.messageId.startsWith('local-') && m.roundItem && (
+              {conversationId && m.messageId && !m.messageId.startsWith('local-') && m.roundItem && 'proposal_id' in m.roundItem && (
                 <RoundProposalCard
                   base={base}
                   conversationId={conversationId}
                   messageId={m.messageId}
                   roundItem={m.roundItem}
+                />
+              )}
+              {/* Weaver rapid fire (S1): the impression this reply
+                  presented, rendered from the server's round_item —
+                  never from message text. Store path only. */}
+              {conversationId && m.messageId && !m.messageId.startsWith('local-') && m.roundItem && 'claim_id' in m.roundItem && (
+                <WeaverRoundClaimCard
+                  base={base}
+                  conversationId={conversationId}
+                  messageId={m.messageId}
+                  roundItem={m.roundItem}
+                  messageContent={m.content}
                 />
               )}
               {m.messageId && m.voiceId && (

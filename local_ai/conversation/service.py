@@ -25,12 +25,14 @@ from local_ai.fellowship.evidence import build_bear_evidence_block
 from local_ai.strand_interviews.boundaries import recognize_explicit_boundary
 from local_ai.strand_interviews.guidance import strand_guidance_block
 from local_ai.strand_interviews.keys import validate_strand_key
+from local_ai.agent_intake.store import AgentStore
 from local_ai.vision_execution import execution_context as _execution_context
 from local_ai.vision_execution import obligations as _obligations
 
 from .encounter import _WEAVER_NATURAL_INTENTION
 from .firebrand_round import ROUND_KIND, firebrand_round_enabled, plan_round_turn
 from .reply import VoiceReply, generate_voice_reply
+from . import round as weaver_round
 from .store import ConversationStore
 
 logger = logging.getLogger(__name__)
@@ -178,6 +180,12 @@ class TurnResult:
     # None when this turn presented nothing new. The card renders
     # from this; hydration refetches by proposal id.
     round_item: dict[str, Any] | None = None
+    # Weaver rapid fire (S1): the round state this turn recorded
+    # ("item" | "checkpoint" | "closing" | "offered" | "ended"), or
+    # None when this turn recorded no round state. The card renders
+    # from round_item; round_state tells the frontend what the turn
+    # did for the round.
+    round_state: str | None = None
 
 
 class ConversationService:
@@ -374,6 +382,29 @@ class ConversationService:
                 round_plan = None
                 round_context = None
 
+        # Weaver rapid fire (S1): conductor-only, Talk only. The
+        # round is planned deterministically from the caller's own
+        # claim records — no model call, no new turn type. The plan
+        # never writes: the park, the parked-clear, and the cooldown
+        # write land below, after generation succeeds, so a failed
+        # turn changes nothing. A failed plan degrades to no block,
+        # never a broken turn. Meetings and the voice route never
+        # reach this path (they do not call turn()). Champion and
+        # conductor never fire on the same turn, so the two rounds
+        # share the one round_context parameter.
+        weaver_plan = None
+        if arch_id == "conductor" and weaver_round.weaver_round_enabled():
+            try:
+                agent_store = AgentStore(user_id=user_id)
+                weaver_plan = weaver_round.plan_round_turn(
+                    self.store, agent_store, user_id, conversation_id, message
+                )
+                round_context = weaver_plan.block
+            except Exception:
+                logger.exception("weaver round: planning failed")
+                weaver_plan = None
+                round_context = None
+
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -449,6 +480,55 @@ class ConversationService:
                 except Exception:
                     logger.exception("firebrand round: park failed")
 
+        # Weaver rapid fire (S1): record the plan's effects now that
+        # generation succeeded — same pattern as Firebrand above. The
+        # marker rides the assistant message's context_json. The park,
+        # the parked-clear, and the cooldown write are guarded: a
+        # store failure must never break the turn — the next turn
+        # re-derives from the records, and the user can skip or
+        # decline again. The offer marker is Weaver's judgment: when
+        # the offer block was built and her reply ends with
+        # [[round-offer]] on its own line, the offer is recorded
+        # (round_state "offered"); an invited-but-unmade offer records
+        # nothing (brief §3.3).
+        weaver_round_state: str | None = None
+        if weaver_plan is not None:
+            if weaver_plan.marker:
+                context.update(weaver_plan.marker)
+                weaver_round_state = str(weaver_plan.marker.get("round_state") or "")
+            if weaver_plan.clear_parked:
+                try:
+                    self.store.clear_parked_round_items(
+                        user_id, conversation_id, weaver_round.ROUND_KIND
+                    )
+                except Exception:
+                    logger.exception("weaver round: parked-clear failed")
+            if weaver_plan.park_claim_id:
+                try:
+                    self.store.park_round_item(
+                        user_id,
+                        conversation_id,
+                        weaver_round.ROUND_KIND,
+                        weaver_plan.park_claim_id,
+                    )
+                except Exception:
+                    logger.exception("weaver round: park failed")
+            if weaver_plan.write_cooldown:
+                try:
+                    self.store.set_round_declined_at(user_id)
+                except Exception:
+                    logger.exception("weaver round: cooldown write failed")
+            if weaver_plan.offer_invited and weaver_round.has_round_offer_marker(
+                voice_reply.reply
+            ):
+                context.update(
+                    {
+                        weaver_round.CTX_ROUND_KIND: weaver_round.ROUND_KIND,
+                        weaver_round.CTX_ROUND_STATE: "offered",
+                    }
+                )
+                weaver_round_state = "offered"
+
         assistant_msg = self.store.append_message(
             user_id,
             conversation_id,
@@ -480,7 +560,12 @@ class ConversationService:
             assistant_message=assistant_msg,
             reply=voice_reply,
             conversation_id=conversation_id,
-            round_item=round_plan.item if round_plan is not None else None,
+            round_item=(
+                weaver_plan.item
+                if weaver_plan is not None
+                else (round_plan.item if round_plan is not None else None)
+            ),
+            round_state=weaver_round_state,
         )
         # Fellowship Runtime P1: the turn is a shared-reality event.
         # Emitted only now — reply computed and persisted — and the

@@ -1487,8 +1487,10 @@ def upload_item_state(
     The presentation check applies, but the standing check does
     not: a decided interpretation still returns its state, so the
     card shows Created / Ruled after a reload. The uncertain-match
-    marker is re-derived (it is a queue-time derivation, never
-    stored on the row)."""
+    marker is read from the row's ``uncertain_match`` column
+    (amendment A3), falling back to a queue-time derivation when
+    the column is NULL (e.g. the prior was ruled after this row
+    was written)."""
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")

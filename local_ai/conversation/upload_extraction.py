@@ -12,20 +12,34 @@ lease, heartbeat + 240s stale threshold, a startup reconciler that
 marks dead jobs 'interrupted' (never resumes them mid-call), and
 resume as a new job over the same version, missing chunks only.
 
-Per-chunk pipeline (A5.2, §3.6): for each chunk, the evidence call
-then the interpretation call(s) over that chunk's rows, committed
-per chunk — so the first interpretation commits after the first
-chunk's calls (P5, N=1). The call budget is unchanged: <=12
-evidence calls + <=4 interpretation calls per lens per job.
+Per-chunk pipeline (A5.2, §3.6, as amended by the founder's
+2026-11-07 brief amendment A1): the evidence call and the
+interpretation call(s) interleave per chunk — for each chunk in
+order, the evidence call runs (missing chunks only on resume; a
+resumed chunk's existing uncited rows join the pending set), then
+the interpretation triggers are checked. An interpretation call
+fires when (a) the first chunk's evidence commits — the first
+call interprets chunk 1's rows alone (P5, N=1), (b) >= 30
+uninterpreted evidence rows have accumulated since the last
+interpretation call (the call covers the oldest 30 rows, FIFO),
+or (c) the evidence loop ends (flush the remainder — the final
+chunk's evidence committing is the normal trigger, and a failed
+final chunk still flushes earlier rows). The cap is 5
+interpretation calls per lens per job (UPLOAD_MAX_INTERPRETATION_CALLS_PER_JOB); there is no overflow — rows that
+would need a sixth call stay uninterpreted, and the coverage line
+says so. A chunk is interpreted when ALL its rows have been
+covered by an interpretation call (a row is covered when it was
+in a call's evidence batch); the job row carries interpreted_chunks
+(the segment ids interpreted, in order). The call budget is
+<=12 evidence calls + <=5 interpretation calls per lens per job
+(17 total; the sequential ceiling is 51 minutes).
 
-Interpretation batching (brief-gap resolution, surfaced in the PR
-body — the brief's "one per lens per chunk-batch" names no batch
-rule, and per-chunk interpretation calls cannot hold for a 12-chunk
-document under the 4-call cap): the first call covers chunk 1
-alone (P5); the remaining chunks split into at most 3 further
-contiguous batches. Every chunk is interpreted within the cap; the
-rule is deterministic and lives in one place
-(interpretation_batches).
+At the final state, a job that extracted anything (succeeded
+chunks > 0) supersedes the older versions' evidence sets (§5.4):
+their spans/observations go 'superseded', their PENDING
+interpretations 'orphaned'; ruled ones stay as history. A failed
+job (0 chunks succeeded) supersedes nothing — nothing replaced
+the old set.
 
 Log rule (reconciliation §9, binding): the job logs counts,
 character counts, failure codes, and durations only — never span
@@ -86,10 +100,17 @@ _CHUNK_CHARS = 4000
 #: (the offer states the coverage, §11.3).
 _MAX_CHUNKS = 12
 
-#: Call budget (reconciliation §5(b)): <=12 evidence calls + <=4
-#: interpretation calls per lens per job.
+#: Call budget (reconciliation §5(b), as amended A1): <=12 evidence
+#: calls + <=5 interpretation calls per lens per job (17 total).
 _MAX_EVIDENCE_CALLS = 12
-_MAX_INTERPRETATION_CALLS_PER_LENS = 4
+UPLOAD_MAX_INTERPRETATION_CALLS_PER_JOB = 5
+
+#: Evidence-row batch (amendment A1): one interpretation call
+#: covers at most 30 uninterpreted evidence rows (spans +
+#: observations, FIFO, oldest first). A separate constant from the
+#: per-call interpretation-object cap below: 30 rows in, at most 30
+#: readings out.
+UPLOAD_MAX_EVIDENCE_ROWS_PER_INTERPRETATION_CALL = 30
 
 #: Failure codes (wash-contract codes, §3.6).
 FAILURE_CODES = (
@@ -316,24 +337,6 @@ def chunk_upload_text(text: str) -> tuple[list[dict[str, Any]], int]:
         for i, segment in enumerate(segments[:_MAX_CHUNKS])
     ]
     return chunks, total
-
-
-def interpretation_batches(chunk_count: int) -> list[list[int]]:
-    """Deterministic interpretation batching (see the module
-    docstring): the first call covers chunk 0 alone (P5 — the first
-    interpretation commits after the first chunk); the remaining
-    chunks split into at most 3 further contiguous batches. Total
-    calls per lens per job: <= 4. Returns chunk-index groups."""
-    if chunk_count <= 0:
-        return []
-    if chunk_count == 1:
-        return [[0]]
-    remaining = list(range(1, chunk_count))
-    size = -(-len(remaining) // 3)  # ceil division
-    groups = [
-        remaining[i : i + size] for i in range(0, len(remaining), size)
-    ]
-    return [[0]] + groups[:3]
 
 
 def chunk_index_for_offset(
@@ -740,118 +743,232 @@ def _run_claimed_job(
         )
         return store.get_upload_job(user_id, job_id) or job
 
-    # Resume: chunks whose evidence already committed in this version
-    # are skipped; interpretation still runs for chunks whose rows
-    # were never interpreted.
+    # Resume: chunks whose evidence already committed in this
+    # version are skipped for evidence; their UNCITED rows join
+    # the pending set (amendment A1 — a cited row was definitely
+    # read by an earlier job; an uncited row might have been in a
+    # call's evidence, but the store records no per-call coverage,
+    # so it is re-offered). A chunk whose rows are all cited is
+    # already interpreted.
     existing_spans = store.list_upload_spans(user_id, document_id, document_version)
     extracted_segments = {s["segment_id"] for s in existing_spans}
-    missing = [
-        i for i, c in enumerate(chunks) if c["segment_id"] not in extracted_segments
-    ]
-    # Evidence phase: missing chunks only, in order.
-    for chunk_index in missing:
+    cited_spans, cited_obs = _cited_row_ids(
+        store, user_id, document_id, document_version
+    )
+    # Pending rows: a FIFO queue of (kind, row_id, segment_id) —
+    # kind is "span" or "obs". chunk_rows maps a segment to ALL its
+    # rows; covered maps it to the rows an interpretation call has
+    # covered (a row is covered when it was in a call's evidence
+    # batch). A chunk is interpreted when its rows are all covered.
+    pending: list[tuple[str, str, str]] = []
+    chunk_rows: dict[str, set[tuple[str, str]]] = {}
+    covered: dict[str, set[tuple[str, str]]] = {}
+    for chunk in chunks:
+        segment_id = chunk["segment_id"]
+        if segment_id not in extracted_segments:
+            continue
+        span_ids, obs_ids = _chunk_row_ids(
+            store, user_id, document_id, document_version, segment_id
+        )
+        rows = {("span", s) for s in span_ids} | {("obs", o) for o in obs_ids}
+        chunk_rows[segment_id] = rows
+        already = {
+            ("span", s) for s in span_ids if s in cited_spans
+        } | {("obs", o) for o in obs_ids if o in cited_obs}
+        covered[segment_id] = set(already)
+        for kind, row_id in [("span", s) for s in span_ids] + [
+            ("obs", o) for o in obs_ids
+        ]:
+            if (kind, row_id) not in already:
+                pending.append((kind, row_id, segment_id))
+
+    def interpreted_chunks() -> list[str]:
+        """Segment ids whose rows are all covered, in chunk order."""
+        return [
+            c["segment_id"]
+            for c in chunks
+            if chunk_rows.get(c["segment_id"])
+            and covered.get(c["segment_id"], set())
+            >= chunk_rows[c["segment_id"]]
+        ]
+
+    interpretation_calls_fired = 0
+
+    def fire_interpretation(batch: list[tuple[str, str, str]]) -> bool:
+        """Fire one interpretation call over an explicit row batch
+        (<= 30 rows). The batch's rows are covered ONLY on a
+        successful call — a failed call leaves them pending (but
+        the started call still counts against the 5-call cap).
+        Returns True when a call was started."""
+        nonlocal interpretation_calls_fired, first_interpretation_at
+        if not batch:
+            return False
+        if interpretation_calls_fired >= UPLOAD_MAX_INTERPRETATION_CALLS_PER_JOB:
+            return False
         if cancelled():
-            break
-        chunk = chunks[chunk_index]
-        call = store.start_upload_job_call(job_id, chunk_index, "evidence")
+            return False
+        interpretation_calls_fired += 1
+        span_ids = [r for k, r, _ in batch if k == "span"]
+        obs_ids = [r for k, r, _ in batch if k == "obs"]
+        call = store.start_upload_job_call(job_id, None, "interpretation")
         try:
+            evidence_text, span_lookup, obs_lookup = _batch_evidence_rows(
+                store, user_id, document_id, document_version,
+                span_ids, obs_ids,
+            )
             raw = _run_model_call(
-                _evidence_prompt(chunk["text"]), complete_fn
+                _interpretation_prompt(lens, lens_kind, evidence_text),
+                complete_fn,
             )
             parsed = _parse_model_json(raw)
-            written, dropped = _write_evidence_chunk(
-                store, user_id, document_id, document_version, chunk, parsed,
-                redaction_stage,
+            written = _write_interpretation_batch(
+                store, user_id, document_id, document_version, lens,
+                lens_kind, parsed, span_lookup, obs_lookup,
             )
+            # Success covers the batch (the model read these rows),
+            # whether or not it cited each one.
+            for kind, row_id, segment_id in batch:
+                if (kind, row_id, segment_id) in pending:
+                    pending.remove((kind, row_id, segment_id))
+                covered.setdefault(segment_id, set()).add((kind, row_id))
+            if written > 0 and first_interpretation_at is None:
+                first_interpretation_at = datetime.now(timezone.utc).isoformat()
+                store.set_upload_job_state(
+                    job_id, "running",
+                    first_interpretation_at=first_interpretation_at,
+                    interpreted_chunks=interpreted_chunks(),
+                )
             store.complete_upload_call(
                 call["call_id"], state="complete", rows_written=written
             )
-            if written == 0:
-                failed_chunks.append(chunk_index)
-                logger.info(
-                    "upload extraction: job %s chunk %d evidence wrote 0 rows "
-                    "(dropped=%d)",
-                    job_id, chunk_index, dropped,
-                )
             heartbeat()
+            return True
         except UploadModelError as exc:
             store.complete_upload_call(
                 call["call_id"], state="failed", code=exc.code
             )
-            failed_chunks.append(chunk_index)
             logger.info(
-                "upload extraction: job %s chunk %d evidence failed (%s)",
-                job_id, chunk_index, exc.code,
+                "upload extraction: job %s interpretation failed (%s)",
+                job_id, exc.code,
             )
             heartbeat()
+            return True
         except Exception:
             store.complete_upload_call(
                 call["call_id"], state="failed", code="invalid_output"
             )
-            failed_chunks.append(chunk_index)
             logger.exception(
-                "upload extraction: job %s chunk %d evidence errored",
-                job_id, chunk_index,
+                "upload extraction: job %s interpretation errored", job_id
             )
             heartbeat()
+            return True
 
-    # Interpretation phase: chunks that have evidence but no citing
-    # interpretation yet (this run's chunks, plus any stranded by an
-    # earlier interrupted job). Batches: first chunk alone (P5),
-    # the rest in at most 3 groups — <=4 calls per lens per job.
-    if not cancelled():
-        targets = _chunks_needing_interpretation(
-            store, user_id, document_id, document_version, chunks
-        )
-        groups = interpretation_batches(len(targets))
-        for group_positions in groups:
-            if cancelled():
-                break
-            batch_indexes = [targets[p] for p in group_positions]
-            call = store.start_upload_job_call(job_id, None, "interpretation")
+    # Interleaved loop (amendment A1): for each chunk in order, the
+    # evidence call (missing chunks only), then the interpretation
+    # triggers — (a) the first chunk's evidence committing fires
+    # the first call over chunk 1's rows alone (P5), (b) >= 30
+    # pending rows fires a call over the oldest 30 (FIFO).
+    for chunk_index, chunk in enumerate(chunks):
+        if cancelled():
+            break
+        segment_id = chunk["segment_id"]
+        if segment_id not in extracted_segments:
+            call = store.start_upload_job_call(job_id, chunk_index, "evidence")
             try:
-                evidence_text, span_lookup, obs_lookup = _batch_evidence(
-                    store, user_id, document_id, document_version,
-                    [chunks[i] for i in batch_indexes],
-                )
                 raw = _run_model_call(
-                    _interpretation_prompt(lens, lens_kind, evidence_text),
-                    complete_fn,
+                    _evidence_prompt(chunk["text"]), complete_fn
                 )
                 parsed = _parse_model_json(raw)
-                written = _write_interpretation_batch(
-                    store, user_id, document_id, document_version, lens,
-                    lens_kind, parsed, span_lookup, obs_lookup,
+                written, dropped = _write_evidence_chunk(
+                    store, user_id, document_id, document_version, chunk, parsed,
+                    redaction_stage,
                 )
-                if written > 0 and first_interpretation_at is None:
-                    first_interpretation_at = datetime.now(
-                        timezone.utc
-                    ).isoformat()
-                    store.set_upload_job_state(
-                        job_id, "running",
-                        first_interpretation_at=first_interpretation_at,
-                    )
                 store.complete_upload_call(
                     call["call_id"], state="complete", rows_written=written
                 )
+                if written == 0:
+                    failed_chunks.append(chunk_index)
+                    logger.info(
+                        "upload extraction: job %s chunk %d evidence wrote 0 rows "
+                        "(dropped=%d)",
+                        job_id, chunk_index, dropped,
+                    )
+                else:
+                    span_ids, obs_ids = _chunk_row_ids(
+                        store, user_id, document_id, document_version, segment_id
+                    )
+                    rows = {("span", s) for s in span_ids} | {
+                        ("obs", o) for o in obs_ids
+                    }
+                    chunk_rows[segment_id] = rows
+                    covered.setdefault(segment_id, set())
+                    for kind, row_id in [("span", s) for s in span_ids] + [
+                        ("obs", o) for o in obs_ids
+                    ]:
+                        pending.append((kind, row_id, segment_id))
                 heartbeat()
             except UploadModelError as exc:
                 store.complete_upload_call(
                     call["call_id"], state="failed", code=exc.code
                 )
+                failed_chunks.append(chunk_index)
                 logger.info(
-                    "upload extraction: job %s interpretation failed (%s)",
-                    job_id, exc.code,
+                    "upload extraction: job %s chunk %d evidence failed (%s)",
+                    job_id, chunk_index, exc.code,
                 )
                 heartbeat()
             except Exception:
                 store.complete_upload_call(
                     call["call_id"], state="failed", code="invalid_output"
                 )
+                failed_chunks.append(chunk_index)
                 logger.exception(
-                    "upload extraction: job %s interpretation errored", job_id
+                    "upload extraction: job %s chunk %d evidence errored",
+                    job_id, chunk_index,
                 )
                 heartbeat()
+        # (a) P5: the first chunk's evidence committing fires the
+        # first interpretation call over chunk 1's rows alone — if
+        # chunk 1 has pending rows and no call has fired yet. (A
+        # resumed chunk 1 whose rows are all cited fires no call:
+        # it is already interpreted. A chunk 1 with no rows fires
+        # none either.)
+        if (
+            chunk_index == 0
+            and interpretation_calls_fired == 0
+            and not cancelled()
+        ):
+            first_batch = [
+                row for row in pending if row[2] == segment_id
+            ][:UPLOAD_MAX_EVIDENCE_ROWS_PER_INTERPRETATION_CALL]
+            if first_batch:
+                fire_interpretation(first_batch)
+        # (b) >= 30 pending rows: fire over the oldest 30, FIFO,
+        # until fewer than 30 remain or the cap is reached.
+        while (
+            len(pending) >= UPLOAD_MAX_EVIDENCE_ROWS_PER_INTERPRETATION_CALL
+            and interpretation_calls_fired < UPLOAD_MAX_INTERPRETATION_CALLS_PER_JOB
+            and not cancelled()
+        ):
+            if not fire_interpretation(
+                pending[:UPLOAD_MAX_EVIDENCE_ROWS_PER_INTERPRETATION_CALL]
+            ):
+                break
+
+    # (c) Flush: the evidence loop ended — interpret whatever is
+    # still pending (the final chunk's evidence committing is the
+    # normal trigger; a failed final chunk still flushes earlier
+    # rows). No overflow past the 5-call cap: the rest stay
+    # uninterpreted, and the coverage line says so.
+    while (
+        pending
+        and interpretation_calls_fired < UPLOAD_MAX_INTERPRETATION_CALLS_PER_JOB
+        and not cancelled()
+    ):
+        if not fire_interpretation(
+            pending[:UPLOAD_MAX_EVIDENCE_ROWS_PER_INTERPRETATION_CALL]
+        ):
+            break
 
     # Final state + counters (the call table is the source of truth).
     calls = store.list_upload_job_calls(job_id)
@@ -875,6 +992,17 @@ def _run_claimed_job(
         final_state = "partial"
     else:
         final_state = "complete"
+    # §5.4 (amendment A3): a job that extracted anything supersedes
+    # the older versions' evidence sets — their spans/observations
+    # go 'superseded', their PENDING interpretations 'orphaned';
+    # ruled ones stay as history. A failed job (0 chunks succeeded)
+    # supersedes nothing — nothing replaced the old set. (A
+    # cancelled job that extracted something supersedes too: the
+    # new set is real, and the old set must not reappear.)
+    if succeeded_chunks > 0:
+        store.supersede_upload_versions_before(
+            user_id, document_id, document_version
+        )
     store.set_upload_job_state(
         job_id,
         final_state,
@@ -882,6 +1010,7 @@ def _run_claimed_job(
         completed_calls=completed_calls,
         failed_calls=failed_calls,
         failed_chunks=sorted(set(failed_chunks)),
+        interpreted_chunks=interpreted_chunks(),
     )
     final = store.get_upload_job(user_id, job_id) or job
     measures = measure_job_row(final, calls)
@@ -962,73 +1091,91 @@ def _write_evidence_chunk(
     return written, dropped
 
 
-def _chunks_needing_interpretation(
+def _cited_row_ids(
     store: ConversationStore,
     user_id: str,
     document_id: str,
     document_version: int,
-    chunks: list[dict[str, Any]],
-) -> list[int]:
-    """Chunk indexes whose evidence exists but no interpretation in
-    this version cites any of their spans — the interpretation
-    phase's target set (this run's chunks, plus any stranded by an
-    earlier interrupted job)."""
-    interpretations = store.list_upload_interpretations(
+) -> tuple[set[str], set[str]]:
+    """The span ids + observation ids any interpretation in this
+    version cites — the cross-job proxy for 'already covered'
+    (amendment A1 resume rule): the store records no per-call
+    coverage, so a resumed chunk's rows are uncited unless an
+    interpretation cites them. A cited row was definitely read; an
+    uncited row might have been in an earlier job's call evidence,
+    but we cannot tell, so it is re-offered."""
+    cited_spans: set[str] = set()
+    cited_obs: set[str] = set()
+    for interp in store.list_upload_interpretations(
         user_id, document_id, document_version=document_version
-    )
-    cited_span_ids: set[str] = set()
-    for interp in interpretations:
+    ):
         for entry in interp.get("evidence_ids") or []:
             if isinstance(entry, dict) and entry.get("span_id"):
-                cited_span_ids.add(entry["span_id"])
-    targets: list[int] = []
-    for i, chunk in enumerate(chunks):
-        spans = store.list_upload_spans(
-            user_id, document_id, document_version, chunk["segment_id"]
-        )
-        # A chunk needs a reading when it has evidence none of whose
-        # spans any interpretation in this version cites yet (a chunk
-        # is interpreted as a whole, not span-by-span).
-        if spans and not any(
-            s["span_id"] in cited_span_ids for s in spans
-        ):
-            targets.append(i)
-    return targets
+                cited_spans.add(entry["span_id"])
+        for obs_id in interp.get("observation_ids") or []:
+            if isinstance(obs_id, str):
+                cited_obs.add(obs_id)
+    return cited_spans, cited_obs
 
 
-def _batch_evidence(
+def _chunk_row_ids(
     store: ConversationStore,
     user_id: str,
     document_id: str,
     document_version: int,
-    batch_chunks: list[dict[str, Any]],
+    segment_id: str,
+) -> tuple[list[str], list[str]]:
+    """One chunk's evidence rows (span ids, then observation ids,
+    in write order). An observation belongs to the chunk whose
+    spans it cites — its cited spans are all written by one
+    chunk's evidence call, so it belongs to exactly one chunk."""
+    spans = store.list_upload_spans(
+        user_id, document_id, document_version, segment_id
+    )
+    span_ids = [s["span_id"] for s in spans]
+    span_set = set(span_ids)
+    obs_ids = [
+        o["observation_id"]
+        for o in store.list_upload_observations(
+            user_id, document_id, document_version
+        )
+        if set(o.get("span_ids") or []) & span_set
+    ]
+    return span_ids, obs_ids
+
+
+def _batch_evidence_rows(
+    store: ConversationStore,
+    user_id: str,
+    document_id: str,
+    document_version: int,
+    span_ids: list[str],
+    observation_ids: list[str],
 ) -> tuple[str, dict[str, str], dict[str, str]]:
-    """The evidence text for one interpretation call (the batch's
-    spans + observations), plus lookups for resolving the model's
-    citations (span text -> span_id, observation claim ->
-    observation_id)."""
+    """The evidence text for one interpretation call over an
+    explicit row batch (amendment A1: rows, not chunks), plus
+    lookups for resolving the model's citations (span text ->
+    span_id, observation claim -> observation_id). Only the
+    batch's rows are readable to the model — a citation of a row
+    outside the batch resolves to nothing and the reading is
+    dropped."""
     lines = ["SPANS:"]
     span_lookup: dict[str, str] = {}
-    for chunk in batch_chunks:
-        for span in store.list_upload_spans(
-            user_id, document_id, document_version, chunk["segment_id"]
-        ):
-            span_lookup[span["span_text"]] = span["span_id"]
-            lines.append(f'- "{span["span_text"]}" [{span["location"]}]')
+    for span_id in span_ids:
+        span = store.get_upload_span(user_id, span_id)
+        if span is None:
+            continue
+        span_lookup[span["span_text"]] = span_id
+        lines.append(f'- "{span["span_text"]}" [{span["location"]}]')
     lines.append("OBSERVATIONS:")
     obs_lookup: dict[str, str] = {}
-    all_observations = store.list_upload_observations(
-        user_id, document_id, document_version
-    )
-    batch_span_ids = set(span_lookup.values())
-    for obs in all_observations:
-        if not set(obs.get("span_ids") or []) & batch_span_ids:
+    for obs_id in observation_ids:
+        obs = store.get_upload_observation(user_id, obs_id)
+        if obs is None:
             continue
-        obs_lookup[obs["claim"]] = obs["observation_id"]
+        obs_lookup[obs["claim"]] = obs_id
         lines.append(f'- {obs["claim"]}')
     return "\n".join(lines), span_lookup, obs_lookup
-
-
 def _write_interpretation_batch(
     store: ConversationStore,
     user_id: str,

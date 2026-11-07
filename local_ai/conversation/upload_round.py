@@ -48,6 +48,14 @@ Brief-gap resolutions embodied here (surfaced in the PR body):
 - Explicit invocation at 0 pending builds no block (the Weaver
   precedent): the turn is ordinary and the seat answers honestly
   that nothing is waiting.
+- Offer-state vocabulary (amendment A7.3): the reconciliation's
+  §5(e) 'ignored'/'never' and the brief's §2.6 'expired' +
+  ``decline_snooze_until`` NULL = never are the same states under
+  different names — 'ignored' is the lapse that writes nothing
+  (the offer stays 'offered' and the marker bars a re-offer),
+  'expired' is the brief's name for that lapsed state, and a
+  STOP-phrase decline writes 'declined' with snooze NULL, which
+  is the 'never' (never offered again). No third state exists.
 """
 
 from __future__ import annotations
@@ -295,19 +303,44 @@ def uncertain_match_for(
     reading is already decided by the earlier ruling), "text_only" /
     "spans_only" when exactly one matches (the UNCERTAIN case: the
     queue carries it as a marker, never an auto-link). Shared by the
-    queue composer and the item-state hydration read."""
-    match = store.match_ruled_interpretation(
+    queue composer and the item-state hydration read.
+
+    Amendment A3: the stored ``uncertain_match`` column is the
+    home — read it first (``matched: "text" | "spans"`` ->
+    ``kind: "text_only" | "spans_only"``), falling back to
+    derivation via ``match_ruled_interpretation`` when the column
+    is NULL (e.g. the prior was ruled after this row was written).
+    One precedence the amendment leaves open: derivation's
+    "exact" always wins over the column's uncertain marker — a
+    later ruling can make an uncertain row exact, and the queue
+    must never present an already-decided reading twice.
+    """
+    derived = store.match_ruled_interpretation(
         user_id,
         str(interpretation.get("document_id") or ""),
         str(interpretation.get("lens") or ""),
         _normalize_upload_text(interpretation.get("text") or ""),
         _supporting_keys(store, user_id, interpretation),
     )
-    if match is None:
+    if derived is not None and derived.get("kind") == "exact":
+        return {
+            "kind": "exact",
+            "prior_interpretation_id": derived.get("prior_interpretation_id"),
+        }
+    stored = interpretation.get("uncertain_match")
+    if isinstance(stored, dict):
+        matched = stored.get("matched")
+        prior = stored.get("prior_interpretation_id")
+        if matched in ("text", "spans") and prior:
+            return {
+                "kind": "text_only" if matched == "text" else "spans_only",
+                "prior_interpretation_id": prior,
+            }
+    if derived is None:
         return None
     return {
-        "kind": match.get("kind"),
-        "prior_interpretation_id": match.get("prior_interpretation_id"),
+        "kind": derived.get("kind"),
+        "prior_interpretation_id": derived.get("prior_interpretation_id"),
     }
 
 
@@ -371,12 +404,17 @@ def compose_upload_queue(
 def upload_coverage(
     store: ConversationStore, user_id: str, document_id: str
 ) -> str | None:
-    """The coverage line's fraction — "first X of Y chunks" — from
-    the job record + the chunker's total for the stored text, never
-    from the model's words. X is the distinct segments with span
-    rows in the latest job's version; Y is the chunker's total.
-    None when there is no job (conversation-promoted readings only)
-    or the stored text cannot be resolved: no coverage claim at all.
+    """The coverage line's fraction — INTERPRETED chunks, as read
+    (amendment A1) — from the latest job's ``interpreted_chunks``
+    + the chunker's total for the stored text, never from the
+    model's words. "first X of Y chunks, as read"; when
+    interpreted chunks lag extracted chunks, both numbers are
+    named ("first E of Y chunks extracted, first X of Y chunks
+    as read"). A job that never ran (``interpreted_chunks``
+    NULL/empty) is honest: "first 0 of Y chunks, as read", not no
+    claim. None when there is no job (conversation-promoted
+    readings only) or the stored text cannot be resolved: no
+    coverage claim at all.
     """
     job = store.latest_upload_job(user_id, document_id)
     if job is None:
@@ -392,7 +430,13 @@ def upload_coverage(
         user_id, document_id, job.get("document_version")
     )
     extracted = len({s.get("segment_id") for s in spans if s.get("segment_id")})
-    return f"first {extracted} of {total} chunks"
+    interpreted = len(job.get("interpreted_chunks") or [])
+    if interpreted >= extracted:
+        return f"first {interpreted} of {total} chunks, as read"
+    return (
+        f"first {extracted} of {total} chunks extracted, "
+        f"first {interpreted} of {total} chunks as read"
+    )
 
 
 def resolve_upload_round_document(

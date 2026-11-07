@@ -33,6 +33,7 @@ from .encounter import _WEAVER_NATURAL_INTENTION
 from .firebrand_round import ROUND_KIND, firebrand_round_enabled, plan_round_turn
 from .reply import VoiceReply, generate_voice_reply
 from . import round as weaver_round
+from . import upload_round
 from .store import ConversationStore
 
 logger = logging.getLogger(__name__)
@@ -382,6 +383,49 @@ class ConversationService:
                 round_plan = None
                 round_context = None
 
+        # Upload rapid fire (S1): conductor-only, strand threads only.
+        # The round is planned deterministically from the caller's own
+        # interpretation records — no model call, no new turn type.
+        # The plan never writes: the park, the parked-clear, the offer
+        # record, the offer accept/decline, and the round-record upsert
+        # land below, after generation succeeds, so a failed turn
+        # changes nothing. A failed plan degrades to no block, never a
+        # broken turn. Upload wins in strand threads: a plan with any
+        # effect drops the Weaver plan for this turn (its
+        # post-generation effects are skipped); an empty plan leaves
+        # Weaver's plan standing. Firebrand still takes precedence
+        # over upload (champion-only vs strand-thread-only — mutually
+        # exclusive by gating anyway). Meetings and the voice route
+        # never reach this path (they do not call turn()).
+        upload_plan = None
+        if (
+            arch_id == "conductor"
+            and upload_round.upload_round_enabled()
+            and self.store.strand_key_for_conversation(user_id, conversation_id)
+            is not None
+        ):
+            try:
+                try:
+                    from local_ai.vision_execution.storage import list_projects
+
+                    projects = list_projects(user_id)[:10]
+                except Exception:
+                    # A parentage-chooser failure must never lose the
+                    # round: the card renders with an empty chooser.
+                    logger.exception("upload round: parentage options failed")
+                    projects = []
+                upload_plan = upload_round.plan_upload_round_turn(
+                    self.store, user_id, conversation_id, message,
+                    projects=projects,
+                )
+                if upload_plan.has_effect:
+                    round_context = upload_plan.block
+                else:
+                    upload_plan = None
+            except Exception:
+                logger.exception("upload round: planning failed")
+                upload_plan = None
+
         # Weaver rapid fire (S1): conductor-only, Talk only. The
         # round is planned deterministically from the caller's own
         # claim records — no model call, no new turn type. The plan
@@ -391,9 +435,15 @@ class ConversationService:
         # never a broken turn. Meetings and the voice route never
         # reach this path (they do not call turn()). Champion and
         # conductor never fire on the same turn, so the two rounds
-        # share the one round_context parameter.
+        # share the one round_context parameter. Skipped when the
+        # upload round claimed the turn (upload wins in strand
+        # threads).
         weaver_plan = None
-        if arch_id == "conductor" and weaver_round.weaver_round_enabled():
+        if (
+            arch_id == "conductor"
+            and weaver_round.weaver_round_enabled()
+            and upload_plan is None
+        ):
             try:
                 agent_store = AgentStore(user_id=user_id)
                 weaver_plan = weaver_round.plan_round_turn(
@@ -529,6 +579,92 @@ class ConversationService:
                 )
                 weaver_round_state = "offered"
 
+        # Upload rapid fire (S1): record the plan's effects now that
+        # generation succeeded — same pattern as Weaver above. The
+        # marker rides the assistant message's context_json. The park,
+        # the parked-clear, the offer accept/decline, and the
+        # round-record upsert are guarded: a store failure must never
+        # break the turn — the next turn re-derives from the records,
+        # and the user can skip or decline again. The offer marker is
+        # the seat's judgment: when the offer block was built and the
+        # reply ends with [[round-offer]] on its own line, the offer
+        # is recorded (round_state "offered" + the offer row with its
+        # coverage); an invited-but-unmade offer records nothing
+        # (brief §11).
+        upload_round_state: str | None = None
+        if upload_plan is not None:
+            if upload_plan.marker:
+                context.update(upload_plan.marker)
+                upload_round_state = str(upload_plan.marker.get("round_state") or "")
+            if upload_plan.clear_parked:
+                try:
+                    self.store.clear_parked_round_items(
+                        user_id, conversation_id, upload_round.UPLOAD_ROUND_KIND
+                    )
+                except Exception:
+                    logger.exception("upload round: parked-clear failed")
+            if upload_plan.park_interpretation_id:
+                try:
+                    self.store.park_round_item(
+                        user_id,
+                        conversation_id,
+                        upload_round.UPLOAD_ROUND_KIND,
+                        upload_plan.park_interpretation_id,
+                    )
+                except Exception:
+                    logger.exception("upload round: park failed")
+            if upload_plan.offer_accept:
+                try:
+                    self.store.set_upload_offer_state(
+                        user_id, upload_plan.offer_accept, "accepted"
+                    )
+                except Exception:
+                    logger.exception("upload round: offer accept failed")
+            if upload_plan.offer_decline:
+                try:
+                    self.store.set_upload_offer_state(
+                        user_id, upload_plan.offer_decline, "declined"
+                    )
+                except Exception:
+                    logger.exception("upload round: offer decline failed")
+            if upload_plan.offer_invited and weaver_round.has_round_offer_marker(
+                voice_reply.reply
+            ):
+                if upload_plan.offer is not None:
+                    try:
+                        self.store.save_upload_offer(
+                            user_id,
+                            upload_plan.offer["document_id"],
+                            upload_plan.offer["lens"],
+                            "offered",
+                            coverage=upload_plan.offer.get("coverage") or "",
+                        )
+                    except Exception:
+                        logger.exception("upload round: offer record failed")
+                context.update(
+                    {
+                        upload_round.CTX_ROUND_KIND: upload_round.UPLOAD_ROUND_KIND,
+                        upload_round.CTX_ROUND_STATE: "offered",
+                    }
+                )
+                upload_round_state = "offered"
+            if upload_plan.round_record:
+                try:
+                    rr = upload_plan.round_record
+                    self.store.save_upload_round(
+                        user_id,
+                        rr["round_id"],
+                        conversation_id,
+                        rr["document_id"],
+                        rr["document_version"],
+                        rr["lens"],
+                        rr["state"],
+                        rr["segment_presented"],
+                        rr["presented_count"],
+                    )
+                except Exception:
+                    logger.exception("upload round: round record failed")
+
         assistant_msg = self.store.append_message(
             user_id,
             conversation_id,
@@ -561,11 +697,15 @@ class ConversationService:
             reply=voice_reply,
             conversation_id=conversation_id,
             round_item=(
-                weaver_plan.item
-                if weaver_plan is not None
-                else (round_plan.item if round_plan is not None else None)
+                upload_plan.item
+                if upload_plan is not None and upload_plan.item is not None
+                else (
+                    weaver_plan.item
+                    if weaver_plan is not None
+                    else (round_plan.item if round_plan is not None else None)
+                )
             ),
-            round_state=weaver_round_state,
+            round_state=upload_round_state or weaver_round_state,
         )
         # Fellowship Runtime P1: the turn is a shared-reality event.
         # Emitted only now — reply computed and persisted — and the

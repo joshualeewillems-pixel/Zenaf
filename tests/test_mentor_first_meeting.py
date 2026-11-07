@@ -219,7 +219,9 @@ def test_integrity_invariants_on_runtime_paths():
     assert "answer plainly first" not in engage
     # Honesty guard: it no longer rides the frames (Level 1) — it
     # rides the canonical tier, asserted there by T-L1-1. The frame
-    # ends with its last capability bullet, not the guard.
+    # ends with its last capability bullet, not the guard. Maverick
+    # S1's +65 guard extension likewise rides the tier, not the
+    # frames, so the pre-L1 guard-endswith pin is superseded.
     assert "Never present a planned capability as available" not in turn_frame
     assert "Never present a planned capability as available" not in engage
     # Grounding: read-back grounds ONLY in substantive material.
@@ -444,6 +446,8 @@ def test_frame_sizes_and_headroom_measured():
     # Level 1 (2026-11-10): the four standing lines moved to the
     # canonical tier, so the composed turn frame shrank 6,132 -> 5,486
     # (recovery 646); headroom 2,868 -> 3,514.
+    # Maverick S1 (C1) extended HONESTY_GUARD by 65 chars, but the
+    # guard rides the tier now, not this frame — no +65 here.
     assert len(turn_frame) == 5486
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3514
@@ -460,6 +464,10 @@ def test_frame_sizes_and_headroom_measured():
     # definition 7405 -> 7647, composed 8035 -> 8277,
     # headroom 965 -> 723 (still >= 300; the 2026-11-09 rebase note
     # about breaching the floor is superseded by the L1 recovery).
+    # Maverick S1 (C1) extended HONESTY_GUARD by 65 chars, but the
+    # guard rides the tier now, not this frame — the pre-L1 8,746 /
+    # headroom-254 figure is superseded (the NOT READY finding in
+    # the five-PR re-verification); the +65 lands in the tier.
     assert len(definition.engage_frame) == 7647
     assert len(engage) == 8277
     assert len(engage) < _EXTRA_INSTRUCTIONS_CAP

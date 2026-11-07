@@ -133,7 +133,7 @@ EXPECTED_SLICES = {
                    "listing_disclosures", "represented_in_councils"],
     "skeptic": ["review_intake", "review_insights_ui", "anchored_evidence",
                 "contest_read", "recurrence", "blend_view"],
-    "maverick": ["import_uploads", "byo_key", "export_all", "rename_reshape"],
+    "maverick": ["import_uploads", "byo_key", "export_all"],
 }
 
 

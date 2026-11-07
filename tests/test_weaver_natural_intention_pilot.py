@@ -80,7 +80,8 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     # Re-measured 2026-11-07 (Gardener S1, G4/D1): the engage frame
     # is 28 chars shorter — the "Shadow: forcing resolution." slice
     # line was removed (27 chars + newline); the four pronoun swaps
-    # in the frame net to zero. Not a pilot change: the pilot text
+    # in the frame net to zero. Maverick S1 (C1): HONESTY_GUARD grew
+    # 65 chars, 8347 -> 8412. Not a pilot change: the pilot text
     # still rides only the uncapped reference.
     # Re-measured 2026-11-10 (Level 1): the engage frame is 646 chars
     # shorter (8,347 -> 7,701) — the four standing lines moved to the
@@ -89,6 +90,8 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     # Crane correction §2 (2026-11-07): the contrast guard added 242
     # chars to the Weaver readback via the steward record. Combined
     # on the post-L1 base: 7,701 -> 7,943.
+    # Maverick S1's +65 guard extension rides the tier, not this
+    # frame — no +65 here.
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     engage_frame = definition.engage_frame

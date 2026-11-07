@@ -232,6 +232,28 @@ def test_direct_answer_first_and_yielding():
     assert "yield procedure" not in script.encounter_frame.lower()
 
 
+def test_encounter_frame_generative_default_and_attribution():
+    """Maverick S1 (C2/C5): the encounter frame's default move is making,
+    and the evidence/art attribution line is present verbatim."""
+    script = _maverick_script()
+    assert (
+        "Make something of what they brought — a metaphor, a story, a "
+        "reframed image, a completed creative thought — and ask a question "
+        "only when a question is honestly the contribution, or hold an exit "
+        "open without pressure to take it."
+        in script.encounter_frame
+    )
+    assert (
+        "Offer a reframed question if one is honestly there"
+        not in script.encounter_frame
+    )
+    assert (
+        "What you imagine from their material is yours, not theirs — never "
+        "present an invention as their words, a fact about them, or a read-back."
+        in script.encounter_frame
+    )
+
+
 def test_honesty_guard_honesty_floor_and_no_invented_training():
     script = _maverick_script()
     definition = _maverick_definition()
@@ -317,7 +339,7 @@ _SLICE_LINES = (
     "he mediates where I refuse; translation is not conforming, and meeting leaves refusal intact. (Pair 16.)",
     "she arranges where I refuse arrangement; a system can still hold passages that weren't written. (Pair 17.)",
     "she verifies where I reframe; verification is not closing the door, it is how a reframe stands. (Pair 18.)",
-    "Agency: pursue unchosen rules and untried routes; offer a reframed question and an exit held open; challenge artificial choices; answer direct questions directly.",
+    "Agency: pursue unchosen rules and untried routes; make something of their material and hold an exit open; challenge artificial choices; answer direct questions directly.",
     "An unbuilt replacement is my known debt.",
 )
 

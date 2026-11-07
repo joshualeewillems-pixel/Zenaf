@@ -1078,8 +1078,10 @@ def render_fox_ordinary(
     + voice on degradation; voice drops whole next; then
     AssemblyError (the compact middle is essential
     characterization and is never dropped). Assembled blocks
-    reproduce exemplar §2 exactly (compact 1,164 chars, fuller
-    1,489 chars, no capability). The word "Irish" appears nowhere:
+    reproduce exemplar §2 exactly (compact 1,479 chars, fuller
+    1,482 chars, no capability). Capability is re-inserted after
+    selection and is not measured against the ceiling.
+    The word "Irish" appears nowhere:
     the sensibility is carried by storyteller cadence and
     sideways speech, never as an accent instruction.
     """
@@ -1100,6 +1102,7 @@ def render_fox_ordinary(
         ("characterization", "temperament"),
         ("characterization", "demeanor"),
         ("characterization", "governing_conviction"),
+        ("characterization", "creative_transformation"),
     ):
         if eligible_field(record, section, key) is None:
             raise AssemblyError(
@@ -1119,11 +1122,6 @@ def render_fox_ordinary(
             "Fox core unit (middle) is not eligible"
         )
 
-    def with_capability(units: list[str]) -> list[str]:
-        if capability:
-            return [*units[:3], capability, *units[3:]]
-        return units
-
     middle_fuller = eligible_field(record, "characterization", "middle_fuller")
     voice_compact = eligible_field(record, "characterization", "voice_compact")
     voice_fuller = eligible_field(record, "characterization", "voice_fuller")
@@ -1136,6 +1134,10 @@ def render_fox_ordinary(
     # (not failure). The fuller voice passage and tail are terminal
     # units: ineligible → dropped whole, middle kept (the
     # tempo/tail pattern from Gardener/Bear/Crane).
+    # Budget separation (renderer-budget separation design 2026-11-04):
+    # the ceiling measures character content ALONE. Capability is not
+    # part of the measured candidate set; it is re-inserted at the
+    # same position (after worldview) in the returned list below.
     candidates: list[list[str]] = []
     if detail == "fuller" and lead_fuller is not None and middle_fuller is not None:
         fuller_units = [
@@ -1145,18 +1147,21 @@ def render_fox_ordinary(
             fuller_units.append(voice_fuller)
         if tail is not None:
             fuller_units.append(tail)
-        candidates.append(with_capability(fuller_units))
+        candidates.append(fuller_units)
     compact_units = [identity, lead_compact, worldview, middle_compact]
     if voice_compact is not None:
         compact_units.append(voice_compact)
-    candidates.append(with_capability(compact_units))
-    candidates.append(with_capability(
-        [identity, lead_compact, worldview, middle_compact]
-    ))
+    candidates.append(compact_units)
+    candidates.append([identity, lead_compact, worldview, middle_compact])
     for units in candidates:
         if not over_budget(units):
-            return units
-    raise AssemblyError(
-        f"Fox character block still over the {CHARACTER_CEILING}-char "
-        "ceiling after dropping all optional units; refusing to truncate"
-    )
+            chosen = units
+            break
+    else:
+        raise AssemblyError(
+            f"Fox character block still over the {CHARACTER_CEILING}-char "
+            "ceiling after dropping all optional units; refusing to truncate"
+        )
+    if capability:
+        return chosen[:3] + [capability] + chosen[3:]
+    return chosen

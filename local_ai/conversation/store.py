@@ -169,10 +169,13 @@ CREATE TABLE IF NOT EXISTS upload_spans (
   redaction_stage TEXT NOT NULL,
   location TEXT NOT NULL,
   span_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'current',
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_upload_spans_user_doc
   ON upload_spans (user_id, document_id, document_version, segment_id);
+CREATE INDEX IF NOT EXISTS idx_upload_spans_hash_loc
+  ON upload_spans (span_hash, location);
 CREATE TABLE IF NOT EXISTS upload_observations (
   observation_id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL,
@@ -180,6 +183,7 @@ CREATE TABLE IF NOT EXISTS upload_observations (
   document_version INTEGER NOT NULL,
   claim TEXT NOT NULL,
   span_ids TEXT NOT NULL DEFAULT '[]',
+  status TEXT NOT NULL DEFAULT 'current',
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_upload_observations_user_doc
@@ -198,6 +202,7 @@ CREATE TABLE IF NOT EXISTS upload_interpretations (
   is_transformation INTEGER NOT NULL DEFAULT 0,
   proposed_outcome TEXT,
   status TEXT NOT NULL DEFAULT 'pending',
+  uncertain_match TEXT,
   promotion_turn_id TEXT,
   promotion_message_id TEXT,
   ungrounded INTEGER NOT NULL DEFAULT 0,
@@ -264,6 +269,7 @@ CREATE TABLE IF NOT EXISTS upload_extraction_jobs (
   completed_calls INTEGER NOT NULL DEFAULT 0,
   failed_calls INTEGER NOT NULL DEFAULT 0,
   failed_chunks TEXT NOT NULL DEFAULT '[]',
+  interpreted_chunks TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -380,6 +386,7 @@ class ConversationStore:
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._migrate_paste_text_columns()
+            self._migrate_upload_amendment_columns()
             self._conn.commit()
 
     def close(self) -> None:
@@ -411,6 +418,64 @@ class ConversationStore:
                 "ALTER TABLE strand_sources ADD COLUMN "
                 "paste_text_encoding TEXT NOT NULL DEFAULT 'zlib'"
             )
+
+    def _migrate_upload_amendment_columns(self) -> None:
+        """Upload S1 amendment A3 (2026-11-07): the re-extraction
+        fields the brief's DDL dropped, restored.
+
+        - ``upload_interpretations.uncertain_match`` (TEXT JSON,
+          NULL when no uncertain match).
+        - ``upload_spans.status`` / ``upload_observations.status``
+          (TEXT NOT NULL DEFAULT 'current'; the §5.4 transition
+          moves the old set to 'superseded' at re-extraction).
+        - ``upload_extraction_jobs.interpreted_chunks`` (TEXT JSON
+          list, amendment A1's coverage tracking).
+        - Index on ``upload_spans (span_hash, location)`` — the
+          §5.2/§5.3 matching lookup compares spans by
+          content+location.
+
+        Guarded by PRAGMA table_info / CREATE INDEX IF NOT EXISTS —
+        a no-op when the columns already exist (the paste-text
+        migration's precedent). Caller holds the lock.
+        """
+        for table, column, ddl in (
+            (
+                "upload_interpretations",
+                "uncertain_match",
+                "ALTER TABLE upload_interpretations ADD COLUMN "
+                "uncertain_match TEXT",
+            ),
+            (
+                "upload_spans",
+                "status",
+                "ALTER TABLE upload_spans ADD COLUMN status "
+                "TEXT NOT NULL DEFAULT 'current'",
+            ),
+            (
+                "upload_observations",
+                "status",
+                "ALTER TABLE upload_observations ADD COLUMN status "
+                "TEXT NOT NULL DEFAULT 'current'",
+            ),
+            (
+                "upload_extraction_jobs",
+                "interpreted_chunks",
+                "ALTER TABLE upload_extraction_jobs ADD COLUMN "
+                "interpreted_chunks TEXT NOT NULL DEFAULT '[]'",
+            ),
+        ):
+            cols = [
+                r["name"]
+                for r in self._conn.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()
+            ]
+            if column not in cols:
+                self._conn.execute(ddl)
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_upload_spans_hash_loc "
+            "ON upload_spans (span_hash, location)"
+        )
 
     # -- conversations --------------------------------------------------------
 
@@ -1696,7 +1761,7 @@ class ConversationStore:
                 "SELECT job_id, user_id, document_id, document_version, state, "
                 "worker_id, last_heartbeat_at, lease_until, "
                 "first_interpretation_at, total_calls, completed_calls, "
-                "failed_calls, failed_chunks, created_at, updated_at "
+                "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
                 "FROM upload_extraction_jobs WHERE job_id = ? AND user_id = ?",
                 (job_id, user_id),
             ).fetchone()
@@ -1713,7 +1778,7 @@ class ConversationStore:
                 "SELECT job_id, user_id, document_id, document_version, state, "
                 "worker_id, last_heartbeat_at, lease_until, "
                 "first_interpretation_at, total_calls, completed_calls, "
-                "failed_calls, failed_chunks, created_at, updated_at "
+                "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
                 "FROM upload_extraction_jobs WHERE user_id = ? AND document_id = ? "
                 "ORDER BY created_at DESC, job_id DESC LIMIT 1",
                 (user_id, document_id),
@@ -1732,7 +1797,7 @@ class ConversationStore:
                     "SELECT job_id, user_id, document_id, document_version, state, "
                     "worker_id, last_heartbeat_at, lease_until, "
                     "first_interpretation_at, total_calls, completed_calls, "
-                    "failed_calls, failed_chunks, created_at, updated_at "
+                    "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
                     "FROM upload_extraction_jobs WHERE user_id = ? AND document_id = ? "
                     "ORDER BY created_at DESC, job_id DESC",
                     (user_id, document_id),
@@ -1742,7 +1807,7 @@ class ConversationStore:
                     "SELECT job_id, user_id, document_id, document_version, state, "
                     "worker_id, last_heartbeat_at, lease_until, "
                     "first_interpretation_at, total_calls, completed_calls, "
-                    "failed_calls, failed_chunks, created_at, updated_at "
+                    "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
                     "FROM upload_extraction_jobs WHERE user_id = ? "
                     "ORDER BY created_at DESC, job_id DESC",
                     (user_id,),
@@ -1791,11 +1856,16 @@ class ConversationStore:
         completed_calls: int | None = None,
         failed_calls: int | None = None,
         failed_chunks: list[int] | None = None,
+        interpreted_chunks: list[str] | None = None,
     ) -> bool:
         """Set a job's state (+ counters). The worker's terminal
         write and the reconciler's interrupt write both land here.
         ``first_interpretation_at`` is set once, by the worker, and
-        is never overwritten by a later call (pass None to leave it)."""
+        is never overwritten by a later call (pass None to leave it).
+        ``interpreted_chunks`` (amendment A1) is the job's coverage
+        record — the chunk ids whose rows an interpretation call has
+        covered; the offer's coverage line reads it.
+        """
         now = _utcnow()
         sets = ["state = ?", "updated_at = ?"]
         args: list[Any] = [state, now]
@@ -1814,6 +1884,9 @@ class ConversationStore:
         if failed_chunks is not None:
             sets.append("failed_chunks = ?")
             args.append(json.dumps([int(c) for c in failed_chunks]))
+        if interpreted_chunks is not None:
+            sets.append("interpreted_chunks = ?")
+            args.append(json.dumps([str(c) for c in interpreted_chunks]))
         args.append(job_id)
         with self._lock:
             cur = self._conn.execute(
@@ -1914,7 +1987,7 @@ class ConversationStore:
                 "SELECT job_id, user_id, document_id, document_version, state, "
                 "worker_id, last_heartbeat_at, lease_until, "
                 "first_interpretation_at, total_calls, completed_calls, "
-                "failed_calls, failed_chunks, created_at, updated_at "
+                "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
                 "FROM upload_extraction_jobs WHERE state IN ('running', 'queued') "
                 "AND (last_heartbeat_at IS NULL OR last_heartbeat_at < ?) "
                 "AND created_at < ? ORDER BY created_at ASC",
@@ -1944,7 +2017,7 @@ class ConversationStore:
         with self._lock:
             existing = self._conn.execute(
                 "SELECT span_id, user_id, document_id, document_version, "
-                "segment_id, span_text, redaction_stage, location, span_hash, "
+                "segment_id, span_text, redaction_stage, location, span_hash, status, "
                 "created_at FROM upload_spans WHERE user_id = ? AND "
                 "document_id = ? AND document_version = ? AND span_hash = ? "
                 "AND location = ?",
@@ -1956,8 +2029,8 @@ class ConversationStore:
             self._conn.execute(
                 "INSERT INTO upload_spans (span_id, user_id, document_id, "
                 "document_version, segment_id, span_text, redaction_stage, "
-                "location, span_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?)",
+                "location, span_hash, status, created_at) VALUES (?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?)",
                 (
                     span_id,
                     user_id,
@@ -1968,13 +2041,14 @@ class ConversationStore:
                     redaction_stage,
                     location,
                     span_hash,
+                    "current",
                     now,
                 ),
             )
             self._conn.commit()
             row = self._conn.execute(
                 "SELECT span_id, user_id, document_id, document_version, "
-                "segment_id, span_text, redaction_stage, location, span_hash, "
+                "segment_id, span_text, redaction_stage, location, span_hash, status, "
                 "created_at FROM upload_spans WHERE span_id = ?",
                 (span_id,),
             ).fetchone()
@@ -1988,7 +2062,7 @@ class ConversationStore:
         with self._lock:
             row = self._conn.execute(
                 "SELECT span_id, user_id, document_id, document_version, "
-                "segment_id, span_text, redaction_stage, location, span_hash, "
+                "segment_id, span_text, redaction_stage, location, span_hash, status, "
                 "created_at FROM upload_spans WHERE span_id = ? AND user_id = ?",
                 (span_id, user_id),
             ).fetchone()
@@ -2009,7 +2083,7 @@ class ConversationStore:
             if segment_id is not None:
                 rows = self._conn.execute(
                     "SELECT span_id, user_id, document_id, document_version, "
-                    "segment_id, span_text, redaction_stage, location, span_hash, "
+                    "segment_id, span_text, redaction_stage, location, span_hash, status, "
                     "created_at FROM upload_spans WHERE user_id = ? AND "
                     "document_id = ? AND document_version = ? AND segment_id = ? "
                     "ORDER BY location, span_id",
@@ -2018,7 +2092,7 @@ class ConversationStore:
             else:
                 rows = self._conn.execute(
                     "SELECT span_id, user_id, document_id, document_version, "
-                    "segment_id, span_text, redaction_stage, location, span_hash, "
+                    "segment_id, span_text, redaction_stage, location, span_hash, status, "
                     "created_at FROM upload_spans WHERE user_id = ? AND "
                     "document_id = ? AND document_version = ? "
                     "ORDER BY location, span_id",
@@ -2073,8 +2147,8 @@ class ConversationStore:
             now = _utcnow()
             self._conn.execute(
                 "INSERT INTO upload_observations (observation_id, user_id, "
-                "document_id, document_version, claim, span_ids, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "document_id, document_version, claim, span_ids, status, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     observation_id,
                     user_id,
@@ -2082,13 +2156,14 @@ class ConversationStore:
                     document_version,
                     claim,
                     json.dumps(span_ids),
+                    "current",
                     now,
                 ),
             )
             self._conn.commit()
             row = self._conn.execute(
                 "SELECT observation_id, user_id, document_id, document_version, "
-                "claim, span_ids, created_at FROM upload_observations "
+                "claim, span_ids, status, created_at FROM upload_observations "
                 "WHERE observation_id = ?",
                 (observation_id,),
             ).fetchone()
@@ -2102,7 +2177,7 @@ class ConversationStore:
         with self._lock:
             row = self._conn.execute(
                 "SELECT observation_id, user_id, document_id, document_version, "
-                "claim, span_ids, created_at FROM upload_observations "
+                "claim, span_ids, status, created_at FROM upload_observations "
                 "WHERE observation_id = ? AND user_id = ?",
                 (observation_id, user_id),
             ).fetchone()
@@ -2117,7 +2192,7 @@ class ConversationStore:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT observation_id, user_id, document_id, document_version, "
-                "claim, span_ids, created_at FROM upload_observations "
+                "claim, span_ids, status, created_at FROM upload_observations "
                 "WHERE user_id = ? AND document_id = ? AND document_version = ? "
                 "ORDER BY created_at ASC, observation_id ASC",
                 (user_id, document_id, document_version),
@@ -2157,9 +2232,11 @@ class ConversationStore:
           content+location) both match a ruled interpretation for
           the same (document, lens), the new row is written with
           status 'ruled' — it inherits the standing ruling and
-          never re-enters the queue. Anything less than both
-          conditions leaves it 'pending' (the uncertain case is
-          derived at queue time, where the card names it).
+          never re-enters the queue. Exactly one condition matching
+          writes the uncertain marker on the row (amendment A3:
+          ``uncertain_match`` JSON, {"prior_interpretation_id",
+          "matched": "text" | "spans"}); the queue reads the column
+          and falls back to derivation when it is NULL.
         """
         from local_ai.council.archetypes import get_archetype
         from local_ai.strand_interviews.keys import validate_strand_key
@@ -2212,6 +2289,7 @@ class ConversationStore:
                 if row is None:
                     raise ValueError(f"Unknown observation id: {oid!r}")
             status = "pending"
+            uncertain_match_json: str | None = None
             if origin == "extracted":
                 supporting = self._supporting_span_keys_locked(
                     user_id, document_id, document_version, coerced
@@ -2225,16 +2303,39 @@ class ConversationStore:
                 )
                 if match is not None and match["kind"] == "exact":
                     status = "ruled"
+                elif match is not None and match["kind"] in (
+                    "text_only",
+                    "spans_only",
+                ):
+                    # Amendment A3: the uncertain case gets its home
+                    # on the row — a JSON marker naming the prior
+                    # ruled interpretation and which condition
+                    # matched. The queue reads it (via
+                    # uncertain_match_for, which falls back to
+                    # derivation when the column is NULL — e.g. the
+                    # prior was ruled after this row was written).
+                    uncertain_match_json = json.dumps(
+                        {
+                            "prior_interpretation_id": match.get(
+                                "prior_interpretation_id"
+                            ),
+                            "matched": (
+                                "text"
+                                if match["kind"] == "text_only"
+                                else "spans"
+                            ),
+                        }
+                    )
             interpretation_id = uuid.uuid4().hex
             now = _utcnow()
             self._conn.execute(
                 "INSERT INTO upload_interpretations (interpretation_id, "
                 "user_id, document_id, document_version, lens, lens_kind, "
                 "text, evidence_ids, observation_ids, origin, "
-                "is_transformation, proposed_outcome, status, "
+                "is_transformation, proposed_outcome, status, uncertain_match, "
                 "promotion_turn_id, promotion_message_id, ungrounded, "
                 "created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?, ?)",
+                "?, ?, ?, ?, ?, ?)",
                 (
                     interpretation_id,
                     user_id,
@@ -2249,6 +2350,7 @@ class ConversationStore:
                     1 if is_transformation else 0,
                     proposed_outcome,
                     status,
+                    uncertain_match_json,
                     promotion_turn_id,
                     promotion_message_id,
                     1 if ungrounded else 0,
@@ -2260,7 +2362,7 @@ class ConversationStore:
                 "SELECT interpretation_id, user_id, document_id, "
                 "document_version, lens, lens_kind, text, evidence_ids, "
                 "observation_ids, origin, is_transformation, "
-                "proposed_outcome, status, promotion_turn_id, "
+                "proposed_outcome, status, uncertain_match, promotion_turn_id, "
                 "promotion_message_id, ungrounded, created_at "
                 "FROM upload_interpretations WHERE interpretation_id = ?",
                 (interpretation_id,),
@@ -2277,7 +2379,7 @@ class ConversationStore:
                 "SELECT interpretation_id, user_id, document_id, "
                 "document_version, lens, lens_kind, text, evidence_ids, "
                 "observation_ids, origin, is_transformation, "
-                "proposed_outcome, status, promotion_turn_id, "
+                "proposed_outcome, status, uncertain_match, promotion_turn_id, "
                 "promotion_message_id, ungrounded, created_at "
                 "FROM upload_interpretations WHERE interpretation_id = ? "
                 "AND user_id = ?",
@@ -2301,7 +2403,7 @@ class ConversationStore:
             "SELECT interpretation_id, user_id, document_id, "
             "document_version, lens, lens_kind, text, evidence_ids, "
             "observation_ids, origin, is_transformation, "
-            "proposed_outcome, status, promotion_turn_id, "
+            "proposed_outcome, status, uncertain_match, promotion_turn_id, "
             "promotion_message_id, ungrounded, created_at "
             "FROM upload_interpretations WHERE user_id = ? AND document_id = ?"
         )
@@ -2584,6 +2686,65 @@ class ConversationStore:
             )
             self._conn.commit()
             return (cur.rowcount or 0) == 1
+
+    def reclaim_upload_outcome(self, user_id: str, outcome_id: str) -> bool:
+        """The §8.1 step-1b retry re-claim (brief amendment A4):
+        a confirmation for an outcome in status 'creating' with no
+        carrier row may re-take the claim — the UPDATE matches a
+        'creating' row, rowcount 1 → this session owns the retry;
+        rowcount 0 → another session owns it (the caller returns the
+        existing outcome or 409s per §8.2). The one-hour staleness
+        gate is the CALLER's job (approve_upload_outcome checks the
+        outcome's age before calling this); this method is the raw
+        compare-and-swap. Setting status to its current value is
+        deliberate: the rowcount, not the value change, is the
+        ownership signal (SQLite counts matched rows)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE upload_outcomes SET status = 'creating' "
+                "WHERE outcome_id = ? AND user_id = ? AND status = 'creating'",
+                (outcome_id, user_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) == 1
+
+    def supersede_upload_versions_before(
+        self, user_id: str, document_id: str, document_version: int
+    ) -> dict[str, int]:
+        """The §5.4 re-extraction transition (amendment A3): when a
+        re-extraction produces a new evidence set, the OLD set
+        becomes 'superseded' — preserved, never deleted, never
+        presented — and its PENDING interpretations become
+        'orphaned' (preserved, never presented). Ruled
+        interpretations stay 'ruled': they are the historical record
+        of what the user decided, readable in history. Returns the
+        counts superseded/orphaned. Idempotent: re-running it
+        matches nothing new."""
+        with self._lock:
+            spans = self._conn.execute(
+                "UPDATE upload_spans SET status = 'superseded' "
+                "WHERE user_id = ? AND document_id = ? "
+                "AND document_version < ? AND status = 'current'",
+                (user_id, document_id, document_version),
+            )
+            observations = self._conn.execute(
+                "UPDATE upload_observations SET status = 'superseded' "
+                "WHERE user_id = ? AND document_id = ? "
+                "AND document_version < ? AND status = 'current'",
+                (user_id, document_id, document_version),
+            )
+            interpretations = self._conn.execute(
+                "UPDATE upload_interpretations SET status = 'orphaned' "
+                "WHERE user_id = ? AND document_id = ? "
+                "AND document_version < ? AND status = 'pending'",
+                (user_id, document_id, document_version),
+            )
+            self._conn.commit()
+            return {
+                "spans": spans.rowcount or 0,
+                "observations": observations.rowcount or 0,
+                "interpretations": interpretations.rowcount or 0,
+            }
 
     def set_upload_outcome_status(
         self,
@@ -2928,6 +3089,11 @@ def _coerce_upload_evidence_roles(
 def _upload_job_dict(row: sqlite3.Row) -> dict[str, Any]:
     d = dict(row)
     d["failed_chunks"] = _parse_upload_json_list(d.get("failed_chunks"))
+    # Amendment A1: the interpreted-chunks coverage record (a JSON
+    # list of chunk ids; [] when nothing has been interpreted yet).
+    d["interpreted_chunks"] = _parse_upload_json_list(
+        d.get("interpreted_chunks")
+    )
     return d
 
 
@@ -2943,6 +3109,20 @@ def _upload_interpretation_dict(row: sqlite3.Row) -> dict[str, Any]:
     d["observation_ids"] = _parse_upload_json_list(d.get("observation_ids"))
     d["is_transformation"] = bool(d.get("is_transformation"))
     d["ungrounded"] = bool(d.get("ungrounded"))
+    # Amendment A3: the stored uncertain-match marker (JSON, or None).
+    # Parsed to a dict when present; the queue translates it to the
+    # {kind, prior_interpretation_id} shape via uncertain_match_for.
+    raw_match = d.get("uncertain_match")
+    if isinstance(raw_match, str) and raw_match.strip():
+        try:
+            parsed_match = json.loads(raw_match)
+        except (ValueError, TypeError):
+            parsed_match = None
+        d["uncertain_match"] = (
+            parsed_match if isinstance(parsed_match, dict) else None
+        )
+    else:
+        d["uncertain_match"] = None
     return d
 
 

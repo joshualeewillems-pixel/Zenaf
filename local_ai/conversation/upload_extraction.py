@@ -101,22 +101,26 @@ FAILURE_CODES = (
     "interrupted",
 )
 
-# -- global model-call concurrency (A4.5, §3.5) ------------------------------
+# -- global model-call concurrency (A4.5, §3.5; home: amendment A5) ---------
 #
 # ONE concurrent extraction-model call, system-wide. The semaphore
-# is one instance, shared by the upload worker (below) and the
-# distill path (local_ai/presence_ingest/distill.py takes it around
-# each batch call) — two independently instantiated Semaphore(1)
-# objects would enforce nothing. The bound covers EXTRACTION calls
-# only; build-room meetings are out of scope. In-process only: the
-# app runs as one process on Fly today; if it ever runs
-# multi-process, the bound becomes a DB lease (a future design).
-# ZENAF_EXTRACTION_CONCURRENCY is the seam (default 1).
-
-_EXTRACTION_CONCURRENCY = max(
-    1, int(os.environ.get("ZENAF_EXTRACTION_CONCURRENCY", "1") or 1)
+# lives in local_ai/extraction_concurrency.py (a neutral home — not
+# here, which would make presence_ingest depend on conversation, and
+# not in distill, the same problem in reverse) and is shared by the
+# upload worker (below, via _run_model_call) and the distill path
+# (local_ai/presence_ingest/distill.py takes it around each batch
+# call) — two independently instantiated Semaphore(1) objects would
+# enforce nothing. The bound covers EXTRACTION calls only;
+# build-room meetings are out of scope. In-process only: the app
+# runs as one process on Fly today; if it ever runs multi-process,
+# the bound becomes a DB lease (a future design).
+# ZENAF_EXTRACTION_CONCURRENCY is the seam (default 1, read in the
+# home module). The wrap is around the model generate call only —
+# never around the Ollama reachability probe.
+from local_ai.extraction_concurrency import (
+    EXTRACTION_MODEL_SEMAPHORE,
+    extraction_slot,
 )
-EXTRACTION_MODEL_SEMAPHORE = threading.Semaphore(_EXTRACTION_CONCURRENCY)
 
 
 class UploadModelError(Exception):
@@ -434,10 +438,12 @@ def _run_model_call(
     *,
     timeout: float = _MODEL_TIMEOUT_S,
 ) -> str:
-    """One model call, under the shared extraction semaphore (§3.5).
-    A stub complete_fn (tests) is called in place of Ollama; its
-    exceptions are mapped to UploadModelError codes."""
-    with EXTRACTION_MODEL_SEMAPHORE:
+    """One model call, under the shared extraction semaphore (§3.5,
+    amendment A5: the slot is the generate call only, never the
+    Ollama reachability probe). A stub complete_fn (tests) is called
+    in place of Ollama; its exceptions are mapped to UploadModelError
+    codes."""
+    with extraction_slot():
         if complete_fn is not None:
             try:
                 return complete_fn(prompt)
@@ -665,7 +671,7 @@ def _get_job_by_id(
             "SELECT job_id, user_id, document_id, document_version, state, "
             "worker_id, last_heartbeat_at, lease_until, "
             "first_interpretation_at, total_calls, completed_calls, "
-            "failed_calls, failed_chunks, created_at, updated_at "
+            "failed_calls, failed_chunks, interpreted_chunks, created_at, updated_at "
             "FROM upload_extraction_jobs WHERE job_id = ?",
             (job_id,),
         ).fetchone()

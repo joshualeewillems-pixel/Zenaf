@@ -1628,6 +1628,19 @@ def list_task_proposals(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/task-proposals/{proposal_id}")
+def get_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
+    """One task proposal, owner-scoped (Firebrand S1).
+
+    The round card hydrates from this — never client memory — so a
+    reload never reverts a decision. A foreign id reads as missing.
+    """
+    proposal = VEStorage.get_task_proposal(current_user["id"], proposal_id)
+    if proposal is None:
+        raise HTTPException(status_code=404, detail="Proposal not found.")
+    return proposal
+
+
 @router.patch("/task-proposals/{proposal_id}")
 def update_task_proposal(proposal_id: str, body: TaskProposalPatchBody, current_user: dict = Depends(get_current_user)):
     try:

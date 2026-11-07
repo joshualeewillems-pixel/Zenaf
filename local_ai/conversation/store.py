@@ -96,6 +96,22 @@ CREATE INDEX IF NOT EXISTS idx_invitations_user_conv_seat
   ON invitations (user_id, conversation_id, seat, status);
 CREATE INDEX IF NOT EXISTS idx_invitations_user_expiry
   ON invitations (user_id, status, expires_at);
+CREATE TABLE IF NOT EXISTS round_parked_ids (
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  parked_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, conversation_id, kind, item_id)
+);
+CREATE TABLE IF NOT EXISTS round_reserved_ids (
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  reserved_at TEXT NOT NULL,
+  snooze_until TEXT,
+  PRIMARY KEY (user_id, kind, item_id)
+);
 CREATE TABLE IF NOT EXISTS strand_threads (
   user_id TEXT NOT NULL,
   strand_key TEXT NOT NULL,
@@ -854,6 +870,158 @@ class ConversationStore:
             )
             self._conn.commit()
             return cur.rowcount if cur.rowcount is not None else 0
+
+    # -- lightning-round parking + reserved markers (Firebrand S1) --------
+    #
+    # The shared mechanisms the Firebrand design §3.4/OQ5 and OQ7 rule:
+    # parked-ids (skip until the next round) and reserved markers
+    # ("don't remind me about this" — a durable snooze or never).
+    # Both live here beside the invitation rows, per the design's
+    # recommendation, so the Weaver round reuses them without a second
+    # store. The two tables scope differently, deliberately:
+    #   * parked: (user, conversation, ROUND kind) — each round's
+    #     parked set is its own ('firebrand' vs 'weaver'), and a park
+    #     lasts only until the next round in that conversation, when
+    #     the round start clears it.
+    #   * reserved: (user, ITEM kind) — the marker attaches to the
+    #     item itself ('task_proposal'), so a reserved item never
+    #     appears in any round that could present it, until its snooze
+    #     expires. snooze_until NULL means never.
+    # Expiry is a read-time gate (same pattern as
+    # list_pending_invitations): a past-expiry row is not active even
+    # before any sweep materializes it. No sweep exists in v1.
+
+    def park_round_item(
+        self, user_id: str, conversation_id: str, kind: str, item_id: str
+    ) -> bool:
+        """Park one item for the rest of this round (Firebrand OQ5).
+
+        A park changes no underlying state — the proposal stays
+        pending — it only suppresses re-presentation until the next
+        round clears it. Idempotent: re-parking returns False.
+        """
+        now = _utcnow()
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT OR IGNORE INTO round_parked_ids "
+                "(user_id, conversation_id, kind, item_id, parked_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, conversation_id, kind, item_id, now),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) > 0
+
+    def list_parked_round_items(
+        self, user_id: str, conversation_id: str, kind: str
+    ) -> list[str]:
+        """Parked item ids for one (user, conversation, round kind)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT item_id FROM round_parked_ids WHERE user_id = ? "
+                "AND conversation_id = ? AND kind = ? "
+                "ORDER BY parked_at ASC, item_id ASC",
+                (user_id, conversation_id, kind),
+            ).fetchall()
+        return [r["item_id"] for r in rows]
+
+    def clear_parked_round_items(
+        self, user_id: str, conversation_id: str, kind: str
+    ) -> int:
+        """Clear one round's parked set — called at round start.
+
+        A park lasts until the next round, so invoking a new round
+        lifts every park in that conversation for that round kind.
+        Returns the number of rows cleared.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM round_parked_ids WHERE user_id = ? "
+                "AND conversation_id = ? AND kind = ?",
+                (user_id, conversation_id, kind),
+            )
+            self._conn.commit()
+            return cur.rowcount if cur.rowcount is not None else 0
+
+    def reserve_round_item(
+        self,
+        user_id: str,
+        kind: str,
+        item_id: str,
+        snooze_until: str | None = None,
+    ) -> dict[str, Any]:
+        """Mark one item "don't remind me about this" (Firebrand OQ7).
+
+        Durable, not round-scoped: ``snooze_until`` is an ISO
+        timestamp (the item returns to rounds after it) or None
+        (never — the item never appears again). Re-reserving the
+        same item replaces its snooze. Returns the stored marker.
+        """
+        now = _utcnow()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO round_reserved_ids "
+                "(user_id, kind, item_id, reserved_at, snooze_until) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, kind, item_id, now, snooze_until),
+            )
+            self._conn.commit()
+        return {
+            "user_id": user_id,
+            "kind": kind,
+            "item_id": item_id,
+            "reserved_at": now,
+            "snooze_until": snooze_until,
+        }
+
+    def list_active_reserved_round_items(
+        self, user_id: str, kind: str, now: str | None = None
+    ) -> list[str]:
+        """Reserved item ids whose marker is still active.
+
+        Never-reserved (snooze_until NULL) and not-yet-expired
+        snoozes are active; an expired snooze is not, so the item
+        returns to rounds. Read-time gate — no sweep.
+        """
+        now = now or _utcnow()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT item_id FROM round_reserved_ids WHERE user_id = ? "
+                "AND kind = ? AND (snooze_until IS NULL OR snooze_until > ?) "
+                "ORDER BY reserved_at ASC, item_id ASC",
+                (user_id, kind, now),
+            ).fetchall()
+        return [r["item_id"] for r in rows]
+
+    def get_reserved_round_item(
+        self, user_id: str, kind: str, item_id: str, now: str | None = None
+    ) -> dict[str, Any] | None:
+        """One active reserved marker, or None (never reserved, or
+        its snooze expired). The card's hydration read uses this to
+        show the snooze date ("back after …") vs never.
+        """
+        now = now or _utcnow()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT user_id, kind, item_id, reserved_at, snooze_until "
+                "FROM round_reserved_ids WHERE user_id = ? AND kind = ? "
+                "AND item_id = ? AND (snooze_until IS NULL OR snooze_until > ?)",
+                (user_id, kind, item_id, now),
+            ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def unreserve_round_item(self, user_id: str, kind: str, item_id: str) -> bool:
+        """Lift a reserved marker (the card's Undo). Returns True if
+        a marker was removed."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM round_reserved_ids WHERE user_id = ? "
+                "AND kind = ? AND item_id = ?",
+                (user_id, kind, item_id),
+            )
+            self._conn.commit()
+            return (cur.rowcount or 0) > 0
 
     def invalidate_invitation(
         self, user_id: str, invitation_id: str

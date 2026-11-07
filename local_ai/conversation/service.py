@@ -29,6 +29,7 @@ from local_ai.vision_execution import execution_context as _execution_context
 from local_ai.vision_execution import obligations as _obligations
 
 from .encounter import _WEAVER_NATURAL_INTENTION
+from .firebrand_round import ROUND_KIND, firebrand_round_enabled, plan_round_turn
 from .reply import VoiceReply, generate_voice_reply
 from .store import ConversationStore
 
@@ -172,6 +173,11 @@ class TurnResult:
     assistant_message: dict[str, Any]
     reply: VoiceReply
     conversation_id: str
+    # Firebrand lightning round (S1): the newly presented item for
+    # the turn response ({"kind", "proposal_id", "proposal"}), or
+    # None when this turn presented nothing new. The card renders
+    # from this; hydration refetches by proposal id.
+    round_item: dict[str, Any] | None = None
 
 
 class ConversationService:
@@ -347,6 +353,27 @@ class ConversationService:
                 _execution_context.build_execution_context(user_id, conversation_id)
             )
 
+        # Firebrand lightning round (S1): champion-only, Talk only.
+        # The round is planned deterministically from the caller's
+        # own records — no model call, no new turn type. The plan
+        # never writes: the park and the parked-clear land below,
+        # after generation succeeds, so a failed turn changes nothing.
+        # A failed plan degrades to no block, never a broken turn.
+        # Meetings and the voice route never reach this path (they do
+        # not call turn()).
+        round_plan = None
+        round_context = None
+        if arch_id == "champion" and firebrand_round_enabled():
+            try:
+                round_plan = plan_round_turn(
+                    self.store, user_id, conversation_id, message
+                )
+                round_context = round_plan.block
+            except Exception:
+                logger.exception("firebrand round: planning failed")
+                round_plan = None
+                round_context = None
+
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -359,6 +386,7 @@ class ConversationService:
             evidence_context=evidence_context,
             invitation_context=invitation_context,
             execution_context=execution_context,
+            round_context=round_context,
             conversation_id=conversation_id,
             thread_summary=thread_summary,
             generate_fn=self._generate_fn,
@@ -392,6 +420,35 @@ class ConversationService:
                 arch_id, CAP.resolve_visitor_state(user_id)),
         )
 
+        # Firebrand lightning round (S1): record the plan's effects
+        # now that generation succeeded. The marker rides the
+        # assistant message's context_json (the user message above
+        # was already serialized, so mutating `context` here touches
+        # only this message). The park and the parked-clear are
+        # guarded: a store failure must never break the turn — the
+        # next turn re-derives from the records, and the user can
+        # skip again.
+        if round_plan is not None:
+            if round_plan.marker:
+                context.update(round_plan.marker)
+            if round_plan.clear_parked:
+                try:
+                    self.store.clear_parked_round_items(
+                        user_id, conversation_id, ROUND_KIND
+                    )
+                except Exception:
+                    logger.exception("firebrand round: parked-clear failed")
+            if round_plan.park_proposal_id:
+                try:
+                    self.store.park_round_item(
+                        user_id,
+                        conversation_id,
+                        ROUND_KIND,
+                        round_plan.park_proposal_id,
+                    )
+                except Exception:
+                    logger.exception("firebrand round: park failed")
+
         assistant_msg = self.store.append_message(
             user_id,
             conversation_id,
@@ -423,6 +480,7 @@ class ConversationService:
             assistant_message=assistant_msg,
             reply=voice_reply,
             conversation_id=conversation_id,
+            round_item=round_plan.item if round_plan is not None else None,
         )
         # Fellowship Runtime P1: the turn is a shared-reality event.
         # Emitted only now — reply computed and persisted — and the

@@ -26,6 +26,33 @@ type Row = {
   role: 'user' | 'voice'
   body: string
   archetype_id?: string | null
+  context?: Record<string, unknown>
+}
+
+// Firebrand lightning round (S1): the item-state payload the round
+// card hydrates from, and the round_item the turn response carries
+// for a champion turn.
+const ROUND_PROPOSAL = {
+  id: 'p1',
+  conversation_id: 'talk-2',
+  source_message_id: 'm-src',
+  block_index: 0,
+  proposal_index: 0,
+  seat: 'champion',
+  title: 'Call the clinic',
+  parent_task_id: null,
+  timeframe_commitment: 'tentative',
+  due_date: null,
+  notes: 'Ask',
+  state: 'pending',
+  created_task_id: null,
+  evidence_quote: 'Prose for Call the clinic here.',
+  original_title: 'Call the clinic',
+  original_parent_task_id: null,
+  original_timeframe_commitment: 'tentative',
+  original_due_date: null,
+  original_notes: 'Ask',
+  grounding_flag: 'words_matched',
 }
 
 const u = (id: string, body: string): Row => ({ id, role: 'user', body })
@@ -75,6 +102,11 @@ function installFetch() {
     if (url.includes('/council/archetypes/status')) {
       return Promise.resolve(ok({ archetypes: [] }))
     }
+    if (url.includes('/conversation/round/item-state')) {
+      return Promise.resolve(
+        ok({ proposal: ROUND_PROPOSAL, parked: false, reserved: null }),
+      )
+    }
     if (url.includes('/conversation/turn')) {
       const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
       turnBodies.push(body)
@@ -88,6 +120,12 @@ function installFetch() {
           voice_color: '#888888',
           mode_used: 'trained',
           has_training: false,
+          // Firebrand lightning round (S1): a champion turn presents
+          // an item; other seats never carry one.
+          round_item:
+            body.archetype_id === 'champion'
+              ? { kind: 'task_proposal', proposal_id: 'p1', proposal: ROUND_PROPOSAL }
+              : null,
         }),
       )
     }
@@ -276,5 +314,60 @@ describe('T10 conversation switching', () => {
     expect(turnBodies).toHaveLength(1)
     expect(turnBodies[0].conversation_id).toBe(B)
     expect(container.textContent).toContain('turn reply')
+  })
+})
+
+describe('Firebrand lightning round (S1)', () => {
+  it('hydration maps the round marker to a card, refetched by id', async () => {
+    renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'champion' })
+    await flush()
+    hydrations[A].resolve(
+      ok({
+        conversation_id: A,
+        messages: [
+          u('m1', 'lightning round'),
+          {
+            id: 'm2',
+            role: 'voice',
+            body: 'First up: call the clinic.',
+            archetype_id: 'champion',
+            context: { round_kind: 'firebrand', round_proposal_id: 'p1' },
+          },
+        ],
+        total: 2,
+      }),
+    )
+    await flush()
+    expect(container.textContent).toContain('Lightning round')
+    expect(container.textContent).toContain('Call the clinic')
+    expect(container.textContent).toContain('Tentative timeframe')
+    expect(calls.some((c) => c.url.includes('/round/item-state'))).toBe(true)
+  })
+
+  it('a champion turn carrying round_item renders the card live', async () => {
+    renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'champion' })
+    await flush()
+    hydrations[A].resolve(ok({ conversation_id: A, messages: [], total: 0 }))
+    await flush()
+    typeText('lightning round')
+    await click(sendButton())
+    expect(container.textContent).toContain('turn reply')
+    expect(container.textContent).toContain('Lightning round')
+    expect(container.textContent).toContain('Call the clinic')
+    const approve = Array.from(container.querySelectorAll('button')).find(
+      (b) => (b.textContent ?? '').trim() === 'Approve',
+    )
+    expect(approve).toBeDefined()
+  })
+
+  it('a non-champion turn carries no round card', async () => {
+    renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'mentor' })
+    await flush()
+    hydrations[A].resolve(ok({ conversation_id: A, messages: [], total: 0 }))
+    await flush()
+    typeText('hello')
+    await click(sendButton())
+    expect(container.textContent).toContain('turn reply')
+    expect(container.textContent).not.toContain('Lightning round')
   })
 })

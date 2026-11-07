@@ -29,6 +29,7 @@ Threading: one connection guarded by a lock is enough for user-triggered use.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import threading
 import uuid

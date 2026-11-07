@@ -262,3 +262,187 @@ def put_permissions(body: M.SettingsPermissionsUpdate, current_user: dict = Depe
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+# --- Permission framework surface (Slice 2) --------------------------------
+# The grouped stance surface (Rev2 §2.2–§2.3), the global pause control
+# (C4.2–C4.3, clarification I.1), and the retained-information counts
+# (Rev2 §4.2, R.1–R.4). Reads are lookups only; stance writes go
+# through the Slice 1 stance store (never the boolean flags, never the
+# scope ledger). No model calls on this path.
+
+
+def _require_owner_id(current_user: dict) -> str:
+    """Owner identity for the framework routes, from the authenticated
+    principal only — never from the request body (the stance/pause
+    bodies carry no user field). An empty or missing owner fails
+    closed: 404, not 403 (PR #329's rule — the caller's framework
+    state does not exist for an unidentified owner)."""
+    user_id = current_user.get("id") if isinstance(current_user, dict) else None
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise HTTPException(status_code=404, detail="owner not found")
+    return user_id
+
+
+def _framework_state(user_id: str) -> dict:
+    """Full framework state for the surface: pause + one entry per
+    registered capability, each with its rows, current stance (user-set
+    record, else the registry default), retained count, paused/quieted
+    display flags, and exception membership (Rev2 §2.2).
+
+    ``stance_source`` is "user" when a stance record exists and
+    "default" when the row falls back to the registry default, so the
+    surface never presents a default as if the user had set it.
+
+    Retained counts carry their own status: ``retained_count`` is an
+    int when the read succeeded and None when it failed, with
+    ``retained_count_status`` "available" / "unavailable" saying so
+    explicitly — a failed read must never appear as zero retained
+    items (founder verdict check 2, 2026-11-06).
+    """
+    from local_ai.permissions import registry as _registry
+    from local_ai.permissions import retained as _retained
+    from local_ai.permissions import store as _store
+
+    pause = _store.get_pause(user_id)
+    stances = _store.get_stances(user_id)
+    counts = _retained.retained_counts(user_id)
+    capabilities = []
+    for capability_id, entry in _registry.CAPABILITIES.items():
+        rows = []
+        for row in entry.rows:
+            record = (stances.get(capability_id) or {}).get(row.key)
+            if isinstance(record, dict) and record.get("stance"):
+                stance = record["stance"]
+                source = "user"
+                granted_at = record.get("granted_at")
+                last_changed_at = record.get("last_changed_at")
+                surface = record.get("surface")
+            else:
+                stance = entry.default_stance
+                source = "default"
+                granted_at = None
+                last_changed_at = None
+                surface = None
+            rows.append(
+                {
+                    "key": row.key,
+                    "label": row.label,
+                    "kind": row.kind,
+                    "stance": stance,
+                    "stance_source": source,
+                    "granted_at": granted_at,
+                    "last_changed_at": last_changed_at,
+                    "surface": surface,
+                }
+            )
+        # Per-commitment capabilities (R6) list only rows with a
+        # user-set stance record; commitments themselves are Slice 6
+        # wiring, so no commitment picker is offered here.
+        if entry.row_scheme == "per_commitment":
+            rows = [
+                {
+                    "key": key,
+                    "label": key,
+                    "kind": "per_commitment",
+                    "stance": record["stance"],
+                    "stance_source": "user",
+                    "granted_at": record.get("granted_at"),
+                    "last_changed_at": record.get("last_changed_at"),
+                    "surface": record.get("surface"),
+                }
+                for key, record in (stances.get(capability_id) or {}).items()
+                if isinstance(record, dict) and record.get("stance")
+            ]
+        capabilities.append(
+            {
+                "id": capability_id,
+                "covers": entry.covers,
+                "does_not_allow": entry.does_not_allow,
+                "default_stance": entry.default_stance,
+                "supported_stances": list(entry.supported_stances),
+                "exception_classes": list(entry.exception_classes),
+                "retained_count": counts.get(capability_id),
+                "retained_count_status": (
+                    "available" if counts.get(capability_id) is not None else "unavailable"
+                ),
+                # Quieting has no machinery until Slice 3 (no counters,
+                # no quiet state): nothing is quieted in Slice 2.
+                "quieted": False,
+                "paused": bool(pause.get("paused", False)),
+                "rows": rows,
+            }
+        )
+    return {"paused": bool(pause.get("paused", False)), "pause": pause, "capabilities": capabilities}
+
+
+@router.get("/permissions/framework")
+def get_framework_permissions(current_user: dict = Depends(get_current_user)):
+    return _framework_state(_require_owner_id(current_user))
+
+
+@router.put("/permissions/framework/stance")
+def put_framework_stance(body: M.FrameworkStanceUpdate, current_user: dict = Depends(get_current_user)):
+    """Write one stance record (surface: settings).
+
+    Succeeds even while the global pause override is set (I.1 rule 2):
+    the write is durable and visible, but takes no effect for new
+    operations until un-pause — the pause record is independent and
+    untouched. Invalid capability / stance / row → 400.
+    """
+    from local_ai.permissions import store as _store
+
+    user_id = _require_owner_id(current_user)
+    try:
+        record = _store.set_stance(
+            user_id,
+            body.capability,
+            body.row_key,
+            body.stance,
+            surface=_store.SURFACE_SETTINGS,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    from local_ai.permissions import retained as _retained
+
+    retained_count = _retained.retained_counts(user_id).get(body.capability)
+    return {
+        "record": record,
+        "retained_count": retained_count,
+        "retained_count_status": (
+            "available" if retained_count is not None else "unavailable"
+        ),
+        # The retained-information choice is offered (nonblocking,
+        # R.1–R.4) when a revocation leaves retained items behind.
+        # An unavailable count offers no choice: the surface cannot
+        # choose about items it could not count.
+        "retained_choice_offered": (
+            body.stance == "dont_do_it"
+            and retained_count is not None
+            and retained_count > 0
+        ),
+        "state": _framework_state(user_id),
+    }
+
+
+@router.put("/permissions/framework/pause")
+def put_framework_pause(body: M.FrameworkPauseUpdate, current_user: dict = Depends(get_current_user)):
+    """Set or clear the global pause override (surface: settings).
+
+    Writes ONLY the pause record (C4.2(d), C4-T4): stances and stance
+    history are untouched. ``canceled_operations`` lists the pending
+    operations the pause canceled — empty in Slice 2, because no
+    cancelable pending operation exists in the wired surface yet
+    (queued reminders and unsent derivation proposals have no pending
+    substrate; see C4-T2). Un-pausing restores stances, never
+    restarts anything canceled (C4.2(e)).
+    """
+    from local_ai.permissions import store as _store
+
+    user_id = _require_owner_id(current_user)
+    record = _store.set_pause(user_id, bool(body.paused), surface=_store.SURFACE_SETTINGS)
+    return {
+        "pause": record,
+        "canceled_operations": [],
+        "state": _framework_state(user_id),
+    }

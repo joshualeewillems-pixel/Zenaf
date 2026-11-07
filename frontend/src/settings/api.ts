@@ -347,6 +347,225 @@ export interface IdentityScopesResponse {
   known_scopes: Record<string, string>
 }
 
+// --- Permission framework surface (Slice 2) -------------------------------
+// Grouped stance surface (Rev2 §2.2–§2.3), global pause (C4), and
+// retained-information counts (Rev2 §4.2). The backend is the
+// authority; these normalizers only defend the UI against a malformed
+// payload (unknown stances fall back to the capability default).
+
+export type FrameworkStance = 'ask_me' | 'just_do_it' | 'dont_do_it'
+
+export const FRAMEWORK_STANCES: FrameworkStance[] = ['ask_me', 'just_do_it', 'dont_do_it']
+
+export function stanceLabel(stance: FrameworkStance): string {
+  if (stance === 'ask_me') return 'Ask me'
+  if (stance === 'just_do_it') return 'Just do it'
+  return "Don't do it"
+}
+
+function isFrameworkStance(value: unknown): value is FrameworkStance {
+  return typeof value === 'string' && (FRAMEWORK_STANCES as string[]).includes(value)
+}
+
+export type FrameworkRow = {
+  key: string
+  label: string
+  kind: string
+  stance: FrameworkStance
+  stance_source: 'user' | 'default'
+  granted_at: string | null
+  last_changed_at: string | null
+  surface: string | null
+}
+
+export type FrameworkCapability = {
+  id: string
+  covers: string
+  does_not_allow: string
+  default_stance: FrameworkStance
+  supported_stances: FrameworkStance[]
+  exception_classes: string[]
+  /**
+   * Retained-item count: a number when the read succeeded, null when
+   * the read failed. A failed read is UNAVAILABLE, never zero —
+   * the surface must render it as unavailable, never as "0 items"
+   * (founder verdict check 2, 2026-11-06).
+   */
+  retained_count: number | null
+  retained_count_status: 'available' | 'unavailable'
+  quieted: boolean
+  paused: boolean
+  rows: FrameworkRow[]
+}
+
+export type FrameworkPause = {
+  paused: boolean
+  paused_at: string | null
+  surface: string | null
+}
+
+export type FrameworkState = {
+  paused: boolean
+  pause: FrameworkPause
+  capabilities: FrameworkCapability[]
+}
+
+export function normalizeFrameworkState(raw: unknown): FrameworkState {
+  const fallback: FrameworkState = {
+    paused: false,
+    pause: { paused: false, paused_at: null, surface: null },
+    capabilities: [],
+  }
+  if (!isRecord(raw)) return fallback
+  const pauseRaw = isRecord(raw.pause) ? raw.pause : {}
+  const capabilities: FrameworkCapability[] = []
+  if (Array.isArray(raw.capabilities)) {
+    for (const entry of raw.capabilities) {
+      if (!isRecord(entry)) continue
+      const defaultStance = isFrameworkStance(entry.default_stance)
+        ? entry.default_stance
+        : 'dont_do_it'
+      const supported = Array.isArray(entry.supported_stances)
+        ? (entry.supported_stances as unknown[]).filter(isFrameworkStance)
+        : [defaultStance]
+      const rows: FrameworkRow[] = []
+      if (Array.isArray(entry.rows)) {
+        for (const row of entry.rows) {
+          if (!isRecord(row)) continue
+          rows.push({
+            key: String(row.key ?? ''),
+            label: String(row.label ?? ''),
+            kind: String(row.kind ?? ''),
+            stance: isFrameworkStance(row.stance) ? row.stance : defaultStance,
+            stance_source: row.stance_source === 'user' ? 'user' : 'default',
+            granted_at: typeof row.granted_at === 'string' ? row.granted_at : null,
+            last_changed_at: typeof row.last_changed_at === 'string' ? row.last_changed_at : null,
+            surface: typeof row.surface === 'string' ? row.surface : null,
+          })
+        }
+      }
+      capabilities.push({
+        id: String(entry.id ?? ''),
+        covers: String(entry.covers ?? ''),
+        does_not_allow: String(entry.does_not_allow ?? ''),
+        default_stance: defaultStance,
+        supported_stances: supported.length > 0 ? supported : [defaultStance],
+        exception_classes: Array.isArray(entry.exception_classes)
+          ? (entry.exception_classes as unknown[]).map(String)
+          : [],
+        // A failed/unavailable read is null, never 0: the normalizer
+        // must not collapse it into a verified zero. An explicit
+        // 'unavailable' status from the server wins over any number
+        // present (fail-closed direction).
+        retained_count:
+          entry.retained_count_status === 'unavailable'
+            ? null
+            : typeof entry.retained_count === 'number' && Number.isFinite(entry.retained_count)
+              ? Math.max(0, Math.floor(entry.retained_count))
+              : null,
+        retained_count_status:
+          entry.retained_count_status === 'unavailable'
+            ? 'unavailable'
+            : typeof entry.retained_count === 'number' && Number.isFinite(entry.retained_count)
+              ? 'available'
+              : 'unavailable',
+        quieted: Boolean(entry.quieted),
+        paused: Boolean(entry.paused),
+        rows,
+      })
+    }
+  }
+  const paused = Boolean(raw.paused) || Boolean(pauseRaw.paused)
+  return {
+    paused,
+    pause: {
+      paused,
+      paused_at: typeof pauseRaw.paused_at === 'string' ? pauseRaw.paused_at : null,
+      surface: typeof pauseRaw.surface === 'string' ? pauseRaw.surface : null,
+    },
+    capabilities,
+  }
+}
+
+export async function fetchFrameworkPermissions(): Promise<FrameworkState> {
+  const res = await fetch(`${BASE}/permissions/framework`, { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to load permission framework')
+  return normalizeFrameworkState(await res.json().catch(() => ({})))
+}
+
+export type FrameworkStanceResponse = {
+  record: Record<string, unknown>
+  retained_count: number | null
+  retained_count_status: 'available' | 'unavailable'
+  retained_choice_offered: boolean
+  state: FrameworkState
+}
+
+export async function setFrameworkStance(
+  capability: string,
+  rowKey: string | null,
+  stance: FrameworkStance,
+): Promise<FrameworkStanceResponse> {
+  const res = await fetch(`${BASE}/permissions/framework/stance`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ capability, row_key: rowKey, stance }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail = (body as { detail?: unknown }).detail
+    throw new Error(typeof detail === 'string' ? detail : 'Failed to save stance')
+  }
+  return {
+    record: isRecord(body.record) ? body.record : {},
+    retained_count:
+      body.retained_count_status === 'unavailable'
+        ? null
+        : typeof body.retained_count === 'number'
+          ? body.retained_count
+          : null,
+    retained_count_status:
+      body.retained_count_status === 'unavailable'
+        ? 'unavailable'
+        : typeof body.retained_count === 'number'
+          ? 'available'
+          : 'unavailable',
+    retained_choice_offered: Boolean(body.retained_choice_offered),
+    state: normalizeFrameworkState(body.state),
+  }
+}
+
+export type FrameworkPauseResponse = {
+  pause: FrameworkPause
+  canceled_operations: unknown[]
+  state: FrameworkState
+}
+
+export async function setFrameworkPause(paused: boolean): Promise<FrameworkPauseResponse> {
+  const res = await fetch(`${BASE}/permissions/framework/pause`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paused }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail = (body as { detail?: unknown }).detail
+    throw new Error(typeof detail === 'string' ? detail : 'Failed to save pause')
+  }
+  const pauseRaw = isRecord(body.pause) ? body.pause : {}
+  return {
+    pause: {
+      paused: Boolean(pauseRaw.paused),
+      paused_at: typeof pauseRaw.paused_at === 'string' ? pauseRaw.paused_at : null,
+      surface: typeof pauseRaw.surface === 'string' ? pauseRaw.surface : null,
+    },
+    canceled_operations: Array.isArray(body.canceled_operations) ? body.canceled_operations : [],
+    state: normalizeFrameworkState(body.state),
+  }
+}
+
 export async function fetchIdentityScopes(): Promise<IdentityScopesResponse> {
   const res = await fetch('/identity/scopes', { credentials: 'include' })
   if (!res.ok) throw new Error('Failed to load identity scopes')

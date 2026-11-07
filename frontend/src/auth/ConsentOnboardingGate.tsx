@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { USER_PERMISSION_DEFAULTS, type UserPermissionFlags } from '../settings/api'
+import { FrameworkPermissionsSurface } from '../settings/FrameworkPermissionsSurface'
 
 const CONSENT_VERSION = 'permissions-v1'
 
@@ -48,6 +49,11 @@ const OPTIONAL_TOGGLES: { key: keyof UserPermissionFlags; label: string; hint: s
     key: 'steward_derivation',
     label: 'Narrative Steward derivation',
     hint: 'Can Zenaf connect our talks into ongoing threads, note what they might mean, and keep those notes where you can review/delete them?',
+  },
+  {
+    key: 'steward_coordination',
+    label: 'Narrative Steward coordination',
+    hint: 'Can Zenaf share derived observations across branches (conversation lines), so a pattern recognized in one place can inform another? (Slice 1 repair: this flag can now persist; Slice 2 adds the row.)',
   },
 ]
 
@@ -124,6 +130,18 @@ export function ConsentOnboardingGate({
               </span>
             </label>
           ))}
+        </div>
+
+        <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-4 space-y-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Standing permissions</p>
+            <p className="text-sm text-slate-400 mt-1">
+              What Zenaf may do, repeatedly, as product behavior — Ask me, Just do it, or Don&apos;t
+              do it, per capability. These are saved immediately as you set them, separately from
+              the consent above.
+            </p>
+          </div>
+          <FrameworkPermissionsSurface />
         </div>
 
         <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-700 bg-slate-900/50 p-3">

@@ -152,6 +152,21 @@ class SettingsPermissionsUpdate(BaseModel):
     consent_version: str = Field(default="", max_length=64)
     permissions: dict[str, bool] = Field(default_factory=dict)
 
+
+class FrameworkStanceUpdate(BaseModel):
+    """One framework stance write (Slice 2): capability + row + stance."""
+
+    capability: str = Field(default="", max_length=16)
+    row_key: str | None = Field(default=None, max_length=128)
+    stance: str = Field(default="", max_length=16)
+
+
+class FrameworkPauseUpdate(BaseModel):
+    """Global pause override write (Slice 2, C4.3)."""
+
+    paused: bool = False
+
+
 class CoreProfileCreate(BaseModel):
     name: str = ""
     core_definition: str = ""

@@ -1,7 +1,8 @@
-"""Standing-permission framework, Slice 1 foundation.
+"""Standing-permission framework, Slice 1 foundation + Slice 2 surface.
 
 Registry definitions (``registry``), the extended stance store
-(``store``), and the five-step framework check (``framework``).
+(``store``), the five-step framework check (``framework``), and the
+retained-information counts (``retained``, Slice 2).
 See each module's docstring for the governing design and bounds.
 """
 
@@ -15,6 +16,7 @@ from .registry import (
     get_capability,
     is_registered,
 )
+from .retained import retained_counts
 from .store import (
     get_pause,
     get_stance,
@@ -36,6 +38,7 @@ __all__ = [
     "RETIRED_CAPABILITY_IDS",
     "get_capability",
     "is_registered",
+    "retained_counts",
     "get_pause",
     "get_stance",
     "get_stances",

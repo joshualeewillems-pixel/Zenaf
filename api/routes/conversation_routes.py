@@ -540,12 +540,18 @@ def _upload_interpretation_for_action(
     message_id: str,
     interpretation_id: str,
 ) -> dict:
-    """Shared guards for the upload card's tap actions.
+    """Shared guards for the upload card's QUEUE actions (skip /
+    reserve / unreserve) — not the verdict actions.
 
     Presentation check first, then the standing check: the
     interpretation must exist and still be pending — a tap that
     arrives after a decision elsewhere is a 409, and the card
-    re-fetches the server state. Both checks are owner-scoped.
+    re-fetches the server state. The verdict actions (keep / talk /
+    artifact / undertaking / train) do NOT use this helper: under
+    amendment A2 stacking, a ruled interpretation does not block a
+    different kind's verdict — each verdict action runs its own
+    per-kind guard (replay for its kind, 409 for a same-kind
+    conflict). Both checks are owner-scoped.
     """
     _upload_presentation_check(
         store, user_id, conversation_id, message_id, interpretation_id
@@ -561,9 +567,13 @@ def _upload_interpretation_for_action(
     return interp
 
 
-#: The U-3 voice mapping (brief §7.2): the menu choice determines
-#: which seat speaks next. Keep it / Remind me later / Archive it
-#: create NO invitation and have no entry here.
+#: The U-3 voice mapping (brief §7.2, amendment A2): the menu
+#: choice determines which seat speaks next. Keep it / Remind me
+#: later / Archive it create NO invitation and have no entry here.
+#: Talk it through's entry names the seat Crane joins the OPEN
+#: THREAD — the invitation brings Crane into this conversation;
+#: there is no next_voice redirect to Crane (U-3 clarification),
+#: so the talk branch invites but returns no next_voice.
 _UPLOAD_VOICE_MAP = {
     "talk": "ambassador",  # Talk it through — Crane
     "artifact": "maverick",  # Make an artifact — Fox
@@ -881,14 +891,16 @@ def upload_outcome_action(
 
     The path value resolves as an outcome id when such a row
     exists, otherwise as an interpretation id — the outcome row
-    only exists after the tap (and artifact/train create no outcome
-    row at all). The response returns the outcome (with its real
-    outcome_id) so replays can use it. Replay (§8.2): the same
+    only exists after the tap (and artifact/train/talk create no
+    outcome row at all). The response returns the outcome (with its
+    real outcome_id) so replays can use it. Replay (§8.2): the same
     outcome already created for the same action returns the
     existing record, no second write, no error — the replay guard
-    runs BEFORE the standing check, so a double-tap never 409s. A
-    tap on an already-ruled interpretation (no standing outcome
-    for this action) is a 409.
+    runs BEFORE the standing check, so a double-tap never 409s.
+    Stacking (amendment A2): cross-kind verdicts are allowed — one
+    outcome per (interpretation, kind), and the 409 applies ONLY to
+    a second outcome of the SAME kind. A tap on an already-ruled
+    interpretation for a kind with no standing outcome proceeds.
     """
     user_id = _uid(current_user)
     if not user_id:
@@ -927,42 +939,73 @@ def upload_outcome_action(
             store.get_upload_interpretation(user_id, interpretation_id) or interp
         )
 
-    if action in ("keep", "talk"):
-        kind = "keep" if action == "keep" else "explore"
+    if action == "talk":
+        # Amendment A2 (routing table): Talk it through records
+        # NOTHING — no outcome row, and the interpretation stays
+        # pending ("talking isn't deciding"). The reconciliation's
+        # §4.2 Talk-it-through outcome (kind 'explore') is STRUCK.
+        # Crane joins the OPEN THREAD (U-3 clarification): the
+        # invitation brings Crane into this conversation; there is
+        # no next_voice redirect to Crane's conversation. A second
+        # talk tap is allowed (it records nothing to conflict with)
+        # and re-invites Crane.
+        seat = _UPLOAD_VOICE_MAP["talk"]
+        _upload_invite(
+            store, user_id, body.conversation_id, seat,
+            _invite_reason("Talk it through"),
+        )
+        return {
+            "interpretation": _fresh_interpretation(),
+            "invited_seat": seat,
+        }
+
+    if action == "keep":
+        kind = "keep"
         if (
             outcome is not None
             and outcome.get("kind") == kind
             and outcome.get("status") == "created"
         ):
             # Replay: the same outcome already created.
-            result: dict = {
+            return {
                 "outcome": outcome,
                 "interpretation": interp,
                 "replayed": True,
             }
-            if action == "talk":
-                seat = _UPLOAD_VOICE_MAP["talk"]
-                _upload_invite(
-                    store, user_id, body.conversation_id, seat,
-                    _invite_reason("Talk it through"),
-                )
-                result["next_voice"] = _upload_next_voice(user_id, seat)
-            return result
-        interp = _upload_interpretation_for_action(
-            store, user_id, body.conversation_id, body.message_id, interpretation_id
+        # Per-kind standing check (amendment A2 stacking): a keep
+        # outcome of another status blocks a new one, but a ruled
+        # interpretation (ruled by a DIFFERENT kind — "Keep it,
+        # then Mine for projects") does not block Keep. A 'pending'
+        # keep outcome (a crash between create and set-created)
+        # completes below, it is not a conflict.
+        existing = store.get_upload_outcome_by_interp_kind(
+            user_id, interpretation_id, kind
         )
-        outcome = store.create_upload_outcome(
-            user_id,
-            str(interp["document_id"]),
-            int(interp["document_version"]),
-            interpretation_id,
-            kind,
-        )
+        if existing is not None and existing.get("status") not in (
+            "created",
+            "pending",
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Outcome is already {existing.get('status')} — "
+                    "refresh to see its state."
+                ),
+            )
+        interp = _fresh_interpretation()
+        if existing is None:
+            outcome = store.create_upload_outcome(
+                user_id,
+                str(interp["document_id"]),
+                int(interp["document_version"]),
+                interpretation_id,
+                kind,
+            )
+        else:
+            outcome = existing
         if outcome.get("status") == "pending":
             # Keep → the outcome IS the verdict (no VE record,
-            # ve_kind/ve_id NULL). Explore → the invitation is the
-            # effect; the outcome records that the reading was
-            # taken up for discussion.
+            # ve_kind/ve_id NULL).
             store.set_upload_outcome_status(
                 user_id, outcome["outcome_id"], "created"
             )
@@ -977,15 +1020,7 @@ def upload_outcome_action(
                 status_code=409,
                 detail=f"Outcome is already {outcome.get('status')} — refresh to see its state.",
             )
-        result = {"outcome": outcome, "interpretation": _fresh_interpretation()}
-        if action == "talk":
-            seat = _UPLOAD_VOICE_MAP["talk"]
-            _upload_invite(
-                store, user_id, body.conversation_id, seat,
-                _invite_reason("Talk it through"),
-            )
-            result["next_voice"] = _upload_next_voice(user_id, seat)
-        return result
+        return {"outcome": outcome, "interpretation": _fresh_interpretation()}
 
     if action == "undertaking":
         from local_ai.vision_execution.storage import (
@@ -1012,6 +1047,16 @@ def upload_outcome_action(
             raise HTTPException(
                 status_code=409,
                 detail="That item was already decided under a different kind — refresh to see its state.",
+            )
+        if outcome is None:
+            # Resolve the standing outcome for THIS kind (the path
+            # may have been the interpretation id): a second tap for
+            # the same kind must hit the replay / R1 / re-claim
+            # guards below, never a duplicate create (the UNIQUE
+            # (interpretation_id, kind) index). A different kind has
+            # no row here — stacking creates it below.
+            outcome = store.get_upload_outcome_by_interp_kind(
+                user_id, interpretation_id, kind
             )
         parent_id = (body.parent_id or "").strip() or None
         if parent_id is not None:
@@ -1056,9 +1101,13 @@ def upload_outcome_action(
                 "interpretation": interp,
                 "next_voice": _upload_next_voice(user_id, seat),
             }
-        interp = _upload_interpretation_for_action(
-            store, user_id, body.conversation_id, body.message_id, interpretation_id
-        )
+        # Amendment A2 stacking: no global standing check here — a
+        # ruled interpretation (ruled by a DIFFERENT kind) does not
+        # block Mine for projects. The per-kind guards above (replay
+        # for a 'created' outcome of this kind; 409 for a different
+        # kind) are the only standing rules. The presentation check
+        # already ran at the top of this handler.
+        interp = _fresh_interpretation()
         if outcome is None:
             outcome = store.create_upload_outcome(
                 user_id,
@@ -1081,8 +1130,10 @@ def upload_outcome_action(
                 store=store,
             )
         except UploadOutcomeStuckError as exc:
-            # R2 (§8.1/§8.2): stuck 'creating' with no carrier row —
-            # no retry transition in S1; the diagnostic names it.
+            # R2 (§8.1/§8.2, amendment A4): a stuck 'creating'
+            # outcome — a young one is refused ('Still creating'),
+            # an old one is re-claimed by the retry tap. The
+            # diagnostic names it.
             raise HTTPException(status_code=409, detail=str(exc))
         except ProposalConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
@@ -1146,9 +1197,12 @@ def upload_outcome_action(
                     "replayed": True,
                     "next_voice": _upload_next_voice(user_id, seat),
                 }
-        interp = _upload_interpretation_for_action(
-            store, user_id, body.conversation_id, body.message_id, interpretation_id
-        )
+        # Amendment A2 stacking: no global standing check — a ruled
+        # interpretation (ruled by a DIFFERENT action) does not block
+        # Make an artifact. The replay guard above (the same artifact
+        # already filed) is the only standing rule. The presentation
+        # check already ran at the top of this handler.
+        interp = _fresh_interpretation()
         span_ids = [
             entry.get("span_id")
             for entry in (interp.get("evidence_ids") or [])
@@ -1215,9 +1269,12 @@ def upload_outcome_action(
                 "replayed": True,
                 "next_voice": _upload_next_voice(user_id, next_seat),
             }
-    interp = _upload_interpretation_for_action(
-        store, user_id, body.conversation_id, body.message_id, interpretation_id
-    )
+    # Amendment A2 stacking: no global standing check — a ruled
+    # interpretation (ruled by a DIFFERENT action) does not block
+    # Train a model. The replay guard above (the same claim already
+    # filed) is the only standing rule. The presentation check
+    # already ran at the top of this handler.
+    interp = _fresh_interpretation()
     spans = [
         store.get_upload_span(user_id, entry.get("span_id") or "")
         for entry in (interp.get("evidence_ids") or [])
@@ -1360,6 +1417,9 @@ def upload_round_reserve(
         # The outcome write follows the reserve; a failure here
         # leaves the item reserved-never (the safe side) and is
         # logged loudly — the reserve is the user-visible effect.
+        # Amendment A2 (routing table): Archive-it is a verdict —
+        # the outcome write also flips the interpretation to
+        # 'ruled', so the reading leaves the round queue.
         try:
             outcome = store.create_upload_outcome(
                 user_id,
@@ -1372,11 +1432,17 @@ def upload_round_reserve(
                 store.set_upload_outcome_status(
                     user_id, outcome["outcome_id"], "archived"
                 )
+                store.set_upload_interpretation_status(
+                    user_id, body.interpretation_id, "ruled"
+                )
                 outcome = (
                     store.get_upload_outcome(user_id, outcome["outcome_id"])
                     or outcome
                 )
             result["outcome"] = outcome
+            result["interpretation"] = store.get_upload_interpretation(
+                user_id, body.interpretation_id
+            ) or interp
         except Exception:
             logger.exception(
                 "upload round: archive outcome write failed (conversation_id=%s)",
@@ -1496,9 +1562,12 @@ def upload_stuck_outcomes(
 ) -> dict:
     """Read-only: outcomes stuck mid-creation ('creating') with
     their age, the latest job state for the document, and whether a
-    carrier row exists (R1 vs R2, brief §8.2). A 'creating' outcome
-    WITH a carrier row completes on the next approve attempt (R1);
-    one WITHOUT is stuck — no retry transition in S1."""
+    carrier row exists (R1 vs R2, brief §8.2, amendment A4). A
+    'creating' outcome WITH a carrier row completes on the next
+    approve attempt — the retry tap heals it (R1, reconciliation
+    §6.3 R3). One WITHOUT is stuck: the retry tap re-claims it
+    only when it is older than one hour (R2, step 1b); a younger
+    one is refused ('Still creating — check back shortly')."""
     from local_ai.vision_execution import storage as ve_storage
 
     user_id = _uid(current_user)

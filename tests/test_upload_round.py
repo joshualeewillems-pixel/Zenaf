@@ -164,6 +164,30 @@ def test_t31_cap_ten_then_checkpoint(store, agent_store, round_on, monkeypatch):
     assert "10 readings" in captured[-1]
 
 
+def test_t31b_continue_after_checkpoint_presents_item_eleven(store, agent_store, round_on, monkeypatch):
+    # Amendment A7.1: the per-round presented-count resets to 0 on
+    # continue, so the checkpoint fires when the count reaches 10
+    # and the eleventh item presents after the user's word.
+    convo, doc, ids = _seed_doc(store, n=11)
+    captured: list = []
+    svc = _turn_service(store, agent_store, captured, monkeypatch)
+    r1 = _turn(svc, convo, "What's waiting for me?")
+    assert r1.round_item is not None
+    assert r1.round_item["interpretation_id"] == ids[0]
+    for i in range(1, 10):
+        r = _turn(svc, convo, "I need to check")
+        assert r.round_item is not None, f"item {i + 1} missing"
+        assert r.round_item["interpretation_id"] == ids[i]
+    r11 = _turn(svc, convo, "I need to check")
+    assert r11.round_item is None
+    assert "[Upload rapid fire — checkpoint]" in captured[-1]
+    # The user's word to continue: the segment resets, item 11 presents.
+    r12 = _turn(svc, convo, "keep going")
+    assert r12.round_item is not None
+    assert r12.round_item["interpretation_id"] == ids[10]
+    assert "Reading 11" in captured[-1]
+
+
 def test_t32_mid_round_invoke_restarts_fresh_with_new_round_id(store):
     convo, doc, ids = _seed_doc(store, n=4)
     plan1 = UR.plan_upload_round_turn(store, USER, convo, "What's waiting?")
@@ -245,7 +269,12 @@ def test_service_invoke_skip_stop_turns(store, agent_store, round_on, monkeypatc
 def test_service_offer_gate_and_record(store, agent_store, round_on, monkeypatch):
     convo, doc, ids = _seed_doc(store, n=3)
     # A job row gives the offer its coverage claim (no job → no claim).
-    store.create_upload_job(USER, doc, 1)
+    # Amendment A1: the coverage names INTERPRETED chunks, so the
+    # job carries its interpreted chunk (the seed's one span segment).
+    job = store.create_upload_job(USER, doc, 1)
+    store.set_upload_job_state(
+        job["job_id"], "complete", interpreted_chunks=["seg-0000"]
+    )
     captured: list = []
     svc = _turn_service(store, agent_store, captured, monkeypatch)
     r = _turn(svc, convo, "The garden needs watering today.")
@@ -254,7 +283,7 @@ def test_service_offer_gate_and_record(store, agent_store, round_on, monkeypatch
     offer = store.get_upload_offer(USER, doc, STRAND)
     assert offer is not None
     assert offer["state"] == "offered"
-    assert offer["coverage"] == "first 1 of 1 chunks"
+    assert offer["coverage"] == "first 1 of 1 chunks, as read"
 
 
 def test_service_upload_wins_over_weaver_in_strand_thread(

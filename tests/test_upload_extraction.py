@@ -285,6 +285,72 @@ def test_t6_migration_noop_on_second_run(store):
     assert _table_names(store._conn) == before
 
 
+def test_t53_amendment_columns_status_defaults_index_and_migration(tmp_path):
+    # Amendment A3: the status columns default 'current', the
+    # (span_hash, location) index exists, and the guarded migration
+    # restores all four columns on a pre-amendment DB (simulated by
+    # dropping them — a DB opened before the amendment).
+    path = tmp_path / "pre-amendment.db"
+    store = ConversationStore(db_path=path)
+    try:
+        convo, doc = _seed_paste(store)
+        span = store.save_upload_span(
+            USER, doc, 1, "seg-0000", SPAN_A, "redacted", f"seg-0000:0-{len(SPAN_A)}"
+        )
+        assert span["status"] == "current"
+        obs = store.save_upload_observation(
+            USER, doc, 1, "The day moved slowly.", [span["span_id"]]
+        )
+        assert obs["status"] == "current"
+        interp = _seed_interpretation(store, doc, "Reading one.", [span["span_id"]])
+        assert store.get_upload_interpretation(USER, interp)["uncertain_match"] is None
+        found = False
+        for idx in store._conn.execute("PRAGMA index_list(upload_spans)").fetchall():
+            cols = [
+                r["name"]
+                for r in store._conn.execute(
+                    f"PRAGMA index_info({idx['name']})"
+                ).fetchall()
+            ]
+            if cols == ["span_hash", "location"]:
+                found = True
+        assert found, "missing (span_hash, location) index on upload_spans"
+        # Simulate the pre-amendment DB: drop the four columns +
+        # the index, then close. Re-opening must restore them.
+        store._conn.execute("DROP INDEX IF EXISTS idx_upload_spans_hash_loc")
+        for table, column in (
+            ("upload_interpretations", "uncertain_match"),
+            ("upload_spans", "status"),
+            ("upload_observations", "status"),
+            ("upload_extraction_jobs", "interpreted_chunks"),
+        ):
+            store._conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+        store._conn.commit()
+        span_id = span["span_id"]
+    finally:
+        store.close()
+    store2 = ConversationStore(db_path=path)
+    try:
+        for table, column in (
+            ("upload_interpretations", "uncertain_match"),
+            ("upload_spans", "status"),
+            ("upload_observations", "status"),
+            ("upload_extraction_jobs", "interpreted_chunks"),
+        ):
+            cols = {
+                r["name"]
+                for r in store2._conn.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()
+            }
+            assert column in cols, f"{table}.{column} not restored by the migration"
+        # The pre-existing span row survives, backfilled 'current'
+        # by the NOT NULL DEFAULT.
+        assert store2.get_upload_span(USER, span_id)["status"] == "current"
+    finally:
+        store2.close()
+
+
 def test_t7_outcome_unique_interpretation_kind(store):
     convo, doc = _seed_paste(store)
     span = _seed_span(store, doc, SPAN_A)
@@ -416,6 +482,76 @@ def test_t13_semaphore_serializes_concurrent_calls(store, tmp_path):
     assert result["state"] in ("complete", "partial")
 
 
+def test_t54_distill_and_upload_model_calls_serialize(store):
+    # Amendment A5 (§16): a distill batch call and an upload call
+    # serialize — asserted by call timestamps. Both stubs sleep
+    # inside the model call (inside the slot), so if the two paths
+    # did NOT share the semaphore their intervals would overlap;
+    # sharing it, they are disjoint.
+    import time
+
+    from local_ai.presence_ingest.distill import PresenceEvent, distill_events
+
+    convo, doc = _seed_paste(store)
+    job = store.create_upload_job(USER, doc, 1)
+    barrier = threading.Barrier(2)
+    intervals: dict[str, list[tuple[float, float]]] = {"distill": [], "upload": []}
+
+    def slow_distill(prompt: str) -> str:
+        start = time.monotonic()
+        time.sleep(0.3)
+        intervals["distill"].append((start, time.monotonic()))
+        return json.dumps({"extractions": []})
+
+    def slow_upload(prompt: str) -> str:
+        start = time.monotonic()
+        time.sleep(0.3)
+        intervals["upload"].append((start, time.monotonic()))
+        return _stub_complete(prompt)
+
+    def run_distill():
+        barrier.wait(timeout=10)
+        distill_events(
+            [
+                PresenceEvent(
+                    event_id="e1",
+                    source="chatgpt",
+                    actor="user",
+                    kind="message",
+                    text="I decided to take the startup offer.",
+                    context={},
+                    provenance={},
+                )
+            ],
+            complete_fn=slow_distill,
+            zone_hint="career",
+            session_id="t54",
+        )
+
+    def run_upload():
+        barrier.wait(timeout=10)
+        ue.run_upload_extraction_job(
+            store, job["job_id"], complete_fn=slow_upload, probe_fn=lambda: True
+        )
+
+    t1 = threading.Thread(target=run_distill, daemon=True)
+    t2 = threading.Thread(target=run_upload, daemon=True)
+    t1.start()
+    t2.start()
+    t1.join(timeout=20)
+    t2.join(timeout=20)
+    assert not t1.is_alive() and not t2.is_alive()
+    assert intervals["distill"], "distill made no model call"
+    assert intervals["upload"], "upload made no model call"
+    for d_start, d_end in intervals["distill"]:
+        for u_start, u_end in intervals["upload"]:
+            assert d_end <= u_start or u_end <= d_start, (
+                "distill and upload model calls overlapped: "
+                f"distill=({d_start:.3f}, {d_end:.3f}) "
+                f"upload=({u_start:.3f}, {u_end:.3f})"
+            )
+
+
 def test_t14_cancel_stops_future_calls_and_keeps_completed_rows(store):
     convo, doc = _seed_paste(store)
     job = store.create_upload_job(USER, doc, 1)
@@ -430,19 +566,33 @@ def test_t14b_semaphore_shared_with_distill():
     import inspect
 
     import local_ai.presence_ingest.distill as distill
-
-    assert "EXTRACTION_MODEL_SEMAPHORE" in inspect.getsource(
-        distill.distill_events
+    from local_ai.conversation import upload_extraction as ue
+    from local_ai.extraction_concurrency import (
+        EXTRACTION_MODEL_SEMAPHORE,
+        extraction_slot,
     )
+
+    # Amendment A5: the semaphore's home is the neutral module
+    # local_ai/extraction_concurrency.py; both paths take the slot
+    # from there (distill lazily, inside distill_events; the worker
+    # around its generate call). One instance, shared — two
+    # independently instantiated Semaphore(1) objects would
+    # enforce nothing.
+    assert "extraction_slot" in inspect.getsource(distill.distill_events)
+    assert "extraction_slot" in inspect.getsource(ue._run_model_call)
+    assert ue.EXTRACTION_MODEL_SEMAPHORE is EXTRACTION_MODEL_SEMAPHORE
+    with extraction_slot():
+        pass
 
 
 # -- extraction behavior (T15–T19) -----------------------------------------------
 
 
 def test_t15_first_interpretation_committed_after_chunk_1(store):
-    # Two chunks; evidence runs over all chunks first, then the
-    # interpretation batches start with chunk 1 alone (P5, N=1): the
-    # first interpretation call's evidence covers exactly seg-0000.
+    # Two chunks; the evidence and interpretation calls interleave
+    # (amendment A1) — the first interpretation call fires when
+    # chunk 1's evidence commits, over chunk 1's rows alone (P5,
+    # N=1): its evidence covers exactly seg-0000.
     two_chunk = (
         SPAN_A
         + "\n"
@@ -505,7 +655,10 @@ def test_t17_partial_job_coverage_is_honest(store):
     assert result["state"] == "partial"
     from local_ai.conversation.upload_round import upload_coverage
 
-    assert upload_coverage(store, USER, doc) == "first 2 of 3 chunks"
+    # Amendment A1: the coverage names INTERPRETED chunks. The
+    # failed third chunk wrote no rows, so 2 of 3 chunks were
+    # extracted and both were read (P5 + flush).
+    assert upload_coverage(store, USER, doc) == "first 2 of 3 chunks, as read"
 
 
 def test_t18_twelve_chunk_cap_records_remainder_unextracted(store):
@@ -529,7 +682,9 @@ def test_t18_twelve_chunk_cap_records_remainder_unextracted(store):
     assert len(evidence_calls) == 12
     from local_ai.conversation.upload_round import upload_coverage
 
-    assert upload_coverage(store, USER, doc) == "first 12 of 13 chunks"
+    # Amendment A1: the coverage names INTERPRETED chunks — all
+    # 12 extracted chunks were read (P5 + flush, 2 calls).
+    assert upload_coverage(store, USER, doc) == "first 12 of 13 chunks, as read"
 
 
 def test_t19_per_call_output_cap_is_the_named_constant():
@@ -537,6 +692,49 @@ def test_t19_per_call_output_cap_is_the_named_constant():
     # The interpretation prompt names the cap.
     prompt = ue._interpretation_prompt("heart", "strand", "")
     assert "30" in prompt
+
+
+def test_t52_interpretation_calls_capped_at_five(store):
+    # Amendment A1: six chunks x 30 spans = 180 rows. The P5 call
+    # covers chunk 1 (30 rows); each further chunk's 30 rows fire
+    # a call — five calls cover the first five chunks; the sixth
+    # chunk's rows stay uninterpreted (no overflow, no sixth call).
+    def thirty_lines(c: int) -> str:
+        return "\n".join(
+            f"Chunk {c} line {i:02d}. The day moved slowly through its ordinary hours today."
+            for i in range(30)
+        )
+
+    text = "\n\n".join(thirty_lines(c) for c in range(6))
+    chunks, total = ue.chunk_upload_text(text)
+    assert len(chunks) == 6 and total == 6
+    convo, doc = _seed_paste(store, text)
+    job = store.create_upload_job(USER, doc, 1)
+
+    def many_spans(prompt: str) -> str:
+        if "one chunk" in prompt:
+            chunk = prompt.split("CHUNK:", 1)[1] if "CHUNK:" in prompt else prompt
+            lines = [ln.strip() for ln in chunk.strip().split("\n") if ln.strip()]
+            return json.dumps({"spans": [{"text": ln} for ln in lines[:30]]})
+        return _interpretation_stub(prompt)
+
+    result = _run(store, job["job_id"], many_spans)
+    assert result["state"] == "complete"
+    interp_calls = [
+        c
+        for c in store.list_upload_job_calls(job["job_id"])
+        if c["call_kind"] == "interpretation"
+    ]
+    assert len(interp_calls) == 5
+    assert ue.UPLOAD_MAX_INTERPRETATION_CALLS_PER_JOB == 5
+    final = store.get_upload_job(USER, job["job_id"])
+    assert final["interpreted_chunks"] == [f"seg-{i:04d}" for i in range(5)]
+    from local_ai.conversation.upload_round import upload_coverage
+
+    # Interpreted lags extracted: both numbers are named.
+    assert upload_coverage(store, USER, doc) == (
+        "first 6 of 6 chunks extracted, first 5 of 6 chunks as read"
+    )
 
 
 # -- records (T20–T24) ------------------------------------------------------------
@@ -656,6 +854,12 @@ def test_t26_same_text_shifted_span_is_uncertain_not_ruled(store):
         store, doc, "The day moved.", [span2], version=2
     )
     assert store.get_upload_interpretation(USER, interp2)["status"] == "pending"
+    # Amendment A3: the uncertain marker lives on the row — the
+    # column (parsed) names the prior and which condition matched.
+    assert store.get_upload_interpretation(USER, interp2)["uncertain_match"] == {
+        "prior_interpretation_id": interp,
+        "matched": "text",
+    }
     match = store.match_ruled_interpretation(
         USER, doc, STRAND, "the day moved", _supporting_keys(store, doc, span2)
     )
@@ -678,6 +882,11 @@ def test_t27_same_spans_reworded_text_is_uncertain_not_ruled(store):
         store, doc, "The day moved in a new direction.", [span2], version=2
     )
     assert store.get_upload_interpretation(USER, interp2)["status"] == "pending"
+    # Amendment A3: the uncertain marker lives on the row.
+    assert store.get_upload_interpretation(USER, interp2)["uncertain_match"] == {
+        "prior_interpretation_id": interp,
+        "matched": "spans",
+    }
     match = store.match_ruled_interpretation(
         USER, doc, STRAND, "the day moved in a new direction",
         _supporting_keys(store, doc, span2),
@@ -702,6 +911,12 @@ def test_t28_re_extraction_never_alters_superseded_row_text(store):
         store.get_upload_interpretation(USER, interp)["text"].encode()
     ).hexdigest()
     assert before == after
+    # Amendment A3 / §5.4: the v2 job superseded the v1 set — the
+    # v1 span is 'superseded', the v1 PENDING interpretation is
+    # 'orphaned' (preserved, never presented). The text itself is
+    # untouched (the hash above).
+    assert store.get_upload_interpretation(USER, interp)["status"] == "orphaned"
+    assert store.get_upload_span(USER, span)["status"] == "superseded"
 
 
 # -- log rule (T51) ----------------------------------------------------------------

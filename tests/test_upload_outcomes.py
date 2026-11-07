@@ -171,8 +171,11 @@ def test_t34_keep_writes_only_its_effect(route_client, store, ve_conn):
 
 
 def test_t35_voice_mapping_routes_each_action_to_its_seat(route_client, store, ve_conn):
+    # Amendment A2: artifact / undertaking / train return a
+    # next_voice redirect to their seat; Talk it through does NOT
+    # (Crane joins the open thread — no redirect) but DOES invite
+    # Crane, and records nothing.
     cases = [
-        ("talk", "ambassador"),
         ("artifact", "maverick"),
         ("undertaking", "champion"),
         ("train", "conductor"),
@@ -190,6 +193,16 @@ def test_t35_voice_mapping_routes_each_action_to_its_seat(route_client, store, v
         assert r.json()["next_voice"]["archetype_id"] == seat
         inv = store.list_pending_invitations(USER)
         assert any(v["seat"] == seat for v in inv), action
+    convo, doc, ids = _seed_doc(store, n=1)
+    msg = _present(store, convo, ids[0])
+    r = _act(route_client, "talk", ids[0], convo, msg)
+    assert r.status_code == 200, r.text
+    assert r.json().get("next_voice") is None
+    assert r.json().get("invited_seat") == "ambassador"
+    inv = store.list_pending_invitations(USER)
+    assert any(v["seat"] == "ambassador" for v in inv)
+    assert store.get_upload_interpretation(USER, ids[0])["status"] == "pending"
+    assert store.get_upload_outcome_by_interp_kind(USER, ids[0], "explore") is None
 
 
 def test_t36_remind_and_archive_create_no_invitation(route_client, store):
@@ -213,6 +226,9 @@ def test_t36_remind_and_archive_create_no_invitation(route_client, store):
     assert store.list_pending_invitations(USER) == []
     out = store.get_upload_outcome_by_interp_kind(USER, ids[1], "keep")
     assert out is not None and out["status"] == "archived"
+    # Amendment A2: Archive-it closes the reading — the
+    # interpretation flips to 'ruled' (it leaves the round queue).
+    assert store.get_upload_interpretation(USER, ids[1])["status"] == "ruled"
 
 
 def test_t37_train_files_pending_claim_invites_weaver_writes_no_signal(
@@ -331,6 +347,15 @@ def test_t41_artifact_and_talk_write_only_their_effects(route_client, store, ve_
     assert store.list_upload_outcomes(USER, ids[0]) == []
     assert ve_conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
     assert ve_conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0
+    # Talk it through (amendment A2): no outcome row, no VE record,
+    # and the interpretation stays pending — talking isn't deciding.
+    msg2 = _present(store, convo, ids[1])
+    r2 = _act(route_client, "talk", ids[1], convo, msg2)
+    assert r2.status_code == 200, r2.text
+    assert store.list_upload_outcomes(USER, ids[1]) == []
+    assert ve_conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+    assert ve_conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0
+    assert store.get_upload_interpretation(USER, ids[1])["status"] == "pending"
 
 
 # -- undertaking + artifact (T42–T46) ------------------------------------------------
@@ -354,14 +379,40 @@ def test_t42_replay_returns_existing_outcome_no_second_ve_record(
     assert ve_conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
 
 
-def test_t42b_new_action_on_ruled_interpretation_is_409(route_client, store, ve_conn):
-    convo, doc, ids = _seed_doc(store)
+def test_t42b_stacking_across_kinds_allowed_same_kind_conflicts(route_client, store, ve_conn):
+    # Amendment A2: cross-kind stacking is allowed — one outcome
+    # per (interpretation, kind); the 409 applies only to a second
+    # outcome of the SAME kind.
+    convo, doc, ids = _seed_doc(store, n=2)
     msg = _present(store, convo, ids[0])
     r1 = _act(route_client, "keep", ids[0], convo, msg)
-    assert r1.status_code == 200
+    assert r1.status_code == 200, r1.text
+    # Talk it through records nothing: 200, and the reading is
+    # still open for a verdict (no outcome row of any kind).
     r2 = _act(route_client, "talk", ids[0], convo, msg)
-    assert r2.status_code == 409
+    assert r2.status_code == 200, r2.text
     assert store.get_upload_outcome_by_interp_kind(USER, ids[0], "explore") is None
+    # Mine for projects (a DIFFERENT kind) stacks on Keep: 200.
+    r3 = _act(route_client, "undertaking", ids[0], convo, msg, kind="task")
+    assert r3.status_code == 200, r3.text
+    # Keep again via the interpretation id replays the existing
+    # keep outcome (same kind, status 'created'): 200, same id.
+    r4 = _act(route_client, "keep", ids[0], convo, msg)
+    assert r4.status_code == 200, r4.text
+    assert r4.json()["outcome"]["outcome_id"] == r1.json()["outcome"]["outcome_id"]
+    # The same-kind 409: Archive-it files a keep outcome
+    # ('archived') on the second reading; a later Keep on it is
+    # refused — a keep outcome already exists, in a non-created
+    # status.
+    msg2 = _present(store, convo, ids[1])
+    r5 = route_client.post(
+        "/conversation/upload/round/reserve",
+        json={"conversation_id": convo, "message_id": msg2,
+              "interpretation_id": ids[1], "archive": True},
+    )
+    assert r5.status_code == 200, r5.text
+    r6 = _act(route_client, "keep", ids[1], convo, msg2)
+    assert r6.status_code == 409, r6.text
 
 
 class _CarrierFailingConnection:
@@ -404,6 +455,80 @@ def test_t43_carrier_and_ve_record_commit_together(route_client, store, ve_conn,
         == 0
     )
     assert store.get_upload_outcome(USER, outcome["outcome_id"])["status"] == "pending"
+
+
+def test_t44b_stuck_outcome_retry_reclaims_after_one_hour(store, ve_conn):
+    # Amendment A4: a 'creating' outcome with no carrier row may
+    # re-take the claim — but only when it is older than one hour.
+    # A younger stuck outcome is presumed live and the retry is
+    # refused with 'Still creating — check back shortly'.
+    from datetime import datetime, timedelta, timezone
+
+    from local_ai.vision_execution.storage import (
+        UploadOutcomeStuckError,
+        approve_upload_outcome,
+    )
+
+    convo, doc, ids = _seed_doc(store)
+    old = store.create_upload_outcome(USER, doc, 1, ids[0], "task", None)
+    assert store.claim_upload_outcome(USER, old["outcome_id"]) is True
+    stale = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    with store._lock:
+        store._conn.execute(
+            "UPDATE upload_outcomes SET created_at = ? WHERE outcome_id = ?",
+            (stale, old["outcome_id"]),
+        )
+        store._conn.commit()
+    approved = approve_upload_outcome(
+        USER, old["outcome_id"], kind="task", title="The day moved",
+        detail="Reading 1: the day moved.", store=store,
+    )
+    assert approved["outcome"]["status"] == "created"
+    assert approved["record"], "the VE task record"
+    assert ve_conn.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 1
+    # A young stuck outcome (a different kind on the same reading —
+    # stacking) is presumed live: the retry is refused, nothing is
+    # created, and the outcome stays 'creating'.
+    young = store.create_upload_outcome(USER, doc, 1, ids[0], "project", None)
+    assert store.claim_upload_outcome(USER, young["outcome_id"]) is True
+    with pytest.raises(UploadOutcomeStuckError, match="Still creating"):
+        approve_upload_outcome(
+            USER, young["outcome_id"], kind="project", title="The day moved",
+            detail="Reading 1: the day moved.", store=store,
+        )
+    assert store.get_upload_outcome(USER, young["outcome_id"])["status"] == "creating"
+    assert ve_conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 0
+
+
+def test_t44c_reclaim_race_loses_to_another_session(store, ve_conn, monkeypatch):
+    # Amendment A4: if the re-claim CAS loses (another session owns
+    # the retry), the retry is refused with the §8.2 409 copy.
+    from local_ai.vision_execution.storage import ProposalConflict, approve_upload_outcome
+
+    convo, doc, ids = _seed_doc(store)
+    outcome = store.create_upload_outcome(USER, doc, 1, ids[0], "task", None)
+    assert store.claim_upload_outcome(USER, outcome["outcome_id"]) is True
+    # Old enough to pass the one-hour gate, so the retry reaches
+    # the re-claim CAS — then loses it.
+    from datetime import datetime, timedelta, timezone
+
+    stale = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    with store._lock:
+        store._conn.execute(
+            "UPDATE upload_outcomes SET created_at = ? WHERE outcome_id = ?",
+            (stale, outcome["outcome_id"]),
+        )
+        store._conn.commit()
+    # Force the re-claim to lose: the CAS sees 'creating' but
+    # returns False (a concurrent retry won it first).
+    monkeypatch.setattr(
+        store, "reclaim_upload_outcome", lambda user_id, outcome_id: False
+    )
+    with pytest.raises(ProposalConflict, match="Already decided"):
+        approve_upload_outcome(
+            USER, outcome["outcome_id"], kind="task", title="The day moved",
+            detail="Reading 1: the day moved.", store=store,
+        )
 
 
 def test_t44_creating_outcome_renders_with_no_ve_link(route_client, store, ve_conn):

@@ -285,6 +285,32 @@ def _interpretation_key(
     )
 
 
+def uncertain_match_for(
+    store: ConversationStore, user_id: str, interpretation: dict[str, Any]
+) -> dict[str, Any] | None:
+    """The §5.3 match for one interpretation against the ruled
+    readings for its (document, lens): None when neither condition
+    matches, else {"kind", "prior_interpretation_id"} — "exact" when
+    both the normalized text and the supporting spans match (the
+    reading is already decided by the earlier ruling), "text_only" /
+    "spans_only" when exactly one matches (the UNCERTAIN case: the
+    queue carries it as a marker, never an auto-link). Shared by the
+    queue composer and the item-state hydration read."""
+    match = store.match_ruled_interpretation(
+        user_id,
+        str(interpretation.get("document_id") or ""),
+        str(interpretation.get("lens") or ""),
+        _normalize_upload_text(interpretation.get("text") or ""),
+        _supporting_keys(store, user_id, interpretation),
+    )
+    if match is None:
+        return None
+    return {
+        "kind": match.get("kind"),
+        "prior_interpretation_id": match.get("prior_interpretation_id"),
+    }
+
+
 def compose_upload_queue(
     store: ConversationStore,
     user_id: str,
@@ -328,21 +354,11 @@ def compose_upload_queue(
         key = _interpretation_key(store, user_id, interp)
         if key in reserved_keys:
             continue
-        normalized = _normalize_upload_text(interp.get("text") or "")
-        supporting = _supporting_keys(store, user_id, interp)
-        match = store.match_ruled_interpretation(
-            user_id, document_id, lens, normalized, supporting
-        )
-        uncertain: dict[str, Any] | None = None
-        if match is not None:
-            if match.get("kind") == "exact":
-                # Already decided by the earlier ruling: never
-                # presented twice.
-                continue
-            uncertain = {
-                "kind": match.get("kind"),
-                "prior_interpretation_id": match.get("prior_interpretation_id"),
-            }
+        uncertain = uncertain_match_for(store, user_id, interp)
+        if uncertain is not None and uncertain.get("kind") == "exact":
+            # Already decided by the earlier ruling: never presented
+            # twice.
+            continue
         item = dict(interp)
         item["uncertain_match"] = uncertain
         queue.append(item)

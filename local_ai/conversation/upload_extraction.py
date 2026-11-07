@@ -332,7 +332,7 @@ def interpretation_batches(chunk_count: int) -> list[list[int]]:
     return [[0]] + groups[:3]
 
 
-def _chunk_index_for_offset(
+def chunk_index_for_offset(
     chunks: list[dict[str, Any]], offset: int
 ) -> int | None:
     """Which chunk holds a character offset into the joined stored
@@ -1166,3 +1166,107 @@ def start_upload_extraction_job(
     )
     thread.start()
     return thread
+
+# -- promotion citation resolution (§10.3) ------------------------------------
+#
+# The noting brief §2.2/§2.3 rule, implemented here because the noting
+# module itself lives on an unmerged branch (not in main): the quote
+# and the stored text are normalized identically for matching ONLY
+# (whitespace runs collapsed, curly quotes straightened — case and
+# punctuation preserved), the normalized quote must occur as exactly
+# one contiguous substring of the normalized stored text, and the
+# matched passage is recorded verbatim from the stored text (mapped
+# back through the normalization index map). Zero or multiple
+# occurrences → no promotion, no repair, no fuzzy match.
+
+_CURLY_QUOTE_MAP = {
+    "\u2018": "'",  # left single quotation mark
+    "\u2019": "'",  # right single quotation mark
+    "\u201c": '"',  # left double quotation mark
+    "\u201d": '"',  # right double quotation mark
+}
+
+_WS_RUN_RE = re.compile(r"\s+")
+
+
+def normalize_quote_for_matching(text: str) -> str:
+    """§2.2, for matching only: collapse every run of whitespace to
+    a single space, strip, map curly quotation marks to straight
+    ones. Case preserved, punctuation preserved, nothing else."""
+    collapsed = _WS_RUN_RE.sub(" ", text or "").strip()
+    return "".join(_CURLY_QUOTE_MAP.get(ch, ch) for ch in collapsed)
+
+
+def _normalized_with_map(text: str) -> tuple[str, list[int]]:
+    """The §2.2 normalization of ``text`` plus the index map: entry
+    i is the raw offset of normalized character i (a collapsed
+    whitespace run maps to its first raw character)."""
+    chars: list[str] = []
+    raw_offsets: list[int] = []
+    pending_space = False
+    for raw_index, ch in enumerate(text or ""):
+        if ch.isspace():
+            if chars and not pending_space:
+                pending_space = True
+                chars.append(" ")
+                raw_offsets.append(raw_index)
+            continue
+        pending_space = False
+        chars.append(_CURLY_QUOTE_MAP.get(ch, ch))
+        raw_offsets.append(raw_index)
+    # Strip the trailing collapsed space, if any.
+    while chars and chars[-1] == " ":
+        chars.pop()
+        raw_offsets.pop()
+    return "".join(chars), raw_offsets
+
+
+def resolve_quote_in_text(
+    quote: str, stored_text: str
+) -> dict[str, Any]:
+    """Resolve one quoted passage against the stored source text
+    (§2.3). Returns {"status": "ok", "span_text", "start", "end"}
+    on exactly one match — the span is the VERBATIM substring of
+    the stored text (raw offsets) — or {"status": "no_match"} /
+    {"status": "ambiguous"} with no span. The caller renders the
+    same plain message for both failures."""
+    normalized_quote = normalize_quote_for_matching(quote)
+    if not normalized_quote:
+        return {"status": "no_match"}
+    normalized_text, raw_map = _normalized_with_map(stored_text)
+    if not normalized_text:
+        return {"status": "no_match"}
+    occurrences = normalized_text.count(normalized_quote)
+    if occurrences == 0:
+        return {"status": "no_match"}
+    if occurrences > 1:
+        return {"status": "ambiguous"}
+    start_n = normalized_text.find(normalized_quote)
+    end_n = start_n + len(normalized_quote)
+    raw_start = raw_map[start_n]
+    raw_end = raw_map[end_n - 1] + 1
+    return {
+        "status": "ok",
+        "span_text": stored_text[raw_start:raw_end],
+        "start": raw_start,
+        "end": raw_end,
+    }
+
+
+_QUOTED_SPAN_RE = re.compile(
+    r'"([^"]+)"'  # straight double quotes
+    r'|“([^”]+)”'  # curly double quotes
+)
+
+
+def extract_quoted_passages(body: str) -> list[str]:
+    """The double-quoted passages in a spoken reading, in order
+    (straight or curly double quotes; empty quotes skipped). Single
+    quotes are not citations — they are usually scare quotes, not
+    passages the seat is citing."""
+    passages: list[str] = []
+    for match in _QUOTED_SPAN_RE.finditer(body or ""):
+        passage = match.group(1) if match.group(1) is not None else match.group(2)
+        if passage and passage.strip():
+            passages.append(passage)
+    return passages

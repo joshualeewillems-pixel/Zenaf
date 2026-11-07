@@ -106,8 +106,18 @@ describe('UploadRoundCard', () => {
             fail(409, 'Already decided — refresh to see its state.'),
           )
         }
+        // Amendment A2: Talk it through records nothing — no
+        // outcome row, no next_voice redirect (Crane joins the
+        // open thread). The mock mirrors the route.
+        if (outcome[1] === 'talk') {
+          return Promise.resolve(
+            ok({
+              interpretation: { interpretation_id: 'interp-1', status: 'pending' },
+              invited_seat: 'ambassador',
+            }),
+          )
+        }
         const next: Record<string, string> = {
-          talk: 'ambassador',
           artifact: 'maverick',
           undertaking: 'champion',
           train: 'conductor',
@@ -115,7 +125,7 @@ describe('UploadRoundCard', () => {
         outcomeState = {
           outcome_id: 'out-1',
           interpretation_id: 'interp-1',
-          kind: outcome[1] === 'talk' ? 'explore' : outcome[1],
+          kind: outcome[1],
           status: 'created',
           ve_kind: null,
           ve_id: null,
@@ -217,7 +227,7 @@ describe('UploadRoundCard', () => {
     vi.restoreAllMocks()
   })
 
-  it('renders the verbatim reading with its cited span and the six menu actions', async () => {
+  it('renders the verbatim reading with its cited span and the seven menu actions', async () => {
     await renderCard()
     expect(text()).toContain('Reading 1: the day moved.')
     expect(text()).toContain('The morning light fell across the kitchen table')
@@ -228,6 +238,8 @@ describe('UploadRoundCard', () => {
       'Make an artifact — Fox',
       'Mine for projects — Firebrand',
       'Train a model — Weaver',
+      'Remind me later',
+      'Archive it',
     ]) {
       expect(buttonNamed(label)).toBeDefined()
     }
@@ -256,13 +268,18 @@ describe('UploadRoundCard', () => {
     expect(text()).toContain('Ruled. Kept.')
   })
 
-  it('Talk confirms and switches the next voice to Crane', async () => {
+  it('Talk confirms in-thread: no voice switch, no ruled line, the menu stays', async () => {
     await renderCard()
     await click('Talk it through — Crane')
-    expect(text()).toContain('This invites Crane to talk it through with you.')
+    expect(text()).toContain('This invites Crane to talk it through with you here, in this thread.')
+    expect(text()).toContain('talking isn’t deciding')
     await click('Confirm')
     expect(outcomePosts()[0].url).toContain('/upload/outcomes/interp-1/talk')
-    expect(onNextVoice).toHaveBeenCalledWith('ambassador')
+    // No redirect to Crane's conversation, and the reading stays
+    // open — the menu is still there to rule on it.
+    expect(onNextVoice).not.toHaveBeenCalled()
+    expect(text()).not.toContain('Ruled.')
+    expect(buttonNamed('Keep it')).toBeDefined()
     expect(turnPosts()).toHaveLength(0)
   })
 
@@ -319,7 +336,7 @@ describe('UploadRoundCard', () => {
     })
   })
 
-  it('Remind me later posts the snooze picker value; Archive it posts archive=true', async () => {
+  it('Remind me later posts the snooze picker value; Archive it confirms with the exact sentence, then posts archive=true', async () => {
     await renderCard()
     await click('Remind me later')
     const reserve = calls.filter(
@@ -331,6 +348,17 @@ describe('UploadRoundCard', () => {
     // first, then the Archive-it tap is available again.
     await click('Undo')
     await click('Archive it')
+    // Archive-it confirms through its panel (the exact A6 sentence)
+    // before anything posts.
+    expect(text()).toContain(
+      'Archived: this reading leaves the round queue and won’t be offered again. It’s kept in history with its passages, and you can recall it explicitly. Nothing is deleted.',
+    )
+    expect(
+      calls.filter(
+        (c) => c.init?.method === 'POST' && c.url.includes('/upload/round/reserve'),
+      ),
+    ).toHaveLength(1)
+    await click('Confirm')
     const reserve2 = calls.filter(
       (c) => c.init?.method === 'POST' && c.url.includes('/upload/round/reserve'),
     )
@@ -370,13 +398,17 @@ describe('UploadRoundCard', () => {
     expect(text()).not.toContain('A different reading entirely.')
   })
 
-  it('consequenceCopy covers all five menu actions', () => {
+  it('consequenceCopy covers the six panel actions', () => {
     expect(consequenceCopy('keep', RENDERING)).toContain('creates nothing')
     expect(consequenceCopy('talk', RENDERING)).toContain('Crane')
+    expect(consequenceCopy('talk', RENDERING)).toContain('stays open')
     expect(consequenceCopy('artifact', RENDERING)).toContain('no task, project, or idea')
     expect(consequenceCopy('undertaking', RENDERING)).toContain('creates a task')
     expect(consequenceCopy('train', RENDERING, { seatName: 'Weaver' })).toContain(
       'Nothing trains until you approve that claim',
+    )
+    expect(consequenceCopy('archive', RENDERING)).toContain(
+      'Archived: this reading leaves the round queue and won’t be offered again. It’s kept in history with its passages, and you can recall it explicitly. Nothing is deleted.',
     )
   })
 

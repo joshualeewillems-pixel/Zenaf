@@ -10,7 +10,7 @@
  * parked/reserved state — the parked/reserved state lives in the
  * round tables, not on the interpretation record, so the bare
  * rendering cannot show it) and renders each record's state:
- * pending → the six menu actions + "Not now" (park); ruled →
+ * pending → the seven menu actions + "Not now" (park); ruled →
  * the decided line ("Ruled. [Verdict label.]") + what was created;
  * parked → the parked line above the pending card (a park
  * suppresses re-presentation, not the decision); reserved → the
@@ -23,7 +23,9 @@
  * sends no turn: the next user message advances the round. A tap
  * that returns next_voice switches the active seat for the next
  * turn (via onNextVoice); the switch is the invitation's effect,
- * not a turn.
+ * not a turn. Talk it through is the exception (amendment A2):
+ * Crane joins this thread, so its response carries no next_voice
+ * and onNextVoice is never called for it.
  */
 import { useEffect, useState } from 'react'
 
@@ -83,7 +85,7 @@ type Props = {
   onNextVoice?: (archetypeId: string) => void
 }
 
-type MenuAction = 'keep' | 'talk' | 'artifact' | 'undertaking' | 'train'
+type MenuAction = 'keep' | 'talk' | 'artifact' | 'undertaking' | 'train' | 'archive'
 
 const MENU_LABEL: Record<MenuAction, string> = {
   keep: 'Keep it',
@@ -91,6 +93,7 @@ const MENU_LABEL: Record<MenuAction, string> = {
   artifact: 'Make an artifact — Fox',
   undertaking: 'Mine for projects — Firebrand',
   train: 'Train a model — Weaver',
+  archive: 'Archive it',
 }
 
 const SEAT_IDS = [
@@ -132,7 +135,9 @@ export function consequenceCopy(
     return 'This keeps the reading as a record. It creates nothing and invites no one.'
   }
   if (action === 'talk') {
-    return 'This invites Crane to talk it through with you. The reading is marked decided.'
+    // Amendment A2: Crane joins THIS thread (in-thread, no
+    // redirect), and talking isn't deciding — the reading stays open.
+    return 'This invites Crane to talk it through with you here, in this thread. The reading stays open — talking isn’t deciding.'
   }
   if (action === 'artifact') {
     return 'This makes an artifact from the reading. It creates no task, project, or idea.'
@@ -140,6 +145,10 @@ export function consequenceCopy(
   if (action === 'undertaking') {
     const kind = detail?.kind ?? item.proposed_outcome ?? 'task'
     return `This creates a ${kind} in your execution list. The reading is marked decided.`
+  }
+  if (action === 'archive') {
+    // Amendment A6: the exact Archive-it sentence, verbatim.
+    return 'Archived: this reading leaves the round queue and won’t be offered again. It’s kept in history with its passages, and you can recall it explicitly. Nothing is deleted.'
   }
   const seat = detail?.seatName ?? 'Weaver'
   return (
@@ -281,10 +290,16 @@ export default function UploadRoundCard({
       if (r.ok) {
         const data = (await r.json()) as {
           outcome?: UploadOutcome
+          artifact?: unknown
+          claim?: unknown
           next_voice?: { archetype_id?: string }
         }
         if (data.outcome) setOutcome(data.outcome)
-        setDecided(true)
+        // Amendment A2: only a VERDICT decides the reading. Talk
+        // it through records nothing (no outcome, artifact, or
+        // claim in the response) — the card stays on the pending
+        // menu so the user can still rule on the reading.
+        if (data.outcome || data.artifact || data.claim) setDecided(true)
         setPanel(null)
         if (data.next_voice?.archetype_id) onNextVoice?.(data.next_voice.archetype_id)
         await refresh()
@@ -320,6 +335,13 @@ export default function UploadRoundCard({
       setTrainSeat(seatId ?? 'conductor')
     }
     setPanel(action)
+  }
+
+  const confirmArchive = async () => {
+    // Amendment A6: Archive-it confirms through its panel (the
+    // exact sentence) before the reserve-never + archived-outcome
+    // write. The panel closes on success via reserve().
+    await reserve(true)
   }
 
   const skip = async () => {
@@ -372,6 +394,7 @@ export default function UploadRoundCard({
       if (r.ok) {
         const data = (await r.json()) as { marker: ReservedMarker }
         setReserved(data.marker)
+        setPanel(null)
       } else if (r.status === 409) {
         setError((await readDetail(r)) ?? 'Already decided — refresh to see its state.')
         await refresh()
@@ -558,7 +581,9 @@ export default function UploadRoundCard({
               <button
                 type="button"
                 disabled={busy || (panel === 'artifact' && rendering.is_transformation && !artifactKind.trim())}
-                onClick={() => void act(panel)}
+                onClick={() =>
+                  void (panel === 'archive' ? confirmArchive() : act(panel))
+                }
                 className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-medium"
               >
                 Confirm
@@ -664,7 +689,7 @@ export default function UploadRoundCard({
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => void reserve(true)}
+                onClick={() => openPanel('archive')}
                 className="px-2 py-1 rounded-lg border border-stone-600 text-stone-200 text-xs hover:bg-stone-800 disabled:opacity-50"
               >
                 Archive it

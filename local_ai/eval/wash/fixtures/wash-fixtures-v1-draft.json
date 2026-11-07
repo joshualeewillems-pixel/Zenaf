@@ -1,0 +1,1660 @@
+{
+  "format": "wash-fixtures",
+  "fixture_set_version": "1.0-draft",
+  "gold_label_version": "1.0-draft",
+  "semantic_contract_version": "1.0",
+  "extraction_version": "1.0",
+  "status": "DRAFT — gold labels NOT frozen; founder approval required before any benchmark run (design §8.1). Labels must never be edited after seeing a model's output; any change after a run voids that run's results for the changed fixtures.",
+  "fixtures": [
+    {
+      "id": "neg-01",
+      "category": "negation",
+      "segment": "We will not use the old vendor for the migration.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The old vendor will not be used for the migration",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "We will not use the old vendor",
+          "equivalents": ["The old vendor is out for the migration", "The migration will not use the old vendor"],
+          "supporting_quotes": ["We will not use the old vendor"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The old vendor will be used for the migration",
+          "equivalents": ["The migration will use the old vendor"],
+          "stance": null,
+          "note": "inverts the negation"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-02",
+      "category": "negation",
+      "segment": "No decision on pricing yet — we're still waiting on the numbers.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "No decision has been made on pricing",
+          "stance": "unresolved",
+          "speaker": null,
+          "quote": "No decision on pricing yet",
+          "equivalents": ["Pricing is undecided", "No pricing decision has been made yet"],
+          "supporting_quotes": ["No decision on pricing yet"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "Pricing was decided",
+          "equivalents": ["We decided on pricing", "The pricing decision is made"],
+          "stance": "committed",
+          "note": "a decision is claimed where none was made"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-03",
+      "category": "negation",
+      "segment": "We are not launching in June; the launch moves to September.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The launch is not in June; it moves to September",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "We are not launching in June",
+          "equivalents": ["The June launch is off; the launch moves to September", "Launch is delayed from June to September"],
+          "supporting_quotes": ["We are not launching in June"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "We are launching in June",
+          "equivalents": ["The June launch is on"],
+          "stance": null,
+          "note": "inverts the negation"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-04",
+      "category": "negation",
+      "segment": "I didn't agree to the new timeline — I only said I'd look at it.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The new timeline was not agreed to",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "I didn't agree to the new timeline",
+          "equivalents": ["The speaker did not agree to the new timeline", "No agreement was made on the new timeline"],
+          "supporting_quotes": ["I didn't agree to the new timeline"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The new timeline was agreed to",
+          "equivalents": ["We agreed to the new timeline"],
+          "stance": "committed",
+          "note": "claims agreement that was explicitly denied"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-05",
+      "category": "negation",
+      "segment": "We won't add the reporting module until the core flow is stable.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The reporting module will not be added until the core flow is stable",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "We won't add the reporting module until the core flow is stable",
+          "equivalents": ["Adding the reporting module waits until the core flow is stable"],
+          "supporting_quotes": ["We won't add the reporting module until the core flow is stable"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "We will add the reporting module now",
+          "equivalents": ["Add the reporting module now"],
+          "stance": null,
+          "note": "drops the negation and the condition"
+        }
+      ],
+      "notes": "Conditional negation: the 'not until' scope must survive, not just the 'not'."
+    },
+    {
+      "id": "neg-06",
+      "category": "negation",
+      "segment": "Nobody on the team wants the on-call rotation to change.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The team does not want the on-call rotation to change",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "Nobody on the team wants the on-call rotation to change",
+          "equivalents": ["No one on the team wants the on-call rotation changed"],
+          "supporting_quotes": ["Nobody on the team wants the on-call rotation to change"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The team wants the on-call rotation to change",
+          "equivalents": ["Change the on-call rotation"],
+          "stance": null,
+          "note": "inverts the negation"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-07",
+      "category": "negation",
+      "segment": "That's not what we decided — we decided to pause hiring, not to cut the team.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "Hiring is paused; the team is not being cut",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "we decided to pause hiring, not to cut the team",
+          "equivalents": ["The decision was to pause hiring, not cut the team"],
+          "supporting_quotes": ["we decided to pause hiring, not to cut the team"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "We decided to cut the team",
+          "equivalents": ["Cut the team"],
+          "stance": null,
+          "note": "inverts the correction"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-08",
+      "category": "negation",
+      "segment": "We have never used that contractor, and we are not starting now.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "That contractor has never been used and will not be used now",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "we are not starting now",
+          "equivalents": ["We are not starting with that contractor now"],
+          "supporting_quotes": ["we are not starting now"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "We are starting with that contractor now",
+          "equivalents": ["Start with that contractor now"],
+          "stance": null,
+          "note": "inverts the negation"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-09",
+      "category": "negation",
+      "segment": "Don't send the draft to the client yet.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The draft should not be sent to the client yet",
+          "stance": "proposed",
+          "speaker": null,
+          "quote": "Don't send the draft to the client yet",
+          "equivalents": ["Hold the draft; do not send it to the client yet"],
+          "supporting_quotes": ["Don't send the draft to the client yet"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "Send the draft to the client now",
+          "equivalents": ["Send the draft to the client"],
+          "stance": null,
+          "note": "inverts the instruction"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "neg-10",
+      "category": "negation",
+      "segment": "The budget does not cover a second designer this quarter.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The budget does not cover a second designer this quarter",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "The budget does not cover a second designer this quarter",
+          "equivalents": ["A second designer is not covered by the budget this quarter"],
+          "supporting_quotes": ["The budget does not cover a second designer this quarter"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The budget covers a second designer this quarter",
+          "equivalents": ["Hire a second designer this quarter"],
+          "stance": null,
+          "note": "inverts the constraint"
+        }
+      ],
+      "notes": "Factual constraint; stance 'rejected' means the idea of a second designer is blocked, not that a decision was debated."
+    },
+    {
+      "id": "unc-01",
+      "category": "uncertainty",
+      "segment": "We might try the new onboarding flow with the next cohort.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The new onboarding flow might be tried with the next cohort",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "We might try the new onboarding flow",
+          "equivalents": ["Trying the new onboarding flow with the next cohort is possible"],
+          "supporting_quotes": ["We might try the new onboarding flow"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "certainty_upgrade",
+          "text": "We will try the new onboarding flow with the next cohort",
+          "equivalents": ["Try the new onboarding flow with the next cohort"],
+          "stance": "committed",
+          "note": "converts 'might' to a commitment"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-02",
+      "category": "uncertainty",
+      "segment": "I'm not sure the timeline holds — the vendor has been slow.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The timeline may not hold because the vendor has been slow",
+          "stance": "unresolved",
+          "speaker": null,
+          "quote": "I'm not sure the timeline holds",
+          "equivalents": ["It is uncertain whether the timeline holds"],
+          "supporting_quotes": ["I'm not sure the timeline holds"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "certainty_upgrade",
+          "text": "The timeline will hold",
+          "equivalents": ["The timeline holds"],
+          "stance": null,
+          "note": "converts doubt to certainty"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-03",
+      "category": "uncertainty",
+      "segment": "Maybe we should move the review to Thursday, if the client is free.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "Moving the review to Thursday is a possibility if the client is free",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "Maybe we should move the review to Thursday",
+          "equivalents": ["The review might move to Thursday if the client is free"],
+          "supporting_quotes": ["Maybe we should move the review to Thursday"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The review was moved to Thursday",
+          "equivalents": ["Move the review to Thursday"],
+          "stance": "committed",
+          "note": "a possibility is stated as a decision"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-04",
+      "category": "uncertainty",
+      "segment": "I think the redesign is probably the right call, but I want to see the numbers first.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The redesign is probably the right call, pending the numbers",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "I think the redesign is probably the right call",
+          "equivalents": ["The redesign is likely the right call but the numbers come first"],
+          "supporting_quotes": ["I think the redesign is probably the right call"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "certainty_upgrade",
+          "text": "The redesign is definitely the right call",
+          "equivalents": ["The redesign is the right call"],
+          "stance": null,
+          "note": "drops the hedge and the condition"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-05",
+      "category": "uncertainty",
+      "segment": "We could try the cheaper plan, though I'm not convinced it covers what we need.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The cheaper plan could be tried, though it may not cover what is needed",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "We could try the cheaper plan",
+          "equivalents": ["Trying the cheaper plan is possible but it may not cover what is needed"],
+          "supporting_quotes": ["We could try the cheaper plan"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "certainty_upgrade",
+          "text": "The cheaper plan covers what we need",
+          "equivalents": ["The cheaper plan is sufficient"],
+          "stance": null,
+          "note": "drops the doubt"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-06",
+      "category": "uncertainty",
+      "segment": "It's unclear whether the pilot will expand beyond the first clinic.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "Whether the pilot will expand beyond the first clinic is unclear",
+          "stance": "unresolved",
+          "speaker": null,
+          "quote": "It's unclear whether the pilot will expand beyond the first clinic",
+          "equivalents": ["Expansion of the pilot beyond the first clinic is uncertain"],
+          "supporting_quotes": ["It's unclear whether the pilot will expand beyond the first clinic"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "certainty_upgrade",
+          "text": "The pilot will expand beyond the first clinic",
+          "equivalents": ["Expand the pilot beyond the first clinic"],
+          "stance": null,
+          "note": "converts uncertainty to a plan"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-07",
+      "category": "uncertainty",
+      "segment": "I'm torn between keeping the current tool and switching to the new one.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The choice between keeping the current tool and switching is undecided",
+          "stance": "unresolved",
+          "speaker": null,
+          "quote": "I'm torn between keeping the current tool and switching to the new one",
+          "equivalents": ["The speaker has not decided between the current tool and the new one"],
+          "supporting_quotes": ["I'm torn between keeping the current tool and switching to the new one"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We decided to switch to the new tool",
+          "equivalents": ["Switch to the new tool"],
+          "stance": "committed",
+          "note": "an undecided choice is stated as decided"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-08",
+      "category": "uncertainty",
+      "segment": "The launch date might slip by a week — depends on the review.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The launch date might slip by a week depending on the review",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "The launch date might slip by a week",
+          "equivalents": ["A one-week slip of the launch date is possible"],
+          "supporting_quotes": ["The launch date might slip by a week"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "certainty_upgrade",
+          "text": "The launch date will slip by a week",
+          "equivalents": ["The launch date slips by a week"],
+          "stance": null,
+          "note": "converts 'might' to 'will'"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-09",
+      "category": "uncertainty",
+      "segment": "If the data supports it, we may roll out to all regions in March.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "A rollout to all regions in March is possible if the data supports it",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "If the data supports it, we may roll out to all regions in March",
+          "equivalents": ["Rolling out to all regions in March depends on the data"],
+          "supporting_quotes": ["If the data supports it, we may roll out to all regions in March"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will roll out to all regions in March",
+          "equivalents": ["Roll out to all regions in March"],
+          "stance": "committed",
+          "note": "a conditional possibility is stated as a commitment"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "unc-10",
+      "category": "uncertainty",
+      "segment": "I lean toward the simpler design, but I'm open to being convinced otherwise.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The simpler design is preferred, but the speaker is open to other options",
+          "stance": "considered",
+          "speaker": null,
+          "quote": "I lean toward the simpler design",
+          "equivalents": ["The speaker leans toward the simpler design but remains open"],
+          "supporting_quotes": ["I lean toward the simpler design"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We decided on the simpler design",
+          "equivalents": ["Use the simpler design"],
+          "stance": "committed",
+          "note": "a lean is stated as a decision"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-01",
+      "category": "commitments",
+      "segment": "We decided to ship on Friday.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The team decided to ship on Friday",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "We decided to ship on Friday",
+          "equivalents": ["Shipping on Friday was decided", "The Friday ship was decided"],
+          "supporting_quotes": ["We decided to ship on Friday"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "We decided not to ship on Friday",
+          "equivalents": ["Do not ship on Friday"],
+          "stance": null,
+          "note": "inverts the decision"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-02",
+      "category": "commitments",
+      "segment": "I will send the draft by Tuesday.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The draft will be sent by Tuesday",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "I will send the draft by Tuesday",
+          "equivalents": ["The speaker will send the draft by Tuesday"],
+          "supporting_quotes": ["I will send the draft by Tuesday"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The draft will not be sent by Tuesday",
+          "equivalents": ["Do not send the draft by Tuesday"],
+          "stance": null,
+          "note": "inverts the commitment"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-03",
+      "category": "commitments",
+      "segment": "We agreed to move the deadline to the end of the month.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The deadline was moved to the end of the month by agreement",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "We agreed to move the deadline to the end of the month",
+          "equivalents": ["Moving the deadline to the end of the month was agreed"],
+          "supporting_quotes": ["We agreed to move the deadline to the end of the month"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The deadline was not moved",
+          "equivalents": ["Keep the deadline as-is"],
+          "stance": null,
+          "note": "inverts the agreement"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-04",
+      "category": "commitments",
+      "segment": "Priya will own the migration, and she starts on Monday.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "Priya will own the migration starting Monday",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "Priya will own the migration",
+          "equivalents": ["Priya owns the migration from Monday"],
+          "supporting_quotes": ["Priya will own the migration"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "Priya will not own the migration",
+          "equivalents": ["Priya does not own the migration"],
+          "stance": null,
+          "note": "inverts the assignment"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-05",
+      "category": "commitments",
+      "segment": "Let's lock in the venue for the workshop — the Riverside hall, June 12.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The Riverside hall is locked in as the workshop venue for June 12",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "Let's lock in the venue for the workshop",
+          "equivalents": ["The workshop venue is the Riverside hall on June 12"],
+          "supporting_quotes": ["Let's lock in the venue for the workshop"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The venue is not locked in",
+          "equivalents": ["Do not lock in the venue"],
+          "stance": null,
+          "note": "inverts the decision"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-06",
+      "category": "commitments",
+      "segment": "We are going with the annual plan — the monthly option is too expensive at our volume.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The annual plan was chosen over the monthly option",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "We are going with the annual plan",
+          "equivalents": ["The team chose the annual plan"],
+          "supporting_quotes": ["We are going with the annual plan"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "We are going with the monthly plan",
+          "equivalents": ["Choose the monthly plan"],
+          "stance": null,
+          "note": "inverts the choice"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-07",
+      "category": "commitments",
+      "segment": "Confirmed: the budget review is Thursday at 10, and everyone needs to be there.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The budget review is confirmed for Thursday at 10 with everyone attending",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "the budget review is Thursday at 10",
+          "equivalents": ["The budget review is Thursday at 10"],
+          "supporting_quotes": ["the budget review is Thursday at 10"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The budget review is not on Thursday",
+          "equivalents": ["The budget review is cancelled"],
+          "stance": null,
+          "note": "inverts the confirmation"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-08",
+      "category": "commitments",
+      "segment": "I commit to finishing the proposal by Friday noon.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The proposal will be finished by Friday noon",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "I commit to finishing the proposal by Friday noon",
+          "equivalents": ["The speaker commits to finishing the proposal by Friday noon"],
+          "supporting_quotes": ["I commit to finishing the proposal by Friday noon"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The proposal will not be finished by Friday noon",
+          "equivalents": ["Do not finish the proposal by Friday noon"],
+          "stance": null,
+          "note": "inverts the commitment"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-09",
+      "category": "commitments",
+      "segment": "We'll pay the invoice this week — it's already approved.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The invoice will be paid this week; it is already approved",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "We'll pay the invoice this week",
+          "equivalents": ["Pay the invoice this week"],
+          "supporting_quotes": ["We'll pay the invoice this week"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "We will not pay the invoice this week",
+          "equivalents": ["Do not pay the invoice"],
+          "stance": null,
+          "note": "inverts the commitment"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "com-10",
+      "category": "commitments",
+      "segment": "The team agreed: no new features until the release is out.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "No new features will be added until the release is out",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "no new features until the release is out",
+          "equivalents": ["The team agreed to add no new features until the release"],
+          "supporting_quotes": ["no new features until the release is out"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "New features will be added before the release",
+          "equivalents": ["Add new features before the release"],
+          "stance": null,
+          "note": "inverts the agreement"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-01",
+      "category": "rejections",
+      "segment": "We agreed to ship Friday, but we're not doing that anymore. We'll revisit the plan next week.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The Friday ship was agreed to but is no longer happening",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "we're not doing that anymore",
+          "equivalents": ["The Friday ship is cancelled", "Shipping Friday is no longer happening"],
+          "supporting_quotes": ["we're not doing that anymore"]
+        },
+        {
+          "text": "The plan will be revisited next week",
+          "stance": "proposed",
+          "speaker": null,
+          "quote": "We'll revisit the plan next week",
+          "equivalents": ["Revisit the plan next week"],
+          "supporting_quotes": ["We'll revisit the plan next week"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will ship on Friday",
+          "equivalents": ["Ship on Friday", "The Friday ship is planned", "We agreed to ship Friday"],
+          "stance": "committed",
+          "note": "the canonical reversal trap: the initial commitment must not survive as a live commitment"
+        }
+      ],
+      "notes": "Canonical reversal fixture (design §5.1, verdict §2D): a lexical detector catches the commitment and misses the reversal. The Friday ship must never be emitted as a live commitment. This case also fails the experimental skip variant outright (§4.3) even if aggregate recall passes."
+    },
+    {
+      "id": "rej-02",
+      "category": "rejections",
+      "segment": "We're dropping the mobile app idea — the web experience is the priority.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The mobile app idea is dropped; the web experience is the priority",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "We're dropping the mobile app idea",
+          "equivalents": ["The mobile app idea is out; web is the priority"],
+          "supporting_quotes": ["We're dropping the mobile app idea"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will build the mobile app",
+          "equivalents": ["Build the mobile app"],
+          "stance": "committed",
+          "note": "a dropped idea is stated as a task"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-03",
+      "category": "rejections",
+      "segment": "That approach is out — it breaks the privacy rule we set.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "That approach is rejected because it breaks the privacy rule",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "That approach is out",
+          "equivalents": ["That approach is rejected for breaking the privacy rule"],
+          "supporting_quotes": ["That approach is out"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will use that approach",
+          "equivalents": ["Use that approach"],
+          "stance": "committed",
+          "note": "a rejected approach is stated as adopted"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-04",
+      "category": "rejections",
+      "segment": "We killed the pilot after the second week — the numbers never moved.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The pilot was ended after the second week because the numbers never moved",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "We killed the pilot after the second week",
+          "equivalents": ["The pilot was killed after two weeks"],
+          "supporting_quotes": ["We killed the pilot after the second week"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The pilot continues",
+          "equivalents": ["Continue the pilot"],
+          "stance": "committed",
+          "note": "an ended pilot is stated as continuing"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-05",
+      "category": "rejections",
+      "segment": "We passed on the acquisition — the price was too high for what it adds.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The acquisition was declined because the price was too high",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "We passed on the acquisition",
+          "equivalents": ["The acquisition was passed on over price"],
+          "supporting_quotes": ["We passed on the acquisition"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will acquire the company",
+          "equivalents": ["Acquire the company"],
+          "stance": "committed",
+          "note": "a declined acquisition is stated as proceeding"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-06",
+      "category": "rejections",
+      "segment": "We decided against the rebrand for now — the name still works.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The rebrand was decided against for now",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "We decided against the rebrand for now",
+          "equivalents": ["The rebrand is off for now"],
+          "supporting_quotes": ["We decided against the rebrand for now"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will rebrand",
+          "equivalents": ["Rebrand now"],
+          "stance": "committed",
+          "note": "a rejected rebrand is stated as decided"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-07",
+      "category": "rejections",
+      "segment": "Scrapped the old onboarding checklist — it confused more people than it helped.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The old onboarding checklist was scrapped because it confused people",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "Scrapped the old onboarding checklist",
+          "equivalents": ["The old onboarding checklist was removed"],
+          "supporting_quotes": ["Scrapped the old onboarding checklist"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "Keep the old onboarding checklist",
+          "equivalents": ["Use the old onboarding checklist"],
+          "stance": "committed",
+          "note": "a scrapped checklist is stated as kept"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-08",
+      "category": "rejections",
+      "segment": "We're no longer pursuing the partnership with Northwind.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The partnership with Northwind is no longer being pursued",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "We're no longer pursuing the partnership with Northwind",
+          "equivalents": ["The Northwind partnership is dropped"],
+          "supporting_quotes": ["We're no longer pursuing the partnership with Northwind"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will pursue the partnership with Northwind",
+          "equivalents": ["Pursue the Northwind partnership"],
+          "stance": "committed",
+          "note": "a dropped partnership is stated as pursued"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-09",
+      "category": "rejections",
+      "segment": "Ruled out the offshore option — the timezone overlap is too thin.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The offshore option was ruled out because the timezone overlap is too thin",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "Ruled out the offshore option",
+          "equivalents": ["The offshore option is out"],
+          "supporting_quotes": ["Ruled out the offshore option"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will use the offshore option",
+          "equivalents": ["Use the offshore option"],
+          "stance": "committed",
+          "note": "a ruled-out option is stated as chosen"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "rej-10",
+      "category": "rejections",
+      "segment": "No — we're not hiring for that role this year.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "That role will not be hired for this year",
+          "stance": "rejected",
+          "speaker": null,
+          "quote": "we're not hiring for that role this year",
+          "equivalents": ["Hiring for that role is off this year"],
+          "supporting_quotes": ["we're not hiring for that role this year"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "We will hire for that role this year",
+          "equivalents": ["Hire for that role this year"],
+          "stance": "committed",
+          "note": "a hiring freeze is stated as a hire"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "att-01",
+      "category": "attribution",
+      "segment": "Speaker A: We should ship the beta on Friday.\nSpeaker B: I disagree — Friday is too soon, the tests aren't green.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "The beta should ship on Friday",
+          "stance": "proposed",
+          "speaker": "Speaker A",
+          "quote": "We should ship the beta on Friday",
+          "equivalents": ["Ship the beta on Friday"],
+          "supporting_quotes": ["We should ship the beta on Friday"]
+        },
+        {
+          "text": "Friday is too soon to ship the beta because the tests aren't green",
+          "stance": "rejected",
+          "speaker": "Speaker B",
+          "quote": "Friday is too soon, the tests aren't green",
+          "equivalents": ["The beta should not ship Friday; the tests aren't green"],
+          "supporting_quotes": ["Friday is too soon, the tests aren't green"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "attribution_error",
+          "text": "Speaker A said Friday is too soon to ship the beta",
+          "equivalents": ["Friday is too soon, according to Speaker A"],
+          "stance": null,
+          "note": "B said Friday is too soon, not A"
+        }
+      ],
+      "notes": "Attribution is determinable: each quote resolves to its speaker-prefixed line."
+    },
+    {
+      "id": "att-02",
+      "category": "attribution",
+      "segment": "Speaker A: I'll take the migration.\nSpeaker B: Great — and I'll handle the client email.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "Migration ownership goes to Speaker A",
+          "stance": "committed",
+          "speaker": "Speaker A",
+          "quote": "I'll take the migration",
+          "equivalents": ["A takes the migration", "A will take the migration", "The migration will be taken by Speaker A"],
+          "supporting_quotes": ["I'll take the migration"]
+        },
+        {
+          "text": "The client email will be handled by Speaker B",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "I'll handle the client email",
+          "equivalents": ["B handles the client email", "B will handle the client email", "The client email will be handled"],
+          "supporting_quotes": ["I'll handle the client email"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "attribution_error",
+          "text": "Speaker B will take the migration",
+          "equivalents": ["B takes the migration"],
+          "stance": null,
+          "note": "A takes the migration, not B"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "att-03",
+      "category": "attribution",
+      "segment": "Speaker A: The budget is approved.\nSpeaker B: Wait — approved for Q3, not Q4.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "The budget is approved for Q3, not Q4",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "approved for Q3, not Q4",
+          "equivalents": ["Budget approval covers Q3, not Q4"],
+          "supporting_quotes": ["approved for Q3, not Q4"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The budget is approved for Q4",
+          "equivalents": ["Budget approved for Q4"],
+          "stance": "committed",
+          "note": "B limited approval to Q3"
+        }
+      ],
+      "notes": "B corrects A's overbroad claim; the gold follows the correction."
+    },
+    {
+      "id": "att-04",
+      "category": "attribution",
+      "segment": "Speaker A: I think we should pause hiring.\nSpeaker B: Agreed — pause hiring until the release is out.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "Hiring should be paused until the release is out",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "pause hiring until the release is out",
+          "equivalents": ["Pause hiring until the release"],
+          "supporting_quotes": ["pause hiring until the release is out"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "Hiring is paused permanently",
+          "equivalents": ["Pause hiring permanently"],
+          "stance": "committed",
+          "note": "B paused hiring until the release, not permanently"
+        }
+      ],
+      "notes": "A proposes, B agrees with a bound; the gold carries B's committed stance and the bound."
+    },
+    {
+      "id": "att-05",
+      "category": "attribution",
+      "segment": "Speaker A: Did we decide on the vendor?\nSpeaker B: Yes — Northwind, starting in March.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "Northwind was decided on as the vendor, starting in March",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "Yes — Northwind, starting in March",
+          "equivalents": ["The vendor is Northwind, starting in March"],
+          "supporting_quotes": ["Yes — Northwind, starting in March"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "attribution_error",
+          "text": "Speaker A decided on Northwind as the vendor",
+          "equivalents": ["A chose Northwind"],
+          "stance": null,
+          "note": "B answered the question; A asked it"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "att-06",
+      "category": "attribution",
+      "segment": "Speaker A: The client loved the demo.\nSpeaker B: They did — and they asked for the reporting feature next.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "The client loved the demo",
+          "stance": "committed",
+          "speaker": "Speaker A",
+          "quote": "The client loved the demo",
+          "equivalents": ["The demo went well with the client"],
+          "supporting_quotes": ["The client loved the demo"]
+        },
+        {
+          "text": "The client asked for the reporting feature next",
+          "stance": "proposed",
+          "speaker": "Speaker B",
+          "quote": "they asked for the reporting feature next",
+          "equivalents": ["The client wants the reporting feature next"],
+          "supporting_quotes": ["they asked for the reporting feature next"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "attribution_error",
+          "text": "Speaker A asked for the reporting feature",
+          "equivalents": ["A requested the reporting feature"],
+          "stance": null,
+          "note": "B reported the client's ask"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "att-07",
+      "category": "attribution",
+      "segment": "Speaker A: We need the report by Friday.\nSpeaker B: Friday works — I'll send it Thursday to be safe.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "The report is needed by Friday",
+          "stance": "proposed",
+          "speaker": "Speaker A",
+          "quote": "We need the report by Friday",
+          "equivalents": ["The report is due Friday"],
+          "supporting_quotes": ["We need the report by Friday"]
+        },
+        {
+          "text": "The report will be sent Thursday",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "I'll send it Thursday to be safe",
+          "equivalents": ["B will send the report Thursday"],
+          "supporting_quotes": ["I'll send it Thursday to be safe"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "attribution_error",
+          "text": "Speaker A will send the report Thursday",
+          "equivalents": ["A sends the report Thursday"],
+          "stance": null,
+          "note": "B sends the report, not A"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "att-08",
+      "category": "attribution",
+      "segment": "Speaker A: I don't think the new flow is ready.\nSpeaker B: You're right — let's hold it for another week.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "The new flow is not ready",
+          "stance": "rejected",
+          "speaker": "Speaker A",
+          "quote": "I don't think the new flow is ready",
+          "equivalents": ["The new flow is not ready to ship"],
+          "supporting_quotes": ["I don't think the new flow is ready"]
+        },
+        {
+          "text": "The new flow will be held for another week",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "let's hold it for another week",
+          "equivalents": ["Hold the new flow for another week"],
+          "supporting_quotes": ["let's hold it for another week"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The new flow is ready to ship",
+          "equivalents": ["Ship the new flow now"],
+          "stance": "committed",
+          "note": "both speakers said the flow is not ready"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "att-09",
+      "category": "attribution",
+      "segment": "Speaker A: Should we invite the design team?\nSpeaker B: Yes, and the data team too.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "The design team and the data team should be invited",
+          "stance": "proposed",
+          "speaker": "Speaker B",
+          "quote": "Yes, and the data team too",
+          "equivalents": ["Invite the design team and the data team"],
+          "supporting_quotes": ["Yes, and the data team too"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "attribution_error",
+          "text": "Speaker A decided to invite the design team",
+          "equivalents": ["A invited the design team"],
+          "stance": null,
+          "note": "B answered yes; A asked the question"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "att-10",
+      "category": "attribution",
+      "segment": "Speaker A: The deadline is impossible.\nSpeaker B: Then we move it — two more weeks, and we tell the client today.",
+      "has_explicit_speakers": true,
+      "expected": [
+        {
+          "text": "The deadline will move by two more weeks",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "Then we move it — two more weeks",
+          "equivalents": ["Move the deadline two weeks"],
+          "supporting_quotes": ["Then we move it — two more weeks"]
+        },
+        {
+          "text": "The client will be told about the move today",
+          "stance": "committed",
+          "speaker": "Speaker B",
+          "quote": "we tell the client today",
+          "equivalents": ["Tell the client about the move today"],
+          "supporting_quotes": ["we tell the client today"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The deadline will be met as-is",
+          "equivalents": ["Meet the deadline as-is"],
+          "stance": "committed",
+          "note": "B moved the deadline; meeting it as-is contradicts the segment"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-01",
+      "category": "evidence_preservation",
+      "segment": "The migration cutover is scheduled for November 14 at 2 a.m. Pacific, with a four-hour window.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The migration cutover is scheduled for November 14 at 2 a.m. Pacific with a four-hour window",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "The migration cutover is scheduled for November 14 at 2 a.m. Pacific",
+          "equivalents": ["Cutover is November 14 at 2 a.m. Pacific, four-hour window"],
+          "supporting_quotes": ["The migration cutover is scheduled for November 14 at 2 a.m. Pacific"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The migration cutover is November 15",
+          "equivalents": ["Cutover is November 15"],
+          "stance": "committed",
+          "note": "wrong date"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-02",
+      "category": "evidence_preservation",
+      "segment": "Mara approved the $12,400 spend for the pilot, not the $18,000 request.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "Mara approved the $12,400 pilot spend, not the $18,000 request",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "Mara approved the $12,400 spend for the pilot",
+          "equivalents": ["The $12,400 pilot spend was approved by Mara"],
+          "supporting_quotes": ["Mara approved the $12,400 spend for the pilot"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "Mara approved the $18,000 request",
+          "equivalents": ["The $18,000 request was approved"],
+          "stance": "committed",
+          "note": "wrong amount — the $18,000 was explicitly not approved"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-03",
+      "category": "evidence_preservation",
+      "segment": "The contract renews on March 1, 2027, unless we give ninety days' notice.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The contract renews March 1, 2027 unless ninety days' notice is given",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "The contract renews on March 1, 2027, unless we give ninety days' notice",
+          "equivalents": ["Contract renewal is March 1, 2027 with ninety days' notice to cancel"],
+          "supporting_quotes": ["The contract renews on March 1, 2027, unless we give ninety days' notice"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The contract renews on January 1, 2027",
+          "equivalents": ["Renewal is January 1, 2027"],
+          "stance": "committed",
+          "note": "wrong date"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-04",
+      "category": "evidence_preservation",
+      "segment": "We need three reviewers for the proposal: Dana, Luis, and Priya — in that order.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "Three reviewers are needed for the proposal: Dana, Luis, and Priya, in that order",
+          "stance": "proposed",
+          "speaker": null,
+          "quote": "We need three reviewers for the proposal: Dana, Luis, and Priya",
+          "equivalents": ["Reviewers are Dana, Luis, and Priya, in that order"],
+          "supporting_quotes": ["We need three reviewers for the proposal: Dana, Luis, and Priya"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "Two reviewers are needed: Dana and Luis",
+          "equivalents": ["Reviewers are Dana and Luis"],
+          "stance": "committed",
+          "note": "wrong reviewer set — Priya is dropped"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-05",
+      "category": "evidence_preservation",
+      "segment": "The workshop runs 9:30 to 12:00 in Room 4 of the Meridian building.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The workshop runs 9:30 to 12:00 in Room 4 of the Meridian building",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "The workshop runs 9:30 to 12:00 in Room 4 of the Meridian building",
+          "equivalents": ["Workshop is 9:30 to 12:00 in Room 4, Meridian building"],
+          "supporting_quotes": ["The workshop runs 9:30 to 12:00 in Room 4 of the Meridian building"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The workshop runs 10:00 to 12:00 in Room 4",
+          "equivalents": ["Workshop starts at 10:00"],
+          "stance": "committed",
+          "note": "wrong start time"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-06",
+      "category": "evidence_preservation",
+      "segment": "The client specifically asked for the export to include the audit trail, not just the summary.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The client asked for the export to include the audit trail, not just the summary",
+          "stance": "proposed",
+          "speaker": null,
+          "quote": "the export to include the audit trail, not just the summary",
+          "equivalents": ["Export must include the audit trail, not only the summary"],
+          "supporting_quotes": ["the export to include the audit trail, not just the summary"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "The client asked for only the summary in the export",
+          "equivalents": ["Export only the summary"],
+          "stance": null,
+          "note": "inverts the requirement"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-07",
+      "category": "evidence_preservation",
+      "segment": "Version 2.4.1 fixes the sync bug; 2.4.0 still has it.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "Version 2.4.1 fixes the sync bug; version 2.4.0 still has it",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "Version 2.4.1 fixes the sync bug",
+          "equivalents": ["The sync bug is fixed in 2.4.1"],
+          "supporting_quotes": ["Version 2.4.1 fixes the sync bug"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "Version 2.4.0 fixes the sync bug",
+          "equivalents": ["The sync bug is fixed in 2.4.0"],
+          "stance": "committed",
+          "note": "wrong version"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-08",
+      "category": "evidence_preservation",
+      "segment": "The team agreed to the 'no-meeting Wednesdays' rule starting next week.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The team agreed to no-meeting Wednesdays starting next week",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "The team agreed to the 'no-meeting Wednesdays' rule starting next week",
+          "equivalents": ["No-meeting Wednesdays start next week"],
+          "supporting_quotes": ["The team agreed to the 'no-meeting Wednesdays' rule starting next week"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The team agreed to no-meeting Fridays",
+          "equivalents": ["No-meeting Fridays start next week"],
+          "stance": "committed",
+          "note": "wrong day"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-09",
+      "category": "evidence_preservation",
+      "segment": "Send the invoice to billing@northwind.example, not to the general inbox.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The invoice should be sent to billing@northwind.example, not the general inbox",
+          "stance": "proposed",
+          "speaker": null,
+          "quote": "Send the invoice to billing@northwind.example, not to the general inbox",
+          "equivalents": ["Invoice goes to billing@northwind.example"],
+          "supporting_quotes": ["Send the invoice to billing@northwind.example, not to the general inbox"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "negation_inversion",
+          "text": "Send the invoice to the general inbox",
+          "equivalents": ["Invoice goes to the general inbox"],
+          "stance": null,
+          "note": "inverts the instruction"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "evp-10",
+      "category": "evidence_preservation",
+      "segment": "The pilot covers twelve clinics in the first phase, not the full network of forty.",
+      "has_explicit_speakers": false,
+      "expected": [
+        {
+          "text": "The pilot covers twelve clinics in the first phase, not the full network of forty",
+          "stance": "committed",
+          "speaker": null,
+          "quote": "The pilot covers twelve clinics in the first phase, not the full network of forty",
+          "equivalents": ["Twelve clinics are in the first pilot phase"],
+          "supporting_quotes": ["The pilot covers twelve clinics in the first phase, not the full network of forty"]
+        }
+      ],
+      "forbidden": [
+        {
+          "class": "commitment_inflation",
+          "text": "The pilot covers all forty clinics in the first phase",
+          "equivalents": ["All forty clinics are in the first phase"],
+          "stance": "committed",
+          "note": "wrong scope"
+        }
+      ],
+      "notes": ""
+    },
+    {
+      "id": "emp-01",
+      "category": "empty",
+      "segment": "We chatted about the weekend, the weather, and the new café on Main Street.",
+      "has_explicit_speakers": false,
+      "expected": [],
+      "forbidden": [
+        {
+          "class": "false_positive",
+          "text": "A new café opened on Main Street",
+          "equivalents": ["The new café on Main Street opened recently"],
+          "stance": null,
+          "note": "casual chat, not a proposition"
+        }
+      ],
+      "notes": "Honest-empty case: no valid propositions. A correct output is {\"rows\": []}."
+    },
+    {
+      "id": "emp-02",
+      "category": "empty",
+      "segment": "Should we move the review to Thursday, or keep it on Wednesday?",
+      "has_explicit_speakers": false,
+      "expected": [],
+      "forbidden": [
+        {
+          "class": "false_positive",
+          "text": "The review was moved to Thursday",
+          "equivalents": ["Move the review to Thursday"],
+          "stance": "committed",
+          "note": "a question, not a decision"
+        }
+      ],
+      "notes": "Honest-empty case: a question with no decision. A correct output is {\"rows\": []}."
+    }
+  ]
+}

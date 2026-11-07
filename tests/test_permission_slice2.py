@@ -715,3 +715,279 @@ def test_framework_stance_put_during_pause(perm_conn, monkeypatch):
     assert F.framework_check(
         "u1", "R1", scope_rows=["strand:heart"], connection=perm_conn
     ).outcome == "deny"
+
+
+# ---------------------------------------------------------------------------
+# Founder-verdict corrections, 2026-11-06 (draft PR #338, checks 1–3)
+# ---------------------------------------------------------------------------
+
+
+class _FailingStore:
+    """A store whose every read raises: simulates a corrupt/unreadable
+    store file. The count must come back unavailable, never zero."""
+
+    def threads_for(self, *args, **kwargs):
+        raise sqlite3.Error("simulated unreadable store")
+
+    def list_pending_invitations(self, *args, **kwargs):
+        raise sqlite3.Error("simulated unreadable store")
+
+    def list_feed_nudges(self, *args, **kwargs):
+        raise sqlite3.Error("simulated unreadable store")
+
+
+def test_checks_r2_failed_read_is_unavailable_not_zero(tmp_path, ve_ctx, monkeypatch):
+    """Check 2: a failed retained read must not appear as zero.
+    R2/R4/R6 read failures -> None; R5 counter failure -> None;
+    R1/R3 stay verified 0 by design (no store to read)."""
+    import local_ai.vision_execution.storage as ve_storage
+
+    ve_conn = ve_ctx.get_connection()
+    failing = _FailingStore()
+    monkeypatch.setattr(
+        ve_storage,
+        "count_pending_task_proposals",
+        lambda user_id, connection=None: (_ for _ in ()).throw(
+            sqlite3.OperationalError("simulated unreadable store")
+        ),
+    )
+    counts = RT.retained_counts(
+        "u1",
+        narrative_store=failing,
+        conversation_store=failing,
+        followthrough_store=failing,
+        ve_connection=ve_conn,
+    )
+    assert counts["R2"] is None
+    assert counts["R4"] is None
+    assert counts["R5"] is None
+    assert counts["R6"] is None
+    assert counts["R1"] == 0
+    assert counts["R3"] == 0
+
+
+def test_checks_r2_missing_db_file_is_verified_zero(tmp_path, monkeypatch, ve_ctx):
+    """Check 2, other side: a store whose database file does not exist
+    yet is a VERIFIED zero (nothing can be retained), not unavailable.
+    A GET must not create the file to find that out."""
+    import local_ai.conversation.store as conv_mod
+    import local_ai.followthrough.store as ft_mod
+    import local_ai.narrative.store as narrative_mod
+
+    monkeypatch.setattr(narrative_mod, "DEFAULT_DB_PATH", tmp_path / "no-narrative.db")
+    monkeypatch.setattr(conv_mod, "DEFAULT_DB_PATH", tmp_path / "no-conv.db")
+    monkeypatch.setattr(ft_mod, "DEFAULT_DB_PATH", tmp_path / "no-ft.db")
+    ve_conn = ve_ctx.get_connection()
+    counts = RT.retained_counts("u1", ve_connection=ve_conn)
+    assert counts == {"R1": 0, "R2": 0, "R3": 0, "R4": 0, "R5": 0, "R6": 0}
+    assert not (tmp_path / "no-narrative.db").exists()
+    assert not (tmp_path / "no-conv.db").exists()
+    assert not (tmp_path / "no-ft.db").exists()
+
+
+def test_checks_r2_framework_get_carries_count_status(perm_conn, monkeypatch):
+    """Check 2 at the API: GET /permissions/framework carries
+    retained_count (int or null) AND retained_count_status
+    ('available' / 'unavailable') per capability."""
+    _route_ctx(perm_conn, monkeypatch)
+    monkeypatch.setattr(
+        RT,
+        "retained_counts",
+        lambda user_id, **kw: {"R1": 0, "R2": None, "R3": 0, "R4": 0, "R5": 0, "R6": 0},
+    )
+    state = settings_mod.get_framework_permissions({"id": "u1"})
+    r2 = [c for c in state["capabilities"] if c["id"] == "R2"][0]
+    assert r2["retained_count"] is None
+    assert r2["retained_count_status"] == "unavailable"
+    r1 = [c for c in state["capabilities"] if c["id"] == "R1"][0]
+    assert r1["retained_count"] == 0
+    assert r1["retained_count_status"] == "available"
+
+
+def test_checks_r2_stance_put_unavailable_count_offers_no_choice(perm_conn, monkeypatch):
+    """Check 2: a revocation with an unavailable count offers no
+    retained-information choice — the surface cannot choose about
+    items it could not count."""
+    from local_ai.vision_execution.models import FrameworkStanceUpdate
+
+    _route_ctx(perm_conn, monkeypatch)
+    monkeypatch.setattr(
+        RT,
+        "retained_counts",
+        lambda user_id, **kw: {"R1": None, "R2": 0, "R3": 0, "R4": 0, "R5": 0, "R6": 0},
+    )
+    resp = settings_mod.put_framework_stance(
+        FrameworkStanceUpdate(capability="R1", row_key="strand:heart", stance="dont_do_it"),
+        {"id": "u1"},
+    )
+    assert resp["retained_count"] is None
+    assert resp["retained_count_status"] == "unavailable"
+    assert resp["retained_choice_offered"] is False
+
+
+def test_checks_r3_framework_read_is_owner_scoped(perm_conn, monkeypatch):
+    """Check 3a: a second user's framework state is not readable by
+    the first — stances and pause both come back as that user's own
+    (defaults + unpaused for a stranger)."""
+    from local_ai.vision_execution.models import FrameworkPauseUpdate
+
+    _route_ctx(perm_conn, monkeypatch)
+    _set(perm_conn, "u1", "R1", "strand:heart", "just_do_it")
+    settings_mod.put_framework_pause(FrameworkPauseUpdate(paused=True), {"id": "u1"})
+    mine = settings_mod.get_framework_permissions({"id": "u1"})
+    assert mine["paused"] is True
+    r1 = [c for c in mine["capabilities"] if c["id"] == "R1"][0]
+    heart = [row for row in r1["rows"] if row["key"] == "strand:heart"][0]
+    assert heart["stance"] == "just_do_it"
+    assert heart["stance_source"] == "user"
+    theirs = settings_mod.get_framework_permissions({"id": "u2"})
+    assert theirs["paused"] is False
+    r1t = [c for c in theirs["capabilities"] if c["id"] == "R1"][0]
+    heart_t = [row for row in r1t["rows"] if row["key"] == "strand:heart"][0]
+    assert heart_t["stance"] == "ask_me"  # registry default, not u1's record
+    assert heart_t["stance_source"] == "default"
+
+
+def test_checks_r3_stance_write_is_owner_scoped(perm_conn, monkeypatch):
+    """Check 3b: a stance write lands under the authenticated user
+    only; the other user's record is untouched."""
+    from local_ai.vision_execution.models import FrameworkStanceUpdate
+
+    _route_ctx(perm_conn, monkeypatch)
+    _set(perm_conn, "u1", "R1", "strand:heart", "just_do_it")
+    settings_mod.put_framework_stance(
+        FrameworkStanceUpdate(capability="R1", row_key="strand:heart", stance="dont_do_it"),
+        {"id": "u2"},
+    )
+    assert S.get_stance("u1", "R1", "strand:heart", connection=perm_conn)["stance"] == "just_do_it"
+    assert S.get_stance("u2", "R1", "strand:heart", connection=perm_conn)["stance"] == "dont_do_it"
+
+
+def test_checks_r3_pause_write_is_owner_scoped(perm_conn, monkeypatch):
+    """Check 3c: a pause write lands under the authenticated user
+    only; the other user's pause is untouched."""
+    from local_ai.vision_execution.models import FrameworkPauseUpdate
+
+    _route_ctx(perm_conn, monkeypatch)
+    settings_mod.put_framework_pause(FrameworkPauseUpdate(paused=True), {"id": "u2"})
+    assert S.get_pause("u1", connection=perm_conn)["paused"] is False
+    assert S.get_pause("u2", connection=perm_conn)["paused"] is True
+
+
+def test_checks_r3_retained_counts_are_owner_scoped(tmp_path, ve_ctx):
+    """Check 3d: retained-count aggregation counts only the caller's
+    items — another user's threads, invitations, proposals, and
+    nudges never leak into the count."""
+    from local_ai.conversation.store import ConversationStore
+    from local_ai.followthrough.store import FollowthroughStore
+    from local_ai.narrative.store import NarrativeStore
+
+    ve_conn = ve_ctx.get_connection()
+    _seed_proposal(ve_ctx, "u2", "prop-u2")
+    nstore = NarrativeStore(tmp_path / "narrative.db")
+    nstore.create_thread("u2", title="Theirs")
+    cstore = ConversationStore(tmp_path / "conv.db")
+    cstore.create_or_refresh_invitation(
+        "u2", "talk-9", "guardian", "hand to offer", evidence=_evidence()
+    )
+    fstore = FollowthroughStore(tmp_path / "ft.db")
+    fstore.create_nudge("u2", "deadline", "task", "t9", "low", "due soon")
+    kwargs = dict(
+        narrative_store=nstore,
+        conversation_store=cstore,
+        followthrough_store=fstore,
+        ve_connection=ve_conn,
+    )
+    mine = RT.retained_counts("u1", **kwargs)
+    assert mine == {"R1": 0, "R2": 0, "R3": 0, "R4": 0, "R5": 0, "R6": 0}
+    theirs = RT.retained_counts("u2", **kwargs)
+    assert theirs["R2"] == 1
+    assert theirs["R4"] == 1
+    assert theirs["R5"] == 1
+    assert theirs["R6"] == 1
+    nstore.close()
+    cstore.close()
+    fstore.close()
+
+
+def test_checks_r3_body_cannot_choose_user(perm_conn, monkeypatch):
+    """Check 3: the owner comes from the authenticated principal,
+    never from the request body. The stance/pause bodies carry no
+    user field — an extra user_id in the payload is dropped, and the
+    write still lands under the authenticated user only."""
+    from local_ai.vision_execution.models import (
+        FrameworkPauseUpdate,
+        FrameworkStanceUpdate,
+    )
+
+    _route_ctx(perm_conn, monkeypatch)
+    assert "user_id" not in FrameworkStanceUpdate.model_fields
+    assert "user_id" not in FrameworkPauseUpdate.model_fields
+    stance_body = FrameworkStanceUpdate.model_validate(
+        {
+            "capability": "R1",
+            "row_key": "strand:heart",
+            "stance": "just_do_it",
+            "user_id": "u2",
+        }
+    )
+    settings_mod.put_framework_stance(stance_body, {"id": "u1"})
+    assert S.get_stance("u1", "R1", "strand:heart", connection=perm_conn)["stance"] == "just_do_it"
+    assert S.get_stance("u2", "R1", "strand:heart", connection=perm_conn) is None
+    settings_mod.put_framework_pause(
+        FrameworkPauseUpdate.model_validate({"paused": True, "user_id": "u2"}),
+        {"id": "u1"},
+    )
+    assert S.get_pause("u1", connection=perm_conn)["paused"] is True
+    assert S.get_pause("u2", connection=perm_conn)["paused"] is False
+
+
+def test_checks_r3_empty_owner_rejected_fail_closed(perm_conn, monkeypatch):
+    """Check 3: an empty or missing owner fails closed at the route
+    boundary — 404, not 403 (PR #329's rule) — on all three framework
+    routes, and no write lands for the empty owner."""
+    from local_ai.vision_execution.models import (
+        FrameworkPauseUpdate,
+        FrameworkStanceUpdate,
+    )
+
+    _route_ctx(perm_conn, monkeypatch)
+    for bad in ({"id": ""}, {"id": "   "}, {}):
+        with pytest.raises(HTTPException) as exc:
+            settings_mod.get_framework_permissions(bad)
+        assert exc.value.status_code == 404
+        with pytest.raises(HTTPException) as exc:
+            settings_mod.put_framework_stance(
+                FrameworkStanceUpdate(
+                    capability="R1", row_key="strand:heart", stance="just_do_it"
+                ),
+                bad,
+            )
+        assert exc.value.status_code == 404
+        with pytest.raises(HTTPException) as exc:
+            settings_mod.put_framework_pause(FrameworkPauseUpdate(paused=True), bad)
+        assert exc.value.status_code == 404
+    assert S.get_stances("", connection=perm_conn) == {}
+    assert S.get_pause("", connection=perm_conn)["paused"] is False
+
+
+def test_checks_r3_unauthenticated_rejected(monkeypatch):
+    """Check 3: no session cookie, or a cookie whose session resolves
+    to no user, is rejected at the auth boundary (401) before any
+    framework route runs."""
+    from starlette.requests import Request
+
+    from api.routes import auth_routes as auth_mod
+
+    with pytest.raises(HTTPException) as exc:
+        auth_mod.get_current_user(Request({"type": "http", "headers": []}))
+    assert exc.value.status_code == 401
+    import local_ai.vision_execution.service as ve_service
+
+    monkeypatch.setattr(ve_service, "get_session_user", lambda token: None)
+    stale = Request(
+        {"type": "http", "headers": [(b"cookie", b"zenaf_session=stale-token")]}
+    )
+    with pytest.raises(HTTPException) as exc:
+        auth_mod.get_current_user(stale)
+    assert exc.value.status_code == 401

@@ -22,11 +22,14 @@ bounds):
   not acked, not resolved, snooze expired or absent).
 
 All counts are owner-scoped. A store whose database file does not
-exist yet contributes 0 WITHOUT creating it — a GET must not create
-state. A read failure on an existing store also contributes 0: the
-surface shows a count, never an error, for retained items. (The
-framework check, not this module, is the fail-closed path; a count
-of 0 never authorizes anything.)
+exist yet contributes a VERIFIED 0 WITHOUT creating it — a GET must
+not create state. A read failure on an existing store contributes
+None (UNAVAILABLE), never 0: a failed read must not appear as zero
+retained items (founder verdict check 2, 2026-11-06). R1/R3 are
+verified 0 by design (no store to read). Callers must render None
+as "unavailable", never as "0 items". (The framework check, not
+this module, is the fail-closed path; a count of 0 never authorizes
+anything.)
 
 Store instances are injectable for tests; otherwise the default
 stores are constructed lazily (and only when their database file
@@ -39,15 +42,22 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-def _safe_count(fn) -> int:
+# A count is an int (verified) or None (read failed — unavailable).
+# Never 0 for a failed read.
+Count = int | None
+
+
+def _count_or_none(fn) -> Count:
+    """Run a count read: the verified count, or None if the read
+    itself failed (corrupt store, missing table, I/O error)."""
     try:
         value = fn()
     except (sqlite3.Error, OSError, ImportError, AttributeError, ValueError):
-        return 0
+        return None
     try:
         return max(0, int(value))
     except (TypeError, ValueError):
-        return 0
+        return None
 
 
 def _db_exists(default_path: Path | str | None) -> bool:
@@ -66,18 +76,20 @@ def retained_counts(
     conversation_store: Any | None = None,
     followthrough_store: Any | None = None,
     ve_connection: sqlite3.Connection | None = None,
-) -> dict[str, int]:
+) -> dict[str, Count]:
     """Retained-item counts per capability for the user.
 
     Always returns all six capabilities (missing/zero counts are 0,
     never absent), so the surface can render a standing line per row
-    without special-casing capabilities.
+    without special-casing capabilities. A value of None means the
+    read FAILED for that capability — unavailable, not zero — and the
+    surface must render it as unavailable.
     """
-    counts: dict[str, int] = {cap: 0 for cap in ("R1", "R2", "R3", "R4", "R5", "R6")}
+    counts: dict[str, Count] = {cap: 0 for cap in ("R1", "R2", "R3", "R4", "R5", "R6")}
 
     # R2: derived narrative threads.
     if narrative_store is not None:
-        counts["R2"] = _safe_count(
+        counts["R2"] = _count_or_none(
             lambda: len(narrative_store.threads_for(user_id, limit=None))
         )
     else:
@@ -85,14 +97,14 @@ def retained_counts(
 
         if _db_exists(DEFAULT_DB_PATH):
             store = NarrativeStore()
-            counts["R2"] = _safe_count(
+            counts["R2"] = _count_or_none(
                 lambda: len(store.threads_for(user_id, limit=None))
             )
             store.close()
 
     # R4: pending invitations, user-wide.
     if conversation_store is not None:
-        counts["R4"] = _safe_count(
+        counts["R4"] = _count_or_none(
             lambda: len(conversation_store.list_pending_invitations(user_id))
         )
     else:
@@ -103,7 +115,7 @@ def retained_counts(
 
         if _db_exists(DEFAULT_DB_PATH):
             store = ConversationStore()
-            counts["R4"] = _safe_count(
+            counts["R4"] = _count_or_none(
                 lambda: len(store.list_pending_invitations(user_id))
             )
             store.close()
@@ -112,19 +124,19 @@ def retained_counts(
     from local_ai.vision_execution import storage as _ve_storage
 
     if ve_connection is not None:
-        counts["R5"] = _safe_count(
+        counts["R5"] = _count_or_none(
             lambda: _ve_storage.count_pending_task_proposals(
                 user_id, connection=ve_connection
             )
         )
     else:
-        counts["R5"] = _safe_count(
+        counts["R5"] = _count_or_none(
             lambda: _ve_storage.count_pending_task_proposals(user_id)
         )
 
     # R6: live follow-through nudges.
     if followthrough_store is not None:
-        counts["R6"] = _safe_count(
+        counts["R6"] = _count_or_none(
             lambda: len(followthrough_store.list_feed_nudges(user_id))
         )
     else:
@@ -135,7 +147,7 @@ def retained_counts(
 
         if _db_exists(DEFAULT_DB_PATH):
             store = FollowthroughStore()
-            counts["R6"] = _safe_count(
+            counts["R6"] = _count_or_none(
                 lambda: len(store.list_feed_nudges(user_id))
             )
             store.close()

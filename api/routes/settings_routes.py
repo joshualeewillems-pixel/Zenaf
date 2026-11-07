@@ -272,6 +272,18 @@ def put_permissions(body: M.SettingsPermissionsUpdate, current_user: dict = Depe
 # scope ledger). No model calls on this path.
 
 
+def _require_owner_id(current_user: dict) -> str:
+    """Owner identity for the framework routes, from the authenticated
+    principal only — never from the request body (the stance/pause
+    bodies carry no user field). An empty or missing owner fails
+    closed: 404, not 403 (PR #329's rule — the caller's framework
+    state does not exist for an unidentified owner)."""
+    user_id = current_user.get("id") if isinstance(current_user, dict) else None
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise HTTPException(status_code=404, detail="owner not found")
+    return user_id
+
+
 def _framework_state(user_id: str) -> dict:
     """Full framework state for the surface: pause + one entry per
     registered capability, each with its rows, current stance (user-set
@@ -281,6 +293,12 @@ def _framework_state(user_id: str) -> dict:
     ``stance_source`` is "user" when a stance record exists and
     "default" when the row falls back to the registry default, so the
     surface never presents a default as if the user had set it.
+
+    Retained counts carry their own status: ``retained_count`` is an
+    int when the read succeeded and None when it failed, with
+    ``retained_count_status`` "available" / "unavailable" saying so
+    explicitly — a failed read must never appear as zero retained
+    items (founder verdict check 2, 2026-11-06).
     """
     from local_ai.permissions import registry as _registry
     from local_ai.permissions import retained as _retained
@@ -344,7 +362,10 @@ def _framework_state(user_id: str) -> dict:
                 "default_stance": entry.default_stance,
                 "supported_stances": list(entry.supported_stances),
                 "exception_classes": list(entry.exception_classes),
-                "retained_count": counts.get(capability_id, 0),
+                "retained_count": counts.get(capability_id),
+                "retained_count_status": (
+                    "available" if counts.get(capability_id) is not None else "unavailable"
+                ),
                 # Quieting has no machinery until Slice 3 (no counters,
                 # no quiet state): nothing is quieted in Slice 2.
                 "quieted": False,
@@ -357,7 +378,7 @@ def _framework_state(user_id: str) -> dict:
 
 @router.get("/permissions/framework")
 def get_framework_permissions(current_user: dict = Depends(get_current_user)):
-    return _framework_state(current_user["id"])
+    return _framework_state(_require_owner_id(current_user))
 
 
 @router.put("/permissions/framework/stance")
@@ -371,7 +392,7 @@ def put_framework_stance(body: M.FrameworkStanceUpdate, current_user: dict = Dep
     """
     from local_ai.permissions import store as _store
 
-    user_id = current_user["id"]
+    user_id = _require_owner_id(current_user)
     try:
         record = _store.set_stance(
             user_id,
@@ -384,14 +405,21 @@ def put_framework_stance(body: M.FrameworkStanceUpdate, current_user: dict = Dep
         raise HTTPException(status_code=400, detail=str(e)) from e
     from local_ai.permissions import retained as _retained
 
-    retained_count = _retained.retained_counts(user_id).get(body.capability, 0)
+    retained_count = _retained.retained_counts(user_id).get(body.capability)
     return {
         "record": record,
         "retained_count": retained_count,
+        "retained_count_status": (
+            "available" if retained_count is not None else "unavailable"
+        ),
         # The retained-information choice is offered (nonblocking,
         # R.1–R.4) when a revocation leaves retained items behind.
+        # An unavailable count offers no choice: the surface cannot
+        # choose about items it could not count.
         "retained_choice_offered": (
-            body.stance == "dont_do_it" and retained_count > 0
+            body.stance == "dont_do_it"
+            and retained_count is not None
+            and retained_count > 0
         ),
         "state": _framework_state(user_id),
     }
@@ -411,7 +439,7 @@ def put_framework_pause(body: M.FrameworkPauseUpdate, current_user: dict = Depen
     """
     from local_ai.permissions import store as _store
 
-    user_id = current_user["id"]
+    user_id = _require_owner_id(current_user)
     record = _store.set_pause(user_id, bool(body.paused), surface=_store.SURFACE_SETTINGS)
     return {
         "pause": record,

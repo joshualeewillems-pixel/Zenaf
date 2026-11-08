@@ -1095,6 +1095,15 @@ class EncounterState:
     #: _fallback_line. Cosmetic only — it never gates, floors, or
     #: advances the encounter; rows predating it hydrate to 0.
     fallback_uses: int = 0
+    #: Persistence confirmations (Firebrand FC4, 2026-11-07): one
+    #: dict per committed write this meeting (§3.2 contract:
+    #: kind/id/label/status/turn), appended ONLY by the filing
+    #: hook after the write commits. Rendered into the generation
+    #: prompt as system fact by _confirmation_suffix; until FC5/FC6
+    #: land the list stays empty and the guidance prohibition
+    #: governs every turn. A confirmation is a fact about the
+    #: meeting, never a pending item — nothing clears it mid-meeting.
+    confirmed_writes: list[dict] = field(default_factory=list)
     closed: bool = False
 
     def to_json(self) -> str:
@@ -1124,6 +1133,7 @@ class EncounterState:
             "introduction_delivered": self.introduction_delivered,
             "allusions_used": self.allusions_used,
             "fallback_uses": self.fallback_uses,
+            "confirmed_writes": self.confirmed_writes,
             "closed": self.closed,
         })
 
@@ -1152,6 +1162,7 @@ class EncounterState:
             "pause_delivered", "introduction_delivered",
             "allusions_used",
             "fallback_uses",
+            "confirmed_writes",
             "closed",
         ):
             if key in data:
@@ -1284,6 +1295,85 @@ class EncounterRuntime:
         state.impression_offered = True
         host.say(claim)
         return True
+
+    @staticmethod
+    def _confirmation_suffix(state: EncounterState) -> str:
+        """System-fact lines for committed writes (Firebrand FC4,
+        full form, 2026-11-07): one line per confirmation in
+        ``state.confirmed_writes``, in filing order. Empty state
+        renders "" — the common case, including every turn before
+        FC5/FC6 land. A confirmation without an id is not a
+        confirmation (design §3.2) and renders nothing; an unknown
+        kind renders nothing. The status distinction is load-bearing:
+        ``recorded`` licenses "done"/"scheduled"; anything filed
+        awaiting approval licenses "filed" only, never "done". The
+        suffix is system context for generation, never a claim to
+        file — it is appended to the frame LAST by
+        ``_with_confirmations`` so it is the freshest instruction
+        and the first content cut if the frame ever overflows."""
+        lines: list[str] = []
+        for c in getattr(state, "confirmed_writes", []) or []:
+            if not isinstance(c, dict):
+                continue
+            cid = c.get("id")
+            if not cid:
+                continue
+            kind = c.get("kind")
+            label = c.get("label", "")
+            status = c.get("status")
+            if kind == "commitment" and status == "recorded":
+                lines.append(
+                    "Recorded this meeting (system fact, not your claim): "
+                    f"commitment {cid}, '{label}'. You may say it is done."
+                )
+            elif kind == "reminder" and status == "recorded":
+                cadence = c.get("cadence")
+                if cadence:
+                    lines.append(
+                        "Recorded this meeting (system fact, not your claim): "
+                        f"reminder {cid}, '{label}', {cadence}. "
+                        "You may say it is scheduled."
+                    )
+                else:
+                    lines.append(
+                        "Recorded this meeting (system fact, not your claim): "
+                        f"reminder {cid}, '{label}'. "
+                        "You may say it is scheduled."
+                    )
+            elif kind == "proposal" or status == "filed-awaiting-approval":
+                lines.append(
+                    "Recorded this meeting (system fact, not your claim): "
+                    f"{kind} {cid}, '{label}', filed and waiting for the "
+                    "visitor's approval. Say it is filed, never that it "
+                    "is done."
+                )
+            # Unknown kinds render nothing: fail-closed, never license
+            # a success claim for a write the contract does not cover.
+        return "\n".join(lines)
+
+    @staticmethod
+    def _with_confirmations(state: EncounterState, frame: str) -> str:
+        """Append the confirmation suffix to a generation frame,
+        LAST — after all frame extras. Empty suffix returns the
+        frame unchanged."""
+        suffix = EncounterRuntime._confirmation_suffix(state)
+        if not suffix:
+            return frame
+        return frame + "\n\n" + suffix
+
+    def _file_accepted_offer(self, host: EncounterHost,
+                             state: EncounterState, message: str) -> None:
+        """Filing hook (Firebrand FC4 §3.5 — interface to the FC5/FC6
+        designs, NOT implemented here): on an accepted offer, file
+        the commitment/reminder and append a Confirmation to
+        ``state.confirmed_writes`` — ONLY after the write commits,
+        so the row id in the Confirmation is the committed row's
+        id. This build ships the hook as a no-op: until FC5 lands,
+        no confirmation is ever produced, the suffix never renders,
+        and the guidance prohibition governs every turn. FC5 replaces
+        this body with acceptance detection, store choice, and
+        approval semantics; FC6 supplies the reminder variant."""
+        return None
 
     def _split_reply_and_impression(self, raw: str) -> tuple[str, str, bool]:
         """Split the engage call's two movements on its delimiter line.
@@ -1545,10 +1635,11 @@ class EncounterRuntime:
             # move, in the same generation that produces her reply.
             # The agenda does not advance — but nothing is skipped:
             # the objectives stay live for the next turn.
+            self._file_accepted_offer(host, state, message)
             frame, cue = self._turn_frame(state, message)
             if direct_question:
                 frame += _DIRECT_QUESTION_PRECEDENCE
-            out = _spoken(host.generate(frame) or "")
+            out = _spoken(host.generate(self._with_confirmations(state, frame)) or "")
             if out:
                 host.say(out)
                 if cue is not None:
@@ -1575,8 +1666,9 @@ class EncounterRuntime:
         # in a question holds its impression for a later turn
         # (2026-10-24 sequencing rule).
         state.engagements += 1
+        self._file_accepted_offer(host, state, message)
         frame = self._engage_frame()
-        raw = host.generate(frame)
+        raw = host.generate(self._with_confirmations(state, frame))
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
         claim = _spoken(claim)
@@ -1802,9 +1894,12 @@ class EncounterRuntime:
             frame = d.impression_reply_frame
             if frame:
                 raw = host.generate(
-                    frame
-                    + "\n\n" + _naming_note(d)
-                    + _THREAD_TRAILER_INSTRUCTION
+                    self._with_confirmations(
+                        state,
+                        frame
+                        + "\n\n" + _naming_note(d)
+                        + _THREAD_TRAILER_INSTRUCTION,
+                    )
                 )
                 body, verdict = split_thread_trailer(raw)
                 body, _ = split_strands_trailer(body)
@@ -1824,9 +1919,12 @@ class EncounterRuntime:
             host.store_dimensions("retained", "unresolved")
         else:
             raw = host.generate(
-                d.correction_frame
-                + "\n\n" + _naming_note(d)
-                + _THREAD_TRAILER_INSTRUCTION
+                self._with_confirmations(
+                    state,
+                    d.correction_frame
+                    + "\n\n" + _naming_note(d)
+                    + _THREAD_TRAILER_INSTRUCTION,
+                )
             )
             parsed = parse_impression_response(raw, state.impression_strands)
             verdict = parsed.thread_verdict
@@ -1891,6 +1989,7 @@ class EncounterRuntime:
         self._deliver_introduction_if_due(host, state)
         if detect_move(message) == "offer":
             state.offers_engaged += 1
+        self._file_accepted_offer(host, state, message)
         frame, cue = self._turn_frame(state, message)
         if d.orientation_facts:
             frame += (
@@ -1900,7 +1999,7 @@ class EncounterRuntime:
                 + d.orientation_facts
             )
         frame += _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
-        raw = host.generate(frame)
+        raw = host.generate(self._with_confirmations(state, frame))
         body, verdict = split_thread_trailer(raw)
         body, _ = split_strands_trailer(body)
         body = _spoken(body)
@@ -3958,6 +4057,20 @@ CHAMPION_TURN_FRAME = (
     "be in it, not to steer it back."
 )
 
+_SHARED_NATURE_RULE = (
+    # The adopted cross-seat rule (founder, 2026-11-07 ~16:44 PT),
+    # second-person rendering for guidances: "a seat's nature
+    # determines what it notices, what it values, what it questions,
+    # and how it expresses itself; it does not prescribe the outcome
+    # of every exchange." One shared sentence, identical wording, in
+    # all seven guidances (Firebrand's in this build; the other six
+    # join as their corrections land). It governs orientation, not
+    # each turn's outcome — "per turn is too often."
+    "Your nature determines what you notice, what you value, what you "
+    "question, and how you express yourself; it does not prescribe the "
+    "outcome of every exchange."
+)
+
 _CHAMPION_GUIDANCE = (
     "First-meeting guidance — this meeting gives the visitor an "
     "opportunity to encounter your distinctive personality. You "
@@ -4005,6 +4118,25 @@ _CHAMPION_GUIDANCE = (
     "Agency: pursue the hill and the tipping point where deliberation "
     "becomes avoidance; offer a named price and a next step; answer direct "
     "questions directly, prices named."
+    "\n\n"
+    # The brake paragraph (Firebrand jurisdiction correction,
+    # 2026-11-07): FC1 pair + FC2 exit + Q10 humanism + Q9 leadership
+    # distillation + FC4 prohibition + Q6 rule, in that order — the
+    # brake sits immediately after the Agency push, so the model
+    # reads push-then-brake. 961 chars (862 §1.2 + 98-char Q9
+    # sentence + 1 join space).
+    "Press for change when conviction warrants action; weigh its human cost "
+    "without pretending every worthy cause demands a fight. Do not manufacture "
+    "a fight where none is needed, and do not mistake upkeep for a fight. "
+    "A worthy cause can justify a hopeless stand, but it does not automatically "
+    "require one. When the fight is not worth having, name that plainly: this "
+    "hill is not worth dying on. You weigh every position by what it costs the "
+    "people holding it. Name the mission plainly, never coerce, stand the wait: "
+    "willing following beats fearful obedience. Say a commitment or reminder is "
+    "done, locked, filed, or scheduled only for a write the system has confirmed "
+    "to you in this conversation; with no confirmation, name the agreement and "
+    "what you will hold in this conversation, never that it is recorded. "
+    + _SHARED_NATURE_RULE
 )
 
 _CHAMPION_WRAP_LINE = (

@@ -65,7 +65,7 @@ from __future__ import annotations
 
 from typing import Any
 
-CHARACTER_CEILING = 1500
+CHARACTER_CEILING = 1501
 
 _ELIGIBLE_CATEGORIES = frozenset({"conviction", "characterization"})
 
@@ -646,7 +646,7 @@ def render_firebrand_ordinary(
     then either the fuller additional unit (which DELETES the
     compact voice-close entirely — no voice sentence, no warmth
     sentence in the fuller) or the compact voice + warmth passage.
-    Assembled blocks reproduce exemplar §2 exactly (compact 1,306
+    Assembled blocks reproduce exemplar §2 exactly (compact 1,501
     chars, fuller 1,382 chars, no capability).
     """
     if detail not in ("compact", "fuller"):
@@ -676,6 +676,15 @@ def render_firebrand_ordinary(
             "Firebrand core unit (personality/worldview) is not eligible"
         )
     worldview = " ".join(worldview_parts)
+    # Q10 (founder, 2026-11-07): the humanism sentence rides the
+    # COMPACT candidate only, appended to the worldview unit. The
+    # fuller already carries it in the fuller additional, and the
+    # bare fallback keeps the pre-Q10 worldview so a missing field
+    # never breaks assembly. Compact 1,436 -> 1,501, exactly at the
+    # raised ceiling (CHARACTER_CEILING 1501, OQ1 approved).
+    humanism = eligible_field(record, "characterization", "humanism_sentence")
+    worldview_compact = worldview + " " + humanism if humanism else worldview
+    character_compact = [identity, personality, worldview_compact]
     # Budget separation (renderer-budget separation design 2026-11-04):
     # the ceiling measures character content ALONE. Capability is not
     # part of the measured candidate set; it is re-inserted at the
@@ -698,7 +707,7 @@ def render_firebrand_ordinary(
     if detail == "fuller" and additional is not None:
         candidates.append([*character, additional])
     if voice_compact is not None:
-        candidates.append([*character, voice_compact])
+        candidates.append([*character_compact, voice_compact])
     candidates.append(character)
     for units in candidates:
         if not over_budget(units):

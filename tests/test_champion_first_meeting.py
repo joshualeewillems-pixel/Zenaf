@@ -327,6 +327,42 @@ def test_frame_sizes_fit_the_voice_builder_cap():
         assert _EXTRA_INSTRUCTIONS_CAP - len(text) >= 300, name
 
 
+def test_composed_engage_frame_fits_with_all_seats_met():
+    """G1 (Firebrand, 2026-11-07): the RUNTIME-composed engage frame
+    — the tightest figure in the design — stays under the
+    extra-instructions cap with >= 300 chars headroom when all six
+    other seats are met (the naming note grows ~20 chars per met
+    seat). Measured post-build (guidance paragraph + Q9 sentence +
+    companion): 8,690 chars, 310 headroom. The stored-frame test
+    above does not cover this: the composed frame is what the model
+    actually receives."""
+    import dataclasses
+
+    definition = _definition()
+    all_met = dataclasses.replace(
+        definition,
+        met_seats=(
+            "conductor",
+            "ambassador",
+            "maverick",
+            "guardian",
+            "mentor",
+            "skeptic",
+        ),
+    )
+    runtime = ENC.EncounterRuntime(all_met)
+    frame = runtime._engage_frame()
+    assert len(frame) < _EXTRA_INSTRUCTIONS_CAP
+    assert _EXTRA_INSTRUCTIONS_CAP - len(frame) >= 300, len(frame)
+    # The brake paragraph rides the composed frame (push-then-brake).
+    assert "Do not manufacture a fight where none is needed" in frame
+    assert "this hill is not worth dying on" in frame
+    assert (
+        "Name the mission plainly, never coerce, stand the wait: "
+        "willing following beats fearful obedience." in frame
+    )
+
+
 # ------------------------------------------- restart / supersede (2026-10-28)
 #
 # DECISION (Joshua, 2026-10-28): prior-run claims on restart use

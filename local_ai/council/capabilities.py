@@ -132,6 +132,13 @@ class Capability:
     #: Human-readable prerequisite/eligibility note. Always present:
     #: it is the third field, and it is what a gated rendering quotes.
     prerequisite_note: str = ""
+    #: Action-honesty note (Firebrand FC4 companion, 2026-11-07):
+    #: one sentence appended to the capability's own status line
+    #: when set and the capability is currently usable — so the
+    #: note rides ONLY where the workflow is actually available,
+    #: never on a planned or gated line. The field is optional and
+    #: defaults to ""; the rendering rule is part of _render_lines.
+    prompt_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -361,6 +368,10 @@ CAPABILITIES: tuple[Capability, ...] = (
             "Signed-in account; the visitor chooses — naming one "
             "does not create it."
         ),
+        # FC4 companion (2026-11-07): the note rides the commitments
+        # line when — and only when — the workflow is usable, so a
+        # signed-out or gated rendering never carries it.
+        prompt_note="Naming one does not create it.",
     ),
     Capability(
         id="followthrough_nudges",
@@ -762,7 +773,15 @@ def _render_lines(seat: str | None, state: VisitorState) -> list[str]:
         head = f"- {cap.name}"
         if cap.detail:
             head += f" ({cap.detail})"
-        lines.append(f"{head} — {_status_text(cap, state)}")
+        line = f"{head} — {_status_text(cap, state)}"
+        # FC4 companion: the prompt_note rides ONLY a usable line —
+        # never a planned, gated, or limited-experimental one. The
+        # "available" wording in _status_text is what a signed-in
+        # visitor sees; the note corrects the reading that naming
+        # creates the thing.
+        if cap.prompt_note and currently_usable(cap, state):
+            line += f". {cap.prompt_note}"
+        lines.append(line)
     return lines
 
 

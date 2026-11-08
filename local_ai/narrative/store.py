@@ -1132,6 +1132,7 @@ class NarrativeStore:
         deferred_kind: str,
         evidence_signature: str,
         evidence_texts: list[dict] | None = None,
+        strand_weights: dict | None = None,
     ) -> NarrativeThread:
         """Records-first birth (increment A §6): create a nascent
         thread, attach its founding evidence, and record the owed
@@ -1141,12 +1142,15 @@ class NarrativeStore:
         retitle (retitling on prose completion is later work).
         ``evidence_texts`` are the verbatim texts the worker needs
         for its prompt (prompt inputs, not evidence rows).
+        ``strand_weights`` is the founding cluster's aggregate
+        (strand-key-keyed); None (the default) births the thread
+        weightless, as before.
         """
         if origin not in THREAD_ORIGINS:
             raise ValueError(f"unknown thread origin: {origin!r}")
         if deferred_kind not in ("birth", "extension"):
             raise ValueError(f"unknown deferred kind: {deferred_kind!r}")
-        weights = _validate_strand_weights(None)
+        weights = _validate_strand_weights(strand_weights)
         cast_rows = _validate_cast(None)
         now = _utcnow()
         thread = NarrativeThread(
@@ -1281,6 +1285,36 @@ class NarrativeStore:
                 "UPDATE narrative_threads SET title = ?, updated_at = ? "
                 "WHERE id = ? AND user_id = ?",
                 (title, _utcnow(), thread_id, user_id),
+            )
+            self._conn.commit()
+            row = self._require_thread(user_id, thread_id)
+        return _row_to_thread(row)
+
+    def set_thread_strand_weights(
+        self, user_id: str, thread_id: str, weights: dict | None
+    ) -> NarrativeThread:
+        """Replace a thread's strand weights with a recomputed aggregate.
+
+        Used by derivation's extension path (founder ruling Q3): when
+        new evidence extends a live thread, the thread's weights are
+        recomputed from all attached evidence and written here. The
+        value passes _validate_strand_weights — strand keys only,
+        unknown keys refused. Passing None clears the weights back
+        to {} (a thread with no weighed evidence is weightless,
+        never invented).
+        """
+        validated = _validate_strand_weights(weights)
+        with self._lock:
+            self._require_thread(user_id, thread_id)
+            self._conn.execute(
+                "UPDATE narrative_threads SET strand_weights_json = ?, "
+                "updated_at = ? WHERE id = ? AND user_id = ?",
+                (
+                    json.dumps(validated, ensure_ascii=False),
+                    _utcnow(),
+                    thread_id,
+                    user_id,
+                ),
             )
             self._conn.commit()
             row = self._require_thread(user_id, thread_id)

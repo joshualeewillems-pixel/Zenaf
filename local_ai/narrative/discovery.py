@@ -186,6 +186,29 @@ def discover(
     )
 
 
+def _mean_parent_weights(
+    weights_list: list[dict[str, float] | None],
+) -> dict[str, float]:
+    """Mean of parent threads' key-keyed weights (discovery birth).
+
+    Only parents carrying weights contribute; two weightless parents
+    yield {} — the discovery thread is born weightless, never with
+    an invented vector. The mean is renormalized to sum 1.0; strands
+    with zero weight are omitted, matching the birth aggregate.
+    """
+    present = [w for w in weights_list if w]
+    if not present:
+        return {}
+    keys = sorted({key for w in present for key in w})
+    mean = {
+        key: sum(w.get(key, 0.0) for w in present) / len(present) for key in keys
+    }
+    total = sum(mean.values())
+    if total <= 0:
+        return {}
+    return {key: value / total for key, value in mean.items() if value > 0}
+
+
 def propose(
     store: NarrativeStore,
     user_id: str,
@@ -222,6 +245,12 @@ def propose(
                 "coincidence — provisional until verdict"
             ),
             evidence_refs=refs,
+            strand_weights=_mean_parent_weights(
+                [
+                    title_a.strand_weights if title_a else None,
+                    title_b.strand_weights if title_b else None,
+                ]
+            ),
         )
         threads.append(thread)
     return threads

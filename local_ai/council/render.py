@@ -632,6 +632,51 @@ def render_gardener_ordinary(
     return chosen
 
 
+# Middle rung for the Firebrand compact (naming-gap fix, 2026-11-07).
+#
+# The full compact sits exactly at the ceiling (1,501/1,501), so any
+# authorized name pushes it over and the ladder used to fall straight
+# to the bare 3-unit block — a NAMED Firebrand lost the voice unit
+# AND the Q10 humanism sentence. This deliberately authored unit is
+# the rung between the full compact and the bare block: a condensed
+# voice passage that keeps the name, the humanism sentence (which
+# rides the worldview unit, not this one), and the behavioral
+# principles verbatim. 511 chars; the rung totals 1,490 with a
+# 60-char name (the longest the store permits — MAX_PERSONAL_NAME_LEN
+# in local_ai/you_profile/store.py), 11 chars of margin, and fits
+# names up to 71 chars.
+#
+# Provenance, sentence by sentence:
+# - Voice essence (authored for this rung, condensing the record's
+#   voice_and_humor + warmth fields): short declarative sentences,
+#   plain words, dry brief humor, sparing warmth.
+# - FC2 exit, verbatim from _CHAMPION_GUIDANCE (encounter.py):
+#   "When the fight is not worth having, name that plainly: this
+#   hill is not worth dying on."
+# - Q9 leadership distillation, verbatim from _CHAMPION_GUIDANCE:
+#   "Name the mission plainly, never coerce, stand the wait:
+#   willing following beats fearful obedience." This is the FIRST
+#   Talk placement of the Q9 sentence — the Q9 record fields are
+#   record-only and the sentence previously rendered on the meeting
+#   path only (rendering placement in Talk was a pending founder
+#   decision; this rung places it for named Firebrand only).
+# - Q6 nature rule, verbatim from _SHARED_NATURE_RULE (encounter.py).
+# The FC1 guidance needs no separate sentence here: the temperament
+# sentence and the hopeless-stand qualification already ride the
+# worldview unit this rung keeps whole.
+_FIREBRAND_COMPACT_VOICE_MID = (
+    "You speak in short declarative sentences, in plain words; your "
+    "humor is dry and brief, your warmth sparing — acknowledge "
+    "briefly, then move to the next concrete step. When the fight is "
+    "not worth having, name that plainly: this hill is not worth "
+    "dying on. Name the mission plainly, never coerce, stand the "
+    "wait: willing following beats fearful obedience. Your nature "
+    "determines what you notice, what you value, what you question, "
+    "and how you express yourself; it does not prescribe the outcome "
+    "of every exchange."
+)
+
+
 def render_firebrand_ordinary(
     record: dict,
     authorized_name: str | None = None,
@@ -648,12 +693,25 @@ def render_firebrand_ordinary(
     sentence in the fuller) or the compact voice + warmth passage.
     Assembled blocks reproduce exemplar §2 exactly (compact 1,501
     chars, fuller 1,382 chars, no capability).
+
+    Middle rung (naming-gap fix, 2026-11-07): the full compact sits
+    exactly at the ceiling, so any authorized name pushes it over.
+    When a name IS present, the ladder tries the authored middle
+    rung (identity-with-name, personality, worldview + humanism,
+    condensed voice) before the bare 3-unit block — a named
+    Firebrand never loses voice and humanism to a name. The rung
+    is name-gated, so unnamed assembly is byte-identical to
+    before (compact → bare ladder unchanged, R3 pin intact).
     """
     if detail not in ("compact", "fuller"):
         raise ValueError(f"Unknown detail: {detail!r}")
     capability = _validated_capability(resolved_capability)
 
     identity = _five_seat_identity_unit(record, authorized_name)
+    # Name-gate for the middle rung: mirrors the identity unit's own
+    # rule (a whitespace name is not authorized). The identity call
+    # above already raised TypeError for a non-string name.
+    _named = bool(authorized_name and authorized_name.strip())
     personality = eligible_field(record, "characterization", "personality")
     worldview_parts = [
         eligible_field(record, "characterization", "conviction_paraphrase"),
@@ -708,6 +766,13 @@ def render_firebrand_ordinary(
         candidates.append([*character, additional])
     if voice_compact is not None:
         candidates.append([*character_compact, voice_compact])
+    if _named:
+        # Middle rung (naming-gap fix, 2026-11-07 — see the constant
+        # above for provenance): only when a name is present. The
+        # full compact is exactly at the ceiling, so a name pushes it
+        # over; without this rung the ladder fell straight to the bare
+        # 3-unit block and a NAMED Firebrand lost voice + humanism.
+        candidates.append([*character_compact, _FIREBRAND_COMPACT_VOICE_MID])
     candidates.append(character)
     for units in candidates:
         if not over_budget(units):

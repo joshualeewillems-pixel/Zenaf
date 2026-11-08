@@ -74,6 +74,7 @@ from local_ai.council.canonical.firebrand import FIREBRAND_RECORD
 from local_ai.council.render import (
     CHARACTER_CEILING,
     AssemblyError,
+    _FIREBRAND_COMPACT_VOICE_MID,
     eligible_field,
     eligible_fields,
     render_bear_ordinary,
@@ -147,6 +148,27 @@ PERSONALITY = (
     "will cost, and the moment deliberation tips into avoidance."
 )
 VOICE_COMPACT_MARKER = "You speak in short declarative sentences"
+# Middle rung (naming-gap fix, 2026-11-07): the authored condensed
+# voice unit. Q9/Q6/FC2 are quoted verbatim from _CHAMPION_GUIDANCE
+# / _SHARED_NATURE_RULE (encounter.py); the voice essence condenses
+# the record's voice_and_humor + warmth fields. The rung is the
+# first Talk placement of the Q9 sentence.
+Q9_SENTENCE = (
+    "Name the mission plainly, never coerce, stand the wait: "
+    "willing following beats fearful obedience."
+)
+NATURE_RULE = (
+    "Your nature determines what you notice, what you value, what you "
+    "question, and how you express yourself; it does not prescribe the "
+    "outcome of every exchange."
+)
+FC2_EXIT = (
+    "When the fight is not worth having, name that plainly: this hill "
+    "is not worth dying on."
+)
+VOICE_MID_MARKER = "your warmth sparing — acknowledge briefly"
+FULL_VOICE_ONLY_MARKER = "strategy is shop talk"
+MAX_PERSONAL_NAME_LEN = 60  # local_ai/you_profile/store.py
 WARMTH_ADOPTED = (
     "Your warmth is sparing: acknowledge briefly, then move to the "
     "next concrete step. Let circumstance set the register: gather "
@@ -647,24 +669,27 @@ def test_renderer_naming_authorized_only():
     )
     assert post[0].endswith("The visitor calls you Mara.")
     assert post[0].startswith(CANONICAL_MARKER)
-    # DESIGN GAP (Firebrand S1, 2026-11-07 — needs a founder ruling,
-    # NOT papered over): the compact sits exactly at the ceiling
-    # (1,501/1,501 after Q10), so an authorized name (+28 chars in
-    # the identity unit) pushes the full compact candidate over and
-    # the renderer falls back to the bare 3-unit block — a NAMED
-    # Firebrand loses the voice unit AND the Q10 humanism sentence.
-    # Pre-build the compact was 1,436, so a name fit and post[1:]
-    # == pre[1:]; post-build it does not. The design did not measure
-    # the named case. Pinned here so the degradation cannot drift
-    # silently; the fix is a founder call — a further ceiling raise,
-    # a middle candidate rung (humanism without voice), or accepting
-    # the degradation for named visitors.
-    assert len(post) == 3
-    assert len(_joined(post)) == 857
+    # NAMING GAP — FIXED (2026-11-07, middle rung): the compact sat
+    # exactly at the ceiling (1,501/1,501 after Q10), so an authorized
+    # name (+28 chars for "Mara") pushed the full compact candidate
+    # over and the renderer fell back to the bare 3-unit block — a
+    # NAMED Firebrand lost the voice unit AND the Q10 humanism
+    # sentence. The ladder now tries the authored middle rung
+    # (identity-with-name, personality, worldview + humanism,
+    # condensed voice carrying Q9, FC2, Q6 verbatim) before the bare
+    # block. post[1:] is NOT pre[1:] anymore: the fourth unit is the
+    # condensed rung, not the full voice + warmth passage.
+    assert len(post) == 4
+    assert len(_joined(post)) == 1434
     assert post[1] == pre[1]  # personality unchanged
-    assert post[2] + " " + HUMANISM_SENTENCE == pre[2]  # pre-Q10 worldview
-    assert HUMANISM_SENTENCE not in _joined(post)
-    assert VOICE_COMPACT_MARKER not in _joined(post)
+    assert post[2] == pre[2]  # worldview + humanism unchanged
+    assert post[3] == _FIREBRAND_COMPACT_VOICE_MID
+    assert HUMANISM_SENTENCE in _joined(post)
+    assert Q9_SENTENCE in _joined(post)
+    assert NATURE_RULE in _joined(post)
+    assert FC2_EXIT in _joined(post)
+    assert VOICE_MID_MARKER in _joined(post)
+    assert FULL_VOICE_ONLY_MARKER not in _joined(post)
     # Empty/whitespace name = not authorized.
     assert render_firebrand_ordinary(
         FIREBRAND_RECORD, authorized_name="  ", detail="compact"
@@ -679,6 +704,78 @@ def test_renderer_naming_authorized_only():
     # A non-string name is a contract violation, not a fallback.
     with pytest.raises(TypeError):
         render_firebrand_ordinary(FIREBRAND_RECORD, authorized_name={"name": "Mara"})
+
+
+def test_renderer_naming_middle_rung_cases():
+    # No name → the full compact, exactly as before. Q9 is ABSENT
+    # here by design: the Q9 sentence lives in the meeting guidance
+    # only, and its Talk placement for the UNNAMED case is still a
+    # pending founder decision — the middle rung places it for a
+    # NAMED Firebrand only (see the constant's provenance comment
+    # in render.py).
+    pre = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
+    assert len(pre) == 4
+    assert len(_joined(pre)) == 1501
+    assert HUMANISM_SENTENCE in _joined(pre)
+    assert FULL_VOICE_ONLY_MARKER in _joined(pre)
+    assert Q9_SENTENCE not in _joined(pre)
+    # Typical names → middle rung, never the bare block. For EACH
+    # case: not the bare 3-unit block, Q9 verbatim, humanism
+    # present, the chosen name present.
+    for name, total in (("Mara", 1434), ("Ash", 1433), ("Beatrice", 1438)):
+        named = render_firebrand_ordinary(
+            FIREBRAND_RECORD, authorized_name=name, detail="compact"
+        )
+        joined = _joined(named)
+        assert len(named) == 4, name
+        assert len(joined) == total, name
+        assert len(joined) <= CHARACTER_CEILING, name
+        assert named[3] == _FIREBRAND_COMPACT_VOICE_MID, name
+        assert f"The visitor calls you {name}." in joined, name
+        assert HUMANISM_SENTENCE in joined, name
+        assert Q9_SENTENCE in joined, name
+        assert NATURE_RULE in joined, name
+        assert FC2_EXIT in joined, name
+        assert VOICE_MID_MARKER in joined, name
+        assert FULL_VOICE_ONLY_MARKER not in joined, name
+    # Long permitted names: the store caps personal_name at 60 chars
+    # (MAX_PERSONAL_NAME_LEN). At the cap the rung still fits with
+    # 11 chars of margin; one over the cap still fits on margin.
+    for n, total in ((59, 1489), (60, 1490), (61, 1491)):
+        long_name = "X" * n
+        named = render_firebrand_ordinary(
+            FIREBRAND_RECORD, authorized_name=long_name, detail="compact"
+        )
+        joined = _joined(named)
+        assert len(named) == 4, n
+        assert len(joined) == total, n
+        assert f"The visitor calls you {long_name}." in joined, n
+        assert Q9_SENTENCE in joined, n
+        assert HUMANISM_SENTENCE in joined, n
+    # Boundary: the rung fits names up to 71 chars (exactly at the
+    # ceiling); at 72 it overflows and the ladder falls to the bare
+    # block. Names over 60 are rejected at the store, so the 72-char
+    # case is unreachable via the authorized path — it pins the
+    # ladder floor, not a supported case.
+    at_limit = render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 71, detail="compact"
+    )
+    assert len(at_limit) == 4
+    assert len(_joined(at_limit)) == 1501
+    assert Q9_SENTENCE in _joined(at_limit)
+    over_limit = render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 72, detail="compact"
+    )
+    assert len(over_limit) == 3
+    assert Q9_SENTENCE not in _joined(over_limit)
+    assert HUMANISM_SENTENCE not in _joined(over_limit)
+    # Fuller is unaffected by naming at any permitted length.
+    assert len(_joined(render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="Mara", detail="fuller"
+    ))) == 1410
+    assert len(_joined(render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 60, detail="fuller"
+    ))) == 1466
 
 
 def test_renderer_capability_gating():

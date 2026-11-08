@@ -149,10 +149,12 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
             "demanding sameness; different perspectives hold legitimate, incomplete truths."
         ),
         "question": "What can bring us together?",
-        "shadow": (
-            "Appeasement: translating each side into what it wants to hear, "
-            "until nobody has actually met."
-        ),
+        # CC5 (2026-11-07, founder ruling): the ambassador carries NO
+        # "shadow" entry — the live "Appeasement: translating each side
+        # into what it wants to hear, until nobody has actually met."
+        # line was an UNADOPTED candidate (crane.py:587) and is removed,
+        # not replaced. philosophy_prompt_lines omits the Shadow line
+        # when absent (conditional since FC7).
         "tension": (
             "Accuses the Champion of manufacturing enemies; the Skeptic suspects the "
             "Ambassador prefers harmony to honesty."

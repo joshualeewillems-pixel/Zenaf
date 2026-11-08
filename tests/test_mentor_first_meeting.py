@@ -348,7 +348,8 @@ def test_fellowship_reference_sketches_shared_doctrine_computed_note():
     # drafting formula).
     for role in ("Firebrand", "Bear", "Fox", "Crane", "Weaver", "Raven"):
         assert role in ref, role
-    assert "She thinks I delay. I think she harvests early." in ref
+    # FC8 (2026-11-07): Firebrand is "he" in the Gardener's reference.
+    assert "He thinks I delay. I think he harvests early." in ref
     assert "which walls are shelter and which are starvation" in ref
     assert "I defend the trellis, and he questions it" in ref
     assert "She won't let me get away with that" in ref

@@ -24,6 +24,12 @@ they are systematically misgendered there too (a known out-of-scope gap
 needing a founder ruling on which build owns them), and extending the
 audit to them would fail by design.
 
+T9 — CC6 fellowship reference (2026-11-07, founder ruling): Bear is
+she and Raven is she in Crane's own fellowship reference; Firebrand
+is he there. The two lowercase "appeasement" prose uses in that
+reference stay per the Crane design §12 Q5 residual, so the test
+pins their count (== 2) rather than asserting absence.
+
 The Fox has no fixed set (fox.py: "No fixed set — different characters
 call the Fox he, she, or they"): the test asserts only that every Fox
 pronoun in the slices is one of {he, she, they} — it never requires any
@@ -236,3 +242,26 @@ def test_champion_fellowship_reference_genders_bear_crane_raven():
     assert "She audits whether a conviction is earned" in ref
     assert "more than she" in ref
     assert "She checks the conviction; the decision stays mine" in ref
+
+
+def test_crane_fellowship_reference_genders_bear_raven_firebrand():
+    """T9 (CC6): Bear is she and Raven is she in Crane's own
+    fellowship reference; Firebrand is he there (FC8). (Crane
+    himself is still "she/her" in the OTHER seats' fellowship
+    references — the known out-of-scope gap, same as Bear/Raven
+    there — so this test audits only Crane's own reference.
+    The two lowercase "appeasement" prose uses in this reference
+    stay per the Crane design §12 Q5 residual — no ruling covers
+    them — so this test asserts pronouns, never "appeasement"
+    absence; the count == 2 pins the residual exactly.)"""
+    ref = REFERENCES["ambassador"]
+    assert "She sets the boundary" in ref
+    assert "the door she keeps" in ref
+    assert "She says I'm confusing" in ref
+    assert "Sometimes she's right" in ref
+    assert "She says what is actually true" in ref
+    assert "her examination" in ref
+    assert "She thinks I'm preserving comfort" in ref
+    assert "she's confusing examination" in ref
+    assert "He names a side plainly" in ref
+    assert ref.lower().count("appeasement") == 2

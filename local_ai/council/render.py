@@ -972,7 +972,7 @@ def render_crane_ordinary(
     or the humanitarian + compact voice (single fused sentence).
     Hearing + humanitarian are shared post units: ineligible →
     AssemblyError, never dropped. Assembled blocks reproduce
-    exemplar §2 exactly (compact 1,034 chars, fuller 1,481 chars,
+    exemplar §2 exactly (compact 1,283 chars, fuller 1,481 chars,
     no capability).
     """
     if detail not in ("compact", "fuller"):

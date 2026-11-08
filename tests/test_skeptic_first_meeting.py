@@ -277,10 +277,12 @@ def test_readback_invariants_and_parser_contract():
     # Position, not summary; separation is the read.
     assert "take a POSITION" in readback
     assert "what they said from what they concluded" in readback
-    # No invented training.
+    # No invented training (Crane correction §9: Gardener's prohibition,
+    # verbatim — replaces the training sentence; Raven's own verdict
+    # round has not started and may revisit her line).
     assert (
-        "Nothing from this meeting trains anything until it goes "
-        "through review like everything else" in readback
+        "Never claim anything here trains you or is kept as training — an "
+        "impression is a proposal, never a filed claim." in readback
     )
     # Parser contract: delimiter (via the engage glue) + Strands line.
     definition = _definition()

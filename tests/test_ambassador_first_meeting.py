@@ -264,9 +264,9 @@ def test_integrity_invariants_verbatim():
     assert "a blanket hedge naming nothing says nothing" in script.readback_frame
     assert "Three to five sentences." in script.readback_frame
     assert "The revised impression is three to five sentences." in script.correction_frame
-    # No invented training.
-    assert "Claim no knowledge of this visitor from training" in script.readback_frame
-    assert "nothing from this meeting trains anything until it goes through review" in script.readback_frame
+    # No invented training (Crane correction §9: Gardener's prohibition,
+    # verbatim — replaces the training claim).
+    assert "Never claim anything here trains you or is kept as training — an impression is a proposal, never a filed claim." in script.readback_frame
     # Strands bookkeeping line, exactly the Weaver form, both read frames.
     strands_form = (
         "'Strands: <names>' listing the one or two of the seven strands "
@@ -352,10 +352,20 @@ def test_fallback_cap_combined_fit_reported_honestly():
     is reported alongside it in the PR description, and the slice
     migrates to the uncapped section after PR #255 merges rather than
     stacking the reference on top of this frame. Neither number is a
-    claim of a fit that was not measured."""
+    claim of a fit that was not measured.
+
+    Crane correction (2026-11-07, design §18.1): the approved design
+    grows the composed engage frame (8,015 -> 8,748 post-rebase; 8,893
+    pre-rebase while the §12 shadow sentence still stands), so the
+    composed frame + reference + cue no longer fits the 12,500
+    fallback cap — and it does not need to: the reference rides the
+    uncapped section, and the binding cap is 9,000, which the composed
+    frame fits (sibling test). The overflow is measured here, not hidden.
+    """
     definition = _definition()
     assert len(definition.engage_frame) + 3739 + 371 <= 12500
-    assert len(_composed_engage(definition)) + 3739 + 371 <= 12500
+    combined = len(_composed_engage(definition)) + 3739 + 371
+    assert combined > 12500, combined
 
 
 # ---------------------------------------------------------------------------

@@ -177,8 +177,9 @@ INVARIANTS = [
     ("Ground the impression ONLY in their substantive material", "readback"),
     # No invented training.
     ("Never invent training they don't have", "readback"),
-    # Recognition note: proposal, never a filed claim.
-    ("A first impression is a proposal, never a filed claim", "readback"),
+    # Recognition note: proposal, never a filed claim (Crane correction
+    # §9: Gardener's prohibition, verbatim — replaces the old form).
+    ("Never claim anything here trains you or is kept as training — an impression is a proposal, never a filed claim", "readback"),
     # No-checklist principle, exact sentence.
     ("Don't reduce your friends to a feature checklist.", "guidance"),
 ]

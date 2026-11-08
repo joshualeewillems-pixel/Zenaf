@@ -73,10 +73,15 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     assert "First-meeting openness right now" in reference
     assert reference.splitlines()[-1].startswith("First-meeting openness right now")
     # Capped frames: byte-identical budget to before the pilot.
-    # Engage frame 8,375 chars, 625 headroom vs the 9,000 cap
+    # Engage frame 8,347 chars, 653 headroom vs the 9,000 cap
     # (MIN_HEADROOM 30, test_conductor_agency_refinement.py).
     # Re-measured 2026-11-06: the read-back frames lengthened the
     # engage frame (was 7,967) and the cap rose 8000 -> 9000.
+    # Re-measured 2026-11-07 (Gardener S1, G4/D1): the engage frame
+    # is 28 chars shorter — the "Shadow: forcing resolution." slice
+    # line was removed (27 chars + newline); the four pronoun swaps
+    # in the frame net to zero. Not a pilot change: the pilot text
+    # still rides only the uncapped reference.
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     engage_frame = definition.engage_frame
@@ -84,7 +89,7 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) == 8375
+    assert len(engage_frame) == 8347
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage_frame) >= 30
     assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) >= 30
     assert _WEAVER_NATURAL_INTENTION not in turn_frame

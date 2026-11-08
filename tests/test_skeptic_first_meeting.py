@@ -380,7 +380,6 @@ def test_slice_present_verbatim_on_both_frames():
     slice_phrases = (
         "Raven (Skeptic) — Truth through examination.",
         "Asks: What are we assuming?",
-        "Shadow: paralysis and cynicism.",
         "a meaning yielded is not automatically sunk-cost storytelling. (Pair 6.)",
         "certainty is not the claim, evidence and suspicion are the question. (Pair 11.)",
         "I challenge the premise and yield the stewardship decision. (Pair 15.)",

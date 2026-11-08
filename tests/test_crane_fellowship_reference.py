@@ -122,6 +122,24 @@ def test_no_blind_spot_statement_or_scaffolding():
         assert phrase not in ref, phrase
 
 
+def test_bear_and_raven_are_she_in_crane_reference():
+    """CC6 (2026-11-07, founder ruling): Bear is she and Raven is she
+    in Crane's own fellowship reference; Firebrand is he (FC8).
+    (The two lowercase "appeasement" prose uses stay per the Crane
+    design §12 Q5 residual — no ruling covers them.)"""
+    ref = _crane_definition().fellowship_reference
+    assert "She sets the boundary" in ref
+    assert "the door she keeps" in ref
+    assert "She says I'm confusing" in ref
+    assert "Sometimes she's right" in ref
+    assert "She says what is actually true" in ref
+    assert "her examination" in ref
+    assert "She thinks I'm preserving comfort" in ref
+    assert "she's confusing examination" in ref
+    assert "He names a side plainly" in ref
+    assert "He thinks I dodge the naming" in ref
+
+
 def test_no_invented_shared_histories():
     ref = _crane_definition().fellowship_reference
     for phrase in ("shown me", "I used to", "I've learned",

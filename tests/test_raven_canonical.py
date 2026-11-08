@@ -860,17 +860,15 @@ def test_naming_prompt_level_stock_vs_authorized(monkeypatch):
 
 def test_encounter_material_excludes_protected_fields():
     """The encounter's own SCRIPT fields carry no protected §1.7
-    material. The composed definition frames carry exactly ONE known
-    pre-existing draft exception, pinned here so it cannot silently
-    grow: the orientation slice (encounter.py, labeled 'draft, not
-    canonical', PR #254 draft material) that names 'Shadow:
-    paralysis and cynicism.' — the LEGACY shadow, not the adopted
-    one. That draft is unadopted content whose replacement belongs
-    to the separate fellowship-reference review — removing it here
-    would be both a first-encounter behavior change and a content
-    decision, both out of scope for this plan. (Meeting-turn prompts
-    via the shared builder's legacy character block are likewise out
-    of scope, preserved byte-identical by the canonical=False gate.)"""
+    material. The Gardener correction (2026-11-07, founder verdict
+    G4/D1) removed the `Shadow:` label from all seven first-meeting
+    slices system-wide — overriding the earlier scoping that said
+    removal \"belongs to the separate fellowship-reference review\".
+    No `Shadow:` label remains in any meeting frame; the adopted
+    shadow formulation stays protected and appears nowhere in
+    encounter material. (Meeting-turn prompts via the shared builder's
+    legacy character block are likewise out of scope, preserved
+    byte-identical by the canonical=False gate.)"""
     from local_ai.conversation import encounter as ENC
     from local_ai.council import meetings as MT
 
@@ -897,8 +895,9 @@ def test_encounter_material_excludes_protected_fields():
 
     definition = ENC.get_definition(script)
     for frame in (definition.turn_frame, definition.engage_frame):
-        # Exactly the one documented draft-reference exception.
-        assert frame.count("Shadow: paralysis and cynicism.") == 1
+        # Gardener correction (2026-11-07, G4/D1): no Shadow: label
+        # remains in any first-meeting slice.
+        assert frame.count("Shadow: paralysis and cynicism.") == 0
         assert "draft, not canonical" in frame
         # The ADOPTED shadow appears nowhere in encounter material.
         assert "finds deception where none exists" not in frame

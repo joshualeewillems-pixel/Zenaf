@@ -78,6 +78,11 @@ WEAVER_RECORD: dict = {
                 "2026-10-28 by code-verified correction."
             ),
         },
+        "pronouns": {
+            "text": "she / her",
+            "standing": "adopted",
+            "category": "identity",
+        },
     },
     "philosophy": {
         "core_conviction": {

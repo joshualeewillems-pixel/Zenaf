@@ -13,21 +13,23 @@ every test is deterministic prompt inspection.
 
 Scope notes (read before "fixing" a failure by weakening a test):
 
-- The legacy ``philosophy_prompt_lines`` function is INTENTIONALLY
-  untouched (frozen rollback source). Its output still contains
-  shadow/tension lines; the canonical branch bypasses it for
+- The legacy ``philosophy_prompt_lines`` function is the frozen
+  rollback source — with ONE exception: FC7 (2026-11-07, founder
+  ruling) removed the Champion's superseded "Martyrdom" shadow line
+  from the shared source dict, so the function now renders 3 lines
+  for the Champion (ideal, question, tension — no Shadow line) and
+  4 for every other seat. The canonical branch bypasses it for
   ordinary Firebrand turns instead of modifying it. There is
   deliberately NO test asserting it returns ideal+question only.
 - Meeting turns (canonical=False) keep the exact legacy assembly,
   including its philosophy lines. The encounter-eligibility test
   pins the encounter's OWN material (scripts + frames): the
-  script texts carry no protected formulations, while the
-  composed definition frames carry exactly ONE known pre-existing
-  pattern — the definition line "Shadow: martyrdom." — the
-  LEGACY label word, not the adopted picture-record shadow
-  formulation. That meeting-path material is out of scope for
-  this plan (ordinary renderer only) and is pinned here so it
-  cannot silently grow.
+  script texts carry no protected formulations, and the composed
+  definition frames carry NO "Shadow" / "Martyrdom" line at all —
+  the Gardener correction (G4/D1) removed the "Shadow: martyrdom."
+  guidance label, and FC7 removed the "Martyrdom" philosophy line.
+  The adopted picture-record shadow formulation appears nowhere in
+  encounter material.
 - The §2 rendering form of the ideal is a PARAPHRASED conviction
   sentence ("You ask whether a commitment is deserved before you
   ask whether it can be won — ..."): the verbatim ideal ("Courage through
@@ -735,16 +737,14 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
     monkeypatch.setattr(R, "FIREBRAND_CANONICAL_CUTOVER", False)
     lines, _ = build_voice_prompt("u1", "champion", "hello", [], mode="base")
     assert lines == _legacy_minimal_prompt(monkeypatch)
-    # EXPLICIT legacy assertion: the old shadow and tension lines
-    # are PRESENT exactly in the OFF branch. They are unacceptable
-    # in the canonical branch and intentional here — the rollback
-    # branch is frozen, not sanitized.
+    # FC7 (2026-11-07, founder ruling): the superseded "Martyrdom"
+    # shadow line was REMOVED from the shared source dict, so it is
+    # absent from the OFF branch too — the oracle above is built from
+    # the same live pieces, so the equality still holds. The tension
+    # line is unchanged and still present exactly.
     joined = _joined(lines)
-    assert (
-        "Shadow — your characteristic failure mode, which the Skeptic "
-        "may name: Martyrdom: conflating opposition with evil, "
-        "manufacturing enemies."
-    ) in joined
+    assert "Martyrdom" not in joined
+    assert "Shadow" not in joined
     assert (
         "Live tension with the other seats: Accuses the Ambassador "
         "of cowardice; the Ambassador accuses the Champion of "
@@ -891,17 +891,15 @@ def test_naming_prompt_level_stock_vs_authorized(monkeypatch):
 
 def test_encounter_material_excludes_protected_fields():
     """The encounter's own SCRIPT fields carry no protected §1.7
-    material. The composed definition frames carry exactly ONE known
-    pre-existing pattern, pinned here so it cannot silently grow:
-    the definition line 'Shadow: martyrdom.' — the LEGACY label
-    word, not the adopted picture-record shadow formulation. That
-    meeting-path material is unadopted content whose replacement
-    belongs to the separate fellowship-reference review — removing
-    it here would be both a first-encounter behavior change and a
-    content decision, both out of scope for this plan. (Meeting-turn
-    prompts via the shared builder's legacy character block are
-    likewise out of scope, preserved byte-identical by the weave
-    gate.)"""
+    material. The Gardener correction (2026-11-07, founder verdict
+    G4/D1) removed the `Shadow:` label from all seven first-meeting
+    slices system-wide — overriding the earlier scoping that said
+    removal \"belongs to the separate fellowship-reference review\".
+    No `Shadow:` label remains in any meeting frame; the adopted
+    shadow formulation stays protected and appears nowhere in
+    encounter material. (Meeting-turn prompts via the shared builder's
+    legacy character block are likewise out of scope, preserved
+    byte-identical by the weave gate.)"""
     from local_ai.conversation import encounter as ENC
     from local_ai.council import meetings as MT
 
@@ -932,8 +930,15 @@ def test_encounter_material_excludes_protected_fields():
 
     definition = ENC.get_definition(script)
     for frame in (definition.turn_frame, definition.engage_frame):
-        # Exactly the one documented pre-existing pattern.
-        assert frame.count("Shadow: martyrdom.") == 1
+        # Gardener correction (2026-11-07, G4/D1): no Shadow: label
+        # remains in any first-meeting slice.
+        assert frame.count("Shadow: martyrdom.") == 0
+        # FC7 (2026-11-07, founder ruling): the superseded "Martyrdom"
+        # shadow line is removed from the philosophy lines too — no
+        # "Shadow" and no "Martyrdom" remain in either meeting prompt.
+        assert "Shadow" not in frame
+        assert "Martyrdom" not in frame
+        assert "martyrdom" not in frame
         # The ADOPTED shadow formulation appears nowhere in encounter material.
         assert "needs something worth dying for" not in frame
         assert "what is worth living for" not in frame

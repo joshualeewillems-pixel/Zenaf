@@ -21,18 +21,13 @@ Scope notes (read before "fixing" a failure by weakening a test):
 - Meeting turns (canonical=False) keep the exact legacy assembly,
   including its philosophy lines. The encounter-eligibility test
   pins the encounter's OWN material (scripts + frames): the
-  script texts carry no protected formulations, while the
-  composed definition frames carry exactly TWO known pre-existing
-  patterns, pinned here so they cannot silently grow: the
-  definition line "Shadow: appeasement." AND the frame
-  instruction "Your shadow is appeasement — translating each
-  side into what it wants to hear until nobody has actually
-  met; guard against it, ..." — both UNADOPTED draft content.
-  The shadow verdict (2026-11-01) does NOT change that
-  meeting-path material: the frames still carry the unadopted
-  draft, pinned not fixed, because fixing them is a separate
-  content decision out of scope for this plan (ordinary
-  renderer only).
+  script texts carry no protected formulations, and the composed
+  definition frames carry NO "Shadow" / "Appeasement" line at all —
+  the Gardener correction (G4/D1) removed the "Shadow: appeasement."
+  label, and CC5 (2026-11-07, founder ruling) removed the
+  "Your shadow is appeasement" guidance sentence and the "Appeasement"
+  philosophy line. The adopted picture-record shadow formulation
+  appears nowhere in encounter material.
 - CRANE'S SHADOW IS ADOPTED (2026-11-01, Joshua's widget
   verdict): the record's protected shadow field carries
   standing "adopted" with his formulation verbatim. It is
@@ -807,16 +802,14 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
     monkeypatch.setattr(R, "CRANE_CANONICAL_CUTOVER", False)
     lines, _ = build_voice_prompt("u1", "ambassador", "hello", [], mode="base")
     assert lines == _legacy_minimal_prompt(monkeypatch)
-    # EXPLICIT legacy assertion: the old shadow and tension lines
-    # are PRESENT exactly in the OFF branch. They are unacceptable
-    # in the canonical branch and intentional here — the rollback
-    # branch is frozen, not sanitized.
+    # CC5 (2026-11-07, founder ruling): the superseded "Appeasement"
+    # shadow line was REMOVED from the shared source dict, so it is
+    # absent from the OFF branch too — the oracle above is built from
+    # the same live pieces, so the equality still holds. The tension
+    # line is unchanged and still present exactly.
     joined = _joined(lines)
-    assert (
-        "Shadow — your characteristic failure mode, which the Skeptic "
-        "may name: Appeasement: translating each side into what it "
-        "wants to hear, until nobody has actually met."
-    ) in joined
+    assert "Appeasement" not in joined
+    assert "Shadow" not in joined
     assert (
         "Live tension with the other seats: Accuses the Champion of "
         "manufacturing enemies; the Skeptic suspects the Ambassador "
@@ -957,16 +950,14 @@ def test_naming_prompt_level_stock_vs_authorized(monkeypatch):
 
 def test_encounter_material_excludes_protected_fields():
     """The encounter's own SCRIPT fields carry no protected §1.7
-    material. The composed definition frames carry exactly TWO known
-    pre-existing patterns, pinned here so they cannot silently
-    grow: the definition line 'Shadow: appeasement.' AND the frame
-    instruction 'Your shadow is appeasement — translating each
-    side into what it wants to hear until nobody has actually
-    met; guard against it, ...' — both UNADOPTED draft content.
-    The shadow verdict (2026-11-01) does NOT change that
-    meeting-path material: it is pinned, not fixed, here, because
-    fixing it is a separate content decision out of scope for
-    this plan (ordinary renderer only). (Meeting-turn prompts via
+    material. The composed definition frames carry NO shadow line at
+    all: the "Shadow: appeasement." label was removed by the Gardener
+    correction (G4/D1), and the "Your shadow is appeasement"
+    guidance sentence + the "Appeasement" philosophy line were
+    removed by CC5 (2026-11-07, founder ruling — removal only, the
+    unadopted candidate is never replaced). The shadow verdict
+    (2026-11-01) does NOT change that the adopted shadow wording
+    stays out of encounter material. (Meeting-turn prompts via
     the shared builder's legacy character block are likewise out
     of scope, preserved byte-identical by the canonical gate.)"""
     from local_ai.conversation import encounter as ENC
@@ -998,13 +989,24 @@ def test_encounter_material_excludes_protected_fields():
 
     definition = ENC.get_definition(script)
     for frame in (definition.turn_frame, definition.engage_frame):
-        # Exactly the two documented pre-existing patterns.
-        assert frame.count("Shadow: appeasement.") == 1
-        assert frame.count("Your shadow is appeasement") == 1
+        # Gardener correction (2026-11-07, G4/D1): the Shadow: label is
+        # gone from the slice.
+        assert frame.count("Shadow: appeasement.") == 0
+        # CC5 (2026-11-07, founder ruling): the unadopted "appeasement"
+        # guidance sentence is removed — no "Shadow", "Appeasement",
+        # or "appeasement" remains in either meeting prompt frame.
+        # (The two lowercase "appeasement" prose uses live on in the
+        # fellowship reference — a separate layer, not in these frames
+        # — per the Crane design §12 Q5 residual; do not assert them
+        # absent from the full prompt.)
+        assert frame.count("Your shadow is appeasement") == 0
+        assert "Shadow" not in frame
+        assert "Appeasement" not in frame
+        assert "appeasement" not in frame
         assert (
             "translating each side into what it wants to hear until "
             "nobody has actually met"
-        ) in frame
+        ) not in frame
         # The ADOPTED picture content (candidate A) is NOT presented
         # as an adopted shadow anywhere in encounter material.
         assert "postpones necessary judgment for understanding" not in frame

@@ -50,13 +50,13 @@ def test_reference_names_all_six_other_seats_as_sketches():
     # Sketches adapted from the corrected doc §2, in her voice.
     assert "I notice the hill, the price" in ref
     assert "another season\" is a hill going untaken" in ref
-    assert "He keeps the ledger of what must survive" in ref
+    assert "She keeps the ledger of what must survive" in ref
     assert "I break for a cause; he breaks from a frame" in ref
     assert "the disagreement is live" in ref
-    assert "I still name the side first. She still asks what it needs" in ref
+    assert "I still name the side first. He still asks what it needs" in ref
     assert "Neither of us has conceded" in ref
     assert "I want the bold version today; she wants it to survive the week" in ref
-    assert "He checks the conviction; the decision stays mine" in ref
+    assert "She checks the conviction; the decision stays mine" in ref
 
 
 def test_reference_is_not_merely_instrumental():
@@ -156,9 +156,10 @@ def test_other_seats_carry_their_own_references_and_weaver_untouched():
         definition = ENC.get_definition(MT.get_script(arch_id, 1))
         assert definition.fellowship_reference != "", arch_id
         assert ENC._fellowship_availability_note(arch_id) in definition.fellowship_reference
-    # The Weaver's shipped reference is untouched by this PR.
+    # FC8 (2026-11-07, founder ruling): the Weaver's shipped reference
+    # carries the corrected Firebrand pronouns — "him", not "her".
     weaver = ENC.get_definition(MT.get_script("conductor", 1))
-    assert "I understand her as the decisive actor" in (
+    assert "I understand him as the decisive actor" in (
         weaver.fellowship_reference
     )
     assert weaver.fellowship_reference.splitlines()[-1].startswith(

@@ -6,7 +6,9 @@ regression fixture. The transcript is at
 ``~/workspace/your_files/zenaf-firebrand-conversation-transcript-2026-11-07.md``.
 
 Acceptance criteria (behavioral, founder-judged, against the same
-regression beats — investigation §6, verbatim):
+regression beats — criteria 1–7 are investigation §6, verbatim;
+criterion 8 is the GPT-proposed addition adopted by the founder
+2026-11-07 ~18:41 PT, correspondence design OQ5):
 
 1. The read-back engages the visitor's framework-level challenge (the
    steering-wheel dream as a question about fighting itself), not only
@@ -26,6 +28,8 @@ regression beats — investigation §6, verbatim):
    commitment redirect first.
 7. He/him for Firebrand in all generated references; no "Shadow:" /
    "Martyrdom" line in the prompt (deterministic).
+8. Firebrand should be capable of recognizing a challenge to the
+   fighting framework itself, not merely the selection of battles.
 
 The criteria are founder-judged, never model-judged: the deterministic
 tests below pin the mechanisms (T1–T8); the behavioral pass is the
@@ -277,7 +281,7 @@ def test_t6_capability_honesty():
 
 
 def test_t7_fixture_transcript_preserved_and_criteria_in_docstring():
-    """The transcript file exists and is non-empty; the seven
+    """The transcript file exists and is non-empty; the eight
     acceptance criteria are carried in this file's docstring. The
     criteria themselves are founder-judged (the live re-test), not
     asserted by code."""
@@ -292,6 +296,7 @@ def test_t7_fixture_transcript_preserved_and_criteria_in_docstring():
         "No suffering-as-legitimacy escalation",
         "A direct practical question",
         "He/him for Firebrand in all generated references",
+        "fighting framework itself, not merely the selection of battles",
     ):
         assert key in doc, key
 

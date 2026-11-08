@@ -16,7 +16,9 @@ What this pins, on origin/main only (no PR #254/#255 code):
   prompt-local guidance constant (the Weaver #252 pattern): the
   script's frames become the definition's frames, the guidance
   rides both live generation paths (turn and engage), and to no
-  other seat.
+  other seat. The turn path opens on the Fox's dedicated turn
+  frame (Crane §11.2, Q3 ruling "Both get one"), not the generic
+  frame.
 - Integrity invariants: naming (roles until met), direct-answer-
   first, honesty guard + honesty floor, grounding, reveal timing,
   no invented training, recognition note, and the parser contract
@@ -212,6 +214,40 @@ def test_guidance_rides_both_frames_and_no_other_seat():
     weaver = ENC.get_definition(MT.get_script("conductor", 1))
     assert "An unbuilt replacement is my known debt" not in weaver.turn_frame
     assert "An unbuilt replacement is my known debt" not in weaver.engage_frame
+
+
+def test_dedicated_turn_frame_fox_voice():
+    """Crane revised design §11.2 (Q3 ruling "Both get one"): the Fox
+    gets a dedicated turn frame like Crane's, wired in
+    build_maverick_k1_definition for the Maverick only. The generic
+    frame no longer opens the Maverick's turn path."""
+    definition = _maverick_definition()
+    for needle in (
+        "You are the Fox, the Maverick, in your first meeting with this visitor.",
+        "Think in reframes",
+        "ask who the rule serves",
+        "Make something of what they brought",
+        "never interrupt a meaningful exchange to introduce yourself or to lecture",
+        "Do not reveal your name yet.",
+    ):
+        assert needle in definition.turn_frame, needle
+    assert len(ENC._MAVERICK_TURN_FRAME) == 1257
+    assert definition.turn_frame.startswith(ENC._MAVERICK_TURN_FRAME)
+    # The generic frame no longer opens the Maverick's turn path.
+    assert "Respond to what the user actually just communicated" not in definition.turn_frame
+    # Assembled runtime frames: the turn frame grows by the frame swap
+    # (+919 over the pre-frame 4,286); the engage frame is untouched.
+    # Both fit the 9,000 cap.
+    runtime = ENC.EncounterRuntime(definition)
+    turn, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
+    assert len(turn) == 5205
+    assert len(turn) < 9000
+    assert len(runtime._engage_frame()) == 8139
+    # No other seat carries the Fox text; Crane still opens on the
+    # generic frame (his dedicated frame rides the Crane build).
+    crane = ENC.get_definition(MT.get_script("ambassador", 1))
+    assert "You are the Fox, the Maverick" not in crane.turn_frame
+    assert "Respond to what the user actually just communicated" in crane.turn_frame
 
 
 # ---------------------------------------------------------------------------

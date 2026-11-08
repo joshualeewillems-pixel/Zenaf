@@ -103,9 +103,11 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
             "advancing; courage is meaningful precisely because something can be lost."
         ),
         "question": "What is worth fighting for?",
-        "shadow": (
-            "Martyrdom: conflating opposition with evil, manufacturing enemies."
-        ),
+        # FC7 (2026-11-07, founder ruling): the champion carries NO
+        # "shadow" entry — the live "Martyrdom: conflating opposition
+        # with evil, manufacturing enemies." line was superseded (see
+        # firebrand.py:502-511) and is removed, not replaced.
+        # philosophy_prompt_lines omits the Shadow line when absent.
         "tension": (
             "Accuses the Ambassador of cowardice; the Ambassador accuses the "
             "Champion of manufacturing unnecessary enemies."
@@ -195,6 +197,11 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
     Returns [] for unknown archetype ids. Woven into every council prompt —
     demo, base, and trained voices alike: the archetype layer underneath the persona.
 
+    A seat with no "shadow" entry renders no Shadow line (Champion, FC7
+    2026-11-07 — the superseded "Martyrdom" line was removed, not
+    replaced); every other seat still carries one, so their rendering is
+    byte-identical.
+
     Weaver consolidation (mandate P2–P3): when the steward read path is
     active, the conductor's philosophy lines come from the steward record
     source instead of ARCHETYPE_PHILOSOPHY; the text is identical
@@ -212,12 +219,18 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
     phil = ARCHETYPE_PHILOSOPHY.get(key)
     if not phil:
         return []
-    return [
+    lines = [
         f"Foundational ideal: {phil['ideal']}",
         f"Defining question (your instinctive first move on any problem): \"{phil['question']}\"",
-        f"Shadow — your characteristic failure mode, which the Skeptic may name: {phil['shadow']}",
-        f"Live tension with the other seats: {phil['tension']}",
     ]
+    # FC7 (2026-11-07): no Shadow line for a seat with no "shadow"
+    # entry. Every other seat still carries one.
+    if "shadow" in phil:
+        lines.append(
+            f"Shadow — your characteristic failure mode, which the Skeptic may name: {phil['shadow']}"
+        )
+    lines.append(f"Live tension with the other seats: {phil['tension']}")
+    return lines
 
 
 #: Universal grounding rule — shared by all seven seats. Ground every reply

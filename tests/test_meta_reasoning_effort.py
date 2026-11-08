@@ -128,6 +128,16 @@ def test_philosophy_covers_all_voices():
 
     for vid in arch.stock_archetype_ids():
         lines = arch.philosophy_prompt_lines(vid)
+        # FC7 (2026-11-07): the Champion carries no "shadow" entry — the
+        # superseded "Martyrdom" line was removed, not replaced — so her
+        # block is 3 lines with no Shadow line; every other seat is 4.
+        if vid == "champion":
+            assert len(lines) == 3, vid
+            assert "Foundational ideal" in lines[0]
+            assert "Defining question" in lines[1]
+            assert "tension" in lines[2]
+            assert not any("Shadow" in l for l in lines), vid
+            continue
         assert len(lines) == 4, vid
         assert "Foundational ideal" in lines[0]
         assert "Defining question" in lines[1]

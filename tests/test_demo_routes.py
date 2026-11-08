@@ -381,9 +381,12 @@ def test_anti_presumption_leaves_card_content_untouched():
     from local_ai.council import archetypes as arch
 
     # Card content assertions from the existing suite still hold: philosophy
-    # block is exactly 4 lines, defining questions intact.
+    # block is exactly 4 lines, defining questions intact — except the
+    # Champion, whose superseded "Martyrdom" shadow line was removed by
+    # FC7 (2026-11-07, founder ruling): 3 lines, no Shadow line.
     for vid in arch.stock_archetype_ids():
-        assert len(arch.philosophy_prompt_lines(vid)) == 4, vid
+        expected = 3 if vid == "champion" else 4
+        assert len(arch.philosophy_prompt_lines(vid)) == expected, vid
     assert "What are we assuming?" in "\n".join(arch.build_archetype_prompt_lines("skeptic"))
 
 

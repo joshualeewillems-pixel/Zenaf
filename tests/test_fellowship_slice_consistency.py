@@ -16,6 +16,14 @@ slice constant, and the canonical protected shadow texts are byte-identical
 to their pre-correction values (the label removal must never touch the
 records or the registry).
 
+T8 — FC8 fellowship references (2026-11-07, founder ruling): Firebrand
+is "he/him/his" in all six other seats' fellowship references, and
+Bear/Crane/Raven are correct in Firebrand's own reference. This test
+deliberately does NOT audit Bear/Crane/Raven in the OTHER seats' refs:
+they are systematically misgendered there too (a known out-of-scope gap
+needing a founder ruling on which build owns them), and extending the
+audit to them would fail by design.
+
 The Fox has no fixed set (fox.py: "No fixed set — different characters
 call the Fox he, she, or they"): the test asserts only that every Fox
 pronoun in the slices is one of {he, she, they} — it never requires any
@@ -176,3 +184,55 @@ def test_no_fixed_second_move_formula_in_any_frame():
         for frame, text in (("engage", engage), ("turn", turn)):
             for phrase in formula:
                 assert phrase not in text, (arch_id, frame, phrase)
+
+
+# The seven fellowship references (FC8, 2026-11-07) — a separate layer
+# from the first-meeting slices: they render as the uncapped
+# fellowship-reference section in build_voice_prompt, not inside the
+# engage/turn frames, so the seven-seat V4 diff does not capture them.
+REFERENCES = {
+    "mentor": ENC._GARDENER_FELLOWSHIP_REFERENCE,
+    "champion": ENC._CHAMPION_FELLOWSHIP_REFERENCE,
+    "guardian": ENC._GUARDIAN_FELLOWSHIP_REFERENCE,
+    "maverick": ENC._MAVERICK_FELLOWSHIP_REFERENCE,
+    "ambassador": ENC._CRANE_FELLOWSHIP_REFERENCE,
+    "conductor": ENC._WEAVER_FELLOWSHIP_REFERENCE,
+    "skeptic": ENC._RAVEN_FELLOWSHIP_REFERENCE,
+}
+
+
+def _firebrand_paragraph(reference: str) -> str:
+    match = re.search(
+        r"- Firebrand \(Champion\): (.*?)(?=\n- |\nMention them|\Z)",
+        reference,
+        re.S,
+    )
+    assert match, "reference carries no Firebrand paragraph"
+    return match.group(0)
+
+
+def test_fellowship_references_use_he_for_firebrand():
+    """T8 (FC8): Firebrand is he/him/his — never she/her — in all six
+    other seats' fellowship references."""
+    for arch_id, reference in REFERENCES.items():
+        if arch_id == "champion":
+            continue
+        paragraph = _firebrand_paragraph(reference)
+        assert not re.search(
+            r"\b(she|her|hers|She|Her|Hers)\b", paragraph
+        ), (arch_id, paragraph)
+        assert re.search(r"\b(he|him|his|He|Him|His)\b", paragraph), arch_id
+
+
+def test_champion_fellowship_reference_genders_bear_crane_raven():
+    """T8 (FC8): Bear is she, Crane is he, Raven is she in Firebrand's
+    own fellowship reference. (Bear/Crane/Raven in the OTHER seats'
+    refs are a known out-of-scope gap — see the module docstring.)"""
+    ref = REFERENCES["champion"]
+    assert "She keeps the ledger of what must survive" in ref
+    assert "He asks what each side actually needs" in ref
+    assert "his ability to tell a genuine enemy" in ref
+    assert "He still asks what it needs" in ref
+    assert "She audits whether a conviction is earned" in ref
+    assert "more than she" in ref
+    assert "She checks the conviction; the decision stays mine" in ref

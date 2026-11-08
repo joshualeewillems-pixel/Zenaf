@@ -116,6 +116,7 @@ def test_reveal_follows_the_existing_ceremony_only():
     # nobody else is introduced: no other seat's character name.
     assert "Before you draw your sword" not in joined
     assert "martyrdom" not in joined
+    assert "Martyrdom" not in joined
     for name in ("Gardener", "Bear", "Fox", "Crane", "Weaver", "Raven"):
         assert name not in joined
     # It closes with an invitation, not a completion declaration.

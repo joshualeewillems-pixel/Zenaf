@@ -248,6 +248,19 @@ def _svc(tmp_path, generate_fn=None):
         generate_fn=generate_fn,
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _seeded_user(email="crane-recognition@example.com"):
     user = ve.create_user_account(email, "pw", "Crane")
@@ -373,7 +386,7 @@ def test_second_run_supersedes_prior_claim_via_visitor_completion(ve_ctx, tmp_pa
     first_claim = first[0]
     store.update_claim(first_claim.id, status="accepted")
 
-    svc.restart(uid, "ambassador")
+    _meet_again(svc, uid, "ambassador")
     _run_crane_turns(
         svc, uid,
         "Second time: I start with people, not tasks.",

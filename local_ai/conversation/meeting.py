@@ -250,6 +250,23 @@ def _lock_for(key: str) -> threading.RLock:
         return lock
 
 
+#: Test-only sync hook for deterministic termination testing (AC24,
+#: amendment §A5 pattern): when set, `_do_reveal` calls it after each
+#: durable step with the boundary name (`after_reveal`,
+#: `after_task_done`, `after_emit`, `after_file`, `after_fence_close`,
+#: `before_finalize`). A test sets it to mark the boundary and pause,
+#: so the parent can SIGKILL the process there and then run the
+#: recovery. Production leaves it None (no-op); it never changes
+#: behavior, only observability.
+_COMPLETION_SYNC_HOOK: Callable[[str], None] | None = None
+
+
+def _sync_point(name: str) -> None:
+    hook = _COMPLETION_SYNC_HOOK
+    if hook is not None:
+        hook(name)
+
+
 def _new_run_id() -> str:
     """A fresh encounter run id (uuid4 hex, proposal §1)."""
     return uuid.uuid4().hex
@@ -1883,6 +1900,27 @@ class MeetingService:
         self.meetings.update_encounter(
             user_id, encounter["run_id"], status="in_progress"
         )
+        # The mirror still points at the predecessor (creation crashed
+        # before meet_again's mirror update): re-point it at this run
+        # and clear the predecessor's read-back, or the new run's
+        # turns hydrate stale state from the meetings row (the live
+        # read-back store during a run) and its claim files the
+        # predecessor's words. A mirror already pointing here is left
+        # alone — a turn may already have recorded on it.
+        mrow = self.meetings.get(
+            user_id, encounter["archetype_id"], encounter["keystone_index"]
+        )
+        if (mrow or {}).get("run_id") != encounter["run_id"]:
+            self.meetings.update(
+                user_id, encounter["archetype_id"],
+                encounter["keystone_index"],
+                run_id=encounter["run_id"],
+                conversation_id=encounter["conversation_id"],
+                state_json=EncounterState().to_json(),
+                readback_claim="", readback_response="",
+                readback_strands="[]", readback_original_claim="",
+                readback_seat_outcome="", readback_visitor_response="",
+            )
         return self.state(
             user_id, encounter["archetype_id"], encounter["keystone_index"]
         )
@@ -2122,6 +2160,15 @@ class MeetingService:
                 user_id, arch_id, keystone_index,
                 run_id=enc["run_id"], conversation_id=enc["conversation_id"],
                 state_json=initial_state,
+                # The meetings row is the live read-back store during a
+                # run (_hydrate_state reads it): a new run starts with
+                # its own empty read-back, or the predecessor's claim
+                # and response leak into this run's turns and its filed
+                # claim. The predecessor's record survives in its own
+                # encounter row (synced at finalize).
+                readback_claim="", readback_response="",
+                readback_strands="[]", readback_original_claim="",
+                readback_seat_outcome="", readback_visitor_response="",
             )
             self.meetings.update_encounter(
                 user_id, enc["run_id"], state_json=initial_state
@@ -2516,12 +2563,14 @@ class MeetingService:
                 for i, paragraph in enumerate(script.reveal):
                     self._say(user_id, cid, arch_id, paragraph,
                               message_key=f"reveal:{run_id}:{i + 1}")
+            _sync_point("after_reveal")
 
             tasks = _seat_keystone_tasks(user_id, arch_id)
             if len(tasks) >= keystone_index:
                 task = tasks[keystone_index - 1]
                 if task.get("status") != "Done":
                     ve.update_task(task["id"], ve_models.TaskUpdate(status="Done"), user_id)
+            _sync_point("after_task_done")
             # Fellowship Runtime P1: the completed meeting is a
             # shared-reality event, emitted at this same single chokepoint
             # (guarded inside _emit_meeting_completed — it can never break
@@ -2537,7 +2586,9 @@ class MeetingService:
                 self._emit_meeting_completed(
                     user_id, arch_id, keystone_index, conversation_id=cid
                 )
+            _sync_point("after_emit")
             self._file_impression(user_id, arch_id, keystone_index, script)
+            _sync_point("after_file")
             # (5) the fence closes before the finalize: a crash here
             # leaves CR-B5 (fence closed, finalized_at NULL), healed by
             # the recovery rule, never by re-running the reveal.
@@ -2556,6 +2607,7 @@ class MeetingService:
                     f"fence for meeting conversation {cid!r} was closed "
                     "by another run; refusing to finalize"
                 )
+            _sync_point("after_fence_close")
             # (6) the completion read-consistency check (AC5/AC16):
             # the fence is closed, so the transcript is stable for
             # the two reads. A failure is recorded, never a block —
@@ -2563,6 +2615,7 @@ class MeetingService:
             verification_status, verification_detail = self._read_consistency_check(
                 user_id, enc, mrow
             )
+            _sync_point("before_finalize")
             # (7) atomic finalize (incl. the meetings-row mirror).
             message_count = self.conversations.count_messages(user_id, cid)
             self.meetings.finalize_encounter(
@@ -2712,6 +2765,7 @@ class MeetingService:
                 SortResult,
                 StrandClaim,
             )
+            from local_ai.agent_intake import review_claims
             from local_ai.agent_intake.store import AgentStore
 
             store = (

@@ -116,6 +116,19 @@ def _svc(tmp_path, gen=None):
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _agents(tmp_path, uid) -> AgentStore:
     return AgentStore(tmp_path / "agents.db", user_id=uid)
@@ -171,7 +184,7 @@ def test_two_run_sequence_supersedes_old_claim(ve_ctx, tmp_path):
     first = store.get_claims("meeting-conductor-1")[0]
     store.update_claim(first.id, status="accepted")
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
     state = _run_conductor_to_completion(
         svc, uid,
         answer="Second time: I start with people, not tasks.",
@@ -207,7 +220,7 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path):
     first = store.get_claims("meeting-conductor-1")[0]
     store.update_claim(first.id, status="accepted")
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
 
     claims = store.get_claims("meeting-conductor-1")
     assert len(claims) == 1
@@ -224,7 +237,7 @@ def test_prior_corrected_verdict_and_note_preserved(ve_ctx, tmp_path):
     first = store.get_claims("meeting-conductor-1")[0]
     store.update_claim(first.id, status="corrected", user_note="Mornings, not deadlines.")
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
     _run_conductor_to_completion(
         svc, uid,
         answer="Second time: I start with people, not tasks.",
@@ -250,7 +263,7 @@ def test_pending_prior_claim_is_superseded_not_left_open(ve_ctx, tmp_path):
     first = store.get_claims("meeting-conductor-1")[0]
     assert first.status == "pending"
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
     _run_conductor_to_completion(
         svc, uid,
         answer="Second time: I start with people, not tasks.",
@@ -292,7 +305,7 @@ def test_supersede_is_idempotent_across_repeated_filings(ve_ctx, tmp_path):
     store = _agents(tmp_path, uid)
     first = store.get_claims("meeting-conductor-1")[0]
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
     _run_conductor_to_completion(
         svc, uid,
         answer="Second time: I start with people, not tasks.",
@@ -311,11 +324,16 @@ def test_supersede_is_idempotent_across_repeated_filings(ve_ctx, tmp_path):
 
 
 def _set_pending(svc, uid, text="A held read."):
+    # The runtime persists encounter state to the encounter row and
+    # mirrors it on the meetings row; complete() hydrates from the
+    # encounter row, so the held read must land on both.
     row = svc.meetings.get(uid, "conductor", 1)
     state = ENC.EncounterState.from_json(row["state_json"])
     state.impression_pending_text = text
     state.impression_pending_strands = ["Logic"]
-    svc.meetings.update(uid, "conductor", 1, state_json=state.to_json())
+    state_json = state.to_json()
+    svc.meetings.update(uid, "conductor", 1, state_json=state_json)
+    svc.meetings.update_encounter(uid, row["run_id"], state_json=state_json)
 
 
 def test_voluntary_end_with_pending_impression_still_discards(ve_ctx, tmp_path):
@@ -341,7 +359,7 @@ def test_discarded_second_run_leaves_prior_claim_standing(ve_ctx, tmp_path):
     # Run 2 begins, holds an impression, and ends voluntarily: the held
     # read is discarded — never filed — so it must not supersede the
     # prior run's standing claim. Discard and supersede stay distinct.
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
     svc.start(uid, "conductor")
     _set_pending(svc, uid)
     state = svc.complete(uid, "conductor")
@@ -373,22 +391,44 @@ def test_seven_seat_agent_ids_match_stock_archetypes():
 
 
 def _file_run(svc, uid, arch, created_at, claim_text, response):
-    """One filing-chokepoint run for a seat without a script: create
-    the meeting row, pin its creation time (the run_key source), give
-    it a read-back, and file through the real _file_impression."""
-    svc.meetings.delete(uid, arch, 1)
-    svc.meetings.create(uid, arch, 1)
-    svc.meetings._conn.execute(
-        "UPDATE meetings SET created_at = ? WHERE user_id = ? "
-        "AND archetype_id = ? AND keystone_index = 1",
-        (created_at, uid, arch),
-    )
-    svc.meetings._conn.commit()
-    svc.meetings.update(
-        uid, arch, 1,
+    """One filing-chokepoint run for a seat without a script: open a
+    fresh encounter for the run, give it a read-back, and file through
+    the real _file_impression.
+
+    Non-destructive replacement for the old delete+recreate of the
+    meetings row (MeetingStore.delete is retired): each simulated run
+    is its own encounter row (run_id key), the meetings row is
+    re-pointed at it, and the read-back is written on both rows —
+    the meetings row because _file_impression reads it as the live
+    store, the encounter row because it is the run's own record.
+    ``created_at`` pins the encounter's creation time (the old
+    run_key source); the claim id now keys on the run_id.
+    """
+    import uuid
+
+    mrow = svc.meetings.get(uid, arch, 1)
+    if mrow is None:
+        svc.meetings.create(uid, arch, 1)
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    run_number = (latest["run_number"] + 1) if latest else 1
+    run_id = uuid.uuid4().hex
+    cid = f"meeting-{arch}-1-{run_id}"
+    strands = json.dumps(["Compass", "Logic"])
+    svc.meetings.create_encounter(
+        run_id=run_id, user_id=uid, archetype_id=arch, keystone_index=1,
+        run_number=run_number, conversation_id=cid,
+        transcript_source="live", status="complete",
+        created_at=created_at,
         readback_claim=claim_text,
         readback_response=response,
-        readback_strands=json.dumps(["Compass", "Logic"]),
+        readback_strands=strands,
+    )
+    svc.meetings.update(
+        uid, arch, 1,
+        run_id=run_id, conversation_id=cid,
+        readback_claim=claim_text,
+        readback_response=response,
+        readback_strands=strands,
     )
     # _file_impression reads only script.character (the agent's display
     # name); the supersede logic itself keys on agent_id alone.

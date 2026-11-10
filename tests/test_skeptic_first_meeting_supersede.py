@@ -118,6 +118,19 @@ def _svc(tmp_path, gen=None):
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _agents(tmp_path, uid) -> AgentStore:
     return AgentStore(tmp_path / "agents.db", user_id=uid)
@@ -188,11 +201,11 @@ def _impression_claims(tmp_path, uid):
 
 
 # ---------------------------------------------------------------------------
-# Semantics (1): restart alone does not supersede — passes today.
+# Semantics (1): meet again alone does not supersede — passes today.
 # ---------------------------------------------------------------------------
 
 
-def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
+def test_meet_again_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     _register_skeptic(monkeypatch)
     uid = _seeded_user()
     _mark_weaver_done(uid)
@@ -212,11 +225,15 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     # thing supersede must never silently overwrite.
     assert store.update_claim(first.id, status="accepted")
 
-    # Restart alone: archives the run verbatim, resets the meeting
-    # — and touches no claim.
-    state = svc.restart(uid, "skeptic")
-    assert state["status"] == "not_started"
-    assert len(svc.meetings.list_archives(uid, "skeptic", 1)) == 1
+    # Meet again alone: opens run 2 and touches no claim — run 1
+    # stays standing, and nothing is archived (there is no delete to
+    # archive for).
+    run1 = svc.meetings.get_latest_encounter(uid, "skeptic", 1)
+    out = _meet_again(svc, uid, "skeptic")
+    assert out["encounter"]["run_number"] == 2
+    assert out["encounter"]["status"] == "in_progress"
+    assert svc.meetings.list_archives(uid, "skeptic", 1) == []
+    assert dict(svc.meetings.get_encounter(uid, run1["run_id"])) == dict(run1)
 
     claims = _impression_claims(tmp_path, uid)
     assert len(claims) == 1
@@ -248,7 +265,7 @@ def test_two_run_supersede_sequence(ve_ctx, tmp_path, monkeypatch):
     first = first[0]
     assert store.update_claim(first.id, status="accepted")
 
-    svc.restart(uid, "skeptic")
+    _meet_again(svc, uid, "skeptic")
     _run_skeptic_to_completion(
         svc, uid,
         answer="Second time: I start with people, not tasks.",

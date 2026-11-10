@@ -108,6 +108,19 @@ def _svc(tmp_path, gen=None):
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _agents(tmp_path, uid) -> AgentStore:
     return AgentStore(tmp_path / "agents.db", user_id=uid)
@@ -222,7 +235,7 @@ def test_replay_files_a_second_distinct_claim(ve_ctx, tmp_path):
     first = store.get_claims("meeting-conductor-1")[0]
     store.update_claim(first.id, status="accepted")
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
     state = _run_conductor_to_completion(
         svc, uid,
         answer="Second time: I start with people, not tasks.",

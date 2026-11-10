@@ -75,6 +75,19 @@ def _svc(tmp_path):
         MeetingStore(tmp_path / "meetings.db"),
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _seeded_user(email="amb@example.com"):
     user = ve.create_user_account(email, "pw", "Amb")
@@ -457,7 +470,7 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     assert first[0].claim_type == "meeting_impression"
     store.update_claim(first[0].id, status="accepted")
 
-    svc.restart(uid, "ambassador")
+    _meet_again(svc, uid, "ambassador")
 
     claims = store.get_claims("meeting-ambassador-1")
     assert len(claims) == 1
@@ -488,7 +501,7 @@ def test_second_run_supersedes_prior_claim(ve_ctx, tmp_path, monkeypatch):
     first_claim = first[0]
     store.update_claim(first_claim.id, status="accepted")
 
-    svc.restart(uid, "ambassador")
+    _meet_again(svc, uid, "ambassador")
     _run_ambassador_to_completion(
         svc, uid,
         "Second time: I start with people, not tasks.",

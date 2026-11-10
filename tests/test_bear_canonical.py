@@ -266,7 +266,7 @@ def test_record_sections_and_keys_match_exemplar():
         "temperament", "personality", "demeanor", "perceptual_habit",
         "fuller_middle", "expressive_terrain", "domain_tension",
         "governing_conviction", "ideal_rendering_form",
-        "affirmative_conviction", "voice_and_humor", "voice_fuller",
+        "affirmative_conviction", "generosity_as_keeping", "voice_and_humor", "voice_fuller",
         "warmth", "friction", "implied_history",
         "established_biography", "invariants", "expressive_defaults",
     }
@@ -371,6 +371,7 @@ EXPECTED_ELIGIBLE = {
     ("characterization", "governing_conviction"),
     ("characterization", "ideal_rendering_form"),
     ("characterization", "affirmative_conviction"),
+    ("characterization", "generosity_as_keeping"),
     ("characterization", "voice_and_humor"),
     ("characterization", "voice_fuller"),
     ("characterization", "warmth"),
@@ -392,6 +393,8 @@ def test_eligibility_matrix():
     assert ("characterization", "ideal_rendering_form") in eligible
     assert ("characterization", "fuller_middle") in eligible
     assert ("characterization", "voice_fuller") in eligible
+    # Bear S1 (Q1): generosity as keeping is adopted + characterization.
+    assert ("characterization", "generosity_as_keeping") in eligible
     # Adopted + protected → EXCLUDED despite adopted standing.
     assert ("protected", "shadow") not in eligible
     assert ("protected", "developmental_knowledge") not in eligible

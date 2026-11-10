@@ -283,6 +283,14 @@ BEAR_RECORD = {
             "standing": "adopted",
             "category": "characterization",
         },
+        "generosity_as_keeping": {
+            "text": (
+                "Generosity and reciprocal relationships are themselves a form "
+                "of keeping: allies are shelter too."
+            ),
+            "standing": "adopted",
+            "category": "characterization",
+        },
         "voice_and_humor": {
             # Drawl DESCRIBED only — no colloquialisms, no phonetic
             # spelling injected.

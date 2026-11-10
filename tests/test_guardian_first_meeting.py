@@ -218,9 +218,11 @@ def test_prompt_control_cleanup_is_permission_not_procedure():
     assert "never by a prescribed procedure" in guidance
     for forbidden in ("step 1", "first, yield", "yield in three", "counting"):
         assert forbidden not in guidance.lower(), forbidden
-    # The read-back is unmandated: the engage glue permits it ("only
-    # if"), it never demands it — and the definition's engage frame
-    # carries that glue verbatim.
+    # The read-back is unmandated below the gate and demanded above
+    # it (Bear S1, Q4): the engage glue permits it ("only if") and
+    # the guidance demands it once the exchange has shown how they
+    # orient — the definition's engage frame carries the glue
+    # verbatim, and the demand beside it.
     definition = ENC.get_definition(MT.get_script("guardian", 1))
     assert "only if this exchange has genuinely shown you how they orient" in definition.engage_frame
 

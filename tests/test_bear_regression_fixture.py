@@ -61,11 +61,24 @@ def _prompts():
     )
     return {
         "definition": definition,
+        "guidance": ENC._GUARDIAN_FIRST_MEETING_GUIDANCE,
         "engage_frame": engage_frame,
         "turn_frame": turn_frame,
         "talk": "\n".join(talk_lines),
         "meet_engage": "\n".join(meet_engage_lines),
         "meet_turn": "\n".join(meet_turn_lines),
+        "composed_variants": {
+            "default": _composed_engage(
+                definition,
+                CAP.first_meeting_block("guardian", CAP.VisitorState()),
+            ),
+            "worst-capability": _composed_engage(
+                definition,
+                CAP.first_meeting_block(
+                    "guardian", CAP.VisitorState(signed_in=False)
+                ),
+            ),
+        },
     }
 
 
@@ -263,3 +276,213 @@ def test_t12_bc8_scoping_per_seat():
     assert len(ARCH.philosophy_prompt_lines("ambassador")) == 3
     # Unknown ids still render nothing.
     assert ARCH.philosophy_prompt_lines("no-such-seat") == []
+
+# ---------------------------------------------------------------------------
+# Slice 4 tests — guidance sentences, name guard, budgets, turn frames.
+# ---------------------------------------------------------------------------
+
+BC1_SENTENCE = (
+    "Never re-ask what the visitor has already established, and never "
+    "manufacture a question merely to keep talking: when they have "
+    "answered, recognize the answer."
+)
+BC2_SENTENCE = (
+    "Once you have named a floor, you do not quietly lower it; but you "
+    "will reconsider where that floor belongs when the facts change."
+)
+BC6_SENTENCE = (
+    "When the visitor disputes the premise your keeping rests on — what "
+    "protection is for, what must be kept, whether keeping is the right "
+    "move at all — examine the premise before you re-apply it. Say "
+    "plainly where the challenge changed your read, and where you still "
+    "hold the line and why."
+)
+Q1_SENTENCE = (
+    "Generosity and reciprocal relationships are themselves a form of "
+    "keeping: allies are shelter too."
+)
+Q4_SENTENCE = (
+    "Once this exchange has genuinely shown you how they orient, offer "
+    "your first impression on this turn — do not keep waiting for a "
+    "better one."
+)
+NAME_GUARD = "Do not reveal your name yet."
+TEACH_SENTENCE = (
+    "never interrupt a meaningful exchange to introduce yourself or to teach"
+)
+
+
+def test_t2_bc1_no_re_ask_in_guidance_and_frames():
+    """BC1: the no-re-ask sentence is verbatim in the guidance and in
+    both composed frames (engage and turn)."""
+    p = _prompts()
+    assert BC1_SENTENCE in p["guidance"]
+    assert BC1_SENTENCE in p["engage_frame"]
+    assert BC1_SENTENCE in p["turn_frame"]
+
+
+def test_t3_bc2_floor_not_lowered_in_guidance_and_frames():
+    """BC2: the floor sentence is verbatim in the guidance and in both
+    composed frames (engage and turn)."""
+    p = _prompts()
+    assert BC2_SENTENCE in p["guidance"]
+    assert BC2_SENTENCE in p["engage_frame"]
+    assert BC2_SENTENCE in p["turn_frame"]
+
+
+def test_t4_corrected_pronouns_in_slices():
+    """T4 (flipped form — Gardener G4/D1 landed in main): in the
+    guardian guidance slice Firebrand is he, Crane is he, Raven is
+    she; in the other six slices Bear is she. The Fox is only ever
+    one of he/she/they. Scope is the seven slices only — the still
+    misgendered _GUARDIAN_FELLOWSHIP_REFERENCE is Gardener-owned
+    and is NOT covered here."""
+    slices = {
+        "mentor": ENC._MENTOR_REFERENCE_SLICE,
+        "champion": ENC._CHAMPION_GUIDANCE,
+        "guardian": ENC._GUARDIAN_FIRST_MEETING_GUIDANCE,
+        "maverick": ENC._MAVERICK_GUIDANCE,
+        "ambassador": ENC._AMBASSADOR_REFERENCE_SLICE,
+        "conductor": ENC._WEAVER_FELLOWSHIP_SLICE,
+        "skeptic": ENC._SKEPTIC_REFERENCE_GUIDANCE,
+    }
+    guardian = slices["guardian"]
+    assert "Firebrand: he" in guardian
+    assert "Crane: he" in guardian
+    assert "Raven: she" in guardian
+    for key, text in slices.items():
+        if key == "guardian":
+            continue
+        assert "Bear: she" in text, key
+        assert "Bear: he" not in text, key
+    for text in slices.values():
+        assert "Bear: he" not in text
+        assert "Crane: she" not in text
+        assert "Raven: he" not in text
+        assert "Firebrand: she" not in text
+
+
+def test_t6_q4_shortened_in_guidance_and_frames():
+    """Q4-shortened (140 chars, brief §5.2 — NOT the design's 146):
+    verbatim in the guidance and in both composed frames; the
+    flattery clause still stands in _ENGAGE_GLUE."""
+    p = _prompts()
+    assert len(Q4_SENTENCE) == 140
+    assert Q4_SENTENCE in p["guidance"]
+    assert Q4_SENTENCE in p["engage_frame"]
+    assert Q4_SENTENCE in p["turn_frame"]
+    # The flattery clause still stands in _ENGAGE_GLUE (brief §5.2
+    # paraphrases it; the live wording is the earned-impression line).
+    assert (
+        "an impression offered before it is earned is flattery"
+        in ENC._ENGAGE_GLUE
+    )
+
+
+def test_t8_name_guard_counts():
+    """E4: the name guard stands twice in the engage frame and once in
+    the turn frame (the encounter frame tail's second instance)."""
+    p = _prompts()
+    assert p["engage_frame"].count(NAME_GUARD) == 2
+    assert p["turn_frame"].count(NAME_GUARD) == 1
+
+
+def test_t9_all_new_guidance_in_both_frames():
+    """BC1, BC2, Q4-shortened, BC6, Q1 — every new guidance sentence
+    is present in both composed frames (engage and turn)."""
+    p = _prompts()
+    for sentence in (
+        BC1_SENTENCE,
+        BC2_SENTENCE,
+        Q4_SENTENCE,
+        BC6_SENTENCE,
+        Q1_SENTENCE,
+    ):
+        assert sentence in p["engage_frame"], sentence[:40]
+        assert sentence in p["turn_frame"], sentence[:40]
+
+
+def test_t10_budgets(caplog):
+    """Budgets (§5.5, brief figures governing): Talk character block
+    1,443/1,500; engage frame ≤ 9,000; turn frame ≤ 9,000; composed
+    engage headroom ≥ 300 in every variant; the _cap_section loud
+    warning never fires for any Bear frame."""
+    import logging
+
+    from local_ai.conversation.reply import (
+        _EXTRA_INSTRUCTIONS_CAP,
+        _cap_section,
+    )
+    from local_ai.council.canonical.bear import BEAR_RECORD
+    from local_ai.council.render import render_bear_ordinary
+
+    block = "\n".join(render_bear_ordinary(BEAR_RECORD))
+    assert len(block) == 1443
+    assert len(block) <= 1500
+    p = _prompts()
+    assert len(p["engage_frame"]) <= 9000
+    assert len(p["turn_frame"]) <= 9000
+    assert _EXTRA_INSTRUCTIONS_CAP == 9000
+    for name, frame in p["composed_variants"].items():
+        headroom = _EXTRA_INSTRUCTIONS_CAP - len(frame)
+        assert len(frame) <= _EXTRA_INSTRUCTIONS_CAP, name
+        assert headroom >= 300, (name, headroom)
+    with caplog.at_level(logging.WARNING):
+        for section, frame in (
+            ("engage", p["engage_frame"]),
+            ("turn", p["turn_frame"]),
+        ):
+            assert (
+                _cap_section(
+                    frame, _EXTRA_INSTRUCTIONS_CAP, section, "guardian"
+                )
+                == frame
+            )
+    assert not [
+        r for r in caplog.records if "prompt section truncated" in r.message
+    ]
+
+
+def test_t11_measured_lengths():
+    """Measured lengths (§5.5): Q1 97, BC6 285, BC1 158, BC2 129,
+    Q4-shortened 140; the guidance addition is exactly the five
+    sentences joined with single spaces (814 chars total, fixed
+    order Q1, BC6, BC1, BC2, Q4); the encounter-frame addition is
+    exactly the 29-char name-guard tail."""
+    assert len(Q1_SENTENCE) == 97
+    assert len(BC6_SENTENCE) == 285
+    assert len(BC1_SENTENCE) == 158
+    assert len(BC2_SENTENCE) == 129
+    assert len(Q4_SENTENCE) == 140
+    assert len(NAME_GUARD) == 28
+    addition = (
+        " " + Q1_SENTENCE + " " + BC6_SENTENCE + " " + BC1_SENTENCE
+        + " " + BC2_SENTENCE + " " + Q4_SENTENCE
+    )
+    assert len(addition) == 814
+    p = _prompts()
+    assert p["guidance"].endswith(addition)
+    assert "in front of you is theirs. Do not reveal your name yet." in p[
+        "engage_frame"
+    ]
+    assert len(" Do not reveal your name yet.") == 29
+
+
+def test_t13_turn_frames_teach_form():
+    """T13 (teach form — the Q-R7 sequencing edit has NOT landed, so
+    the turn frames still say 'teach', not 'lecture'; this build
+    never edits that sentence). The sentence is verbatim in all five
+    turn frames and in the steward_records.py duplicate."""
+    import local_ai.council.steward_records as SR
+
+    frames = {
+        "weaver": ENC.WEAVER_TURN_FRAME,
+        "guardian": ENC.GUARDIAN_TURN_FRAME,
+        "mentor": ENC.MENTOR_TURN_FRAME,
+        "skeptic": ENC.SKEPTIC_TURN_FRAME,
+        "champion": ENC.CHAMPION_TURN_FRAME,
+    }
+    for key, frame in frames.items():
+        assert TEACH_SENTENCE in frame, key
+        assert "to lecture" not in frame, key
+    assert TEACH_SENTENCE in SR.TURN_FRAME

@@ -2396,7 +2396,7 @@ GUARDIAN_FIRST_MEETING = MeetingScript(
         "and never read the same breath twice: anti-presumption "
         "governs substance, one read per breath governs structure. "
         "Do not move on to some other question of your own; the work "
-        "in front of you is theirs."
+        "in front of you is theirs. Do not reveal your name yet."
     ),
     readback_frame=(
         "Offer your first impression of this user — a READ-BACK: a position, "

@@ -282,11 +282,11 @@ def _seat_paragraph(reference: str, seat: str, role: str) -> str:
 
 # seat -> (role label, pronouns that must appear, pronouns that must not).
 _BEAR_CRANE_RAVEN = {
-    "Bear": ("Guardian", r"\b(she|her|hers|She|Her|Hers)\b",
+    "Bear": ("Guardian", "guardian", r"\b(she|her|hers|She|Her|Hers)\b",
              r"\b(he|him|his|He|Him|His)\b"),
-    "Crane": ("Ambassador", r"\b(he|him|his|He|Him|His)\b",
+    "Crane": ("Ambassador", "ambassador", r"\b(he|him|his|He|Him|His)\b",
               r"\b(she|her|hers|She|Her|Hers)\b"),
-    "Raven": ("Skeptic", r"\b(she|her|hers|She|Her|Hers)\b",
+    "Raven": ("Skeptic", "skeptic", r"\b(she|her|hers|She|Her|Hers)\b",
               r"\b(he|him|his|He|Him|His)\b"),
 }
 
@@ -299,7 +299,9 @@ def test_fellowship_references_gender_bear_crane_raven():
     audited here; Gardener/Firebrand/Weaver paragraphs are covered by
     the T8 Firebrand test and the canonical records."""
     for arch_id, reference in REFERENCES.items():
-        for seat, (role, good, bad) in _BEAR_CRANE_RAVEN.items():
+        for seat, (role, own_id, good, bad) in _BEAR_CRANE_RAVEN.items():
+            if arch_id == own_id:
+                continue  # A reference never names its own seat.
             paragraph = _seat_paragraph(reference, seat, role)
             assert not re.search(bad, paragraph), (arch_id, seat, paragraph)
             assert re.search(good, paragraph), (arch_id, seat, paragraph)

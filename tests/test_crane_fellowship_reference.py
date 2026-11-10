@@ -79,7 +79,9 @@ def test_c3_disagreement_carried_on_crane_side_only():
     # Crane-side C3 line, and her Crane sketch is unchanged.
     weaver_ref = ENC.get_definition(MT.get_script("conductor", 1)).fellowship_reference
     assert "a place isn't the same as belonging" not in weaver_ref
-    assert "I understand her as the unifier of people by translation" in weaver_ref
+    # (2026-11-09 pronoun build: "her" -> "him" — Crane is male; the
+    # sketch is otherwise unchanged.)
+    assert "I understand him as the unifier of people by translation" in weaver_ref
 
 
 def test_shared_doctrine_naming_and_no_arrangement():

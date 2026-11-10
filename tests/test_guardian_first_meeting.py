@@ -149,8 +149,8 @@ def test_guardian_reveal_is_single_and_names_him():
 
 def test_guardian_orientation_settles_the_weaver_debt():
     """The Weaver's guardian allusion (locks she didn't put there, a
-    kept door) is honored from the Bear's side: his keeping, shown
-    as his own — and the orientation frame disciplines answers to
+    kept door) is honored from the Bear's side: her keeping, shown
+    as her own — and the orientation frame disciplines answers to
     the place notes only."""
     script = MT.get_script("guardian", 1)
     assert script.orientation, "orientation context paragraphs required"

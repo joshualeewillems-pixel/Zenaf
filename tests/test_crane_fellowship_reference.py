@@ -2,12 +2,12 @@
 relational references, 2026-10-29 — Crane PR, mirroring the Weaver
 fellowship-reference suite). What this pins:
 
-- The Crane's reference names all six other seats from her own side
-  of her pairs (comparison DRAFT §5, adapted — not the compressed
+- The Crane's reference names all six other seats from his own side
+  of his pairs (comparison DRAFT §5, adapted — not the compressed
   one-liners, which stay capped in the orientation slice).
 - Dwell-on-one-person is a TENDENCY of attention, never a quota (C2).
 - The Weaver–Ambassador disagreement is carried on the Crane's side
-  ONLY here (C3): her line is that a place isn't the same as
+  ONLY here (C3): his line is that a place isn't the same as
   belonging, neither side concedes — and the line does NOT leak
   into the Weaver's shipped reference (the Weaver-side addition is
   explicitly not part of this PR).

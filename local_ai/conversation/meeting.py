@@ -777,6 +777,342 @@ class MeetingStore:
                 raise
         return self.get_encounter(fields["user_id"], fields["run_id"])  # type: ignore[return-value]
 
+    def migrate_to_encounters(
+        self, conversations: Any, task_id_for: Any
+    ) -> dict[str, Any]:
+        """Run the §4.3 migration (Steps 2–5) on the databases this
+        store is opened on. Step 1 (additive schema) is already
+        applied by __init__ (the _SCHEMA creates the tables; the
+        guarded ALTERs add the columns).
+
+        Step 2 — archive rows become encounter rows, in `archived_at`
+        order: `legacy-unverified`, `legacy_group_key` = shared
+        `meeting_created_at`, distinct record identities,
+        `predecessor_link_kind = 'reconstructed'`. The identity
+        evidence rule (§4.1 I6): an archive row whose
+        `meeting_created_at` group key is unique within the key's
+        archive rows qualifies for `run_id_provenance =
+        'generated-migration'`; a row in a duplicate group gets
+        `'legacy-record'` (and `legacy_possible_duplicate = 1`).
+        An archive encounter's conversation id is run-specific
+        (its transcript is read from `transcript_json`, never from
+        messages) so its fence row cannot collide with the live
+        run's grandfathered shared id.
+        Step 3 — the live row becomes an encounter row (`run_number`
+        k+1, `verification_status = 'unverified'`, `transcript_source
+        = 'live'`, the grandfathered shared conversation id). A
+        pre-existing materialized row (lazy materialization, S2) is
+        ADOPTED — its run_number is moved to k+1 and its predecessor
+        set to the last archive encounter — never duplicated.
+        Step 4 — the meetings row is re-pointed at the live encounter.
+        Step 5 — verify per key (the gates) and report.
+        Step 6 — live messages are untouched (nothing here moves a
+        message). `meeting_archives` is retained as-is; no rows are
+        deleted, no columns dropped, no values relabelled. No
+        migrated row is promoted to `read_consistency_verified`
+        (archive rows stay `legacy-unverified`; live rows stay
+        `unverified` until a check runs). No recorded opening is
+        backfilled for a legacy row (a row with no recorded opening
+        fails closed, never completes from the live script).
+
+        `task_id_for(user_id, archetype_id, keystone_index)` resolves
+        the seeded keystone task id (or None). The migration is
+        idempotent: re-running it adopts existing encounter rows and
+        only fills gaps. Returns a report
+        {keys: [...per-key...], verified: bool, failures: [...]}."""
+        report: dict[str, Any] = {"keys": [], "verified": True, "failures": []}
+        for user_id in self.distinct_user_ids():
+            for arch_id, keystone_index in self.distinct_meeting_keys(user_id):
+                key_report: dict[str, Any] = {
+                    "user_id": user_id,
+                    "archetype_id": arch_id,
+                    "keystone_index": keystone_index,
+                    "archives_migrated": 0,
+                    "archives_adopted": 0,
+                    "live": None,
+                    "fences": 0,
+                    "failures": [],
+                }
+                report["keys"].append(key_report)
+                shared_cid = conversation_id_for(arch_id, keystone_index)
+                # The live message count, recorded before anything is
+                # written (Step 5 compares it after — Step 6).
+                live_msg_before = conversations.count_messages(user_id, shared_cid)
+                # --- Step 2: archive rows -------------------------------
+                archives = self.list_archives(user_id, arch_id, keystone_index)
+                archives.sort(key=lambda a: (a.get("archived_at") or "", a["id"]))
+                groups: dict[str, list[dict[str, Any]]] = {}
+                for a in archives:
+                    groups.setdefault(a.get("meeting_created_at") or "", []).append(a)
+                existing = self.list_encounters(user_id, arch_id, keystone_index)
+                existing_archive = [
+                    e for e in existing if e.get("transcript_source") == "archive"
+                ]
+                live_pre = next(
+                    (e for e in existing if e.get("transcript_source") == "live"),
+                    None,
+                )
+                # A live/materialized row occupies a run_number in the
+                # archive range (it was created as run 1 before the
+                # archives were migrated). Move it to k+1 FIRST — the
+                # final archive count is known upfront (len(archives))
+                # — so its old number is free for the archive rows
+                # and its final number (k+1) cannot collide with them.
+                # (run_number is an identity field, outside
+                # update_encounter's allow-list, so this is a direct
+                # migration UPDATE.)
+                if live_pre is not None:
+                    with self._lock:
+                        self._conn.execute(
+                            "UPDATE meeting_encounters SET run_number = ? "
+                            "WHERE user_id = ? AND run_id = ?",
+                            (len(archives) + 1, user_id, live_pre["run_id"]),
+                        )
+                        self._conn.commit()
+                max_run = max(
+                    (e["run_number"] for e in existing_archive), default=0
+                )
+                prev_archive: dict[str, Any] | None = (
+                    max(existing_archive, key=lambda e: e["run_number"])
+                    if existing_archive else None
+                )
+                for a in archives:
+                    group = groups[a.get("meeting_created_at") or ""]
+                    # Already migrated? Match by group key + transcript
+                    # (the archive dict carries the parsed `transcript`
+                    # list — `transcript_json` was popped by
+                    # _archive_dict — so compare parsed forms).
+                    a_transcript = a.get("transcript") or []
+
+                    def _enc_transcript(e: dict[str, Any]) -> list:
+                        try:
+                            t = json.loads(e.get("transcript_json") or "[]")
+                            return t if isinstance(t, list) else []
+                        except Exception:
+                            return []
+
+                    already = next(
+                        (
+                            e for e in existing_archive
+                            if e.get("legacy_group_key") == a.get("meeting_created_at")
+                            and _enc_transcript(e) == a_transcript
+                        ),
+                        None,
+                    )
+                    if already is not None:
+                        key_report["archives_adopted"] += 1
+                        prev_archive = already
+                        continue
+                    if not isinstance(a_transcript, list):
+                        key_report["failures"].append(
+                            f"archive {a['id']}: malformed transcript_json"
+                        )
+                        continue
+                    transcript = a_transcript
+                    run_id = _new_run_id()
+                    max_run += 1
+                    fields: dict[str, Any] = {
+                        "run_id": run_id,
+                        "user_id": user_id,
+                        "archetype_id": arch_id,
+                        "keystone_index": keystone_index,
+                        "run_number": max_run,
+                        "predecessor_run_id": (
+                            prev_archive["run_id"] if prev_archive else None
+                        ),
+                        "predecessor_link_kind": (
+                            "reconstructed" if prev_archive else "witnessed"
+                        ),
+                        "conversation_id": f"{shared_cid}-{run_id}",
+                        "transcript_source": "archive",
+                        "transcript_json": json.dumps(
+                            transcript, ensure_ascii=True
+                        ),
+                        "status": "complete",
+                        "stage": "complete",
+                        "state_json": "",
+                        "readback_claim": a.get("readback_claim") or "",
+                        "readback_response": a.get("readback_response") or "",
+                        "readback_strands": a.get("readback_strands") or "[]",
+                        "readback_original_claim": a.get("readback_original_claim") or "",
+                        "readback_seat_outcome": a.get("readback_seat_outcome") or "",
+                        "readback_visitor_response": a.get("readback_visitor_response") or "",
+                        "message_count": len(transcript),
+                        "verification_status": "legacy-unverified",
+                        "legacy_group_key": a.get("meeting_created_at") or "",
+                        "legacy_possible_duplicate": 1 if len(group) > 1 else 0,
+                        "run_id_provenance": (
+                            "generated-migration" if len(group) == 1 else "legacy-record"
+                        ),
+                        "created_at": a.get("meeting_created_at") or a.get("archived_at") or "",
+                        "completed_at": a.get("archived_at") or "",
+                        "finalized_at": a.get("archived_at") or "",
+                        "task_id": task_id_for(user_id, arch_id, keystone_index),
+                    }
+                    enc = self.create_encounter(**fields)
+                    prev_archive = enc
+                    key_report["archives_migrated"] += 1
+                # --- Step 3: the live row -------------------------------
+                mrow = self.get(user_id, arch_id, keystone_index)
+                live_enc: dict[str, Any] | None = None
+                if mrow is not None:
+                    archive_count = len(
+                        [e for e in self.list_encounters(user_id, arch_id, keystone_index)
+                         if e.get("transcript_source") == "archive"]
+                    )
+                    live_existing = next(
+                        (
+                            e for e in self.list_encounters(user_id, arch_id, keystone_index)
+                            if e.get("transcript_source") == "live"
+                        ),
+                        None,
+                    )
+                    last_archive = (
+                        max(
+                            [e for e in self.list_encounters(user_id, arch_id, keystone_index)
+                             if e.get("transcript_source") == "archive"],
+                            key=lambda e: e["run_number"],
+                        )
+                        if archive_count else None
+                    )
+                    if live_existing is not None:
+                        # Adopt the materialized row: it was already
+                        # moved to k+1 in Step 2a, so only its
+                        # predecessor binds here (to the last archive
+                        # encounter) and its message_count syncs from
+                        # the live messages (materialization never set
+                        # it), so Step 5's count gate passes.
+                        # (predecessor is an identity field, outside
+                        # update_encounter's allow-list, so the bind
+                        # is a direct migration UPDATE.)
+                        with self._lock:
+                            self._conn.execute(
+                                "UPDATE meeting_encounters SET "
+                                "predecessor_run_id = ?, predecessor_link_kind = ? "
+                                "WHERE user_id = ? AND run_id = ?",
+                                (
+                                    last_archive["run_id"] if last_archive else None,
+                                    "reconstructed" if last_archive else "witnessed",
+                                    user_id, live_existing["run_id"],
+                                ),
+                            )
+                            self._conn.commit()
+                        self.update_encounter(
+                            user_id, live_existing["run_id"],
+                            message_count=conversations.count_messages(
+                                user_id, live_existing["conversation_id"]
+                            ),
+                        )
+                        live_enc = self.get_encounter(user_id, live_existing["run_id"])
+                        key_report["live"] = "adopted"
+                    else:
+                        live_msg = conversations.count_messages(user_id, shared_cid)
+                        live_enc = self.create_encounter(
+                            run_id=_new_run_id(),
+                            user_id=user_id,
+                            archetype_id=arch_id,
+                            keystone_index=keystone_index,
+                            run_number=archive_count + 1,
+                            predecessor_run_id=(
+                                last_archive["run_id"] if last_archive else None
+                            ),
+                            predecessor_link_kind=(
+                                "reconstructed" if last_archive else "witnessed"
+                            ),
+                            conversation_id=shared_cid,
+                            transcript_source="live",
+                            status=(
+                                "complete" if mrow.get("status") == "complete"
+                                else "in_progress"
+                            ),
+                            stage=mrow.get("stage") or "encounter",
+                            state_json=mrow.get("state_json") or "",
+                            readback_claim=mrow.get("readback_claim") or "",
+                            readback_response=mrow.get("readback_response") or "",
+                            readback_strands=mrow.get("readback_strands") or "[]",
+                            readback_original_claim=mrow.get("readback_original_claim") or "",
+                            readback_seat_outcome=mrow.get("readback_seat_outcome") or "",
+                            readback_visitor_response=mrow.get("readback_visitor_response") or "",
+                            message_count=live_msg,
+                            verification_status="unverified",
+                            run_id_provenance="generated-migration",
+                            created_at=mrow.get("created_at") or "",
+                            completed_at=(
+                                mrow.get("updated_at") or ""
+                                if mrow.get("status") == "complete" else ""
+                            ),
+                            finalized_at=(
+                                mrow.get("updated_at") or ""
+                                if mrow.get("status") == "complete" else ""
+                            ),
+                            task_id=task_id_for(user_id, arch_id, keystone_index),
+                        )
+                        key_report["live"] = "created"
+                    # --- Step 4: re-point the meetings row -------------
+                    self.update(
+                        user_id, arch_id, keystone_index,
+                        run_id=live_enc["run_id"],
+                        conversation_id=live_enc["conversation_id"],
+                    )
+                # --- Fences (I5) ----------------------------------------
+                for enc in self.list_encounters(user_id, arch_id, keystone_index):
+                    conversations.ensure_fence(user_id, enc["conversation_id"])
+                    key_report["fences"] += 1
+                    if enc["status"] == "complete":
+                        conversations.close_fence(
+                            user_id, enc["conversation_id"], enc["run_id"]
+                        )
+                # --- Step 5: verify -------------------------------------
+                encounters = self.list_encounters(user_id, arch_id, keystone_index)
+                expected = len(archives) + (1 if mrow is not None else 0)
+                if len(encounters) != expected:
+                    key_report["failures"].append(
+                        f"encounter count {len(encounters)} != archive {len(archives)} + live {1 if mrow is not None else 0}"
+                    )
+                if conversations.count_messages(user_id, shared_cid) != live_msg_before:
+                    key_report["failures"].append("live message count changed")
+                for enc in encounters:
+                    if enc.get("transcript_source") == "archive":
+                        try:
+                            n = len(json.loads(enc.get("transcript_json") or "[]"))
+                        except Exception:
+                            n = -1
+                        if enc.get("message_count") != n:
+                            key_report["failures"].append(
+                                f"archive run {enc['run_id']}: message_count {enc.get('message_count')} != transcript {n}"
+                            )
+                        if not enc.get("legacy_group_key"):
+                            key_report["failures"].append(
+                                f"archive run {enc['run_id']}: legacy_group_key missing"
+                            )
+                        group = groups.get(enc.get("legacy_group_key") or "", [])
+                        want_dup = 1 if len(group) > 1 else 0
+                        if enc.get("legacy_possible_duplicate") != want_dup:
+                            key_report["failures"].append(
+                                f"archive run {enc['run_id']}: legacy_possible_duplicate wrong"
+                            )
+                    else:
+                        live_now = conversations.count_messages(
+                            user_id, enc["conversation_id"]
+                        )
+                        if enc.get("message_count") != live_now:
+                            key_report["failures"].append(
+                                f"live run {enc['run_id']}: message_count {enc.get('message_count')} != live {live_now}"
+                            )
+                    fence = conversations.get_fence_state(user_id, enc["conversation_id"])
+                    want = "closed" if enc["status"] == "complete" else "open"
+                    if fence != want:
+                        key_report["failures"].append(
+                            f"run {enc['run_id']}: fence {fence} != {want}"
+                        )
+                if key_report["failures"]:
+                    report["verified"] = False
+                    report["failures"].extend(
+                        f"{user_id}/{arch_id}/{keystone_index}: {f}"
+                        for f in key_report["failures"]
+                    )
+        return report
+
     def update_encounter(
         self, user_id: str, run_id: str, **fields: Any
     ) -> dict[str, Any] | None:
@@ -813,7 +1149,10 @@ class MeetingStore:
         return self.get_encounter(user_id, run_id)
 
     def finalize_encounter(
-        self, user_id: str, run_id: str, message_count: int | None = None
+        self, user_id: str, run_id: str, message_count: int | None = None,
+        verification_status: str | None = None,
+        verification_detail: dict[str, Any] | None = None,
+        verification_checked_at: str | None = None,
     ) -> dict[str, Any] | None:
         """Atomically complete one encounter (proposal §3.1 step 6).
 
@@ -823,9 +1162,13 @@ class MeetingStore:
         host writes those there during the encounter), and the meetings
         row mirrors the completion — but only while it still points at
         this run (a successor already owns the pointer once a Meet
-        Again has run). Idempotent: an already-finalized encounter
-        returns its row unchanged. Returns the encounter row, or None
-        when the run does not exist."""
+        Again has run). When a read-consistency check result is given,
+        its status + checked_at are written and its detail entry is
+        APPENDED to verification_detail_json (the history is
+        append-only — a failed check never overwrites a prior passing
+        record). Idempotent: an already-finalized encounter returns
+        its row unchanged. Returns the encounter row, or None when
+        the run does not exist."""
         now = _utcnow()
         with self._lock:
             try:
@@ -861,6 +1204,24 @@ class MeetingStore:
                         sets[col] = mrow[col]
                 if message_count is not None:
                     sets["message_count"] = message_count
+                if verification_status is not None:
+                    sets["verification_status"] = verification_status
+                    sets["verification_checked_at"] = (
+                        verification_checked_at or now
+                    )
+                    if verification_detail is not None:
+                        try:
+                            history = json.loads(
+                                enc["verification_detail_json"] or "[]"
+                            )
+                        except Exception:
+                            history = []
+                        if not isinstance(history, list):
+                            history = []
+                        history.append(verification_detail)
+                        sets["verification_detail_json"] = json.dumps(
+                            history, ensure_ascii=True
+                        )
                 cols = ", ".join(f"{k} = ?" for k in sets)
                 self._conn.execute(
                     f"UPDATE meeting_encounters SET {cols} "
@@ -1044,6 +1405,27 @@ def _is_ceiling_filed(row: dict[str, Any]) -> bool:
     if not isinstance(state, dict) or "impression_answered" not in state:
         return False
     return state.get("impression_answered") is False
+
+
+#: Normative paragraph (readiness amendment §A): what the
+#: read-consistency check does and does not establish. Carried into
+#: the implementation's documentation and into any user-facing copy
+#: that describes the verification badge (the encounter detail
+#: response serves it as ``verification_note``).
+READ_CONSISTENCY_NORMATIVE = (
+    "The read-consistency check performs two independent paged reads of the same "
+    "SQLite records (the live `messages` rows for the encounter's conversation id, "
+    "in `id` order) and compares them on count, `id` sequence, and order; it "
+    "confirms the six read-back fields are present and the `state_json` parses "
+    "with its version context. A passing check establishes that the two reads "
+    "agree and that the recorded transcript is internally consistent at the time "
+    "of the check. It does **not** establish that no earlier messages are missing "
+    "relative to any external ground truth — there is no external ground truth for "
+    "a live conversation — nor that the transcript matches any record outside the "
+    "live rows, nor absolute completeness. A record can be preserved without being "
+    "read-consistency-verified, and it must never be represented as verified merely "
+    "because preservation was attempted."
+)
 
 
 class MeetingService:
@@ -1816,6 +2198,9 @@ class MeetingService:
             "messages": messages,
             "total": total,
             "read_only": enc["status"] == "complete",
+            # What the verification badge does and does not establish
+            # (readiness amendment §A) — carried into user-facing copy.
+            "verification_note": READ_CONSISTENCY_NORMATIVE,
         }
 
     def turn(self, user_id: str, archetype_id: str, message: str, keystone_index: int = 1) -> dict[str, Any]:
@@ -1995,6 +2380,83 @@ class MeetingService:
         )
         return reply.reply
 
+    def _read_consistency_check(
+        self, user_id: str, encounter: dict[str, Any],
+        meetings_row: dict[str, Any] | None,
+    ) -> tuple[str, dict[str, Any]]:
+        """The completion read-consistency check (readiness amendment
+        §A, AC5/AC16): two independent paged reads of the encounter's
+        transcript (the live `messages` rows for its conversation id,
+        in `id` order) must agree on count, `id` sequence, and order;
+        the six read-back fields must be present on the meetings row;
+        `state_json` must parse. Returns (status, detail_entry) —
+        `read_consistency_verified` or `read_consistency_failed`.
+        A failure NEVER blocks completion (the encounter is still
+        marked complete; a successor is still creatable) — it is
+        recorded, and the detail history is append-only, so a failed
+        check never overwrites a prior passing record. See
+        READ_CONSISTENCY_NORMATIVE for what the check does and does
+        not establish."""
+        cid = encounter["conversation_id"]
+        checked_at = _utcnow()
+
+        def _read_all() -> list[dict[str, Any]]:
+            rows: list[dict[str, Any]] = []
+            offset = 0
+            while True:
+                page = self.conversations.history(
+                    user_id, cid, limit=200, offset=offset
+                )
+                rows.extend(page)
+                if len(page) < 200:
+                    break
+                offset += len(page)
+            return rows
+
+        failures: list[str] = []
+        try:
+            first = _read_all()
+            second = _read_all()
+        except Exception as exc:  # noqa: BLE001 — the check records, never raises
+            failures.append(f"read_error: {exc}")
+            first, second = [], []
+        first_ids = [m["id"] for m in first]
+        second_ids = [m["id"] for m in second]
+        if len(first) != len(second):
+            failures.append(
+                f"count_mismatch: first={len(first)} second={len(second)}"
+            )
+        if first_ids != second_ids:
+            failures.append("id_sequence_mismatch")
+        mrow = meetings_row or {}
+        for col in (
+            "readback_claim", "readback_response", "readback_strands",
+            "readback_original_claim", "readback_seat_outcome",
+            "readback_visitor_response",
+        ):
+            if mrow.get(col) is None:
+                failures.append(f"readback_field_missing: {col}")
+        raw_state = encounter.get("state_json") or ""
+        if raw_state:
+            try:
+                state = json.loads(raw_state)
+                if not isinstance(state, dict):
+                    failures.append("state_json_not_an_object")
+            except Exception:
+                failures.append("state_json_unparseable")
+        status = (
+            "read_consistency_failed" if failures else "read_consistency_verified"
+        )
+        detail = {
+            "checked_at": checked_at,
+            "result": status,
+            "count": len(first),
+            "id_range": [first_ids[0], first_ids[-1]] if first_ids else [None, None],
+            "failures": failures,
+            "note": READ_CONSISTENCY_NORMATIVE,
+        }
+        return status, detail
+
     def _do_reveal(self, user_id: str, arch_id: str, keystone_index: int,
                    script: MT.MeetingScript, wrap_line: str = "",
                    silent_close: bool = False) -> None:
@@ -2082,10 +2544,20 @@ class MeetingService:
                     f"fence for meeting conversation {cid!r} was closed "
                     "by another run; refusing to finalize"
                 )
-            # (6) atomic finalize (incl. the meetings-row mirror).
+            # (6) the completion read-consistency check (AC5/AC16):
+            # the fence is closed, so the transcript is stable for
+            # the two reads. A failure is recorded, never a block —
+            # the encounter still completes.
+            verification_status, verification_detail = self._read_consistency_check(
+                user_id, enc, mrow
+            )
+            # (7) atomic finalize (incl. the meetings-row mirror).
             message_count = self.conversations.count_messages(user_id, cid)
             self.meetings.finalize_encounter(
-                user_id, run_id, message_count=message_count
+                user_id, run_id, message_count=message_count,
+                verification_status=verification_status,
+                verification_detail=verification_detail,
+                verification_checked_at=verification_detail["checked_at"],
             )
 
     def _emit_meeting_completed(self, user_id: str, arch_id: str, keystone_index: int,
@@ -2523,11 +2995,22 @@ class MeetingService:
                 if fence == "closed" and not enc.get("finalized_at"):
                     # CR-B5: the fence closed but the finalize never
                     # ran — complete it from the recorded artifacts.
+                    # The completion check runs here too (a failure is
+                    # recorded, never a block).
+                    mrow = self.meetings.get(
+                        user_id, enc["archetype_id"], enc["keystone_index"]
+                    )
+                    verification_status, verification_detail = (
+                        self._read_consistency_check(user_id, enc, mrow)
+                    )
                     message_count = self.conversations.count_messages(
                         user_id, enc["conversation_id"]
                     )
                     self.meetings.finalize_encounter(
-                        user_id, enc["run_id"], message_count=message_count
+                        user_id, enc["run_id"], message_count=message_count,
+                        verification_status=verification_status,
+                        verification_detail=verification_detail,
+                        verification_checked_at=verification_detail["checked_at"],
                     )
                     records.append({**base, "action": "finalized_cr_b5"})
                     continue

@@ -12,8 +12,9 @@ needs its own separate authorization (brief §11).
 T4/T5/T13 are written in their POST-REBASE (flipped) forms: the
 Gardener S1 build (PR #346, merged to main 93e6033) already landed
 G4/D1, so the slice shadow line is absent and the slice pronouns
-are corrected; the Q-R7 sequencing edit has NOT landed, so the
-"teach" sentence is still the live text (T13 asserts "teach").
+are corrected; the Q-R7 sequencing edit landed in main via PR #348
+(b570c65), so the "lecture" sentence is the live text (T13 asserts
+"lecture").
 """
 
 from __future__ import annotations
@@ -307,8 +308,8 @@ Q4_SENTENCE = (
     "better one."
 )
 NAME_GUARD = "Do not reveal your name yet."
-TEACH_SENTENCE = (
-    "never interrupt a meaningful exchange to introduce yourself or to teach"
+LECTURE_SENTENCE = (
+    "never interrupt a meaningful exchange to introduce yourself or to lecture"
 )
 
 
@@ -468,11 +469,14 @@ def test_t11_measured_lengths():
     assert len(" Do not reveal your name yet.") == 29
 
 
-def test_t13_turn_frames_teach_form():
-    """T13 (teach form — the Q-R7 sequencing edit has NOT landed, so
-    the turn frames still say 'teach', not 'lecture'; this build
-    never edits that sentence). The sentence is verbatim in all five
-    turn frames and in the steward_records.py duplicate."""
+def test_t13_turn_frames_lecture_form():
+    """T13 (lecture form — the Q-R7 sequencing edit LANDED in main
+    via PR #348, b570c65, so the turn frames say 'lecture', not
+    'teach'; this build never edits that sentence, it only flips
+    the pin). The sentence is verbatim in all five turn frames and
+    in the steward_records.py duplicate; the old teach sentence is
+    gone from all of them (the Weaver frame's unrelated 'teaching
+    every feature' is untouched and is NOT what this asserts on)."""
     import local_ai.council.steward_records as SR
 
     frames = {
@@ -482,7 +486,11 @@ def test_t13_turn_frames_teach_form():
         "skeptic": ENC.SKEPTIC_TURN_FRAME,
         "champion": ENC.CHAMPION_TURN_FRAME,
     }
+    teach_sentence = (
+        "never interrupt a meaningful exchange to introduce yourself or to teach"
+    )
     for key, frame in frames.items():
-        assert TEACH_SENTENCE in frame, key
-        assert "to lecture" not in frame, key
-    assert TEACH_SENTENCE in SR.TURN_FRAME
+        assert LECTURE_SENTENCE in frame, key
+        assert teach_sentence not in frame, key
+    assert LECTURE_SENTENCE in SR.TURN_FRAME
+    assert teach_sentence not in SR.TURN_FRAME

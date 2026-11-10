@@ -61,7 +61,6 @@ def _composed_frames():
     turn_frame, _cue = runtime._turn_frame(
         ENC.EncounterState(), "Hello.")
     engage_frame = definition.engage_frame
-    engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
@@ -152,15 +151,21 @@ def test_duplicate_focus_line_dropped_from_turn_composition():
     assert "Your ground — what naturally draws your attention" not in turn_frame
 
 
-def test_capability_intention_line_kept_as_deliberate_offer():
-    # Resolution, not removal: the intention line stays in the
-    # first-meeting block, and the honesty guard stays last.
+def test_capability_block_is_lead_in_plus_bullets_only():
+    # Level 1 (2026-11-10): the intention line and honesty guard
+    # moved to the canonical tier. The first-meeting block is the
+    # adopted lead-in plus the seat's capability bullets only; the
+    # guard lives in the tier (T-L1-2, tests/test_canonical_tier.py).
+    # The deliberate-offer resolution stands — the intention line
+    # still instructs the offer, now from the tier, not the block.
     block = CAP.first_meeting_block("conductor", CAP.VisitorState())
-    assert CAP.INTENTION_LINE in block
-    assert block.rstrip().endswith(CAP.HONESTY_GUARD)
+    assert CAP.INTENTION_LINE not in block
+    assert CAP.HONESTY_GUARD not in block
+    assert block.split("\n")[0] == "From your scope:"
+    assert block.split("\n")[-1].startswith("- ")
     _definition, _turn, engage = _composed_frames()
-    assert CAP.INTENTION_LINE in engage
-    assert engage.rstrip().endswith(CAP.HONESTY_GUARD)
+    assert CAP.INTENTION_LINE not in engage
+    assert CAP.HONESTY_GUARD not in engage
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +272,9 @@ def test_recomputed_budget_fits_with_headroom():
     assert len(engage_frame) < CAP_LIMIT
     assert CAP_LIMIT - len(turn_frame) >= MIN_HEADROOM
     assert CAP_LIMIT - len(engage_frame) >= MIN_HEADROOM
-    # The honesty guard is the last content of the engage frame.
-    assert engage_frame.rstrip().endswith(CAP.HONESTY_GUARD)
+    # Level 1 (2026-11-10): the honesty guard is the last content of
+    # the tier section, immediately before the frame — asserted in
+    # the tier by T-L1-1 (tests/test_canonical_tier.py), not here.
 
 
 def test_budget_identical_on_steward_and_rollback_paths(monkeypatch):

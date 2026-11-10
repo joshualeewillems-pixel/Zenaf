@@ -88,11 +88,12 @@ def _definition():
 
 def _composed_engage(definition):
     """The engage frame as the live path actually sends it: the
-    definition's engage frame + the runtime's Zenaf note, naming note,
-    and capability context (encounter.handle_turn, substantive path)."""
+    definition's engage frame + the runtime's naming note and
+    capability context (encounter.handle_turn, substantive path).
+    The standing Zenaf question note no longer rides the frame
+    (Level 1, 2026-11-10): it rides the canonical tier."""
     return (
         definition.engage_frame
-        + "\n\n" + ENC._ZENAF_QUESTION_NOTE
         + "\n\n" + ENC._naming_note(definition)
         + "\n\n" + definition.capability_context
     )
@@ -311,15 +312,18 @@ def test_parser_contract_delimiter_and_strands():
 
 def test_frame_budget_fits_live_cap_with_guard_intact():
     """Binding cap: reply.py truncates extra_instructions at _EXTRA_INSTRUCTIONS_CAP, and
-    the meeting path sends the composed engage frame through it. The
-    honesty guard rides at the END of the composed frame (capability
-    context tail), so it survives only if the composed frame fits.
-    Measured here, not asserted from the proposal's arithmetic."""
+    the meeting path sends the composed engage frame through it.
+    Level 1 (2026-11-10): the honesty guard no longer rides the
+    frame at all — it rides the canonical tier, an uncapped section
+    immediately before the frame, so frame-cap truncation can never
+    touch it (asserted in the tier by T-L1-1,
+    tests/test_canonical_tier.py). Measured here, not asserted from
+    the proposal's arithmetic."""
     definition = _definition()
     composed = _composed_engage(definition)
     assert len(composed) <= _EXTRA_INSTRUCTIONS_CAP
-    # The guard is the last content of the composed frame.
-    assert composed.rstrip().endswith("immediately usable.")
+    # The guard rides the tier, not the frame.
+    assert "immediately usable." not in composed
     # Worst-case naming note: every other seat already met.
     all_met = dataclasses.replace(
         definition,

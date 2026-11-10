@@ -159,10 +159,15 @@ NOT_CONSENTED = CAP.VisitorState(signed_in=True, consent_acknowledged=False)
 UNKNOWN_CONSENT = CAP.VisitorState(signed_in=True, consent_acknowledged=None)
 
 
-def test_first_meeting_block_carries_slice_plus_intention_line():
+def test_first_meeting_block_carries_lead_in_plus_slice_bullets():
+    # Level 1 (2026-11-10): the block is the adopted lead-in plus
+    # the seat's capability bullets only. The intention line and
+    # honesty guard moved to the canonical tier — asserted there by
+    # T-L1-2 (tests/test_canonical_tier.py).
     block = CAP.first_meeting_block("conductor", CONSENTED)
-    assert CAP.INTENTION_LINE in block
-    assert CAP.HONESTY_GUARD in block
+    assert CAP.INTENTION_LINE not in block
+    assert CAP.HONESTY_GUARD not in block
+    assert block.split("\n")[0] == "From your scope:"
     for name in ("First meetings", "Fellowship attention (!)",
                  "Convened multi-seat council", "Artifact provenance"):
         assert name in block
@@ -193,7 +198,10 @@ def test_weaver_definition_carries_the_block_and_turn_frame_renders_it():
     runtime = ENC.EncounterRuntime(definition)
     frame, _cue = runtime._turn_frame(ENC.EncounterState(), "hello there")
     assert definition.capability_context in frame
-    assert CAP.INTENTION_LINE in frame
+    # Level 1 (2026-11-10): the intention line rides the canonical
+    # tier, not the frame — asserted in the tier section of the
+    # assembled prompt by T-L1-1 (tests/test_canonical_tier.py).
+    assert CAP.INTENTION_LINE not in frame
 
 
 def test_engage_path_frame_carries_the_block():
@@ -236,7 +244,11 @@ def test_engage_path_frame_carries_the_block():
         0,
     )
     assert host.frames, "engage path spent no generation"
-    assert any(CAP.INTENTION_LINE in f for f in host.frames)
+    # Level 1 (2026-11-10): the intention line rides the canonical
+    # tier, not the frames — asserted there by T-L1-1
+    # (tests/test_canonical_tier.py). The capability bullets still
+    # ride the frames.
+    assert not any(CAP.INTENTION_LINE in f for f in host.frames)
     assert any("First meetings" in f for f in host.frames)
 
 

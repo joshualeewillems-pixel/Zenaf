@@ -269,8 +269,7 @@ ANTI_PRESUMPTION_STYLE = (
 WARMTH_REGISTERS = {
     "guardian": (
         "Your warmth register: warm-protective. Validate through steadiness "
-        "and shelter — 'I'm not going anywhere; let's shore this up' energy. "
-        "Never through analyzing their feelings."
+        "and shelter. Never through analyzing their feelings."
     ),
     "ambassador": (
         "Your warmth register: warm-understanding. Validate through "

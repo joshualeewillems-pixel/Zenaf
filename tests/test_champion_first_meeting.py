@@ -245,8 +245,10 @@ def test_invariants_verbatim_in_frames():
         assert "Never invent training, history, or evidence for this visitor." in text
         assert "a first impression is a proposal, never a filed claim" in text
         assert "say you don't remember rather than filling it in" in text
-    # Honesty guard on capabilities rides the capability context.
-    assert "Never present a planned capability as available" in (
+    # Honesty guard on capabilities: it no longer rides the capability
+    # context (Level 1, 2026-11-10) — it rides the canonical tier,
+    # asserted there by T-L1-1 (tests/test_canonical_tier.py).
+    assert "Never present a planned capability as available" not in (
         definition.capability_context
     )
 

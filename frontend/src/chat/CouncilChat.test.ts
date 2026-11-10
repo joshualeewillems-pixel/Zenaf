@@ -129,6 +129,29 @@ function installFetch() {
         }),
       )
     }
+    if (url.includes('/feedback?')) {
+      // Read-back feedback prefill: one saved record for conversation
+      // A (response m2), none for any other conversation.
+      const cid = new URL(url, 'http://x').searchParams.get('conversation_id') ?? ''
+      return Promise.resolve(
+        ok({
+          records:
+            cid === A
+              ? [
+                  {
+                    id: 'fb1',
+                    response_ref: 'm2',
+                    conversation_id: A,
+                    seat: 'mentor',
+                    slider: 6,
+                    checks: ['Helpful'],
+                    note: 'Landed well.',
+                  },
+                ]
+              : [],
+        }),
+      )
+    }
     if (url.includes('/conversation?')) {
       const id = new URL(url, 'http://x').searchParams.get('conversation_id') ?? ''
       const d = deferred()
@@ -253,6 +276,26 @@ describe('T8 hydration', () => {
     expect(container.textContent).not.toContain("Couldn't load this conversation")
     expect(container.textContent).toContain('recovered thread')
     expect(sendButton().disabled).toBe(false)
+  })
+
+  it('loads saved feedback once per conversation and prefills the widget minimized', async () => {
+    renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'mentor' })
+    await flush()
+    expect(
+      calls.filter((c) => c.url.includes('/feedback?')).map((c) => c.url),
+    ).toEqual([expect.stringContaining(`/feedback?conversation_id=${A}`)])
+    hydrations[A].resolve(ok({
+      conversation_id: A,
+      messages: [u('m1', 'hello A'), v('m2', 'reply A')],
+      total: 2,
+    }))
+    await flush()
+    expect(container.textContent).toContain('reply A')
+    // The m2 widget mounts minimized with the saved face — the reply
+    // itself is untouched.
+    expect(container.textContent).toContain('😊')
+    expect(container.textContent).toContain('Saved, tap to change')
+    expect(calls.filter((c) => c.url.includes('/feedback?'))).toHaveLength(1)
   })
 
   it('re-hydrates identically on remount with the same id', async () => {

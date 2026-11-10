@@ -126,3 +126,25 @@ def test_list_filters_by_conversation_and_newest_first(client):
     assert [r["response_ref"] for r in all_records] == ["m2", "m1"]
     only = c.get("/feedback", params={"conversation_id": "skeleton"}).json()["records"]
     assert [r["response_ref"] for r in only] == ["m1"]
+
+
+def test_second_submit_supersedes_first_newest_first(client):
+    """Latest-wins contract the frontend prefill relies on: two submits
+    for the same response_ref both store, newest first, and the first
+    row stays retrievable as edit history."""
+    c, _store, _app = client
+    r1 = _submit(c)
+    assert r1.status_code == 200, r1.text
+    first = r1.json()
+    r2 = _submit(c, slider=3, checks=["Missed the mark"], note="On reflection, no.")
+    assert r2.status_code == 200, r2.text
+    second = r2.json()
+    assert second["id"] != first["id"]
+    records = c.get("/feedback").json()["records"]
+    assert len(records) == 2
+    assert records[0] == second
+    assert records[0]["slider"] == 3
+    assert records[0]["checks"] == ["Missed the mark"]
+    assert records[0]["note"] == "On reflection, no."
+    assert records[1] == first
+    assert records[1]["slider"] == 6

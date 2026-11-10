@@ -65,11 +65,13 @@ canonical character; the user's echo is a different side of the switch).
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 import logging
 import re
 import sqlite3
 import threading
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -90,7 +92,13 @@ from .encounter import (
     _is_pass,
 )
 from .reply import generate_voice_reply
-from .store import ConversationStore
+from .store import (
+    ConversationIntegrityError,
+    ConversationStore,
+    ConversationWriteRefused,
+    OpeningIntegrityConflict,
+    TransactionStateError,
+)
 
 GenerateFn = Callable[..., str]
 
@@ -140,6 +148,49 @@ CREATE TABLE IF NOT EXISTS meeting_archives (
   meeting_created_at TEXT NOT NULL DEFAULT '',
   archived_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS meeting_encounters (
+  run_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  archetype_id TEXT NOT NULL,
+  keystone_index INTEGER NOT NULL,
+  run_number INTEGER NOT NULL,
+  predecessor_run_id TEXT,
+  predecessor_link_kind TEXT NOT NULL DEFAULT 'witnessed',
+  conversation_id TEXT NOT NULL,
+  transcript_source TEXT NOT NULL DEFAULT 'live',
+  transcript_json TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'creating',
+  stage TEXT NOT NULL DEFAULT 'encounter',
+  state_json TEXT NOT NULL DEFAULT '',
+  state_schema_version TEXT NOT NULL DEFAULT 'unknown',
+  state_writer_ref TEXT NOT NULL DEFAULT 'unknown',
+  archive_commit TEXT NOT NULL DEFAULT 'unknown',
+  readback_claim TEXT NOT NULL DEFAULT '',
+  readback_response TEXT NOT NULL DEFAULT '',
+  readback_strands TEXT NOT NULL DEFAULT '[]',
+  readback_original_claim TEXT NOT NULL DEFAULT '',
+  readback_seat_outcome TEXT NOT NULL DEFAULT '',
+  readback_visitor_response TEXT NOT NULL DEFAULT '',
+  message_count INTEGER NOT NULL DEFAULT 0,
+  verification_status TEXT NOT NULL DEFAULT 'unverified',
+  verification_detail_json TEXT NOT NULL DEFAULT '[]',
+  verification_checked_at TEXT,
+  task_id TEXT,
+  finalized_at TEXT,
+  opening_expected INTEGER NOT NULL DEFAULT 0,
+  opening_script_id TEXT,
+  opening_script_version TEXT,
+  opening_paragraphs_json TEXT,
+  legacy_group_key TEXT,
+  legacy_possible_duplicate INTEGER NOT NULL DEFAULT 0,
+  run_id_provenance TEXT NOT NULL DEFAULT 'generated',
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  UNIQUE (user_id, archetype_id, keystone_index, run_number),
+  UNIQUE (user_id, archetype_id, keystone_index, predecessor_run_id)
+);
+CREATE INDEX IF NOT EXISTS idx_encounters_key_run
+  ON meeting_encounters (user_id, archetype_id, keystone_index, run_number);
 """
 
 #: The deterministic heuristics that guard the state-critical
@@ -164,8 +215,90 @@ def conversation_id_for(archetype_id: str, keystone_index: int) -> str:
     return f"meeting-{archetype_id}-{keystone_index}"
 
 
+#: Per-run / per-key locks (non-destructive Meet Again, Slice 2).
+#: The meeting service is constructed fresh per request, so no
+#: instance-level lock can cover a run: the registry is module-level,
+#: keyed by ``run:<run_id>`` for a single encounter and by
+#: ``key:<user_id>:<archetype_id>:<keystone_index>`` for creation of
+#: the next run of one key. RLock: a turn holds its run's lock while
+#: the runtime closes through _do_reveal, which takes the same lock
+#: again. One small lock object per run — the same order as the
+#: encounter rows themselves; the registry is never pruned (a run's
+#: lock must stay the same object for the run's life).
+_RUN_LOCKS: dict[str, threading.RLock] = {}
+_RUN_LOCKS_GUARD = threading.Lock()
+
+
+def _lock_for(key: str) -> threading.RLock:
+    with _RUN_LOCKS_GUARD:
+        lock = _RUN_LOCKS.get(key)
+        if lock is None:
+            # RLock, not Lock: a turn holds its run's lock while the
+            # runtime closes through _do_reveal, which takes the same
+            # lock again in the same thread. A plain Lock here deadlocks
+            # the ceiling close (found by the ceiling test hanging in
+            # _do_reveal's _resolve_encounter — the lock was already
+            # held by the enclosing turn).
+            lock = threading.RLock()
+            _RUN_LOCKS[key] = lock
+        return lock
+
+
+def _new_run_id() -> str:
+    """A fresh encounter run id (uuid4 hex, proposal §1)."""
+    return uuid.uuid4().hex
+
+
+def _opening_digest(paragraphs: list[str]) -> str:
+    """The opening script version: first 16 hex of sha256 of the
+    joined opening paragraphs (proposal §3.3)."""
+    return hashlib.sha256("\n".join(paragraphs).encode("utf-8")).hexdigest()[:16]
+
+
+def _run_key_for_encounter(
+    encounter: dict[str, Any] | None, meetings_row: dict[str, Any] | None = None
+) -> str:
+    """The claim-identity key for one run (the ``_file_impression``
+    run_key). New runs are keyed by their run_id; a run that predates
+    encounters keeps its created_at-derived key, so a re-filing of the
+    same run finds its existing claim instead of filing a second one
+    and superseding its own standing claim:
+    - provenance 'generated' -> the run_id.
+    - provenance 'generated-migration' -> the meetings row's created_at.
+    - provenance 'legacy-record' -> the legacy group key (the archive
+      row's meeting_created_at, the original run's created_at).
+    - no encounter -> the meetings row's created_at (legacy path)."""
+    if encounter is None:
+        created = (meetings_row or {}).get("created_at") or ""
+        return re.sub(r"[^0-9A-Za-z]", "", created) or "run"
+    provenance = encounter.get("run_id_provenance") or "generated"
+    if provenance == "generated":
+        return encounter["run_id"]
+    if provenance == "legacy-record":
+        created = encounter.get("legacy_group_key") or ""
+        return re.sub(r"[^0-9A-Za-z]", "", created) or "run"
+    created = (
+        (meetings_row or {}).get("created_at")
+        or encounter.get("created_at")
+        or ""
+    )
+    return re.sub(r"[^0-9A-Za-z]", "", created) or "run"
+
+
 class MeetingError(ValueError):
-    """A meeting rule refusal (maps to 409 in the route layer)."""
+    """A meeting rule refusal (maps to 409 in the route layer).
+
+    ``code`` is the stable machine-readable refusal (``encounter_finalized``,
+    ``encounter_in_progress``, ...); ``run_id`` names the encounter the
+    refusal is about, when there is one. Both are carried on the
+    exception so the route layer can return them without re-deriving
+    them; a MeetingError without a code keeps today's plain-string detail."""
+
+    def __init__(self, message: str, code: str | None = None,
+                 run_id: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.run_id = run_id
 
 
 #: Written-but-unreleased first meetings (Fellowship
@@ -234,6 +367,19 @@ class MeetingStore:
                         f"ALTER TABLE meeting_archives ADD COLUMN {column} "
                         "TEXT NOT NULL DEFAULT ''"
                     )
+            # Non-destructive Meet Again (Slice 2): the meetings row is
+            # the latest-encounter pointer — `run_id` names the
+            # encounter it points at, `conversation_id` that
+            # encounter's conversation. Additive, guarded.
+            for column, ddl in (
+                ("run_id", "ALTER TABLE meetings ADD COLUMN run_id TEXT"),
+                (
+                    "conversation_id",
+                    "ALTER TABLE meetings ADD COLUMN conversation_id TEXT",
+                ),
+            ):
+                if column not in cols:
+                    self._conn.execute(ddl)
             self._conn.commit()
 
     def close(self) -> None:
@@ -254,14 +400,45 @@ class MeetingStore:
 
         D5 (2026-11-07): the recovery sweep's input — the sweep needs
         every active meeting to find affirmed-but-unfiled impressions,
-        not one row at a time."""
+        not one row at a time.
+
+        Non-destructive Meet Again (Slice 2): the active set is the
+        in-progress ENCOUNTERS, one row per key, in encounter shape
+        (carrying run_id + conversation_id) — UNION the meetings rows
+        with status 'active' that have NO encounter row yet (an
+        unmigrated / un-materialized meeting), in meetings-row shape
+        with conversation_id filled in (the stored column, or the
+        legacy shared id). The sweep reads the encounter rows' run_id
+        for the claim identity and the conversation id for the quiet
+        check; the meetings-row entries carry run_id None and are
+        materialized by the caller before any claim work."""
         with self._lock:
-            rows = self._conn.execute(
+            enc_rows = self._conn.execute(
+                "SELECT * FROM meeting_encounters WHERE user_id = ? AND "
+                "status = 'in_progress' ORDER BY created_at ASC",
+                (user_id,),
+            ).fetchall()
+            enc_keys = {
+                (r["archetype_id"], r["keystone_index"]) for r in enc_rows
+            }
+            m_rows = self._conn.execute(
                 "SELECT * FROM meetings WHERE user_id = ? AND "
                 "status = 'active' ORDER BY created_at ASC",
                 (user_id,),
             ).fetchall()
-        return [dict(row) for row in rows]
+        out: list[dict[str, Any]] = [_encounter_dict(r) for r in enc_rows]
+        for r in m_rows:
+            key = (r["archetype_id"], r["keystone_index"])
+            if key in enc_keys:
+                continue
+            d = dict(r)
+            if not d.get("conversation_id"):
+                d["conversation_id"] = conversation_id_for(
+                    d["archetype_id"], d["keystone_index"]
+                )
+            out.append(d)
+        out.sort(key=lambda d: d.get("created_at") or "")
+        return out
 
     def create(self, user_id: str, archetype_id: str, keystone_index: int) -> dict[str, Any]:
         now = _utcnow()
@@ -276,7 +453,11 @@ class MeetingStore:
         return self.get(user_id, archetype_id, keystone_index)  # type: ignore[return-value]
 
     def update(self, user_id: str, archetype_id: str, keystone_index: int, **fields: Any) -> dict[str, Any]:
-        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response", "readback_strands", "readback_original_claim", "readback_seat_outcome", "readback_visitor_response", "state_json"}
+        # The pointer columns (run_id / conversation_id) are
+        # updatable: the meetings row points at the latest encounter,
+        # and the pointer moves on Meet Again / materialization. The
+        # key (user, archetype, keystone) is never updatable.
+        allowed = {"stage", "status", "question_idx", "readback_claim", "readback_response", "readback_strands", "readback_original_claim", "readback_seat_outcome", "readback_visitor_response", "state_json", "run_id", "conversation_id"}
         sets = {k: v for k, v in fields.items() if k in allowed}
         if sets:
             cols = ", ".join(f"{k} = ?" for k in sets)
@@ -337,14 +518,16 @@ class MeetingStore:
 
     def met_seats(self, user_id: str) -> list[str]:
         """Archetype ids whose FIRST meeting (keystone 1) is complete
-        for this user — the naming rule's met set (amendment E):
-        character names may be used for these seats, roles for all
-        others. A begun-but-incomplete meeting does not count: the
-        name unlocks at completion, when the card says so."""
+        for this user — the naming rule's met set (amendment E).
+        Read from the ENCOUNTERS, never the meetings rows (amendment
+        §1): a seat counts when ANY completed encounter exists for its
+        first meeting. A begun-but-incomplete meeting does not count:
+        the name unlocks at completion, when the card says so."""
         with self._lock:
             rows = self._conn.execute(
-                "SELECT archetype_id FROM meetings WHERE user_id = ? "
-                "AND keystone_index = 1 AND status = 'complete'",
+                "SELECT DISTINCT archetype_id FROM meeting_encounters "
+                "WHERE user_id = ? AND keystone_index = 1 "
+                "AND status = 'complete'",
                 (user_id,),
             ).fetchall()
         return [row[0] for row in rows]
@@ -425,6 +608,225 @@ class MeetingStore:
             ).fetchall()
         return [_archive_dict(r) for r in rows]
 
+    # -- encounters (one row per run; the meeting is a succession) ----------
+
+    def get_encounter(self, user_id: str, run_id: str) -> dict[str, Any] | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM meeting_encounters WHERE user_id = ? AND run_id = ?",
+                (user_id, run_id),
+            ).fetchone()
+        return _encounter_dict(row) if row else None
+
+    def get_latest_encounter(
+        self, user_id: str, archetype_id: str, keystone_index: int
+    ) -> dict[str, Any] | None:
+        """The highest-run_number encounter for the key, or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM meeting_encounters WHERE user_id = ? "
+                "AND archetype_id = ? AND keystone_index = ? "
+                "ORDER BY run_number DESC LIMIT 1",
+                (user_id, archetype_id, keystone_index),
+            ).fetchone()
+        return _encounter_dict(row) if row else None
+
+    def list_encounters(
+        self, user_id: str, archetype_id: str, keystone_index: int
+    ) -> list[dict[str, Any]]:
+        """Every encounter for the key, run_number ascending (the lineage)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM meeting_encounters WHERE user_id = ? "
+                "AND archetype_id = ? AND keystone_index = ? "
+                "ORDER BY run_number ASC",
+                (user_id, archetype_id, keystone_index),
+            ).fetchall()
+        return [_encounter_dict(r) for r in rows]
+
+    def distinct_meeting_keys(self, user_id: str) -> list[tuple[str, int]]:
+        """Every (archetype_id, keystone_index) the user has a meetings
+        row or an encounter row for — the recovery sweep's key input."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT archetype_id, keystone_index FROM meetings "
+                "WHERE user_id = ? UNION SELECT archetype_id, "
+                "keystone_index FROM meeting_encounters WHERE user_id = ?",
+                (user_id, user_id),
+            ).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
+    def distinct_user_ids(self) -> list[str]:
+        """Every user with a meetings row or an encounter row — the
+        recovery sweep's input."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT user_id FROM meetings "
+                "UNION SELECT DISTINCT user_id FROM meeting_encounters"
+            ).fetchall()
+        return [r[0] for r in rows]
+
+    def create_encounter(self, **fields: Any) -> dict[str, Any]:
+        """Insert one encounter row. The caller supplies run_id,
+        user_id, archetype_id, keystone_index, run_number and
+        conversation_id, plus any other Appendix A column; the rest
+        take their defaults. A duplicate run_number / predecessor for
+        the key raises IntegrityError — the caller re-reads the latest
+        encounter instead of creating a second run."""
+        fields = dict(fields)
+        fields.setdefault("created_at", _utcnow())
+        fields.setdefault("status", "creating")
+        cols = ", ".join(fields)
+        placeholders = ", ".join("?" for _ in fields)
+        with self._lock:
+            self._conn.execute(
+                f"INSERT INTO meeting_encounters ({cols}) VALUES ({placeholders})",
+                tuple(fields.values()),
+            )
+            self._conn.commit()
+        return self.get_encounter(fields["user_id"], fields["run_id"])  # type: ignore[return-value]
+
+    def update_encounter(
+        self, user_id: str, run_id: str, **fields: Any
+    ) -> dict[str, Any] | None:
+        """Update one encounter row (allow-list; identity fields are
+        never updated). ``verification_detail`` / ``opening_paragraphs``
+        take lists and are serialized. Returns the row, or None when
+        the run does not exist."""
+        if "verification_detail" in fields:
+            fields["verification_detail_json"] = json.dumps(
+                fields.pop("verification_detail"), ensure_ascii=True
+            )
+        if "opening_paragraphs" in fields:
+            fields["opening_paragraphs_json"] = json.dumps(
+                fields.pop("opening_paragraphs"), ensure_ascii=True
+            )
+        allowed = {
+            "status", "stage", "state_json", "state_schema_version",
+            "state_writer_ref", "archive_commit", "readback_claim",
+            "readback_response", "readback_strands",
+            "readback_original_claim", "readback_seat_outcome",
+            "readback_visitor_response", "message_count",
+            "verification_status", "verification_detail_json",
+            "verification_checked_at", "task_id", "finalized_at",
+            "completed_at", "opening_expected", "opening_script_id",
+            "opening_script_version", "opening_paragraphs_json",
+            "legacy_group_key", "legacy_possible_duplicate",
+            "transcript_json", "transcript_source", "predecessor_run_id",
+            "predecessor_link_kind",
+        }
+        sets = {k: v for k, v in fields.items() if k in allowed}
+        if not sets:
+            return self.get_encounter(user_id, run_id)
+        cols = ", ".join(f"{k} = ?" for k in sets)
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE meeting_encounters SET {cols} "
+                "WHERE user_id = ? AND run_id = ?",
+                (*sets.values(), user_id, run_id),
+            )
+            self._conn.commit()
+        return self.get_encounter(user_id, run_id)
+
+    def finalize_encounter(
+        self, user_id: str, run_id: str, message_count: int | None = None
+    ) -> dict[str, Any] | None:
+        """Atomically complete one encounter (proposal §3.1 step 6).
+
+        One BEGIN IMMEDIATE transaction on meetings.db: the encounter
+        flips to complete (finalized_at / completed_at set), its six
+        read-back fields + state_json sync from the meetings row (the
+        host writes those there during the encounter), and the meetings
+        row mirrors the completion — but only while it still points at
+        this run (a successor already owns the pointer once a Meet
+        Again has run). Idempotent: an already-finalized encounter
+        returns its row unchanged. Returns the encounter row, or None
+        when the run does not exist."""
+        now = _utcnow()
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                enc = self._conn.execute(
+                    "SELECT * FROM meeting_encounters "
+                    "WHERE user_id = ? AND run_id = ?",
+                    (user_id, run_id),
+                ).fetchone()
+                if enc is None:
+                    self._conn.execute("ROLLBACK")
+                    return None
+                if enc["finalized_at"]:
+                    self._conn.execute("ROLLBACK")
+                    return _encounter_dict(enc)
+                mrow = self._conn.execute(
+                    "SELECT * FROM meetings WHERE user_id = ? "
+                    "AND archetype_id = ? AND keystone_index = ?",
+                    (user_id, enc["archetype_id"], enc["keystone_index"]),
+                ).fetchone()
+                sets: dict[str, Any] = {
+                    "status": "complete",
+                    "stage": "complete",
+                    "finalized_at": now,
+                    "completed_at": enc["completed_at"] or now,
+                }
+                if mrow is not None:
+                    for col in (
+                        "state_json", "readback_claim", "readback_response",
+                        "readback_strands", "readback_original_claim",
+                        "readback_seat_outcome", "readback_visitor_response",
+                    ):
+                        sets[col] = mrow[col]
+                if message_count is not None:
+                    sets["message_count"] = message_count
+                cols = ", ".join(f"{k} = ?" for k in sets)
+                self._conn.execute(
+                    f"UPDATE meeting_encounters SET {cols} "
+                    "WHERE user_id = ? AND run_id = ?",
+                    (*sets.values(), user_id, run_id),
+                )
+                if mrow is not None and (
+                    mrow["run_id"] is None or mrow["run_id"] == run_id
+                ):
+                    self._conn.execute(
+                        "UPDATE meetings SET status = 'complete', "
+                        "stage = 'complete', run_id = ?, "
+                        "conversation_id = ?, updated_at = ? "
+                        "WHERE user_id = ? AND archetype_id = ? "
+                        "AND keystone_index = ?",
+                        (
+                            run_id, enc["conversation_id"], now,
+                            user_id, enc["archetype_id"], enc["keystone_index"],
+                        ),
+                    )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                if self._conn.in_transaction:
+                    try:
+                        self._conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                raise
+        return self.get_encounter(user_id, run_id)
+
+
+def _encounter_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """An encounter row as the API shape: the JSON columns parsed to
+    lists (``opening_paragraphs`` / ``verification_detail``), the raw
+    ``*_json`` keys dropped."""
+    out = dict(row)
+    try:
+        out["opening_paragraphs"] = json.loads(
+            out.pop("opening_paragraphs_json") or "null"
+        )
+    except Exception:
+        out["opening_paragraphs"] = None
+    try:
+        out["verification_detail"] = json.loads(
+            out.pop("verification_detail_json") or "[]"
+        )
+    except Exception:
+        out["verification_detail"] = []
+    return out
+
 
 def _archive_dict(row: sqlite3.Row) -> dict[str, Any]:
     out = dict(row)
@@ -464,7 +866,8 @@ class _MeetingHost:
     def __init__(self, service: "MeetingService", user_id: str, arch_id: str,
                  keystone_index: int, script: MT.MeetingScript,
                  fellowship_reference: str = "",
-                 decoupled_recognition: bool = False) -> None:
+                 decoupled_recognition: bool = False,
+                 conversation_id: str | None = None) -> None:
         self._svc = service
         self._user_id = user_id
         self._arch_id = arch_id
@@ -472,7 +875,9 @@ class _MeetingHost:
         self._script = script
         self._fellowship_reference = fellowship_reference
         self._decoupled_recognition = decoupled_recognition
-        self._cid = conversation_id_for(arch_id, keystone_index)
+        # The encounter's own conversation (run-specific); the legacy
+        # shared id only when no encounter exists yet.
+        self._cid = conversation_id or conversation_id_for(arch_id, keystone_index)
 
     def say(self, body: str) -> None:
         self._svc._say(self._user_id, self._cid, self._arch_id, body)
@@ -482,6 +887,7 @@ class _MeetingHost:
             return self._svc._generate_framed(
                 self._user_id, self._arch_id, self._keystone_index, frame,
                 fellowship_reference=self._fellowship_reference,
+                conversation_id=self._cid,
             )
         except Exception:
             # A provider failure degrades to the runtime's fallback
@@ -555,6 +961,191 @@ class MeetingService:
         # review queue; None builds the default-path store per user,
         # the same store the intake routes read.
         self._agent_store_factory = agent_store_factory
+
+    def close(self) -> None:
+        """Close both stores (the sweep's open-query-close discipline)."""
+        self.conversations.close()
+        self.meetings.close()
+
+    @staticmethod
+    def _translate_store_error(
+        exc: Exception, run_id: str | None = None
+    ) -> None:
+        """Translate a conversation-store refusal into the meeting
+        service's error vocabulary: a write refusal becomes a
+        MeetingError (409, carrying its stable code); an integrity /
+        transaction failure becomes a RuntimeError (502). Always
+        raises; never returns."""
+        if isinstance(exc, ConversationWriteRefused):
+            raise MeetingError(
+                str(exc), code=exc.code, run_id=exc.run_id or run_id
+            ) from exc
+        if isinstance(exc, OpeningIntegrityConflict):
+            raise MeetingError(
+                str(exc), code=exc.code, run_id=exc.run_id or run_id
+            ) from exc
+        if isinstance(exc, (ConversationIntegrityError, TransactionStateError)):
+            raise RuntimeError(str(exc)) from exc
+        raise exc
+
+    # -- encounters -----------------------------------------------------------
+
+    def _resolve_encounter(
+        self, user_id: str, arch_id: str, keystone_index: int
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """(latest encounter, meetings row) for a key.
+
+        When no encounter row exists but a meetings row does, the
+        encounter is lazily materialized from the meetings row (the
+        migration's Step 3, applied on read): run 1, provenance
+        'generated-migration', transcript_source 'live', the
+        conversation id from the meetings row (or the legacy shared
+        id), status from the meetings row, the fence created (open for
+        an active meeting, closed for a completed one), and the
+        meetings row pointed at the new run. When neither exists,
+        (None, None)."""
+        enc = self.meetings.get_latest_encounter(user_id, arch_id, keystone_index)
+        mrow = self.meetings.get(user_id, arch_id, keystone_index)
+        if enc is not None:
+            return enc, mrow
+        if mrow is None:
+            return None, None
+        return self._materialize_encounter(user_id, arch_id, keystone_index, mrow), mrow
+
+    def _materialize_encounter(
+        self, user_id: str, arch_id: str, keystone_index: int,
+        mrow: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Create the run-1 encounter row for a meetings row that
+        predates encounters. Under the per-key lock; a concurrent
+        materialization that wins returns the existing row instead.
+        The opening is NOT recorded here — it predates the encounter
+        record (opening_expected stays 0); a row with no recorded
+        opening is never completed from the live script."""
+        key = f"key:{user_id}:{arch_id}:{keystone_index}"
+        with _lock_for(key):
+            existing = self.meetings.get_latest_encounter(
+                user_id, arch_id, keystone_index
+            )
+            if existing is not None:
+                return existing
+            run_id = _new_run_id()
+            cid = (mrow.get("conversation_id") or "") or conversation_id_for(
+                arch_id, keystone_index
+            )
+            status = mrow.get("status") or "active"
+            enc_status = "complete" if status == "complete" else "in_progress"
+            tasks = _seat_keystone_tasks(user_id, arch_id)
+            task = tasks[keystone_index - 1] if len(tasks) >= keystone_index else None
+            now = _utcnow()
+            enc = self.meetings.create_encounter(
+                run_id=run_id,
+                user_id=user_id,
+                archetype_id=arch_id,
+                keystone_index=keystone_index,
+                run_number=1,
+                conversation_id=cid,
+                transcript_source="live",
+                run_id_provenance="generated-migration",
+                status=enc_status,
+                stage=mrow.get("stage") or "encounter",
+                state_json=mrow.get("state_json") or "",
+                readback_claim=mrow.get("readback_claim") or "",
+                readback_response=mrow.get("readback_response") or "",
+                readback_strands=mrow.get("readback_strands") or "[]",
+                readback_original_claim=mrow.get("readback_original_claim") or "",
+                readback_seat_outcome=mrow.get("readback_seat_outcome") or "",
+                readback_visitor_response=mrow.get("readback_visitor_response") or "",
+                task_id=(task or {}).get("id"),
+                created_at=mrow.get("created_at") or now,
+                completed_at=mrow.get("updated_at") if enc_status == "complete" else None,
+                finalized_at=now if enc_status == "complete" else None,
+            )
+            # The fence: a completed meeting's conversation is closed
+            # to writes; an active one's is open.
+            self.conversations.ensure_conversation(user_id, cid, kind="meeting")
+            if enc_status == "complete":
+                self.conversations.close_fence(user_id, cid, run_id)
+            self.meetings.update(
+                user_id, arch_id, keystone_index,
+                run_id=run_id, conversation_id=cid,
+            )
+            return enc
+
+    def _create_encounter(
+        self, user_id: str, arch_id: str, keystone_index: int,
+        predecessor: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Create the next encounter row for a key (run_number = latest
+        + 1, or 1), in status 'creating'. The caller records the
+        opening and flips it to in_progress. A concurrent creation
+        that wins the race raises IntegrityError on the unique
+        run_number — the caller re-reads the latest encounter
+        instead of creating a second run."""
+        latest = self.meetings.get_latest_encounter(user_id, arch_id, keystone_index)
+        run_number = (latest["run_number"] + 1) if latest else 1
+        run_id = _new_run_id()
+        tasks = _seat_keystone_tasks(user_id, arch_id)
+        task = tasks[keystone_index - 1] if len(tasks) >= keystone_index else None
+        fields: dict[str, Any] = {
+            "run_id": run_id,
+            "user_id": user_id,
+            "archetype_id": arch_id,
+            "keystone_index": keystone_index,
+            "run_number": run_number,
+            "conversation_id": f"meeting-{arch_id}-{keystone_index}-{run_id}",
+            "transcript_source": "live",
+            "run_id_provenance": "generated",
+            "status": "creating",
+            "task_id": (task or {}).get("id"),
+        }
+        if predecessor is not None:
+            fields["predecessor_run_id"] = predecessor["run_id"]
+            fields["predecessor_link_kind"] = "witnessed"
+        return self.meetings.create_encounter(**fields)
+
+    def _record_opening(
+        self, encounter: dict[str, Any], script: MT.MeetingScript
+    ) -> list[str]:
+        """Record the opening identity on a creating encounter
+        (proposal §3.3): opening_script_id, opening_script_version
+        (first 16 hex of sha256 of the joined paragraphs),
+        opening_paragraphs_json, opening_expected. Returns the
+        recorded paragraphs."""
+        definition = ENC.get_definition(script)
+        paragraphs = list(definition.opening)
+        self.meetings.update_encounter(
+            encounter["user_id"], encounter["run_id"],
+            opening_script_id=f"{encounter['archetype_id']}:{encounter['keystone_index']}",
+            opening_script_version=_opening_digest(paragraphs),
+            opening_paragraphs=paragraphs,
+            opening_expected=len(paragraphs),
+        )
+        return paragraphs
+
+    def _speak_opening(
+        self, user_id: str, encounter: dict[str, Any], paragraphs: list[str]
+    ) -> list[dict[str, Any]]:
+        """Speak the recorded opening, insert-if-absent per paragraph
+        (corrections §3): a re-run returns the existing messages,
+        never duplicates. Each paragraph carries its identity
+        ``opening:{run_id}:{index}`` and its (index, total) context."""
+        cid = encounter["conversation_id"]
+        arch_id = encounter["archetype_id"]
+        run_id = encounter["run_id"]
+        total = len(paragraphs)
+        out: list[dict[str, Any]] = []
+        for i, paragraph in enumerate(paragraphs):
+            out.append(self._say(
+                user_id, cid, arch_id, paragraph,
+                message_key=f"opening:{run_id}:{i}",
+                context={
+                    "meeting": True,
+                    "opening_index": i,
+                    "opening_total": total,
+                },
+            ))
+        return out
 
     # -- guards ---------------------------------------------------------------
 
@@ -644,46 +1235,92 @@ class MeetingService:
 
     # -- state ------------------------------------------------------------------
 
-    def state(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
+    def state(self, user_id: str, archetype_id: str, keystone_index: int = 1,
+              run_id: str | None = None) -> dict[str, Any]:
         """Where this meeting stands, for the frontend. Never raises on
-        unseeded/unwritten — it reports, the begin action refuses."""
+        unseeded/unwritten — it reports, the begin action refuses.
+
+        Reads the LATEST encounter by default (or the named run when
+        ``run_id`` is given — a historical revisit, read-only). Status
+        comes from the encounter: creating / active (in_progress) /
+        complete; a paused meeting reads its paused state from the
+        meetings-row mirror. The demeanor unlocks when ANY completed
+        encounter exists for this key (amendment §1) — a later run
+        never re-locks the face the first meeting revealed.
+        ``run_id`` names the encounter in the payload; ``read_only``
+        is true for a completed encounter or a revisit of a run that
+        is not the latest."""
         arch_id = (archetype_id or "").strip().lower()
-        cid = conversation_id_for(arch_id, keystone_index)
-        row = self.meetings.get(user_id, arch_id, keystone_index)
+        script = MT.get_script(arch_id, keystone_index)
         done = False
         try:
             done = self._keystone_done(user_id, arch_id, keystone_index)
         except Exception:
             done = False
-        if row is None:
+        if run_id is not None:
+            enc = self.meetings.get_encounter(user_id, run_id)
+            mrow = self.meetings.get(user_id, arch_id, keystone_index)
+            if (
+                enc is None
+                or enc["archetype_id"] != arch_id
+                or enc["keystone_index"] != keystone_index
+            ):
+                # Unknown run for this key: fall back to the latest.
+                enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+                run_id = None
+        else:
+            enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+        if enc is None:
             status = "complete" if done else "not_started"
             stage = "complete" if done else None
+            cid = conversation_id_for(arch_id, keystone_index)
+            completion_offered = False
+            pending_discarded = ""
+            read_only = False
+            enc_run_id = None
+            any_complete = done
         else:
-            status = row["status"]
-            stage = row["stage"]
-        script = MT.get_script(arch_id, keystone_index)
-        # Controller-visible completion signal (Fellowship shared
-        # foundation, 2026-10-28): True while the character has
-        # named the Complete action and the record is still active
-        # — the frontend renders its hint + primary Complete action
-        # from this. `pending_impression_discarded` carries the
-        # auditable discard reason after a voluntary end ("" =
-        # nothing discarded). Neither is meaningful once complete
-        # except the discard record, which stays inspectable.
-        completion_offered = False
-        pending_discarded = ""
-        if row is not None:
+            cid = enc["conversation_id"]
+            enc_run_id = enc["run_id"]
+            if enc["status"] == "complete":
+                status = "complete"
+            elif enc["status"] == "creating":
+                status = "creating"
+            elif (mrow or {}).get("status") == "paused":
+                status = "paused"
+            else:
+                status = "active"
+            stage = enc["stage"]
+            completion_offered = False
+            pending_discarded = ""
             try:
-                enc = self._hydrate_state(row)
+                enc_state = self._hydrate_state(enc, mrow)
                 completion_offered = bool(
-                    enc.completion_offered and status in ("active", "paused"))
-                pending_discarded = enc.pending_impression_discarded or ""
+                    enc_state.completion_offered and status in ("active", "paused"))
+                pending_discarded = enc_state.pending_impression_discarded or ""
             except Exception:
                 pass
+            latest = self.meetings.get_latest_encounter(
+                user_id, arch_id, keystone_index
+            )
+            read_only = enc["status"] == "complete" or (
+                latest is not None and latest["run_id"] != enc["run_id"]
+            )
+            if enc["status"] == "complete":
+                any_complete = True
+            else:
+                encounters = self.meetings.list_encounters(
+                    user_id, arch_id, keystone_index
+                )
+                any_complete = any(
+                    e["status"] == "complete" for e in encounters
+                )
         return {
             "archetype_id": arch_id,
             "keystone_index": keystone_index,
             "conversation_id": cid,
+            "run_id": enc_run_id,
+            "read_only": read_only,
             "status": status,
             "stage": stage,
             "completion_offered": completion_offered,
@@ -693,143 +1330,280 @@ class MeetingService:
             # meeting unlocks. Only meaningful once complete — before that
             # the frontend shows neither (earned, not announced).
             "character": script.character if script else None,
-            "demeanor": script.demeanor if (script and status == "complete") else None,
+            "demeanor": script.demeanor if (script and any_complete) else None,
             "messages": self.conversations.history(user_id, cid, limit=100),
         }
 
     # -- speech ------------------------------------------------------------------
 
-    def _say(self, user_id: str, cid: str, archetype_id: str, body: str) -> dict[str, Any]:
-        return self.conversations.append_message(
-            user_id, cid, archetype_id, "voice", body, mode="base", context={"meeting": True},
-            via_meeting=True,
+    def _say(self, user_id: str, cid: str, archetype_id: str, body: str,
+             message_key: str | None = None,
+             context: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Speak one voice message into a meeting conversation.
+
+        ``message_key`` is the durable identity for scripted speech
+        (corrections §3.3): an opening paragraph or a reveal paragraph
+        carries ``opening:{run_id}:{index}`` / ``reveal:{run_id}:{index}``,
+        so a re-run returns the existing message instead of speaking
+        twice. Unkeyed speech (live runtime lines) is unchanged."""
+        try:
+            return self.conversations.append_message(
+                user_id, cid, archetype_id, "voice", body, mode="base",
+                context=context if context is not None else {"meeting": True},
+                message_key=message_key,
+                via_meeting=True,
+            )
+        except (
+            ConversationWriteRefused, ConversationIntegrityError,
+            TransactionStateError, OpeningIntegrityConflict,
+        ) as exc:
+            self._translate_store_error(exc)
+
+    def _resume_creating_encounter(
+        self, user_id: str, encounter: dict[str, Any], script: MT.MeetingScript
+    ) -> dict[str, Any]:
+        """Resume an encounter stuck in 'creating': re-attempt the
+        recorded opening (insert-if-absent) and flip to in_progress.
+        Fails closed — the encounter stays as it is — when the opening
+        was never recorded or its recorded paragraphs do not match
+        their recorded version (a digest mismatch means the record
+        itself is untrustworthy, never the live script)."""
+        paragraphs = encounter.get("opening_paragraphs")
+        version = encounter.get("opening_script_version")
+        if not paragraphs or not version:
+            raise MeetingError(
+                "This meeting's opening was never recorded, so its "
+                "creation cannot be resumed safely — the encounter "
+                "stays as it is.",
+                code="opening_unrecorded",
+                run_id=encounter["run_id"],
+            )
+        if _opening_digest(paragraphs) != version:
+            raise MeetingError(
+                "This meeting's recorded opening does not match its "
+                "recorded version — the encounter stays as it is.",
+                code="opening_integrity_conflict",
+                run_id=encounter["run_id"],
+            )
+        self.conversations.ensure_conversation(
+            user_id, encounter["conversation_id"], kind="meeting"
+        )
+        self._speak_opening(user_id, encounter, paragraphs)
+        self.meetings.update_encounter(
+            user_id, encounter["run_id"], status="in_progress"
+        )
+        return self.state(
+            user_id, encounter["archetype_id"], encounter["keystone_index"]
         )
 
     def start(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         """Begin (or resume) a meeting. A fresh start delivers the
         encounter's opening — the script's authored introduction
         (the Weaver's is four bubbles, delivered verbatim) — and
-        the encounter begins. A resume
-        returns current state: the transcript carries what was already
-        said, nothing repeats."""
+        the encounter begins. A resume returns current state: the
+        transcript carries what was already said, nothing repeats.
+
+        The encounter is the unit: a start resumes the latest
+        in-progress encounter, returns the completed state for a
+        completed one (Meet Again opens the next run — start never
+        re-opens a finished run), and creates run 1 only when no
+        encounter and no meetings row exist. A Done keystone task with
+        an in-progress successor resumes the successor; a Done task
+        with a completed latest encounter backfills the impression.
+        The per-key lock serializes concurrent starts for one key."""
         arch_id = (archetype_id or "").strip().lower()
         script = self._check_beginnable(user_id, arch_id, keystone_index)
-        cid = conversation_id_for(arch_id, keystone_index)
+        key = f"key:{user_id}:{arch_id}:{keystone_index}"
+        with _lock_for(key):
+            self.recover_incomplete_encounters(user_id, arch_id, keystone_index)
 
-        if self._keystone_done(user_id, arch_id, keystone_index):
-            row = self.meetings.get(user_id, arch_id, keystone_index)
-            if row is None:
-                row = self.meetings.create(user_id, arch_id, keystone_index)
-            self.meetings.update(user_id, arch_id, keystone_index, stage="complete", status="complete")
-            # A meeting completed before impressions were filed (or one
-            # whose filing was missed) backfills here — the filing is
-            # idempotent per run, so this is a no-op once filed.
-            self._file_impression(user_id, arch_id, keystone_index, script)
+            if self._keystone_done(user_id, arch_id, keystone_index):
+                enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+                if enc is None:
+                    # The task is Done but no meeting record exists:
+                    # create the row and materialize a completed
+                    # encounter for it.
+                    self.meetings.create(user_id, arch_id, keystone_index)
+                    self.meetings.update(
+                        user_id, arch_id, keystone_index,
+                        stage="complete", status="complete",
+                    )
+                    enc, mrow = self._resolve_encounter(
+                        user_id, arch_id, keystone_index
+                    )
+                if enc["status"] == "in_progress":
+                    # A successor is live: the Done task belongs to
+                    # the predecessor. Resume the successor.
+                    return self.state(user_id, arch_id, keystone_index)
+                if enc["status"] == "creating":
+                    return self._resume_creating_encounter(user_id, enc, script)
+                # The latest encounter is complete: backfill the
+                # impression (idempotent per run) and return the
+                # completed state.
+                self._file_impression(user_id, arch_id, keystone_index, script)
+                return self.state(user_id, arch_id, keystone_index)
+
+            enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+            if enc is not None:
+                if enc["status"] == "complete":
+                    return self.state(user_id, arch_id, keystone_index)
+                if enc["status"] == "creating":
+                    return self._resume_creating_encounter(user_id, enc, script)
+                if (mrow or {}).get("status") == "paused":
+                    self.meetings.update(
+                        user_id, arch_id, keystone_index, status="active"
+                    )
+                return self.state(user_id, arch_id, keystone_index)
+
+            # Fresh start: run 1. The meetings row is the pointer;
+            # the encounter owns the conversation.
+            self.meetings.create(user_id, arch_id, keystone_index)
+            enc = self._create_encounter(user_id, arch_id, keystone_index)
+            initial_state = EncounterState().to_json()
+            self.meetings.update(
+                user_id, arch_id, keystone_index,
+                run_id=enc["run_id"], conversation_id=enc["conversation_id"],
+                state_json=initial_state,
+            )
+            self.meetings.update_encounter(
+                user_id, enc["run_id"], state_json=initial_state
+            )
+            self.conversations.ensure_conversation(
+                user_id, enc["conversation_id"], kind="meeting"
+            )
+            paragraphs = self._record_opening(enc, script)
+            self._speak_opening(user_id, enc, paragraphs)
+            self.meetings.update_encounter(
+                user_id, enc["run_id"], status="in_progress"
+            )
             return self.state(user_id, arch_id, keystone_index)
-
-        row = self.meetings.get(user_id, arch_id, keystone_index)
-        if row is not None:
-            if row["status"] != "active":
-                self.meetings.update(user_id, arch_id, keystone_index, status="active")
-            return self.state(user_id, arch_id, keystone_index)
-
-        self.meetings.create(user_id, arch_id, keystone_index)
-        self.conversations.ensure_conversation(user_id, cid, kind="meeting")
-        definition = ENC.get_definition(script)
-        self.meetings.update(
-            user_id, arch_id, keystone_index,
-            state_json=EncounterState().to_json(),
-        )
-        for paragraph in definition.opening:
-            self._say(user_id, cid, arch_id, paragraph)
-        return self.state(user_id, arch_id, keystone_index)
 
     def turn(self, user_id: str, archetype_id: str, message: str, keystone_index: int = 1) -> dict[str, Any]:
         """One user turn inside an active meeting. The encounter
         runtime runs the turn — the user's move first, the character's
         objectives behind it — and this service persists the outcome.
         Raises MeetingError when no meeting is in progress, ValueError
-        on bad input."""
+        on bad input. A turn to a completed encounter is refused with
+        ``encounter_finalized`` (409): the encounter is complete, its
+        last stored message is its last word, and no retry is
+        attempted — Meet Again opens the next run. The per-run lock
+        serializes concurrent turns on one run."""
         arch_id = (archetype_id or "").strip().lower()
         if arch_id not in stock_archetype_ids():
             raise ValueError(f"Unknown seat: {archetype_id!r}")
         if not (message or "").strip():
             raise ValueError("Message is empty.")
-        row = self.meetings.get(user_id, arch_id, keystone_index)
-        if row is None or row["status"] == "complete":
+        enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+        if enc is None:
             raise MeetingError("No meeting is in progress with this seat — begin one first.")
+        if enc["status"] == "complete":
+            raise MeetingError(
+                "This meeting has reached its close — its last stored "
+                "message is its last word. Meet again to open a new run.",
+                code="encounter_finalized",
+                run_id=enc["run_id"],
+            )
+        if enc["status"] == "creating":
+            script = MT.get_script(arch_id, keystone_index)
+            if script is None:
+                raise MeetingError("That meeting isn't written yet.")
+            self._resume_creating_encounter(user_id, enc, script)
+            enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
         script = MT.get_script(arch_id, keystone_index)
         if script is None:  # state without a script shouldn't exist; be honest
             raise MeetingError("That meeting isn't written yet.")
-        if row["status"] != "active":
-            self.meetings.update(user_id, arch_id, keystone_index, status="active")
-            row = self.meetings.get(user_id, arch_id, keystone_index)  # type: ignore[assignment]
+        with _lock_for(f"run:{enc['run_id']}"):
+            if (mrow or {}).get("status") == "paused":
+                self.meetings.update(user_id, arch_id, keystone_index, status="active")
+                mrow = self.meetings.get(user_id, arch_id, keystone_index)
 
-        cid = conversation_id_for(arch_id, keystone_index)
-        self.conversations.append_message(
-            user_id, cid, arch_id, "user", message, mode="base", context={"meeting": True},
-            via_meeting=True,
-        )
+            cid = enc["conversation_id"]
+            try:
+                self.conversations.append_message(
+                    user_id, cid, arch_id, "user", message, mode="base",
+                    context={"meeting": True}, via_meeting=True,
+                )
+            except (
+                ConversationWriteRefused, ConversationIntegrityError,
+                TransactionStateError, OpeningIntegrityConflict,
+            ) as exc:
+                self._translate_store_error(exc, run_id=enc["run_id"])
 
-        enc_state = self._hydrate_state(row)
-        if enc_state.closed:
-            raise MeetingError("This meeting has already reached its close.")
-        definition = ENC.get_definition(script)
-        # The naming rule needs the met set: completed first meetings
-        # only (see MeetingStore.met_seats). The definition is frozen,
-        # so replace rather than mutate. Same pattern for capability
-        # context (demonstration spec §6): re-resolved per turn from
-        # the visitor's actual state, so a consent-gated capability
-        # is never implied usable to a visitor who has not consented.
-        definition = dataclasses.replace(
-            definition,
-            met_seats=tuple(self.meetings.met_seats(user_id)),
-            capability_context=CAP.first_meeting_block(
-                arch_id, CAP.resolve_visitor_state(user_id)),
-        )
-        host = _MeetingHost(
-            self, user_id, arch_id, keystone_index, script,
-            fellowship_reference=definition.fellowship_reference,
-            decoupled_recognition=definition.decoupled_recognition,
-        )
-        new_q_idx = EncounterRuntime(definition).handle_turn(
-            host, enc_state, message, int(row["question_idx"])
-        )
-        self.meetings.update(
-            user_id, arch_id, keystone_index,
-            question_idx=new_q_idx,
-            state_json=enc_state.to_json(),
-            stage=ENC.derived_stage(enc_state),
-        )
-        return self.state(user_id, arch_id, keystone_index)
+            enc_state = self._hydrate_state(enc, mrow)
+            if enc_state.closed:
+                raise MeetingError("This meeting has already reached its close.")
+            definition = ENC.get_definition(script)
+            # The naming rule needs the met set: completed first meetings
+            # only (see MeetingStore.met_seats). The definition is frozen,
+            # so replace rather than mutate. Same pattern for capability
+            # context (demonstration spec §6): re-resolved per turn from
+            # the visitor's actual state, so a consent-gated capability
+            # is never implied usable to a visitor who has not consented.
+            definition = dataclasses.replace(
+                definition,
+                met_seats=tuple(self.meetings.met_seats(user_id)),
+                capability_context=CAP.first_meeting_block(
+                    arch_id, CAP.resolve_visitor_state(user_id)),
+            )
+            host = _MeetingHost(
+                self, user_id, arch_id, keystone_index, script,
+                fellowship_reference=definition.fellowship_reference,
+                decoupled_recognition=definition.decoupled_recognition,
+                conversation_id=cid,
+            )
+            new_q_idx = EncounterRuntime(definition).handle_turn(
+                host, enc_state, message, int((mrow or {}).get("question_idx") or 0)
+            )
+            stage = ENC.derived_stage(enc_state)
+            state_json = enc_state.to_json()
+            self.meetings.update_encounter(
+                user_id, enc["run_id"], state_json=state_json, stage=stage
+            )
+            self.meetings.update(
+                user_id, arch_id, keystone_index,
+                question_idx=new_q_idx, state_json=state_json, stage=stage,
+            )
+            return self.state(user_id, arch_id, keystone_index)
 
     @staticmethod
-    def _hydrate_state(row: dict[str, Any]) -> EncounterState:
+    def _hydrate_state(
+        row: dict[str, Any], meetings_row: dict[str, Any] | None = None
+    ) -> EncounterState:
         """The encounter state for a meeting row. Rows begun before
         the encounter runtime carry no state_json; their position is
         reconstructed from the columns the old engine already kept —
         the read-back claim/response and the stage label — so an
-        in-progress meeting survives the engine change honestly."""
+        in-progress meeting survives the engine change honestly.
+
+        The read-back columns are read from the meetings row when
+        one is given: the host writes them there during the encounter
+        (the encounter row's copy syncs only at finalize), so the
+        meetings row is the live source for whether an impression was
+        offered and answered. A read-back the meetings row records
+        but the encounter state doesn't is a legacy (pre-runtime)
+        impression — the recognition floor is waived for it, never
+        for one the runtime itself has run."""
         state = EncounterState.from_json(row.get("state_json"))
-        if row.get("state_json"):
+        source = meetings_row if meetings_row is not None else row
+        if row.get("state_json") and not (source.get("readback_claim") or "").strip():
             return state
-        if (row.get("readback_claim") or "").strip():
-            state.impression_offered = True
-            state.impression_text = row["readback_claim"]
-            # The recognition floor (the Weaver pattern) did not
-            # exist when this meeting's impression was offered: the
-            # recognition completes under the contract the meeting
-            # began with, so the floor is waived for this row —
-            # never for one the runtime itself has run.
-            state.floor_waived = True
-            try:
-                state.impression_strands = json.loads(row.get("readback_strands") or "[]")
-            except Exception:
-                state.impression_strands = []
-        if (row.get("readback_response") or "").strip():
+        if (source.get("readback_claim") or "").strip():
+            if not state.impression_offered:
+                # Legacy (pre-runtime) impression: the runtime never
+                # offered it, so the recognition floor is waived.
+                state.impression_offered = True
+                state.impression_text = source["readback_claim"]
+                state.floor_waived = True
+                try:
+                    state.impression_strands = json.loads(
+                        source.get("readback_strands") or "[]"
+                    )
+                except Exception:
+                    state.impression_strands = []
+        if (source.get("readback_response") or "").strip():
             state.impression_answered = True
             state.response_recorded = True
-        if row.get("stage") == "orientation":
+        if source.get("stage") == "orientation":
             state.pause_delivered = True
             # The orientation stage was only ever reachable after
             # the read-back was answered, in both engines — the
@@ -843,7 +1617,8 @@ class MeetingService:
         return [{"role": m["role"], "content": m["body"]} for m in rows]
 
     def _generate_framed(self, user_id: str, arch_id: str, keystone_index: int,
-                         frame: str, fellowship_reference: str = "") -> str:
+                         frame: str, fellowship_reference: str = "",
+                         conversation_id: str | None = None) -> str:
         """Run one live beat against the transcript: the last user message
         is lifted out as the reply builder's input, everything else stays
         as context, in order. Returns the raw reply text.
@@ -851,8 +1626,10 @@ class MeetingService:
         Fellowship knowledge, carried as an uncapped meeting-scoped
         prompt section (see reply.build_voice_prompt) — "" means no
         reference has been written for this seat yet, and the prompt
-        is byte-identical to before (mechanism only, no content)."""
-        cid = conversation_id_for(arch_id, keystone_index)
+        is byte-identical to before (mechanism only, no content).
+        `conversation_id` is the encounter's own conversation; the
+        legacy shared id only when no encounter exists yet."""
+        cid = conversation_id or conversation_id_for(arch_id, keystone_index)
         history = self._history_for_reply(user_id, cid)
         last_user_idx = max(
             (i for i, m in enumerate(history) if m["role"] == "user"), default=None
@@ -891,35 +1668,95 @@ class MeetingService:
         line nor the reveal paragraphs. The recognition moment
         already introduced the character live, and the completion
         card marks the close; the task Done, event, and filing
-        below still run exactly as before."""
-        cid = conversation_id_for(arch_id, keystone_index)
-        if not silent_close:
-            if wrap_line:
-                self._say(user_id, cid, arch_id, wrap_line)
-            for paragraph in script.reveal:
-                self._say(user_id, cid, arch_id, paragraph)
+        below still run exactly as before.
 
-        tasks = _seat_keystone_tasks(user_id, arch_id)
-        if len(tasks) >= keystone_index:
-            task = tasks[keystone_index - 1]
-            if task.get("status") != "Done":
-                ve.update_task(task["id"], ve_models.TaskUpdate(status="Done"), user_id)
-        self.meetings.update(user_id, arch_id, keystone_index, stage="complete", status="complete")
-        # Fellowship Runtime P1: the completed meeting is a
-        # shared-reality event, emitted at this same single chokepoint
-        # (guarded inside _emit_meeting_completed — it can never break
-        # the close, and its derivation only produces observations).
-        self._emit_meeting_completed(user_id, arch_id, keystone_index)
-        self._file_impression(user_id, arch_id, keystone_index, script)
+        The corrected order (proposal §3.1): (1) reveal dialogue via
+        _say, each paragraph carrying its durable identity
+        (``reveal:{run_id}:{index}`` — the wrap line is index 0, the
+        script's reveal paragraphs 1..n — so a re-run returns the
+        existing messages, never speaks twice); (2) keystone task
+        Done; (3) the completed-meeting event; (4) the impression
+        filed; (5) the write fence closed; (6) atomic
+        finalize_encounter (incl. the meetings-row mirror in the same
+        transaction). A crash between (5) and (6) is healed by
+        recover_incomplete_encounters (CR-B5); a crash during (1)
+        re-runs the reveal insert-if-absent (CR-B1/B2). Completing an
+        already-complete encounter is a no-op (the reveal is never
+        spoken twice). The per-run lock serializes concurrent closes
+        of one run."""
+        enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+        if enc is None:
+            raise MeetingError(
+                "There's no meeting in progress to complete — this seat "
+                "hasn't been met yet."
+            )
+        with _lock_for(f"run:{enc['run_id']}"):
+            if enc["status"] == "complete":
+                return
+            run_id = enc["run_id"]
+            cid = enc["conversation_id"]
+            if not silent_close:
+                if wrap_line:
+                    self._say(user_id, cid, arch_id, wrap_line,
+                              message_key=f"reveal:{run_id}:0")
+                for i, paragraph in enumerate(script.reveal):
+                    self._say(user_id, cid, arch_id, paragraph,
+                              message_key=f"reveal:{run_id}:{i + 1}")
 
-    def _emit_meeting_completed(self, user_id: str, arch_id: str, keystone_index: int) -> None:
+            tasks = _seat_keystone_tasks(user_id, arch_id)
+            if len(tasks) >= keystone_index:
+                task = tasks[keystone_index - 1]
+                if task.get("status") != "Done":
+                    ve.update_task(task["id"], ve_models.TaskUpdate(status="Done"), user_id)
+            # Fellowship Runtime P1: the completed meeting is a
+            # shared-reality event, emitted at this same single chokepoint
+            # (guarded inside _emit_meeting_completed — it can never break
+            # the close, and its derivation only produces observations).
+            # A recovery re-run skips the emit when the impression is
+            # already filed: the emit precedes the filing, so a filed
+            # claim proves the emit ran — re-emitting would duplicate
+            # the event. (The narrow window between the emit and the
+            # filing can still duplicate it once; see the build report.)
+            if not self._impression_claim_exists(
+                user_id, arch_id, keystone_index, script, enc, mrow
+            ):
+                self._emit_meeting_completed(
+                    user_id, arch_id, keystone_index, conversation_id=cid
+                )
+            self._file_impression(user_id, arch_id, keystone_index, script)
+            # (5) the fence closes before the finalize: a crash here
+            # leaves CR-B5 (fence closed, finalized_at NULL), healed by
+            # the recovery rule, never by re-running the reveal.
+            try:
+                fence_result = self.conversations.close_fence(user_id, cid, run_id)
+            except TransactionStateError as exc:
+                self._translate_store_error(exc, run_id=run_id)
+            if fence_result == "missing":
+                raise ConversationIntegrityError(
+                    f"no fence row for meeting conversation {cid!r}; "
+                    "refusing to finalize an encounter whose writes "
+                    "were never fenced"
+                )
+            if fence_result == "closed-by-other-run":
+                raise ConversationIntegrityError(
+                    f"fence for meeting conversation {cid!r} was closed "
+                    "by another run; refusing to finalize"
+                )
+            # (6) atomic finalize (incl. the meetings-row mirror).
+            message_count = self.conversations.count_messages(user_id, cid)
+            self.meetings.finalize_encounter(
+                user_id, run_id, message_count=message_count
+            )
+
+    def _emit_meeting_completed(self, user_id: str, arch_id: str, keystone_index: int,
+                                conversation_id: str | None = None) -> None:
         """Record the completed meeting as a fellowship event.
 
         Evidence is the user's verbatim read-back answer (their words
         about the impression) when the run stored one; otherwise the
         observation will cite the meeting itself by reference. Guarded
         like _file_impression: failures are logged, never raised.
-        """
+        The entity is the encounter's own conversation."""
         try:
             from local_ai.fellowship.events import emit_event
 
@@ -928,7 +1765,8 @@ class MeetingService:
                 kind="meeting_completed",
                 user_id=user_id,
                 entity_type="meeting",
-                entity_id=conversation_id_for(arch_id, keystone_index),
+                entity_id=conversation_id
+                or conversation_id_for(arch_id, keystone_index),
                 evidence_text=(row.get("readback_response") or ""),
                 summary=(
                     f"First meeting completed with the {arch_id} voice "
@@ -942,6 +1780,70 @@ class MeetingService:
         except Exception:
             logger.exception("fellowship: meeting-completed event failed")
 
+
+    def _build_meeting_impression_claim(
+        self, user_id: str, arch_id: str, keystone_index: int,
+        script: MT.MeetingScript, run_key: str, filed_via: str = "",
+    ):
+        """The meeting_impression claim for one run (or None when the
+        run has no read-back to file). The claim id carries the
+        run_key, so one run's filing is idempotent and a new run's
+        filing is distinct — the D5 sweep and the _do_reveal emit
+        guard compute the same id through here."""
+        row = self.meetings.get(user_id, arch_id, keystone_index)
+        if not row or not (row.get("readback_claim") or "").strip():
+            return None
+        from local_ai.agent_intake import review_claims
+
+        try:
+            strand_names = json.loads(row.get("readback_strands") or "[]")
+        except Exception:
+            strand_names = []
+        strand_keys = [PLAIN_TO_KEY[n] for n in strand_names if n in PLAIN_TO_KEY]
+        return review_claims.build_meeting_impression_claim(
+            agent_id=conversation_id_for(arch_id, keystone_index),
+            seat_name=script.character,
+            readback_claim=row.get("readback_claim") or "",
+            readback_response=row.get("readback_response") or "",
+            strand_keys=strand_keys,
+            run_key=run_key,
+            readback_original_claim=row.get("readback_original_claim") or "",
+            readback_seat_outcome=row.get("readback_seat_outcome") or "",
+            readback_visitor_response=row.get("readback_visitor_response") or "",
+            ceiling_filed=_is_ceiling_filed(row),
+            filed_via=filed_via,
+        )
+
+    def _impression_claim_exists(
+        self, user_id: str, arch_id: str, keystone_index: int,
+        script: MT.MeetingScript,
+        encounter: dict[str, Any] | None,
+        meetings_row: dict[str, Any] | None,
+    ) -> bool:
+        """Whether this run's meeting_impression claim already exists
+        in the review queue. The emit precedes the filing, so a filed
+        claim proves the emit ran — a recovery re-run of _do_reveal
+        skips the emit on that evidence. A store failure reads as
+        'not filed' (the emit then runs; a duplicate event is the
+        lesser harm)."""
+        claim = self._build_meeting_impression_claim(
+            user_id, arch_id, keystone_index, script,
+            _run_key_for_encounter(encounter, meetings_row),
+        )
+        if claim is None:
+            return False
+        from local_ai.agent_intake.store import AgentStore
+
+        store = (
+            self._agent_store_factory(user_id)
+            if self._agent_store_factory is not None
+            else AgentStore(user_id=user_id)
+        )
+        agent_id = conversation_id_for(arch_id, keystone_index)
+        try:
+            return any(c.id == claim.id for c in store.get_claims(agent_id))
+        except Exception:
+            return False
 
     def _file_impression(self, user_id: str, arch_id: str, keystone_index: int,
                          script: MT.MeetingScript,
@@ -958,10 +1860,12 @@ class MeetingService:
         training signal (under the read-back's strands, via the normal
         claim-feedback machinery).
 
-        Idempotent per run: the claim id carries the run's creation
-        time, and an existing claim is never re-saved (save_claims is
-        INSERT OR REPLACE — re-saving would reset its verdict). A
-        replay is a new run with a new claim, and filing that new claim
+        Idempotent per run: the claim id carries the run's key
+        (run_id for a new run, the created_at-derived key for a run
+        that predates encounters — see _run_key_for_encounter), and an
+        existing claim is never re-saved (save_claims is INSERT OR
+        REPLACE — re-saving would reset its verdict). A replay is a
+        new run with a new claim, and filing that new claim
         SUPERSEDES every prior meeting_impression claim for the same
         agent (Fellowship supersede rule, 2026-10-28): the old rows
         stay in history with their prior verdicts recorded in their
@@ -974,10 +1878,10 @@ class MeetingService:
         break a meeting's close, so failures are logged, not raised.
         """
         try:
+            enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
             row = self.meetings.get(user_id, arch_id, keystone_index)
             if not row or not (row.get("readback_claim") or "").strip():
                 return
-            from local_ai.agent_intake import review_claims
             from local_ai.agent_intake.schema import (
                 ConnectedAgent,
                 MomentClaim,
@@ -997,20 +1901,13 @@ class MeetingService:
             except Exception:
                 strand_names = []
             strand_keys = [PLAIN_TO_KEY[n] for n in strand_names if n in PLAIN_TO_KEY]
-            run_key = re.sub(r"[^0-9A-Za-z]", "", row.get("created_at") or "") or "run"
-            claim = review_claims.build_meeting_impression_claim(
-                agent_id=agent_id,
-                seat_name=script.character,
-                readback_claim=row.get("readback_claim") or "",
-                readback_response=row.get("readback_response") or "",
-                strand_keys=strand_keys,
-                run_key=run_key,
-                readback_original_claim=row.get("readback_original_claim") or "",
-                readback_seat_outcome=row.get("readback_seat_outcome") or "",
-                readback_visitor_response=row.get("readback_visitor_response") or "",
-                ceiling_filed=_is_ceiling_filed(row),
+            run_key = _run_key_for_encounter(enc, mrow)
+            claim = self._build_meeting_impression_claim(
+                user_id, arch_id, keystone_index, script, run_key,
                 filed_via=filed_via,
             )
+            if claim is None:
+                return
             existing = store.get_claims(agent_id)
             is_new = claim.id not in {c.id for c in existing}
 
@@ -1019,7 +1916,8 @@ class MeetingService:
             # is its sort (which is also what places it under the seat's
             # review group). Refreshed per run — the claim ids keep each
             # run's filing distinct.
-            history = self.conversations.history(user_id, agent_id, limit=200)
+            history_cid = (enc or {}).get("conversation_id") or agent_id
+            history = self.conversations.history(user_id, history_cid, limit=200)
             examples = [
                 f"{'USER' if m.get('role') == 'user' else 'ASSISTANT'}: {m.get('body') or ''}"
                 for m in history
@@ -1144,7 +2042,6 @@ class MeetingService:
         trigger. Returns the claim ids filed, so the sweep is
         auditable from its own output. Failures are logged per row,
         never raised — one bad row must not lose the rest."""
-        from local_ai.agent_intake import review_claims
         from local_ai.agent_intake.store import AgentStore
 
         filed: list[str] = []
@@ -1158,14 +2055,18 @@ class MeetingService:
         )
         for row in rows:
             try:
-                if not (row.get("readback_claim") or "").strip():
+                arch_id = (row.get("archetype_id") or "").strip().lower()
+                keystone_index = int(row.get("keystone_index") or 1)
+                # The read-back fields live on the meetings row (the
+                # host writes them there during the encounter); the
+                # encounter row's copy syncs only at finalize.
+                mrow = self.meetings.get(user_id, arch_id, keystone_index) or row
+                if not (mrow.get("readback_claim") or "").strip():
                     continue
-                if (row.get("readback_visitor_response") or "").strip() != "affirmed":
+                if (mrow.get("readback_visitor_response") or "").strip() != "affirmed":
                     continue
                 if not self._meeting_quiet_since(user_id, row, cutoff):
                     continue
-                arch_id = (row.get("archetype_id") or "").strip().lower()
-                keystone_index = int(row.get("keystone_index") or 1)
                 script = MT.get_script(arch_id, keystone_index)
                 if script is None:
                     logger.warning(
@@ -1174,32 +2075,18 @@ class MeetingService:
                     )
                     continue
                 agent_id = conversation_id_for(arch_id, keystone_index)
-                try:
-                    strand_names = json.loads(row.get("readback_strands") or "[]")
-                except Exception:
-                    strand_names = []
-                strand_keys = [
-                    PLAIN_TO_KEY[n] for n in strand_names if n in PLAIN_TO_KEY
-                ]
-                run_key = (
-                    re.sub(r"[^0-9A-Za-z]", "", row.get("created_at") or "") or "run"
-                )
+                enc, _ = self._resolve_encounter(user_id, arch_id, keystone_index)
                 # The claim id, computed through the same builder
                 # _file_impression uses, so the pre-check matches the
                 # filing exactly.
-                claim_id = review_claims.build_meeting_impression_claim(
-                    agent_id=agent_id,
-                    seat_name=script.character,
-                    readback_claim=row.get("readback_claim") or "",
-                    readback_response=row.get("readback_response") or "",
-                    strand_keys=strand_keys,
-                    run_key=run_key,
-                    readback_original_claim=row.get("readback_original_claim") or "",
-                    readback_seat_outcome=row.get("readback_seat_outcome") or "",
-                    readback_visitor_response=row.get("readback_visitor_response") or "",
-                    ceiling_filed=_is_ceiling_filed(row),
+                claim = self._build_meeting_impression_claim(
+                    user_id, arch_id, keystone_index, script,
+                    _run_key_for_encounter(enc, mrow),
                     filed_via="affirmation_recovery",
-                ).id
+                )
+                if claim is None:
+                    continue
+                claim_id = claim.id
                 store = (
                     self._agent_store_factory(user_id)
                     if self._agent_store_factory is not None
@@ -1224,12 +2111,142 @@ class MeetingService:
                 )
         return filed
 
+    def recover_incomplete_encounters(
+        self, user_id: str, archetype_id: str | None = None,
+        keystone_index: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Heal encounters left incomplete by a crash (proposal §3.4,
+        CR-B1…CR-B6). Scoped to one key when archetype_id is given;
+        otherwise every key the user has a meetings row or encounter
+        row for. Returns one record per key examined. Failures are
+        logged per key, never raised — one bad key must not lose the
+        rest, and a recovery that cannot heal fails closed (the
+        encounter stays as it is, with the reason recorded).
+
+        Per key, the latest encounter:
+        - 'creating' -> resume creation (the recorded opening is
+          re-attempted insert-if-absent, then the flip; a missing
+          recorded opening or a digest mismatch fails closed).
+        - in_progress + fence closed + finalized_at NULL (CR-B5) ->
+          complete the finalize from the already-recorded artifacts
+          (the reveal, the task Done, the impression): never re-run
+          _do_reveal, never re-speak.
+        - in_progress + fence open + reveal-keyed messages (CR-B1/B2)
+          -> re-run _do_reveal with the wrap line read back from the
+          transcript (the ``reveal:{run_id}:0`` message, or "" when
+          the close spoke no wrap); the reveal re-attempts
+          insert-if-absent and the emit is skipped when the
+          impression is already filed.
+        - in_progress + fence open + no reveal messages -> an ordinary
+          active encounter; nothing to do.
+        - complete -> nothing to do."""
+        if archetype_id is not None:
+            keys = [(archetype_id.strip().lower(), keystone_index or 1)]
+        else:
+            keys = self.meetings.distinct_meeting_keys(user_id)
+        records: list[dict[str, Any]] = []
+        for arch_id, key_idx in keys:
+            try:
+                enc, _mrow = self._resolve_encounter(user_id, arch_id, key_idx)
+                if enc is None:
+                    records.append({
+                        "run_id": None, "archetype_id": arch_id,
+                        "keystone_index": key_idx, "action": "no_encounter",
+                    })
+                    continue
+                base = {
+                    "run_id": enc["run_id"], "archetype_id": arch_id,
+                    "keystone_index": key_idx,
+                }
+                if enc["status"] == "complete":
+                    records.append({**base, "action": "unchanged",
+                                    "detail": "already complete"})
+                    continue
+                if enc["status"] == "creating":
+                    script = MT.get_script(arch_id, key_idx)
+                    if script is None:
+                        records.append({**base, "action": "failed",
+                                        "detail": "no script for this meeting"})
+                        continue
+                    try:
+                        self._resume_creating_encounter(user_id, enc, script)
+                    except MeetingError as exc:
+                        records.append({**base, "action": "failed",
+                                        "detail": str(exc)})
+                        continue
+                    records.append({**base, "action": "creation_resumed"})
+                    continue
+                # in_progress
+                fence = self.conversations.get_fence_state(
+                    user_id, enc["conversation_id"]
+                )
+                if fence == "closed" and not enc.get("finalized_at"):
+                    # CR-B5: the fence closed but the finalize never
+                    # ran — complete it from the recorded artifacts.
+                    message_count = self.conversations.count_messages(
+                        user_id, enc["conversation_id"]
+                    )
+                    self.meetings.finalize_encounter(
+                        user_id, enc["run_id"], message_count=message_count
+                    )
+                    records.append({**base, "action": "finalized_cr_b5"})
+                    continue
+                if fence == "closed":
+                    records.append({**base, "action": "unchanged",
+                                    "detail": "fence closed, finalized"})
+                    continue
+                if fence is None:
+                    # A missing fence on a meeting conversation is an
+                    # integrity error, not a state to heal — the
+                    # migration establishes it; the recovery refuses.
+                    records.append({**base, "action": "failed",
+                                    "detail": "missing fence row"})
+                    continue
+                reveal = self.conversations.messages_by_key_prefix(
+                    user_id, enc["conversation_id"], f"reveal:{enc['run_id']}:"
+                )
+                if not reveal:
+                    records.append({**base, "action": "unchanged",
+                                    "detail": "active, no interrupted close"})
+                    continue
+                wrap = next(
+                    (
+                        m["body"]
+                        for m in reveal
+                        if m.get("message_key") == f"reveal:{enc['run_id']}:0"
+                    ),
+                    "",
+                )
+                script = MT.get_script(arch_id, key_idx)
+                if script is None:
+                    records.append({**base, "action": "failed",
+                                    "detail": "no script for this meeting"})
+                    continue
+                self._do_reveal(
+                    user_id, arch_id, key_idx, script,
+                    wrap_line=wrap, silent_close=False,
+                )
+                records.append({**base, "action": "reveal_replayed"})
+            except Exception as exc:
+                logger.exception(
+                    "encounter recovery: %s keystone %s failed",
+                    arch_id, key_idx,
+                )
+                records.append({
+                    "run_id": None, "archetype_id": arch_id,
+                    "keystone_index": key_idx, "action": "failed",
+                    "detail": str(exc),
+                })
+        return records
+
     def _meeting_quiet_since(self, user_id: str, row: dict[str, Any],
                              cutoff: datetime) -> bool:
         """True when the meeting's conversation has no message newer
         than `cutoff` — or no messages at all. A message whose
-        timestamp cannot be parsed fails closed: not quiet."""
-        agent_id = conversation_id_for(
+        timestamp cannot be parsed fails closed: not quiet. The
+        conversation id comes from the row (an encounter row carries
+        its own); the legacy shared id is only the fallback."""
+        agent_id = (row.get("conversation_id") or "") or conversation_id_for(
             (row.get("archetype_id") or "").strip().lower(),
             int(row.get("keystone_index") or 1),
         )
@@ -1332,8 +2349,15 @@ class MeetingService:
 
     def pause(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         arch_id = (archetype_id or "").strip().lower()
-        row = self.meetings.get(user_id, arch_id, keystone_index)
-        if row is not None and row["status"] == "active":
+        enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+        # Paused is a meetings-row mirror state, not an encounter
+        # lifecycle state: the encounter stays in_progress, and the
+        # next turn flips the mirror back to active.
+        if (
+            enc is not None
+            and enc["status"] == "in_progress"
+            and (mrow or {}).get("status") == "active"
+        ):
             self.meetings.update(user_id, arch_id, keystone_index, status="paused")
         return self.state(user_id, arch_id, keystone_index)
 
@@ -1387,26 +2411,25 @@ class MeetingService:
                 "That meeting isn't written yet. It will get its own "
                 "conversation when its turn comes — nothing improvised."
             )
-        row = self.meetings.get(user_id, arch_id, keystone_index)
-        if row is None:
+        enc, mrow = self._resolve_encounter(user_id, arch_id, keystone_index)
+        if enc is None:
             if self._keystone_done(user_id, arch_id, keystone_index):
                 return self.state(user_id, arch_id, keystone_index)
             raise MeetingError(
                 "There's no meeting in progress to complete — this seat "
                 "hasn't been met yet."
             )
-        if row["status"] == "complete":
+        if enc["status"] == "complete":
             return self.state(user_id, arch_id, keystone_index)
-        if row["status"] not in ("active", "paused"):
-            raise MeetingError(
-                "This meeting can't be completed from where it stands."
-            )
+        if enc["status"] == "creating":
+            return self._resume_creating_encounter(user_id, enc, script)
         # Explicit discard (see docstring): the held read must not
         # strand in the completed row's state_json as an orphan, and
         # must not be spoken or filed on the way out. The discard
         # reason is persisted on the state, so it stays inspectable
-        # after the meeting completes.
-        enc_state = self._hydrate_state(row)
+        # after the meeting completes. Written to the encounter row
+        # (and the meetings-row mirror).
+        enc_state = self._hydrate_state(enc, mrow)
         if enc_state.impression_pending_text:
             logger.info(
                 "meeting: discarding pending impression on voluntary "
@@ -1420,6 +2443,9 @@ class MeetingService:
             enc_state.pending_impression_discarded = (
                 "visitor completed the meeting manually "
                 "(POST /meeting/complete)"
+            )
+            self.meetings.update_encounter(
+                user_id, enc["run_id"], state_json=enc_state.to_json()
             )
             self.meetings.update(
                 user_id, arch_id, keystone_index,

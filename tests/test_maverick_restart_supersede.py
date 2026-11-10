@@ -185,7 +185,7 @@ def test_completion_is_silent_under_decoupling(ve_ctx, tmp_path):
         readback_strands=json.dumps(["Compass"]),
     )
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     state = svc.complete(uid, "maverick")
     assert state["status"] == "complete"
     assert said == []

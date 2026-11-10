@@ -238,7 +238,7 @@ def test_do_reveal_silent_for_decoupled_still_completes(ve_ctx, tmp_path):
     svc.meetings.create(uid, "skeptic", 1)
     script = MT.SKEPTIC_FIRST_MEETING
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     svc._do_reveal(uid, "skeptic", 1, script, wrap_line="wrap line",
                    silent_close=True)
     assert said == []
@@ -252,7 +252,7 @@ def test_do_reveal_spoken_when_not_silent(ve_ctx, tmp_path):
     svc.meetings.create(uid, "skeptic", 1)
     script = MT.SKEPTIC_FIRST_MEETING
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     svc._do_reveal(uid, "skeptic", 1, script, wrap_line="wrap line",
                    silent_close=False)
     assert said == ["wrap line", *script.reveal]
@@ -278,7 +278,7 @@ def test_filing_happens_at_completion_not_recognition(ve_ctx, tmp_path):
     # is a moment, not a completion.
     assert store.get_claims("meeting-skeptic-1") == []
     script = MT.SKEPTIC_FIRST_MEETING
-    svc._say = lambda user_id, cid, arch_id, body: None  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: None  # type: ignore[method-assign]
     svc._do_reveal(uid, "skeptic", 1, script, wrap_line="wrap line",
                    silent_close=True)
     claims = [

@@ -282,7 +282,7 @@ def test_do_reveal_silent_for_decoupled_still_completes(ve_ctx, tmp_path, monkey
     svc.start(uid, "ambassador")
     script = MT.AMBASSADOR_FIRST_MEETING
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     definition = ENC.get_definition(script)
     assert definition.decoupled_recognition is True
     svc._do_reveal(uid, "ambassador", 1, script, wrap_line="wrap line",

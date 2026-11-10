@@ -136,6 +136,52 @@ try:
 except Exception as e:  # noqa: BLE001 — app boot outranks derivation
     print(f"Steward pipeline/sweep not installed: {e}")
 
+
+# Non-destructive Meet Again (Slice 2): recovery sweep for incomplete
+# encounters — the same 60s daemon-thread pattern as the steward sweep
+# above (open-query-close per user; a failure in one user never loses
+# the rest; the sweep never blocks boot or requests).
+def _recover_incomplete_encounters_for_all_users() -> None:
+    from local_ai.conversation.meeting import MeetingService, MeetingStore
+    from local_ai.conversation.store import ConversationStore
+
+    store = MeetingStore()
+    try:
+        user_ids = store.distinct_user_ids()
+    finally:
+        store.close()
+    for user_id in user_ids:
+        svc = MeetingService(ConversationStore(), MeetingStore())
+        try:
+            svc.recover_incomplete_encounters(user_id)
+        except Exception as e:  # noqa: BLE001 — one user never loses the rest
+            print(f"  encounter recovery for user {user_id} FAILED: {e}")
+        finally:
+            svc.close()
+
+
+def _start_encounter_recovery_sweep() -> None:
+    import threading
+    import time
+
+    def _loop() -> None:
+        while True:
+            try:
+                _recover_incomplete_encounters_for_all_users()
+            except Exception as e:  # noqa: BLE001 — the sweep never dies
+                print(f"  encounter recovery sweep FAILED: {e}")
+            time.sleep(60)
+
+    threading.Thread(
+        target=_loop, daemon=True, name="encounter-recovery-sweep"
+    ).start()
+
+
+try:
+    _start_encounter_recovery_sweep()
+except Exception as e:  # noqa: BLE001 — app boot outranks recovery
+    print(f"Encounter recovery sweep not installed: {e}")
+
 # Vision → Execution Engine: separate domain (ideas, initiatives, projects, tasks, people, assets). Not part of /run or file sorter.
 try:
     from api.routes.vision_execution import router as vision_execution_router
@@ -580,6 +626,16 @@ def _on_startup() -> None:
         print(f"  upload extraction reconciler: interrupted {interrupted} stale job(s)")
     except Exception as e:
         print(f"  upload extraction reconciler FAILED (startup continues): {e}")
+    # Non-destructive Meet Again (Slice 2): one recovery pass for
+    # encounters left incomplete by a crash (a finalize that never
+    # ran, a creation interrupted mid-opening, a reveal interrupted
+    # mid-speech). Guarded: a recovery failure must never block
+    # startup. The 60s sweep covers it again after boot.
+    try:
+        _recover_incomplete_encounters_for_all_users()
+        print("  encounter recovery: startup pass complete")
+    except Exception as e:
+        print(f"  encounter recovery FAILED (startup continues): {e}")
 
 
 @app.exception_handler(Exception)

@@ -840,6 +840,23 @@ class ConversationStore:
             result["inserted"] = True
         return result
 
+    def messages_by_key_prefix(
+        self, user_id: str, conversation_id: str, prefix: str
+    ) -> list[dict[str, Any]]:
+        """Messages whose message_key starts with `prefix`, oldest
+        first — the recovery's read-back of a partially spoken reveal
+        (the wrap line is the message keyed ``reveal:{run_id}:0``).
+        The prefix is a run id (hex) plus ':'; it carries no LIKE
+        wildcards."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, role, body, message_key, created_at FROM messages "
+                "WHERE user_id = ? AND conversation_id = ? "
+                "AND message_key LIKE ? ORDER BY created_at ASC, id ASC",
+                (user_id, conversation_id, prefix + "%"),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def history(
         self, user_id: str, conversation_id: str = "skeleton", limit: int = 50, offset: int = 0
     ) -> list[dict[str, Any]]:

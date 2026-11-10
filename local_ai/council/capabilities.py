@@ -766,20 +766,28 @@ def _render_lines(seat: str | None, state: VisitorState) -> list[str]:
     return lines
 
 
+#: Lead-in for the first-meeting block (Level 1, founder review
+#: item 1, 2026-11-10): a short structural lead-in, not doctrine.
+#: It heads the seat-specific capability bullets inside the frame
+#: after the scope line moved to the canonical tier. The canonical
+#: scope doctrine stays in the tier; the lead-in carries no doctrine
+#: of its own.
+_CAPABILITY_LEADIN = "From your scope:"
+
+
 def first_meeting_block(seat: str | None, state: VisitorState) -> str:
-    """The first-meeting frame's capability context: the seat's own
-    slice as knowledge, plus the ONE shared intention line and the
-    standing honesty guard. Empty for unknown seats (no slice, no
-    intention line). This is the only place the intention line is
-    defined for frames; continuations never receive it."""
+    """The first-meeting frame's capability context: the adopted
+    lead-in plus the seat's own capability bullets only. The shared
+    lines that used to ride this block — the scope line, the ONE
+    shared intention line, and the standing honesty guard — now ride
+    the canonical tier (``local_ai/conversation/canonical_tier.py``),
+    carried once as an uncapped section immediately before the frame
+    on the meeting path. Empty for unknown seats (no slice, no
+    lead-in). Continuations never receive this block."""
     lines = _render_lines(seat, state)
     if not lines:
         return ""
-    header = (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):"
-    )
-    return "\n".join([header, *lines, INTENTION_LINE, HONESTY_GUARD])
+    return "\n".join([_CAPABILITY_LEADIN, *lines])
 
 
 def continuation_block(seat: str | None, state: VisitorState) -> str:

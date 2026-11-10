@@ -87,7 +87,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
-from local_ai.council.archetypes import get_archetype, stock_archetype_ids
+from local_ai.council.archetypes import PLAIN_TO_KEY, get_archetype, stock_archetype_ids
 from local_ai.council.jurisdictions import get_jurisdiction
 from local_ai.fellowship.events import FellowshipEvent
 
@@ -243,15 +243,35 @@ def _tokens(text: str) -> set[str]:
     return out
 
 
+def _normalize_strand_keys(weights: dict[str, float] | None) -> dict[str, float]:
+    """Map a strand vector's keys to canonical lowercase strand keys.
+
+    Vectors arrive under two vocabularies: thread/item weights use
+    lowercase strand keys (``word``/``people``/...) while archetype
+    weights use plain-spoken names (``Voice``/``Heart``/...).
+    PLAIN_TO_KEY (``local_ai/council/archetypes.py``) is the single
+    source of truth for the mapping. Keys already in key form pass
+    through unchanged; unknown keys pass through lowercased. Without
+    this mapping the key sets are disjoint and every cross-vocabulary
+    cosine is 0.0.
+    """
+    by_lower = {k.lower(): v for k, v in PLAIN_TO_KEY.items()}
+    return {
+        by_lower.get(str(k).strip().lower(), str(k).strip().lower()): v
+        for k, v in (weights or {}).items()
+    }
+
+
 def _cosine(a: dict[str, float], b: dict[str, float]) -> float:
-    """Cosine similarity with case-insensitive strand keys.
+    """Cosine similarity over canonical strand keys.
 
     Strand vectors arrive from different stores under different key
-    casings (archetype weights use display names); the comparison
-    must not depend on that accident.
+    vocabularies (archetype weights use display names); both sides
+    are mapped through PLAIN_TO_KEY first, so the comparison must
+    not depend on that accident.
     """
-    norm_a = {str(k).lower(): float(v) for k, v in a.items()}
-    norm_b = {str(k).lower(): float(v) for k, v in b.items()}
+    norm_a = {k: float(v) for k, v in _normalize_strand_keys(a).items()}
+    norm_b = {k: float(v) for k, v in _normalize_strand_keys(b).items()}
     dot = sum(norm_a.get(k, 0.0) * v for k, v in norm_b.items())
     mag_a = math.sqrt(sum(v * v for v in norm_a.values()))
     mag_b = math.sqrt(sum(v * v for v in norm_b.values()))

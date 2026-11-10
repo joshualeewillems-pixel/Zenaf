@@ -78,10 +78,36 @@ def _tokens(text: str) -> set[str]:
     return out
 
 
+def _normalize_strand_keys(weights: dict | None) -> dict:
+    """Map a strand vector's keys to canonical lowercase strand keys.
+
+    Vectors arrive under two vocabularies: thread/item weights use
+    lowercase strand keys (``word``/``people``/...) while archetype
+    weights use plain-spoken names (``Voice``/``Heart``/...).
+    PLAIN_TO_KEY (``local_ai/council/archetypes.py``) is the single
+    source of truth for the mapping. Keys already in key form pass
+    through unchanged; unknown keys pass through lowercased. Without
+    this mapping the key sets are disjoint and every cross-vocabulary
+    cosine is 0.0.
+    """
+    from local_ai.council.archetypes import PLAIN_TO_KEY
+
+    by_lower = {k.lower(): v for k, v in PLAIN_TO_KEY.items()}
+    return {
+        by_lower.get(str(k).strip().lower(), str(k).strip().lower()): v
+        for k, v in (weights or {}).items()
+    }
+
+
 def _cosine(a: dict, b: dict) -> float:
-    """Cosine similarity with case-insensitive strand keys."""
-    norm_a = {str(k).lower(): float(v) for k, v in (a or {}).items()}
-    norm_b = {str(k).lower(): float(v) for k, v in (b or {}).items()}
+    """Cosine similarity over canonical strand keys.
+
+    Both sides are mapped through PLAIN_TO_KEY first (see
+    ``_normalize_strand_keys``), so the comparison does not depend on
+    which vocabulary a vector arrived under.
+    """
+    norm_a = {k: float(v) for k, v in _normalize_strand_keys(a).items()}
+    norm_b = {k: float(v) for k, v in _normalize_strand_keys(b).items()}
     dot = sum(norm_a.get(k, 0.0) * v for k, v in norm_b.items())
     mag_a = math.sqrt(sum(v * v for v in norm_a.values()))
     mag_b = math.sqrt(sum(v * v for v in norm_b.values()))

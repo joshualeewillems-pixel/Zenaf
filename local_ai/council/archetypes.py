@@ -201,8 +201,11 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
 
     A seat with no "shadow" entry renders no Shadow line (Champion, FC7
     2026-11-07 — the superseded "Martyrdom" line was removed, not
-    replaced); every other seat still carries one, so their rendering is
-    byte-identical.
+    replaced); the guardian renders none either (Bear S1, BC8
+    2026-11-07 — the identity-block shadow line rides this correction,
+    not the meeting frames; the ARCHETYPE_PHILOSOPHY table stays the
+    frozen rollback source, only the emitted lines change). Every other
+    seat still carries one, so their rendering is byte-identical.
 
     Weaver consolidation (mandate P2–P3): when the steward read path is
     active, the conductor's philosophy lines come from the steward record
@@ -226,8 +229,12 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
         f"Defining question (your instinctive first move on any problem): \"{phil['question']}\"",
     ]
     # FC7 (2026-11-07): no Shadow line for a seat with no "shadow"
-    # entry. Every other seat still carries one.
-    if "shadow" in phil:
+    # entry. BC8 (Bear S1, 2026-11-07): no Shadow line for the
+    # guardian either — the identity-block shadow line rides this
+    # correction, not the meeting frames. The ARCHETYPE_PHILOSOPHY
+    # table stays the frozen rollback source; only the emitted lines
+    # change. Every other seat still carries one.
+    if "shadow" in phil and key != "guardian":
         lines.append(
             f"Shadow — your characteristic failure mode, which the Skeptic may name: {phil['shadow']}"
         )

@@ -136,3 +136,89 @@ def test_t1_quoted_warmth_phrase_absent_everywhere():
     assert "Validate through steadiness and shelter." in warmth_copy
     # The live line itself carries the new wording.
     assert ARCH.WARMTH_REGISTERS["guardian"] == WARMTH_NEW
+
+
+# ---------------------------------------------------------------------------
+# T5 — shadow lines, identity block out, slice line Gardener-owned
+# (BC8, brief §3; FLIPPED form: G4/D1 has landed, so the slice line
+# is absent from both frames).
+# ---------------------------------------------------------------------------
+
+PROTECTED_SHADOW_TEXT = (
+    "Keeping past the point where the kept thing can no "
+    "longer leave, grow, or stand independently — "
+    "protection that has become retention, with the keeper "
+    "believing she is still only sheltering."
+)
+
+
+def test_t5_identity_block_shadow_out_slice_line_absent():
+    """BC8 scope: the identity-block shadow line is absent from both
+    meeting prompts, and present in the four seats' legacy philosophy
+    lines that still carry one (the Champion has none — FC7 removed
+    its table entry; the Ambassador has none — CC5 removed its
+    table entry). The slice line "Shadow: smothering." is absent
+    from both frames (Gardener G4/D1, landed in main). The protected
+    shadow field in bear.py is byte-identical."""
+    from local_ai.council.canonical.bear import BEAR_RECORD
+
+    p = _prompts()
+    assert SHADOW_LINE not in p["meet_engage"]
+    assert SHADOW_LINE not in p["meet_turn"]
+    assert "Shadow: smothering." not in p["engage_frame"]
+    assert "Shadow: smothering." not in p["turn_frame"]
+    for other in ("mentor", "maverick", "conductor", "skeptic"):
+        lines = ARCH.philosophy_prompt_lines(other)
+        assert any(
+            "Shadow — your characteristic failure mode" in line
+            for line in lines
+        ), other
+    # The Champion (FC7) and the Ambassador (CC5) have no shadow
+    # line either — their table entries were removed by those
+    # corrections, not this one.
+    for shadowless in ("champion", "ambassador"):
+        assert "Shadow — your characteristic failure mode" not in "\n".join(
+            ARCH.philosophy_prompt_lines(shadowless)
+        ), shadowless
+    assert (
+        BEAR_RECORD["protected"]["shadow"]["text"] == PROTECTED_SHADOW_TEXT
+    )
+    # The table itself stays the frozen rollback source.
+    assert (
+        ARCH.ARCHETYPE_PHILOSOPHY["guardian"]["shadow"]
+        == "Smothering: possessiveness, shielding people from necessary growth."
+    )
+
+
+# ---------------------------------------------------------------------------
+# T12 — BC8 scoping (brief §9.2): guardian lines are ideal + question
+# + tension only; every other seat's lines are unchanged in shape.
+# ---------------------------------------------------------------------------
+
+
+def test_t12_bc8_scoping_per_seat():
+    """philosophy_prompt_lines emits exactly three lines for the
+    guardian (ideal, question, tension — no shadow) and four for
+    the four seats that carry a shadow line; the Champion renders
+    three (FC7 removed its table entry) and the Ambassador three
+    (CC5 removed its table entry) — neither by this correction."""
+    guardian_lines = ARCH.philosophy_prompt_lines("guardian")
+    assert len(guardian_lines) == 3, guardian_lines
+    assert guardian_lines[0].startswith("Foundational ideal: ")
+    assert guardian_lines[1].startswith(
+        "Defining question (your instinctive first move on any problem): "
+    )
+    assert guardian_lines[2].startswith(
+        "Live tension with the other seats: "
+    )
+    assert not any("Shadow" in line for line in guardian_lines)
+    for other in ("mentor", "maverick", "conductor", "skeptic"):
+        lines = ARCH.philosophy_prompt_lines(other)
+        assert len(lines) == 4, (other, lines)
+        assert lines[2].startswith(
+            "Shadow — your characteristic failure mode"
+        ), other
+    assert len(ARCH.philosophy_prompt_lines("champion")) == 3
+    assert len(ARCH.philosophy_prompt_lines("ambassador")) == 3
+    # Unknown ids still render nothing.
+    assert ARCH.philosophy_prompt_lines("no-such-seat") == []

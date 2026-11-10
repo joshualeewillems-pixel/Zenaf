@@ -2156,6 +2156,12 @@ class MeetingService:
             e = dict(enc)
             e["identity_kind"] = enc.get("run_id_provenance") or "generated"
             e["read_only"] = enc["status"] == "complete"
+            # The fence state, so the frontend can distinguish an
+            # in-progress encounter from one interrupted during
+            # completion (fence closed, not finalized).
+            e["fence_state"] = self.conversations.get_fence_state(
+                user_id, enc["conversation_id"]
+            )
             if enc.get("predecessor_link_kind") == "reconstructed":
                 e["lineage_label"] = "follows (archive order)"
             elif enc.get("predecessor_run_id"):
@@ -2194,7 +2200,13 @@ class MeetingService:
             )
             total = self.conversations.count_messages(user_id, enc["conversation_id"])
         return {
-            "encounter": dict(enc, read_only=enc["status"] == "complete"),
+            "encounter": dict(
+                enc,
+                read_only=enc["status"] == "complete",
+                fence_state=self.conversations.get_fence_state(
+                    user_id, enc["conversation_id"]
+                ),
+            ),
             "messages": messages,
             "total": total,
             "read_only": enc["status"] == "complete",

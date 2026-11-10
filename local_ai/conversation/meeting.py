@@ -191,6 +191,17 @@ CREATE TABLE IF NOT EXISTS meeting_encounters (
 );
 CREATE INDEX IF NOT EXISTS idx_encounters_key_run
   ON meeting_encounters (user_id, archetype_id, keystone_index, run_number);
+CREATE TABLE IF NOT EXISTS meet_again_requests (
+  user_id TEXT NOT NULL,
+  request_id TEXT NOT NULL,
+  predecessor_run_id TEXT NOT NULL,
+  successor_run_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, request_id),
+  UNIQUE (user_id, successor_run_id)
+);
+CREATE INDEX IF NOT EXISTS idx_meet_again_requests_predecessor
+  ON meet_again_requests (user_id, predecessor_run_id);
 """
 
 #: The deterministic heuristics that guard the state-critical
@@ -199,11 +210,6 @@ CREATE INDEX IF NOT EXISTS idx_encounters_key_run
 #: encounter.py with the runtime that uses them; the private names
 #: are re-exported above for the callers that grew up importing
 #: them from here.
-
-#: The status seeded keystone tasks start with: keystone_seeding creates
-#: them through TaskCreate without a status, so the model's default is the
-#: seed state. Restart returns a completed meeting's task to exactly this.
-_SEEDED_TASK_STATUS = "Todo"
 
 
 
@@ -299,6 +305,28 @@ class MeetingError(ValueError):
         super().__init__(message)
         self.code = code
         self.run_id = run_id
+
+
+class MeetingValidationError(ValueError):
+    """A Meet Again validation refusal (maps to 422 in the route layer):
+    ``predecessor_required`` (no predecessor_run_id in the body),
+    ``predecessor_unknown`` (no such run for the key). Carries the
+    stable code so the route layer can return it without re-deriving it."""
+
+    def __init__(self, message: str, code: str):
+        super().__init__(message)
+        self.code = code
+
+
+class MeetingNotFoundError(ValueError):
+    """No encounter ever existed for the key (maps to 404 in the route
+    layer): a Meet Again with nothing to meet again from. Distinct
+    from ``predecessor_unknown`` (422) — that is a run id that matches
+    no encounter for a key that HAS encounters."""
+
+    def __init__(self, message: str, code: str = "encounter_not_found"):
+        super().__init__(message)
+        self.code = code
 
 
 #: Written-but-unreleased first meetings (Fellowship
@@ -504,18 +532,6 @@ class MeetingStore:
                 )
             self._conn.commit()
 
-    def delete(self, user_id: str, archetype_id: str, keystone_index: int) -> None:
-        """Remove the live meeting row. Only ever called by restart, AFTER
-        the run has been archived and verified complete — the record
-        survives in the archive."""
-        with self._lock:
-            self._conn.execute(
-                "DELETE FROM meetings WHERE user_id = ? AND archetype_id = ? "
-                "AND keystone_index = ?",
-                (user_id, archetype_id, keystone_index),
-            )
-            self._conn.commit()
-
     def met_seats(self, user_id: str) -> list[str]:
         """Archetype ids whose FIRST meeting (keystone 1) is complete
         for this user — the naming rule's met set (amendment E).
@@ -670,10 +686,12 @@ class MeetingStore:
         """Insert one encounter row. The caller supplies run_id,
         user_id, archetype_id, keystone_index, run_number and
         conversation_id, plus any other Appendix A column; the rest
-        take their defaults. A duplicate run_number / predecessor for
-        the key raises IntegrityError — the caller re-reads the latest
-        encounter instead of creating a second run."""
-        fields = dict(fields)
+        take their defaults. ``verification_detail`` /
+        ``opening_paragraphs`` take lists and are serialized (the
+        same as update_encounter). A duplicate run_number /
+        predecessor for the key raises IntegrityError — the caller
+        re-reads the latest encounter instead of creating a second run."""
+        fields = _serialize_encounter_lists(dict(fields))
         fields.setdefault("created_at", _utcnow())
         fields.setdefault("status", "creating")
         cols = ", ".join(fields)
@@ -686,6 +704,79 @@ class MeetingStore:
             self._conn.commit()
         return self.get_encounter(fields["user_id"], fields["run_id"])  # type: ignore[return-value]
 
+    def get_meet_again_request(
+        self, user_id: str, request_id: str
+    ) -> dict[str, Any] | None:
+        """The recorded Meet Again request for (user_id, request_id) —
+        the request's identity (proposal §5, AC15/AC19). A retry with
+        the same request_id finds this row first and returns the
+        existing successor instead of creating a second run."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM meet_again_requests WHERE user_id = ? AND request_id = ?",
+                (user_id, request_id),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def get_successor(
+        self, user_id: str, predecessor_run_id: str
+    ) -> dict[str, Any] | None:
+        """The encounter (if any) whose predecessor is the given run —
+        the one-successor-per-predecessor rule (AC19). A stale
+        predecessor (or a concurrent creation that won) returns this
+        instead of creating a second successor."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM meeting_encounters WHERE user_id = ? "
+                "AND predecessor_run_id = ? ORDER BY run_number ASC LIMIT 1",
+                (user_id, predecessor_run_id),
+            ).fetchone()
+        return _encounter_dict(row) if row else None
+
+    def create_encounter_with_request(
+        self, encounter_fields: dict[str, Any], request: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Insert an encounter row AND its meet-again request record in
+        one BEGIN IMMEDIATE transaction on meetings.db. A crash between
+        them would leave a successor with no request identity, and a
+        retry would create a duplicate run — the two rows are one
+        atomic fact. A duplicate request_id (a concurrent retry that
+        won) or a duplicate run_number raises IntegrityError; the
+        caller re-reads the request / the latest encounter."""
+        fields = _serialize_encounter_lists(dict(encounter_fields))
+        fields.setdefault("created_at", _utcnow())
+        fields.setdefault("status", "creating")
+        cols = ", ".join(fields)
+        placeholders = ", ".join("?" for _ in fields)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                self._conn.execute(
+                    f"INSERT INTO meeting_encounters ({cols}) VALUES ({placeholders})",
+                    tuple(fields.values()),
+                )
+                self._conn.execute(
+                    "INSERT INTO meet_again_requests "
+                    "(user_id, request_id, predecessor_run_id, successor_run_id, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        request["user_id"],
+                        request["request_id"],
+                        request["predecessor_run_id"],
+                        request["successor_run_id"],
+                        request.get("created_at") or _utcnow(),
+                    ),
+                )
+                self._conn.execute("COMMIT")
+            except BaseException:
+                if self._conn.in_transaction:
+                    try:
+                        self._conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                raise
+        return self.get_encounter(fields["user_id"], fields["run_id"])  # type: ignore[return-value]
+
     def update_encounter(
         self, user_id: str, run_id: str, **fields: Any
     ) -> dict[str, Any] | None:
@@ -693,14 +784,7 @@ class MeetingStore:
         never updated). ``verification_detail`` / ``opening_paragraphs``
         take lists and are serialized. Returns the row, or None when
         the run does not exist."""
-        if "verification_detail" in fields:
-            fields["verification_detail_json"] = json.dumps(
-                fields.pop("verification_detail"), ensure_ascii=True
-            )
-        if "opening_paragraphs" in fields:
-            fields["opening_paragraphs_json"] = json.dumps(
-                fields.pop("opening_paragraphs"), ensure_ascii=True
-            )
+        fields = _serialize_encounter_lists(dict(fields))
         allowed = {
             "status", "stage", "state_json", "state_schema_version",
             "state_writer_ref", "archive_commit", "readback_claim",
@@ -806,6 +890,22 @@ class MeetingStore:
                         pass
                 raise
         return self.get_encounter(user_id, run_id)
+
+
+def _serialize_encounter_lists(fields: dict[str, Any]) -> dict[str, Any]:
+    """Serialize an encounter row's list-valued columns to their
+    ``*_json`` storage form (the same rule update_encounter applies):
+    ``opening_paragraphs`` -> ``opening_paragraphs_json``,
+    ``verification_detail`` -> ``verification_detail_json``."""
+    if "verification_detail" in fields:
+        fields["verification_detail_json"] = json.dumps(
+            fields.pop("verification_detail"), ensure_ascii=True
+        )
+    if "opening_paragraphs" in fields:
+        fields["opening_paragraphs_json"] = json.dumps(
+            fields.pop("opening_paragraphs"), ensure_ascii=True
+        )
+    return fields
 
 
 def _encounter_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -1075,13 +1175,17 @@ class MeetingService:
     def _create_encounter(
         self, user_id: str, arch_id: str, keystone_index: int,
         predecessor: dict[str, Any] | None = None,
+        request: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create the next encounter row for a key (run_number = latest
         + 1, or 1), in status 'creating'. The caller records the
         opening and flips it to in_progress. A concurrent creation
         that wins the race raises IntegrityError on the unique
         run_number — the caller re-reads the latest encounter
-        instead of creating a second run."""
+        instead of creating a second run. When ``request`` is given
+        (a Meet Again), the encounter row and the request record are
+        inserted in one transaction, so a crash between them can never
+        leave a successor with no request identity."""
         latest = self.meetings.get_latest_encounter(user_id, arch_id, keystone_index)
         run_number = (latest["run_number"] + 1) if latest else 1
         run_id = _new_run_id()
@@ -1102,6 +1206,11 @@ class MeetingService:
         if predecessor is not None:
             fields["predecessor_run_id"] = predecessor["run_id"]
             fields["predecessor_link_kind"] = "witnessed"
+        if request is not None:
+            # The request record names the successor it created.
+            request = dict(request)
+            request["successor_run_id"] = run_id
+            return self.meetings.create_encounter_with_request(fields, request)
         return self.meetings.create_encounter(**fields)
 
     def _record_opening(
@@ -1477,6 +1586,237 @@ class MeetingService:
                 user_id, enc["run_id"], status="in_progress"
             )
             return self.state(user_id, arch_id, keystone_index)
+
+    def meet_again(
+        self, user_id: str, arch_id: str, keystone_index: int = 1,
+        predecessor_run_id: str | None = None, request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Open the next encounter after a completed one (proposal §5).
+
+        Identity-first (corrections §2, AC15/AC19): the (user_id,
+        request_id) record IS the request's identity. A retry with the
+        same request_id returns the existing successor
+        (``successor_exists: true``); the same request_id for a
+        DIFFERENT predecessor is a ``request_identity_conflict`` (409).
+        The predecessor must exist and be complete: no encounter ever
+        existed for the key -> 404; the run id matches no encounter
+        for the key -> 422 ``predecessor_unknown``; the predecessor is
+        not complete -> 409 ``encounter_in_progress``. The successor
+        leaves the predecessor byte-identical (AC1) and carries
+        run_number + 1 with the predecessor bound explicitly (AC19).
+        A crash during creation leaves a 'creating' successor; a
+        retry resumes it (the recorded opening is replayed, never
+        re-recorded). Returns {encounter, state, resumed,
+        successor_exists}. The per-key lock serializes concurrent
+        Meet Again calls for one key."""
+        arch_id = (arch_id or "").strip().lower()
+        if arch_id not in stock_archetype_ids():
+            raise ValueError(f"Unknown seat: {arch_id!r}")
+        script = MT.get_script(arch_id, keystone_index)
+        if script is None:
+            raise MeetingError("That meeting isn't written yet.")
+        if not (predecessor_run_id or "").strip():
+            raise MeetingValidationError(
+                "A predecessor run is required — Meet Again opens the next "
+                "run after a completed one.",
+                code="predecessor_required",
+            )
+        predecessor_run_id = (predecessor_run_id or "").strip()
+        request_id = (request_id or "").strip()
+        key = f"key:{user_id}:{arch_id}:{keystone_index}"
+        with _lock_for(key):
+            # Identity-first: a retry returns the existing successor.
+            existing = self.meetings.get_meet_again_request(user_id, request_id)
+            if existing is not None:
+                if existing["predecessor_run_id"] != predecessor_run_id:
+                    raise MeetingError(
+                        "This request id was already used for a different "
+                        "predecessor — a request id identifies one Meet Again.",
+                        code="request_identity_conflict",
+                    )
+                successor = self.meetings.get_encounter(
+                    user_id, existing["successor_run_id"]
+                )
+                if successor is None:
+                    # The request record exists but its successor row
+                    # does not — an integrity failure, never silently
+                    # re-created.
+                    raise ConversationIntegrityError(
+                        "meet-again request references a missing successor "
+                        f"run {existing['successor_run_id']!r}"
+                    )
+                if successor["status"] == "creating":
+                    # A crash during creation: resume it (the recorded
+                    # opening is replayed, never re-recorded).
+                    self._resume_creating_encounter(user_id, successor, script)
+                    successor = self.meetings.get_encounter(
+                        user_id, existing["successor_run_id"]
+                    )
+                return {
+                    "encounter": successor,
+                    "state": self.state(user_id, arch_id, keystone_index),
+                    "resumed": True,
+                    "successor_exists": True,
+                }
+
+            # The predecessor must exist and be complete.
+            pred = self.meetings.get_encounter(user_id, predecessor_run_id)
+            if pred is None or pred["archetype_id"] != arch_id or pred["keystone_index"] != keystone_index:
+                if self.meetings.get_latest_encounter(user_id, arch_id, keystone_index) is None:
+                    raise MeetingNotFoundError(
+                        "No encounter ever existed for this meeting — "
+                        "begin one first, then meet again."
+                    )
+                raise MeetingValidationError(
+                    f"Unknown predecessor run: {predecessor_run_id!r}.",
+                    code="predecessor_unknown",
+                )
+            if pred["status"] != "complete":
+                raise MeetingError(
+                    "This meeting is still in progress — meet again once "
+                    "it has reached its close.",
+                    code="encounter_in_progress",
+                    run_id=pred["run_id"],
+                )
+
+            # A successor already exists for this predecessor (a stale
+            # predecessor, or a concurrent creation that won): return
+            # it — exactly one successor per predecessor (AC19). The
+            # successor's request record belongs to the creation that
+            # made it (UNIQUE successor_run_id); an adopter does not
+            # record a second one — a retry re-runs this check and
+            # returns the same successor.
+            existing_successor = self.meetings.get_successor(
+                user_id, predecessor_run_id
+            )
+            if existing_successor is not None:
+                return {
+                    "encounter": existing_successor,
+                    "state": self.state(user_id, arch_id, keystone_index),
+                    "resumed": True,
+                    "successor_exists": True,
+                }
+
+            # Create the successor (encounter row + request record in
+            # one transaction) and deliver its opening.
+            try:
+                enc = self._create_encounter(
+                    user_id, arch_id, keystone_index, predecessor=pred,
+                    request={
+                        "user_id": user_id,
+                        "request_id": request_id,
+                        "predecessor_run_id": predecessor_run_id,
+                    },
+                )
+            except sqlite3.IntegrityError:
+                # A concurrent creation won the race between the
+                # successor check and this insert (the UNIQUE
+                # predecessor constraint enforces one successor per
+                # predecessor). Re-read and adopt it.
+                existing = self.meetings.get_meet_again_request(user_id, request_id)
+                if existing is not None:
+                    successor = self.meetings.get_encounter(
+                        user_id, existing["successor_run_id"]
+                    )
+                    return {
+                        "encounter": successor,
+                        "state": self.state(user_id, arch_id, keystone_index),
+                        "resumed": True,
+                        "successor_exists": True,
+                    }
+                latest = self.meetings.get_latest_encounter(
+                    user_id, arch_id, keystone_index
+                )
+                if latest is not None and latest.get("predecessor_run_id") == predecessor_run_id:
+                    return {
+                        "encounter": latest,
+                        "state": self.state(user_id, arch_id, keystone_index),
+                        "resumed": True,
+                        "successor_exists": True,
+                    }
+                raise
+            initial_state = EncounterState().to_json()
+            self.meetings.update(
+                user_id, arch_id, keystone_index,
+                run_id=enc["run_id"], conversation_id=enc["conversation_id"],
+                state_json=initial_state,
+            )
+            self.meetings.update_encounter(
+                user_id, enc["run_id"], state_json=initial_state
+            )
+            self.conversations.ensure_conversation(
+                user_id, enc["conversation_id"], kind="meeting"
+            )
+            paragraphs = self._record_opening(enc, script)
+            self._speak_opening(user_id, enc, paragraphs)
+            self.meetings.update_encounter(
+                user_id, enc["run_id"], status="in_progress"
+            )
+            return {
+                "encounter": self.meetings.get_encounter(user_id, enc["run_id"]),
+                "state": self.state(user_id, arch_id, keystone_index),
+                "resumed": False,
+                "successor_exists": False,
+            }
+
+    def list_encounters(
+        self, user_id: str, arch_id: str, keystone_index: int = 1
+    ) -> list[dict[str, Any]]:
+        """Every encounter for the key, run_number ascending (the
+        lineage). Each carries ``identity_kind`` (from
+        run_id_provenance), ``read_only`` (a completed encounter is
+        read-only), and ``lineage_label`` — ``"follows (archive
+        order)"`` for a reconstructed (legacy) link, ``"follows"``
+        for a witnessed one, None for the first run."""
+        encounters = self.meetings.list_encounters(user_id, arch_id, keystone_index)
+        out: list[dict[str, Any]] = []
+        for enc in encounters:
+            e = dict(enc)
+            e["identity_kind"] = enc.get("run_id_provenance") or "generated"
+            e["read_only"] = enc["status"] == "complete"
+            if enc.get("predecessor_link_kind") == "reconstructed":
+                e["lineage_label"] = "follows (archive order)"
+            elif enc.get("predecessor_run_id"):
+                e["lineage_label"] = "follows"
+            else:
+                e["lineage_label"] = None
+            out.append(e)
+        return out
+
+    def get_encounter_detail(
+        self, user_id: str, run_id: str, limit: int = 100, offset: int = 0
+    ) -> dict[str, Any] | None:
+        """One encounter + its transcript, owner-scoped (another
+        user's run_id returns None -> 404 at the route). A completed
+        encounter is read-only. A live encounter's transcript is
+        paged from its conversation (bound, default 100); an archive
+        encounter's transcript is paged in memory from its
+        transcript_json (same bound)."""
+        enc = self.meetings.get_encounter(user_id, run_id)
+        if enc is None:
+            return None
+        limit = max(1, min(int(limit or 100), 200))
+        offset = max(0, int(offset or 0))
+        if enc.get("transcript_source") == "archive":
+            try:
+                transcript = json.loads(enc.get("transcript_json") or "[]")
+            except Exception:
+                transcript = []
+            if not isinstance(transcript, list):
+                transcript = []
+            total = len(transcript)
+            messages = transcript[offset:offset + limit]
+        else:
+            messages = self.conversations.history(
+                user_id, enc["conversation_id"], limit=limit, offset=offset
+            )
+            total = self.conversations.count_messages(user_id, enc["conversation_id"])
+        return {
+            "encounter": dict(enc, read_only=enc["status"] == "complete"),
+            "messages": messages,
+            "total": total,
+            "read_only": enc["status"] == "complete",
+        }
 
     def turn(self, user_id: str, archetype_id: str, message: str, keystone_index: int = 1) -> dict[str, Any]:
         """One user turn inside an active meeting. The encounter
@@ -2265,87 +2605,6 @@ class MeetingService:
         if last.tzinfo is None:
             last = last.replace(tzinfo=timezone.utc)
         return last <= cutoff
-
-    def restart(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
-        """Meet again: reset a COMPLETED meeting so it can be run fresh.
-
-        The prior run's FULL transcript (every message row,
-        in original order, verified complete against the live rows)
-        plus the read-back impression is archived in the meeting store
-        before anything is reset — archived and verified, never deleted
-        unverified. The seat's keystone task returns
-        to the status it was seeded with, which also re-locks the face
-        the first meeting revealed (PR #186's face_revealed reads the
-        same task store) until the new run completes.
-
-        Refusals are honest: no meeting on record, a meeting still in
-        progress (pause/resume serves that), or a seat whose meeting
-        isn't written yet. Restart alone does NOT supersede the prior
-        run's filed claim: it stays standing until a new run completes
-        and files its own impression. Nothing here trains — same
-        invariant as the rest of the engine."""
-        arch_id = (archetype_id or "").strip().lower()
-        if arch_id not in stock_archetype_ids():
-            raise ValueError(f"Unknown seat: {archetype_id!r}")
-        script = MT.get_script(arch_id, keystone_index)
-        if script is None:
-            raise MeetingError(
-                "That meeting isn't written yet. It will get its own "
-                "conversation when its turn comes — nothing improvised."
-            )
-        row = self.meetings.get(user_id, arch_id, keystone_index)
-        if row is None:
-            raise MeetingError(
-                "There's no finished meeting to meet again — this seat "
-                "hasn't been met yet."
-            )
-        if row["status"] != "complete":
-            raise MeetingError(
-                "This meeting is still in progress — it waits where you "
-                "left it and can be resumed. Meeting again is for a "
-                "meeting that has reached its close."
-            )
-
-        cid = conversation_id_for(arch_id, keystone_index)
-        # Archive the FULL transcript in bounded 200-row pages, then
-        # verify it against the live rows before anything is deleted.
-        # Any failure aborts the restart with every live row and the
-        # live meeting row intact, so the meeting stays restartable.
-        pages: list[list[dict[str, Any]]] = []
-        offset = 0
-        while True:
-            page = self.conversations.history(user_id, cid, limit=200, offset=offset)
-            pages.append(page)
-            if len(page) < 200:
-                break
-            offset += 200
-        transcript: list[dict[str, Any]] = []
-        for page in reversed(pages):
-            transcript.extend(page)
-        count = self.conversations.count_messages(user_id, cid)
-        ids = self.conversations.message_ids(user_id, cid)
-        if len(transcript) != count or [m["id"] for m in transcript] != ids:
-            raise MeetingError(
-                "The prior run could not be archived completely — its live "
-                "transcript was left untouched. Meet again to retry."
-            )
-        self.meetings.archive_run(user_id, arch_id, keystone_index, row, transcript)
-        self.conversations.clear_conversation(user_id, cid)
-        self.meetings.delete(user_id, arch_id, keystone_index)
-
-        # Revert the keystone task through the same VE service layer the
-        # completion path writes through (_do_reveal), back to the exact
-        # status seeded keystone tasks start with.
-        tasks = _seat_keystone_tasks(user_id, arch_id)
-        if len(tasks) >= keystone_index:
-            task = tasks[keystone_index - 1]
-            if task.get("status") != _SEEDED_TASK_STATUS:
-                ve.update_task(
-                    task["id"],
-                    ve_models.TaskUpdate(status=_SEEDED_TASK_STATUS),
-                    user_id,
-                )
-        return self.state(user_id, arch_id, keystone_index)
 
     def pause(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
         arch_id = (archetype_id or "").strip().lower()

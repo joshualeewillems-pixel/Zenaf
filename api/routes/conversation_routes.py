@@ -28,18 +28,28 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+from typing import Any
 
 from api.routes.auth_routes import get_current_user
 from local_ai.conversation import suggestions as sugg
 from local_ai.conversation.firebrand_round import ITEM_KIND, ROUND_KIND
 from local_ai.conversation.round import ROUND_KIND as WEAVER_ROUND_KIND
-from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingStore
+from local_ai.conversation.meeting import (
+    MeetingError,
+    MeetingNotFoundError,
+    MeetingService,
+    MeetingStore,
+    MeetingValidationError,
+)
 from local_ai.conversation.service import ConversationService
 from local_ai.conversation.store import (
+    ConversationIntegrityError,
     ConversationStore,
     ConversationWriteRefused,
+    OpeningIntegrityConflict,
+    TransactionStateError,
 )
 from local_ai.conversation.upload_extraction import (
     chunk_index_for_offset,
@@ -2005,9 +2015,10 @@ class MeetingPauseBody(BaseModel):
     keystone_index: int = Field(default=1, ge=1, le=4)
 
 
-class MeetingRestartBody(BaseModel):
+class MeetingMeetAgainBody(BaseModel):
     archetype_id: str = Field(max_length=32)
     keystone_index: int = Field(default=1, ge=1, le=4)
+    predecessor_run_id: str = Field(default="", max_length=64)
 
 
 class MeetingCompleteBody(BaseModel):
@@ -2016,10 +2027,39 @@ class MeetingCompleteBody(BaseModel):
 
 
 def _meeting_call(fn) -> dict:
+    """Run a meeting-service call, mapping its refusals to HTTP.
+
+    A refusal that carries a stable ``code`` returns
+    ``{"code", "message"}`` as its detail, so the client can branch
+    on the code; a refusal without one keeps today's plain-string
+    detail. MeetingError -> 409, MeetingValidationError -> 422,
+    MeetingNotFoundError -> 404, store integrity/transaction errors
+    -> 502, a keyed-opening conflict -> 409."""
     try:
         return fn()
+    except MeetingNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail={"code": exc.code, "message": str(exc)}
+        )
+    except MeetingValidationError as exc:
+        raise HTTPException(
+            status_code=422, detail={"code": exc.code, "message": str(exc)}
+        )
     except MeetingError as exc:
-        raise HTTPException(status_code=409, detail=str(exc))
+        detail: Any = (
+            {"code": exc.code, "message": str(exc)} if exc.code else str(exc)
+        )
+        raise HTTPException(status_code=409, detail=detail)
+    except OpeningIntegrityConflict as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": exc.code, "message": str(exc)}
+        )
+    except ConversationWriteRefused as exc:
+        raise HTTPException(
+            status_code=409, detail={"code": exc.code, "message": str(exc)}
+        )
+    except (ConversationIntegrityError, TransactionStateError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except RuntimeError as exc:
@@ -2061,17 +2101,48 @@ def meeting_pause(body: MeetingPauseBody, current_user: dict = Depends(get_curre
     return _meeting_call(lambda: _meeting_service().pause(user_id, arch_id, body.keystone_index))
 
 
-@router.post("/meeting/restart")
-def meeting_restart(body: MeetingRestartBody, current_user: dict = Depends(get_current_user)) -> dict:
-    """Meet again: archive a completed meeting's full transcript, verified
-    complete, and reset it to not-started (its keystone task returns to
-    its seeded status), so the conversation can be run fresh. Refuses —
-    409 — when there is no completed meeting to restart."""
+@router.post("/meeting/meet-again")
+def meeting_meet_again(
+    body: MeetingMeetAgainBody,
+    current_user: dict = Depends(get_current_user),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict:
+    """Meet Again: open the next encounter after a completed one.
+
+    The predecessor stays byte-identical; the successor is a new run
+    (run_number + 1) with its own conversation. The Idempotency-Key
+    header is REQUIRED — it is the request's identity: a retry with
+    the same key returns the existing successor (``resumed: true``,
+    ``successor_exists: true``) instead of creating a second run, and
+    the same key for a different predecessor is a 409
+    ``request_identity_conflict``. Missing key -> 422; missing
+    predecessor_run_id -> 422 ``predecessor_required``; unknown
+    predecessor -> 422 ``predecessor_unknown``; no encounter ever
+    existed -> 404; predecessor still in progress -> 409
+    ``encounter_in_progress``."""
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to meet again.")
+    # A direct (non-HTTP) call leaves the Header() default object in
+    # place; only a real header string counts as a key.
+    if not isinstance(idempotency_key, str):
+        idempotency_key = None
+    if not (idempotency_key or "").strip():
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "idempotency_key_required",
+                "message": "An Idempotency-Key header is required — it identifies this Meet Again request, so a retry returns the same successor instead of creating a second run.",
+            },
+        )
     arch_id = _check_seat(body.archetype_id)
-    return _meeting_call(lambda: _meeting_service().restart(user_id, arch_id, body.keystone_index))
+    return _meeting_call(
+        lambda: _meeting_service().meet_again(
+            user_id, arch_id, body.keystone_index,
+            predecessor_run_id=body.predecessor_run_id,
+            request_id=idempotency_key.strip(),
+        )
+    )
 
 
 @router.post("/meeting/complete")
@@ -2088,17 +2159,74 @@ def meeting_complete(body: MeetingCompleteBody, current_user: dict = Depends(get
     return _meeting_call(lambda: _meeting_service().complete(user_id, arch_id, body.keystone_index))
 
 
+@router.get("/meeting/encounters")
+def meeting_encounters(
+    archetype_id: str = Query(max_length=32),
+    keystone_index: int = Query(default=1, ge=1, le=4),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Every encounter for the key, run_number ascending — the
+    lineage. Each carries its identity kind, verification status,
+    and lineage label (\"follows (archive order)\" for a reconstructed
+    legacy link). Owner-scoped: only the caller's own encounters."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to see the meeting.")
+    arch_id = _check_seat(archetype_id)
+    return _meeting_call(
+        lambda: {
+            "encounters": _meeting_service().list_encounters(
+                user_id, arch_id, keystone_index
+            )
+        }
+    )
+
+
+@router.get("/meeting/encounters/{run_id}")
+def meeting_encounter_detail(
+    run_id: str,
+    limit: int = Query(default=100, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """One encounter + its transcript. A completed encounter is
+    read-only. Owner-scoped: another user's run_id is a 404."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to see the meeting.")
+    svc = _meeting_service()
+    detail = svc.get_encounter_detail(user_id, run_id, limit=limit, offset=offset)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Encounter not found.")
+    return detail
+
+
 @router.get("/meeting")
 def meeting_state(
     archetype_id: str = Query(max_length=32),
     keystone_index: int = Query(default=1, ge=1, le=4),
     current_user: dict = Depends(get_current_user),
+    run_id: str | None = Query(default=None, max_length=64),
 ) -> dict:
-    """Current meeting state + transcript for hydration/resume."""
+    """Current meeting state + transcript for hydration/resume. The
+    latest encounter by default; ``?run_id=`` hydrates a specific
+    encounter (``read_only: true`` for a completed or historical one).
+    A run_id that is not the caller's is a 404."""
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to see the meeting.")
     arch_id = _check_seat(archetype_id)
+    # A direct (non-HTTP) call leaves the Query() default object in
+    # place; only a real run_id string counts as one.
+    if not isinstance(run_id, str):
+        run_id = None
+    if run_id:
+        svc = _meeting_service()
+        if svc.meetings.get_encounter(user_id, run_id) is None:
+            raise HTTPException(status_code=404, detail="Encounter not found.")
+        return _meeting_call(
+            lambda: svc.state(user_id, arch_id, keystone_index, run_id=run_id)
+        )
     return _meeting_call(lambda: _meeting_service().state(user_id, arch_id, keystone_index))
 
 

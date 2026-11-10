@@ -125,11 +125,14 @@ def test_guardian_opening_is_seven_bubbles_and_names_nobody():
     assert len(script.opening) == 7
     opening_text = "\n".join(script.opening)
     # Introductions are earned, not announced: the opening carries
-    # the doorway, the house kept for winter, and his question of
-    # who to let in — never the name or the role.
+    # the doorway, the house kept for winter, and her question of
+    # what is worth standing up for — never the name or the role.
     assert "Bear" not in opening_text
     assert "Guardian" not in opening_text
-    assert "who to let in" in opening_text
+    assert (
+        "When you think of the things in this world worth standing up for, "
+        "what comes to mind?"
+    ) in opening_text
     # The Weaver pattern in kind: no question bank to work through.
     assert script.questions == ()
 

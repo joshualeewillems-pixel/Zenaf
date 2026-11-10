@@ -191,6 +191,47 @@ def test_t5_identity_block_shadow_out_slice_line_absent():
 
 
 # ---------------------------------------------------------------------------
+# T7 — the new opening is adopted verbatim (BC9, brief §4).
+# ---------------------------------------------------------------------------
+
+NEW_OPENING = (
+    "Well, don't just stand there in the doorway! Come in, come in. There's a fire going, and I believe we've enough supper for another.",
+    "Mind that third step. Been meaning to fix it. Though I suppose I've been saying that for years.",
+    "You know, I've spent a good deal of my life building things meant to last. Strong foundations. Sturdy walls. A roof that keeps the weather where it belongs.",
+    "Funny thing about building, though. Sometimes it's knowing what to mend, what to leave alone, and what to tear down before it falls on somebody.",
+    "And people are harder still. Some need shelter. Some need room to wander. Some need someone to stand beside them, and others need someone willing to stand in their way.",
+    "I've never been entirely certain which is the greater kindness.",
+    "But listen to me, carrying on like an old home builder while the supper's getting cold. When you think of the things in this world worth standing up for, what comes to mind?",
+)
+
+
+def test_t7_new_opening_adopted_verbatim():
+    """BC9: all seven bubbles of the new opening are present verbatim
+    in GUARDIAN_INTRODUCTION; bubble 6 is kept (Q-B5) and bubble 7
+    closes on the values-first question. Bubbles 1–3 are byte-identical
+    to the live script they replace."""
+    assert MT.GUARDIAN_INTRODUCTION == NEW_OPENING
+    assert len(MT.GUARDIAN_INTRODUCTION) == 7
+    assert (
+        MT.GUARDIAN_INTRODUCTION[5]
+        == "I've never been entirely certain which is the greater kindness."
+    )
+    assert MT.GUARDIAN_INTRODUCTION[6].endswith(
+        "When you think of the things in this world worth standing up for, "
+        "what comes to mind?"
+    )
+    # The dropped material is gone: the triage question, the
+    # aphorism, the carpenter line, the captive-audience line.
+    opening_text = "\n".join(MT.GUARDIAN_INTRODUCTION)
+    assert "who to let in" not in opening_text
+    assert "hold it so tightly" not in opening_text
+    assert "old carpenter" not in opening_text
+    assert "captive audience" not in opening_text
+    assert "old home builder" in opening_text
+    assert "tear down before it falls on somebody" in opening_text
+
+
+# ---------------------------------------------------------------------------
 # T12 — BC8 scoping (brief §9.2): guardian lines are ideal + question
 # + tension only; every other seat's lines are unchanged in shape.
 # ---------------------------------------------------------------------------

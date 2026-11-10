@@ -701,7 +701,8 @@ class MeetingService:
 
     def _say(self, user_id: str, cid: str, archetype_id: str, body: str) -> dict[str, Any]:
         return self.conversations.append_message(
-            user_id, cid, archetype_id, "voice", body, mode="base", context={"meeting": True}
+            user_id, cid, archetype_id, "voice", body, mode="base", context={"meeting": True},
+            via_meeting=True,
         )
 
     def start(self, user_id: str, archetype_id: str, keystone_index: int = 1) -> dict[str, Any]:
@@ -766,7 +767,8 @@ class MeetingService:
 
         cid = conversation_id_for(arch_id, keystone_index)
         self.conversations.append_message(
-            user_id, cid, arch_id, "user", message, mode="base", context={"meeting": True}
+            user_id, cid, arch_id, "user", message, mode="base", context={"meeting": True},
+            via_meeting=True,
         )
 
         enc_state = self._hydrate_state(row)

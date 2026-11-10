@@ -59,10 +59,19 @@ CREATE TABLE IF NOT EXISTS messages (
   body TEXT NOT NULL DEFAULT '',
   mode TEXT NOT NULL DEFAULT 'trained',
   context_json TEXT NOT NULL DEFAULT '{}',
+  message_key TEXT,
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_conv_messages_user_conv
   ON messages (user_id, conversation_id, created_at, id);
+CREATE TABLE IF NOT EXISTS conversation_write_fence (
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'open',
+  closed_at TEXT,
+  closed_by_run_id TEXT,
+  PRIMARY KEY (user_id, conversation_id)
+);
 CREATE TABLE IF NOT EXISTS thread_state (
   user_id TEXT NOT NULL,
   conversation_id TEXT NOT NULL,
@@ -374,6 +383,48 @@ def _message_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
     return out
 
 
+class ConversationWriteRefused(ValueError):
+    """A meeting-conversation write refused at the store boundary.
+
+    Carries the stable error ``code`` the route layer maps to 409:
+    ``reserved_meeting_id`` (the (b) gate: a non-meeting writer
+    reached a reserved meeting conversation id) or
+    ``encounter_finalized`` (the fence: the encounter is closed).
+    ``run_id`` names the encounter when the fence row records one.
+    """
+
+    def __init__(self, code: str, message: str, run_id: str | None = None):
+        super().__init__(message)
+        self.code = code
+        self.run_id = run_id
+
+
+class ConversationIntegrityError(RuntimeError):
+    """The store's data is inconsistent — a missing fence row on a
+    reserved meeting conversation. A missing fence must never mean an
+    open meeting. Maps to 502."""
+
+
+class TransactionStateError(RuntimeError):
+    """``append_message`` was called while the connection already held
+    a transaction this append did not open. The append fails closed
+    and touches nothing — it never rolls back an unrelated
+    transaction. Maps to 502."""
+
+
+class OpeningIntegrityConflict(ValueError):
+    """The same message identity already exists with different
+    content: a contradiction, never silently ignored. Maps to 409
+    ``opening_integrity_conflict``."""
+
+    def __init__(self, message: str, run_id: str | None = None,
+                 message_key: str | None = None):
+        super().__init__(message)
+        self.code = "opening_integrity_conflict"
+        self.run_id = run_id
+        self.message_key = message_key
+
+
 class ConversationStore:
     """SQLite-backed store for the conversation skeleton."""
 
@@ -387,6 +438,7 @@ class ConversationStore:
             self._conn.executescript(_SCHEMA)
             self._migrate_paste_text_columns()
             self._migrate_upload_amendment_columns()
+            self._migrate_meet_again_columns()
             self._conn.commit()
 
     def close(self) -> None:
@@ -477,6 +529,35 @@ class ConversationStore:
             "ON upload_spans (span_hash, location)"
         )
 
+    def _migrate_meet_again_columns(self) -> None:
+        """Non-destructive Meet Again (Slice 1): ``messages.message_key``.
+
+        The partial unique index on ``(user_id, conversation_id,
+        message_key) WHERE message_key IS NOT NULL`` is created here,
+        AFTER the column exists — it cannot live in ``_SCHEMA``,
+        whose executescript runs before this migration on a
+        pre-existing database (creating the index on a table without
+        the column fails). Guarded by PRAGMA table_info / CREATE
+        INDEX IF NOT EXISTS — a no-op when the column and index
+        already exist (the paste-text migration's precedent). Caller
+        holds the lock.
+        """
+        cols = [
+            r["name"]
+            for r in self._conn.execute(
+                "PRAGMA table_info(messages)"
+            ).fetchall()
+        ]
+        if "message_key" not in cols:
+            self._conn.execute(
+                "ALTER TABLE messages ADD COLUMN message_key TEXT"
+            )
+        self._conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_key "
+            "ON messages (user_id, conversation_id, message_key) "
+            "WHERE message_key IS NOT NULL"
+        )
+
     # -- conversations --------------------------------------------------------
 
     def ensure_conversation(
@@ -495,6 +576,16 @@ class ConversationStore:
                 "WHERE user_id = ? AND conversation_id = ?",
                 (now, user_id, conversation_id),
             )
+            # Non-destructive Meet Again (Slice 1): a reserved meeting
+            # conversation gets its write fence the moment the
+            # conversation is created. INSERT OR IGNORE never touches
+            # an existing row, so a closed fence is never re-opened.
+            if (conversation_id or "").startswith("meeting-"):
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO conversation_write_fence "
+                    "(user_id, conversation_id, state) VALUES (?, ?, 'open')",
+                    (user_id, conversation_id),
+                )
             self._conn.commit()
             row = self._conn.execute(
                 "SELECT user_id, conversation_id, kind, created_at, updated_at "
@@ -502,6 +593,84 @@ class ConversationStore:
                 (user_id, conversation_id),
             ).fetchone()
         return dict(row)
+
+    # -- meeting write fence --------------------------------------------------
+
+    def ensure_fence(self, user_id: str, conversation_id: str) -> None:
+        """Create the write fence for a meeting conversation, open.
+
+        Idempotent (INSERT OR IGNORE); never touches an existing row,
+        so a closed fence is never re-opened. Used by the migration
+        and by encounter creation for conversations that were never
+        ensured (the fence's row is the write-admission record).
+        """
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO conversation_write_fence "
+                "(user_id, conversation_id, state) VALUES (?, ?, 'open')",
+                (user_id, conversation_id),
+            )
+            self._conn.commit()
+
+    def get_fence_state(self, user_id: str, conversation_id: str) -> str | None:
+        """The fence state for one conversation: 'open', 'closed', or
+        None when no fence row exists."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT state FROM conversation_write_fence "
+                "WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+        return row["state"] if row is not None else None
+
+    def close_fence(self, user_id: str, conversation_id: str, run_id: str) -> str:
+        """Close the write fence for one meeting conversation.
+
+        Returns 'closed' (this call closed it),
+        'already-closed-by-same-run' (an idempotent re-close by the
+        same run), 'closed-by-other-run', or 'missing' (no fence row —
+        an integrity error for the caller to raise, never permission
+        to write). One BEGIN IMMEDIATE transaction; fails closed with
+        TransactionStateError when the connection already holds a
+        transaction this close did not open.
+        """
+        now = _utcnow()
+        with self._lock:
+            if self._conn.in_transaction:
+                raise TransactionStateError(
+                    "close_fence refused: the store connection already "
+                    "holds an open transaction this close did not open; "
+                    "refusing rather than rolling back unrelated work"
+                )
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cur = self._conn.execute(
+                    "UPDATE conversation_write_fence "
+                    "SET state = 'closed', closed_at = ?, closed_by_run_id = ? "
+                    "WHERE user_id = ? AND conversation_id = ? AND state = 'open'",
+                    (now, run_id, user_id, conversation_id),
+                )
+                if cur.rowcount == 1:
+                    self._conn.execute("COMMIT")
+                    return "closed"
+                row = self._conn.execute(
+                    "SELECT state, closed_by_run_id FROM conversation_write_fence "
+                    "WHERE user_id = ? AND conversation_id = ?",
+                    (user_id, conversation_id),
+                ).fetchone()
+                self._conn.execute("ROLLBACK")
+                if row is None:
+                    return "missing"
+                if row["state"] == "closed" and row["closed_by_run_id"] == run_id:
+                    return "already-closed-by-same-run"
+                return "closed-by-other-run"
+            except BaseException:
+                if self._conn.in_transaction:
+                    try:
+                        self._conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                raise
 
     # -- messages --------------------------------------------------------------
 
@@ -514,29 +683,149 @@ class ConversationStore:
         body: str,
         mode: str = "trained",
         context: dict[str, Any] | None = None,
+        message_key: str | None = None,
+        via_meeting: bool = False,
     ) -> dict[str, Any]:
+        """Append one message, fenced (non-destructive Meet Again, S1).
+
+        The fence check and the INSERT run in one BEGIN IMMEDIATE
+        transaction in the same file as the message table, so a
+        finalization cannot interleave between them. The order is
+        load-bearing:
+
+        1. Transaction ownership (safeguard 2): when the connection
+           already holds a transaction this append did not open, fail
+           closed with TransactionStateError — the append never rolls
+           back an unrelated transaction.
+        2. The (b) gate: a write to a reserved ``meeting-*``
+           conversation id from a non-meeting writer is refused with
+           ConversationWriteRefused (``reserved_meeting_id``). Only
+           the meeting service (``via_meeting=True``) writes there.
+        3. The fence: a closed fence refuses the write
+           (``encounter_finalized``); a missing fence on a reserved
+           meeting id is an integrity error (502), never permission
+           to write (safeguard 1). An ordinary conversation has no
+           fence row and writes as before.
+        4. The insert, with the conflict handler (safeguard 3): when
+           ``message_key`` is given, a duplicate key with matching
+           body and context returns the existing message with
+           ``inserted: False``; the same key with different content
+           raises OpeningIntegrityConflict (409); any other
+           constraint failure surfaces as-is. A keyed insert returns
+           ``inserted: True``; an unkeyed write returns exactly
+           today's shape.
+        """
         msg_id = uuid.uuid4().hex[:16]
         now = _utcnow()
         context_json = json.dumps(context or {}, ensure_ascii=True)
+        is_meeting = (conversation_id or "").startswith("meeting-")
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO messages (id, user_id, conversation_id, archetype_id, "
-                "role, body, mode, context_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    msg_id,
-                    user_id,
-                    conversation_id,
-                    archetype_id,
-                    role,
-                    body or "",
-                    mode or "trained",
-                    context_json,
-                    now,
-                ),
-            )
-            self._conn.commit()
-        return {
+            if self._conn.in_transaction:
+                raise TransactionStateError(
+                    "append_message refused: the store connection "
+                    "already holds an open transaction this append "
+                    "did not open; refusing rather than rolling back "
+                    "unrelated work"
+                )
+            if is_meeting and not via_meeting:
+                raise ConversationWriteRefused(
+                    "reserved_meeting_id",
+                    f"conversation {conversation_id!r} is a reserved "
+                    "meeting conversation; ordinary writes are refused",
+                )
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                fence = self._conn.execute(
+                    "SELECT state, closed_by_run_id "
+                    "FROM conversation_write_fence "
+                    "WHERE user_id = ? AND conversation_id = ?",
+                    (user_id, conversation_id),
+                ).fetchone()
+                if fence is not None and fence["state"] == "closed":
+                    self._conn.execute("ROLLBACK")
+                    raise ConversationWriteRefused(
+                        "encounter_finalized",
+                        f"conversation {conversation_id!r} is closed to "
+                        "writes (its encounter is finalized)",
+                        run_id=fence["closed_by_run_id"],
+                    )
+                if fence is None and is_meeting:
+                    self._conn.execute("ROLLBACK")
+                    raise ConversationIntegrityError(
+                        f"no fence row for reserved meeting conversation "
+                        f"{conversation_id!r} (user {user_id!r}); refusing "
+                        "the write rather than treating a missing fence "
+                        "as open"
+                    )
+                try:
+                    self._conn.execute(
+                        "INSERT INTO messages (id, user_id, conversation_id, "
+                        "archetype_id, role, body, mode, context_json, "
+                        "message_key, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            msg_id,
+                            user_id,
+                            conversation_id,
+                            archetype_id,
+                            role,
+                            body or "",
+                            mode or "trained",
+                            context_json,
+                            message_key,
+                            now,
+                        ),
+                    )
+                except sqlite3.IntegrityError:
+                    if message_key is None:
+                        raise
+                    existing = self._conn.execute(
+                        "SELECT id, role, body, mode, context_json, created_at "
+                        "FROM messages WHERE user_id = ? AND conversation_id = ? "
+                        "AND message_key = ?",
+                        (user_id, conversation_id, message_key),
+                    ).fetchone()
+                    if existing is None:
+                        raise
+                    try:
+                        existing_context = json.loads(existing["context_json"] or "{}")
+                    except Exception:
+                        existing_context = {}
+                    if (existing["body"] == (body or "")
+                            and existing_context == (context or {})):
+                        self._conn.execute("ROLLBACK")
+                        return {
+                            "id": existing["id"],
+                            "user_id": user_id,
+                            "conversation_id": conversation_id,
+                            "archetype_id": archetype_id,
+                            "role": existing["role"],
+                            "body": existing["body"],
+                            "mode": existing["mode"],
+                            "context": existing_context,
+                            "created_at": existing["created_at"],
+                            "inserted": False,
+                        }
+                    run_id = None
+                    parts = (message_key or "").split(":")
+                    if len(parts) >= 2:
+                        run_id = parts[1] or None
+                    self._conn.execute("ROLLBACK")
+                    raise OpeningIntegrityConflict(
+                        f"message_key {message_key!r} already exists with "
+                        "different content; refusing a contradictory write",
+                        run_id=run_id,
+                        message_key=message_key,
+                    ) from None
+                self._conn.execute("COMMIT")
+            except BaseException:
+                if self._conn.in_transaction:
+                    try:
+                        self._conn.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                raise
+        result: dict[str, Any] = {
             "id": msg_id,
             "user_id": user_id,
             "conversation_id": conversation_id,
@@ -547,6 +836,9 @@ class ConversationStore:
             "context": context or {},
             "created_at": now,
         }
+        if message_key is not None:
+            result["inserted"] = True
+        return result
 
     def history(
         self, user_id: str, conversation_id: str = "skeleton", limit: int = 50, offset: int = 0

@@ -107,23 +107,34 @@ def test_t2_persistence_across_instances(tmp_path):
 
 
 def test_t3_skeleton_and_meetings_untouched(client):
-    """Talk sends leave the skeleton thread and meeting rows alone."""
+    """Talk sends leave the skeleton thread and meeting rows alone.
+
+    Non-destructive Meet Again (Slice 1): an ordinary turn to a
+    reserved meeting conversation id is refused by the (b) gate (409
+    ``reserved_meeting_id``) — it writes nothing anywhere, so the
+    skeleton is untouched and no meeting-* row exists at all."""
     c, store = client
     _turn(c, "skeleton", "mentor", "skeleton msg")
     before = _hydrate(c, "skeleton")
     _turn(c, TALK_A, "mentor", "talk msg")
-    _turn(c, "meeting-mentor-1", "mentor", "meeting msg")
+    r = c.post(
+        "/conversation/turn",
+        json={"conversation_id": "meeting-mentor-1", "archetype_id": "mentor",
+              "message": "meeting msg"},
+    )
+    assert r.status_code == 409, r.text
+    assert r.json()["detail"]["code"] == "reserved_meeting_id"
     after = _hydrate(c, "skeleton")
     assert [m["body"] for m in after["messages"]] == [
         m["body"] for m in before["messages"]
     ]
     assert after["total"] == before["total"] == 2
-    # Talk sends created no meeting-* rows beyond the one meeting turn.
+    # The refused turn wrote nothing: no meeting-* rows exist.
     rows = store._conn.execute(
         "SELECT DISTINCT conversation_id FROM messages "
         "WHERE conversation_id LIKE 'meeting-%'"
     ).fetchall()
-    assert [r[0] for r in rows] == ["meeting-mentor-1"]
+    assert [r[0] for r in rows] == []
 
 
 def test_t4_no_silent_shared_default(client):
@@ -148,7 +159,11 @@ def test_t5_list_contents_and_scoping(client):
     store.append_message("user-alice", TALK_A, "champion", "user", "a3")
     store.append_message("user-alice", TALK_B, "champion", "user", "b1")
     store.append_message("user-alice", "skeleton", "mentor", "user", "sk")
-    store.append_message("user-alice", "meeting-mentor-1", "mentor", "user", "mt")
+    # Non-destructive Meet Again (Slice 1): a meeting message in the
+    # store goes through the meeting path — ensured (fence) + via_meeting.
+    store.ensure_conversation("user-alice", "meeting-mentor-1", kind="meeting")
+    store.append_message("user-alice", "meeting-mentor-1", "mentor", "user", "mt",
+                         via_meeting=True)
     store.append_message("user-bob", "talk-cccccccccccccccccccccccccccccccc", "mentor", "user", "bob")
     store.ensure_conversation("user-alice", "talk-eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
     r = c.get("/conversation/list")

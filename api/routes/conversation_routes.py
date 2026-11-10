@@ -37,7 +37,10 @@ from local_ai.conversation.firebrand_round import ITEM_KIND, ROUND_KIND
 from local_ai.conversation.round import ROUND_KIND as WEAVER_ROUND_KIND
 from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingStore
 from local_ai.conversation.service import ConversationService
-from local_ai.conversation.store import ConversationStore
+from local_ai.conversation.store import (
+    ConversationStore,
+    ConversationWriteRefused,
+)
 from local_ai.conversation.upload_extraction import (
     chunk_index_for_offset,
     chunk_upload_text,
@@ -167,6 +170,13 @@ def conversation_turn(
             mode=body.mode,
             question=body.question,
             context=(body.context.model_dump(exclude_none=True) if body.context else None),
+        )
+    except ConversationWriteRefused as exc:
+        # Non-destructive Meet Again (Slice 1): the (b) gate — an
+        # ordinary turn to a reserved meeting conversation id is
+        # refused with its stable code, not a bare 422.
+        raise HTTPException(
+            status_code=409, detail={"code": exc.code, "message": str(exc)}
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

@@ -73,9 +73,16 @@ def _completed_meeting(svc, uid, n, arch=ARCH):
         readback_strands=json.dumps(["Compass"]),
     )
     cid = conversation_id_for(arch, 1)
+    # Non-destructive Meet Again (Slice 1): seeding a meeting
+    # transcript goes through the meeting path — the conversation is
+    # ensured (which creates its write fence) and the appends carry
+    # via_meeting, as the meeting service's own writes do. The
+    # restart/archive assertions below are unchanged.
+    svc.conversations.ensure_conversation(uid, cid, kind="meeting")
     for i in range(n):
         role = "user" if i % 2 == 0 else "voice"
-        svc.conversations.append_message(uid, cid, arch, role, f"message {i}")
+        svc.conversations.append_message(uid, cid, arch, role, f"message {i}",
+                                         via_meeting=True)
     return cid
 
 

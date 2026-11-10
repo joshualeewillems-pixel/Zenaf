@@ -433,16 +433,18 @@ def test_frame_sizes_and_headroom_measured():
     # Binding cap: reply.build_voice_prompt truncates
     # extra_instructions at 8,000 chars. Both composed paths fit with
     # at least 300 chars headroom (proposal minimum).
-    assert len(definition.turn_frame) == 4854
+    assert len(definition.turn_frame) == 4856
     # #262 dropped the appended jurisdiction line from _turn_frame
     # (298 chars + separator = 300), so the composed turn frame is
     # 300 smaller than originally measured; definition frame unchanged.
     # Gardener correction (2026-11-07): the composed turn frame grew
     # 5,287 -> 6,130 (turn-frame invariant + T2), so the 9,000-cap
     # headroom is 9,000 - 6,130 = 2,870.
-    assert len(turn_frame) == 6130
+    # Q-R7 lecture edit (2026-11-09): "teach" -> "lecture" (+2 chars):
+    # definition 4854 -> 4856, composed 6,130 -> 6,132, headroom 2,870 -> 2,868.
+    assert len(turn_frame) == 6132
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 2870
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 2868
     # Read-back correction (2026-11-06): the founder-approved §F.1
     # readback frames lengthened the engage frame (Mentor 6128 -> 6563
     # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->

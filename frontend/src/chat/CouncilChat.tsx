@@ -10,7 +10,7 @@ import UploadRoundCard, { type UploadRoundItem } from './UploadRoundCard'
 import WeaverRoundClaimCard from './WeaverRoundClaimCard'
 import { stripCorrectionDraft, stripRoundOfferMarker, type WeaverRoundItem } from './weaverRound'
 import { stripTaskProposalBlocks } from './taskProposals'
-import VoiceFeedback from './VoiceFeedback'
+import VoiceFeedback, { type InitialFeedback } from './VoiceFeedback'
 import {
   useDraftStore,
   COUNCIL_DRAFT_SEAT,
@@ -273,6 +273,56 @@ export default function CouncilChat({
   // The store key rides along for the next build; today it only identifies
   // the thread for future hydration (call sites key on it when it exists).
   const conversationKey = conversationId ?? 'local'
+
+  /** Saved feedback, latest row per response_ref, for prefilling the
+   *  widgets. One GET /feedback per conversation load — never one per
+   *  message. A failed or malformed response is silent: widgets mount
+   *  unanswered, exactly as if no record existed. */
+  const [feedbackByResponse, setFeedbackByResponse] = useState<
+    Record<string, InitialFeedback>
+  >({})
+  useEffect(() => {
+    let cancelled = false
+    setFeedbackByResponse({})
+    fetch(
+      `${base}/feedback?conversation_id=${encodeURIComponent(conversationKey)}&limit=200`,
+      { credentials: 'include' },
+    )
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return (await r.json()) as Record<string, unknown>
+      })
+      .then((data) => {
+        if (cancelled) return
+        const records = (data as { records?: unknown }).records
+        if (!Array.isArray(records)) return
+        // Newest first: the first row per response_ref is the latest.
+        const map: Record<string, InitialFeedback> = {}
+        for (const rec of records) {
+          if (!rec || typeof rec !== 'object') continue
+          const ref = (rec as Record<string, unknown>).response_ref
+          if (typeof ref !== 'string' || ref in map) continue
+          const slider = (rec as Record<string, unknown>).slider
+          const checks = (rec as Record<string, unknown>).checks
+          const note = (rec as Record<string, unknown>).note
+          if (typeof slider !== 'number') continue
+          map[ref] = {
+            slider,
+            checks: Array.isArray(checks)
+              ? checks.filter((c): c is string => typeof c === 'string')
+              : [],
+            note: typeof note === 'string' ? note : '',
+          }
+        }
+        setFeedbackByResponse(map)
+      })
+      .catch(() => {
+        // Silent: prefill is a convenience, not a load-bearing read.
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [conversationKey, base])
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -896,6 +946,7 @@ export default function CouncilChat({
                     messageId={m.messageId}
                     seat={m.voiceId}
                     conversationId={conversationKey}
+                    initialFeedback={feedbackByResponse[m.messageId] ?? null}
                   />
                 </div>
               )}

@@ -412,6 +412,18 @@ class DerivationPipeline:
     (``lambda fn: fn()``) for determinism. ``generate_fn`` and
     ``store`` are injectable for the same reason. Scheduling itself
     never raises.
+
+    Consent gating (Phase 0 consent correction, mirroring the
+    steward pipeline): when ``consent_reader`` is set, every run
+    checks it first — a closed gate means no derivation, no LLM
+    call, nothing persisted. The check happens at run time, not
+    at schedule time, so a withdrawal between scheduling and
+    running is respected. A pipeline built WITHOUT a reader
+    derives ungated: that is the direct-drive mode for tests and
+    tools only. The production install
+    (``install_default_pipeline``) always gates, using the
+    production reader by default — pass an explicit reader there
+    only to override it in tests.
     """
 
     def __init__(
@@ -419,10 +431,12 @@ class DerivationPipeline:
         store: ObservationStore | None = None,
         generate_fn: GenerateFn | None = None,
         scheduler: Callable[[Callable[[], None]], None] | None = None,
+        consent_reader: Callable[[str], bool] | None = None,
     ) -> None:
         self._store = store
         self._generate_fn = generate_fn
         self._scheduler = scheduler or self._thread_scheduler
+        self._consent_reader = consent_reader
 
     @staticmethod
     def _thread_scheduler(fn: Callable[[], None]) -> None:
@@ -434,6 +448,19 @@ class DerivationPipeline:
             self._store = ObservationStore()
         return self._store
 
+    def _gate_open(self, user_id: str) -> bool:
+        """True when this pipeline may derive for this user."""
+        if self._consent_reader is None:
+            return True
+        try:
+            return bool(self._consent_reader(user_id))
+        except Exception:
+            logger.exception(
+                "fellowship: consent read failed for user %r; failing closed",
+                user_id,
+            )
+            return False
+
     def schedule(self, event: FellowshipEvent) -> None:
         try:
             self._scheduler(lambda: self._run(event))
@@ -442,6 +469,14 @@ class DerivationPipeline:
 
     def _run(self, event: FellowshipEvent) -> None:
         try:
+            if not self._gate_open(event.user_id):
+                logger.info(
+                    "fellowship: consent closed for user %r; "
+                    "event %s skipped",
+                    event.user_id,
+                    event.id,
+                )
+                return
             derive_observations(event, self.store, generate_fn=self._generate_fn)
         except Exception:
             logger.exception("fellowship: derivation run failed for %s", event.id)
@@ -455,16 +490,28 @@ def install_default_pipeline(
     store: ObservationStore | None = None,
     generate_fn: GenerateFn | None = None,
     scheduler: Callable[[Callable[[], None]], None] | None = None,
+    consent_reader: Callable[[str], bool] | None = None,
 ) -> DerivationPipeline:
     """Install the process-wide derivation pipeline (app assembly).
 
     Idempotent-ish: re-installing replaces the pipeline (tests use
     this to install a synchronous one; production installs once).
+    Unlike a directly constructed DerivationPipeline, the installed
+    pipeline ALWAYS gates: with no explicit reader it uses the
+    production consent reader (Phase 0 consent correction). Pass an
+    explicit reader only to override it in tests.
     """
     global _PIPELINE
+    if consent_reader is None:
+        from local_ai.fellowship.consent import fellowship_consent_allowed
+
+        consent_reader = fellowship_consent_allowed
     with _PIPELINE_LOCK:
         _PIPELINE = DerivationPipeline(
-            store=store, generate_fn=generate_fn, scheduler=scheduler
+            store=store,
+            generate_fn=generate_fn,
+            scheduler=scheduler,
+            consent_reader=consent_reader,
         )
         return _PIPELINE
 

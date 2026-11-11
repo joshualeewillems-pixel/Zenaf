@@ -680,6 +680,12 @@ def test_pipeline_synchronous_scheduler_derives_on_emit(tmp_path, activity_recor
         store=store,
         generate_fn=_gen_returning("Scheduled reading."),
         scheduler=lambda fn: fn(),
+        # Phase 0 consent correction: the installed pipeline always
+        # gates. This test exercises pipeline mechanics, so it
+        # overrides the reader explicitly (the steward tests do the
+        # same); the gate itself is pinned in
+        # tests/test_fellowship_consent_gate.py.
+        consent_reader=lambda user_id: True,
     )
     events.emit_event(
         kind=events.CONVERSATION_TURN,
@@ -702,6 +708,10 @@ def test_pipeline_thread_scheduler_derives_in_background(tmp_path, activity_reco
     derivation.install_default_pipeline(
         store=store,
         generate_fn=_gen_returning("Background reading."),
+        # Phase 0 consent correction: see the synchronous test above
+        # — the installed pipeline always gates, so this test
+        # overrides the reader explicitly.
+        consent_reader=lambda user_id: True,
     )
     events.emit_event(
         kind=events.CONVERSATION_TURN,

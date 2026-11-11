@@ -257,6 +257,7 @@ export type UserPermissionFlags = {
   aspiration_use_in_guidance: boolean
   steward_derivation: boolean
   steward_coordination: boolean
+  fellowship_derivation: boolean
 }
 
 export const USER_PERMISSION_DEFAULTS: UserPermissionFlags = {
@@ -285,6 +286,13 @@ export const USER_PERMISSION_DEFAULTS: UserPermissionFlags = {
   // no Settings UI component change; the coordination row lands
   // with the Slice 2 Settings surface.
   steward_coordination: false,
+  // Phase 0 consent correction — fellowship derivation gate.
+  // Dedicated default-off flag, distinct from steward_derivation
+  // by design. Default off; existing users are NOT opted in by
+  // the addition, and no forced re-acknowledgement. Bound: defaults
+  // (data) only — no Settings UI component change; the toggle row
+  // lands once the founder rules its wording.
+  fellowship_derivation: false,
 }
 
 export type UserPermissionsSettings = {

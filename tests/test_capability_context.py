@@ -450,9 +450,12 @@ def test_meeting_turn_generation_carries_first_meeting_block(
 # ---------------------------------------------------------------------------
 # C1–C3 (design §7.4). The note rides ONLY the commitments line, and
 # only when the capability is currently usable (signed-in). The other
-# six seats' blocks are pinned byte-identical to the 1589a04 base
-# (recorded in the test from a pristine checkout): this build changes
-# exactly one line on one seat.
+# six seats' blocks are pinned byte-identical to the post-Level-1
+# rendering (lead-in + bullets only, starting "From your scope:" —
+# the three shared lines moved into the canonical tier by Level 1,
+# PR #353). The pins below were rendered from pristine main (213a084)
+# and verified byte-identical to this branch (2026-11-11 #342
+# correction): this build changes exactly one line on one seat.
 #
 # REBASE NOTE: the Maverick S1 build (running) removes "Rename and
 # reshape seats" from the registry (its C1 verdict). If it lands
@@ -460,131 +463,57 @@ def test_meeting_turn_generation_carries_first_meeting_block(
 # time and is updated then — the removal, not this build, owns the
 # difference.
 
-_OTHER_SEATS_PRE_CHANGE = {
-    "mentor": (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):\n"
-        "- Conversation-export import — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Training and distillation — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Snapshots and eras — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Signal decay — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Growth records — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Specializations (twigs) — available in limited form "
-        "(workflow not yet verified)\n"
-        "when a natural opportunity arises, offer something "
-        "characteristic of what you do here; prefer a real action or "
-        "interaction over an abstract description; never force an "
-        "example, manufacture a need, or imply that an action occurred "
-        "when it didn't\n"
-        "Never present a planned capability as available, a "
-        "hypothetical as an action, or a gated capability as "
-        "immediately usable."
+_OTHER_SEATS_POST_L1 = {
+    'mentor': (
+        'From your scope:\n'
+        '- Conversation-export import — available in limited form (workflow not yet verified)\n'
+        '- Training and distillation — available in limited form (workflow not yet verified)\n'
+        '- Snapshots and eras — available in limited form (workflow not yet verified)\n'
+        '- Signal decay — available in limited form (workflow not yet verified)\n'
+        '- Growth records — available in limited form (workflow not yet verified)\n'
+        '- Specializations (twigs) — available in limited form (workflow not yet verified)'
     ),
-    "guardian": (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):\n"
-        "- Redaction at capture — available (workflow not yet verified)\n"
-        "- Consent-scope enforcement — available (workflow not yet verified)\n"
-        "- Consent onboarding gate — available (workflow not yet verified)\n"
-        "- Per-scope toggles — available (workflow not yet verified)\n"
-        "- Never observed (a data-handling policy guarantee, not a "
-        "configurable setting or toggle) — available (workflow not yet "
-        "verified)\n"
-        "when a natural opportunity arises, offer something "
-        "characteristic of what you do here; prefer a real action or "
-        "interaction over an abstract description; never force an "
-        "example, manufacture a need, or imply that an action occurred "
-        "when it didn't\n"
-        "Never present a planned capability as available, a "
-        "hypothetical as an action, or a gated capability as "
-        "immediately usable."
+    'guardian': (
+        'From your scope:\n'
+        '- Redaction at capture — available (workflow not yet verified)\n'
+        '- Consent-scope enforcement — available (workflow not yet verified)\n'
+        '- Consent onboarding gate — available (workflow not yet verified)\n'
+        '- Per-scope toggles — available (workflow not yet verified)\n'
+        '- Never observed (a data-handling policy guarantee, not a configurable setting or toggle) — available (workflow not yet verified)'
     ),
-    "maverick": (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):\n"
-        "- Conversation-export import — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Bring-your-own key — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Export everything — planned, not available yet\n"
-        "- Rename and reshape seats — available in limited form "
-        "(workflow not yet verified)\n"
-        "when a natural opportunity arises, offer something "
-        "characteristic of what you do here; prefer a real action or "
-        "interaction over an abstract description; never force an "
-        "example, manufacture a need, or imply that an action occurred "
-        "when it didn't\n"
-        "Never present a planned capability as available, a "
-        "hypothetical as an action, or a gated capability as "
-        "immediately usable."
+    'maverick': (
+        'From your scope:\n'
+        '- Conversation-export import — available in limited form (workflow not yet verified)\n'
+        '- Bring-your-own key — available in limited form (workflow not yet verified)\n'
+        '- Export everything — planned, not available yet\n'
+        '- Rename and reshape seats — available in limited form (workflow not yet verified)'
     ),
-    "ambassador": (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):\n"
-        "- Voice chat — available (workflow not yet verified)\n"
-        "- Echo rentals — planned, not available yet\n"
-        "- Zones (rental slicing) — planned, not available yet\n"
-        "- Listing disclosures — planned, not available yet\n"
-        "- Being represented in other people's councils — planned, "
-        "not available yet\n"
-        "when a natural opportunity arises, offer something "
-        "characteristic of what you do here; prefer a real action or "
-        "interaction over an abstract description; never force an "
-        "example, manufacture a need, or imply that an action occurred "
-        "when it didn't\n"
-        "Never present a planned capability as available, a "
-        "hypothetical as an action, or a gated capability as "
-        "immediately usable."
+    'ambassador': (
+        'From your scope:\n'
+        '- Voice chat — available (workflow not yet verified)\n'
+        '- Echo rentals — planned, not available yet\n'
+        '- Zones (rental slicing) — planned, not available yet\n'
+        '- Listing disclosures — planned, not available yet\n'
+        "- Being represented in other people's councils — planned, not available yet"
     ),
-    "conductor": (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):\n"
-        "- First meetings — available\n"
-        "- One-on-one seat chat — available (workflow not yet verified)\n"
-        "- Fellowship attention (!) — available\n"
-        "- Tree view and branch panels (the tree mapping conversations "
-        "and artifacts) — available (workflow not yet verified)\n"
-        "- Convened multi-seat council — planned, not available yet\n"
-        "- Marketplace info via the tree — planned, not available yet\n"
-        "- Artifact provenance (recorded origin of an artifact — not "
-        "rental or listing disclosure) — available (workflow not yet "
-        "verified)\n"
-        "when a natural opportunity arises, offer something "
-        "characteristic of what you do here; prefer a real action or "
-        "interaction over an abstract description; never force an "
-        "example, manufacture a need, or imply that an action occurred "
-        "when it didn't\n"
-        "Never present a planned capability as available, a "
-        "hypothetical as an action, or a gated capability as "
-        "immediately usable."
+    'conductor': (
+        'From your scope:\n'
+        '- First meetings — available\n'
+        '- One-on-one seat chat — available (workflow not yet verified)\n'
+        '- Fellowship attention (!) — available\n'
+        '- Tree view and branch panels (the tree mapping conversations and artifacts) — available (workflow not yet verified)\n'
+        '- Convened multi-seat council — planned, not available yet\n'
+        '- Marketplace info via the tree — planned, not available yet\n'
+        '- Artifact provenance (recorded origin of an artifact — not rental or listing disclosure) — available (workflow not yet verified)'
     ),
-    "skeptic": (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):\n"
-        "- Review queue — intake candidates — available (workflow not "
-        "yet verified)\n"
-        "- Review queue — personality claims — planned, not available yet\n"
-        "- Anchored evidence — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Contesting a read — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Recurrence patterns — available in limited form "
-        "(workflow not yet verified)\n"
-        "- Blend view — available in limited form "
-        "(workflow not yet verified)\n"
-        "when a natural opportunity arises, offer something "
-        "characteristic of what you do here; prefer a real action or "
-        "interaction over an abstract description; never force an "
-        "example, manufacture a need, or imply that an action occurred "
-        "when it didn't\n"
-        "Never present a planned capability as available, a "
-        "hypothetical as an action, or a gated capability as "
-        "immediately usable."
+    'skeptic': (
+        'From your scope:\n'
+        '- Review queue — intake candidates — available (workflow not yet verified)\n'
+        '- Review queue — personality claims — planned, not available yet\n'
+        '- Anchored evidence — available in limited form (workflow not yet verified)\n'
+        '- Contesting a read — available in limited form (workflow not yet verified)\n'
+        '- Recurrence patterns — available in limited form (workflow not yet verified)\n'
+        '- Blend view — available in limited form (workflow not yet verified)'
     ),
 }
 
@@ -602,9 +531,9 @@ def test_c1_companion_note_renders_when_usable():
 
 def test_c2_no_other_seat_changes():
     """C2: the other six seats' first-meeting blocks are
-    byte-identical to the pre-change (1589a04) output. The companion
-    rides exactly one line on one seat."""
-    for seat, pinned in _OTHER_SEATS_PRE_CHANGE.items():
+    byte-identical to the post-Level-1 baseline (rendered from pristine
+    main, 213a084). The companion rides exactly one line on one seat."""
+    for seat, pinned in _OTHER_SEATS_POST_L1.items():
         assert CAP.first_meeting_block(seat, CONSENTED) == pinned, seat
 
 

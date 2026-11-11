@@ -32,9 +32,12 @@ by string exclusion and never by developer memory:
   unit uses the record's ``render_text`` (plan-review correction),
   never the verbatim picture's Fox-history illustration.
 
-Budget: the assembled character-derived block has a 1,501-character
-provisional ceiling (raised 1500 -> 1501 by founder ruling OQ1,
-2026-11-07, for the Q10 humanism sentence). Firebrand's renderer
+Budget: the assembled character-derived block has a 1,500-character
+ceiling (raised 1500 -> 1501 by founder ruling OQ1, 2026-11-07, for
+the Q10 humanism sentence; restored to 1500 by the 2026-11-11 #342
+correction, founder disposition 2026-11-11 ~06:20 PT — the 1501 raise
+changed Gardener's named compact and was never needed once Firebrand
+got its own threshold). Firebrand's renderer
 alone uses its own 1,758 threshold (_FIREBRAND_CHARACTER_CEILING,
 below) for the Q9 + Q6 principles unit (founder rulings 2026-11-07
 ~19:21/~19:23 PT); the shared ceiling is NOT raised, so no other
@@ -72,7 +75,7 @@ from __future__ import annotations
 
 from typing import Any
 
-CHARACTER_CEILING = 1501
+CHARACTER_CEILING = 1500
 
 # Firebrand-only threshold (Q9 + Q6 in Talk generally, founder
 # rulings 2026-11-07 ~19:21/~19:23 PT): Firebrand's Talk block carries
@@ -90,6 +93,14 @@ CHARACTER_CEILING = 1501
 # prefers a shared raise (accepting the Bear fuller un-degradation),
 # that is a one-line change: CHARACTER_CEILING = 1758 and this
 # constant deleted.
+# NOTE (2026-11-11 #342 correction, founder disposition 2026-11-11
+# ~06:20 PT): the shared ceiling was 1501 on this branch — raised
+# 1500 -> 1501 by founder ruling OQ1 (2026-11-07, for the Q10
+# humanism sentence) and never reverted when Firebrand got its own
+# 1758 threshold. That 1-char raise changed Gardener's named compact
+# (1,472 + 29 = 1,501): the voice unit was retained on the branch
+# instead of dropping as pinned on main. The correction restores the
+# shared ceiling to 1500; Firebrand keeps 1758 via its own constant.
 _FIREBRAND_CHARACTER_CEILING = 1758
 
 _ELIGIBLE_CATEGORIES = frozenset({"conviction", "characterization"})
@@ -743,9 +754,10 @@ def render_firebrand_ordinary(
     ~19:21/~19:23 PT). Assembled blocks reproduce exemplar §2 exactly
     (compact 1,758 chars, fuller 1,639 chars, no capability).
     Firebrand alone reads _FIREBRAND_CHARACTER_CEILING (1,758); the
-    shared CHARACTER_CEILING (1,501) is unchanged, so no other seat's
-    rendering moves (see the constant's comment for why the raise is
-    Firebrand-scoped: a shared raise would un-degrade Bear's fuller).
+    shared CHARACTER_CEILING (1,500) is restored to the main baseline,
+    so no other seat's rendering moves (see the constant's comment for
+    why the raise is Firebrand-scoped: a shared raise would un-degrade
+    Bear's fuller).
 
     Middle rung (naming-gap fix, 2026-11-07): the full compact sits
     exactly at the Firebrand threshold, so any authorized name pushes
@@ -795,7 +807,8 @@ def render_firebrand_ordinary(
     # ceiling, then 1,501 -> 1,758 when the Q9 + Q6 principles unit
     # joined every Talk candidate (founder rulings 2026-11-07
     # ~19:21/~19:23 PT; _FIREBRAND_CHARACTER_CEILING 1758, minimal
-    # exact fit — the shared ceiling stays 1501).
+    # exact fit — the shared ceiling is 1500 again, restored by the
+    # 2026-11-11 #342 correction).
     humanism = eligible_field(record, "characterization", "humanism_sentence")
     worldview_compact = worldview + " " + humanism if humanism else worldview
     character_compact = [identity, personality, worldview_compact]
@@ -815,7 +828,8 @@ def render_firebrand_ordinary(
     )
 
     # Firebrand alone reads its own threshold (see the constant's
-    # comment): the shared ceiling stays 1501 so no other seat moves.
+    # comment): the shared ceiling is 1500 (restored by the 2026-11-11
+    # #342 correction) so no other seat moves.
     def over_budget(units: list[str]) -> bool:
         return len("\n".join(units)) > _FIREBRAND_CHARACTER_CEILING
 

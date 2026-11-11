@@ -531,7 +531,9 @@ def test_renderer_budgets_compact_and_fuller_exact():
     chars, both at or under the 1,758 Firebrand threshold (2026-11-04 characterization
     revision: governing judgment promoted into the compact core;
     2026-11-07 Q10: the humanism sentence rides the compact worldview,
-    ceiling raised 1500 -> 1501 by founder approval OQ1)."""
+    ceiling raised 1500 -> 1501 by founder approval OQ1; shared ceiling
+    restored to 1500 by the 2026-11-11 #342 correction — Firebrand reads
+    its own 1758 threshold)."""
     compact = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
     fuller = render_firebrand_ordinary(FIREBRAND_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
@@ -598,7 +600,9 @@ def test_r2_humanism_in_the_compact_worldview():
 def test_r3_firebrand_ceiling_is_scoped():
     """R3 (Q9 + Q6 in Talk generally, founder rulings 2026-11-07
     ~19:21/~19:23 PT): the Firebrand threshold is SCOPED — the shared
-    CHARACTER_CEILING stays 1501, so no other seat's rendering moves.
+    CHARACTER_CEILING stays 1500 (restored from 1501 by the 2026-11-11
+    #342 correction, founder disposition 2026-11-11 ~06:20 PT), so no
+    other seat's rendering moves.
     A shared raise was measured and rejected: Bear's fuller is 1,648
     chars, so a shared 1,758 would un-degrade it from its compact
     fallback, which Bear's own test pins by design
@@ -626,8 +630,9 @@ def test_r3_firebrand_ceiling_is_scoped():
 
     import local_ai.council.render as render_mod
 
-    # The shared ceiling was NOT raised.
-    assert render_mod.CHARACTER_CEILING == 1501
+    # The shared ceiling was restored to 1500 (its pre-OQ1 value),
+    # NOT raised.
+    assert render_mod.CHARACTER_CEILING == 1500
     assert render_mod._FIREBRAND_CHARACTER_CEILING == 1758
 
     others = [
@@ -647,7 +652,7 @@ def test_r3_firebrand_ceiling_is_scoped():
                 render_mod._FIREBRAND_CHARACTER_CEILING = 1758
             at_1758 = renderer(record, detail=detail)
             assert at_1501 == at_1758, (renderer.__name__, detail)
-    # Bear's fuller still falls back to compact at the shared 1501 —
+    # Bear's fuller still falls back to compact at the shared 1500 —
     # the raise did not touch it.
     assert len(_joined(render_bear_ordinary(_BR, detail="fuller"))) == 1443
     # Firebrand at the old threshold: compact and fuller both degrade
@@ -1347,7 +1352,7 @@ def test_characterization_revision_2026_11_04_assembled_prompts():
     # Ceiling (exact lengths are pinned by the budgets tests). The
     # Firebrand compact now sits EXACTLY at its own threshold
     # (1,758/1,758, Q9+Q6) — `over_budget` uses `>`, so equality
-    # passes. Bear's compact stays under the shared 1,501 ceiling.
+    # passes. Bear's compact stays under the shared 1,500 ceiling.
     assert len(fb) <= _FIREBRAND_CHARACTER_CEILING
     assert len(br) <= CHARACTER_CEILING
 

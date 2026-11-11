@@ -82,14 +82,17 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     # line was removed (27 chars + newline); the four pronoun swaps
     # in the frame net to zero. Not a pilot change: the pilot text
     # still rides only the uncapped reference.
+    # Re-measured 2026-11-10 (Level 1): the engage frame is 646 chars
+    # shorter (8,347 -> 7,701) — the four standing lines moved to the
+    # canonical tier. The pilot text still rides only the uncapped
+    # reference.
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     engage_frame = definition.engage_frame
-    engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) == 8347
+    assert len(engage_frame) == 7701
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage_frame) >= 30
     assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) >= 30
     assert _WEAVER_NATURAL_INTENTION not in turn_frame

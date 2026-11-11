@@ -445,8 +445,11 @@ def test_engage_frames_fit_the_prompt_cap():
     8375 chars — past the old 8000 cap, which silently truncated the
     capability block's intention line and honesty guard off every
     Weaver engage turn. The cap is _EXTRA_INSTRUCTIONS_CAP; every
-    seat's engage frame must fit it with the intention line and
-    honesty guard intact."""
+    seat's engage frame must fit it. Level 1 (2026-11-10): the
+    intention line and honesty guard no longer ride the frame — they
+    ride the canonical tier, an uncapped section immediately before
+    the frame, so frame-cap truncation can never touch them
+    (asserted in the tier by T-L1-1, tests/test_canonical_tier.py)."""
     from local_ai.conversation import encounter as ENC
     from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP as cap
     from local_ai.council import capabilities as CAP
@@ -457,8 +460,8 @@ def test_engage_frames_fit_the_prompt_cap():
         frame = ENC.EncounterRuntime(definition)._engage_frame()
         assert len(frame) <= cap, f"{arch}: engage frame {len(frame)} chars exceeds {cap}"
         capped = frame[:cap]
-        assert CAP.INTENTION_LINE in capped, f"{arch}: intention line truncated"
-        assert CAP.HONESTY_GUARD in capped, f"{arch}: honesty guard truncated"
+        assert CAP.INTENTION_LINE not in capped, f"{arch}: intention line in frame"
+        assert CAP.HONESTY_GUARD not in capped, f"{arch}: honesty guard in frame"
 
 
 def test_truncated_section_logs_loudly(caplog):

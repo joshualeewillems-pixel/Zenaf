@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from local_ai.agent_intake.llm_keys import generate as _default_generate
+from local_ai.conversation.canonical_tier import CANONICAL_TIER_L1
 from local_ai.conversation.weave import sanitize_weave
 from local_ai.council.archetypes import (
     ANTI_PRESUMPTION_STYLE,
@@ -461,6 +462,13 @@ def build_voice_prompt(
     invitation_context: str | None = None,
     execution_context: str | None = None,
     round_context: str | None = None,
+    # Canonical instruction tier (Level 1, 2026-11-10): the four
+    # standing instruction lines, carried once as a single uncapped
+    # section immediately before extra_instructions. Meetings only
+    # (meeting.py passes True); Talk and demo leave it off and are
+    # byte-identical to before. Default False keeps every existing
+    # caller unchanged.
+    canonical_tier: bool = False,
     # Conversation id, for the execution-budget warning log only.
     # None on paths that never carry an execution block (meetings,
     # voice route); the log only fires when a block was supplied.
@@ -827,6 +835,19 @@ def build_voice_prompt(
             "defining question guide you. Output the question plus at most one "
             "short sentence of context — no advice, no preamble.",
         ]
+    if canonical_tier:
+        # Canonical instruction tier (Level 1, 2026-11-10): the four
+        # standing instruction lines, carried once as a NEW UNCAPPED
+        # meeting-scoped prompt section immediately before the capped
+        # frame — the fellowship_reference precedent. Deliberately
+        # outside the 9,000-char frame cap: the honesty guard (the
+        # tier's last line) must never be the first content lost to
+        # truncation. Present when the flag is true, absent
+        # otherwise, so Talk and demo are byte-identical to before.
+        prompt += [
+            "",
+            CANONICAL_TIER_L1,
+        ]
     if extra_instructions:
         # A situational frame layered over the voice (e.g. a keystone
         # meeting beat). The voice itself is unchanged; the frame only
@@ -1011,6 +1032,10 @@ def generate_voice_reply(
     execution_context: str | None = None,
     round_context: str | None = None,
     conversation_id: str | None = None,
+    # Canonical instruction tier (Level 1, 2026-11-10): passed
+    # through to build_voice_prompt. Meetings only; Talk and demo
+    # leave it off (default False).
+    canonical_tier: bool = False,
     # Provider-timing label for the one log line per call (latency
     # instrumentation only): "talk" for ordinary Talk turns,
     # "meeting" for first-meeting turns. The default covers the
@@ -1037,6 +1062,7 @@ def generate_voice_reply(
         execution_context=execution_context,
         round_context=round_context,
         conversation_id=conversation_id,
+        canonical_tier=canonical_tier,
     )
     gen = generate_fn or _default_generate
     # Provider-timing instrumentation (durations + labels only; no

@@ -164,14 +164,15 @@ def test_no_tutorial_machinery_remains():
 # System layer: naming + Zenaf one-liners, recognition close.
 # ---------------------------------------------------------------------------
 
-def test_turn_frame_carries_zenaf_note_and_naming_note():
-    # Both standing notes are one line each.
+def test_turn_frame_carries_naming_note_not_zenaf_note():
+    # Level 1: the question note rides the canonical tier, not the
+    # frame — the turn frame carries the naming note only.
     runtime = ENC.EncounterRuntime(
         ENC.get_definition(MT.get_script("conductor", 1)))
     frame, _cue = runtime._turn_frame(
         ENC.EncounterState(), "What is this app?")
-    assert "answer plainly first" in frame
-    assert "planned rather than available" in frame
+    assert "answer plainly first" not in frame
+    assert "planned rather than available" not in frame
     assert "Other seats: roles until met." in frame
     # No detector reinforcement, no long naming paragraph.
     assert "Note: this message asks directly about Zenaf" not in frame
@@ -180,9 +181,11 @@ def test_turn_frame_carries_zenaf_note_and_naming_note():
 
 
 def test_zenaf_note_is_standing_not_detector_triggered():
-    # No detector exists anymore: the one-line note rides the frame
-    # for an unmistakable question AND for an oblique one — a
-    # visitor may ask in words no small vocabulary knows.
+    # No detector exists anymore: the one-line note rides the
+    # canonical tier (Level 1) for an unmistakable question AND for
+    # an oblique one — a visitor may ask in words no small
+    # vocabulary knows. The tier is present on every meeting prompt,
+    # so the note is standing, not frame-bound.
     assert not hasattr(ENC, "_asks_about_zenaf")
     runtime = ENC.EncounterRuntime(
         ENC.get_definition(MT.get_script("conductor", 1)))
@@ -190,7 +193,7 @@ def test_zenaf_note_is_standing_not_detector_triggered():
                      "So what actually is all of this?"):
         frame, _cue = runtime._turn_frame(
             ENC.EncounterState(), question)
-        assert "answer plainly first" in frame
+        assert "answer plainly first" not in frame
 
 
 def test_naming_note_is_two_tier_and_per_seat():

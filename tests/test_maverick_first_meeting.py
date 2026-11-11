@@ -235,9 +235,11 @@ def test_direct_answer_first_and_yielding():
 def test_honesty_guard_honesty_floor_and_no_invented_training():
     script = _maverick_script()
     definition = _maverick_definition()
-    # The capability block carries the standing honesty guard.
-    assert HONESTY_GUARD in definition.capability_context
-    assert "Never present a planned capability as available" in definition.capability_context
+    # The capability block no longer carries the standing honesty
+    # guard (Level 1, 2026-11-10): the guard rides the canonical
+    # tier, asserted there by T-L1-1 (tests/test_canonical_tier.py).
+    assert HONESTY_GUARD not in definition.capability_context
+    assert "Never present a planned capability as available" not in definition.capability_context
     # Layer A honesty floor, prompt-local on both paths.
     assert "say you don't remember rather than filling the gap" in script.encounter_frame
     assert "say you don't remember rather than filling the gap" in definition.turn_frame
@@ -396,11 +398,18 @@ def test_composed_frames_fit_the_voice_builder_cap():
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     engage_frame = definition.engage_frame
-    engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
-    engage_frame += "\n\n" + ENC._naming_note(definition)
+    # Aligned to runtime composition (Level 1, 2026-11-10): the test
+    # composes engage + capability + naming — capability BEFORE the
+    # naming note, exactly as _engage_frame does. The old order
+    # (capability last) was the test's own composition, not the
+    # runtime's. The standing Zenaf question note no longer rides
+    # the frame; it rides the canonical tier. Runtime ordering is
+    # not altered. Length assertions are unaffected (same parts,
+    # same separators — order does not change lengths).
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
+    engage_frame += "\n\n" + ENC._naming_note(definition)
     assert len(engage_frame) < _EXTRA_INSTRUCTIONS_CAP
-    # The honesty guard sits last in the capability block: under the
-    # cap, nothing is truncated, so it can never be the content lost.
-    assert engage_frame.rstrip().endswith(HONESTY_GUARD)
+    # The honesty guard rides the canonical tier, not the frame —
+    # asserted there by T-L1-1 (tests/test_canonical_tier.py).
+    assert HONESTY_GUARD not in engage_frame

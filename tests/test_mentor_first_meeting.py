@@ -91,7 +91,6 @@ def _definition():
 
 def _composed_engage(definition):
     frame = definition.engage_frame
-    frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         frame += "\n\n" + definition.capability_context
@@ -213,16 +212,16 @@ def test_integrity_invariants_on_runtime_paths():
     # Naming: roles until met (runtime note, one line, both paths).
     assert "Other seats: roles until met. None met yet." in turn_frame
     assert "Other seats: roles until met. None met yet." in engage
-    # Direct-answer-first about Zenaf (standing note, both paths).
-    assert "answer plainly first" in turn_frame
-    assert "answer plainly first" in engage
-    # Honesty guard (capability block, last line, last in composition).
-    assert "Never present a planned capability as available" in turn_frame
-    assert "Never present a planned capability as available" in engage
-    assert engage.rstrip().endswith(
-        "Never present a planned capability as available, a hypothetical "
-        "as an action, or a gated capability as immediately usable."
-    )
+    # Direct-answer-first about Zenaf (standing note): it no longer
+    # rides the frames (Level 1, 2026-11-10) — it rides the canonical
+    # tier, asserted there by T-L1-1 (tests/test_canonical_tier.py).
+    assert "answer plainly first" not in turn_frame
+    assert "answer plainly first" not in engage
+    # Honesty guard: it no longer rides the frames (Level 1) — it
+    # rides the canonical tier, asserted there by T-L1-1. The frame
+    # ends with its last capability bullet, not the guard.
+    assert "Never present a planned capability as available" not in turn_frame
+    assert "Never present a planned capability as available" not in engage
     # Grounding: read-back grounds ONLY in substantive material.
     assert "Ground the impression ONLY in their substantive material" in engage
     assert "Never ground it in the courtesies of the meeting" in engage
@@ -442,19 +441,24 @@ def test_frame_sizes_and_headroom_measured():
     # headroom is 9,000 - 6,130 = 2,870.
     # Q-R7 lecture edit (2026-11-09): "teach" -> "lecture" (+2 chars):
     # definition 4854 -> 4856, composed 6,130 -> 6,132, headroom 2,870 -> 2,868.
-    assert len(turn_frame) == 6132
+    # Level 1 (2026-11-10): the four standing lines moved to the
+    # canonical tier, so the composed turn frame shrank 6,132 -> 5,486
+    # (recovery 646); headroom 2,868 -> 3,514.
+    assert len(turn_frame) == 5486
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 2868
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3514
     # Read-back correction (2026-11-06): the founder-approved §F.1
     # readback frames lengthened the engage frame (Mentor 6128 -> 6563
     # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->
     # 9000 the same day, so headroom is measured against 9000 now.
     # Gardener correction (2026-11-07): definition 6563 -> 7405,
     # composed 7839 -> 8681, headroom 1161 -> 319 (still >= 300).
+    # Level 1 (2026-11-10): composed 8681 -> 8035 (recovery 646);
+    # headroom 319 -> 965.
     assert len(definition.engage_frame) == 7405
-    assert len(engage) == 8681
+    assert len(engage) == 8035
     assert len(engage) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 319
+    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 965
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage) >= 300
     # Proposal fallback cap, for the record: reference + slice together
     # exceed 12,500 (PR #254 warning) — this branch carries the slice

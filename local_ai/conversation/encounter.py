@@ -663,16 +663,10 @@ def _naming_note(definition: EncounterDefinition) -> str:
     return "Other seats: roles until met. None met yet."
 
 
-#: Standing responsibility (amendment C), one line: direct
-#: questions about Zenaf get concrete answers first. No detector:
-#: the line covers every phrasing, and a small regex vocabulary
-#: can only re-state it for the phrasings it happens to match.
-_ZENAF_QUESTION_NOTE = (
-    "If the visitor asks about Zenaf, answer plainly first — "
-    "what it is, what it does, what they can do with it — and "
-    "say plainly what is planned rather than available. Then "
-    "return to their material."
-)
+#: (Level 1, 2026-11-10) The standing Zenaf question note moved
+#: verbatim to local_ai/conversation/canonical_tier.py as
+#: QUESTION_NOTE — the constant's only home is now the tier. It is
+#: removed from the frames (E3/E4) and from this module (E5).
 
 
 def _has_fallback(definition: EncounterDefinition) -> bool:
@@ -1375,14 +1369,18 @@ class EncounterRuntime:
     def _engage_frame(self) -> str:
         """The substantive (engage) frame, composed in guarded
         order (Fellowship shared foundation, 2026-10-28): the
-        capability block — whose last line is the honesty guard
-        (capabilities.HONESTY_GUARD) — sits BEFORE the naming note,
-        so if the capped frame ever overflows, the variable-length
-        naming note (which grows ~20 chars per met seat) is the
-        first content lost, never the honesty guard. The frame
-        itself is unchanged in content, only in order."""
+        capability block sits BEFORE the naming note, so if the
+        capped frame ever overflows, the variable-length naming
+        note (which grows ~20 chars per met seat) is the first
+        content lost. The honesty guard no longer rides this frame
+        at all (Level 1, 2026-11-10): it rides the canonical tier,
+        an uncapped section immediately before the frame on the
+        meeting path, so frame-cap truncation can never touch it.
+        The standing Zenaf question note likewise rides the tier
+        now. The frame itself is unchanged in content, only in
+        order and in the lines that moved to the tier."""
         d = self.definition
-        parts = [d.engage_frame, _ZENAF_QUESTION_NOTE]
+        parts = [d.engage_frame]
         if d.capability_context:
             parts.append(d.capability_context)
         parts.append(_naming_note(d))
@@ -1393,14 +1391,17 @@ class EncounterRuntime:
     def _turn_frame(self, state: EncounterState,
                     message: str) -> tuple[str, AllusionCue | None]:
         """The conversational frame for this turn: the definition's
-        move frame + prepared context — the standing Zenaf question
-        note (one line), the two-tier naming note (one line), and
-        at most one environmental cue the conversation is passing
-        near. No tutorial guidance, no objective frames: objectives
-        are server-side state, and topic coverage is observed from
-        spoken bodies, never steered from the frame. The cue is
-        returned so the caller can log it against the debt
-        registry once the reply is actually spoken.
+        move frame + prepared context — the two-tier naming note
+        (one line), the capability block, and at most one
+        environmental cue the conversation is passing near. The
+        standing Zenaf question note no longer rides this frame
+        (Level 1, 2026-11-10): it rides the canonical tier, an
+        uncapped section immediately before the frame on the
+        meeting path. No tutorial guidance, no objective frames:
+        objectives are server-side state, and topic coverage is
+        observed from spoken bodies, never steered from the frame.
+        The cue is returned so the caller can log it against the
+        debt registry once the reply is actually spoken.
 
         No jurisdiction focus line is appended here: the focus
         already rides the identity block (archetype prompt lines),
@@ -1409,7 +1410,6 @@ class EncounterRuntime:
         """
         d = self.definition
         parts = [d.turn_frame]
-        parts.append(_ZENAF_QUESTION_NOTE)
         parts.append(_naming_note(d))
         if d.capability_context:
             parts.append(d.capability_context)
@@ -2450,8 +2450,8 @@ _WEAVER_FELLOWSHIP_REFERENCE = (
 #: (shared + one joining newline + line). Rides the
 #: fellowship-reference insertion layer on the meeting path and
 #: extra_instructions on the Talk path — NOT the capped turn/engage
-#: frames (the engage frame sits at 7,967 / 8,000 chars; adding the
-#: pilot there would blow the budget), and NOT the steward records
+#: frames (the engage frame sits at 7,701 / 9,000 chars post-Level-1;
+#: adding the pilot there would blow the budget), and NOT the steward records
 #: (the regeneration script manages TURN_FRAME + philosophy lines
 #: only). Weaver (conductor) only, first meeting + Talk. No records,
 #: no new model calls, no evidence changes. Shelve by removing the

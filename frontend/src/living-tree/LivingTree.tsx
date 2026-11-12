@@ -293,14 +293,14 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
 
 /** Seat-owned destinations (the distributed menu, 2026-10-22): a full-screen
     surface belongs to the seat whose slice of the system it is, and its
-    sheet carries the door. The Firebrand owns the execution surface (talk
-    into action); the Bear owns provenance (where your material came from
+    sheet carries the door. The Mentor owns the execution surface (the
+    vision map and its tables); the Bear owns provenance (where your material came from
     and where it went). Everything else left the global menu the same way:
     Today lives in every seat's menu above and in YOU's, Review is already
     per-seat, Settings and Content live with YOU, and Connect is gone —
     its intake remains reachable from the you-sheet's upload entry. */
 const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: string; nav: SheetNavView }>> = {
-  champion: [
+  mentor: [
     { id: 'vision_map', title: 'Vision map', desc: 'The execution surface — initiatives, projects, and their stones.', nav: 'vision_map' },
     { id: 'vision_tables', title: 'Vision (tables)', desc: 'The same work, as tables.', nav: 'vision_execution' },
   ],

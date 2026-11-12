@@ -5594,7 +5594,7 @@ function App() {
               onRadarScrollBucketConsumed={clearVeRadarScrollBucket}
             />
           </div>
-        ) : (
+        ) : mainView === 'workspace' ? (
           /* Workspace Organizer */
           <main className="flex-1 min-w-0 min-h-0 overflow-auto p-4 lg:p-6 max-w-3xl mx-auto space-y-10">
             {workoutActive && workoutPerspective ? (
@@ -5928,6 +5928,17 @@ function App() {
               </div>
             ) : null}
           </main>
+        ) : (
+          /* Unknown view — bug-catcher, not a feature: every MainView member
+             has an explicit branch above, so reaching here is a bug. */
+          <div className="flex-1 flex flex-col min-h-0 items-center justify-center px-6 text-center">
+            <div className="max-w-md">
+              <h2 className="text-xl font-semibold text-stone-200 mb-2">Unknown view</h2>
+              <p className="text-stone-400 text-[15px] leading-relaxed">
+                Zenaf does not know this view. Return to the Living Tree.
+              </p>
+            </div>
+          </div>
         )}
 
       </div>

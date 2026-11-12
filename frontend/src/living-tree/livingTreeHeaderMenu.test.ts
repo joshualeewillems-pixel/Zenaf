@@ -71,6 +71,17 @@ describe('buildSeatHeaderMenu', () => {
       'Upload',
       'Signal review',
     ])
+    const conductor = buildSeatHeaderMenu({
+      seatKey: 'conductor',
+      invitationCount: 0,
+      currentChatId: null,
+    })
+    expect(conductor.map((i) => i.title)).toEqual([
+      'Today',
+      'Review',
+      'Upload',
+      'Workspace Organizer',
+    ])
   })
 
   it('shows the shortcut when an invitation target differs from the open conversation', () => {

@@ -31,7 +31,7 @@ import {
 import {
   branchAnglesForCount,
   branchTopLeft,
-  columnWidthForBranchCount,
+  columnCentersForProjectCounts,
   fruitTopLeft,
   seedTopLeftAboveTree,
   taskTopLeft,
@@ -185,12 +185,6 @@ export function buildLiveVisionMapGraph(
     projectsByInit.set(k, list)
   }
 
-  let maxProjectsInColumn = 1
-  for (const plist of projectsByInit.values()) {
-    if (plist.length > maxProjectsInColumn) maxProjectsInColumn = plist.length
-  }
-  const colW = columnWidthForBranchCount(maxProjectsInColumn)
-
   const sourcedIdeaIds = new Set(initiatives.map((i) => i.source_idea_id).filter(Boolean) as string[])
   const orphanIdeas = ideas.filter((i) => !sourcedIdeaIds.has(i.id))
   const seedNodeAdded = new Set<string>()
@@ -237,9 +231,18 @@ export function buildLiveVisionMapGraph(
   }
 
   const unscoped = projectsByInit.get(UNSCOPED_INIT_ID) || []
+  /**
+   * One column per initiative, each only as wide as its own branch arc
+   * needs — a narrow initiative no longer pays for the widest one's arc,
+   * so the garden consolidates instead of stranding empty canvas between
+   * clusters. The unscoped column, when present, trails the initiatives.
+   */
+  const columnCenters = columnCentersForProjectCounts([
+    ...initiativesSorted.map((ini) => (projectsByInit.get(ini.id) ?? []).length),
+    ...(unscoped.length > 0 ? [unscoped.length] : []),
+  ])
   if (unscoped.length > 0) {
-    const col = initiativesSorted.length
-    const columnCenterX = col * colW + colW / 2
+    const columnCenterX = columnCenters[initiativesSorted.length]!
     const treeTL = treeTopLeftForColumn(columnCenterX, VISION_MAP_LAYOUT.TREE_TOP_Y)
     const ref: MapEntityRef = { veType: 'initiative', id: UNSCOPED_INIT_ID }
     const uTouch = newestIso(unscoped.map((p) => p.updated_at))
@@ -293,7 +296,7 @@ export function buildLiveVisionMapGraph(
   }
 
   initiativesSorted.forEach((ini, col) => {
-    const columnCenterX = col * colW + colW / 2
+    const columnCenterX = columnCenters[col]!
     const treeTL = treeTopLeftForColumn(columnCenterX, VISION_MAP_LAYOUT.TREE_TOP_Y)
     const treeId = `tree-${ini.id}`
     const idea = ini.source_idea_id ? ideaById.get(ini.source_idea_id) : undefined

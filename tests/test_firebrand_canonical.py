@@ -74,6 +74,9 @@ from local_ai.council.canonical.firebrand import FIREBRAND_RECORD
 from local_ai.council.render import (
     CHARACTER_CEILING,
     AssemblyError,
+    _FIREBRAND_CHARACTER_CEILING,
+    _FIREBRAND_COMPACT_VOICE_MID,
+    _FIREBRAND_TALK_PRINCIPLES,
     eligible_field,
     eligible_fields,
     render_bear_ordinary,
@@ -138,12 +141,36 @@ TEMPERAMENT_SENTENCE = (
     "fight. Do not manufacture a fight where none is needed, and do "
     "not mistake upkeep for a fight."
 )
+HUMANISM_SENTENCE = (
+    "You weigh every position by what it costs the people holding it."
+)
 PERSONALITY = (
     "You are fierce and direct, fast and forward-leaning: you get to "
     "the verb early, and you notice first what is at stake, what it "
     "will cost, and the moment deliberation tips into avoidance."
 )
 VOICE_COMPACT_MARKER = "You speak in short declarative sentences"
+# Middle rung (naming-gap fix, 2026-11-07): the authored condensed
+# voice unit. Q9/Q6/FC2 are quoted verbatim from _CHAMPION_GUIDANCE
+# / _SHARED_NATURE_RULE (encounter.py); the voice essence condenses
+# the record's voice_and_humor + warmth fields. The rung is the
+# first Talk placement of the Q9 sentence.
+Q9_SENTENCE = (
+    "Name the mission plainly, never coerce, stand the wait: "
+    "willing following beats fearful obedience."
+)
+NATURE_RULE = (
+    "Your nature determines what you notice, what you value, what you "
+    "question, and how you express yourself; it does not prescribe the "
+    "outcome of every exchange."
+)
+FC2_EXIT = (
+    "When the fight is not worth having, name that plainly: this hill "
+    "is not worth dying on."
+)
+VOICE_MID_MARKER = "your warmth sparing — acknowledge briefly"
+FULL_VOICE_ONLY_MARKER = "strategy is shop talk"
+MAX_PERSONAL_NAME_LEN = 60  # local_ai/you_profile/store.py
 WARMTH_ADOPTED = (
     "Your warmth is sparing: acknowledge briefly, then move to the "
     "next concrete step. Let circumstance set the register: gather "
@@ -173,6 +200,7 @@ COMPACT_PROSE = (
     "human cost without pretending every worthy cause demands a "
     "fight. Do not manufacture a fight where none is needed, and do "
     "not mistake upkeep for a fight. "
+    "You weigh every position by what it costs the people holding it. "
     "You speak in short declarative sentences, in plain words; "
     "strategy is shop talk, available when it illuminates, never a "
     "required list. "
@@ -183,7 +211,12 @@ COMPACT_PROSE = (
     "next concrete step. Let circumstance set the register: gather "
     "missing information before judging; do upkeep cleanly, since "
     "unattended maintenance costs attention and morale; slow down "
-    "and name the next step when the visitor is exhausted or uncertain."
+    "and name the next step when the visitor is exhausted or uncertain. "
+    "Name the mission plainly, never coerce, stand the wait: willing "
+    "following beats fearful obedience. "
+    "Your nature determines what you notice, what you value, what you "
+    "question, and how you express yourself; it does not prescribe the "
+    "outcome of every exchange."
 )
 FULLER_PROSE = (
     "You are the Firebrand, who occupies the Champion seat in the Fellowship. "
@@ -210,7 +243,12 @@ FULLER_PROSE = (
     "You still believe discipline, sacrifice, and the necessity of conflict; "
     "obedience is not conviction to you. "
     "You weigh every position by what it costs the people holding it. "
-    "Before you draw your sword, decide what victory would actually mean."
+    "Before you draw your sword, decide what victory would actually mean. "
+    "Name the mission plainly, never coerce, stand the wait: willing "
+    "following beats fearful obedience. "
+    "Your nature determines what you notice, what you value, what you "
+    "question, and how you express yourself; it does not prescribe the "
+    "outcome of every exchange."
 )
 
 NO_TRAINING_NOTE = (
@@ -265,7 +303,12 @@ def test_record_sections_and_keys_match_exemplar():
         "temperament", "personality", "demeanor", "perceptual_habit",
         "fuller_additional", "expressive_terrain", "domain_tension",
         "governing_conviction", "conviction_paraphrase",
-        "temperament_sentence", "voice_and_humor", "humor_signature",
+        "temperament_sentence",
+        # Q10 (2026-11-07) + Q9 fields A/B/C (founder-adopted OQ5,
+        # 2026-11-07): record fields, see firebrand.py.
+        "humanism_sentence", "leadership_without_coercion",
+        "parenting_as_command", "command_vs_fear",
+        "voice_and_humor", "humor_signature",
         "warmth", "friction", "implied_history",
         "established_biography", "invariants", "expressive_defaults",
     }
@@ -369,6 +412,17 @@ EXPECTED_ELIGIBLE = {
     ("characterization", "governing_conviction"),
     ("characterization", "conviction_paraphrase"),
     ("characterization", "temperament_sentence"),
+    # Q10 (2026-11-07): the humanism sentence, adopted, renders in the
+    # compact worldview (render.py) and the fuller additional.
+    ("characterization", "humanism_sentence"),
+    # Q9 (2026-11-07, founder-adopted per-element OQ5): record fields
+    # only — NOT rendered in Talk (compact budget exhausted) and NOT
+    # rendered on the meeting path as their own sentences (the guidance
+    # carries one distilled sentence instead). Eligible by the existing
+    # rule, consumed by no renderer.
+    ("characterization", "leadership_without_coercion"),
+    ("characterization", "parenting_as_command"),
+    ("characterization", "command_vs_fear"),
     ("characterization", "voice_and_humor"),
     ("characterization", "humor_signature"),
     ("characterization", "warmth"),
@@ -473,16 +527,25 @@ def test_renderer_order_identity_personality_worldview_capability():
 
 def test_renderer_budgets_compact_and_fuller_exact():
     """Assembled blocks reproduce exemplar §2 exactly (same sentences,
-    same order, byte-identical prose): compact 1,306 chars, fuller 1,382
-    chars, both under the 1,500 ceiling (2026-11-04 characterization
-    revision: governing judgment promoted into the compact core)."""
+    same order, byte-identical prose): compact 1,758 chars, fuller 1,639
+    chars, both at or under the 1,758 Firebrand threshold (2026-11-04 characterization
+    revision: governing judgment promoted into the compact core;
+    2026-11-07 Q10: the humanism sentence rides the compact worldview,
+    ceiling raised 1500 -> 1501 by founder approval OQ1; shared ceiling
+    restored to 1500 by the 2026-11-11 #342 correction — Firebrand reads
+    its own 1758 threshold)."""
     compact = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
     fuller = render_firebrand_ordinary(FIREBRAND_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 1436, len(_joined(compact))
-    assert len(_joined(fuller)) == 1382, len(_joined(fuller))
-    assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
+    assert len(_joined(compact)) == 1758, len(_joined(compact))
+    assert len(_joined(fuller)) == 1639, len(_joined(fuller))
+    # Compact is now the LARGER block (its voice unit, 606, exceeds the
+    # fuller additional, 552) — the ordering was never load-bearing; the
+    # load-bearing rule is that both blocks fit at or under the Firebrand
+    # threshold.
+    assert len(_joined(compact)) <= _FIREBRAND_CHARACTER_CEILING
+    assert len(_joined(fuller)) <= _FIREBRAND_CHARACTER_CEILING
     # The verbatim ideal is canonical-but-unrendered: its prefix must
     # NOT appear (the §2 paraphrase replaces it), while the defining
     # question IS verbatim in both.
@@ -508,6 +571,122 @@ def test_renderer_budgets_compact_and_fuller_exact():
     # still present in the fuller additional (untouched).
     assert "does not automatically require one" in _joined(fuller)
     assert "does not automatically require one" in _joined(compact)
+    # Q9 + Q6 in Talk generally (founder rulings 2026-11-07 ~19:21/~19:23
+    # PT): the principles unit trails BOTH candidates, verbatim, as the
+    # last unit — not buried mid-block, and identical in each.
+    assert Q9_SENTENCE in _joined(compact)
+    assert Q9_SENTENCE in _joined(fuller)
+    assert NATURE_RULE in _joined(compact)
+    assert NATURE_RULE in _joined(fuller)
+    assert compact[-1] == _FIREBRAND_TALK_PRINCIPLES
+    assert fuller[-1] == _FIREBRAND_TALK_PRINCIPLES
+
+
+def test_r2_humanism_in_the_compact_worldview():
+    """R2 (Q10, founder 2026-11-07): the humanism sentence rides the
+    compact worldview unit (index 2), and the fuller contains it
+    exactly once — in the additional unit, not duplicated into the
+    worldview."""
+    compact = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
+    fuller = render_firebrand_ordinary(FIREBRAND_RECORD, detail="fuller")
+    assert HUMANISM_SENTENCE in compact[2]  # worldview unit
+    assert compact[2].endswith(HUMANISM_SENTENCE)
+    assert HUMANISM_SENTENCE not in compact[3]  # voice unit, not voice
+    assert _joined(fuller).count(HUMANISM_SENTENCE) == 1
+    assert HUMANISM_SENTENCE in fuller[3]  # additional unit
+    assert HUMANISM_SENTENCE not in fuller[2]  # not in the worldview
+
+
+def test_r3_firebrand_ceiling_is_scoped():
+    """R3 (Q9 + Q6 in Talk generally, founder rulings 2026-11-07
+    ~19:21/~19:23 PT): the Firebrand threshold is SCOPED — the shared
+    CHARACTER_CEILING stays 1500 (restored from 1501 by the 2026-11-11
+    #342 correction, founder disposition 2026-11-11 ~06:20 PT), so no
+    other seat's rendering moves.
+    A shared raise was measured and rejected: Bear's fuller is 1,648
+    chars, so a shared 1,758 would un-degrade it from its compact
+    fallback, which Bear's own test pins by design
+    (test_bear_canonical.py::test_renderer_budgets_compact_and_fuller_exact).
+    This test pins the honest form: the other six seats are
+    byte-identical whether the Firebrand threshold is 1501 or 1758
+    (they never read it), and Firebrand's compact and fuller both need
+    the 1,758 threshold — at 1501 they degrade to the bare 3-unit
+    block, while a NAMED Firebrand at 1501 still lands on the middle
+    rung (the rung is what protects names at the old threshold)."""
+    from local_ai.council.canonical.crane import CRANE_RECORD
+    from local_ai.council.canonical.bear import BEAR_RECORD as _BR
+    from local_ai.council.canonical.fox import FOX_RECORD
+    from local_ai.council.canonical.gardener import GARDENER_RECORD
+    from local_ai.council.canonical.raven import RAVEN_RECORD
+    from local_ai.council.canonical.weaver import WEAVER_RECORD
+    from local_ai.council.render import (
+        render_bear_ordinary,
+        render_crane_ordinary,
+        render_fox_ordinary,
+        render_gardener_ordinary,
+        render_raven_ordinary,
+        render_weaver_ordinary,
+    )
+
+    import local_ai.council.render as render_mod
+
+    # The shared ceiling was restored to 1500 (its pre-OQ1 value),
+    # NOT raised.
+    assert render_mod.CHARACTER_CEILING == 1500
+    assert render_mod._FIREBRAND_CHARACTER_CEILING == 1758
+
+    others = [
+        (render_weaver_ordinary, WEAVER_RECORD),
+        (render_raven_ordinary, RAVEN_RECORD),
+        (render_gardener_ordinary, GARDENER_RECORD),
+        (render_bear_ordinary, _BR),
+        (render_crane_ordinary, CRANE_RECORD),
+        (render_fox_ordinary, FOX_RECORD),
+    ]
+    for detail in ("compact", "fuller"):
+        for renderer, record in others:
+            render_mod._FIREBRAND_CHARACTER_CEILING = 1501
+            try:
+                at_1501 = renderer(record, detail=detail)
+            finally:
+                render_mod._FIREBRAND_CHARACTER_CEILING = 1758
+            at_1758 = renderer(record, detail=detail)
+            assert at_1501 == at_1758, (renderer.__name__, detail)
+    # Bear's fuller still falls back to compact at the shared 1500 —
+    # the raise did not touch it.
+    assert len(_joined(render_bear_ordinary(_BR, detail="fuller"))) == 1443
+    # Firebrand at the old threshold: compact and fuller both degrade
+    # to the bare 3-unit block (voice + humanism + principles dropped).
+    render_mod._FIREBRAND_CHARACTER_CEILING = 1501
+    try:
+        fuller_1501 = render_firebrand_ordinary(FIREBRAND_RECORD, detail="fuller")
+        compact_1501 = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
+        named_1501 = render_firebrand_ordinary(
+            FIREBRAND_RECORD, authorized_name="Mara", detail="compact"
+        )
+    finally:
+        render_mod._FIREBRAND_CHARACTER_CEILING = 1758
+    fuller_1758 = render_firebrand_ordinary(FIREBRAND_RECORD, detail="fuller")
+    compact_1758 = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
+    assert len(_joined(compact_1758)) == 1758
+    assert len(compact_1758) == 5
+    assert len(_joined(fuller_1758)) == 1639
+    assert len(fuller_1758) == 5
+    assert Q9_SENTENCE in _joined(compact_1758)
+    assert Q9_SENTENCE in _joined(fuller_1758)
+    assert NATURE_RULE in _joined(compact_1758)
+    assert NATURE_RULE in _joined(fuller_1758)
+    assert len(_joined(compact_1501)) == 829
+    assert len(compact_1501) == 3
+    assert len(_joined(fuller_1501)) == 829
+    assert len(fuller_1501) == 3
+    assert HUMANISM_SENTENCE not in _joined(compact_1501)
+    assert Q9_SENTENCE not in _joined(compact_1501)
+    assert VOICE_COMPACT_MARKER not in _joined(compact_1501)
+    # A named Firebrand at the old threshold still lands on the rung.
+    assert len(_joined(named_1501)) == 1434
+    assert len(named_1501) == 4
+    assert named_1501[3] == _FIREBRAND_COMPACT_VOICE_MID
 
 
 def test_renderer_exclusions():
@@ -532,13 +711,33 @@ def test_renderer_naming_authorized_only():
     # No authorized name → no address clause.
     pre = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
     assert not any("calls you" in line for line in pre)
-    # Lookup-authorized name → address clause, essence unchanged.
+    # Lookup-authorized name → address clause.
     post = render_firebrand_ordinary(
         FIREBRAND_RECORD, authorized_name="Mara", detail="compact"
     )
     assert post[0].endswith("The visitor calls you Mara.")
     assert post[0].startswith(CANONICAL_MARKER)
-    assert post[1:] == pre[1:]
+    # NAMING GAP — FIXED (2026-11-07, middle rung): the compact sat
+    # exactly at the Firebrand threshold (1,758/1,758 after Q9+Q6), so an authorized
+    # name (+28 chars for "Mara") pushed the full compact candidate
+    # over and the renderer fell back to the bare 3-unit block — a
+    # NAMED Firebrand lost the voice unit AND the Q10 humanism
+    # sentence. The ladder now tries the authored middle rung
+    # (identity-with-name, personality, worldview + humanism,
+    # condensed voice carrying Q9, FC2, Q6 verbatim) before the bare
+    # block. post[1:] is NOT pre[1:] anymore: the fourth unit is the
+    # condensed rung, not the full voice + warmth passage.
+    assert len(post) == 4
+    assert len(_joined(post)) == 1434
+    assert post[1] == pre[1]  # personality unchanged
+    assert post[2] == pre[2]  # worldview + humanism unchanged
+    assert post[3] == _FIREBRAND_COMPACT_VOICE_MID
+    assert HUMANISM_SENTENCE in _joined(post)
+    assert Q9_SENTENCE in _joined(post)
+    assert NATURE_RULE in _joined(post)
+    assert FC2_EXIT in _joined(post)
+    assert VOICE_MID_MARKER in _joined(post)
+    assert FULL_VOICE_ONLY_MARKER not in _joined(post)
     # Empty/whitespace name = not authorized.
     assert render_firebrand_ordinary(
         FIREBRAND_RECORD, authorized_name="  ", detail="compact"
@@ -553,6 +752,95 @@ def test_renderer_naming_authorized_only():
     # A non-string name is a contract violation, not a fallback.
     with pytest.raises(TypeError):
         render_firebrand_ordinary(FIREBRAND_RECORD, authorized_name={"name": "Mara"})
+
+
+def test_renderer_naming_middle_rung_cases():
+    # No name → the full compact with the Q9 + Q6 principles unit.
+    # Q9 + Q6 in Talk generally (founder rulings 2026-11-07 ~19:21/
+    # ~19:23 PT): the unnamed compact now carries both sentences
+    # verbatim as its last unit — the earlier "Q9 ABSENT by design"
+    # pin is superseded by those rulings. Five units, 1,758 chars,
+    # exactly at the Firebrand threshold.
+    pre = render_firebrand_ordinary(FIREBRAND_RECORD, detail="compact")
+    assert len(pre) == 5
+    assert len(_joined(pre)) == 1758
+    assert HUMANISM_SENTENCE in _joined(pre)
+    assert FULL_VOICE_ONLY_MARKER in _joined(pre)
+    assert Q9_SENTENCE in _joined(pre)
+    assert NATURE_RULE in _joined(pre)
+    assert pre[-1] == _FIREBRAND_TALK_PRINCIPLES
+    # Typical names → middle rung, never the bare block. For EACH
+    # case: not the bare 3-unit block, Q9 verbatim, humanism
+    # present, the chosen name present.
+    for name, total in (("Mara", 1434), ("Ash", 1433), ("Beatrice", 1438)):
+        named = render_firebrand_ordinary(
+            FIREBRAND_RECORD, authorized_name=name, detail="compact"
+        )
+        joined = _joined(named)
+        assert len(named) == 4, name
+        assert len(joined) == total, name
+        assert len(joined) <= _FIREBRAND_CHARACTER_CEILING, name
+        assert named[3] == _FIREBRAND_COMPACT_VOICE_MID, name
+        assert f"The visitor calls you {name}." in joined, name
+        assert HUMANISM_SENTENCE in joined, name
+        assert Q9_SENTENCE in joined, name
+        assert NATURE_RULE in joined, name
+        assert FC2_EXIT in joined, name
+        assert VOICE_MID_MARKER in joined, name
+        assert FULL_VOICE_ONLY_MARKER not in joined, name
+    # Long permitted names: the store caps personal_name at 60 chars
+    # (MAX_PERSONAL_NAME_LEN). At the cap the rung still fits with
+    # 11 chars of margin; one over the cap still fits on margin.
+    for n, total in ((59, 1489), (60, 1490), (61, 1491)):
+        long_name = "X" * n
+        named = render_firebrand_ordinary(
+            FIREBRAND_RECORD, authorized_name=long_name, detail="compact"
+        )
+        joined = _joined(named)
+        assert len(named) == 4, n
+        assert len(joined) == total, n
+        assert f"The visitor calls you {long_name}." in joined, n
+        assert Q9_SENTENCE in joined, n
+        assert HUMANISM_SENTENCE in joined, n
+    # Boundary: the rung fits names up to 328 chars (exactly at the
+    # 1,758 Firebrand threshold); at 329 it overflows and the ladder
+    # falls to the bare block. Names over 60 are rejected at the
+    # store, so cases past 60 are unreachable via the authorized
+    # path — they pin the ladder floor, not supported cases. The old
+    # 71/72 boundary moved with the threshold: both now land on the
+    # rung, Q9 present.
+    at_old_limit = render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 71, detail="compact"
+    )
+    assert len(at_old_limit) == 4
+    assert len(_joined(at_old_limit)) == 1501
+    assert Q9_SENTENCE in _joined(at_old_limit)
+    over_old_limit = render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 72, detail="compact"
+    )
+    assert len(over_old_limit) == 4
+    assert len(_joined(over_old_limit)) == 1502
+    assert Q9_SENTENCE in _joined(over_old_limit)
+    at_limit = render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 328, detail="compact"
+    )
+    assert len(at_limit) == 4
+    assert len(_joined(at_limit)) == 1758
+    assert Q9_SENTENCE in _joined(at_limit)
+    over_limit = render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 329, detail="compact"
+    )
+    assert len(over_limit) == 3
+    assert Q9_SENTENCE not in _joined(over_limit)
+    assert HUMANISM_SENTENCE not in _joined(over_limit)
+    # Fuller carries the principles unit too, so naming moves it the
+    # same way (was 1,410 / 1,466 before the principles unit).
+    assert len(_joined(render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="Mara", detail="fuller"
+    ))) == 1667
+    assert len(_joined(render_firebrand_ordinary(
+        FIREBRAND_RECORD, authorized_name="X" * 60, detail="fuller"
+    ))) == 1723
 
 
 def test_renderer_capability_gating():
@@ -589,16 +877,17 @@ def test_renderer_budget_degrades_then_fails_validation():
 
     # Compact + typical (signed-in) guidance: under budget separation
     # (renderer-budget separation design 2026-11-04), the ceiling
-    # measures character content ALONE, so the 1,306-char compact
-    # block keeps its voice unit with the 283-char signed guidance
-    # attached: total 1,590, voice and range lines render.
+    # measures character content ALONE, so the 1,758-char compact
+    # block keeps its voice unit with the 315-char signed guidance
+    # (283 + the 32-char FC4 companion note, 2026-11-07) attached:
+    # total 2,074, voice and range lines render.
     # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
     # block previously asserted the voice-drop (voice absent, total
     # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) == 1436 + 1 + len(signed) == 1720
+    assert len(_joined(compact_typical)) == 1758 + 1 + len(signed) == 2074
     assert signed in _joined(compact_typical)  # capability never truncated
     assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
     assert VOICE_COMPACT_MARKER in _joined(compact_typical)
@@ -608,11 +897,11 @@ def test_renderer_budget_degrades_then_fails_validation():
     assert VOICE_COMPACT_MARKER in compact_typical[4]
 
     # Fuller + typical guidance: additional survives too; total
-    # 1,382 + 1 + 283 = 1,666. (Reversal of the old drop expectation.)
+    # 1,639 + 1 + 315 = 1,955. (Reversal of the old drop expectation.)
     full_typical = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=signed
     )
-    assert len(_joined(full_typical)) == 1382 + 1 + len(signed) == 1666
+    assert len(_joined(full_typical)) == 1639 + 1 + len(signed) == 1955
     for marker in FULLER_ADDITIONAL_MARKERS:
         assert marker in _joined(full_typical), marker
     assert signed in _joined(full_typical)
@@ -635,7 +924,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         FIREBRAND_RECORD, detail="fuller", resolved_capability=mid
     )
     joined = _joined(degraded)
-    assert len(joined) == 1382 + 1 + 600
+    assert len(joined) == 1639 + 1 + 600
     for marker in FULLER_ADDITIONAL_MARKERS:
         assert marker in joined, marker  # additional survives
     assert CANONICAL_MARKER in joined
@@ -649,7 +938,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     large_render = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="compact", resolved_capability=large
     )
-    assert len(_joined(large_render)) == 1436 + 1 + 900
+    assert len(_joined(large_render)) == 1758 + 1 + 900
     assert WARMTH_ADOPTED in _joined(large_render)
     assert large in _joined(large_render)
 
@@ -663,7 +952,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         FIREBRAND_RECORD, detail="compact",
         resolved_capability="x" * (CHARACTER_CEILING + 500),
     )
-    assert len(_joined(huge)) == 1436 + 1 + (CHARACTER_CEILING + 500)
+    assert len(_joined(huge)) == 1758 + 1 + (CHARACTER_CEILING + 500)
     assert WARMTH_ADOPTED in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
@@ -1060,9 +1349,12 @@ def test_characterization_revision_2026_11_04_assembled_prompts():
     assert "Bear" not in fb
     assert "Firebrand" not in br
 
-    # Ceiling (exact lengths are pinned by the budgets tests).
-    assert len(fb) < CHARACTER_CEILING
-    assert len(br) < CHARACTER_CEILING
+    # Ceiling (exact lengths are pinned by the budgets tests). The
+    # Firebrand compact now sits EXACTLY at its own threshold
+    # (1,758/1,758, Q9+Q6) — `over_budget` uses `>`, so equality
+    # passes. Bear's compact stays under the shared 1,500 ceiling.
+    assert len(fb) <= _FIREBRAND_CHARACTER_CEILING
+    assert len(br) <= CHARACTER_CEILING
 
     # Capability-attached turns: judgment, voice, AND range survive
     # under budget separation (design 2026-11-04) — the old
@@ -1092,14 +1384,16 @@ def test_renderer_budget_separation_2026_11_04():
     signed = CAP.continuation_block(
         "champion", CAP.VisitorState(signed_in=True, consent_acknowledged=True)
     ).strip()
-    assert len(signed) == 283, len(signed)
+    # 283 + the 32-char FC4 companion note ("Naming one does not
+    # create it.", 2026-11-07).
+    assert len(signed) == 315, len(signed)
 
-    # §(e)1: compact + guidance, total exactly 1,590.
+    # §(e)1: compact + guidance, total exactly 2,074.
     compact = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="compact", resolved_capability=signed
     )
     joined = _joined(compact)
-    assert len(joined) == 1720
+    assert len(joined) == 2074
     for sentence in (
         "deserved before you ask whether it can be won",  # judgment
         "Press for change when conviction warrants action",  # judgment (refinement 1)
@@ -1116,7 +1410,7 @@ def test_renderer_budget_separation_2026_11_04():
     fuller = render_firebrand_ordinary(
         FIREBRAND_RECORD, detail="fuller", resolved_capability=signed
     )
-    assert len(_joined(fuller)) == 1666  # §(e)7
+    assert len(_joined(fuller)) == 1955  # §(e)7
     assert fuller[3] == signed
     for marker in FULLER_ADDITIONAL_MARKERS:
         assert marker in _joined(fuller), marker

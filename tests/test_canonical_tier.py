@@ -12,6 +12,15 @@ The pre-L1 goldens (tests/level1_pre_goldens.json) were captured at
 the demo path (POST /voice/chat), all seven seats; two independent
 capture runs produced byte-identical output. No model calls here —
 every generate_fn is a capturing stub. $0 spend.
+
+CHAMPION EXCEPTION (2026-11-11 #342 correction, founder disposition
+2026-11-11 ~06:20 PT, correction 3): the four champion goldens
+(talk champion:empty/:seeded, demo champion:skeleton/:inline) were
+regenerated from this branch to reflect ONLY the intended Firebrand
+S1 behavior — the Q9 sentence, the C1 companion note on the
+Commitments line, and the Q6/nature-rule line (delta +354 chars each,
+verified identical across all four captures). The other six seats'
+goldens are still the 5d99063 pre-L1 capture, byte-identical.
 """
 import dataclasses
 import json

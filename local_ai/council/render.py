@@ -33,7 +33,17 @@ by string exclusion and never by developer memory:
   never the verbatim picture's Fox-history illustration.
 
 Budget: the assembled character-derived block has a 1,500-character
-provisional ceiling. Units are complete bounded sentences/paragraphs
+ceiling (raised 1500 -> 1501 by founder ruling OQ1, 2026-11-07, for
+the Q10 humanism sentence; restored to 1500 by the 2026-11-11 #342
+correction, founder disposition 2026-11-11 ~06:20 PT — the 1501 raise
+changed Gardener's named compact and was never needed once Firebrand
+got its own threshold). Firebrand's renderer
+alone uses its own 1,758 threshold (_FIREBRAND_CHARACTER_CEILING,
+below) for the Q9 + Q6 principles unit (founder rulings 2026-11-07
+~19:21/~19:23 PT); the shared ceiling is NOT raised, so no other
+seat's rendering moves. The whole assembled Talk prompt is ~3,416
+chars against the 8,000 whole-prompt budget, so both numbers are
+design budgets, not technical limits. Units are complete bounded sentences/paragraphs
 and are only ever dropped whole, never truncated mid-thought:
 over budget, the fuller personality degrades to the compact variant,
 then the droppable voice guidance is dropped; if the block is still
@@ -66,6 +76,32 @@ from __future__ import annotations
 from typing import Any
 
 CHARACTER_CEILING = 1500
+
+# Firebrand-only threshold (Q9 + Q6 in Talk generally, founder
+# rulings 2026-11-07 ~19:21/~19:23 PT): Firebrand's Talk block carries
+# the Q9 + Q6 principles unit (256 chars), so its full compact is
+# 1,758 and its fuller 1,639. The shared ceiling is deliberately NOT
+# raised: a shared raise to 1,758 would un-degrade Bear's fuller
+# (1,648), which Bear's own test pins as falling back to compact by
+# design (test_bear_canonical.py::test_renderer_budgets_compact_and_fuller_exact)
+# — changing another seat's pinned rendering inside a Firebrand-scoped
+# change. Only render_firebrand_ordinary reads this threshold; every
+# other seat reads CHARACTER_CEILING. Minimal exact fit for the
+# principles unit; the whole assembled Talk prompt is 3,416 chars
+# against the 8,000 whole-prompt budget (measured in-process), so the
+# number is a design budget, not a technical limit. If the founder
+# prefers a shared raise (accepting the Bear fuller un-degradation),
+# that is a one-line change: CHARACTER_CEILING = 1758 and this
+# constant deleted.
+# NOTE (2026-11-11 #342 correction, founder disposition 2026-11-11
+# ~06:20 PT): the shared ceiling was 1501 on this branch — raised
+# 1500 -> 1501 by founder ruling OQ1 (2026-11-07, for the Q10
+# humanism sentence) and never reverted when Firebrand got its own
+# 1758 threshold. That 1-char raise changed Gardener's named compact
+# (1,472 + 29 = 1,501): the voice unit was retained on the branch
+# instead of dropping as pinned on main. The correction restores the
+# shared ceiling to 1500; Firebrand keeps 1758 via its own constant.
+_FIREBRAND_CHARACTER_CEILING = 1758
 
 _ELIGIBLE_CATEGORIES = frozenset({"conviction", "characterization"})
 
@@ -632,6 +668,73 @@ def render_gardener_ordinary(
     return chosen
 
 
+# Middle rung for the Firebrand compact (naming-gap fix, 2026-11-07).
+#
+# The full compact sits exactly at the Firebrand threshold
+# (1,758/1,758), so any authorized name pushes it over and the ladder
+# used to fall straight to the bare 3-unit block — a NAMED Firebrand
+# lost the voice unit AND the Q10 humanism sentence. This deliberately
+# authored unit is the rung between the full compact and the bare
+# block: a condensed voice passage that keeps the name, the humanism
+# sentence (which rides the worldview unit, not this one), and the
+# behavioral principles verbatim. 511 chars; the rung totals 1,490 with a
+# 60-char name (the longest the store permits — MAX_PERSONAL_NAME_LEN
+# in local_ai/you_profile/store.py), 268 chars of margin against the
+# 1,758 Firebrand threshold, and fits names up to 328 chars.
+#
+# Provenance, sentence by sentence:
+# - Voice essence (authored for this rung, condensing the record's
+#   voice_and_humor + warmth fields): short declarative sentences,
+#   plain words, dry brief humor, sparing warmth.
+# - FC2 exit, verbatim from _CHAMPION_GUIDANCE (encounter.py):
+#   "When the fight is not worth having, name that plainly: this
+#   hill is not worth dying on."
+# - Q9 leadership distillation, verbatim from _CHAMPION_GUIDANCE:
+#   "Name the mission plainly, never coerce, stand the wait:
+#   willing following beats fearful obedience." (Since the 2026-11-07
+#   ~19:21 PT ruling the Q9 sentence also rides every Talk assembly
+#   via _FIREBRAND_TALK_PRINCIPLES below; this rung keeps it so each
+#   candidate stays self-contained.)
+# - Q6 nature rule, verbatim from _SHARED_NATURE_RULE (encounter.py).
+# The FC1 guidance needs no separate sentence here: the temperament
+# sentence and the hopeless-stand qualification already ride the
+# worldview unit this rung keeps whole.
+_FIREBRAND_COMPACT_VOICE_MID = (
+    "You speak in short declarative sentences, in plain words; your "
+    "humor is dry and brief, your warmth sparing — acknowledge "
+    "briefly, then move to the next concrete step. When the fight is "
+    "not worth having, name that plainly: this hill is not worth "
+    "dying on. Name the mission plainly, never coerce, stand the "
+    "wait: willing following beats fearful obedience. Your nature "
+    "determines what you notice, what you value, what you question, "
+    "and how you express yourself; it does not prescribe the outcome "
+    "of every exchange."
+)
+
+
+# Q9 + Q6 in Talk generally (founder rulings 2026-11-07 ~19:21/~19:23 PT).
+#
+# The Q9 principle sentence and the shared nature rule ride EVERY
+# Talk assembly — compact and fuller, named and unnamed — as one
+# trailing principles unit (256 chars: 98 + 1 + 157). Previously both
+# lived in the meeting guidance only, and in Talk only via the
+# name-gated middle rung above, for a named Firebrand. Both sentences
+# are quoted verbatim from _CHAMPION_GUIDANCE and _SHARED_NATURE_RULE
+# (encounter.py) — the second-person rendering of the rule, identical
+# to the middle rung and to the N1 test's ADOPTED_SENTENCE; do not
+# paraphrase. The rung above is NOT given this unit as well: it
+# already carries both sentences, and each candidate stays
+# self-contained (no dedup surgery). The bare 3-unit fallback does
+# not carry it either: the floor stays minimal by design.
+_FIREBRAND_TALK_PRINCIPLES = (
+    "Name the mission plainly, never coerce, stand the wait: "
+    "willing following beats fearful obedience. "
+    "Your nature determines what you notice, what you value, what you "
+    "question, and how you express yourself; it does not prescribe the "
+    "outcome of every exchange."
+)
+
+
 def render_firebrand_ordinary(
     record: dict,
     authorized_name: str | None = None,
@@ -646,14 +749,34 @@ def render_firebrand_ordinary(
     then either the fuller additional unit (which DELETES the
     compact voice-close entirely — no voice sentence, no warmth
     sentence in the fuller) or the compact voice + warmth passage.
-    Assembled blocks reproduce exemplar §2 exactly (compact 1,306
-    chars, fuller 1,382 chars, no capability).
+    Both candidates end with the Q9 + Q6 principles unit
+    (_FIREBRAND_TALK_PRINCIPLES, founder rulings 2026-11-07
+    ~19:21/~19:23 PT). Assembled blocks reproduce exemplar §2 exactly
+    (compact 1,758 chars, fuller 1,639 chars, no capability).
+    Firebrand alone reads _FIREBRAND_CHARACTER_CEILING (1,758); the
+    shared CHARACTER_CEILING (1,500) is restored to the main baseline,
+    so no other seat's rendering moves (see the constant's comment for
+    why the raise is Firebrand-scoped: a shared raise would un-degrade
+    Bear's fuller).
+
+    Middle rung (naming-gap fix, 2026-11-07): the full compact sits
+    exactly at the Firebrand threshold, so any authorized name pushes
+    it over. When a name IS present, the ladder tries the authored
+    middle rung (identity-with-name, personality, worldview + humanism,
+    condensed voice) before the bare 3-unit block — a named
+    Firebrand never loses voice and humanism to a name. The rung
+    is name-gated, so unnamed assembly is byte-identical to
+    before (compact → bare ladder unchanged, R3 pin intact).
     """
     if detail not in ("compact", "fuller"):
         raise ValueError(f"Unknown detail: {detail!r}")
     capability = _validated_capability(resolved_capability)
 
     identity = _five_seat_identity_unit(record, authorized_name)
+    # Name-gate for the middle rung: mirrors the identity unit's own
+    # rule (a whitespace name is not authorized). The identity call
+    # above already raised TypeError for a non-string name.
+    _named = bool(authorized_name and authorized_name.strip())
     personality = eligible_field(record, "characterization", "personality")
     worldview_parts = [
         eligible_field(record, "characterization", "conviction_paraphrase"),
@@ -676,6 +799,19 @@ def render_firebrand_ordinary(
             "Firebrand core unit (personality/worldview) is not eligible"
         )
     worldview = " ".join(worldview_parts)
+    # Q10 (founder, 2026-11-07): the humanism sentence rides the
+    # COMPACT candidate only, appended to the worldview unit. The
+    # fuller already carries it in the fuller additional, and the
+    # bare fallback keeps the pre-Q10 worldview so a missing field
+    # never breaks assembly. Compact 1,436 -> 1,501 at the OQ1
+    # ceiling, then 1,501 -> 1,758 when the Q9 + Q6 principles unit
+    # joined every Talk candidate (founder rulings 2026-11-07
+    # ~19:21/~19:23 PT; _FIREBRAND_CHARACTER_CEILING 1758, minimal
+    # exact fit — the shared ceiling is 1500 again, restored by the
+    # 2026-11-11 #342 correction).
+    humanism = eligible_field(record, "characterization", "humanism_sentence")
+    worldview_compact = worldview + " " + humanism if humanism else worldview
+    character_compact = [identity, personality, worldview_compact]
     # Budget separation (renderer-budget separation design 2026-11-04):
     # the ceiling measures character content ALONE. Capability is not
     # part of the measured candidate set; it is re-inserted at the
@@ -691,14 +827,26 @@ def render_firebrand_ordinary(
         " ".join([voice, warmth]) if voice is not None and warmth is not None else None
     )
 
+    # Firebrand alone reads its own threshold (see the constant's
+    # comment): the shared ceiling is 1500 (restored by the 2026-11-11
+    # #342 correction) so no other seat moves.
     def over_budget(units: list[str]) -> bool:
-        return len("\n".join(units)) > CHARACTER_CEILING
+        return len("\n".join(units)) > _FIREBRAND_CHARACTER_CEILING
 
     candidates: list[list[str]] = []
     if detail == "fuller" and additional is not None:
-        candidates.append([*character, additional])
+        candidates.append([*character, additional, _FIREBRAND_TALK_PRINCIPLES])
     if voice_compact is not None:
-        candidates.append([*character, voice_compact])
+        candidates.append(
+            [*character_compact, voice_compact, _FIREBRAND_TALK_PRINCIPLES]
+        )
+    if _named:
+        # Middle rung (naming-gap fix, 2026-11-07 — see the constant
+        # above for provenance): only when a name is present. The
+        # full compact is exactly at the ceiling, so a name pushes it
+        # over; without this rung the ladder fell straight to the bare
+        # 3-unit block and a NAMED Firebrand lost voice + humanism.
+        candidates.append([*character_compact, _FIREBRAND_COMPACT_VOICE_MID])
     candidates.append(character)
     for units in candidates:
         if not over_budget(units):
@@ -706,7 +854,8 @@ def render_firebrand_ordinary(
             break
     else:
         raise AssemblyError(
-            f"Firebrand character block still over the {CHARACTER_CEILING}-char "
+            f"Firebrand character block still over the "
+            f"{_FIREBRAND_CHARACTER_CEILING}-char "
             "ceiling after dropping all optional units; refusing to truncate"
         )
     if capability:

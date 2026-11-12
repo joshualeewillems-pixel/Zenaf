@@ -1282,9 +1282,23 @@ export function LivingTreeView({
             >
               {arch.display_name}
             </button>
-            <div className="ltag" style={{ color: col }}>
+            <button
+              type="button"
+              className="ltag"
+              aria-expanded={expanded}
+              onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+              style={{
+                color: col,
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+                font: 'inherit',
+                textAlign: 'left',
+              }}
+            >
               {tag}
-            </div>
+            </button>
           </div>
         </div>
         {headerMenuSeat === arch.id && renderSeatHeaderMenu(arch)}

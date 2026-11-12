@@ -236,13 +236,14 @@ def test_dedicated_turn_frame_fox_voice():
     # The generic frame no longer opens the Maverick's turn path.
     assert "Respond to what the user actually just communicated" not in definition.turn_frame
     # Assembled runtime frames: the turn frame grows by the frame swap
-    # (+919 over the pre-frame 4,286); the engage frame is untouched.
-    # Both fit the 9,000 cap.
+    # (+927 over the L1 turn 3,567); the engage frame is untouched by
+    # the swap (7,428 post-L1 — the guard extension rides the tier,
+    # not the frame). Both fit the 9,000 cap.
     runtime = ENC.EncounterRuntime(definition)
     turn, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
-    assert len(turn) == 5205
+    assert len(turn) == 4494
     assert len(turn) < 9000
-    assert len(runtime._engage_frame()) == 8139
+    assert len(runtime._engage_frame()) == 7428
     # No other seat carries the Fox text; Crane still opens on the
     # generic frame (his dedicated frame rides the Crane build).
     crane = ENC.get_definition(MT.get_script("ambassador", 1))

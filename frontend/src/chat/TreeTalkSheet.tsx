@@ -3,6 +3,12 @@ import { apiBase } from '../apiBase'
 import CouncilChat from './CouncilChat'
 import InvitationList, { INVITATIONS_CHANGED_EVENT } from './InvitationList'
 import SeatChips, { useSeatMeta } from './SeatChips'
+import { symbolUrl, SYMBOL_COUNT } from '../assets/symbols/symbols'
+import {
+  TALK_PALETTE,
+  useTalkIdentities,
+  type TalkIdentity,
+} from './talkIdentity'
 
 /**
  * Durable Tree Talk (Slice A): the Tree sheet's conversation mount.
@@ -86,6 +92,35 @@ function formatWhen(iso: string | null): string {
   }
 }
 
+/**
+ * A conversation's color + symbol emblem (founder, 2026-11-12):
+ * history entries are identified by color + symbol, never by a
+ * generated text title. Unset → a dashed circle.
+ */
+function IdentityBadge({ identity, size = 30 }: { identity: TalkIdentity; size?: number }) {
+  const url = symbolUrl(identity.symbol)
+  return (
+    <span
+      aria-hidden="true"
+      className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full"
+      style={{
+        width: size,
+        height: size,
+        background: identity.color ?? 'rgba(245,240,232,.06)',
+        border: identity.color
+          ? `2px solid ${identity.color}`
+          : '1px dashed rgba(245,240,232,.35)',
+      }}
+    >
+      {url ? (
+        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        <span className="text-sm leading-none text-stone-400">+</span>
+      )}
+    </span>
+  )
+}
+
 export default function TreeTalkSheet({
   seatKey,
   displayName,
@@ -132,6 +167,40 @@ export default function TreeTalkSheet({
   /** Bumped after every completed turn so the invitation list
       refetches — joining is observed by the entry disappearing. */
   const [inviteRefreshKey, setInviteRefreshKey] = useState(0)
+  /** Per-conversation color + symbol (localStorage; see talkIdentity). */
+  const { identities, setIdentity, clearIdentity } = useTalkIdentities()
+  /** Seat conversation history beside New conversation (founder,
+      2026-11-12): the same GET /conversation/list the seat lookup
+      already uses, seat-scoped, limit 10; fetched lazily when the
+      panel opens. Zero-message conversations never appear — the
+      endpoint only lists conversations with at least one message. */
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<TalkListItem[] | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState(false)
+  /** Conversation id whose color/symbol picker is open, or null. */
+  const [identityFor, setIdentityFor] = useState<string | null>(null)
+  const fetchHistory = useCallback(async () => {
+    if (!chatSeat) return
+    setHistoryLoading(true)
+    setHistoryError(false)
+    try {
+      const r = await fetch(
+        `${base}/conversation/list?seat=${encodeURIComponent(chatSeat)}&limit=10`,
+        { credentials: 'include' },
+      )
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const data = await r.json()
+      setHistory(Array.isArray(data.conversations) ? data.conversations : [])
+    } catch {
+      setHistoryError(true)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [base, chatSeat])
+  useEffect(() => {
+    if (historyOpen) void fetchHistory()
+  }, [historyOpen, fetchHistory])
   /** Stable signal for the Tree: a list refetch dropped a row. The
       Tree refetches attention; nothing navigates, nothing transitions. */
   const dispatchInvitationsChanged = useCallback(() => {
@@ -290,6 +359,8 @@ export default function TreeTalkSheet({
 
   const startNew = useCallback(() => {
     setChatId(newTalkId())
+    setHistoryOpen(false)
+    setIdentityFor(null)
     setMode('chat')
   }, [])
 
@@ -408,6 +479,12 @@ export default function TreeTalkSheet({
   }
 
   // mode === 'chat'
+  // History shows past conversations with this seat (seat-scoped list,
+  // most recent first); the open conversation is excluded — it is the
+  // one already on screen. Rows are identified by color + symbol,
+  // never by a text title; the ✎ opens the color/symbol picker.
+  const historyRows = (history ?? []).filter((t) => t.conversation_id !== chatId)
+  const currentIdentity = chatId ? identities[chatId] ?? { color: null, symbol: null } : null
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -418,6 +495,27 @@ export default function TreeTalkSheet({
         >
           New conversation
         </button>
+        {chatSeat && (
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((o) => !o)}
+            aria-expanded={historyOpen}
+            className="min-h-[44px] px-4 rounded-full border border-stone-700 text-sm text-stone-400"
+          >
+            History
+          </button>
+        )}
+        {chatId && currentIdentity && (
+          <button
+            type="button"
+            onClick={() => setIdentityFor(identityFor === chatId ? null : chatId)}
+            aria-label="Choose a color and symbol for this conversation"
+            title="Choose a color and symbol for this conversation"
+            className="min-h-[44px] min-w-[44px] px-2 rounded-full border border-stone-700 flex items-center justify-center"
+          >
+            <IdentityBadge identity={currentIdentity} size={30} />
+          </button>
+        )}
         {fromList && (
           <button
             type="button"
@@ -428,6 +526,152 @@ export default function TreeTalkSheet({
           </button>
         )}
       </div>
+      {historyOpen && (
+        <div className="flex flex-col gap-2 rounded-2xl border border-stone-700/60 bg-stone-900/70 px-3 py-2">
+          {historyLoading ? (
+            <p className="text-sm text-stone-400 px-1 py-2">Loading history…</p>
+          ) : historyError ? (
+            <p className="text-sm text-stone-400 px-1 py-2">
+              Couldn’t load history.{' '}
+              <button type="button" onClick={() => void fetchHistory()} className="underline">
+                Try again
+              </button>
+            </p>
+          ) : historyRows.length === 0 ? (
+            <p className="text-sm text-stone-400 px-1 py-2">
+              No past conversations with this seat yet.
+            </p>
+          ) : (
+            historyRows.map((t) => (
+              <div
+                key={t.conversation_id}
+                className="flex items-center gap-2 rounded-xl border border-stone-700/60 bg-stone-900/70"
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFromList(true)
+                    setChatId(t.conversation_id)
+                    setHistoryOpen(false)
+                    setIdentityFor(null)
+                    setMode('chat')
+                  }}
+                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2 text-left"
+                >
+                  <IdentityBadge
+                    identity={identities[t.conversation_id] ?? { color: null, symbol: null }}
+                  />
+                  <span className="min-w-0 flex-1">
+                    {t.last_message_preview && (
+                      <span className="block truncate text-sm text-stone-200">
+                        {t.last_message_preview}
+                      </span>
+                    )}
+                    <span className="block text-[11px] text-stone-500">
+                      {t.message_count} messages
+                      {formatWhen(t.last_message_at)
+                        ? ` · ${formatWhen(t.last_message_at)}`
+                        : ''}
+                    </span>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label="Choose a color and symbol for this conversation"
+                  title="Choose a color and symbol"
+                  onClick={() =>
+                    setIdentityFor(
+                      identityFor === t.conversation_id ? null : t.conversation_id,
+                    )
+                  }
+                  className="min-h-[44px] min-w-[44px] px-2 text-sm text-stone-400"
+                >
+                  ✎
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+      {identityFor && (
+        <div className="flex flex-col gap-3 rounded-2xl border border-stone-700/60 bg-stone-900/70 px-3 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold text-stone-200">Color &amp; symbol</span>
+            <button
+              type="button"
+              onClick={() => setIdentityFor(null)}
+              className="min-h-[44px] px-3 rounded-full border border-stone-700 text-sm text-stone-400"
+            >
+              Done
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Color">
+            {TALK_PALETTE.map((c) => {
+              const selected = identities[identityFor]?.color === c
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  aria-label={`Color ${c}`}
+                  aria-pressed={selected}
+                  onClick={() => setIdentity(identityFor, { color: c })}
+                  className="h-8 w-8 rounded-full"
+                  style={{
+                    background: c,
+                    outline: selected ? '2px solid #f5f0e8' : '1px solid rgba(245,240,232,.25)',
+                    outlineOffset: 2,
+                  }}
+                />
+              )
+            })}
+            <button
+              type="button"
+              aria-label="No color"
+              aria-pressed={!identities[identityFor]?.color}
+              onClick={() => setIdentity(identityFor, { color: null })}
+              className="h-8 w-8 rounded-full text-xs text-stone-400"
+              style={{ outline: '1px dashed rgba(245,240,232,.35)', outlineOffset: 2 }}
+            >
+              —
+            </button>
+          </div>
+          <div className="grid grid-cols-6 gap-2" role="group" aria-label="Symbol">
+            {Array.from({ length: SYMBOL_COUNT }, (_, i) => i + 1).map((n) => {
+              const selected = identities[identityFor]?.symbol === n
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  aria-label={`Symbol ${n}`}
+                  aria-pressed={selected}
+                  onClick={() => setIdentity(identityFor, { symbol: n })}
+                  className="aspect-square overflow-hidden rounded-full"
+                  style={{
+                    outline: selected ? '2px solid #f5f0e8' : '1px solid rgba(245,240,232,.25)',
+                    outlineOffset: 2,
+                  }}
+                >
+                  <img
+                    src={symbolUrl(n) ?? ''}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                </button>
+              )
+            })}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              clearIdentity(identityFor)
+              setIdentityFor(null)
+            }}
+            className="self-start min-h-[44px] px-3 rounded-full border border-stone-700 text-sm text-stone-400"
+          >
+            Clear color &amp; symbol
+          </button>
+        </div>
+      )}
       {chatId && (
         <>
           <InvitationList

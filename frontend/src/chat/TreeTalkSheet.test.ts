@@ -14,6 +14,7 @@ import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import TreeTalkSheet, { newTalkId } from './TreeTalkSheet'
+import { getTalkIdentity, TALK_IDENTITY_STORAGE_KEY } from './talkIdentity'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -29,6 +30,7 @@ type Talk = {
 }
 
 const TALK_MENTOR = 'talk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+const TALK_MENTOR_OLDER = 'talk-dddddddddddddddddddddddddddddddd'
 const TALK_CHAMPION = 'talk-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 const CONV_OVERRIDE = 'talk-cccccccccccccccccccccccccccccccc'
 
@@ -76,6 +78,7 @@ function installFetch() {
       const all = [
         talk(TALK_CHAMPION, ['champion'], 'champion preview'),
         talk(TALK_MENTOR, ['mentor'], 'mentor preview'),
+        talk(TALK_MENTOR_OLDER, ['mentor'], 'mentor older preview'),
       ]
       const conversations = seat ? all.filter((t) => t.seats.includes(seat)) : all
       return Promise.resolve(ok({ conversations }))
@@ -130,6 +133,7 @@ async function click(el: Element) {
 
 beforeEach(() => {
   listBehavior = 'ok'
+  localStorage.clear()
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
     () => {}
@@ -185,6 +189,68 @@ describe('seat sheet resolution', () => {
     )
     expect(id).toMatch(/^talk-[0-9a-f]{32}$/)
     expect(id).not.toBe(TALK_MENTOR)
+  })
+})
+
+describe('seat conversation history + color/symbol identity', () => {
+  it('History sits beside New conversation and lists past talks, excluding the open one', async () => {
+    renderSheet({ seatKey: 'mentor', displayName: 'Gardener' })
+    await flush()
+    expect(container.textContent).toContain('New conversation')
+    await click(buttonByText('History'))
+    // Seat-scoped list, limit 10 — the same endpoint as the seat lookup.
+    expect(
+      calls.some(
+        (u) =>
+          u.includes('/conversation/list') &&
+          u.includes('seat=mentor') &&
+          u.includes('limit=10'),
+      ),
+    ).toBe(true)
+    expect(container.textContent).toContain('mentor older preview')
+    // The open conversation is the one already on screen, not a row.
+    expect(container.textContent).not.toContain('mentor preview')
+  })
+
+  it('picking a history row opens that conversation', async () => {
+    renderSheet({ seatKey: 'mentor', displayName: 'Gardener' })
+    await flush()
+    await click(buttonByText('History'))
+    const row = Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('mentor older preview'),
+    )
+    if (!row) throw new Error('history row not found')
+    await click(row)
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${TALK_MENTOR_OLDER}`)),
+    ).toBe(true)
+    expect(container.textContent).toContain('thread talk-dddd')
+  })
+
+  it('color + symbol can be picked for the open conversation and persist', async () => {
+    renderSheet({ seatKey: 'mentor', displayName: 'Gardener' })
+    await flush()
+    const chip = container.querySelector(
+      '[aria-label="Choose a color and symbol for this conversation"]',
+    )
+    if (!chip) throw new Error('identity chip not found')
+    await click(chip)
+    const color = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Color #c9a86a',
+    )
+    if (!color) throw new Error('color swatch not found')
+    await click(color)
+    const symbol = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Symbol 1',
+    )
+    if (!symbol) throw new Error('symbol button not found')
+    await click(symbol)
+    const stored = getTalkIdentity(TALK_MENTOR)
+    expect(stored.color).toBe('#c9a86a')
+    expect(stored.symbol).toBe(1)
+    expect(localStorage.getItem(TALK_IDENTITY_STORAGE_KEY)).toContain(TALK_MENTOR)
+    // The picked symbol renders on the chip badge.
+    expect(container.querySelector('img[src*="symbol-01"]')).not.toBeNull()
   })
 })
 

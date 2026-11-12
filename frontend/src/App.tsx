@@ -37,6 +37,7 @@ import {
   type TreeNodeRef,
 } from './living-tree/LivingTree'
 import ProvenanceView from './provenance/ProvenanceView'
+import StandaloneMint from './provenance/StandaloneMint'
 import {
   formatWorkoutContextBlock,
   countWorkoutRatingsInStorage,
@@ -5009,6 +5010,17 @@ function App() {
         />
       ) : null
     }
+    if (item === 'mint') {
+      // Maverick only (the Fox's expressive mint, founder 2026-11-12):
+      // the shared standalone-mint flow, mounted in the sheet. The
+      // menu only offers it for the Maverick, but the mount guards
+      // anyway — any other seat falls through to the honest
+      // "still growing" state. No seat is attributed to the artifact:
+      // the standalone endpoints take no seat (open question).
+      return node.kind === 'seat' && node.seatKey === 'maverick' ? (
+        <StandaloneMint key={`mint-${node.seatKey}`} />
+      ) : null
+    }
     if (item === 'talk') {
       // Durable Tree Talk (Slice A): the sheet always mounts a
       // server-backed conversation. A seat sheet auto-resumes the most
@@ -7053,9 +7065,9 @@ function App() {
                   <div className="space-y-3 p-4">
                 <p className="rounded-lg border border-stone-700 bg-stone-900/70 px-3 py-2 text-[11px] leading-snug text-stone-400">
                   Talking with your council lives in one place now — open any seat on the
-                  tree and choose Talk; “Ask the council” there reaches every seat in one
-                  thread. This console is the deliberation desk: folder runs, synthesis,
-                  and recorded insights.
+                  tree and choose Talk; “choose multiple” there sends one message to the
+                  seats you check, in one thread. This console is the deliberation desk:
+                  folder runs, synthesis, and recorded insights.
                 </p>
                 <div>
                   <label className="block text-xs text-stone-500 mb-1">Your reply</label>

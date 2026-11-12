@@ -96,7 +96,12 @@ export interface SeatFaceSource {
   face_revealed?: boolean
 }
 
-function isRevealed(arch: SeatFaceSource): boolean {
+/** Revealed by the first meeting or the depth milestone. Exported:
+    the compact head's name tag uses the same reveal as the face —
+    a seat that has not been opened/met has not revealed its name.
+    `face_revealed` decides when present; `avatar_unlocked` is the
+    fallback for older payloads. */
+export function isRevealed(arch: SeatFaceSource): boolean {
   return arch.face_revealed ?? arch.avatar_unlocked
 }
 

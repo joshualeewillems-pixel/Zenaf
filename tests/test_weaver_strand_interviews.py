@@ -94,19 +94,51 @@ def test_validate_strand_key_rejects_unknown_and_taxonomy_keys():
 # -- orientation (C3) ------------------------------------------------------------
 
 
-def test_orientation_fresh_is_definition_plus_nonbinding_invitation():
+def test_orientation_fresh_is_roots_panel_model():
+    # Seven-roots panel model (founder, 2026-11-12): concise question
+    # + one short invitation + talk line. Heart's wording is the
+    # founder's verbatim.
     orientation = orientation_for("heart", is_fresh=True)
     assert orientation["definition"] == "things you care about"
     assert orientation["is_fresh"] is True
     assert orientation["resume"] is None
-    # Nonbinding invitation: deflect/change subject, no upload needed.
-    invitation = orientation["invitation"]
-    assert "deflect it" in invitation
-    assert "Nothing here needs an upload to begin" in invitation
-    # §3.3 opener pattern, rendered as the invitation's question.
-    assert "cared about long enough" in orientation["opening_question"]
+    assert orientation["question"] == "What matters to you?"
+    assert orientation["invitation"] == (
+        "Who and what do you care about, and why? Explore the people, "
+        "passions, values, and experiences that hold a special place "
+        "in your life."
+    )
+    assert orientation["talk_line"] == (
+        "Talk with the Conductor about something you care about. There's no "
+        "right answer, and you can follow the conversation wherever "
+        "it leads."
+    )
+    assert orientation["opening_question"] is None
     # Nonbinding: no claim that anything will be remembered or acted on.
+    invitation = orientation["invitation"]
     assert "I'll note" not in invitation and "I'll save" not in invitation
+
+
+def test_orientation_fresh_panel_copy_present_for_all_seven_roots():
+    # Every root carries the full panel model; each talk line names
+    # the Conductor (founder's ruling 2026-11-12: role, not personal name) and carries the same reassurance close.
+    for key in DESIGN_STRAND_KEYS:
+        orientation = orientation_for(key, is_fresh=True)
+        assert orientation["question"], key
+        assert orientation["invitation"], key
+        assert orientation["talk_line"], key
+        assert orientation["talk_line"].startswith("Talk with the Conductor about"), key
+        assert orientation["talk_line"].endswith(
+            "There's no right answer, and you can follow the "
+            "conversation wherever it leads."
+        ), key
+        assert orientation["opening_question"] is None
+    # The seven questions are distinct — each root its own center.
+    questions = {
+        orientation_for(key, is_fresh=True)["question"]
+        for key in DESIGN_STRAND_KEYS
+    }
+    assert len(questions) == 7
 
 
 def test_orientation_returning_is_resume_only_no_opener_no_greeting():
@@ -114,6 +146,8 @@ def test_orientation_returning_is_resume_only_no_opener_no_greeting():
     assert orientation["is_fresh"] is False
     assert orientation["resume"] is True
     assert orientation["opening_question"] is None
+    assert orientation["question"] is None
+    assert orientation["talk_line"] is None
     assert "where you left off" in orientation["invitation"]
     assert "Hello" not in orientation["invitation"]
 
@@ -322,7 +356,16 @@ def test_resolve_is_fresh_and_orientation_present(client):
     assert "things you care about" in body["definition"]
     assert body["is_fresh"] is True
     assert body["conversation_id"].startswith("talk-")
-    assert "cared about long enough" in body["orientation"]["opening_question"]
+    assert body["orientation"]["question"] == "What matters to you?"
+    assert body["orientation"]["invitation"].startswith(
+        "Who and what do you care about, and why?"
+    )
+    assert body["orientation"]["talk_line"] == (
+        "Talk with the Conductor about something you care about. There's no "
+        "right answer, and you can follow the conversation wherever "
+        "it leads."
+    )
+    assert body["orientation"]["opening_question"] is None
     assert body["boundaries"] == []
     assert body["sources"] == []
     assert "reply" not in body  # no generated turn on open

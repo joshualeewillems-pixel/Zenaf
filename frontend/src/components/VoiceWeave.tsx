@@ -11,19 +11,19 @@ import { useEffect, useState } from 'react'
  */
 
 export const VOICE_COLORS: Record<string, string> = {
-  mentor: '#c9a86a',
-  champion: '#c96a5a',
-  guardian: '#7ba889',
-  maverick: '#9a7bc9',
-  ambassador: '#7aa3b8',
-  conductor: '#8a8a93',
-  skeptic: '#6b6b76',
+  mentor: '#92b692',
+  champion: '#e24e4e',
+  guardian: '#ac7c5b',
+  maverick: '#a55cce',
+  ambassador: '#5c9cea',
+  conductor: '#8892c3',
+  skeptic: '#a29ac1',
 }
 
 export const USER_WEAVE_COLOR = '#e8a33d'
 
 export function voiceColor(id: string): string {
-  return VOICE_COLORS[(id || '').trim().toLowerCase()] ?? '#8a8a93'
+  return VOICE_COLORS[(id || '').trim().toLowerCase()] ?? '#8892c3'
 }
 
 export type DemoVoice = {

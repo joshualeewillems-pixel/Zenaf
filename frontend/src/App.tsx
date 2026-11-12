@@ -5905,6 +5905,7 @@ function App() {
               onNavigate={(view) => setMainView(view)}
               renderSheetContent={renderTreeSheetContent}
               currentUserId={currentUser?.id ?? null}
+              userAvatarUrl={currentUser?.avatar_data_url ?? null}
             />
           </div>
         ) : mainView === 'perspectives' ? (

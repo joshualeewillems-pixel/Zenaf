@@ -114,7 +114,7 @@ FOX_RECORD = {
             "category": "identity",
         },
         "voice_color": {
-            "text": "Electric violet #9a7bc9 — 'pattern-breaking'",
+            "text": "Electric violet #a55cce — 'pattern-breaking'",
             "standing": "adopted",
             "category": "identity",
         },

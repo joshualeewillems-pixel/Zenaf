@@ -20,8 +20,7 @@ import {
   isUserDefined,
   createAgent,
 } from './perspectives/types'
-import { apiBase } from './apiBase'; import { iconHintFor } from './perspectives/roleIcons'
-import { AvatarDisplay } from './components/AvatarDisplay'
+import { apiBase } from './apiBase'
 import {
   PerspectivesView,
   AgentDetailPanel,
@@ -78,23 +77,15 @@ import {
   deriveInjectPreviewQuestionText,
   inferInjectPreviewOrigin,
   metaForSeededGuideContent,
-  resolveGuideQuestionMeta,
 } from './developmentalGuidance/guideQuestionDisplay'
-import { InlineThreadGuideCard } from './conversation/InlineThreadGuideCard'
-import { ThreadInlineGuideStack } from './conversation/ThreadInlineGuideStack'
 import { appendChatDroppedFiles, dataTransferHasFiles } from './conversation/chatFileDrop'
-import { SubjectHandoffReview } from './conversation/SubjectHandoffReview'
 import {
   councilPhaseDetail,
   deriveMediationPanelMode,
-  mainViewLabel,
-  mediationPanelHeadline,
-  workspaceRunModeLabel,
   type CouncilStreamPhase,
   type CouncilTransportTimings,
   type MediationThreadItemKind,
 } from './conversation/mediationSurfaceTypes'
-import { MediationFlowHint } from './flow/MediationFlowHint'
 import type { ConversationSubject } from './conversation/conversationTrunkTypes'
 import {
   contentForSuggestionExtraction,
@@ -117,7 +108,10 @@ import {
 import { VISION_EXECUTION_API, type CoreProfile } from './vision-execution/types'
 import { canonicalCoreProfileId, coreProfileInfluencePickLabel } from './vision-execution/canonicalCoreProfile'
 import { ZenafPresence } from './components/ZenafPresence'
-import { EntityMentionText, type EntityMentionOpenPayload } from './components/EntityMentionText'
+// NOTE (dead-code removal, 2026-11-12): EntityMentionText was removed as
+// unused, but the type EntityMentionOpenPayload from the same import is
+// still used — the import stays for the type only.
+import { type EntityMentionOpenPayload } from './components/EntityMentionText'
 import { enrichScopedDigressionLabel } from './council/enrichScopedDigressionLabel'
 import { postCouncilInsightRecognition } from './vision-execution/recognitionDecisions'
 import { BrandStructuredProfilePanel, CoreHowItWorksPanel } from './vision-execution/coreProfilePanels'
@@ -164,7 +158,6 @@ import {
   isKnownMandateId,
 } from './mandateSeatAccent'
 import { CouncilMandatePicker, CouncilPerspectivePicker } from './council/CouncilSeatPickers'
-import { CouncilPersonalityModeSelector } from './council/CouncilPersonalityModeSelector'
 import {
   fetchCouncilPersonalityMode,
   saveCouncilPersonalityMode,
@@ -197,7 +190,6 @@ import { BuildCouncilSubmitView } from './build-council/BuildCouncilSubmitView'
 import {
   fetchLLMSettings,
   fetchUserPermissionsSettings,
-  saveCouncilSeatLlm,
   saveUserPermissionsSettings,
   type ProviderStatusRow,
   type UserPermissionFlags,
@@ -304,151 +296,6 @@ function postWorkspaceLearningFromRef(
   })
 }
 
-function CouncilSynthesisIntegrityNote({
-  includeSynthesis,
-  state,
-  warning,
-  envelope,
-}: {
-  includeSynthesis: boolean
-  state: CouncilSynthesisIntegrityState | null
-  warning: string | null
-  envelope: CouncilIntegrityEnvelopePayload | null
-}) {
-  if (!includeSynthesis || !state) return null
-
-  const primaryInPacket = state !== 'weak'
-  let synthesisAnchorLabel: string
-  if (state === 'weak') synthesisAnchorLabel = 'Not evaluated'
-  else if (state === 'anchored') synthesisAnchorLabel = 'Detected (heuristic)'
-  else synthesisAnchorLabel = 'Not detected (heuristic)'
-
-  const policies = envelope?.policies_applied?.filter(Boolean) ?? []
-  const runId = envelope?.provenance?.run_id
-  const mode = (envelope?.integrity_mode ?? envelope?.default_mode ?? 'bounded').trim() || 'bounded'
-  const synthesisType = (envelope?.synthesis_type ?? null)?.trim() || null
-  const refs = envelope?.subject_refs ?? []
-  const refsLine =
-    refs.length === 0
-      ? '—'
-      : refs
-          .map((r) => [r.entity_type, r.entity_id].filter(Boolean).join(' ') || '—')
-          .slice(0, 4)
-          .join(' · ')
-  const supportExplain = explainSynthesisSupportStatus(envelope?.synthesis_support_status)
-  const combined = deriveCouncilSynthesisCombinedSummary(state, warning, envelope?.synthesis_support_status)
-  const combinedPresentation = councilSynthesisCombinedPresentation(combined)
-
-  return (
-    <div className="mt-2 pt-2 border-t border-stone-700/60 text-[11px] text-stone-500">
-      <div className="mb-2 pb-2 border-b border-stone-700/40">
-        <span className="text-stone-500">Combined reading: </span>
-        <span className={combinedPresentation.labelClassName}>{labelCouncilSynthesisCombinedSummary(combined)}</span>
-        <p className={`mt-1 text-[10px] leading-snug ${combinedPresentation.descriptionClassName}`}>
-          {councilSynthesisCombinedSummaryLine(combined)}
-        </p>
-      </div>
-      <div>
-        <span>Synthesis integrity: </span>
-        <span className={`font-medium ${councilSynthesisIntegrityClass(state)}`}>{labelCouncilSynthesisIntegrity(state)}</span>
-        {warning === 'missing_primary_anchor' ? (
-          <span className="block text-amber-400/85 mt-1">
-            Note: the closing summary may not tie back clearly to your main topic. Ask for a tighter recap if that matters.
-          </span>
-        ) : warning === 'synthesis_failure_template' ? (
-          <span className="block text-amber-300/85 mt-1">
-            Note: the closing summary looked like a system message rather than a normal answer; treat anchor checks as approximate.
-          </span>
-        ) : null}
-      </div>
-      <details className="mt-1.5 group">
-        <summary className="cursor-pointer text-stone-400 hover:text-stone-200 list-none flex items-center gap-1 select-none [&::-webkit-details-marker]:hidden">
-          <span className="text-[10px] uppercase tracking-wide text-stone-500 group-open:text-stone-400">
-            Why this rating?
-          </span>
-          <span aria-hidden className="text-stone-600 group-open:rotate-90 transition-transform inline-block">
-            ›
-          </span>
-        </summary>
-        <div className="mt-2 pl-2 border-l border-stone-600/80 space-y-2 text-stone-400">
-          <p className="text-[10px] text-stone-500 leading-snug">
-            The headline blends two checks: whether the summary stayed on your main topic, and how well different voices
-            supported it. Technical details are below.
-          </p>
-          <p className="text-stone-400 leading-snug">{councilSynthesisWhyLine(state)}</p>
-          <dl className="space-y-1.5">
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Combined summary (derived)</dt>
-              <dd>
-                <span className={combinedPresentation.labelClassName}>{labelCouncilSynthesisCombinedSummary(combined)}</span>
-                <span className="block font-mono text-[10px] text-stone-500/75 mt-0.5">{combined}</span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Integrity mode</dt>
-              <dd className="text-stone-300 font-mono text-[10px]">{mode}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Synthesis type</dt>
-              <dd className="text-stone-300 font-mono text-[10px]">{synthesisType ?? 'normal'}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Main topic in this run&apos;s context</dt>
-              <dd className="text-stone-300">
-                {primaryInPacket ? 'Included as the main focus' : 'Light context only — grounding is weaker'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Main topic reflected in closing summary</dt>
-              <dd className="text-stone-300">{synthesisAnchorLabel}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">How voices supported the answer (heuristic)</dt>
-              <dd className="text-stone-300">
-                {supportExplain ? (
-                  <>
-                    <span className="font-medium text-[11px]">{supportExplain.label}</span>
-                    <span className="block text-stone-400 mt-0.5 text-[10px] leading-snug">{supportExplain.body}</span>
-                  </>
-                ) : (
-                  <span className="text-stone-500 font-mono text-[10px]">—</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Integrity warning</dt>
-              <dd className="text-stone-300 font-mono text-[10px]">{warning ?? '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Policies applied</dt>
-              <dd className="text-stone-300">
-                {policies.length > 0 ? (
-                  <ul className="list-disc pl-4 space-y-0.5 font-mono text-[10px] text-stone-400">
-                    {policies.map((p, idx) => (
-                      <li key={`${idx}-${p}`}>{p}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-stone-500">Not in stream payload</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Run id</dt>
-              <dd className="text-stone-300 font-mono text-[10px]" title={runId ?? undefined}>
-                {shortIntegrityRunId(runId)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Related items (focus)</dt>
-              <dd className="text-stone-300 text-[10px] leading-snug break-words">{refsLine}</dd>
-            </div>
-          </dl>
-        </div>
-      </details>
-    </div>
-  )
-}
 
 /** Map workflow JSON panel modes → trace intents for copy / outcome attribution. */
 /** Syncs VE field focus into a ref for council preflight (must render under VisionExecutionFocusProvider). */
@@ -569,83 +416,8 @@ function useWorkspaceOrVeResonanceEntity(
   }, [mainView, ve?.focus?.core?.entity_id, ve?.focus?.core?.entity_type, folderPath, lastFolderPath])
 }
 
-function AgentChatResonanceSlider({
-  responseId,
-  agentLabel,
-  mainView,
-  folderPath,
-  lastFolderPath,
-  folderWorkflow,
-}: {
-  responseId: string
-  agentLabel: string | undefined
-  mainView: MainViewForResonance
-  folderPath: string
-  lastFolderPath: string
-  folderWorkflow?: boolean
-}) {
-  const { entityType, entityId } = useWorkspaceOrVeResonanceEntity(mainView, folderPath, lastFolderPath)
-  const { seatId, contextKind } = chatResonanceIntegration(agentLabel, { folderWorkflow })
-  return (
-    <ResonanceSlider
-      responseId={responseId}
-      seatId={seatId}
-      contextKind={contextKind}
-      entityType={entityType}
-      entityId={entityId}
-    />
-  )
-}
 
 /** Council thread: per-seat resonance sliders; VE field focus on Vision & Execution, else workspace + folder hash. */
-function CouncilTranscriptResonanceBridge({
-  text,
-  stripZenafSynthesis,
-  decorateSeatHeaders,
-  responseIdPrefix,
-  mainView,
-  folderPath,
-  lastFolderPath,
-  agentLabelForResonance,
-  folderWorkflowResonance,
-  integrationCommit,
-  pendingIntegration,
-  onOpenEntity,
-}: {
-  text: string
-  stripZenafSynthesis: boolean
-  decorateSeatHeaders: boolean
-  responseIdPrefix: string
-  mainView: MainViewForResonance
-  folderPath: string
-  lastFolderPath: string
-  agentLabelForResonance?: string
-  folderWorkflowResonance?: boolean
-  integrationCommit?: IntegrationCommitPayload | null
-  pendingIntegration?: PendingIntegrationPayload | null
-  onOpenEntity?: (p: EntityMentionOpenPayload) => void
-}) {
-  const { entityType, entityId } = useWorkspaceOrVeResonanceEntity(mainView, folderPath, lastFolderPath)
-  const { seatId, contextKind } = chatResonanceIntegration(agentLabelForResonance, {
-    folderWorkflow: folderWorkflowResonance,
-  })
-
-  return (
-    <CouncilTranscriptWithResonance
-      text={text}
-      stripZenafSynthesis={stripZenafSynthesis}
-      decorateSeatHeaders={decorateSeatHeaders}
-      responseIdPrefix={responseIdPrefix}
-      entityType={entityType}
-      entityId={entityId}
-      integratedSeatId={seatId}
-      integratedContextKind={contextKind}
-      integrationCommit={integrationCommit}
-      pendingIntegration={pendingIntegration}
-      onOpenEntity={onOpenEntity}
-    />
-  )
-}
 
 /** Single top strip: focus tools + (when idle) workspace “where” crumbs. Renders under VisionExecutionFocusProvider. */
 function UniversalContextStrip({
@@ -749,141 +521,6 @@ function focusTextareaRefEnd(textareaRef: Ref<HTMLTextAreaElement>) {
 }
 
 /** Council “Your reply” — registers focus/selection for record + insert; voice still uses DOM-first when the textarea stays active. Renders under VisionExecutionFocusProvider. */
-function CouncilQuestionTextarea({
-  value,
-  onChange,
-  textareaRef,
-  onInput,
-  onKeyDown,
-  placeholder,
-  className,
-  onAfterFilesDropped,
-}: {
-  value: string
-  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void
-  textareaRef: Ref<HTMLTextAreaElement>
-  onInput: () => void
-  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
-  placeholder: string
-  className: string
-  onAfterFilesDropped?: () => void
-}) {
-  const ctx = useVisionExecutionFocusOptional()
-  const valueRef = useRef(value)
-  valueRef.current = value
-  const [dragActive, setDragActive] = useState(false)
-
-  const onComposerDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    if (!dataTransferHasFiles(e.dataTransfer)) return
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'copy'
-    setDragActive(true)
-  }, [])
-
-  const onComposerDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const t = e.currentTarget
-    const rel = e.relatedTarget as Node | null
-    if (rel && t.contains(rel)) return
-    setDragActive(false)
-  }, [])
-
-  const onComposerDrop = useCallback(
-    async (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault()
-      e.stopPropagation()
-      setDragActive(false)
-      const files = e.dataTransfer.files
-      if (!files?.length) return
-      const next = await appendChatDroppedFiles(valueRef.current, files)
-      onChange({ target: { value: next } } as ChangeEvent<HTMLTextAreaElement>)
-      focusTextareaRefEnd(textareaRef)
-      onAfterFilesDropped?.()
-    },
-    [onChange, onAfterFilesDropped, textareaRef],
-  )
-
-  const dropZoneClass = dragActive
-    ? 'ring-2 ring-amber-500/75 ring-offset-2 ring-offset-stone-900 rounded-lg'
-    : ''
-
-  const desc = useMemo(
-    () =>
-      ({
-        surface: 'workspace' as const,
-        entity_type: 'council' as const,
-        entity_id: COUNCIL_REPLY_FOCUS_ID,
-        field_key: 'reply',
-        field_label: 'Council reply',
-        field_kind: 'idea_body' as const,
-      }) as const,
-    [],
-  )
-
-  useEffect(() => {
-    if (!ctx) return
-    const getter = () => valueRef.current
-    ctx.registerFieldTextGetter(COUNCIL_REPLY_FOCUS_FIELD_KEY, getter)
-    return () => ctx.unregisterFieldTextGetter(COUNCIL_REPLY_FOCUS_FIELD_KEY)
-  }, [ctx])
-
-  const ta = (
-    <textarea
-      data-testid="council-question-input"
-      data-zenaf-voice-insert="council-question"
-      ref={textareaRef}
-      value={value}
-      onChange={onChange}
-      onInput={onInput}
-      onKeyDown={onKeyDown}
-      placeholder={placeholder}
-      rows={1}
-      className={className}
-    />
-  )
-
-  if (!ctx) {
-    return (
-      <div
-        className={`min-w-0 ${dropZoneClass}`}
-        onDragOver={onComposerDragOver}
-        onDragLeave={onComposerDragLeave}
-        onDrop={(e) => void onComposerDrop(e)}
-      >
-        {ta}
-      </div>
-    )
-  }
-
-  const { notifyFieldFocused, notifyFieldBlurred, recordFieldSelection } = ctx
-
-  const syncSelection = useCallback(
-    (e: SyntheticEvent) => {
-      const t = e.target
-      if (!(t instanceof HTMLTextAreaElement)) return
-      recordFieldSelection(COUNCIL_REPLY_FOCUS_FIELD_KEY, t.selectionStart ?? 0, t.selectionEnd ?? 0)
-    },
-    [recordFieldSelection],
-  )
-
-  return (
-    <div
-      className={`min-w-0 ${dropZoneClass}`}
-      onFocusCapture={() => notifyFieldFocused(desc)}
-      onBlurCapture={() => notifyFieldBlurred()}
-      onSelectCapture={syncSelection}
-      onKeyUpCapture={syncSelection}
-      onClickCapture={syncSelection}
-      onDragOver={onComposerDragOver}
-      onDragLeave={onComposerDragLeave}
-      onDrop={(e) => void onComposerDrop(e)}
-    >
-      {ta}
-    </div>
-  )
-}
 
 const WORKFLOW_JSON_INTENT_BY_MODE: Record<'analyze' | 'simulate' | 'assess' | 'recommend', string> = {
   analyze: WORKSPACE_ACTION_INTENTS.analyze,
@@ -1028,7 +665,6 @@ const COUNCIL_STREAM_MAX_MS = 15 * 60 * 1000
  */
 const COUNCIL_STREAM_IDLE_MS = 3 * 60 * 1000
 /** Non-council agent bubbles stay short; council + folder advisor can be long (many seats + synthesis). */
-const AGENT_THREAD_DISPLAY_MAX_CHARS = 2000
 
 function newScopedThreadNestId(): string {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -1903,20 +1539,6 @@ function App() {
     el.style.overflowY = fullScroll > maxH ? 'auto' : 'hidden'
   }, [])
 
-  const appendFilesToCouncilQuestion = useCallback(async (files: FileList | null) => {
-    if (!files?.length) return
-    const next = await appendChatDroppedFiles(questionRef.current, files)
-    setQuestion(next)
-    requestAnimationFrame(() => {
-      adjustCouncilQuestionTextareaHeight()
-      councilQuestionTextareaRef.current?.focus()
-      const ta = councilQuestionTextareaRef.current
-      if (ta) {
-        const len = ta.value.length
-        ta.setSelectionRange(len, len)
-      }
-    })
-  }, [adjustCouncilQuestionTextareaHeight])
 
   useLayoutEffect(() => {
     adjustCouncilQuestionTextareaHeight()
@@ -2079,11 +1701,6 @@ function App() {
   /** Matches `councilRunId` for the in-flight / last council reply — keeps resonance slider key stable stream → final message. */
   const councilResonanceRunIdRef = useRef<string | null>(null)
   /** Stable id for the orphan “agent response” strip when `agentThread` is empty (avoids shared `thread-fallback` key). */
-  const threadAgentStripResonanceIdRef = useRef<string>(
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `agent-strip-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-  )
   const councilVeEntityBundleRef = useRef<VisionMapEntityBundle | null>(null)
   const councilRuntimeRef = useRef<{
     mainView: string
@@ -2129,7 +1746,6 @@ function App() {
     })
   }, [scopedDigressionKey, councilIdeaLiveLabelsSeq])
   /** Expanded `scoped_thread_nest` rows in the council transcript (collapsed by default). */
-  const [councilExpandedNestIds, setCouncilExpandedNestIds] = useState<Set<string>>(() => new Set())
   const [councilSeatSlots, setCouncilSeatSlots] = useState<CouncilSeatSlot[]>(() =>
     Array.from({ length: EXPANDED_MAX_SEATS }, (_, i) => ({
       id: `cs-${i}`,
@@ -2144,12 +1760,16 @@ function App() {
   const councilInvocationNextRef = useRef<'default' | 'full_multiseat'>('default')
   /** When map triggers council, stash payload so bounded transforms resolve anchor + title without re-streaming. */
   const councilRunMapPayloadRef = useRef<MapNodePayload | null>(null)
-  const [expandedThreadGuidePromptId, setExpandedThreadGuidePromptId] = useState<string | null>(null)
-  const [activeConversationalSuggestionPromptId, setActiveConversationalSuggestionPromptId] =
+  // NOTE (dead-code removal, 2026-11-12): the VALUE bindings of these five
+  // guide-stack states were removed as unused (tsc noUnusedLocals), but
+  // their setters are still called by live handlers — so the declarations
+  // stay with the value slot elided ([, setter]), not deleted outright.
+  const [, setExpandedThreadGuidePromptId] = useState<string | null>(null)
+  const [, setActiveConversationalSuggestionPromptId] =
     useState<string | null>(null)
-  const [guideStackListOpen, setGuideStackListOpen] = useState(false)
-  const [nestedStackGuidePromptId, setNestedStackGuidePromptId] = useState<string | null>(null)
-  const [seenStackGuidePromptIds, setSeenStackGuidePromptIds] = useState<string[]>([])
+  const [, setGuideStackListOpen] = useState(false)
+  const [, setNestedStackGuidePromptId] = useState<string | null>(null)
+  const [, setSeenStackGuidePromptIds] = useState<string[]>([])
   const [councilAdvancedOptions, setCouncilAdvancedOptions] = useState(false)
   // Council personality mode: which version of each seat to use (user's choice, per purpose).
   const [councilPersonalityMode, setCouncilPersonalityMode] =
@@ -4261,16 +3881,6 @@ function App() {
     }
   }, [currentUser])
 
-  const handleCouncilPersonalityModeChange = useCallback(
-    (mode: CouncilPersonalityMode) => {
-      const prev = councilPersonalityMode
-      setCouncilPersonalityMode(mode)
-      void saveCouncilPersonalityMode(mode).then((ok) => {
-        if (!ok) setCouncilPersonalityMode(prev) // revert: the default didn't persist
-      })
-    },
-    [councilPersonalityMode],
-  )
 
   const councilAgentList = useMemo(() => {
     const base = perspectiveAgents.length > 0 ? perspectiveAgents : BUILT_IN_PERSPECTIVES
@@ -4357,31 +3967,7 @@ function App() {
     [buildWorkoutPerspectiveDefinition],
   )
 
-  const councilLlmSelectOptions = useMemo(() => {
-    const auto = { value: 'auto', label: 'Auto (policy)' }
-    const staticOrder: { value: string; label: string }[] = [
-      auto,
-      { value: 'meta', label: 'Meta (Muse)' },
-      { value: 'ollama', label: 'Ollama (local)' },
-      { value: 'openai', label: 'OpenAI' },
-      { value: 'anthropic', label: 'Anthropic' },
-      { value: 'google', label: 'Google (Gemini)' },
-      { value: 'xai', label: 'xAI (Grok)' },
-      { value: 'openrouter', label: 'OpenRouter' },
-    ]
-    if (!currentUser || llmProviderRows.length === 0) return staticOrder
-    const rowById = new Map(llmProviderRows.map((p) => [p.id, p]))
-    return staticOrder.map((o) => {
-      if (o.value === 'auto') return o
-      const r = rowById.get(o.value)
-      if (!r) return o
-      if (r.available) return { value: o.value, label: r.display_name }
-      if (!r.enabled) return { value: o.value, label: `${r.display_name} (off in Settings)` }
-      return { value: o.value, label: `${r.display_name} (add key in Settings)` }
-    })
-  }, [currentUser, llmProviderRows])
   const councilMaxSeats = councilExpandedMode ? EXPANDED_MAX_SEATS : MAX_COUNCIL_SEATS
-  const councilSelectedCount = councilSeatSlots.slice(0, councilMaxSeats).filter((s) => s.actorId).length
   useEffect(() => {
     const visibleIds = councilSeatSlots.slice(0, councilMaxSeats).map((s) => s.id)
     if (visibleIds.length === 0) return
@@ -4390,17 +3976,6 @@ function App() {
     }
   }, [councilSeatSlots, councilMaxSeats, selectedCouncilSlotId])
 
-  const applyCouncilSeatClear = useCallback((slotId: string) => {
-    setCouncilSeatSlots((prev) => {
-      const vis = prev.slice(0, councilMaxSeats)
-      const othersFilled = vis.filter((s) => s.id !== slotId && s.actorId != null).length
-      if (othersFilled === 0) {
-        setMandatesBySeatId((m) => ({ ...m, [slotId]: 'thinking_partner' }))
-        return prev.map((s) => (s.id === slotId ? { ...s, actorId: 'zenaf' } : s))
-      }
-      return prev.map((s) => (s.id === slotId ? { ...s, actorId: null } : s))
-    })
-  }, [councilMaxSeats])
 
   // Conversational thread: last agent output / user input so next run can continue the thread
   type AgentThreadMessage = {
@@ -4451,34 +4026,7 @@ function App() {
   const agentThreadRef = useRef(agentThread)
   agentThreadRef.current = agentThread
 
-  const handleCouncilEntityMentionOpen = useCallback((p: EntityMentionOpenPayload) => {
-    const enriched = enrichScopedDigressionLabel(p, {
-      ideaLabels: councilIdeaLabelsRef.current,
-      bundle: councilVeEntityBundleRef.current,
-    })
-    setCouncilScopeThreadStartIndex(agentThreadRef.current.length)
-    setCouncilScopedDigression(enriched)
-  }, [])
 
-  const foldScopedThreadIntoNest = useCallback(() => {
-    const start = councilScopeThreadStartIndexRef.current
-    const label = councilScopedDigressionRef.current?.label ?? 'Focused thread'
-    setCouncilScopedDigression(null)
-    setCouncilScopeThreadStartIndex(null)
-    setAgentThread((prev) => {
-      if (start == null || start >= prev.length) return prev
-      const nestId = newScopedThreadNestId()
-      const children = prev.slice(start).map((row) => ({ ...row }))
-      const before = prev.slice(0, start)
-      const nest: AgentThreadMessage = {
-        role: 'system',
-        content: '',
-        threadItemKind: 'scoped_thread_nest',
-        nestedScopedThread: { id: nestId, label, children },
-      }
-      return [...before, nest]
-    })
-  }, [])
 
   const lastConversationalFocusInviteRef = useRef<{ key: string; t: number } | null>(null)
 
@@ -4490,17 +4038,6 @@ function App() {
     if (sig?.stackRowId) return sig.stackRowId
     return sig?.promptId ?? ephemeralGuidePromptIdFromContent(row.content)
   }, [])
-  const removeGuideRowsForPromptId = useCallback(
-    (promptId: string) => {
-      setExpandedThreadGuidePromptId((e) => (e === promptId ? null : e))
-      setNestedStackGuidePromptId((n) => (n === promptId ? null : n))
-      setActiveConversationalSuggestionPromptId((a) => (a === promptId ? null : a))
-      setAgentThread((prev) =>
-        prev.filter((row) => !(row.role === 'guide' && guideRowPromptId(row) === promptId)),
-      )
-    },
-    [guideRowPromptId],
-  )
 
   const dismissGuideFromThread = useCallback(
     (stackRowOrPromptId: string) => {
@@ -4520,7 +4057,6 @@ function App() {
     [guideRowPromptId],
   )
 
-  const removeAgentThreadGuidesForPromptId = dismissGuideFromThread
   const hidePromptActionsForPromptId = useCallback(
     (promptId: string) => {
       setAgentThread((prev) =>
@@ -4538,10 +4074,14 @@ function App() {
   const [councilStreamPhase, setCouncilStreamPhase] = useState<CouncilStreamPhase>('idle')
   const councilTransportTimingRef = useRef<CouncilTransportTimings | null>(null)
   /** How to render last completed council output when thread is empty (transcript vs plain). */
-  const [lastCouncilPresentationKind, setLastCouncilPresentationKind] = useState<
+  // NOTE (dead-code removal, 2026-11-12): the VALUE bindings of these two
+  // states were removed as unused (tsc noUnusedLocals), but their setters
+  // are still called by live code — declarations stay with the value slot
+  // elided ([, setter]).
+  const [, setLastCouncilPresentationKind] = useState<
     'thinking' | 'multiseat' | 'folder'
   >('multiseat')
-  const [lastCouncilWasFolderWorkflow, setLastCouncilWasFolderWorkflow] = useState(false)
+  const [, setLastCouncilWasFolderWorkflow] = useState(false)
   /** When true, server runs integrator pass and UI shows “Zenaf synthesis”; default off. */
   const [includeCouncilSynthesis, setIncludeCouncilSynthesis] = useState(false)
   const [councilSynthesisIntegrity, setCouncilSynthesisIntegrity] = useState<CouncilSynthesisIntegrityState | null>(null)
@@ -4572,8 +4112,6 @@ function App() {
       agentConversationEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
     }
   }, [streamingCouncilText, loading])
-  const [councilInsightSaving, setCouncilInsightSaving] = useState(false)
-  const [councilInsightNotice, setCouncilInsightNotice] = useState<string | null>(null)
   useEffect(() => {
     if (activeMode !== 'council' && councilStreamPhase === 'completed') {
       setCouncilStreamPhase('idle')
@@ -4916,11 +4454,7 @@ function App() {
     setQuery(q)
     runWebResearch(q)
   }
-  const runSelectedAgent = () => {
-    void runCouncil(undefined)
-  }
   // Only block while a run is in flight. Empty question is OK (runCouncil defaults). At least one seat is always implied (default Zenaf thinking partner).
-  const agentRunDisabled = loading || councilTransformLoading
   const agentResponse: string | null =
     lastMode === 'council' && lastCouncilResult ? lastCouncilResult
     : lastMode === 'web_research' && lastWebResearchResult
@@ -4941,24 +4475,6 @@ function App() {
     return null
   }, [streamingCouncilText, agentThread, lastMode, agentResponse])
 
-  const handleRecordCouncilInsight = useCallback(async () => {
-    const text = resolveCouncilInsightText()
-    if (!text?.trim()) return
-    setCouncilInsightSaving(true)
-    setCouncilInsightNotice(null)
-    try {
-      await postCouncilInsightRecognition(veApiPost, {
-        bodyText: text,
-        label: streamingCouncilRunLabel || undefined,
-        userId: currentUser?.id ?? null,
-      })
-      setCouncilInsightNotice('Recorded as decision (meaning-only recognition).')
-    } catch (e) {
-      setCouncilInsightNotice(e instanceof Error ? e.message : 'Could not record insight')
-    } finally {
-      setCouncilInsightSaving(false)
-    }
-  }, [resolveCouncilInsightText, currentUser?.id, streamingCouncilRunLabel])
 
   // Tree-as-organism (phase 1): the Living Tree's node sheets mount the real
   // existing views — same props and data flow as their pages, rendered in
@@ -5106,9 +4622,6 @@ function App() {
   const [mainView, setMainView] = useState<MainView>('living_tree')
   // Mobile: the conversation panel starts collapsed so the view's content owns
   // the screen; expand on demand. Desktop (lg+) always shows it.
-  const [chatPanelCollapsed, setChatPanelCollapsed] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023.98px)').matches,
-  )
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
   /** Avoid new object identity on every VisionExecutionView `bundleForFocus` refresh when ids are unchanged. */
   const stableVeSelectionForExecutionView = useMemo(
@@ -5176,27 +4689,6 @@ function App() {
   const [workoutExitToast, setWorkoutExitToast] = useState<string | null>(null)
   const showFolderReviewPanel = mainView === 'workspace' && lastRecommendResult != null && !lastRecommendResult.error
 
-  const mediationPanelMode = useMemo(
-    () =>
-      deriveMediationPanelMode({
-        showFolderReviewPanel,
-        workoutActive,
-        councilTransformLoading,
-        activeMode,
-        loading,
-        agentThreadLength: agentThread.length,
-        councilStreamPhase,
-      }),
-    [
-      showFolderReviewPanel,
-      workoutActive,
-      councilTransformLoading,
-      activeMode,
-      loading,
-      agentThread.length,
-      councilStreamPhase,
-    ],
-  )
 
   useEffect(() => {
     if (!workoutExitToast) return
@@ -5599,13 +5091,6 @@ function App() {
     () => new Set(stackedGuides.map((g) => guideRowPromptId(g))),
     [stackedGuides, guideRowPromptId],
   )
-  const firstStackedGuideIndex = useMemo(() => {
-    for (let i = 0; i < agentThread.length; i++) {
-      const m = agentThread[i]
-      if (m?.role === 'guide' && stackedPromptIdSet.has(guideRowPromptId(m))) return i
-    }
-    return -1
-  }, [agentThread, stackedPromptIdSet, guideRowPromptId])
 
   /** Prune seen ids to current stack; collapse nested UI when stack becomes empty (same node). */
   useEffect(() => {
@@ -5634,17 +5119,7 @@ function App() {
    * and on map seed (`mergedCtx`). Entity/triad/evidence text changes alter the string → deferred prompt
    * does not reappear in-thread until context stabilizes; server still owns schedule via check API.
    */
-  const registerDeferContextForPrompt = useCallback(
-    (promptId: string) => {
-      const fp = buildDevelopmentalMapFingerprint(developmentalGuidancePreview)
-      deferResurfaceFingerprintRef.current.set(promptId, fp)
-    },
-    [developmentalGuidancePreview],
-  )
 
-  const markGuideInteracted = useCallback((_promptId: string) => {
-    /* session hook reserved; prompt-signal actions already post to server */
-  }, [])
 
   const [pendingThreadSuggestions, setPendingThreadSuggestions] = useState<PendingThreadSuggestion[]>([])
   const pendingThreadSuggestionsRef = useRef(pendingThreadSuggestions)
@@ -5654,8 +5129,6 @@ function App() {
   const lastConversationSubjectLabelRef = useRef<string>('')
 
   const [resolvedHandoffItemIds, setResolvedHandoffItemIds] = useState<string[]>([])
-  const resolvedHandoffSet = useMemo(() => new Set(resolvedHandoffItemIds), [resolvedHandoffItemIds])
-  const [handoffNotesBusyId, setHandoffNotesBusyId] = useState<string | null>(null)
 
   useEffect(() => {
     if (agentThread.length === 0) return
@@ -5775,65 +5248,11 @@ function App() {
     return WORKSPACE_DEFER_ENTITY
   }, [veSelection])
 
-  const runGuideDiscussFromCollapsed = useCallback(
-    (stackRowId: string, questionText: string, canonicalPromptId: string) => {
-      engageGuideDiscussion(stackRowId, { councilPrefill: councilPrefillForGuideQuestion(questionText) })
-      hidePromptActionsForPromptId(stackRowId)
-      void postPromptSignal({
-        prompt_id: canonicalPromptId,
-        action: 'engaged',
-        entity_type: promptSignalAttachRef.entity_type,
-        entity_id: promptSignalAttachRef.entity_id,
-        prompt_summary: questionText.slice(0, 400),
-        deferred_until: null,
-      })
-    },
-    [engageGuideDiscussion, hidePromptActionsForPromptId, promptSignalAttachRef],
-  )
 
-  const markStackGuideSeen = useCallback((promptId: string) => {
-    if (!promptId) return
-    setSeenStackGuidePromptIds((prev) => (prev.includes(promptId) ? prev : [...prev, promptId]))
-  }, [])
 
-  const toggleGuideStackList = useCallback(() => {
-    setGuideStackListOpen((o) => !o)
-    setNestedStackGuidePromptId(null)
-  }, [])
 
-  const handleHandoffCommitNow = useCallback(
-    (item: { id: string; text: string }) => {
-      setResolvedHandoffItemIds((r) => [...r, item.id])
-      setActiveMode('council')
-      setQuestion(HANDOFF_COMMIT_STARTER)
-      window.setTimeout(() => {
-        const el = councilQuestionTextareaRef.current
-        el?.focus()
-        const len = el?.value.length ?? 0
-        el?.setSelectionRange(len, len)
-      }, 0)
-    },
-    [],
-  )
 
-  const handleHandoffSaveNotes = useCallback(
-    async (item: { id: string; text: string }, previousSubjectKey: string) => {
-      setHandoffNotesBusyId(item.id)
-      try {
-        await appendEntityNotesLine(previousSubjectKey, item.text)
-        setResolvedHandoffItemIds((r) => [...r, item.id])
-      } catch {
-        /* non-blocking; user can copy from thread */
-      } finally {
-        setHandoffNotesBusyId(null)
-      }
-    },
-    [appendEntityNotesLine],
-  )
 
-  const handleHandoffDismissItem = useCallback((item: { id: string; text: string }) => {
-    setResolvedHandoffItemIds((r) => [...r, item.id])
-  }, [])
 
   if (authLoading) {
     return (

@@ -245,11 +245,12 @@ def test_dedicated_turn_frame_fox_voice():
     assert len(turn) == 4494
     assert len(turn) < 9000
     assert len(runtime._engage_frame()) == 7670
-    # No other seat carries the Fox text; Crane still opens on the
-    # generic frame (his dedicated frame rides the Crane build).
+    # No other seat carries the Fox text; Crane now opens on his own
+    # dedicated frame (#345), not the generic frame.
     crane = ENC.get_definition(MT.get_script("ambassador", 1))
     assert "You are the Fox, the Maverick" not in crane.turn_frame
-    assert "Respond to what the user actually just communicated" in crane.turn_frame
+    assert "You are Crane, the Ambassador" in crane.turn_frame
+    assert "Respond to what the user actually just communicated" not in crane.turn_frame
 
 
 # ---------------------------------------------------------------------------

@@ -2,19 +2,21 @@
 
 Deterministic; no model calls. The T-series is the acceptance gate.
 
-PRE-REBASE NOTE (read before triaging failures): this branch does NOT
-do the §12 shadow-sentence removal — the Gardener build owns it
-(archetypes.py:150-153 philosophy line + encounter.py:2747 guidance
-sentence + the :2716 slice label "Shadow: appeasement."). Every
-guidance-bearing figure in this file is therefore +145 over its
-post-rebase value until this branch rebases onto post-Gardener main.
-The tests assert the POST-REBASE figures (the Firebrand S1 T3/T4
-pattern): T1-after, T3-exact, T5, and the T7 Crane length fail
-pre-rebase by exactly +145 (or by the shadow lines still being
-present, for T5) and pass after rebase. The cap assertions (<= 9,000)
-pass pre-rebase. The verification report
-(~/workspace/crane-s1-logs/verification-report.md) records the
-pre-rebase measured values and the reconciliation.
+POST-REBASE NOTE (2026-11-12): this branch has rebased onto
+post-Gardener main (213a084, then c75362e after the Firebrand S1
+merge #342), so the §12 shadow sentence is GONE and the +145
+pre-rebase offset no longer applies. The pins in this file were
+re-pinned to the verified post-Level-1 measurements on 2026-11-12
+(founder ruling, test-only correction): the widespread ~666-char
+reductions are the Level 1 relocation of the four standing
+instruction lines out of the capped frame into the shared canonical
+tier (local_ai/conversation/canonical_tier.py, injected by the
+meeting path only — Talk/demo are byte-identical); Mentor's
++196/+199 is the Gardener S1 script revision (#346); the
+champion's move is the Firebrand S1 merge (#342), not this branch.
+The design corrections below still stand as corrections to the
+design's own simulation; the pinned figures in the tests are the
+post-L1 measurements, not the design's figures.
 
 DESIGN CORRECTIONS (verified against the design's own simulation and
 the runtime):
@@ -177,29 +179,30 @@ def _crane_prompts():
 # ---------------------------------------------------------------------------
 
 def test_t1_crane_post_edit_figures():
-    """§18.1 corrected: engage 8,748/8,850, turn 5,456/5,558, meeting
-    prompts 16,051/12,759. Fails pre-rebase by +145 (the §12 shadow
-    sentence is still in the guidance until the Gardener build lands)."""
+    """§18.1 corrected, re-pinned post-Level-1 (2026-11-12): engage
+    8,082/8,184, turn 4,790/4,892, meeting prompts 15,224/11,932.
+    (Pre-L1 figures were 8,748/8,850, 5,456/5,558, 16,051/12,759.)"""
     defn, (ef, tf, me, mt) = _crane_prompts()
     ef_all, tf_all = _all_met(defn, MSG)
-    assert len(ef) == 8748
-    assert len(ef_all) == 8850
-    assert len(tf) == 5456
-    assert len(tf_all) == 5558
-    assert len(me) == 16051
-    assert len(mt) == 12759
+    assert len(ef) == 8082
+    assert len(ef_all) == 8184
+    assert len(tf) == 4790
+    assert len(tf_all) == 4892
+    assert len(me) == 15224
+    assert len(mt) == 11932
 
 
 def test_t1_fox_engage_post_guard():
     """§18.2: the Fox engage frame moves only by the §2 guard
-    (7,825 -> 8,067). The Fox turn frame is the Maverick build's;
-    this branch leaves it at the 4,236 baseline (see T7)."""
+    (7,825 -> 8,067 pre-L1; 7,398 post-L1). The Fox turn frame is
+    the Maverick build's; this branch leaves it at the post-L1
+    baseline (3,567; 4,236 pre-L1) (see T7)."""
     defn = _definition("maverick")
     ef, tf, me, mt = _meeting_prompts(defn, FOX_MSG)
-    assert len(ef) == 8067
-    assert len(tf) == 4236
-    assert len(me) == 15046
-    assert len(mt) == 11215
+    assert len(ef) == 7398
+    assert len(tf) == 3567
+    assert len(me) == 14372
+    assert len(mt) == 10541
 
 
 # ---------------------------------------------------------------------------
@@ -300,17 +303,18 @@ def test_t2_dispute_first_precedes_question_all_seven():
 # ---------------------------------------------------------------------------
 
 def test_t3_crane_engage_budget_corrected():
-    """Corrected post-rebase figures (see module docstring): engage
-    8,748 fresh / 8,850 all-met, headroom 252 / 150. The §5 approval
+    """Corrected figures, re-pinned post-Level-1 (2026-11-12): engage
+    8,082 fresh / 8,184 all-met, headroom 918 / 816. (Pre-L1:
+    8,748 / 8,850, headroom 252 / 150.) The §5 approval
     (accept 169) was of a figure measured with the wrong met-seat id;
-    the true headroom is 150 — flagged for the founder, not silently
-    substituted."""
+    the true pre-L1 headroom was 150 — flagged for the founder, not
+    silently substituted."""
     defn, (ef, tf, me, mt) = _crane_prompts()
     ef_all, _ = _all_met(defn, MSG)
-    assert len(ef) == 8748
-    assert len(ef_all) == 8850
-    assert CAP - len(ef) == 252
-    assert CAP - len(ef_all) == 150
+    assert len(ef) == 8082
+    assert len(ef_all) == 8184
+    assert CAP - len(ef) == 918
+    assert CAP - len(ef_all) == 816
     assert len(ef) <= CAP
     assert len(ef_all) <= CAP
 
@@ -318,9 +322,9 @@ def test_t3_crane_engage_budget_corrected():
 def test_t3_crane_turn_budget():
     defn, (ef, tf, me, mt) = _crane_prompts()
     _, tf_all = _all_met(defn, MSG)
-    assert len(tf) == 5456
-    assert len(tf_all) == 5558
-    assert CAP - len(tf_all) == 3442
+    assert len(tf) == 4790
+    assert len(tf_all) == 4892
+    assert CAP - len(tf_all) == 4108
     assert len(tf) <= CAP
     assert len(tf_all) <= CAP
 
@@ -345,7 +349,7 @@ def test_t4_talk_byte_identical():
     from local_ai.council.canonical.fox import FOX_RECORD
 
     assert len(_talk("ambassador", MSG, True)) == 3001
-    assert len(_talk("ambassador", MSG, False)) == 2871
+    assert len(_talk("ambassador", MSG, False)) == 2706
     assert len(_talk("maverick", FOX_MSG, True)) == 3062
     assert len(_talk("maverick", FOX_MSG, False)) == 2791
     assert len("\n".join(R.render_crane_ordinary(CRANE_RECORD, detail="compact"))) == 1283
@@ -387,14 +391,17 @@ def test_t5_shadow_lines_absent():
 def test_t5_other_seats_unmoved_by_section12_scope():
     """The §12-adjacent work must not move the other six seats: their
     turn frames are baseline-identical and their engage frames carry
-    only the §2 guard (+242) and, for Raven/Bear, the §9 swap."""
+    only the §2 guard (+242) and, for Raven/Bear, the §9 swap.
+    Re-pinned post-Level-1 (2026-11-12) to the post-#342 main values;
+    the champion's move is the Firebrand S1 merge (#342), not this
+    branch."""
     expected_engage = {
-        "conductor": 8617, "mentor": 8081, "champion": 7837,
-        "guardian": 7865, "maverick": 8067, "skeptic": 8265,
+        "conductor": 7943, "mentor": 8277, "champion": 8168,
+        "guardian": 7198, "maverick": 7398, "skeptic": 7586,
     }
     expected_turn = {
-        "conductor": 6848, "mentor": 5287, "champion": 4731,
-        "guardian": 4714, "maverick": 4236, "skeptic": 5598,
+        "conductor": 6176, "mentor": 5486, "champion": 5064,
+        "guardian": 4049, "maverick": 3567, "skeptic": 4921,
     }
     for arch, want_eng in expected_engage.items():
         defn = _definition(arch)
@@ -437,7 +444,7 @@ def test_t7_crane_turn_frame_is_dedicated():
     defn, (ef, tf, me, mt) = _crane_prompts()
     assert tf.startswith(ENC._AMBASSADOR_TURN_FRAME)
     assert len(ENC._AMBASSADOR_TURN_FRAME) == 1404
-    assert len(tf) == 5456
+    assert len(tf) == 4790
     assert "Respond to what the user actually just communicated" not in tf
     # The default stays as the fallback for seats without their own frame.
     assert ENC._GENERIC_TURN_FRAME.startswith(
@@ -446,11 +453,12 @@ def test_t7_crane_turn_frame_is_dedicated():
 
 def test_t7_fox_turn_frame_unchanged_by_this_branch():
     """§11.2 is the Maverick build's. This branch must not move the Fox
-    frame: it still starts with the generic frame at the baseline 4,236."""
+    frame: it still starts with the generic frame at the post-L1
+    baseline 3,567 (4,236 pre-L1)."""
     defn = _definition("maverick")
     _, tf, _, _ = _meeting_prompts(defn, FOX_MSG)
     assert tf.startswith(ENC._GENERIC_TURN_FRAME)
-    assert len(tf) == 4236
+    assert len(tf) == 3567
 
 
 # ---------------------------------------------------------------------------
@@ -466,13 +474,14 @@ def test_t8_weaver_steward_parity():
     assert DISPUTE_FIRST in S.SCRIPT_CORRECTION_FRAME
     cf = S.SCRIPT_CORRECTION_FRAME
     assert cf.index(DISPUTE_FIRST) < cf.index("If they ask a question, answer it")
-    # Weaver engage frame: 8,617 fresh, headroom 383 (§2.1).
+    # Weaver engage frame: 7,943 fresh, headroom 1,057 (§2.1, re-pinned
+    # post-Level-1 2026-11-12; pre-L1 8,617 fresh, headroom 383).
     defn = _definition("conductor")
     ef, _ = _meeting_prompts(defn, MSG)[:2]
     ef_all, _ = _all_met(defn, MSG)
-    assert len(ef) == 8617
-    assert CAP - len(ef) == 383
-    assert len(ef_all) == 8719
+    assert len(ef) == 7943
+    assert CAP - len(ef) == 1057
+    assert len(ef_all) == 8045
 
 
 # ---------------------------------------------------------------------------

@@ -536,6 +536,21 @@ class _MeetingHost:
                 return m
         return None
 
+    def recent_history(
+        self, limit: int = ENC._CARRIED_OFFER_WINDOW
+    ) -> list[dict]:
+        """FC5 (founder ruling 2026-11-12, read-back offer
+        continuity): the most recent ``limit`` messages for this
+        meeting, oldest-first, from the server-side conversation
+        store the host already writes to — strictly per-user,
+        scoped by the host's own user id and meeting conversation
+        id. The filing hook reads this bounded window to resolve
+        the single offer carried across exactly one read-back turn;
+        it never searches further back."""
+        return self._svc.conversations.history(
+            self._user_id, self._cid, limit=limit
+        )
+
 
 def _is_ceiling_filed(row: dict[str, Any]) -> bool:
     """Whether this run's impression was filed by the ceiling wrap

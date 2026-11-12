@@ -74,17 +74,39 @@ def _voice_msg(msg_id: str, body: str) -> dict:
     }
 
 
+def _user_msg(msg_id: str, body: str) -> dict:
+    return {
+        "id": msg_id,
+        "user_id": UID,
+        "conversation_id": CID,
+        "archetype_id": "conductor",
+        "role": "user",
+        "body": body,
+        "mode": "base",
+        "context": {"meeting": True},
+        "created_at": "2026-11-12T00:00:00+00:00",
+    }
+
+
 class _Host:
     """Minimal host: records what the runtime asks of it."""
 
-    def __init__(self, last_voice: dict | None = None) -> None:
+    def __init__(self, last_voice: dict | None = None,
+                 history: list[dict] | None = None) -> None:
         self._last = last_voice
+        self._history = list(history) if history is not None else []
         self.said: list[str] = []
         self.generated: list[str] = []
         self.closed: list[str] = []
 
     def last_voice_message(self) -> dict | None:
         return self._last
+
+    def recent_history(self, limit: int = 8) -> list[dict]:
+        """The bounded window the carried-offer resolver reads."""
+        if limit <= 0:
+            return []
+        return self._history[-int(limit):]
 
     def generate(self, frame: str) -> str:
         self.generated.append(frame)
@@ -308,6 +330,26 @@ def test_f5_5_recency_offer_must_be_last_voice_turn(tmp_path):
           state, "Yes", service)
     assert service.list_commitments(UID) == []
     assert state.confirmed_writes == []
+    # A conversational turn after the read-back also breaks the
+    # carry (founder ruling 2026-11-12): the offer is reachable
+    # only across exactly one read-back turn, not across a
+    # read-back PLUS a conversational turn.
+    state.impression_text = "A held read of the visitor."
+    intervened = _Host(
+        _voice_msg("msg-reply-2", "A plain reply, no block."),
+        history=[
+            _voice_msg("msg-offer-1", _offer_body()),
+            _voice_msg("msg-impression", "A held read of the visitor."),
+            _user_msg("msg-u-readback", "Yes, that's right."),
+            _voice_msg("msg-readback-reply", "Noted."),
+            _user_msg("msg-u-conv", "Tell me more about that."),
+            _voice_msg("msg-reply-2", "A plain reply, no block."),
+            _user_msg("msg-u-now", "Yes"),
+        ],
+    )
+    _file(intervened, state, "Yes", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
     # The offer in the immediately previous model turn files.
     _file(_Host(_voice_msg("msg-offer-1", _offer_body())),
           state, "Yes", service)
@@ -319,12 +361,14 @@ def test_f5_5_recency_offer_must_be_last_voice_turn(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_f5_6_read_back_lag_no_filing_then_next_turn_files(ft_ctx, tmp_path):
-    """An offer accepted while answering the read-back files nothing
-    on that turn (the hook does not run on the response turn); on
-    the next conversational turn — the seat having re-offered with
-    the block, per the prohibition + block-emission instruction —
-    the same affirmation files.
+def test_f5_6_read_back_lag_files_without_re_offer(ft_ctx, tmp_path):
+    """Founder ruling 2026-11-12 (read-back offer continuity): an
+    offer accepted while answering the read-back files nothing on
+    that turn (the hook does not run on the response turn); on the
+    next conversational turn the same affirmation files the
+    ORIGINAL offer — no re-offer required — because exactly one
+    read-back turn intervened. The filing keeps the original
+    offer's id, label, and provenance.
 
     The hook constructs its default service on the filing path, so
     the default store is pointed at an isolated database (ft_ctx)
@@ -344,14 +388,307 @@ def test_f5_6_read_back_lag_no_filing_then_next_turn_files(ft_ctx, tmp_path):
     assert service.list_commitments(UID) == []
     assert state.confirmed_writes == []
     assert state.impression_answered is True
-    # Next conversational turn: the seat re-offered (block in the
-    # immediately previous model turn) and the visitor affirms.
-    host._last = _voice_msg("msg-offer-2", _offer_body())
+    # Next conversational turn: the seat did NOT re-offer. The last
+    # voice message is its read-back response (no block); the
+    # carried offer resolves from the bounded history window.
+    response = _voice_msg("msg-readback-reply", "Got it — noted, and held.")
+    host._last = response
+    host._history = [
+        offer,
+        _voice_msg("msg-impression", "A held read of the visitor."),
+        _user_msg("msg-u-readback", "Yes, lock it in"),
+        response,
+        _user_msg("msg-u-now", "Yes, lock it in"),
+    ]
     runtime.handle_turn(host, state, "Yes, lock it in", 0)
     rows = service.list_commitments(UID)
     assert len(rows) == 1
+    assert rows[0]["text"] == LABEL
+    assert rows[0]["source_message_id"] == "msg-offer-1"
+    assert rows[0]["source_quote"] == "Yes, lock it in"
     assert len(state.confirmed_writes) == 1
     assert state.confirmed_writes[0]["status"] == "recorded"
+    assert state.confirmed_writes[0]["source_message_id"] == "msg-offer-1"
+
+
+# ---------------------------------------------------------------------------
+# T-F5-6b — read-back offer continuity (founder ruling 2026-11-12)
+# ---------------------------------------------------------------------------
+
+IMPRESSION = "A held read of the visitor."
+
+
+def _pre_voices(*, offer_in="reply", offer_label=LABEL):
+    """The pre-read-back model turn's voices, in order, plus the
+    impression text the state must carry for the walk to identify
+    the read-back turn. ``offer_in``: "reply" (block in the reply
+    before the impression), "impression" (block in the impression
+    itself), "both-same" (the same label in both), "both-different"
+    (reply "first", impression "second"), or None (no block)."""
+    if offer_in == "reply":
+        return ([_voice_msg("msg-offer-1", _offer_body(offer_label)),
+                 _voice_msg("msg-impression", IMPRESSION)], IMPRESSION)
+    if offer_in == "impression":
+        body = _offer_body(offer_label)
+        return ([_voice_msg("msg-impression", body)], body)
+    if offer_in == "both-same":
+        body = _offer_body(offer_label)
+        return ([_voice_msg("msg-offer-1", body),
+                 _voice_msg("msg-impression", body)], body)
+    if offer_in == "both-different":
+        return ([_voice_msg("msg-offer-1", _offer_body("first")),
+                 _voice_msg("msg-impression", _offer_body("second"))],
+                _offer_body("second"))
+    return ([_voice_msg("msg-impression", IMPRESSION)], IMPRESSION)
+
+
+def _carried_host(*, pre_voices, readback_body="Yes, that's right.",
+                  response_bodies=("Noted.",), current_body="Yes",
+                  trailing_voices=(), impression_text=IMPRESSION):
+    """(host, state) for the carry shape:
+    [pre_voices...] U_readback [responses...] U_current [trailing...].
+    ``trailing_voices`` are voices spoken in the current turn
+    before the hook runs (the live introduction). The host's last
+    voice message is the last voice in the assembled history, as
+    production's last_voice_message would return it."""
+    history = list(pre_voices)
+    history.append(_user_msg("msg-u-readback", readback_body))
+    for n, body in enumerate(response_bodies):
+        history.append(_voice_msg(f"msg-response-{n}", body))
+    history.append(_user_msg("msg-u-now", current_body))
+    history.extend(trailing_voices)
+    last_voice = next(
+        (m for m in reversed(history) if m.get("role") == "voice"), None
+    )
+    state = EncounterState()
+    state.impression_text = impression_text
+    return _Host(last_voice, history=history), state
+
+
+def test_f5_6b_immediate_acceptance_files(tmp_path):
+    """The ruling's first case: the offer in the immediately
+    previous model turn files on an explicit acceptance."""
+    service = _ft_service(tmp_path)
+    host = _Host(
+        _voice_msg("msg-offer-1", _offer_body()),
+        history=[
+            _voice_msg("msg-offer-1", _offer_body()),
+            _user_msg("msg-u-now", "Yes"),
+        ],
+    )
+    _file(host, EncounterState(), "Yes", service)
+    rows = service.list_commitments(UID)
+    assert len(rows) == 1
+    assert rows[0]["source_message_id"] == "msg-offer-1"
+
+
+def test_f5_6b_carried_offer_in_reply_files(tmp_path):
+    """Read-back acceptance: the offer in the reply before the
+    impression files on the next turn's explicit acceptance,
+    keeping the original offer's id, label, and provenance."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text)
+    _file(host, state, "Yes", service)
+    rows = service.list_commitments(UID)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["text"] == LABEL
+    assert row["source_message_id"] == "msg-offer-1"
+    assert row["source_conversation_id"] == CID
+    assert row["source_quote"] == "Yes"
+    assert len(state.confirmed_writes) == 1
+    assert state.confirmed_writes[0]["source_message_id"] == "msg-offer-1"
+
+
+def test_f5_6b_carried_offer_in_impression_files(tmp_path):
+    """The block in the impression voice itself is the carried
+    offer — it files with the impression's own id."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="impression")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text)
+    _file(host, state, "Yes", service)
+    rows = service.list_commitments(UID)
+    assert len(rows) == 1
+    assert rows[0]["text"] == LABEL
+    assert rows[0]["source_message_id"] == "msg-impression"
+
+
+def test_f5_6b_carried_same_label_twice_files_once(tmp_path):
+    """The same label in both the reply and the impression is one
+    offer, not two — it files once, carried by the newest voice
+    (the impression)."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="both-same")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text)
+    _file(host, state, "Yes", service)
+    rows = service.list_commitments(UID)
+    assert len(rows) == 1
+    assert rows[0]["source_message_id"] == "msg-impression"
+    assert len(state.confirmed_writes) == 1
+
+
+def test_f5_6b_carried_competing_offers_file_nothing(tmp_path):
+    """Two different labels in the pre-read-back turn are competing
+    offers — automatic filing is invalid and nothing files."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="both-different")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text)
+    _file(host, state, "Yes", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
+
+
+def test_f5_6b_immediately_preceding_offer_wins(tmp_path):
+    """When the last voice message carries its own block, that
+    offer files — the carried one is not also filed."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(
+        pre_voices=pre_voices, impression_text=impression_text,
+        response_bodies=(_offer_body("second"),),
+    )
+    _file(host, state, "Yes", service)
+    rows = service.list_commitments(UID)
+    assert len(rows) == 1
+    assert rows[0]["text"] == "second"
+    assert rows[0]["source_message_id"] == "msg-response-0"
+
+
+def test_f5_6b_reoffer_in_readback_response_supersedes(tmp_path):
+    """The seat re-offers in its read-back response (a different
+    label), then speaks on without the block: the carried offer is
+    superseded — the visitor's "Yes" is ambiguous between the two
+    offers, so nothing files automatically."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(
+        pre_voices=pre_voices, impression_text=impression_text,
+        response_bodies=(_offer_body("second"), "Anything else?"),
+    )
+    _file(host, state, "Yes", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
+
+
+def test_f5_6b_carried_ambiguous_current_message_files_nothing(tmp_path):
+    """The carried offer resolves, but an ambiguous current reply
+    files nothing — the matcher gate still binds on this path."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text,
+                                current_body="Hmm")
+    _file(host, state, "Hmm", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
+
+
+def test_f5_6b_carried_withdrawal_in_readback_files_nothing(tmp_path):
+    """The read-back answer withdraws the offer ("No, don't file
+    that") — a later "Yes" does not revive it automatically."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text,
+                                readback_body="No, don't file that")
+    _file(host, state, "Yes", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
+
+
+def test_f5_6b_carried_correction_in_readback_files_nothing(tmp_path):
+    """The read-back answer amends the record ("I meant Y") — a
+    substantive change in the same exchange, so the carried offer
+    does not file automatically even though the matcher alone
+    would not deny it."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text,
+                                readback_body="I meant Y. Yes, lock it in.")
+    _file(host, state, "Yes", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
+
+
+def test_f5_6b_carried_silent_readback_response_files_nothing(tmp_path):
+    """The model said nothing in response to the read-back (a
+    degraded turn) — the carry fails closed and nothing files."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text,
+                                response_bodies=())
+    _file(host, state, "Yes", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
+
+
+def test_f5_6b_carried_offer_files_with_introduction_first(tmp_path):
+    """The live introduction, spoken in the current turn before
+    the hook runs, does not disturb the carry: the walk skips the
+    current turn's own speech."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(
+        pre_voices=pre_voices, impression_text=impression_text,
+        trailing_voices=[_voice_msg("msg-intro", "I am the Champion.")],
+    )
+    _file(host, state, "Yes", service)
+    rows = service.list_commitments(UID)
+    assert len(rows) == 1
+    assert rows[0]["source_message_id"] == "msg-offer-1"
+
+
+def test_f5_6b_carried_no_offer_files_nothing(tmp_path):
+    """No block anywhere in the pre-read-back turn: the carry
+    resolves nothing and a "Yes" files nothing."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in=None)
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text)
+    _file(host, state, "Yes", service)
+    assert service.list_commitments(UID) == []
+    assert state.confirmed_writes == []
+
+
+def test_f5_6b_carried_duplicate_retry_files_once(tmp_path):
+    """A second "Yes" to the same carried offer files nothing
+    further — the state dedup holds on the carried path."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text)
+    _file(host, state, "Yes", service)
+    assert len(service.list_commitments(UID)) == 1
+    _file(host, state, "Yes", service)
+    assert len(service.list_commitments(UID)) == 1
+    assert len(state.confirmed_writes) == 1
+
+
+def test_f5_6b_carried_storage_idempotency_survives_lost_confirmation(tmp_path):
+    """Correction 2 on the carried path: the Confirmation is lost
+    after the write commits; a retry returns the committed row —
+    same id — not a second row."""
+    service = _ft_service(tmp_path)
+    pre_voices, impression_text = _pre_voices(offer_in="reply")
+    host, state = _carried_host(pre_voices=pre_voices,
+                                impression_text=impression_text)
+    _file(host, state, "Yes", service)
+    assert len(service.list_commitments(UID)) == 1
+    first_id = state.confirmed_writes[0]["id"]
+    state.confirmed_writes.clear()
+    _file(host, state, "Yes", service)
+    rows = service.list_commitments(UID)
+    assert len(rows) == 1
+    assert rows[0]["id"] == first_id
+    assert len(state.confirmed_writes) == 1
+    assert state.confirmed_writes[0]["id"] == first_id
 
 
 # ---------------------------------------------------------------------------

@@ -1251,6 +1251,17 @@ class EncounterHost(Protocol):
     # a host that does not implement it never files (the hook reads
     # it through getattr and fails closed).
 
+    def recent_history(self, limit: int) -> list[dict]: ...
+    # FC5 (founder ruling 2026-11-12, read-back offer continuity):
+    # the most recent ``limit`` messages for this meeting,
+    # oldest-first — {'id', 'role', 'body', 'user_id',
+    # 'conversation_id', ...} per row — or [] when there are none.
+    # The filing hook reads this bounded window to resolve the
+    # single offer carried across exactly one read-back turn; it
+    # never searches further back. Optional: a host that does not
+    # implement it resolves the immediately preceding offer only
+    # (the hook reads it through getattr and fails closed).
+
 
 # ---------------------------------------------------------------------------
 # The runtime.
@@ -1408,6 +1419,116 @@ def parse_commitment_offer(body: str) -> str | None:
         return None
     return label
 
+#: FC5 (founder ruling 2026-11-12, read-back offer continuity): the
+#: bounded history window the filing hook may read to resolve an
+#: offer carried across exactly one read-back turn. The window
+#: covers the largest shape the ruling allows, and nothing more:
+#: the current user turn (1) + the read-back response voices (at
+#: most 3: the reply, a revised claim, the live introduction) +
+#: the read-back answer (1) + the pre-read-back model turn's
+#: voices (at most 2: the reply and the impression). 8 messages;
+#: anything older is out of reach by construction — no arbitrary
+#: historical search, no indefinite pending-offer state.
+_CARRIED_OFFER_WINDOW = 8
+
+
+def _carried_offer_from_history(messages: list[dict],
+                                impression_text: str,
+                                current_message: str) -> dict | None:
+    """Resolve the single eligible offer carried across exactly one
+    read-back turn (founder ruling 2026-11-12), or None.
+
+    ``messages`` is the recent history, oldest-first, ending with
+    the current user turn (and possibly the current turn's own
+    speech after it — the live introduction, spoken before the
+    hook runs on a post-recognition turn). The shape that files,
+    and nothing else::
+
+        [reply?, impression]  U_readback  [response voices...]  U_current
+
+    - the voice immediately before U_readback IS the impression
+      (body == ``impression_text``) — that is what identifies
+      U_readback as the read-back turn rather than an ordinary
+      conversational turn, so a conversational turn intervening
+      between the offer and the acceptance files nothing;
+    - the user turn found as U_current must be the message the
+      hook is processing (body == ``current_message``) — the walk
+      is anchored to this turn, not to whatever a host happens to
+      have appended last;
+    - the offer sits in the model turn that spoke the impression
+      (its reply and/or the impression itself): exactly one
+      distinct label files; two distinct labels are competing
+      offers and nothing files;
+    - the read-back response carries no new offer block — a
+      re-offer supersedes the carried one;
+    - the read-back answer neither denies the offer (withdrawal)
+      nor corrects the record (substantive change).
+
+    Returns the offer's voice-message row — the id, label, and
+    provenance come from it, never reconstructed from the later
+    affirmation — or None. Pure function: no state, no store, no
+    model call.
+    """
+    if not impression_text or not messages:
+        return None
+    i = len(messages) - 1
+    # 1. Skip the current turn's own speech (e.g. the live
+    #    introduction, spoken before the hook runs on a
+    #    post-recognition turn).
+    while i >= 0 and messages[i].get("role") == "voice":
+        i -= 1
+    # 2. The current user turn — it must be the message the hook is
+    #    processing, or the walk is misaligned and files nothing.
+    if i < 0 or messages[i].get("role") != "user":
+        return None
+    if (messages[i].get("body") or "") != (current_message or ""):
+        return None
+    i -= 1
+    # 3. The read-back response voices. At least one: the seat
+    #    answered the read-back; a silent turn is degraded and
+    #    files nothing carried.
+    response_voices = []
+    while i >= 0 and messages[i].get("role") == "voice":
+        response_voices.append(messages[i])
+        i -= 1
+    if not response_voices:
+        return None
+    # A new offer block in the response supersedes the carried one.
+    for voice in response_voices:
+        if parse_commitment_offer(voice.get("body") or "") is not None:
+            return None
+    # 4. The read-back answer itself.
+    if i < 0 or messages[i].get("role") != "user":
+        return None
+    readback_body = messages[i].get("body") or ""
+    if match_affirmation(readback_body) == "deny":
+        return None  # withdrawal
+    if _classify_readback_reply(readback_body) == "correction":
+        return None  # substantive change
+    i -= 1
+    # 5. The voice immediately before the read-back answer must be
+    #    the impression — that is what identifies this user turn as
+    #    the read-back turn.
+    if i < 0 or messages[i].get("role") != "voice":
+        return None
+    if (messages[i].get("body") or "") != impression_text:
+        return None
+    # 6. The pre-read-back model turn's voices: the impression and
+    #    the reply spoken with it (consecutive voices, no user
+    #    message between them). Exactly one distinct label files;
+    #    two distinct labels are competing offers. On a repeated
+    #    label the newest voice (the impression) carries the id.
+    labels: dict[str, dict] = {}
+    while i >= 0 and messages[i].get("role") == "voice":
+        label = parse_commitment_offer(messages[i].get("body") or "")
+        if label is not None and label not in labels:
+            labels[label] = messages[i]
+        i -= 1
+    if len(labels) != 1:
+        return None
+    return next(iter(labels.values()))
+
+
 def _spoken(text: str) -> str:
     """Generated text on its way to being spoken by the character —
     or stored as her words (the impression claim): bookkeeping
@@ -1511,6 +1632,30 @@ class EncounterRuntime:
             return frame
         return frame + "\n\n" + suffix
 
+    def _resolve_carried_offer(self, host: EncounterHost,
+                               state: EncounterState,
+                               message: str) -> dict | None:
+        """Resolve the offer carried across exactly one read-back
+        turn (founder ruling 2026-11-12), or None. Reads the
+        bounded recent-history window through the host; a host
+        without ``recent_history`` resolves nothing carried
+        (fail-closed). The returned row is the offer's own voice
+        message — its id, label, and provenance are the filing's,
+        never reconstructed from the later affirmation."""
+        getter = getattr(host, "recent_history", None)
+        if not callable(getter):
+            return None
+        try:
+            history = getter(_CARRIED_OFFER_WINDOW)
+        except Exception:
+            logger.exception("FC5: recent_history failed; not filing carried")
+            return None
+        if not isinstance(history, list):
+            return None
+        return _carried_offer_from_history(
+            history, state.impression_text, message
+        )
+
     def _file_accepted_offer(self, host: EncounterHost,
                              state: EncounterState, message: str,
                              service=None) -> None:
@@ -1521,18 +1666,29 @@ class EncounterRuntime:
         Confirmation is the committed row's id. No model call
         anywhere in the hook — deterministic parse + matcher only.
 
-        Steps: (1) read the previous model turn through the host
-        (a host without ``last_voice_message`` never files —
-        fail-closed); (2) parse the ```commitment-offer block —
-        a prose offer without the block files nothing; (3) match
-        the visitor's reply against the deterministic affirmation
-        lists (denylist first; ambiguous files nothing); (4) dedup
-        on the offer's stable message id, in state AND in storage
-        (FC5 correction 2 — the store refuses a second row for one
-        offer, so a retry after an encounter-state persistence
-        failure returns the already-committed row instead of
-        duplicating it); (5) file in-process through the
-        follow-through service and append the Confirmation.
+        Steps: (1) resolve the offer — the immediately preceding
+        one (the last voice message), or the single eligible offer
+        carried across exactly one read-back turn (founder ruling
+        2026-11-12: the hook may resolve the immediately preceding
+        offer or the single eligible offer carried across the
+        read-back; the immediately preceding offer wins, and the
+        carried one resolves only from the bounded history window
+        when the last voice message carries no block — see
+        ``_carried_offer_from_history`` for the shape and the
+        invalidation rules; a host without ``last_voice_message``
+        never files — fail-closed); (2) parse the
+        ```commitment-offer block — a prose offer without the block
+        files nothing; (3) match the visitor's reply against the
+        deterministic affirmation lists (denylist first; ambiguous
+        files nothing); (4) dedup on the offer's stable message id,
+        in state AND in storage (FC5 correction 2 — the store
+        refuses a second row for one offer, so a retry after an
+        encounter-state persistence failure returns the
+        already-committed row instead of duplicating it); (5) file
+        in-process through the follow-through service and append
+        the Confirmation. The carried offer keeps the ORIGINAL
+        offer's id, label, and provenance — nothing is
+        reconstructed or reinterpreted from the later affirmation.
 
         Dispatch: only a ```commitment-offer block selects this
         branch. A reminder offer selects FC6's branch (design §4)
@@ -1559,24 +1715,30 @@ class EncounterRuntime:
             return
         if not isinstance(last, dict):
             return
+        # The immediately preceding offer wins; the carried offer
+        # resolves only when the last voice message carries no block.
+        offer: dict | None = None
         label = parse_commitment_offer(last.get("body") or "")
-        if label is None:
-            # No commitment-offer block in the previous model turn —
-            # including a reminder offer, which is FC6's branch and
-            # is stubbed (return without touching state) while FC6
-            # is held. A prose offer without the block files nothing.
-            return
+        if label is not None:
+            offer = last
+        else:
+            offer = self._resolve_carried_offer(host, state, message)
+            if offer is None:
+                return
+            label = parse_commitment_offer(offer.get("body") or "")
+            if label is None:
+                return  # defensive: the resolver only returns block rows
         if match_affirmation(message) != "affirm":
             return
-        offer_id = last.get("id")
+        offer_id = offer.get("id")
         if not offer_id:
             return
         # State-level dedup: one filing per offer.
         for c in getattr(state, "confirmed_writes", []) or []:
             if isinstance(c, dict) and c.get("source_message_id") == offer_id:
                 return
-        user_id = last.get("user_id")
-        conversation_id = last.get("conversation_id")
+        user_id = offer.get("user_id")
+        conversation_id = offer.get("conversation_id")
         if not user_id or not conversation_id:
             return
         owned = service is None

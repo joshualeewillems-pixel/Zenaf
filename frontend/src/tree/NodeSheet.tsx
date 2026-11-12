@@ -20,6 +20,7 @@ export function NodeSheet({
   subtitle,
   onBack,
   backLabel,
+  headerActions,
   children,
 }: {
   open: boolean
@@ -29,6 +30,10 @@ export function NodeSheet({
   /** When set, a back chevron appears in the header (sheet-internal navigation). */
   onBack?: (() => void) | null
   backLabel?: string
+  /** Optional actions rendered in the header row, between the titles
+      and the close control (e.g. a seat sheet's viability + full
+      character open). Rendered only when provided. */
+  headerActions?: ReactNode
   children: ReactNode
 }) {
   useEffect(() => {
@@ -58,6 +63,7 @@ export function NodeSheet({
 .nsh-titles{flex:1;min-width:0}
 .nsh-titles h2{margin:0;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nsh-titles p{margin:2px 0 0;font-size:11.5px;color:rgba(245,240,232,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nsh-actions{display:flex;align-items:center;gap:8px;flex:none}
 .nsh-back,.nsh-close{flex:none;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;background:rgba(245,240,232,.06);border:1px solid rgba(201,168,106,.25);border-radius:12px;color:#f5f0e8;font-size:20px;line-height:1;cursor:pointer;font-family:inherit;padding:0}
 .nsh-back:active,.nsh-close:active{background:rgba(201,168,106,.18)}
 .nsh-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 14px 24px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
@@ -90,6 +96,7 @@ export function NodeSheet({
             <h2>{title}</h2>
             {subtitle ? <p>{subtitle}</p> : null}
           </div>
+          {headerActions ? <div className="nsh-actions">{headerActions}</div> : null}
           <button
             type="button"
             className="nsh-close"

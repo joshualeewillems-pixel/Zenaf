@@ -159,13 +159,16 @@ function newLocalRef(): string {
  *   the sheet, from PR #147's merged Talk+Character tab).
  * - Sheet you-node → chips with no pre-selection: an invitation to pick.
  *
- * Ask the council (Joshua, 2026-10-23 — supersedes the 1:1-only note
- * that stood here): having two chats was confusing, so the workspace
+ * Choose multiple (Joshua, 2026-11-12 — supersedes "Ask the council",
+ * 2026-10-23): having two chats was confusing, so the workspace
  * console's conversational power lives here now — multi-seat fan-out.
- * The "Ask the council" toggle sends one message to every seat through
- * the same per-seat turn path, and each reply lands in this one thread
- * under its seat's name. The workspace console remains a deliberation
- * console (folder runs, synthesis, recorded insights) — talking lives here.
+ * The "choose multiple" control opens checkboxes on the seat chips
+ * above; the send fans out to exactly the checked seats through the
+ * same per-seat turn path, and each reply lands in this one thread
+ * under its seat's name. Entering the mode checks every seat, so the
+ * old all-seats behaviour is the starting point — the user unchecks
+ * to narrow. The workspace console remains a deliberation console
+ * (folder runs, synthesis, recorded insights) — talking lives here.
  */
 export default function CouncilChat({
   environment,
@@ -184,7 +187,7 @@ export default function CouncilChat({
   /** Pre-selected seat (seat-branch sheets). Omit → chips, no selection. */
   initialArchetypeId?: string | null
   /** Weaver strand interviews (rev2): when set, the chat is locked to
-   *  this seat — SeatChips and "Ask the council" are hidden, the seat
+   *  this seat — SeatChips and "choose multiple" are hidden, the seat
    *  can never change, and the draft is keyed to the locked seat. */
   lockArchetypeId?: string | null
   /** Seat fellowship name override for the composer placeholder. */
@@ -227,6 +230,16 @@ export default function CouncilChat({
   const [activeId, setActiveId] = useState<string | null>(lockArchetypeId ?? initialArchetypeId ?? null)
   /** Ask-the-council fan-out: the next send goes to every seat at once. */
   const [councilMode, setCouncilMode] = useState(false)
+  /**
+   * "choose multiple" (founder, 2026-11-12 — replaces "Ask the
+   * council"): checkbox mode on the seat chips; the send fans out to
+   * exactly the checked seats instead of all of them. Entering the
+   * mode checks every seat (the old all-seats behaviour is the
+   * starting point); the user unchecks to narrow. councilMode stays
+   * the send-path flag — it is true exactly while checkbox mode is on.
+   */
+  const [chooseMultiple, setChooseMultiple] = useState(false)
+  const [checkedSeatIds, setCheckedSeatIds] = useState<string[]>([])
   // A locked seat stays locked: the chips (the only UI path that calls
   // setActiveId) are hidden when locked, and this effect re-forces the
   // lock if anything else ever moves it.
@@ -563,6 +576,9 @@ export default function CouncilChat({
     const text = input.trim()
     if (loading) return
     if (!councilMode && !activeId) return
+    // Checkbox mode with nothing checked sends nowhere — the button
+    // is disabled too; this is the Enter-key path.
+    if (chooseMultiple && checkedSeatIds.length === 0) return
     if (!text) return
     // The Enter key path bypasses the disabled button: enforce the
     // hydration gate here too — never send into a thread whose
@@ -603,10 +619,14 @@ export default function CouncilChat({
     setSignedOut(false)
     try {
       if (councilMode) {
-        // Fan out to every seat at once. A seat that fails gets a
-        // quiet, honestly-labelled bubble — the others still answer.
+        // Fan out to the checked seats (checkbox mode) or to every
+        // seat. A seat that fails gets a quiet, honestly-labelled
+        // bubble — the others still answer.
+        const targets = chooseMultiple
+          ? SEAT_ORDER.filter((s) => checkedSeatIds.includes(s))
+          : SEAT_ORDER
         const results = await Promise.all(
-          SEAT_ORDER.map(async (seatId) => {
+          targets.map(async (seatId) => {
             try {
               return await askSeat(seatId, text)
             } catch {
@@ -678,11 +698,12 @@ export default function CouncilChat({
     } finally {
       if (sendSeqRef.current === seq) setLoading(false)
     }
-  }, [input, loading, activeId, councilMode, askSeat, activeName, names, conversationId, hydrating, hydrateError, onTurnSent, draftCtx, setComposer])
+  }, [input, loading, activeId, councilMode, chooseMultiple, checkedSeatIds, askSeat, activeName, names, conversationId, hydrating, hydrateError, onTurnSent, draftCtx, setComposer])
 
   const sendDisabled =
     loading ||
     (!activeId && !councilMode) ||
+    (chooseMultiple && checkedSeatIds.length === 0) ||
     !input.trim() ||
     (conversationId ? hydrating || hydrateError : false)
 
@@ -694,7 +715,14 @@ export default function CouncilChat({
       {!lockArchetypeId && (
         <>
           <SeatChips
-            activeId={councilMode ? null : activeId}
+            activeId={chooseMultiple ? null : activeId}
+            checkable={chooseMultiple}
+            checkedIds={checkedSeatIds}
+            onToggleCheck={(id) =>
+              setCheckedSeatIds((prev) =>
+                prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+              )
+            }
             onSelect={(id) => {
               swapComposer(id)
               setActiveId(id)
@@ -702,30 +730,43 @@ export default function CouncilChat({
             }}
           />
 
-          {/* Ask the council — one message, every seat answers in this thread. */}
+          {/* choose multiple — checkboxes on the seat chips above; the
+              send fans out to exactly the checked seats. Tapping again
+              exits checkbox mode and clears the checked set. */}
           <div className="flex flex-wrap items-center gap-3 -mt-1">
             <button
               type="button"
               onClick={() => {
-                // Toggle destination: ON → the 'council' key; OFF → the
-                // active seat, or 'unselected' when no seat is picked.
-                swapComposer(
-                  councilMode ? (activeId ?? UNSELECTED_DRAFT_SEAT) : COUNCIL_DRAFT_SEAT,
-                )
-                setCouncilMode((v) => !v)
+                if (chooseMultiple) {
+                  // Exit: back to the active seat, or 'unselected'
+                  // when no seat is picked.
+                  swapComposer(activeId ?? UNSELECTED_DRAFT_SEAT)
+                  setChooseMultiple(false)
+                  setCouncilMode(false)
+                  setCheckedSeatIds([])
+                } else {
+                  // Enter: every seat checked (the old all-seats
+                  // behaviour is the starting point); uncheck to narrow.
+                  swapComposer(COUNCIL_DRAFT_SEAT)
+                  setChooseMultiple(true)
+                  setCouncilMode(true)
+                  setCheckedSeatIds([...SEAT_ORDER])
+                }
               }}
-              aria-pressed={councilMode}
+              aria-pressed={chooseMultiple}
               className={`min-h-[44px] px-4 rounded-full border text-sm font-medium ${
-                councilMode
+                chooseMultiple
                   ? 'bg-amber-950/40 text-amber-300 border-amber-700/50'
                   : 'border-stone-700 text-stone-400'
               }`}
             >
-              Ask the council
+              {chooseMultiple ? '✓ choose multiple' : 'choose multiple'}
             </button>
-            {councilMode && (
+            {chooseMultiple && (
               <p className="text-[11px] text-stone-500">
-                One message — every seat answers here, under its own name.
+                {checkedSeatIds.length === 0
+                  ? 'Choose at least one seat above — nothing is checked yet.'
+                  : 'One message — only the checked seats answer here, under their own names.'}
               </p>
             )}
           </div>
@@ -931,11 +972,23 @@ export default function CouncilChat({
                 }
               }}
               placeholder={
-                councilMode ? 'Ask the whole council…' : `Talk to ${activeName}…`
+                councilMode
+                  ? chooseMultiple
+                    ? checkedSeatIds.length === 0
+                      ? 'Choose seats above…'
+                      : 'Ask the checked seats…'
+                    : 'Ask the whole council…'
+                  : `Talk to ${activeName}…`
               }
               maxLength={2000}
               rows={1}
-              aria-label={councilMode ? 'Message the whole council' : `Message ${activeName}`}
+              aria-label={
+                councilMode
+                  ? chooseMultiple
+                    ? 'Message the checked seats'
+                    : 'Message the whole council'
+                  : `Message ${activeName}`
+              }
               className="flex-1 min-w-0 resize-none overflow-y-auto bg-stone-950 border border-stone-700 rounded-2xl px-4 py-2.5 min-h-[44px] text-sm text-stone-200 outline-none focus:border-amber-500/60"
             />
             <button

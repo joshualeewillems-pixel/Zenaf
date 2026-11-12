@@ -57,33 +57,45 @@ export function useSeatMeta(): SeatMeta {
  * conversation to that seat; history carries across (one persistent
  * conversation per user, not isolated per-seat sessions).
  *
- * Depth rides on each chip as a thin bar — the training-depth signal from
- * the old card grid, kept subtle.
+ * Checkbox mode (founder, 2026-11-12 — "choose multiple"): when
+ * `checkable` is set, tapping a chip toggles it in `checkedIds`
+ * instead of selecting it, so the user picks exactly which seats a
+ * message goes to. The depth bar is unchanged.
  */
 export default function SeatChips({
   activeId,
   onSelect,
+  checkable = false,
+  checkedIds = [],
+  onToggleCheck = () => {},
 }: {
   activeId: string | null
   onSelect: (id: string) => void
+  /** Checkbox mode: chips toggle membership in `checkedIds`. */
+  checkable?: boolean
+  checkedIds?: readonly string[]
+  onToggleCheck?: (id: string) => void
 }) {
   const { names, depths } = useSeatMeta()
   return (
     <div
       role="group"
-      aria-label="Choose a voice"
+      aria-label={checkable ? 'Choose which seats answer' : 'Choose a voice'}
       className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1"
     >
       {SEAT_ORDER.map((id) => {
         const color = voiceColor(id)
-        const active = activeId === id
+        const checked = checkedIds.includes(id)
+        const active = checkable ? checked : activeId === id
         const depth = depths[id] ?? 0
         return (
           <button
             key={id}
             type="button"
-            onClick={() => onSelect(id)}
-            aria-pressed={active}
+            onClick={() => (checkable ? onToggleCheck(id) : onSelect(id))}
+            aria-pressed={checkable ? undefined : active}
+            aria-checked={checkable ? checked : undefined}
+            role={checkable ? 'checkbox' : undefined}
             title={`${names[id] ?? id} — ${Math.round(depth)} depth`}
             className={`shrink-0 min-h-[44px] px-3 rounded-full border text-sm font-medium flex flex-col items-start justify-center gap-1 ${
               active ? 'bg-stone-800' : 'bg-stone-900/50 hover:bg-stone-800/50'
@@ -94,7 +106,10 @@ export default function SeatChips({
               borderLeftColor: color,
             }}
           >
-            <span style={{ color }}>{names[id] ?? id}</span>
+            <span style={{ color }}>
+              {checkable ? (checked ? '☑ ' : '☐ ') : ''}
+              {names[id] ?? id}
+            </span>
             <span
               className="w-12 h-1 rounded-full bg-stone-800 overflow-hidden"
               aria-hidden

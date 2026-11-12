@@ -1212,6 +1212,30 @@ export function LivingTreeView({
     return (
       <div>
         <div className="lavatar-head">
+          <button
+            type="button"
+            aria-label="Other actions"
+            aria-expanded={headerMenuSeat === arch.id}
+            onClick={() => setHeaderMenuSeat(headerMenuSeat === arch.id ? null : arch.id)}
+            style={{
+              minWidth: 44,
+              minHeight: 44,
+              padding: '0 12px',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: 'rgba(245,240,232,.06)',
+              border: '1px solid rgba(201,168,106,.25)',
+              borderRadius: 12,
+              color: '#f5f0e8',
+              fontSize: 20,
+              lineHeight: 1,
+              cursor: 'pointer',
+              flex: 'none',
+            }}
+          >
+            ···
+          </button>
           <SeatAvatar avatarUrl={resolveSeatFace(arch)} displayName={arch.display_name} size={44} />
           <div>
             <h3 style={{ margin: 0 }}>{arch.display_name}</h3>
@@ -1220,6 +1244,7 @@ export function LivingTreeView({
             </div>
           </div>
         </div>
+        {headerMenuSeat === arch.id && renderSeatHeaderMenu(arch)}
         <p>“{arch.prompt_frame}”</p>
         {door && (
           <button
@@ -1234,45 +1259,7 @@ export function LivingTreeView({
             {door === 'begin' ? 'Begin the first meeting →' : 'Your first meeting →'}
           </button>
         )}
-        <div className="lstat">
-          <span className="lname">Viability</span>
-          <span className="lpct">{arch.depth}%</span>
-          {isSeed && <span className="lnote"> — training comes first</span>}
-        </div>
-        <button
-          type="button"
-          className="lback"
-          aria-expanded={expanded}
-          onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
-        >
-          {expanded ? 'Hide full character ↑' : 'Full character →'}
-        </button>
         {expanded && renderSeatCharacterBody(arch)}
-        <button
-          type="button"
-          aria-label="Other actions"
-          aria-expanded={headerMenuSeat === arch.id}
-          onClick={() => setHeaderMenuSeat(headerMenuSeat === arch.id ? null : arch.id)}
-          style={{
-            minWidth: 44,
-            minHeight: 44,
-            marginTop: 8,
-            padding: '0 12px',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            background: 'rgba(245,240,232,.06)',
-            border: '1px solid rgba(201,168,106,.25)',
-            borderRadius: 12,
-            color: '#f5f0e8',
-            fontSize: 20,
-            lineHeight: 1,
-            cursor: 'pointer',
-          }}
-        >
-          ···
-        </button>
-        {headerMenuSeat === arch.id && renderSeatHeaderMenu(arch)}
       </div>
     )
   }
@@ -1648,6 +1635,39 @@ export function LivingTreeView({
     ? 'The source'
     : sheetNode.archetypeName
 
+  /**
+   * Seat-talk sheet header actions (founder, 2026-11-12): the full
+   * character open sits next to the seat name and Viability sits at
+   * the top right, near the close control — both moved out of the
+   * compact seat head below. Only for seat talk sheets; every other
+   * sheet keeps the plain header. Viability keeps its value and the
+   * "training comes first" association (shown when the seat is a
+   * seed); what Viability measures is unchanged.
+   */
+  const sheetArch =
+    sheetNode?.kind === 'seat' && sheetItem === 'talk'
+      ? (archetypes.find((a) => a.id === sheetNode.seatKey) ?? null)
+      : null
+  const sheetHeaderActions = sheetArch ? (
+    <>
+      <button
+        type="button"
+        className="lhead-fullchar"
+        aria-expanded={charExpandedSeat === sheetArch.id}
+        onClick={() =>
+          setCharExpandedSeat(charExpandedSeat === sheetArch.id ? null : sheetArch.id)
+        }
+      >
+        {charExpandedSeat === sheetArch.id ? 'Hide full character ↑' : 'Full character →'}
+      </button>
+      <div className="lhead-viab">
+        <span className="lhead-viab-l">Viability</span>
+        <span className="lhead-viab-v">{sheetArch.depth}%</span>
+        {sheetArch.depth <= 0 && <span className="lhead-viab-n">training comes first</span>}
+      </div>
+    </>
+  ) : null
+
   return (
     <div
       className="ltree"
@@ -1717,6 +1737,12 @@ export function LivingTreeView({
 .lsheet-view{min-height:200px}
 .lsheet-view .lsub{font-style:normal}
 .lavatar-head{display:flex;gap:12px;align-items:center;margin-bottom:2px}
+.lhead-fullchar{flex:none;min-height:44px;padding:0 10px;background:rgba(201,168,106,.12);border:1px solid rgba(201,168,106,.5);border-radius:10px;color:#f5f0e8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.lhead-fullchar:active{background:rgba(201,168,106,.25)}
+.lhead-viab{flex:none;text-align:right;line-height:1.3;min-width:52px}
+.lhead-viab-l{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(245,240,232,.55)}
+.lhead-viab-v{display:block;font-size:13px;font-weight:700;color:#f5f0e8}
+.lhead-viab-n{display:block;font-size:9px;color:rgba(245,240,232,.55)}
 .lavatar-head h3{margin:0}
 .nsh-panel{user-select:text;-webkit-user-select:text}
       `}</style>
@@ -1972,6 +1998,7 @@ export function LivingTreeView({
         backLabel="Back to menu"
         title={sheetTitle}
         subtitle={sheetSubtitle}
+        headerActions={sheetHeaderActions}
       >
         {renderSheetBody()}
       </NodeSheet>

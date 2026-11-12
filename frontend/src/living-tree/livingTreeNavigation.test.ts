@@ -13,6 +13,11 @@
  * The App-side key remount on nonce bump is covered by
  * TreeTalkSheet.test.ts (fresh mount consumes the new override).
  *
+ * Sheet header actions (2026-11-12): the seat sheet's header carries
+ * the full-character open next to the seat name and Viability at the
+ * top right; the compact head keeps only the quote, the meeting door
+ * and the Other-actions button, which sits left of the avatar.
+ *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -314,5 +319,70 @@ describe('you-node menu preserved', () => {
     expect(back).toBeDefined()
     await click(back as Element)
     expect(container.textContent).toContain('Think something through with your whole council.')
+  })
+})
+
+describe('sheet header actions (2026-11-12)', () => {
+  it('the seat header carries Full character next to the name and Viability at the top right', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    const dlg = dialog()
+    expect(dlg).not.toBeNull()
+    const head = dlg?.querySelector('.nsh-head')
+    const kids = Array.from(head?.children ?? []).map((c) => (c as Element).className)
+    const actionsIdx = kids.indexOf('nsh-actions')
+    const closeIdx = kids.indexOf('nsh-close')
+    expect(actionsIdx).toBeGreaterThan(-1)
+    expect(closeIdx).toBeGreaterThan(-1)
+    // Actions sit between the titles and the close control.
+    expect(actionsIdx).toBeGreaterThan(kids.indexOf('nsh-titles'))
+    expect(actionsIdx).toBeLessThan(closeIdx)
+    const actions = dlg?.querySelector('.nsh-actions')
+    expect(actions?.textContent).toContain('Full character →')
+    expect(actions?.textContent).toContain('Viability')
+    // Seed fallback: 0% with the training note, same value as before.
+    expect(actions?.textContent).toContain('0%')
+    expect(actions?.textContent).toContain('training comes first')
+    // Collapsed: exactly one Viability and one Full character control
+    // in the whole sheet — the compact head no longer carries either.
+    expect((dlg?.textContent?.match(/Viability/g) ?? []).length).toBe(1)
+    expect(
+      Array.from(dlg?.querySelectorAll('button') ?? []).filter(
+        (b) => (b.textContent ?? '').trim() === 'Full character →',
+      ),
+    ).toHaveLength(1)
+  })
+
+  it('the header Full character open drives the same disclosure', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    const btn = Array.from(dialog()?.querySelectorAll('button') ?? []).find(
+      (b) => (b.textContent ?? '').trim() === 'Full character →',
+    )
+    if (!btn) throw new Error('header Full character button not found')
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    await click(btn)
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    // The expanded character body renders (Marketplace section).
+    expect(dialog()?.textContent).toContain('Marketplace')
+  })
+
+  it('Other actions sits left of the avatar in the compact head', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    const head = dialog()?.querySelector('.lavatar-head')
+    expect(head).not.toBeNull()
+    const first = head?.firstElementChild as Element | null
+    expect(first?.getAttribute('aria-label')).toBe('Other actions')
+    expect(first?.textContent).toContain('···')
+    // The moved button still opens the menu.
+    await click(buttonByLabel('Other actions'))
+    expect(rowByTitle('Today')).toBeDefined()
   })
 })

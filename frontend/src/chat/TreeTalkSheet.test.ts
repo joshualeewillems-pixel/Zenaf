@@ -14,7 +14,7 @@ import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
 import TreeTalkSheet, { newTalkId } from './TreeTalkSheet'
-import { getTalkIdentity, TALK_IDENTITY_STORAGE_KEY } from './talkIdentity'
+import { getTalkIdentity, TALK_IDENTITY_STORAGE_KEY, TALK_PALETTE } from './talkIdentity'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -235,8 +235,13 @@ describe('seat conversation history + color/symbol identity', () => {
     )
     if (!chip) throw new Error('identity chip not found')
     await click(chip)
+    // Pick the first palette swatch — the palette is built from the
+    // current seat/strand colors, so the test must not hard-code a
+    // color (the old Mentor gold #c9a86a left the palette when the
+    // logo sheet's measured colors landed in #357).
+    const picked = TALK_PALETTE[0]
     const color = Array.from(container.querySelectorAll('button')).find(
-      (b) => b.getAttribute('aria-label') === 'Color #c9a86a',
+      (b) => b.getAttribute('aria-label') === `Color ${picked}`,
     )
     if (!color) throw new Error('color swatch not found')
     await click(color)
@@ -246,7 +251,7 @@ describe('seat conversation history + color/symbol identity', () => {
     if (!symbol) throw new Error('symbol button not found')
     await click(symbol)
     const stored = getTalkIdentity(TALK_MENTOR)
-    expect(stored.color).toBe('#c9a86a')
+    expect(stored.color).toBe(picked)
     expect(stored.symbol).toBe(1)
     expect(localStorage.getItem(TALK_IDENTITY_STORAGE_KEY)).toContain(TALK_MENTOR)
     // The picked symbol renders on the chip badge.

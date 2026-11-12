@@ -1,11 +1,11 @@
 /**
- * Weaver strand interview panel (rev2, as accepted).
+ * Conductor strand interview panel (rev2, as accepted).
  *
- * Root (strand) tap opens a conversation with the WEAVER in the bottom
+ * Root (strand) tap opens a conversation with the CONDUCTOR in the bottom
  * panel about source materials relevant to that strand. Conversation-
  * first: the thread resolves immediately — no upload prerequisite, no
  * model call on open (T1b). The opening orientation is a panel header,
- * never a message: a generated Weaver turn present on open, before any
+ * never a message: a generated Conductor turn present on open, before any
  * user turn, would fail T1b.
  *
  * One question at a time, reciprocal contribution, continuity without
@@ -241,7 +241,7 @@ export default function StrandPanel({
       </div>
 
       {/* Orientation header — pattern copy, not a message. The first
-          generated Weaver question arrives through the Talk path once
+          generated Conductor question arrives through the Talk path once
           the user sends a message; nothing here generates. Seven-roots
           panel model (founder, 2026-11-12): concise question + one
           short invitation + talk line. Returning threads carry only
@@ -259,7 +259,7 @@ export default function StrandPanel({
         environment="sheet"
         initialArchetypeId="conductor"
         lockArchetypeId="conductor"
-        displayName="Weaver"
+        displayName="the Conductor"
         conversationId={resolved.conversation_id}
         context={{ strand_key: resolved.strand_key }}
       />
@@ -269,13 +269,13 @@ export default function StrandPanel({
       <div className="mt-4">
         <h4 className="text-sm font-medium text-stone-300">Sources for this strand</h4>
         <p className="lsub">
-          Optional. Paste text or upload a file Weaver can draw on — redacted
+          Optional. Paste text or upload a file the Conductor can draw on — redacted
           at capture, linked to this strand only.
         </p>
         <textarea
           value={pasteText}
           onChange={(e) => setPasteText(e.target.value)}
-          placeholder="Paste something Weaver can learn from — a note, a passage, a list…"
+          placeholder="Paste something the Conductor can learn from — a note, a passage, a list…"
           rows={3}
           className="w-full rounded border border-stone-700 bg-stone-900 p-2 text-sm text-stone-200"
         />
@@ -321,7 +321,7 @@ export default function StrandPanel({
 
       {resolved.boundaries.length > 0 && (
         <div className="mt-4">
-          <h4 className="text-sm font-medium text-stone-300">Topics you asked Weaver not to raise</h4>
+          <h4 className="text-sm font-medium text-stone-300">Topics you asked the Conductor not to raise</h4>
           <ul className="mt-2 space-y-1">
             {resolved.boundaries.map((b) => (
               <li key={b.id} className="flex items-center gap-2 text-sm text-stone-300">

@@ -159,7 +159,7 @@ def test_availability_note_computed_from_gates_minus_self():
     assert "Gardener — open now" in note
     assert "Weaver — open now" in note
     assert "Raven — open now" in note
-    # The note covers the other seats, not the Crane herself.
+    # The note covers the other seats, not the Crane himself.
     assert "Crane —" not in note
 
 

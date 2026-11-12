@@ -352,13 +352,13 @@ SEAT_JURISDICTIONS: dict[str, SeatJurisdiction] = {
         ),
         conflicts=SeatConflicts(
             overlaps=(
-                "The Gardener (mentor): protection versus growth — he "
+                "The Gardener (mentor): protection versus growth — she "
                 "walls the garden; the Gardener keeps asking what the "
                 "wall is keeping out that the plant needs.",
                 "The Firebrand (champion): acceptable risk — she "
                 "would spend safety on a worthy hill; she would keep "
                 "the shelter standing for the next winter.",
-                "The Fox (maverick): boundaries themselves — he "
+                "The Fox (maverick): boundaries themselves — she "
                 "maintains them; the Fox tests every one for a door.",
             ),
             overreach=(
@@ -538,7 +538,7 @@ SEAT_JURISDICTIONS: dict[str, SeatJurisdiction] = {
         ),
         conflicts=SeatConflicts(
             overlaps=(
-                "The Raven (skeptic): harmony versus honesty — she "
+                "The Raven (skeptic): harmony versus honesty — he "
                 "will hold two truths in one room; she suspects a held "
                 "truth is often just an unexamined one.",
                 "The Firebrand (champion): whether an opponent is an "

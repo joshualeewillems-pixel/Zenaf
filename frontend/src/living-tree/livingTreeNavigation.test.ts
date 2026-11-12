@@ -245,10 +245,10 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     ).toBe(false)
   })
 
-  it('the champion head menu carries its seat-owned destinations', async () => {
+  it('the mentor head menu carries its seat-owned destinations', async () => {
     renderTree()
     await flush()
-    clickNode('CH')
+    clickNode('ME')
     await flush()
     await click(buttonByLabel('Other actions'))
     expect(rowByTitle('Vision map')).toBeDefined()

@@ -455,10 +455,15 @@ def test_frame_sizes_and_headroom_measured():
     # composed 7839 -> 8681, headroom 1161 -> 319 (still >= 300).
     # Level 1 (2026-11-10): composed 8681 -> 8035 (recovery 646);
     # headroom 319 -> 965.
-    assert len(definition.engage_frame) == 7405
-    assert len(engage) == 8035
+    # Crane correction §2 (2026-11-07): the contrast guard added 242
+    # chars to every readback frame. Combined on the post-L1 base:
+    # definition 7405 -> 7647, composed 8035 -> 8277,
+    # headroom 965 -> 723 (still >= 300; the 2026-11-09 rebase note
+    # about breaching the floor is superseded by the L1 recovery).
+    assert len(definition.engage_frame) == 7647
+    assert len(engage) == 8277
     assert len(engage) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 965
+    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 723
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage) >= 300
     # Proposal fallback cap, for the record: reference + slice together
     # exceed 12,500 (PR #254 warning) — this branch carries the slice

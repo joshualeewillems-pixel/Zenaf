@@ -45,7 +45,7 @@ import {
 import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
 import { DraftStoreProvider } from '../chat/draftStore'
 import StrandPanel from '../chat/StrandPanel'
-import { resolveSeatFace, resolveSeatLogo, resolveSeatPanel } from './seatFaces'
+import { isRevealed, resolveSeatFace, resolveSeatLogo, resolveSeatPanel, type SeatFaceSource } from './seatFaces'
 import { USER_WEAVE_COLOR, voiceColor } from '../components/VoiceWeave'
 import { NodeSheet } from '../tree/NodeSheet'
 import { YouEchoPanel } from './YouEchoPanel'
@@ -78,6 +78,7 @@ export type NodeMenuItemId =
   | 'talk'
   | 'review'
   | 'upload'
+  | 'mint'
   | 'projects'
   | 'settings'
   | 'content'
@@ -135,6 +136,37 @@ const FELLOWSHIP_NAMES: Record<string, string> = {
   conductor: 'The Weaver',
   skeptic: 'The Raven',
   maverick: 'The Fox',
+}
+
+/** The adopted personal names (naming slate, founder 2026-11-10 — see
+    ~/workspace/your_files/zenaf-naming-implementation-design-brief-2026-11-10.md).
+    Shown in the compact head's tag ONLY once the seat is opened/met;
+    until then the tag shows the role name. This is the one surface
+    where a personal name appears before the visitor names the seat —
+    the Conductor ruling (role until the visitor names it) is
+    superseded here only; renaming a seat later is untouched. */
+const SEAT_PERSONAL_NAMES: Record<string, string> = {
+  mentor: 'Rumi',
+  champion: 'Valen',
+  guardian: 'Maeve',
+  ambassador: 'Lucian',
+  conductor: 'Aria',
+  skeptic: 'Severine',
+  maverick: 'Jynx',
+}
+
+/**
+ * The compact-head tag: the seat's personal name once opened/met
+ * (isRevealed — first meeting complete or the depth milestone), the
+ * role name in caps until then. An unopened seat has not revealed its
+ * name, so there is no "???" — the role name is what shows. The
+ * personal name renders in normal case (a name); the role name in
+ * caps (a label).
+ */
+export function seatHeadTag(arch: SeatFaceSource): string {
+  return isRevealed(arch)
+    ? (SEAT_PERSONAL_NAMES[arch.id] ?? arch.id.toUpperCase())
+    : arch.id.toUpperCase()
 }
 
 /** Spoken form of a seat's attention marker, by reason. The intro line is
@@ -309,6 +341,18 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
   ],
 }
 
+/** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —
+    the Fox's expressive standalone mint, mounted in the sheet like
+    Today/Review/Upload. No other seat gets it. The flow is the
+    shared StandaloneMint component (see App's renderTreeSheetContent);
+    the mint itself carries no seat attribution — the standalone
+    endpoints take no seat (open question, 2026-11-12). */
+const SEAT_SHEET_ITEMS: Record<string, Array<{ id: NodeMenuItemId; title: string; desc: string }>> = {
+  maverick: [
+    { id: 'mint', title: 'Mint', desc: 'Mint a photo, a song, a piece — standalone, no journal entry needed.' },
+  ],
+}
+
 /**
  * The compact-head "Other actions" menu (M3, navigation correction
  * §2): sheet destinations, seat-owned destinations, and the
@@ -316,7 +360,7 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
  * the visibility rules are unit-testable without rendering the tree.
  *
  * Never contains Talk (tapping the node IS talk), Full character
- * (already a head disclosure), or the first-meeting door (a direct
+ * (already the display-name disclosure), or the first-meeting door (a direct
  * header button). The shortcut appears ONLY when the seat has a
  * pending invitation AND its most-recent invitation conversation is
  * not the open one — when the target IS the open conversation, the
@@ -340,6 +384,9 @@ export function buildSeatHeaderMenu(args: {
     title: m.title,
     desc: m.desc,
   }))
+  for (const extra of SEAT_SHEET_ITEMS[args.seatKey] ?? []) {
+    items.push({ kind: 'sheet' as const, id: extra.id, title: extra.title, desc: extra.desc })
+  }
   for (const nav of SEAT_NAV_ITEMS[args.seatKey] ?? []) {
     items.push({ kind: 'nav', id: nav.id, title: nav.title, desc: nav.desc, nav: nav.nav })
   }
@@ -750,30 +797,16 @@ function AvatarSection({
       <div className="lsect">Face</div>
       <div className="lavatar-row">
         <SeatAvatar avatarUrl={face} displayName={arch.display_name} />
-        <div className="lavatar-meta">
-          {arch.avatar_url ? (
-            <p className="lnote">
-              This is {arch.display_name}'s face — the one you've earned the right to see.
-            </p>
-          ) : face && arch.avatar_unlocked ? (
-            <p className="lnote">
-              The fellowship's face for {arch.display_name}. Generate or upload an
-              image to replace it with your own.
-            </p>
-          ) : face ? (
-            <p className="lnote">
-              The fellowship's face for {arch.display_name} — revealed when the two
-              of you met.
-            </p>
-          ) : (
-            <p className="lnote">
-              <strong>???</strong> — this seat's face is still undiscovered. Meet this
-              seat — or train it ({arch.avatar_signals_to_unlock} more depth to go) —
-              and you'll earn the right to see it.
-            </p>
-          )}
-          {error && <p className="lavatar-err">{error}</p>}
-        </div>
+        {(!face || error) && (
+          <div className="lavatar-meta">
+            {!face && (
+              <p className="lnote">
+                Undiscovered — {arch.avatar_signals_to_unlock} more depth to go.
+              </p>
+            )}
+            {error && <p className="lavatar-err">{error}</p>}
+          </div>
+        )}
       </div>
       {showPanel && panelArt && (
         <img
@@ -1204,8 +1237,11 @@ export function LivingTreeView({
    * scroll; the full panel expands inline via disclosure.
    */
   const renderCompactSeatHead = (arch: ArchetypeStatus) => {
-    const isSeed = arch.depth <= 0
-    const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
+    // The tag is the seat's name (founder 2026-11-12): the personal
+    // name once opened/met, the role name until then (seatHeadTag).
+    // Both the display name and the tag open the full character sheet
+    // (same disclosure) — no separate "Full character" link.
+    const tag = seatHeadTag(arch)
     const col = voiceColor(arch.id)
     const expanded = charExpandedSeat === arch.id
     const door = meetingDoorState(attention?.markers[arch.id]?.reason, arch.face_revealed === true)
@@ -1238,9 +1274,16 @@ export function LivingTreeView({
           </button>
           <SeatAvatar avatarUrl={resolveSeatFace(arch)} displayName={arch.display_name} size={44} />
           <div>
-            <h3 style={{ margin: 0 }}>{arch.display_name}</h3>
+            <button
+              type="button"
+              className="lname-btn"
+              aria-expanded={expanded}
+              onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+            >
+              {arch.display_name}
+            </button>
             <div className="ltag" style={{ color: col }}>
-              {arch.is_skeptic ? 'THE SKEPTIC · ' : ''}{tag}
+              {tag}
             </div>
           </div>
         </div>
@@ -1354,8 +1397,8 @@ export function LivingTreeView({
   }
 
   /** The full character panel body — face unlock, strand blend, twigs,
-      marketplace. Shown via the Talk tab's "Full character" disclosure.
-      When the seat's panel art is revealed it becomes a left-justified
+      marketplace. Shown via the display-name disclosure in the compact
+      head. When the seat's panel art is revealed it becomes a left-justified
       column and every profile section flows in a column to its right
       (Joshua, 2026-10-23); without art the body is the single column
       it has always been — no empty gutter. */
@@ -1366,7 +1409,7 @@ export function LivingTreeView({
       <>
         <AvatarSection arch={arch} onChanged={refreshArchetypes} showPanel={!panelArt} />
         <StrandBlendBars weights={arch.strand_weights} />
-        {(arch.twigs ?? []).length > 0 ? (
+        {(arch.twigs ?? []).length > 0 && (
           <div className="ltwigs">
             <div className="lsect">Specializations</div>
             {(arch.twigs ?? []).map((t) => (
@@ -1379,10 +1422,6 @@ export function LivingTreeView({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="lsub">
-            No specializations yet — they sprout when your training clusters in a specific domain.
-          </p>
         )}
         <div className="lmarket">
           <div className="lsect">Marketplace</div>
@@ -1393,16 +1432,8 @@ export function LivingTreeView({
             </div>
             <span className="lpct">{arch.depth}%</span>
           </div>
-          <p className="lnote">
-            {isSeed
-              ? 'Nothing to rent yet — training comes first. You set the price when there is something worth renting.'
-              : 'No rental price set yet — you set the price per archetype when there is training worth renting.'}
-          </p>
         </div>
-        <YouEchoPanel
-          archetypeId={arch.id}
-          character={FELLOWSHIP_NAMES[arch.id] ?? arch.display_name}
-        />
+        <YouEchoPanel archetypeId={arch.id} />
         {(() => {
           // Phase 5 — recent stories, true from state: the seat's live
           // threads (active, cast) with latest confirmed change. State
@@ -1428,8 +1459,12 @@ export function LivingTreeView({
             type="button"
             className="lcta"
             onClick={() => {
-              closeSheet()
-              onNavigate('agent_intake')
+              // Seat-aimed upload (founder 2026-11-12): the sheet's own
+              // upload item mounts AgentIntakeView with this seat's
+              // fellowship name, so the copy and the review jump aim at
+              // this seat. The generic intake (onNavigate('agent_intake'),
+              // no seatName) is not used from a seat's profile.
+              setSheetItem('upload')
             }}
           >
             Upload source materials to begin training ›
@@ -1519,10 +1554,31 @@ export function LivingTreeView({
     // old seat-menu invitation row is deleted (its shortcut lives in
     // the head menu). The you-node menu is unchanged, Talk included.
     const items = node.kind === 'you' ? YOU_MENU : SEAT_MENU
+    const extraItems =
+      node.kind === 'seat' ? (SEAT_SHEET_ITEMS[node.seatKey] ?? []) : []
     const navItems = node.kind === 'seat' ? (SEAT_NAV_ITEMS[node.seatKey] ?? []) : []
     return (
       <div>
         {items.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className="lrow"
+            onClick={() => {
+              // Any non-invitation row ends an invitation navigation
+              // episode: a stale override must never resurrect.
+              setTalkOverride(null)
+              setSheetItem(m.id)
+            }}
+          >
+            <span>
+              <span className="lrow-t">{m.title}</span>
+              <span className="lrow-d">{m.desc}</span>
+            </span>
+            <span className="lchev">›</span>
+          </button>
+        ))}
+        {extraItems.map((m) => (
           <button
             key={m.id}
             type="button"
@@ -1636,36 +1692,24 @@ export function LivingTreeView({
     : sheetNode.archetypeName
 
   /**
-   * Seat-talk sheet header actions (founder, 2026-11-12): the full
-   * character open sits next to the seat name and Viability sits at
-   * the top right, near the close control — both moved out of the
-   * compact seat head below. Only for seat talk sheets; every other
-   * sheet keeps the plain header. Viability keeps its value and the
-   * "training comes first" association (shown when the seat is a
-   * seed); what Viability measures is unchanged.
+   * Seat-talk sheet header actions (founder, 2026-11-12): Viability
+   * sits at the top right, near the close control. The full character
+   * has no separate link: the seat's display name in the compact head
+   * below IS the opener (same disclosure). Only for seat talk sheets;
+   * every other sheet keeps the plain header. Viability keeps its
+   * value and the "training comes first" association (shown when the
+   * seat is a seed); what Viability measures is unchanged.
    */
   const sheetArch =
     sheetNode?.kind === 'seat' && sheetItem === 'talk'
       ? (archetypes.find((a) => a.id === sheetNode.seatKey) ?? null)
       : null
   const sheetHeaderActions = sheetArch ? (
-    <>
-      <button
-        type="button"
-        className="lhead-fullchar"
-        aria-expanded={charExpandedSeat === sheetArch.id}
-        onClick={() =>
-          setCharExpandedSeat(charExpandedSeat === sheetArch.id ? null : sheetArch.id)
-        }
-      >
-        {charExpandedSeat === sheetArch.id ? 'Hide full character ↑' : 'Full character →'}
-      </button>
-      <div className="lhead-viab">
-        <span className="lhead-viab-l">Viability</span>
-        <span className="lhead-viab-v">{sheetArch.depth}%</span>
-        {sheetArch.depth <= 0 && <span className="lhead-viab-n">training comes first</span>}
-      </div>
-    </>
+    <div className="lhead-viab">
+      <span className="lhead-viab-l">Viability</span>
+      <span className="lhead-viab-v">{sheetArch.depth}%</span>
+      {sheetArch.depth <= 0 && <span className="lhead-viab-n">training comes first</span>}
+    </div>
   ) : null
 
   return (
@@ -1737,6 +1781,8 @@ export function LivingTreeView({
 .lsheet-view{min-height:200px}
 .lsheet-view .lsub{font-style:normal}
 .lavatar-head{display:flex;gap:12px;align-items:center;margin-bottom:2px}
+.lname-btn{background:none;border:0;padding:0;margin:0;color:#f5f0e8;font-family:inherit;font-size:18px;font-weight:700;line-height:1.2;cursor:pointer;text-align:left;display:block}
+.lname-btn:active{color:#c9a86a}
 .lhead-fullchar{flex:none;min-height:44px;padding:0 10px;background:rgba(201,168,106,.12);border:1px solid rgba(201,168,106,.5);border-radius:10px;color:#f5f0e8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
 .lhead-fullchar:active{background:rgba(201,168,106,.25)}
 .lhead-viab{flex:none;text-align:right;line-height:1.3;min-width:52px}

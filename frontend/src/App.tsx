@@ -37,6 +37,7 @@ import {
   type TreeNodeRef,
 } from './living-tree/LivingTree'
 import ProvenanceView from './provenance/ProvenanceView'
+import StandaloneMint from './provenance/StandaloneMint'
 import {
   formatWorkoutContextBlock,
   countWorkoutRatingsInStorage,
@@ -5007,6 +5008,17 @@ function App() {
             )
           }
         />
+      ) : null
+    }
+    if (item === 'mint') {
+      // Maverick only (the Fox's expressive mint, founder 2026-11-12):
+      // the shared standalone-mint flow, mounted in the sheet. The
+      // menu only offers it for the Maverick, but the mount guards
+      // anyway — any other seat falls through to the honest
+      // "still growing" state. No seat is attributed to the artifact:
+      // the standalone endpoints take no seat (open question).
+      return node.kind === 'seat' && node.seatKey === 'maverick' ? (
+        <StandaloneMint key={`mint-${node.seatKey}`} />
       ) : null
     }
     if (item === 'talk') {

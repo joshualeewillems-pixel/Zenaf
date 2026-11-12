@@ -92,6 +92,7 @@ export type SheetNavView =
   | 'provenance'
   | 'perspectives'
   | 'agent_intake'
+  | 'signal_review'
 
 /**
  * Cross-component ask: jump the open seat sheet to that seat's review
@@ -327,7 +328,8 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
     surface belongs to the seat whose slice of the system it is, and its
     sheet carries the door. The Mentor owns the execution surface (the
     vision map and its tables); the Bear owns provenance (where your material came from
-    and where it went). Everything else left the global menu the same way:
+    and where it went); the Raven owns signal review (distilled signals
+    from imports, awaiting your verdict). Everything else left the global menu the same way:
     Today lives in every seat's menu above and in YOU's, Review is already
     per-seat, Settings and Content live with YOU, and Connect is gone —
     its intake remains reachable from the you-sheet's upload entry. */
@@ -338,6 +340,9 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
   ],
   guardian: [
     { id: 'provenance', title: 'Provenance', desc: 'Where your material came from — and where it went.', nav: 'provenance' },
+  ],
+  skeptic: [
+    { id: 'signal_review', title: 'Signal review', desc: 'Distilled signals from your imports, awaiting your verdict.', nav: 'signal_review' },
   ],
 }
 

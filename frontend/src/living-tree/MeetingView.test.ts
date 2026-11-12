@@ -28,6 +28,7 @@ import { MeetingView } from './MeetingView'
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 type Msg = { id: string; role: 'user' | 'voice'; body: string; archetype_id?: string }
+type Confirmation = { kind: string; id: string; label: string; status: string; turn: number }
 type St = {
   archetype_id: string
   keystone_index: number
@@ -38,6 +39,7 @@ type St = {
   character: string | null
   demeanor: string | null
   messages: Msg[]
+  confirmations?: Confirmation[]
 }
 
 const v = (id: string, body: string): Msg => ({ id, role: 'voice', body, archetype_id: 'conductor' })
@@ -62,7 +64,7 @@ const TURN2 = [
   v('v8', "Don't wait for the instrument to be finished before you come back."),
 ]
 
-function state(status: string, messages: Msg[]): St {
+function state(status: string, messages: Msg[], confirmations?: Confirmation[]): St {
   return {
     archetype_id: 'conductor',
     keystone_index: 1,
@@ -73,6 +75,7 @@ function state(status: string, messages: Msg[]): St {
     character: 'Weaver',
     demeanor: status === 'complete' ? 'Hears how parts fit; cannot leave a loose thread.' : null,
     messages,
+    ...(confirmations ? { confirmations } : {}),
   }
 }
 
@@ -336,5 +339,120 @@ describe('MeetingView composer Enter key', () => {
     await act(async () => pressEnter(input))
     await flush(100)
     expect(turnCount).toBe(1)
+  })
+})
+
+describe('MeetingView filed receipt (FC5)', () => {
+  const RECEIPT: Confirmation = {
+    kind: 'commitment',
+    id: 'c-1',
+    label: 'non-complicity at home',
+    status: 'recorded',
+    turn: 1,
+  }
+
+  async function beginMeeting() {
+    await act(async () => {
+      root.render(React.createElement(MeetingView, { archetypeId: 'conductor', onClose: () => {} }))
+    })
+    await flush(100)
+    const beginBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Begin the meeting'),
+    )
+    expect(beginBtn).toBeTruthy()
+    await act(async () => {
+      beginBtn!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    await flush(100)
+  }
+
+  async function sendTurn(text: string) {
+    const input = container.querySelector('textarea') as HTMLTextAreaElement
+    expect(input).toBeTruthy()
+    await act(async () => setInputValue(input, text))
+    const sendBtn = [...container.querySelectorAll('button')].find((b) => b.textContent === 'Send')
+    await act(async () => {
+      sendBtn!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    await flush(100)
+  }
+
+  it('T-F5-13 renders a receipt for a confirmation in the turn response, none without', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = String(url)
+      let payload: St
+      if (path.includes('/meeting/turn')) payload = state('active', TURN1, [RECEIPT])
+      else if (path.includes('/meeting/start')) payload = state('active', OPENING)
+      else payload = state('not_started', [])
+      return { ok: true, status: 200, json: async () => payload } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await beginMeeting()
+    // No confirmation on the start state: no receipt.
+    expect(container.textContent).not.toContain('Recorded')
+    await sendTurn('Yes, lock it in')
+    // The turn response carries the confirmation: label + Recorded.
+    expect(container.textContent).toContain('non-complicity at home')
+    expect(container.textContent).toContain('Recorded')
+    expect(container.textContent).toContain('Dismiss')
+  })
+
+  it('T-F5-14 Dismiss PATCHes the commitment dismissed and removes the receipt', async () => {
+    const patchCalls: Array<{ url: string; init: unknown }> = []
+    const fetchMock = vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+      const path = String(url)
+      if (path.includes('/followthrough/commitments/')) {
+        patchCalls.push({ url: path, init })
+        return { ok: true, status: 200, json: async () => ({}) } as Response
+      }
+      let payload: St
+      if (path.includes('/meeting/turn')) payload = state('active', TURN1, [RECEIPT])
+      else if (path.includes('/meeting/start')) payload = state('active', OPENING)
+      else payload = state('not_started', [])
+      return { ok: true, status: 200, json: async () => payload } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await beginMeeting()
+    await sendTurn('Yes, lock it in')
+    expect(container.textContent).toContain('Recorded')
+    const dismissBtn = [...container.querySelectorAll('button')].find((b) =>
+      b.textContent?.includes('Dismiss'),
+    )
+    expect(dismissBtn).toBeTruthy()
+    await act(async () => {
+      dismissBtn!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    })
+    await flush(100)
+    expect(patchCalls).toHaveLength(1)
+    expect(patchCalls[0].url).toContain('/followthrough/commitments/c-1')
+    expect((patchCalls[0].init as { method?: string }).method).toBe('PATCH')
+    expect(JSON.parse((patchCalls[0].init as { body?: string }).body ?? '{}')).toEqual({
+      status: 'dismissed',
+    })
+    expect(container.textContent).not.toContain('Recorded')
+  })
+
+  it('T-F5-15 a reload re-reads receipts from the server, never from client memory', async () => {
+    // A fresh mount (a reload) whose first hydration already
+    // carries the confirmation: the receipt renders from the
+    // fetched state alone, with no prior client-side filing in
+    // this session.
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = String(url)
+      const payload = path.includes('/meeting?')
+        ? state('active', TURN1, [RECEIPT])
+        : state('not_started', [])
+      return { ok: true, status: 200, json: async () => payload } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await act(async () => {
+      root.render(React.createElement(MeetingView, { archetypeId: 'conductor', onClose: () => {} }))
+    })
+    await flush(100)
+    expect(container.textContent).toContain('non-complicity at home')
+    expect(container.textContent).toContain('Recorded')
   })
 })

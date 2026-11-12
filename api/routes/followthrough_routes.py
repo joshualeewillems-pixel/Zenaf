@@ -56,6 +56,11 @@ class SnoozeBody(BaseModel):
 class CommitmentBody(BaseModel):
     text: str
     source_quote: str | None = None
+    # FC5: the meeting (or other conversation) the commitment was
+    # filed from, for provenance. Optional; external callers are
+    # unaffected. source_message_id is NOT exposed here — it is the
+    # filing hook's internal idempotency key, never client-supplied.
+    source_conversation_id: str | None = None
 
 
 class LinkBody(BaseModel):
@@ -117,7 +122,12 @@ def snooze_nudge(
 @router.post("/commitments")
 def create_commitment(body: CommitmentBody, user: dict = Depends(get_current_user)):
     try:
-        return _svc().create_commitment(_uid(user), body.text, body.source_quote)
+        return _svc().create_commitment(
+            _uid(user),
+            body.text,
+            body.source_quote,
+            source_conversation_id=body.source_conversation_id,
+        )
     except Exception as exc:  # noqa: BLE001
         raise _http(exc)
 

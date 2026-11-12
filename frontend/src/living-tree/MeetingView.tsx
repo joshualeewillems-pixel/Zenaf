@@ -86,6 +86,16 @@ type MeetingState = {
   character: string | null
   demeanor: string | null
   messages: MeetingMessage[]
+  // FC5 (§2.6): confirmations filed on this turn — the receipt
+  // data, from the server, never from client memory. Absent on
+  // older responses: treated as none.
+  confirmations?: Array<{
+    kind: string
+    id: string
+    label: string
+    status: string
+    turn: number
+  }>
 }
 
 const STYLE = `
@@ -122,6 +132,10 @@ export function MeetingView({
   const seenRef = useRef<Set<string>>(new Set())
   const primedRef = useRef(false)
   const [typing, setTyping] = useState<{ id: string; count: number } | null>(null)
+  // FC5 (§2.6): ids of receipts the visitor dismissed this session.
+  // The receipt DATA always comes from the server (state.confirmations);
+  // this only hides a receipt after its Dismiss PATCH succeeds.
+  const [dismissedIds, setDismissedIds] = useState<string[]>([])
   // Whether every voice bubble has been delivered. Completion
   // PRESENTATION (the "You've met the…" title, the reveal card, the
   // complete footer) is gated on this: the closing turn's state
@@ -290,6 +304,31 @@ export function MeetingView({
     onClose()
   }
 
+  // FC5 (§2.6): Dismiss on a filed receipt — the visitor's undo for
+  // a filing they did not mean. PATCHes the already-filed row's
+  // status to dismissed (the existing endpoint) and hides the
+  // receipt. It never writes anything else and never re-files.
+  const dismissConfirmation = async (id: string) => {
+    try {
+      const res = await fetch(
+        `${base}/followthrough/commitments/${encodeURIComponent(id)}`,
+        {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'dismissed' }),
+        },
+      )
+      if (!res.ok) {
+        setError('Could not dismiss that commitment just now.')
+        return
+      }
+      setDismissedIds((cur) => [...cur, id])
+    } catch {
+      setError('Could not dismiss that commitment just now.')
+    }
+  }
+
   // The visitor's own close action: complete the meeting at their word,
   // whether or not the runtime's close verdict fired. The returned state
   // carries the character's closing words, which type in through the
@@ -388,6 +427,39 @@ export function MeetingView({
               <div ref={endRef} />
             </div>
           )}
+
+          {/* FC5 (§2.6): the filed-receipt — system chrome, not a
+          message and never a claim. One row per confirmation filed
+          on this turn (label + "Recorded" + Dismiss). It is not an
+          approval: nothing is pending, the visitor already approved
+          in conversation. A reload re-reads receipts from the
+          server; this hides only receipts dismissed this session. */}
+          {state &&
+            (state.confirmations ?? []).filter((c) => !dismissedIds.includes(c.id)).length >
+              0 && (
+              <div className="mt-3 space-y-2">
+                {(state.confirmations ?? [])
+                  .filter((c) => !dismissedIds.includes(c.id))
+                  .map((c) => (
+                    <div
+                      key={c.id}
+                      className="rounded-2xl border border-emerald-600/50 bg-emerald-600/10 px-3 py-2 text-sm text-emerald-100 leading-snug flex items-center gap-2"
+                    >
+                      <span className="flex-1 min-w-0">
+                        {c.label} — Recorded
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void dismissConfirmation(c.id)}
+                        className="shrink-0 min-h-[44px] px-3 text-sm text-stone-300 underline underline-offset-4"
+                        aria-label={`Dismiss ${c.label}`}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            )}
 
           {/* Fellowship shared foundation (2026-10-28): the
           conversation-visible completion hint. Shown while the

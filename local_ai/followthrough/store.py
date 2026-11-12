@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS commitments (
   user_id TEXT NOT NULL,
   text TEXT NOT NULL,
   source_quote TEXT,
+  source_conversation_id TEXT,
+  source_message_id TEXT,
   linked_task_id TEXT,
   status TEXT NOT NULL DEFAULT 'open',
   created_at TEXT NOT NULL,
@@ -98,6 +100,40 @@ class FollowthroughStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # FC5 migration (2026-11-12): provenance + offer identity for
+            # pre-existing commitments tables. Columns BEFORE the index
+            # that references them (the agent_intake pattern): creating
+            # the unique index first would raise "no such column:
+            # source_message_id" on a legacy table and abort the open.
+            cols = [
+                r["name"]
+                for r in self._conn.execute(
+                    "PRAGMA table_info(commitments)"
+                ).fetchall()
+            ]
+            for col, ddl in (
+                (
+                    "source_conversation_id",
+                    "ALTER TABLE commitments "
+                    "ADD COLUMN source_conversation_id TEXT",
+                ),
+                (
+                    "source_message_id",
+                    "ALTER TABLE commitments "
+                    "ADD COLUMN source_message_id TEXT",
+                ),
+            ):
+                if cols and col not in cols:
+                    self._conn.execute(ddl)
+            # Storage-level filing idempotency (FC5 correction 2): one
+            # row per (owner, offer). NULL source_message_id rows never
+            # conflict (SQLite treats NULLs as distinct), so legacy and
+            # route-created rows are unaffected.
+            self._conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "idx_ft_commitments_offer "
+                "ON commitments (user_id, source_message_id)"
+            )
             self._conn.commit()
 
     def close(self) -> None:
@@ -258,16 +294,60 @@ class FollowthroughStore:
 
     # -- commitments ----------------------------------------------------------
     def create_commitment(
-        self, user_id: str, text: str, source_quote: str | None = None
+        self,
+        user_id: str,
+        text: str,
+        source_quote: str | None = None,
+        source_conversation_id: str | None = None,
+        source_message_id: str | None = None,
     ) -> dict[str, Any]:
+        """Insert one open commitment, or return the row already filed
+        for this offer (FC5 correction 2 — storage-level idempotency).
+
+        When ``source_message_id`` (the stable id of the assistant
+        message that offered the lock-in) is given, the write is
+        idempotent on ``(user_id, source_message_id)``: INSERT OR
+        IGNORE against the unique index, then re-select. A retry after
+        an encounter-state persistence failure therefore returns the
+        already-committed row — same id — instead of filing a second
+        row. The first write wins if two different labels ever arrive
+        for one offer id. With no ``source_message_id`` the call is
+        the historical plain insert, unchanged.
+        """
         cid = _new_id()
         now = _now_iso()
         with self._lock:
+            if source_message_id:
+                self._conn.execute(
+                    """INSERT OR IGNORE INTO commitments
+                       (id, user_id, text, source_quote,
+                        source_conversation_id, source_message_id,
+                        status, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?)""",
+                    (
+                        cid,
+                        user_id,
+                        text,
+                        source_quote,
+                        source_conversation_id,
+                        source_message_id,
+                        now,
+                        now,
+                    ),
+                )
+                self._conn.commit()
+                row = self._conn.execute(
+                    "SELECT * FROM commitments "
+                    "WHERE user_id = ? AND source_message_id = ?",
+                    (user_id, source_message_id),
+                ).fetchone()
+                return _row_to_dict(row) if row else {}
             self._conn.execute(
                 """INSERT INTO commitments
-                   (id, user_id, text, source_quote, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, 'open', ?, ?)""",
-                (cid, user_id, text, source_quote, now, now),
+                   (id, user_id, text, source_quote,
+                    source_conversation_id, status, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, 'open', ?, ?)""",
+                (cid, user_id, text, source_quote, source_conversation_id, now, now),
             )
             self._conn.commit()
         return self.get_commitment(cid, user_id) or {}

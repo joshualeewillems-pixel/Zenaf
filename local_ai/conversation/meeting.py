@@ -520,6 +520,22 @@ class _MeetingHost:
             silent_close=self._decoupled_recognition,
         )
 
+    def last_voice_message(self) -> dict | None:
+        """FC5 (design §2.4.1): the last assistant ("voice") message
+        row for this meeting, or None when there is none. Read from
+        the server-side conversation store the host already writes
+        to — strictly per-user, scoped by the host's own user id and
+        meeting conversation id. The row carries the offer's stable
+        id plus the server-side user_id / conversation_id the filing
+        hook files under (correction 3)."""
+        history = self._svc.conversations.history(
+            self._user_id, self._cid, limit=100
+        )
+        for m in reversed(history or []):
+            if isinstance(m, dict) and m.get("role") == "voice":
+                return m
+        return None
+
 
 def _is_ceiling_filed(row: dict[str, Any]) -> bool:
     """Whether this run's impression was filed by the ceiling wrap
@@ -672,12 +688,22 @@ class MeetingService:
         # except the discard record, which stays inspectable.
         completion_offered = False
         pending_discarded = ""
+        # FC5 (§2.6): the confirmations filed on THIS turn — the
+        # receipt data, riding the existing turn response. Filtered
+        # by turn == user_turns: empty on turns where nothing was
+        # filed, and a reload re-reads them from the server (never
+        # from client memory) while the turn count still stands.
+        confirmations: list[dict[str, Any]] = []
         if row is not None:
             try:
                 enc = self._hydrate_state(row)
                 completion_offered = bool(
                     enc.completion_offered and status in ("active", "paused"))
                 pending_discarded = enc.pending_impression_discarded or ""
+                confirmations = [
+                    c for c in (enc.confirmed_writes or [])
+                    if isinstance(c, dict) and c.get("turn") == enc.user_turns
+                ]
             except Exception:
                 pass
         return {
@@ -688,6 +714,7 @@ class MeetingService:
             "stage": stage,
             "completion_offered": completion_offered,
             "pending_impression_discarded": pending_discarded,
+            "confirmations": confirmations,
             "has_script": script is not None,
             # The reveal payload: who was met, and the demeanor the first
             # meeting unlocks. Only meaningful once complete — before that

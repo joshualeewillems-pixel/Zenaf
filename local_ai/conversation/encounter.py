@@ -1241,6 +1241,16 @@ class EncounterHost(Protocol):
     def store_dimensions(self, seat_outcome: str, visitor_response: str) -> None: ...
     def close(self, wrap_line: str) -> None: ...
 
+    def last_voice_message(self) -> dict | None: ...
+    # FC5 (design §2.4.1): the last assistant ("voice") message row
+    # for this meeting — {'id', 'body', 'user_id',
+    # 'conversation_id', ...} — or None when there is none. The id
+    # is the offer's stable identifier (the filing hook's dedup and
+    # idempotency key); user_id / conversation_id are the
+    # server-side provenance facts the hook files under. Optional:
+    # a host that does not implement it never files (the hook reads
+    # it through getattr and fails closed).
+
 
 # ---------------------------------------------------------------------------
 # The runtime.
@@ -1257,6 +1267,146 @@ _WHOLE_EXCHAUST_NOTE = (
     "Form your impression from the whole of what they have said "
     "across this meeting — the exchange itself is the evidence."
 )
+
+#: FC5 (design §2.5): the block-emission instruction, appended as a
+#: shared constant in both meeting frames (_engage_frame and
+#: _turn_frame) — mechanism, not character, so it rides every
+#: seat's meeting prompts identically from one constant and two
+#: append sites. The block is the filing trigger: without it the
+#: model offers lock-ins in prose and the hook files nothing. The
+#: instruction is ~250 chars; the frame budget is pinned by the
+#: FC5 render tests (T-F5-12) — if the measurement ever fails, this
+#: text is shortened, never the block format.
+_COMMITMENT_OFFER_INSTRUCTION = (
+    "When you offer to lock something in, append a "
+    "```commitment-offer block: one line, "
+    "`label: <the thing in the visitor's words, short>`. The block "
+    "is the filing trigger; never claim it is filed — the system "
+    "files it only after the visitor says yes."
+)
+
+#: FC5 (design §2.4.3 + founder correction 1): the deterministic
+#: affirmation lists. The forms are words and phrases — matching is
+#: on token boundaries, so "know" does not contain "no" and
+#: "yesterday" does not start with "yes". A false negative (a real
+#: Yes that files nothing) is recoverable by offering again; a
+#: false positive (a non-Yes that files) is a commitment the
+#: visitor never made — so the matcher is tight by design, and the
+#: founder may strike or widen entries (D-F5-4).
+_AFFIRM_FORMS = (
+    "yes",
+    "yes please",
+    "please do",
+    "lock it in",
+    "file it",
+    "record it",
+    "do it",
+    "go ahead",
+    "sounds good",
+    "let's do it",
+    "lets do it",
+)
+
+#: Checked FIRST, before the affirm list — "yes, but not yet"
+#: denies, it does not affirm.
+_DENY_FORMS = (
+    "no",
+    "not",
+    "don't",
+    "dont",
+    "wait",
+    "hold on",
+    "not yet",
+    "later",
+    "maybe",
+    "not now",
+    "don't file",
+    "no thanks",
+)
+
+#: The structured offer block (design §2.4.2): one field, the label,
+#: in the visitor's own words. The block is the filing trigger — a
+#: prose offer without it files nothing.
+_COMMITMENT_OFFER_RE = re.compile(
+    r"```commitment-offer\s*\n(.*?)\n```", re.DOTALL
+)
+_COMMITMENT_OFFER_LABEL_RE = re.compile(
+    r"(?m)^\s*label\s*:\s*(.*?)\s*$"
+)
+
+#: The longest a label may be (design §2.4.2). Missing, empty, or
+#: over-long labels file nothing (fail-closed).
+_COMMITMENT_OFFER_LABEL_MAX = 200
+
+
+def _normalize_message(text: str) -> str:
+    """Lowercase, punctuation (except apostrophes — "don't" and
+    "dont", "let's" and "lets" are distinct listed forms) folded
+    to spaces, whitespace collapsed. The matcher works on the
+    normalized token stream, never on raw substrings."""
+    lowered = (text or "").lower()
+    folded = "".join(ch if (ch.isalnum() or ch == "'") else " " for ch in lowered)
+    return " ".join(folded.split())
+
+
+def _tokens(text: str) -> list[str]:
+    return _normalize_message(text).split()
+
+
+def _phrase_in_tokens(tokens: list[str], phrase: str) -> bool:
+    """True when the phrase's tokens occur as a contiguous run in
+    the message's tokens (token boundaries, not substrings)."""
+    parts = phrase.split()
+    if not parts:
+        return False
+    n = len(parts)
+    return any(tokens[i:i + n] == parts for i in range(len(tokens) - n + 1))
+
+
+def _starts_with_form(tokens: list[str], form: str) -> bool:
+    """True when the form's tokens are a prefix of the message's
+    tokens — the message starts with the form as words, so "yes,
+    non-complicity at home" affirms and "yesterday ..." does not."""
+    parts = form.split()
+    return len(tokens) >= len(parts) and tokens[:len(parts)] == parts
+
+
+def match_affirmation(message: str) -> str:
+    """Deterministic affirmation verdict for one user message
+    (FC5 design §2.4.3, founder correction 1): "affirm", "deny",
+    or "ambiguous". The denylist is checked FIRST; anything that
+    is neither a listed affirm nor a listed deny is ambiguous and
+    files nothing. No model call, no fuzzy matching."""
+    tokens = _tokens(message)
+    if not tokens:
+        return "ambiguous"
+    for form in _DENY_FORMS:
+        if _phrase_in_tokens(tokens, form):
+            return "deny"
+    for form in _AFFIRM_FORMS:
+        if tokens == form.split() or _starts_with_form(tokens, form):
+            return "affirm"
+    return "ambiguous"
+
+
+def parse_commitment_offer(body: str) -> str | None:
+    """The label from the first ```commitment-offer block in a model
+    turn (FC5 design §2.4.2), or None when there is no usable block:
+    no block, no label line, an empty label, or a label over 200
+    chars. A second block in the same turn is ignored, not a second
+    filing."""
+    if not body:
+        return None
+    found = _COMMITMENT_OFFER_RE.search(body)
+    if not found:
+        return None
+    label_match = _COMMITMENT_OFFER_LABEL_RE.search(found.group(1))
+    if not label_match:
+        return None
+    label = (label_match.group(1) or "").strip()
+    if not label or len(label) > _COMMITMENT_OFFER_LABEL_MAX:
+        return None
+    return label
 
 def _spoken(text: str) -> str:
     """Generated text on its way to being spoken by the character —
@@ -1362,18 +1512,114 @@ class EncounterRuntime:
         return frame + "\n\n" + suffix
 
     def _file_accepted_offer(self, host: EncounterHost,
-                             state: EncounterState, message: str) -> None:
-        """Filing hook (Firebrand FC4 §3.5 — interface to the FC5/FC6
-        designs, NOT implemented here): on an accepted offer, file
-        the commitment/reminder and append a Confirmation to
-        ``state.confirmed_writes`` — ONLY after the write commits,
-        so the row id in the Confirmation is the committed row's
-        id. This build ships the hook as a no-op: until FC5 lands,
-        no confirmation is ever produced, the suffix never renders,
-        and the guidance prohibition governs every turn. FC5 replaces
-        this body with acceptance detection, store choice, and
-        approval semantics; FC6 supplies the reminder variant."""
-        return None
+                             state: EncounterState, message: str,
+                             service=None) -> None:
+        """Filing hook (Firebrand FC4 §3.5, filled in by FC5
+        §2.4): on an accepted commitment offer, file the commitment
+        and append a Confirmation to ``state.confirmed_writes`` —
+        ONLY after the write commits, so the row id in the
+        Confirmation is the committed row's id. No model call
+        anywhere in the hook — deterministic parse + matcher only.
+
+        Steps: (1) read the previous model turn through the host
+        (a host without ``last_voice_message`` never files —
+        fail-closed); (2) parse the ```commitment-offer block —
+        a prose offer without the block files nothing; (3) match
+        the visitor's reply against the deterministic affirmation
+        lists (denylist first; ambiguous files nothing); (4) dedup
+        on the offer's stable message id, in state AND in storage
+        (FC5 correction 2 — the store refuses a second row for one
+        offer, so a retry after an encounter-state persistence
+        failure returns the already-committed row instead of
+        duplicating it); (5) file in-process through the
+        follow-through service and append the Confirmation.
+
+        Dispatch: only a ```commitment-offer block selects this
+        branch. A reminder offer selects FC6's branch (design §4)
+        — FC6 is HELD, so anything that is not a commitment-offer
+        returns here without touching state; FC6 fills that branch
+        in. Provenance (correction 3) comes from the stored message
+        row itself — ``user_id`` / ``conversation_id`` as the
+        server-side conversation store recorded them, never from
+        client-supplied conversation ownership.
+
+        ``service`` is an injection point for tests (a
+        FollowthroughService on an isolated database). In
+        production it is constructed lazily, only on the filing
+        path, and closed when the hook constructed it. On any
+        failure: append nothing, log, return — the seat will not
+        say "Done" for a write that did not commit."""
+        getter = getattr(host, "last_voice_message", None)
+        if not callable(getter):
+            return
+        try:
+            last = getter()
+        except Exception:
+            logger.exception("FC5: last_voice_message failed; not filing")
+            return
+        if not isinstance(last, dict):
+            return
+        label = parse_commitment_offer(last.get("body") or "")
+        if label is None:
+            # No commitment-offer block in the previous model turn —
+            # including a reminder offer, which is FC6's branch and
+            # is stubbed (return without touching state) while FC6
+            # is held. A prose offer without the block files nothing.
+            return
+        if match_affirmation(message) != "affirm":
+            return
+        offer_id = last.get("id")
+        if not offer_id:
+            return
+        # State-level dedup: one filing per offer.
+        for c in getattr(state, "confirmed_writes", []) or []:
+            if isinstance(c, dict) and c.get("source_message_id") == offer_id:
+                return
+        user_id = last.get("user_id")
+        conversation_id = last.get("conversation_id")
+        if not user_id or not conversation_id:
+            return
+        owned = service is None
+        if owned:
+            try:
+                from local_ai.followthrough.service import (
+                    FollowthroughService,
+                )
+                from local_ai.followthrough.store import FollowthroughStore
+
+                service = FollowthroughService(FollowthroughStore())
+            except Exception:
+                logger.exception("FC5: could not open follow-through store")
+                return
+        try:
+            row = service.create_commitment(
+                user_id,
+                text=label,
+                source_quote=(message or "").strip(),
+                source_conversation_id=conversation_id,
+                source_message_id=offer_id,
+            )
+        except Exception:
+            logger.exception("FC5: commitment write failed; not filing")
+            return
+        finally:
+            if owned:
+                try:
+                    service.store.close()
+                except Exception:
+                    pass
+        if not isinstance(row, dict) or not row.get("id"):
+            return
+        state.confirmed_writes.append(
+            {
+                "kind": "commitment",
+                "id": row["id"],
+                "label": label,
+                "status": "recorded",
+                "turn": state.user_turns,
+                "source_message_id": offer_id,
+            }
+        )
 
     def _split_reply_and_impression(self, raw: str) -> tuple[str, str, bool]:
         """Split the engage call's two movements on its delimiter line.
@@ -1474,6 +1720,9 @@ class EncounterRuntime:
         if d.capability_context:
             parts.append(d.capability_context)
         parts.append(_naming_note(d))
+        # FC5 (§2.5): the shared block-emission instruction, appended
+        # in both frames from one constant.
+        parts.append(_COMMITMENT_OFFER_INSTRUCTION)
         return "\n\n".join(parts)
 
     # -- frames ----------------------------------------------------------------
@@ -1522,6 +1771,9 @@ class EncounterRuntime:
                 "force it, and never explain it; it is simply true "
                 "of this place."
             )
+        # FC5 (§2.5): the shared block-emission instruction, appended
+        # in both frames from one constant — last, after the cue.
+        parts.append(_COMMITMENT_OFFER_INSTRUCTION)
         return "\n\n".join(parts), cue
 
     def _nearby_allusion(self, state: EncounterState,

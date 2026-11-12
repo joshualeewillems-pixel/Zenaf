@@ -407,12 +407,23 @@ class FollowthroughService:
 
     # -- commitments ----------------------------------------------------------
     def create_commitment(
-        self, user_id: str, text: str, source_quote: str | None = None
+        self,
+        user_id: str,
+        text: str,
+        source_quote: str | None = None,
+        source_conversation_id: str | None = None,
+        source_message_id: str | None = None,
     ) -> dict[str, Any]:
         text = (text or "").strip()
         if not text:
             raise ValueError("commitment text is required")
-        return self.store.create_commitment(user_id, text, source_quote)
+        return self.store.create_commitment(
+            user_id,
+            text,
+            source_quote,
+            source_conversation_id=source_conversation_id,
+            source_message_id=source_message_id,
+        )
 
     def list_commitments(
         self, user_id: str, status: str | None = None

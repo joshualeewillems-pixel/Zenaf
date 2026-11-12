@@ -310,7 +310,7 @@ const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'talk', title: 'Talk', desc: 'Think something through with your whole council.' },
   { id: 'review', title: 'Review', desc: 'Moments awaiting your verdict before anything trains.' },
   { id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
-  { id: 'content', title: 'Content', desc: 'Your journal and reflections — the material that is yours.' },
+  { id: 'content', title: 'Content', desc: 'Narrative packages and transcript tools — briefs, scripts, and sorted transcripts.' },
   { id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
 ]
 

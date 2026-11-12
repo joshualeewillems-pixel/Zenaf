@@ -5478,8 +5478,7 @@ function App() {
                       setFoundationEditAgent(foundationSelectedAgent)
                       setFoundationActorUi('edit_actor')
                     }}
-                    onChat={() => {}}
-                    onUseInWorkspace={() => {}}
+                    onUseInWorkspace={() => setMainView('workspace')}
                     onDelete={
                       isUserDefined(foundationSelectedAgent)
                         ? (ag) => {

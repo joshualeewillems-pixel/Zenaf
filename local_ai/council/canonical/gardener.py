@@ -74,7 +74,7 @@ GARDENER_RECORD = {
             "category": "identity",
         },
         "voice_color": {
-            "text": "Deep gold #c9a86a — 'the long view'",
+            "text": "Sage green #92b692 — 'the long view'",
             "standing": "adopted",
             "category": "identity",
         },

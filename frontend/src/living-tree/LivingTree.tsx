@@ -45,8 +45,8 @@ import {
 import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
 import { DraftStoreProvider } from '../chat/draftStore'
 import StrandPanel from '../chat/StrandPanel'
-import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
-import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
+import { resolveSeatFace, resolveSeatLogo, resolveSeatPanel } from './seatFaces'
+import { USER_WEAVE_COLOR, voiceColor } from '../components/VoiceWeave'
 import { NodeSheet } from '../tree/NodeSheet'
 import { YouEchoPanel } from './YouEchoPanel'
 import { MeetingView } from './MeetingView'
@@ -558,12 +558,12 @@ function relax(P: Map<string, Placed>): Map<string, Placed> {
   return P
 }
 
-/** The Skeptic's hollow branch — the inverse voice, rendered in muted slate. */
-const SKEPTIC_COLOR = '#6b6480'
-
 function strandCol(p: { side: string; strand: StrandKey | null; datum?: TreeDatum }): string {
   if (p.side === 'c') return '#c9a86a'
-  if (p.datum?.archetype?.is_skeptic) return SKEPTIC_COLOR
+  // A seat node wears its own seat color (the founder's logo-sheet palette);
+  // the Skeptic's hollow branch (dashed stroke, dark fill) is drawn at the
+  // node itself and is unaffected by the color.
+  if (p.datum?.archetype) return voiceColor(p.datum.archetype.id)
   if (!p.strand) return '#c9a86a'
   return strandColor(p.strand)
 }
@@ -876,6 +876,7 @@ export function LivingTreeView({
   initials,
   renderSheetContent,
   currentUserId,
+  userAvatarUrl,
 }: {
   /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
   onNavigate: (view: SheetNavView) => void
@@ -886,8 +887,18 @@ export function LivingTreeView({
   /** Signed-in user id (null when signed out): keys the draft store
       and purges it on auth change. */
   currentUserId?: string | null
+  /** The signed-in user's profile photo — App's currentUser.avatar_data_url,
+      the same source the header avatar uses. The you-node wears it instead
+      of the "YOU" letters; null/undefined keeps the letters. */
+  userAvatarUrl?: string | null
 }) {
   const [sel, setSel] = useState<string | null>(null)
+  /** The you-node photo failed to load — fall back to the "YOU" letters
+      (mirrors the header avatar's broken-image fallback). */
+  const [youImgBroken, setYouImgBroken] = useState(false)
+  useEffect(() => {
+    setYouImgBroken(false)
+  }, [userAvatarUrl])
   /** Weaver strand interview open in the bottom panel (rev2): the
       design strand key, or null when no strand conversation is open.
       A strand root tap opens it; a re-tap closes it. */
@@ -1172,9 +1183,7 @@ export function LivingTreeView({
         first.
       </p>
       {archetypes.map((a) => {
-        const domKey = dominantStrandKey(a)
-        const s = STRANDS.find((x) => x.key === domKey)
-        const col = a.is_skeptic ? SKEPTIC_COLOR : (s?.color ?? '#c9a86a')
+        const col = voiceColor(a.id)
         return (
           <div key={a.id} className="lstat">
             <span className="ldot" style={{ background: col }} />
@@ -1197,7 +1206,7 @@ export function LivingTreeView({
   const renderCompactSeatHead = (arch: ArchetypeStatus) => {
     const isSeed = arch.depth <= 0
     const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
-    const col = arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a'
+    const col = voiceColor(arch.id)
     const expanded = charExpandedSeat === arch.id
     const door = meetingDoorState(attention?.markers[arch.id]?.reason, arch.face_revealed === true)
     return (
@@ -1393,7 +1402,7 @@ export function LivingTreeView({
           <div className="lstat">
             <span className="lname">Viability</span>
             <div className="lbar">
-              <div className="lfill" style={{ width: `${arch.depth}%`, background: arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a' }} />
+              <div className="lfill" style={{ width: `${arch.depth}%`, background: voiceColor(arch.id) }} />
             </div>
             <span className="lpct">{arch.depth}%</span>
           </div>
@@ -1462,12 +1471,11 @@ export function LivingTreeView({
       you-node and the seats open sheets. */
   const renderPanel = () => {
     const d = sel ? findDatum(sel, up) : null
+    // No selection — or a seat selected, which opens its sheet: the panel
+    // is empty. (The old "Tap the trunk…" hint bar was removed 2026-11-12;
+    // the panel box itself is hidden by showPanel below.)
     if (!d || d.archetype) {
-      return (
-        <div className="lhint">
-          Tap the trunk for your options — tap any branch to meet its character.
-        </div>
-      )
+      return null
     }
     const live = nodeById.get(sel!)
     const col = live ? strandCol(live) : '#c9a86a'
@@ -1506,6 +1514,13 @@ export function LivingTreeView({
       </div>
     )
   }
+
+  /** The panel box shows only when there is panel content: the open
+      strand interview, or a selected strand's narrative. With nothing
+      selected — or a seat selected, which opens its sheet — the box is
+      gone entirely (the old hint bar was removed 2026-11-12). */
+  const panelDatum = sel ? findDatum(sel, up) : null
+  const showPanel = !!strandPanelKey || (!!panelDatum && !panelDatum.archetype)
 
   /* ---------------- node sheet: menus + mounted views ---------------- */
 
@@ -1641,13 +1656,6 @@ export function LivingTreeView({
       <style>{`
 .ltree{box-sizing:border-box;width:100%;max-width:430px;margin:0 auto;background:#0b0a09;border:1px solid rgba(201,168,106,.25);border-radius:20px;padding:18px 12px 14px;color:#f5f0e8;font-family:system-ui,-apple-system,sans-serif;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overflow-x:clip}
 .ltree *{box-sizing:border-box}
-.lhead{text-align:center}
-.lhead h2{margin:0;font-size:18px;font-weight:650}
-.lhead h2 em{color:#c9a86a;font-style:italic}
-.lhead p{margin:6px 8px 0;font-size:11.5px;color:rgba(245,240,232,.6);line-height:1.55;overflow-wrap:break-word}
-.llegend{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;margin:10px 4px 0;font-size:10px;color:rgba(245,240,232,.55)}
-.llegend span{display:inline-flex;align-items:center;gap:4px}
-.llegend i{width:8px;height:8px;border-radius:50%;display:inline-block}
 .lsvg{display:block;width:100%;height:auto}
 .lnode{cursor:pointer}
 .lnode circle.face{fill:#141210;stroke-width:1.8}
@@ -1659,7 +1667,6 @@ export function LivingTreeView({
 .lnarr h3{margin:0 0 3px;font-size:13.5px}
 .lnarr .ltag{font-size:10.5px;font-weight:700;letter-spacing:.08em;margin-bottom:5px}
 .lnarr p{margin:0;font-size:12px;line-height:1.6;color:rgba(245,240,232,.82);font-style:italic;overflow-wrap:break-word}
-.lnarr .lhint{color:rgba(245,240,232,.45);font-style:normal;text-align:center;padding:12px 0 4px;font-size:12px}
 .lnarr .lnote{font-style:normal;color:rgba(245,240,232,.6);font-size:11.5px;margin-bottom:8px}
 .lrow{display:flex;align-items:center;justify-content:space-between;width:100%;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.25);border-radius:10px;color:#f5f0e8;font-size:13px;font-weight:600;padding:10px 12px;min-height:44px;margin:0 0 6px;cursor:pointer;font-family:inherit;text-align:left}
 .lrow:active{background:rgba(201,168,106,.15)}
@@ -1713,27 +1720,6 @@ export function LivingTreeView({
 .lavatar-head h3{margin:0}
 .nsh-panel{user-select:text;-webkit-user-select:text}
       `}</style>
-      <div className="lhead">
-        <h2>
-          The <em>Living Tree</em>
-        </h2>
-        <p>
-          Seven strands braid through the trunk and root below. Your council branches above — Mentor, Champion,
-          Guardian, Maverick, Ambassador, Conductor, and the Skeptic. Tap a branch to meet its character; the
-          marketplace lives one tap deeper, inside each branch.
-        </p>
-        <div className="llegend" aria-hidden="true">
-          {BRAID_ORDER.map((key) => {
-            const s = STRANDS.find((x) => x.key === key)!
-            return (
-              <span key={key}>
-                <i style={{ background: s.color }} />
-                {s.agentName}
-              </span>
-            )
-          })}
-        </div>
-      </div>
       <svg
         className="lsvg"
         viewBox={viewBox}
@@ -1791,6 +1777,14 @@ export function LivingTreeView({
             const collapsed = p.kids.length > 0 && !exp[p.datum.id]
             const faceR = nodeR(p)
             const initialsText = isYou ? initials ?? 'YOU' : p.datum.name.split(' ')[0].slice(0, 2).toUpperCase()
+            // Met seats wear their logo instead of their letters (the
+            // founder's 2026-11-12 logo sheet); unmet seats keep letters.
+            // The you-node wears the user's profile photo when one is set
+            // — falling back to the letters if the photo fails to load.
+            // Either image is circular-cropped to the node below.
+            const seatLogo = p.datum.archetype ? resolveSeatLogo(p.datum.archetype) : null
+            const youPhoto = isYou && userAvatarUrl && !youImgBroken ? userAvatarUrl : null
+            const nodeImage = seatLogo ?? youPhoto
             // Keystone attention: a seat that wants the user carries a small
             // "!" badge at its top-right, in the app's amber attention
             // accent. Decorative — it lives inside the node's own <g>, so
@@ -1823,11 +1817,42 @@ export function LivingTreeView({
                   strokeWidth={selected ? 3 : 1.8}
                   strokeDasharray={isSkeptic ? '5 4' : undefined}
                   fill={isSkeptic ? '#0b0a09' : undefined}
-                  style={selected ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
+                  style={selected && !nodeImage ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
                 />
-                <text className="nm" y={isYou ? 7 : 4} style={{ fontSize: isYou ? '15px' : '9px' }}>
-                  {initialsText}
-                </text>
+                {nodeImage ? (
+                  <>
+                    <defs>
+                      <clipPath id={`node-img-${p.datum.id}`}>
+                        <circle r={faceR} />
+                      </clipPath>
+                    </defs>
+                    <image
+                      href={nodeImage}
+                      x={-faceR}
+                      y={-faceR}
+                      width={faceR * 2}
+                      height={faceR * 2}
+                      clipPath={`url(#node-img-${p.datum.id})`}
+                      preserveAspectRatio="xMidYMid slice"
+                      onError={youPhoto ? () => setYouImgBroken(true) : undefined}
+                    />
+                    {/* Re-draw the ring on top: the image covers the base
+                        circle's stroke, and the selected glow lives here
+                        (one glow, not two). */}
+                    <circle
+                      r={faceR}
+                      fill="none"
+                      stroke={col}
+                      strokeWidth={selected ? 3 : 1.8}
+                      strokeDasharray={isSkeptic ? '5 4' : undefined}
+                      style={selected ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
+                    />
+                  </>
+                ) : (
+                  <text className="nm" y={isYou ? 7 : 4} style={{ fontSize: isYou ? '15px' : '9px' }}>
+                    {initialsText}
+                  </text>
+                )}
                 {showMarker && (
                   <g
                     className="attn"
@@ -1918,19 +1943,21 @@ export function LivingTreeView({
           own conversation). It covers ONLY the Tree subtree, so
           workspace/console mounts never see it. */}
       <DraftStoreProvider userId={currentUserId ?? null}>
-      <div className="lnarr">
-        {strandPanelKey ? (
-          <StrandPanel
-            strandKey={strandPanelKey}
-            onClose={() => {
-              setStrandPanelKey(null)
-              setSel(null)
-            }}
-          />
-        ) : (
-          renderPanel()
-        )}
-      </div>
+      {showPanel && (
+        <div className="lnarr">
+          {strandPanelKey ? (
+            <StrandPanel
+              strandKey={strandPanelKey}
+              onClose={() => {
+                setStrandPanelKey(null)
+                setSel(null)
+              }}
+            />
+          ) : (
+            renderPanel()
+          )}
+        </div>
+      )}
       <div className="lfoot">
         Training first, rent later —<br />
         the tree is yours; the marketplace is a lens on it, one tap deep.

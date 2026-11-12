@@ -22,7 +22,7 @@ import type { ConditionSeverity, GrowthState, MapEntityKind, MapEntityRef } from
 export const STONE_SVG_VIEWBOX = '0 0 64 64'
 
 /** Seven strand colors (living-tree/strands.ts) — the garden's palette. */
-const STRAND_PALETTE = ['#c98f6a', '#7aa3b8', '#c9a86a', '#b983a8', '#9db87a', '#a88fc9', '#7ba889']
+const STRAND_PALETTE = ['#e7aa89', '#91b6d1', '#edc87c', '#dea1b8', '#b3c98d', '#bfa1de', '#88b899']
 const NEUTRAL_WASH = '#a8a29e'
 const URGENCY_RING = '#d9a441'
 const PULSE_RING = '#86b89a'

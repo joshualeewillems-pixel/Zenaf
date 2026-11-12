@@ -108,7 +108,7 @@ RAVEN_RECORD: dict = {
             ),
         },
         "voice_color": {
-            "text": "ash gray #6b6b76 — the uncomfortable question",
+            "text": "muted lavender #a29ac1 — the uncomfortable question",
             "standing": "adopted",
             "category": "identity",
         },

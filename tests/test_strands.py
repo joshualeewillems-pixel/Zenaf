@@ -38,13 +38,13 @@ def test_strand_colors_unique_hex() -> None:
 
 def test_canonical_colors() -> None:
     expected = {
-        "word": "#c98f6a",
-        "number": "#7aa3b8",
-        "image": "#c9a86a",
-        "sound": "#b983a8",
-        "body": "#9db87a",
-        "people": "#a88fc9",
-        "self": "#7ba889",
+        "word": "#e7aa89",
+        "number": "#91b6d1",
+        "image": "#edc87c",
+        "sound": "#dea1b8",
+        "body": "#b3c98d",
+        "people": "#bfa1de",
+        "self": "#88b899",
     }
     for key, color in expected.items():
         assert strands.strand_color(key) == color

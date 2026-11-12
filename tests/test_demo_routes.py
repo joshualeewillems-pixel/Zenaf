@@ -648,7 +648,7 @@ def test_register_flag_response_field_defaults_none():
         reply="hi",
         session_id="s",
         voice="mentor",
-        voice_color="#c9a86a",
+        voice_color="#92b692",
         exchanges_used=1,
         exchanges_left=11,
     )
@@ -1007,7 +1007,7 @@ def test_progression_response_fields_default_empty():
         reply="hi",
         session_id="s",
         voice="mentor",
-        voice_color="#c9a86a",
+        voice_color="#92b692",
         exchanges_used=1,
         exchanges_left=11,
     )

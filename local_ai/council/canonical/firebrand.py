@@ -86,7 +86,7 @@ FIREBRAND_RECORD = {
             "category": "identity",
         },
         "voice_color": {
-            "text": "Ember red #c96a5a — 'courage, action'",
+            "text": "Ember red #e24e4e — 'courage, action'",
             "standing": "adopted",
             "category": "identity",
         },

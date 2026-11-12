@@ -158,16 +158,14 @@ function newLocalRef(): string {
  * - Sheet seat tab → pre-selected seat (character header rendered above by
  *   the sheet, from PR #147's merged Talk+Character tab).
  * - Sheet you-node → chips with no pre-selection: an invitation to pick.
- * - Workspace (Foundation console) → adds the trained/base version toggle.
  *
  * Ask the council (Joshua, 2026-10-23 — supersedes the 1:1-only note
  * that stood here): having two chats was confusing, so the workspace
- * console's two conversational powers live here now — the version
- * switch (above) and multi-seat fan-out: the "Ask the council" toggle
- * sends one message to every seat through the same per-seat turn path,
- * and each reply lands in this one thread under its seat's name. The
- * workspace console remains a deliberation console (folder runs,
- * synthesis, recorded insights) — talking lives here.
+ * console's conversational power lives here now — multi-seat fan-out.
+ * The "Ask the council" toggle sends one message to every seat through
+ * the same per-seat turn path, and each reply lands in this one thread
+ * under its seat's name. The workspace console remains a deliberation
+ * console (folder runs, synthesis, recorded insights) — talking lives here.
  */
 export default function CouncilChat({
   environment,
@@ -181,7 +179,7 @@ export default function CouncilChat({
   seedMessages = null,
   onTurnSent = () => {},
 }: {
-  /** 'sheet' = compact, with the Zenaf/You side switch. 'workspace' = roomier + version toggle. */
+  /** 'sheet' = compact. 'workspace' = roomier. */
   environment: 'sheet' | 'workspace'
   /** Pre-selected seat (seat-branch sheets). Omit → chips, no selection. */
   initialArchetypeId?: string | null
@@ -252,21 +250,15 @@ export default function CouncilChat({
     )
   })
   const [loading, setLoading] = useState(false)
-  /** Demo's "Respond / Question me" toggle, brought to the authenticated chat. */
-  const [questionMode, setQuestionMode] = useState(false)
-  /** Workspace-only trained/base version toggle. Sheets get the Zenaf/You side switch below. */
-  const [voiceMode, setVoiceMode] = useState<'trained' | 'base'>('trained')
   /**
-   * Sheet-only Zenaf/You switch (per seat): Zenaf = the canonical character
-   * (base voice), You = the user's trained echo of the seat (trained voice).
-   * Either side can be talked to at any time — the switch selects which
-   * voice renders the reply; the You *profile* (name, recognition) is what
-   * keystone 4 unlocks, not the talking. Defaults to You, matching the
-   * sheet's historical trained-only behavior.
+   * Voice: always the canonical seat (base). The Zenaf/You switch and
+   * the workspace trained/base toggle were removed 2026-11-12 (UI
+   * cleanup): the trained echo does not exist yet, so there is nothing
+   * to switch to. A training-threshold unlock gate is a future open
+   * item, not built here. The backend still defaults `mode` to
+   * "trained", so the base choice is sent explicitly on every turn.
    */
-  const [side, setSide] = useState<'you' | 'zenaf'>('you')
-  const chatMode: 'trained' | 'base' =
-    environment === 'workspace' ? voiceMode : side === 'you' ? 'trained' : 'base'
+  const chatMode: 'trained' | 'base' = 'base'
   const [signedOut, setSignedOut] = useState(false)
   const chatEndRef = useRef<HTMLDivElement | null>(null)
 
@@ -526,7 +518,6 @@ export default function CouncilChat({
                 archetype_id: seatId,
                 message: text,
                 mode: chatMode,
-                question: questionMode,
                 ...(context ? { context } : {}),
               }
             : {
@@ -534,7 +525,6 @@ export default function CouncilChat({
                 message: text,
                 history: messages.map((m) => ({ role: m.role, content: m.content })),
                 mode: chatMode,
-                question: questionMode,
               },
         ),
       })
@@ -566,14 +556,14 @@ export default function CouncilChat({
         roundState: data.round_state ?? null,
       }
     },
-    [base, conversationId, context, chatMode, questionMode, messages, names, activeId, activeName],
+    [base, conversationId, context, chatMode, messages, names, activeId, activeName],
   )
 
   const send = useCallback(async () => {
     const text = input.trim()
     if (loading) return
     if (!councilMode && !activeId) return
-    if (!text && !questionMode) return
+    if (!text) return
     // The Enter key path bypasses the disabled button: enforce the
     // hydration gate here too — never send into a thread whose
     // history hasn't loaded.
@@ -693,7 +683,7 @@ export default function CouncilChat({
   const sendDisabled =
     loading ||
     (!activeId && !councilMode) ||
-    (!input.trim() && !questionMode) ||
+    !input.trim() ||
     (conversationId ? hydrating || hydrateError : false)
 
   return (
@@ -740,64 +730,6 @@ export default function CouncilChat({
             )}
           </div>
         </>
-      )}
-
-      {environment === 'workspace' && (
-        <div className="flex flex-wrap items-center gap-3">
-          <div
-            role="group"
-            aria-label="Voice version"
-            className="flex rounded-full border border-stone-700 overflow-hidden"
-          >
-            {(['trained', 'base'] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setVoiceMode(m)}
-                aria-pressed={voiceMode === m}
-                className={`min-h-[44px] px-4 text-sm font-medium ${
-                  voiceMode === m ? 'bg-amber-950/40 text-amber-300' : 'text-stone-400'
-                }`}
-              >
-                {m === 'trained' ? 'Your voices' : 'Base voices'}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-stone-500">
-            {voiceMode === 'trained'
-              ? 'Your seats, shaped by your training.'
-              : 'The aspirational stock voices — no training.'}
-          </p>
-        </div>
-      )}
-
-      {environment === 'sheet' && activeId && (
-        <div className="flex flex-wrap items-center gap-3">
-          <div
-            role="group"
-            aria-label="Zenaf or You — which side of this seat"
-            className="flex rounded-full border border-stone-700 overflow-hidden"
-          >
-            {(['zenaf', 'you'] as const).map((s) => (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSide(s)}
-                aria-pressed={side === s}
-                className={`min-h-[44px] px-4 text-sm font-medium ${
-                  side === s ? 'bg-amber-950/40 text-amber-300' : 'text-stone-400'
-                }`}
-              >
-                {s === 'zenaf' ? 'Zenaf' : 'You'}
-              </button>
-            ))}
-          </div>
-          <p className="text-[11px] text-stone-500">
-            {side === 'you'
-              ? 'Your echo of the seat — shaped by your approved training.'
-              : 'The seat as written — the stock character, before any training.'}
-          </p>
-        </div>
       )}
 
       {/* Hydration failure is not an empty thread: banner + retry, and
@@ -966,37 +898,6 @@ export default function CouncilChat({
 
       {(activeId || councilMode) && (
         <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2 space-y-2">
-          {/* Demo's Respond / Question me toggle. */}
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
-            <span className="text-xs text-stone-500">Ask to…</span>
-            <div
-              role="group"
-              aria-label="Respond or question mode"
-              className="flex rounded-full border border-stone-700 overflow-hidden"
-            >
-              {(
-                [
-                  { id: false, label: 'Respond' },
-                  { id: true, label: 'Question me' },
-                ] as const
-              ).map((o) => (
-                <button
-                  key={o.label}
-                  type="button"
-                  onClick={() => setQuestionMode(o.id)}
-                  aria-pressed={questionMode === o.id}
-                  className={`min-h-[44px] px-4 text-sm font-medium ${
-                    questionMode === o.id
-                      ? 'bg-amber-950/40 text-amber-300'
-                      : 'text-stone-400'
-                  }`}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="flex gap-2">
             <textarea
               ref={composerRef}
@@ -1030,11 +931,7 @@ export default function CouncilChat({
                 }
               }}
               placeholder={
-                councilMode
-                  ? 'Ask the whole council…'
-                  : questionMode
-                    ? 'Add context (optional)…'
-                    : `Talk to ${activeName}…`
+                councilMode ? 'Ask the whole council…' : `Talk to ${activeName}…`
               }
               maxLength={2000}
               rows={1}

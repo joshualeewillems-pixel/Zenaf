@@ -23,9 +23,9 @@ def orientation_for(strand_key: str, *, is_fresh: bool) -> dict[str, Any]:
     """Pattern-copy orientation for a strand thread opening.
 
     ``is_fresh`` means the thread has no messages yet. A fresh thread
-    gets the strand definition, a nonbinding invitation, and the §3.3
-    opener pattern as the conversational invitation. A returning thread
-    gets a resume line only — no opener, no greeting, no recap demanded.
+    gets the strand definition and a single-sentence invitation. A
+    returning thread gets a resume line only — no opener, no greeting,
+    no recap demanded.
     """
     key = validate_strand_key(strand_key)
     definition = STRAND_DEFINITIONS[key]
@@ -37,15 +37,12 @@ def orientation_for(strand_key: str, *, is_fresh: bool) -> dict[str, Any]:
         "is_fresh": bool(is_fresh),
     }
     if is_fresh:
-        base["invitation"] = (
-            f"Talk with Weaver about {definition['definition']}. "
-            "She'll ask one question at a time — answer it, deflect it, "
-            "or change the subject whenever you like. "
-            "Nothing here needs an upload to begin."
-        )
-        # §3.3 opener pattern, rendered as the invitation's question.
-        # Pattern copy, not a script and not a generated turn.
-        base["opening_question"] = definition["opener"]
+        # Single lead sentence only (UI cleanup 2026-11-12): the
+        # explanatory sentences and the §3.3 opener question were
+        # removed from the panel. The opener patterns remain in keys.py
+        # as founder-authored appendix copy, unrendered.
+        base["invitation"] = f"Talk with Weaver about {definition['definition']}."
+        base["opening_question"] = None
         base["resume"] = None
     else:
         base["invitation"] = (

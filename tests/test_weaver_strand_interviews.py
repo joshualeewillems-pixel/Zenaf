@@ -99,12 +99,11 @@ def test_orientation_fresh_is_definition_plus_nonbinding_invitation():
     assert orientation["definition"] == "things you care about"
     assert orientation["is_fresh"] is True
     assert orientation["resume"] is None
-    # Nonbinding invitation: deflect/change subject, no upload needed.
+    # Single lead sentence only (UI cleanup 2026-11-12): no
+    # explanatory sentences, no opener question.
     invitation = orientation["invitation"]
-    assert "deflect it" in invitation
-    assert "Nothing here needs an upload to begin" in invitation
-    # §3.3 opener pattern, rendered as the invitation's question.
-    assert "cared about long enough" in orientation["opening_question"]
+    assert invitation == "Talk with Weaver about things you care about."
+    assert orientation["opening_question"] is None
     # Nonbinding: no claim that anything will be remembered or acted on.
     assert "I'll note" not in invitation and "I'll save" not in invitation
 
@@ -322,7 +321,8 @@ def test_resolve_is_fresh_and_orientation_present(client):
     assert "things you care about" in body["definition"]
     assert body["is_fresh"] is True
     assert body["conversation_id"].startswith("talk-")
-    assert "cared about long enough" in body["orientation"]["opening_question"]
+    assert body["orientation"]["invitation"] == "Talk with Weaver about things you care about."
+    assert body["orientation"]["opening_question"] is None
     assert body["boundaries"] == []
     assert body["sources"] == []
     assert "reply" not in body  # no generated turn on open

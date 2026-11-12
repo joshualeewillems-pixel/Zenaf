@@ -14,7 +14,7 @@ import { apiBase } from '../apiBase'
  *  - The You identity card (name/face presentation) stays unrevealed until
  *    keystone 4 ("The echo") is complete. The QC data is visible from day
  *    one, because checking what's being fashioned is the day-to-day point
- *    of the switch — but the echo's NAME cannot be set before then: you
+ *    of this panel — but the echo's NAME cannot be set before then: you
  *    have to get to know it before you can name it, and the naming happens
  *    in the recognition conversation itself.
  *  - Signal anchors are shown read-only, exactly as recorded (they were
@@ -171,8 +171,8 @@ export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; 
           <p className="lsub">
             Your echo of the {character} is being fashioned, but its card stays unrevealed
             until the recognition conversation (keystone 4, “The echo”) — the name, face,
-            and full presentation arrive then. The switch above and everything below stay
-            open in the meantime: this is yours to inspect from day one.
+            and full presentation arrive then. Everything here stays open
+            in the meantime: this is yours to inspect from day one.
           </p>
           <p className="lnote">
             It doesn’t have a name yet — you have to get to know it before you can

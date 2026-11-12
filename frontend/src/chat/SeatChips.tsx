@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
-import { voiceColor } from '../components/VoiceWeave'
+import { voiceColor } from '../council/colors'
 
 /** Canonical seat order for the chip row. */
 export const SEAT_ORDER = [

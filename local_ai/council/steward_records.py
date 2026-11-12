@@ -97,7 +97,7 @@ DICTIONARY_PERSPECTIVE = "Integration doesn't require uniformity; sometimes the 
 DICTIONARY_SIGNATURE_LINE = 'Not every voice needs to sing the same note.'
 
 #: Voice color (UI accent; not prompt text).
-VOICE_COLOR = '#8a8a93'
+VOICE_COLOR = '#8892c3'
 
 #: Archetype id.
 ARCHETYPE_ID = 'conductor'

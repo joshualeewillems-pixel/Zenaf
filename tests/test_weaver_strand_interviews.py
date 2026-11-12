@@ -109,7 +109,7 @@ def test_orientation_fresh_is_roots_panel_model():
         "in your life."
     )
     assert orientation["talk_line"] == (
-        "Talk with Aria about something you care about. There's no "
+        "Talk with the Conductor about something you care about. There's no "
         "right answer, and you can follow the conversation wherever "
         "it leads."
     )
@@ -121,13 +121,13 @@ def test_orientation_fresh_is_roots_panel_model():
 
 def test_orientation_fresh_panel_copy_present_for_all_seven_roots():
     # Every root carries the full panel model; each talk line names
-    # Aria (founder's example) and carries the same reassurance close.
+    # the Conductor (founder's ruling 2026-11-12: role, not personal name) and carries the same reassurance close.
     for key in DESIGN_STRAND_KEYS:
         orientation = orientation_for(key, is_fresh=True)
         assert orientation["question"], key
         assert orientation["invitation"], key
         assert orientation["talk_line"], key
-        assert orientation["talk_line"].startswith("Talk with Aria about"), key
+        assert orientation["talk_line"].startswith("Talk with the Conductor about"), key
         assert orientation["talk_line"].endswith(
             "There's no right answer, and you can follow the "
             "conversation wherever it leads."
@@ -361,7 +361,7 @@ def test_resolve_is_fresh_and_orientation_present(client):
         "Who and what do you care about, and why?"
     )
     assert body["orientation"]["talk_line"] == (
-        "Talk with Aria about something you care about. There's no "
+        "Talk with the Conductor about something you care about. There's no "
         "right answer, and you can follow the conversation wherever "
         "it leads."
     )

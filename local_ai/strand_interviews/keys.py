@@ -48,10 +48,11 @@ TAXONOMY_TO_DESIGN: dict[str, str] = {v: k for k, v in DESIGN_TO_TAXONOMY.items(
 #: ``invitation`` is the one short subject-specific invitation, and
 #: ``talk_line`` is the talk line. Heart's three strings are the
 #: founder's wording verbatim; the other six are drafted in parallel
-#: from his definitions. The talk lines name Aria (his example), where
-#: the rest of the strand UI uses the role name Weaver — see the
-#: name-vs-role flag in the implementation report; do not "fix" the
-#: name unilaterally. ``opener`` remains founder-authored appendix
+#: from his definitions. The talk lines name the Conductor (founder's
+#: ruling 2026-11-12: role, not personal name — "Aria" is visitor-
+#: chosen eventually, so it does not belong in the UI yet). The panel
+#: header, loading text, and resume line likewise use the Conductor.
+#: ``opener`` remains founder-authored appendix
 #: copy, unrendered (see orientation.py).
 STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
     "heart": {
@@ -64,7 +65,7 @@ STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
             "special place in your life."
         ),
         "talk_line": (
-            "Talk with Aria about something you care about. There's "
+            "Talk with the Conductor about something you care about. There's "
             "no right answer, and you can follow the conversation "
             "wherever it leads."
         ),
@@ -85,7 +86,7 @@ STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
             "accomplishing."
         ),
         "talk_line": (
-            "Talk with Aria about something you like to do or make. "
+            "Talk with the Conductor about something you like to do or make. "
             "There's no right answer, and you can follow the "
             "conversation wherever it leads."
         ),
@@ -105,7 +106,7 @@ STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
             "how you change your mind."
         ),
         "talk_line": (
-            "Talk with Aria about how you make sense of things. "
+            "Talk with the Conductor about how you make sense of things. "
             "There's no right answer, and you can follow the "
             "conversation wherever it leads."
         ),
@@ -125,7 +126,7 @@ STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
             "art, music, storytelling, or something else entirely."
         ),
         "talk_line": (
-            "Talk with Aria about how you express yourself. There's no "
+            "Talk with the Conductor about how you express yourself. There's no "
             "right answer, and you can follow the conversation "
             "wherever it leads."
         ),
@@ -145,7 +146,7 @@ STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
             "listen to, and what tends to fall on deaf ears."
         ),
         "talk_line": (
-            "Talk with Aria about what resonates with you. There's no "
+            "Talk with the Conductor about what resonates with you. There's no "
             "right answer, and you can follow the conversation "
             "wherever it leads."
         ),
@@ -165,7 +166,7 @@ STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
             "direction is worth taking."
         ),
         "talk_line": (
-            "Talk with Aria about what guides you. There's no right "
+            "Talk with the Conductor about what guides you. There's no right "
             "answer, and you can follow the conversation wherever it "
             "leads."
         ),
@@ -185,7 +186,7 @@ STRAND_DEFINITIONS: dict[str, dict[str, str]] = {
             "might overlook."
         ),
         "talk_line": (
-            "Talk with Aria about what you notice. There's no right "
+            "Talk with the Conductor about what you notice. There's no right "
             "answer, and you can follow the conversation wherever it "
             "leads."
         ),

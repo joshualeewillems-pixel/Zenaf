@@ -53,7 +53,7 @@ def orientation_for(strand_key: str, *, is_fresh: bool) -> dict[str, Any]:
         base["question"] = None
         base["invitation"] = (
             "Pick up where you left off — no recap, no restart. "
-            "Weaver remembers the thread; you decide where it goes next."
+            "The Conductor remembers the thread; you decide where it goes next."
         )
         base["talk_line"] = None
         base["opening_question"] = None

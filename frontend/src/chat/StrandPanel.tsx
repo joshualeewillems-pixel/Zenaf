@@ -200,7 +200,7 @@ export default function StrandPanel({
   if (loading) {
     return (
       <div>
-        <p className="lsub">Opening your conversation with Weaver…</p>
+        <p className="lsub">Opening your conversation with the Conductor…</p>
       </div>
     )
   }
@@ -208,7 +208,7 @@ export default function StrandPanel({
   if (error || !resolved) {
     return (
       <div>
-        <h3>Weaver</h3>
+        <h3>Conductor</h3>
         <p className="lsub">{error ?? 'Could not open this strand.'}</p>
         <button type="button" className="lcta" onClick={() => void resolve()}>
           Try again ›
@@ -226,7 +226,7 @@ export default function StrandPanel({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3>
-            {resolved.strand_name} — with Weaver
+            {resolved.strand_name} — with the Conductor
           </h3>
           <div className="ltag">{resolved.definition}</div>
         </div>

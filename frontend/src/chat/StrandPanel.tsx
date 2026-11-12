@@ -52,7 +52,9 @@ export type StrandResolve = {
     definition: string
     tagline: string
     is_fresh: boolean
+    question: string | null
     invitation: string
+    talk_line: string | null
     opening_question: string | null
     resume: boolean | null
   }
@@ -240,8 +242,15 @@ export default function StrandPanel({
 
       {/* Orientation header — pattern copy, not a message. The first
           generated Weaver question arrives through the Talk path once
-          the user sends a message; nothing here generates. */}
+          the user sends a message; nothing here generates. Seven-roots
+          panel model (founder, 2026-11-12): concise question + one
+          short invitation + talk line. Returning threads carry only
+          the resume line as the invitation. */}
+      {orientation.question && (
+        <p className="mt-2 text-base font-medium text-stone-200">{orientation.question}</p>
+      )}
       <p className="lsub">{orientation.invitation}</p>
+      {orientation.talk_line && <p className="lsub">{orientation.talk_line}</p>}
       {orientation.opening_question && (
         <p>“{orientation.opening_question}”</p>
       )}

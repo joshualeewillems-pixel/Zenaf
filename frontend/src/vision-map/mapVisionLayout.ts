@@ -18,6 +18,10 @@ export const VISION_MAP_LAYOUT = {
   TASK_ROW_V_GAP: 40,
   /** Horizontal gap between task columns — avoids sibling overlap */
   TASK_COL_H_GAP: 36,
+  /** Clearance between adjacent initiative columns (edge of one column's
+      branch arc to the next) — consolidated from 200 so columns sit
+      closer together instead of stranding empty canvas between them. */
+  COLUMN_H_GAP: 120,
   MAX_TASK_ROWS: 5,
   ORPHAN_COLUMN_PITCH: 360,
 } as const
@@ -111,5 +115,24 @@ export function columnWidthForBranchCount(maxBranches: number): number {
   const maxX = Math.max(...xs)
   const arcSpan = maxX - minX + L.BRANCH.w
   const fromBuffer = 2 * L.INITIATIVE_BUFFER_R + L.TREE.w * 0.35
-  return Math.ceil(Math.max(fromBuffer, arcSpan + 200, 720))
+  return Math.ceil(Math.max(fromBuffer, arcSpan + L.COLUMN_H_GAP, 720))
+}
+
+/**
+ * Initiative column centers, one column per project count — each column is
+ * only as wide as its own branch arc needs, instead of every column paying
+ * for the widest initiative's arc. Columns sit directly adjacent, so the
+ * garden consolidates instead of stranding empty canvas between clusters.
+ * Equal counts reproduce the old uniform layout exactly
+ * (center[i] = i * colW + colW / 2).
+ */
+export function columnCentersForProjectCounts(projectCounts: readonly number[]): number[] {
+  const widths = projectCounts.map((n) => columnWidthForBranchCount(n))
+  const centers: number[] = []
+  let x = 0
+  for (const w of widths) {
+    centers.push(x + w / 2)
+    x += w
+  }
+  return centers
 }

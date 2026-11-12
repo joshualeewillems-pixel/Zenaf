@@ -34,7 +34,7 @@ import './mapAesthetics.css'
 
 import { EntityMapNode } from './EntityMapNode'
 import { CairnNode } from './CairnNode'
-import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX, NEST_NODE_LAYOUT_WIDTH_PX } from './NestGroupNode'
+import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX } from './NestGroupNode'
 import {
   CAIRN_NARROW_THRESHOLD,
   CAIRN_WIDE_THRESHOLD,
@@ -96,10 +96,18 @@ const edgeTypes = { mapFlow: MapFlowEdge }
 const TRACKPAD_ZOOM_GAIN = 2.2
 const SCENE_BASE_HEIGHT_PX = 560
 const SCENE_CONTENT_PADDING_PX = 260
-/** Fallback node size before React Flow measures — matches painted stone box (see mapEntityNodeLayout). */
-const DEFAULT_ENTITY_W = MAP_ENTITY_FALLBACK_LAYOUT_PX.width
-const DEFAULT_ENTITY_H = MAP_ENTITY_FALLBACK_LAYOUT_PX.height
-const INITIAL_MAP_ZOOM = 1
+/**
+ * Open view (2026-11-12): the map opens fitted on the whole garden — every
+ * cairn visible, consolidated — instead of centered on a random node at
+ * zoom 1 (or a stale saved 20% zoom-out). The fit never blows a small
+ * garden up past FIT_VIEW_MAX_ZOOM. A saved viewport is restored only
+ * when it is a real close-up (>= 25% closer than the fit); a saved
+ * zoomed-out state is the scattered open, not intent, and is refit.
+ */
+const FIT_VIEW_PADDING = 0.15
+const FIT_VIEW_MAX_ZOOM = 0.9
+const MAP_MIN_ZOOM = 0.15
+const SAVED_VIEWPORT_RESTORE_ZOOM_RATIO = 1.25
 const ORIENT_RETRY_MS = 600
 
 const MAP_SAND_LAYER_CLASS = 'map-sand-layer'
@@ -250,8 +258,8 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
         selectionKeyCode="Shift"
         elementsSelectable
         fitView={false}
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.2}
+        fitViewOptions={{ padding: FIT_VIEW_PADDING }}
+        minZoom={MAP_MIN_ZOOM}
         maxZoom={1.6}
         zoomOnScroll={true}
         zoomOnPinch={true}
@@ -721,7 +729,11 @@ function VisionMapFlow({
   }, [guidancePulseNodeId])
 
   /**
-   * On each new `baseGraph` (load / refresh): restore saved viewport, or else center on a random node at a fixed zoom.
+   * On each new `baseGraph` (load / refresh): open fitted on the whole
+   * garden — every cairn visible, consolidated — instead of centered on a
+   * random node at zoom 1. A saved viewport is restored only when it is a
+   * real close-up (>= 25% closer than the fit); a saved zoomed-out state
+   * is the scattered 20% open, not intent, and is refit instead.
    * Nesting does not change `baseGraph`, so this does not run again.
    */
   useEffect(() => {
@@ -735,37 +747,6 @@ function VisionMapFlow({
     const savedVp = viewportRestoreRef.current
     viewportRestoreRef.current = null
 
-    if (
-      savedVp &&
-      Number.isFinite(savedVp.x) &&
-      Number.isFinite(savedVp.y) &&
-      Number.isFinite(savedVp.zoom) &&
-      savedVp.zoom > 0
-    ) {
-      const outerVp = window.setTimeout(() => {
-        requestAnimationFrame(() => {
-          void rf
-            .setViewport(
-              { x: savedVp.x, y: savedVp.y, zoom: savedVp.zoom },
-              { duration: 0 },
-            )
-            .then(() => {
-              if (!cancelled) {
-                setZoomLevel(savedVp.zoom)
-                setMapViewportReady(true)
-              }
-            })
-            .catch(() => {
-              if (!cancelled) setMapViewportReady(true)
-            })
-        })
-      }, 0)
-      return () => {
-        cancelled = true
-        clearTimeout(outerVp)
-      }
-    }
-
     const orient = () => {
       if (cancelled) return
       const live = rf.getNodes()
@@ -777,17 +758,40 @@ function VisionMapFlow({
         }
         return
       }
-      const pick = live[Math.floor(Math.random() * live.length)]!
-      const defaultH = pick.type === 'nestGroup' ? NEST_NODE_LAYOUT_HEIGHT_PX : DEFAULT_ENTITY_H
-      const defaultW = pick.type === 'nestGroup' ? NEST_NODE_LAYOUT_WIDTH_PX : DEFAULT_ENTITY_W
-      const w = pick.measured?.width ?? pick.width ?? defaultW
-      const h = pick.measured?.height ?? pick.height ?? defaultH
-      const cx = pick.position.x + w / 2
-      const cy = pick.position.y + h / 2
       void rf
-        .setCenter(cx, cy, { zoom: INITIAL_MAP_ZOOM, duration: 0 })
+        .fitView({ padding: FIT_VIEW_PADDING, maxZoom: FIT_VIEW_MAX_ZOOM, duration: 0 })
         .then(() => {
-          if (!cancelled) setMapViewportReady(true)
+          if (cancelled) return
+          const fitted = rf.getViewport()
+          const isCloseUp =
+            savedVp &&
+            Number.isFinite(savedVp.x) &&
+            Number.isFinite(savedVp.y) &&
+            Number.isFinite(savedVp.zoom) &&
+            savedVp.zoom > 0 &&
+            savedVp.zoom >= fitted.zoom * SAVED_VIEWPORT_RESTORE_ZOOM_RATIO
+          if (isCloseUp) {
+            void rf
+              .setViewport(
+                { x: savedVp.x, y: savedVp.y, zoom: savedVp.zoom },
+                { duration: 0 },
+              )
+              .then(() => {
+                if (!cancelled) {
+                  setZoomLevel(savedVp.zoom)
+                  setMapViewportReady(true)
+                }
+              })
+              .catch(() => {
+                if (!cancelled) {
+                  setZoomLevel(fitted.zoom)
+                  setMapViewportReady(true)
+                }
+              })
+            return
+          }
+          setZoomLevel(fitted.zoom)
+          setMapViewportReady(true)
         })
         .catch(() => {
           if (!cancelled) setMapViewportReady(true)
@@ -1033,25 +1037,17 @@ function VisionMapFlow({
     }
     setMapViewportReady(false)
     window.setTimeout(() => {
-      const pick = bg.nodes[Math.floor(Math.random() * bg.nodes.length)]!
-      const lw =
-        pick.type === 'entityMap'
-          ? mapEntityNodeLayoutPx(pick.data.kind).width
-          : pick.type === 'nestGroup'
-            ? NEST_NODE_LAYOUT_WIDTH_PX
-            : DEFAULT_ENTITY_W
-      const lh =
-        pick.type === 'entityMap'
-          ? mapEntityNodeLayoutPx(pick.data.kind).height
-          : pick.type === 'nestGroup'
-            ? NEST_NODE_LAYOUT_HEIGHT_PX
-            : DEFAULT_ENTITY_H
-      const cx = pick.position.x + lw / 2
-      const cy = pick.position.y + lh / 2
-      void rf.setCenter(cx, cy, { zoom: INITIAL_MAP_ZOOM, duration: 0 }).then(() => {
-        setMapViewportReady(true)
-        setZoomLevel(INITIAL_MAP_ZOOM)
-      })
+      // Reset opens fitted on the whole garden, like a fresh open —
+      // not centered on a random stone.
+      void rf
+        .fitView({ padding: FIT_VIEW_PADDING, maxZoom: FIT_VIEW_MAX_ZOOM, duration: 0 })
+        .then(() => {
+          setMapViewportReady(true)
+          setZoomLevel(rf.getViewport().zoom)
+        })
+        .catch(() => {
+          setMapViewportReady(true)
+        })
     }, 0)
   }, [layoutStorageKey, rf])
 

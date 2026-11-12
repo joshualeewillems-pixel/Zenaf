@@ -140,47 +140,56 @@ function buildLowFreqPattern(): CanvasPattern | null {
   return octx.createPattern(oc, 'repeat')
 }
 
-function drawPassiveSand(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  phase: number,
-  breathe: number,
-) {
-  const valleyA = 0.14 + breathe * 0.07
-  ctx.save()
-  ctx.lineWidth = 1
-  ctx.strokeStyle = `rgba(88, 92, 102, ${valleyA})`
-  const step = 26
-  for (let y = -24; y < h + 48; y += step) {
-    ctx.beginPath()
-    for (let x = 0; x <= w; x += 5) {
-      const wob =
-        Math.sin(x * 0.011 + phase * 0.38) * 2.8 +
-        Math.sin(y * 0.007 + phase * 0.22 + x * 0.0035) * 1.6
-      const yy = y + wob + Math.sin(phase * 0.12 + y * 0.018) * breathe * 2.5
-      if (x === 0) ctx.moveTo(x, yy)
-      else ctx.lineTo(x, yy)
-    }
-    ctx.stroke()
-  }
+/**
+ * Raked-gravel ring background (2026-11-12): concentric circles replace the
+ * ruled horizontal lines that read as lined paper. One tile holds three
+ * off-grid ring foci so the repeat does not read as a grid; the grain +
+ * speckle layers on top break it up further. Strokes stay at alpha <= 0.09
+ * — a texture, not a drawing. Every ring sits fully inside the tile (max
+ * radius < distance to the nearest edge) so the repeat has no seams.
+ * Rendered once per resize into a repeating pattern (buildRingPattern);
+ * the bed is static after that, so it paints once per resize, not per frame.
+ */
+export const ZEN_SAND_RING_PATTERN = {
+  // 960px tile: on a phone (390px wide) less than half a tile is visible,
+  // so the repeat never reads as a grid; seven irregular foci spread the
+  // rings across the whole tile with no empty bands.
+  tilePx: 960,
+  foci: [
+    { x: 180, y: 200, rings: 8 },
+    { x: 520, y: 130, rings: 6 },
+    { x: 820, y: 300, rings: 7 },
+    { x: 240, y: 520, rings: 6 },
+    { x: 620, y: 620, rings: 8 },
+    { x: 860, y: 780, rings: 5 },
+    { x: 120, y: 820, rings: 5 },
+  ],
+  ringStepPx: 18,
+  strokeRgb: '88, 92, 102',
+  alpha: 0.09,
+  alphaAlternate: 0.055,
+  lineWidthPx: 1,
+} as const
 
-  ctx.globalAlpha = 0.04 + breathe * 0.03
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.32)'
-  for (let y = -18; y < h + 40; y += step * 1.15) {
-    ctx.beginPath()
-    for (let x = 0; x <= w; x += 6) {
-      const wob =
-        Math.sin(x * 0.009 + phase * 0.28 + 0.4) * 2 +
-        Math.sin(y * 0.006 + phase * 0.18) * 1.2
-      const yy = y + wob + 3
-      if (x === 0) ctx.moveTo(x, yy)
-      else ctx.lineTo(x, yy)
+function buildRingPattern(): CanvasPattern | null {
+  const { tilePx, foci, ringStepPx, strokeRgb, alpha, alphaAlternate, lineWidthPx } =
+    ZEN_SAND_RING_PATTERN
+  const oc = document.createElement('canvas')
+  oc.width = tilePx
+  oc.height = tilePx
+  const octx = oc.getContext('2d')
+  if (!octx) return null
+  octx.lineWidth = lineWidthPx
+  for (const f of foci) {
+    for (let i = 1; i <= f.rings; i++) {
+      const r = i * ringStepPx
+      octx.beginPath()
+      octx.arc(f.x, f.y, r, 0, Math.PI * 2)
+      octx.strokeStyle = `rgba(${strokeRgb}, ${i % 2 === 0 ? alphaAlternate : alpha})`
+      octx.stroke()
     }
-    ctx.stroke()
   }
-
-  ctx.restore()
+  return octx.createPattern(oc, 'repeat')
 }
 
 type Props = {
@@ -202,6 +211,9 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
   const grainPatternRef = useRef<CanvasPattern | null>(null)
   const specklePatternRef = useRef<CanvasPattern | null>(null)
   const lowFreqPatternRef = useRef<CanvasPattern | null>(null)
+  const ringPatternRef = useRef<CanvasPattern | null>(null)
+  /** The bed (gradient + grain + rings) is static — repaint only after a resize clears the canvas. */
+  const bedDirtyRef = useRef(true)
   const sandFieldRef = useRef<SandHeightField | null>(null)
   const fieldScratchRef = useRef<HTMLCanvasElement | null>(null)
   const fieldImageDataRef = useRef<ImageData | null>(null)
@@ -211,7 +223,6 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
   const lastDecayTimeRef = useRef<number | null>(null)
   const rafRef = useRef<number>(0)
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const phaseRef = useRef(0)
   /** Skip redundant pattern rebuilds when CSS size + DPR unchanged (ResizeObserver can fire often). */
   const lastResizeLogicalRef = useRef<{ w: number; h: number; dpr: number } | null>(null)
   const rakeEnabledRef = useRef(rakeEnabled)
@@ -245,6 +256,8 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
     grainPatternRef.current = buildGrainPattern()
     specklePatternRef.current = buildSpecklePattern()
     lowFreqPatternRef.current = buildLowFreqPattern()
+    ringPatternRef.current = buildRingPattern()
+    bedDirtyRef.current = true
     ensureSandField().resize(w, h)
     fieldImageDataRef.current = null
     lastDecayTimeRef.current = null
@@ -281,81 +294,73 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
     }
   }, [ensureSandField])
 
-  const drawBed = useCallback(
-    (now: number) => {
-      const canvas = bedCanvasRef.current
-      if (!canvas) return
-      const ctx = canvas.getContext('2d')
-      if (!ctx) return
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      const w = canvas.width / dpr
-      const h = canvas.height / dpr
+  const drawBed = useCallback(() => {
+    // Static bed: repaint only after a resize cleared the canvas. The rake
+    // field on the canvas above is the animated layer.
+    if (!bedDirtyRef.current) return
+    const canvas = bedCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+    const dpr = Math.min(window.devicePixelRatio || 1, 2)
+    const w = canvas.width / dpr
+    const h = canvas.height / dpr
 
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 
-      const base = ctx.createLinearGradient(0, 0, w * 0.92, h * 1.1)
-      base.addColorStop(0, '#cfcbc3')
-      base.addColorStop(0.22, '#c8c4bb')
-      base.addColorStop(0.5, '#c0bbb2')
-      base.addColorStop(0.76, '#b8b3aa')
-      base.addColorStop(1, '#b0aaa1')
-      ctx.fillStyle = base
+    const base = ctx.createLinearGradient(0, 0, w * 0.92, h * 1.1)
+    base.addColorStop(0, '#cfcbc3')
+    base.addColorStop(0.22, '#c8c4bb')
+    base.addColorStop(0.5, '#c0bbb2')
+    base.addColorStop(0.76, '#b8b3aa')
+    base.addColorStop(1, '#b0aaa1')
+    ctx.fillStyle = base
+    ctx.fillRect(0, 0, w, h)
+
+    const low = lowFreqPatternRef.current
+    if (low) {
+      ctx.save()
+      ctx.globalAlpha = 0.28
+      ctx.fillStyle = low
+      const sc = 3.15
+      ctx.scale(sc, sc)
+      ctx.fillRect(0, 0, w / sc + 2, h / sc + 2)
+      ctx.restore()
+    }
+
+    const pat = grainPatternRef.current
+    if (pat) {
+      ctx.save()
+      ctx.globalAlpha = 0.82
+      ctx.fillStyle = pat
       ctx.fillRect(0, 0, w, h)
+      ctx.restore()
+    }
 
-      const low = lowFreqPatternRef.current
-      if (low) {
-        ctx.save()
-        ctx.globalAlpha = 0.28
-        ctx.fillStyle = low
-        const sc = 3.15
-        ctx.scale(sc, sc)
-        ctx.fillRect(0, 0, w / sc + 2, h / sc + 2)
-        ctx.restore()
-      }
+    const speck = specklePatternRef.current
+    if (speck) {
+      ctx.save()
+      ctx.globalAlpha = 0.16
+      ctx.fillStyle = speck
+      const sc2 = 2.2
+      ctx.scale(sc2, sc2)
+      ctx.fillRect(0, 0, w / sc2 + 2, h / sc2 + 2)
+      ctx.restore()
+    }
 
-      const pat = grainPatternRef.current
-      if (pat) {
-        ctx.save()
-        ctx.globalAlpha = 0.82
-        ctx.fillStyle = pat
-        ctx.fillRect(0, 0, w, h)
-        ctx.restore()
-      }
+    // Raked-gravel rings: concentric circles, no ruled lines.
+    const rings = ringPatternRef.current
+    if (rings) {
+      ctx.save()
+      ctx.fillStyle = rings
+      ctx.fillRect(0, 0, w, h)
+      ctx.restore()
+    }
 
-      const speck = specklePatternRef.current
-      if (speck) {
-        ctx.save()
-        ctx.globalAlpha = 0.16
-        ctx.fillStyle = speck
-        const sc2 = 2.2
-        ctx.scale(sc2, sc2)
-        ctx.fillRect(0, 0, w / sc2 + 2, h / sc2 + 2)
-        ctx.restore()
-      }
-
-      if (!reducedMotion) {
-        phaseRef.current += 0.011
-        const breathe = Math.sin(now * 0.00028) * 0.5 + 0.5
-        drawPassiveSand(ctx, w, h, phaseRef.current, breathe)
-      } else {
-        ctx.save()
-        ctx.globalAlpha = 0.12
-        ctx.strokeStyle = 'rgba(100, 105, 118, 0.4)'
-        ctx.lineWidth = 1
-        const step = 32
-        for (let y = 0; y < h; y += step) {
-          ctx.beginPath()
-          ctx.moveTo(0, y)
-          ctx.lineTo(w, y)
-          ctx.stroke()
-        }
-        ctx.restore()
-      }
-    },
-    [reducedMotion],
-  )
+    bedDirtyRef.current = false
+  }, [])
 
   const drawRake = useCallback((now: number): boolean => {
     const canvas = rakeCanvasRef.current
@@ -446,7 +451,7 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
 
   const draw = useCallback(
     (now: number): boolean => {
-      drawBed(now)
+      drawBed()
       return drawRake(now)
     },
     [drawBed, drawRake],

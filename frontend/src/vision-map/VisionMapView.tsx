@@ -81,8 +81,6 @@ import { detectMissingDimensions } from './guidanceScripts'
 import { assessNodeFlowAndChannels } from '../flow/assessNodeFlowAndChannels'
 import { useVisionExecutionFocusOptional } from '../vision-execution/focus/VisionExecutionFocusContext'
 import { mapPayloadToConversationFocusDescriptor } from './mapFocusDescriptor'
-import { VeRadarAwarenessStrip } from './VeRadarAwarenessStrip'
-import type { VeRadarBucketId } from '../vision-execution/veRadarAwareness'
 
 const nodeTypes = { entityMap: EntityMapNode, nestGroup: NestGroupNode, cairn: CairnNode }
 const edgeTypes = { mapFlow: MapFlowEdge }
@@ -331,8 +329,6 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
 
 export type VisionMapViewProps = {
   onOpenOperatorMode: () => void
-  /** Jump to Vision & Execution Radar tab; optional bucket for scroll target. */
-  onOpenVeRadar?: (bucket?: VeRadarBucketId) => void
   councilQuestionDraft: string
   onVisionMapCouncilInteraction: (action: VisionMapCouncilInteraction) => void
   /** Growth triad snapshot for developmental guidance (council preflight); cleared when selection clears. */
@@ -345,7 +341,6 @@ export type VisionMapViewProps = {
 
 function VisionMapFlow({
   onOpenOperatorMode,
-  onOpenVeRadar,
   councilQuestionDraft,
   onVisionMapCouncilInteraction,
   onDevelopmentalSignalsChange,
@@ -460,8 +455,6 @@ function VisionMapFlow({
   const [memberDragPositions, setMemberDragPositions] = useState<Record<string, XYPosition>>({})
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [loadErr, setLoadErr] = useState<string | null>(null)
-  /** Bumps VeRadarAwarenessStrip refresh when map reloads VE entities. */
-  const [radarStripRefreshNonce, setRadarStripRefreshNonce] = useState(0)
   /** False until first viewport is centered on a node (avoid fit-to-full-canvas zoom-out flash). */
   const [mapViewportReady, setMapViewportReady] = useState(false)
   /** Overflow menu for the slim chrome header (Refresh data / Reset layout / tables). */
@@ -547,7 +540,6 @@ function VisionMapFlow({
       setSelectedNodeId(null)
       setSelectedPayload(null)
       setLoadState('ok')
-      setRadarStripRefreshNonce((n) => n + 1)
     } catch (err) {
       setLoadState('error')
       setLoadErr(err instanceof Error ? err.message : String(err))
@@ -1284,14 +1276,6 @@ function VisionMapFlow({
             ) : null}
           </div>
         </div>
-        {onOpenVeRadar ? (
-          <div className="max-w-full px-3 pb-1.5">
-            <VeRadarAwarenessStrip
-              onOpenVeRadar={onOpenVeRadar}
-              refreshNonce={radarStripRefreshNonce}
-            />
-          </div>
-        ) : null}
       </header>
 
       <div className="flex flex-1 min-h-0">

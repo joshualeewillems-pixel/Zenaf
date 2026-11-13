@@ -416,6 +416,13 @@ class TaskUpdate(BaseModel):
     notes: str | None = None
     seat_ref: str | None = None
     timeframe_commitment: str | None = None
+    # Waiver intent marker (entry-seat correction, addendum §1): the
+    # "I already know" affordance sends waiver=True with the status
+    # flip so the backend records an explicit waiver event at the
+    # operation. Never persisted as a column; never inferred — a bare
+    # status toggle without this marker is provenance-unknown, not a
+    # waiver.
+    waiver: bool | None = None
 
 
 class SeatRequestCreate(BaseModel):

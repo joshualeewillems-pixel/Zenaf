@@ -38,6 +38,10 @@ class ActivityType(str, Enum):
     TASK_COMPLETED = "task_completed"
     TASK_UPDATED = "task_updated"
     TASK_DELETED = "task_deleted"
+    # Explicit visitor-initiated waiver of a keystone-1 task ("I already
+    # know"): recorded at the waiver operation, never inferred from a
+    # bare task toggle (entry-seat correction, addendum §1).
+    TASK_WAIVED = "task_waived"
     INITIATIVE_CREATED = "initiative_created"
     INITIATIVE_UPDATED = "initiative_updated"
     INITIATIVE_DELETED = "initiative_deleted"

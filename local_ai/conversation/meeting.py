@@ -23,7 +23,7 @@ runtime derives it from encounter state — position is the interface's
 view, objectives are the engine's.
 
 Rules the service enforces (Joshua's design, not preferences):
-  - The Conductor is met first. Until its keystone 1 completes, no other
+  - The Guardian is met first. Until its keystone 1 completes, no other
     seat's first meeting can begin (the attention markers encode the same
     order on the tree).
   - A seat with no written script has no meeting yet — the engine refuses
@@ -603,12 +603,12 @@ class MeetingService:
                 raise MeetingError(
                     f"One meeting at a time — '{tasks[i].get('title')}' comes first."
                 )
-        # The Conductor opens the council: every other seat's FIRST meeting
+        # The Guardian opens the council: every other seat's FIRST meeting
         # waits until the entry seat's first meeting is complete.
         # STICKY (Joshua's rule, 2026-10-30: "Once it's open it should
         # stay open"): a seat whose begin door has become available
         # stays beginnable even if the entry seat's task later returns
-        # to Todo (Weaver restart / Reopen toggle) — otherwise the lit
+        # to Todo (Guardian restart / Reopen toggle) — otherwise the lit
         # door would lead to a refusal, which is not "open". The
         # availability sets above (released / held / unreleased),
         # the script check, and the chain check are untouched; only
@@ -619,7 +619,7 @@ class MeetingService:
             if not entry_tasks or entry_tasks[0].get("status") != "Done":
                 if not keystone_seeding.seat_unlocked(user_id, arch_id):
                     raise MeetingError(
-                        "The Weaver opens the council — meet them first. The "
+                        "The Guardian opens the council — meet her first. The "
                         "others will introduce themselves in their own time."
                     )
         # BUILDING IS NOT AVAILABILITY, last guard: a written script
@@ -629,7 +629,7 @@ class MeetingService:
         # transcript, generation, or reveal can happen for it. The
         # guard sits after the seed / script / chain / entry checks
         # so every earlier refusal keeps its original message and
-        # the Conductor (released) is untouched.
+        # the entry seat (released) is untouched.
         if keystone_index == 1 and arch_id not in MT.RELEASED_FIRST_MEETING_SEATS:
             raise MeetingError(
                 "That seat's first meeting isn't open to visitors yet — "

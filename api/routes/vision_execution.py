@@ -267,9 +267,10 @@ def get_keystone_attention(current_user: dict = Depends(get_current_user)):
     """Living Tree "!" attention markers, merged (Fellowship P2).
 
     Read-only. Each marker keeps the keystone contract exactly
-    (``attention`` + ``reason``; the Conductor carries "intro" until its
-    first keystone completes, then every seat with an incomplete chain
-    does, with reason "recognition" once only keystone 4 remains) and
+    (``attention`` + ``reason``; the Guardian carries "intro" until its
+    first keystone completes, then the journey offers one seat at a
+    time in JOURNEY_ORDER with reason "meet", and "recognition" once
+    only keystone 4 remains) and
     gains observation fields: ``observation_reason`` (discuss | clarify
     | challenge | offer), ``observation_ids`` and ``observation_count``
     for the seat's active (pending/surfaced) observations, plus

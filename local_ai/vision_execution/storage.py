@@ -8621,6 +8621,10 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
     args = []
     nullable_fks = ("assignee_id", "parent_task_id", "project_id")
     model_items = data.model_dump(exclude_unset=True)
+    # Waiver intent marker (addendum §1): carried into the call by the
+    # "I already know" affordance, never a task column — consumed here
+    # and dropped before the column updates are built.
+    waiver_requested = bool(model_items.pop("waiver", None))
     if "timeframe_commitment" in model_items:
         _validate_timeframe_commitment(model_items.get("timeframe_commitment"))
     if "project_id" in model_items and model_items.get("project_id") is not None:
@@ -8673,6 +8677,26 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
     related = _ve_activity_related_id(str(rel_pid).strip() if rel_pid else None)
     patch_keys = list(model_items.keys())
     if _ve_task_status_done(new_status) and not _ve_task_status_done(old_status):
+        if waiver_requested:
+            # Waiver provenance (addendum §1): the visitor's explicit
+            # "I already know" choice is recorded at the waiver
+            # operation, accompanying the flip — never inferred from
+            # the flip itself. A bare toggle without the marker logs
+            # no waiver event (provenance unknown). Genuine meeting
+            # completion (_do_reveal) never sends the marker, so it
+            # never logs one; a waiver row (type task_waived) stays
+            # distinguishable from a meeting close by query.
+            _log_ve_entity_activity(
+                type=ActivityType.TASK_WAIVED.value,
+                entity_type=ActivityEntityType.TASK.value,
+                entity_id=task_id,
+                user_id=user_id,
+                related_entity_id=related,
+                detail=(
+                    "keystone waiver: visitor chose \"I already know\" "
+                    f"for seat {(after or {}).get('seat_ref') or 'unknown'}"
+                ),
+            )
         _log_ve_entity_activity(
             type=ActivityType.TASK_COMPLETED.value,
             entity_type=ActivityEntityType.TASK.value,

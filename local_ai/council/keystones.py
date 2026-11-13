@@ -5,11 +5,12 @@ per seat, exactly as Joshua approved in the design (no quotes, no mottos —
 name and face first, like meeting someone in real life). Content revisions are
 data edits here, never rebuilds.
 
-Order is fixed and starts with the Conductor (entry seat): in optimal form it
-is the amalgamation of the others' strengths and weaknesses and the
-negotiation between them, so it is met first. It does NOT introduce the
-others (Joshua's rule, 2026-10-22): each seat is met individually, in its own
-meeting, or not at all. The other six follow in the user's choice of order.
+Order is fixed for the journey and starts with the Guardian (entry seat):
+she is met first because she keeps what the visitor shares safe. The
+Conductor is second and explains how the council fits together. The
+other five follow in journey order (JOURNEY_ORDER below), offered one
+at a time. No seat introduces the others (Joshua's rule, 2026-10-22):
+each seat is met individually, in its own meeting, or not at all.
 Keystone 4 gates RENTABILITY, not training — training runs continuously
 throughout normal usage, per user approval.
 
@@ -25,8 +26,8 @@ INITIATIVE_KEY = "meet-your-council"
 INITIATIVE_TITLE = "Meet your council"
 INITIATIVE_STATUS = "Active"
 INITIATIVE_BRIEF = (
-    "Meet the seven seats of your council. Start with the Conductor — the one "
-    "who hears how the others fit together. It opens the door; the rest "
+    "Meet the seven seats of your council. Start with the Guardian — the one "
+    "who keeps what you share safe. She opens the door; the rest "
     "introduce themselves, each in their own meeting — nobody is met by "
     "proxy. Like meeting someone in real life: name and face first, then "
     "what each one is good at, what each one is not good at, and finally "
@@ -37,14 +38,31 @@ INITIATIVE_BRIEF = (
 PROJECT_STATUS = "Ready"
 
 #: Canonical seat ids (local_ai/council/archetypes.py stock_archetype_ids).
-#: Conductor first — it is the ENTRY seat (see module docstring).
+#: Guardian first — it is the ENTRY seat (see module docstring).
+#:
+#: JOURNEY_ORDER — the single ordering authority for the guided journey's
+#: OFFERING (markers, hand-off): Guardian, then Conductor, Champion,
+#: Mentor, Ambassador, Maverick, Skeptic, one at a time. It is never
+#: consulted by the entry gate and never becomes an eligibility check
+#: (C-1, ruled): the gate enforces entry-only ordering, the journey
+#: offers in this order. Do NOT reorder the SEATS tuple itself: SEATS
+#: is the canonical seat list, not the journey order; the entry seat is
+#: identified by the flag, and journey order by JOURNEY_ORDER.
+JOURNEY_ORDER: tuple[str, ...] = (
+    "guardian",
+    "conductor",
+    "champion",
+    "mentor",
+    "ambassador",
+    "maverick",
+    "skeptic",
+)
 SEATS: tuple[dict[str, str], ...] = (
     {
         "seat_ref": "conductor",
         "character": "Weaver",
         "demeanor": "Hears how parts fit; cannot leave a loose thread.",
         "echo": "the part that arranges; also the anxious planner when blended",
-        "entry": "true",
     },
     {
         "seat_ref": "mentor",
@@ -63,6 +81,7 @@ SEATS: tuple[dict[str, str], ...] = (
         "character": "Bear",
         "demeanor": "Steady, sheltering; slow to move, impossible to move once moved.",
         "echo": "the protector part",
+        "entry": "true",
     },
     {
         "seat_ref": "ambassador",
@@ -103,7 +122,8 @@ def keystones_for(seat: dict[str, str]) -> list[dict[str, str]]:
             description=(
                 f"{character} — {demeanor} First meetings are mutual: "
                 f"{character} introduces themselves and asks an opening "
-                "question. No flaw, no systems talk yet."
+                "question. No flaw yet; systems talk only if you approve "
+                "the orientation."
             ),
             completion_criteria="Unlocked: face, name, one-line demeanor.",
         ),

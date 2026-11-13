@@ -26,11 +26,36 @@ def find_keystone_initiative(user_id: str) -> dict[str, Any] | None:
     return None
 
 
+def _assert_single_entry_seat() -> str:
+    """The entry-seat invariant: exactly one seat carries entry=true.
+
+    Returns that seat's ref. Raises ValueError naming the count and the
+    flagged seats otherwise — never silently falls back to a default
+    seat, so a missing or duplicated flag fails loudly at import and
+    at seeding instead of restoring Conductor-first behavior.
+    """
+    flagged = [s["seat_ref"] for s in KD.SEATS if s.get("entry") == "true"]
+    if len(flagged) != 1:
+        if not flagged:
+            raise ValueError(
+                "no entry seat configured: exactly one seat must carry "
+                'entry="true"'
+            )
+        raise ValueError(
+            f"multiple entry seats configured: {flagged} — exactly one "
+            'seat must carry entry="true"'
+        )
+    return flagged[0]
+
+
 def seed_meet_your_council(user_id: str) -> dict[str, Any]:
     """Seed the keystone initiative for a user. Idempotent.
 
     Returns {"initiative": <initiative dict>, "created": bool}.
     """
+    # Seed-time assertion (§5): the data being seeded carries exactly
+    # one entry seat — a bad seed file fails here, not at first use.
+    _assert_single_entry_seat()
     existing = find_keystone_initiative(user_id)
     if existing is not None:
         return {"initiative": existing, "created": False}
@@ -83,33 +108,44 @@ def seed_meet_your_council(user_id: str) -> dict[str, Any]:
 # on the Living Tree — narrative guidance, never a push notification; the
 # marker waits on the tree. Rules (Joshua's design):
 #
-# - The Conductor is the entry seat. Until its first keystone ("First
-#   meeting") completes, ONLY the conductor carries a marker (reason
-#   "intro" — the Weaver wants to talk about something).
-# - Once the conductor's first keystone completes, every other seat with an
-#   incomplete keystone chain carries a marker (reason "meet").
-# - STICKY (Joshua's rule, 2026-10-30: "Once it's open it should stay
-#   open"): once a seat's marker has lit, it stays lit across a later
-#   Weaver restart or Reopen toggle. The lighting is recorded in the
-#   seat_unlocks table when the entry keystone-1 task flips to Done
+# - The Guardian is the entry seat. Until its first keystone ("First
+#   meeting") completes, ONLY the guardian carries a marker (reason
+#   "intro" — the Guardian wants to talk about something).
+# - Once the guardian's first keystone completes, the guided journey
+#   offers the next seat ONE AT A TIME in JOURNEY_ORDER: only the
+#   first seat after the entry whose first keystone is undone carries
+#   a marker (reason "meet"). Later seats stay dark until their
+#   predecessor's first keystone is Done.
+# - STICKY ACCESS, NOT STICKY MARKERS (disposition correction 1):
+#   once a seat's begin door has become available it stays available
+#   even if the entry seat's task later returns to Todo (Guardian
+#   restart or Reopen toggle) — the door sticks via the seat_unlocks
+#   table, recorded when the entry keystone-1 task flips to Done
 #   (both Done paths — genuine meeting close and bare task toggle —
-#   funnel through the VE task update), and keystone_attention below
-#   treats a recorded seat as entry-complete for marker purposes. A
-#   seat that never lit stays locked behind Weaver-first ordering.
-#   Weaver's own marker/door/face logic is unchanged by stickiness.
+#   funnel through the VE task update). Markers are a pure function
+#   of current keystone states + JOURNEY_ORDER: a recorded seat does
+#   NOT keep a lit marker merely because it was recorded. If the
+#   entry keystone returns to Todo, "intro" re-lights on the Guardian
+#   and "meet" goes dark, while every previously unlocked door stays
+#   beginnable. A seat that never lit stays locked behind
+#   Guardian-first ordering.
+#   Guardian's own marker/door/face logic is unchanged by stickiness.
 # - A seat whose keystones 1–3 are complete but whose keystone 4 ("The
 #   echo" — the recognition conversation) is not carries reason
 #   "recognition". (v1 proxy for readiness; true readiness detection is
-#   separate future work.)
+#   separate future work.) Recognition is a per-seat milestone,
+#   independent of journey position and of the entry intro: it lights
+#   even while an earlier seat still carries "meet", or while the
+#   entry intro is undone.
 # - A seat with all four keystones Done carries no marker.
 # - No initiative seeded → no markers, never an error.
 # ---------------------------------------------------------------------------
 
-#: The entry seat_ref — the seat flagged "entry" in the seed data (Conductor).
-ENTRY_SEAT_REF: str = next(
-    (s["seat_ref"] for s in KD.SEATS if s.get("entry") == "true"),
-    KD.SEATS[0]["seat_ref"],
-)
+#: The entry seat_ref — the seat flagged "entry" in the seed data (Guardian).
+#: Exactly one seat must carry the flag: the derivation raises ValueError
+#: at import time otherwise (no SEATS[0] fallback — a missing flag must
+#: never silently restore Conductor-first behavior).
+ENTRY_SEAT_REF: str = _assert_single_entry_seat()
 
 _DONE = "Done"
 
@@ -202,17 +238,20 @@ def keystone_attention(user_id: str) -> dict[str, Any]:
 
     Returns {"seeded": bool, "markers": {seat_ref: {"attention": bool,
     "reason": "intro" | "meet" | "recognition" | None}}} covering all seven
-    canonical seats. Read-only in output (same shape as before); the
-    one behavioral addition is stickiness: a seat recorded in
-    seat_unlocks keeps its marker even after the entry seat's task
-    returns to Todo. An unseeded user gets seeded=False with no
-    markers lit.
+    canonical seats. Read-only in output (same shape as before).
 
-    Marker rules: "intro" while the entry seat's first keystone is
-    undone; "meet" only while a seat's own first keystone is undone
-    (a mid-chain seat — intro Done, chain incomplete — carries no
-    marker until the recognition stage); "recognition" when keystones
-    1-3 are Done and the 4th is pending.
+    Marker rules (Guardian-first, one-at-a-time journey offering):
+    "intro" only on the entry seat while its first keystone is undone;
+    "meet" only on the first seat in JOURNEY_ORDER after the entry
+    whose first keystone is undone (one at a time, once the entry
+    keystone is Done); "recognition" when keystones 1-3 are Done and
+    the 4th is pending — a per-seat milestone, independent of journey
+    position and of the entry intro. Markers are a pure function of
+    current keystone states + JOURNEY_ORDER: seat_unlocks governs gate
+    begin-ability only and never lights a marker. A mid-chain seat
+    (intro Done, chain incomplete) carries no marker until the
+    recognition stage. An unseeded user gets seeded=False with no
+    markers lit.
     """
     markers: dict[str, dict[str, Any]] = {
         seat["seat_ref"]: {"attention": False, "reason": None} for seat in KD.SEATS
@@ -244,14 +283,22 @@ def keystone_attention(user_id: str) -> dict[str, Any]:
 
     entry_chain = chain_of(ENTRY_SEAT_REF)
     entry_intro_done = bool(entry_chain) and entry_chain[0]
-    # Sticky unlocks: seats recorded when the entry keystone first
-    # completed keep their marker even if the entry task returns to
-    # Todo (Weaver restart / Reopen toggle). Read failure degrades to
-    # no stickiness (fail closed, pre-sticky behavior).
-    try:
-        unlocks = S.get_seat_unlocks(user_id)
-    except Exception:
-        unlocks = set()
+    # One-at-a-time journey offering (O-I-6): once the entry keystone
+    # is Done, exactly one seat carries "meet" — the first seat after
+    # the entry in JOURNEY_ORDER whose first keystone is undone.
+    # Sticky access lives in seat_unlocks (the gate reads it); the
+    # marker loop never consults unlocks, so a reopened entry
+    # keystone darkens "meet" and re-lights "intro" while the doors
+    # stay open.
+    next_meet: str | None = None
+    if entry_intro_done:
+        for ref in KD.JOURNEY_ORDER:
+            if ref == ENTRY_SEAT_REF:
+                continue
+            done = chain_of(ref)
+            if done and not done[0]:
+                next_meet = ref
+                break
 
     for seat in KD.SEATS:
         ref = seat["seat_ref"]
@@ -260,11 +307,13 @@ def keystone_attention(user_id: str) -> dict[str, Any]:
             continue  # nothing seeded for this seat, or chain complete
         if ref == ENTRY_SEAT_REF and not done[0]:
             markers[ref] = {"attention": True, "reason": "intro"}
-        elif ref != ENTRY_SEAT_REF and not entry_intro_done and ref not in unlocks:
-            continue  # conductor first — the others wait for the intro
         elif len(done) >= 4 and all(done[:3]) and not done[3]:
+            # Recognition is a per-seat milestone, independent of
+            # journey position and of the entry intro: it is checked
+            # before any entry gate, so it lights even while the
+            # entry intro is undone or an earlier seat carries "meet".
             markers[ref] = {"attention": True, "reason": "recognition"}
-        elif not done[0]:
+        elif ref == next_meet:
             # "meet" lights only while the seat's first keystone is
             # undone. Once the intro is Done the seat goes dark until
             # the recognition stage — a mid-chain seat carries no

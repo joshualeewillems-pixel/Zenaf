@@ -7,8 +7,7 @@ walked through. This module is that runtime. The meeting service
 (local_ai/conversation/meeting.py) is its first host: it owns the
 stores, the keystone guards, and the completion chokepoint, and lends
 the runtime its hands (say / generate / file) through a small host
-protocol. Only the Conductor's keystone 1 is defined so far — the
-proving ground, not a special case.
+protocol.
 
 The rules the runtime runs by:
 

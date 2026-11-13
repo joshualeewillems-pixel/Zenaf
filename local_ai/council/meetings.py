@@ -150,9 +150,8 @@ The Champion's first meeting is written below and HELD
 until the hold is lifted — building it does not make it available
 (the entry gate in local_ai/conversation/meeting.py refuses held
 meetings; see that module's _check_beginnable).
-The Guardian's is the second script written, and it is NOT released to
-visitors (see RELEASED_FIRST_MEETING_SEATS — building is not
-availability).
+The Guardian's script is written and released (release status follows
+RELEASED_FIRST_MEETING_SEATS, not this comment).
 
 MAINTENANCE RULE (Joshua, 2026-10-22 — standing): the first meetings are
 also the system's tutorials, DISTRIBUTED — each seat teaches the slice of
@@ -1493,9 +1492,9 @@ AMBASSADOR_FIRST_MEETING = MeetingScript(
 # frontend shows a Begin button only when state reports
 # has_script — both read SCRIPTS. Seeding creates a Skeptic
 # keystone-1 task for every user, and the entry gate passes once
-# the Weaver's keystone 1 is Done, so registering this script
+# the Guardian's keystone 1 is Done, so registering this script
 # alone would make the meeting visitor-accessible to every
-# Weaver-completed user. Until a separate availability decision
+# Guardian-completed user. Until a separate availability decision
 # (unlock / gate, out of scope for this PR) adds it to SCRIPTS,
 # the meeting cannot begin: begin refuses with "isn't written
 # yet" and the frontend shows the not-written message. Adding
@@ -2607,7 +2606,7 @@ GUARDIAN_FIRST_MEETING = MeetingScript(
 #: _check_beginnable). A seat joins this set only by a release
 #: decision, in its own change — never as a side effect of writing
 #: its script. All-six release (Joshua's availability verdict,
-#: 2026-10-29): all seven seats are released; the Conductor-first
+#: 2026-10-29): all seven seats are released; the Guardian-first
 #: entry order still applies to fresh users.
 RELEASED_FIRST_MEETING_SEATS: frozenset[str] = frozenset({"conductor", "mentor", "champion", "ambassador", "skeptic", "maverick", "guardian"})
 

@@ -627,66 +627,66 @@ def get_seat_unlocks(user_id: str) -> set[str]:
 
 
 # Persons
-def list_persons():
-    return S.list_persons()
+def list_persons(user_id: str):
+    return S.list_persons(user_id)
 
 
-def get_person(person_id: str):
-    return S.get_person(person_id)
+def get_person(person_id: str, user_id: str):
+    return S.get_person(person_id, user_id)
 
 
-def create_person(data: M.PersonCreate):
-    return S.create_person(data)
+def create_person(data: M.PersonCreate, user_id: str):
+    return S.create_person(data, user_id)
 
 
-def update_person(person_id: str, data: M.PersonUpdate):
-    return S.update_person(person_id, data)
+def update_person(person_id: str, data: M.PersonUpdate, user_id: str):
+    return S.update_person(person_id, data, user_id)
 
 
-def delete_person(person_id: str):
-    return S.delete_person(person_id)
+def delete_person(person_id: str, user_id: str):
+    return S.delete_person(person_id, user_id)
 
 
 # Capacity (with derived: activeWeeklyHours, capacityDelta, overcapacity)
-def list_capacity_profiles(user_id: str | None = None):
-    out = S.list_capacity_profiles()
-    projects = S.list_projects(user_id) if user_id is not None else S.list_projects()
+def list_capacity_profiles(user_id: str):
+    out = S.list_capacity_profiles(user_id)
+    projects = S.list_projects(user_id)
     for r in out:
         D.add_capacity_derived(r, r["person_id"], projects)
     return out
 
 
-def get_capacity_profile(person_id: str, user_id: str | None = None):
-    out = S.get_capacity_profile(person_id)
+def get_capacity_profile(person_id: str, user_id: str):
+    out = S.get_capacity_profile(person_id, user_id)
     if out is not None:
-        projects = S.list_projects(user_id) if user_id is not None else S.list_projects()
+        projects = S.list_projects(user_id)
         D.add_capacity_derived(out, person_id, projects)
     return out
 
 
-def upsert_capacity_profile(data: M.CapacityProfileUpsert):
-    return S.upsert_capacity_profile(data)
+def upsert_capacity_profile(data: M.CapacityProfileUpsert, user_id: str):
+    return S.upsert_capacity_profile(data, user_id)
 
 
 # Assets
-def list_assets():
-    return S.list_assets()
+def list_assets(user_id: str):
+    return S.list_assets(user_id)
 
 
-def get_asset(asset_id: str):
-    return S.get_asset(asset_id)
+def get_asset(asset_id: str, user_id: str):
+    return S.get_asset(asset_id, user_id)
 
 
-def create_asset(data: M.AssetCreate):
-    return S.create_asset(data)
+def create_asset(data: M.AssetCreate, user_id: str):
+    return S.create_asset(data, user_id)
 
 
-def update_asset(asset_id: str, data: M.AssetUpdate):
-    return S.update_asset(asset_id, data)
+def update_asset(asset_id: str, data: M.AssetUpdate, user_id: str):
+    return S.update_asset(asset_id, data, user_id)
 
 
-def delete_asset(asset_id: str):
-    return S.delete_asset(asset_id)
+def delete_asset(asset_id: str, user_id: str):
+    return S.delete_asset(asset_id, user_id)
 
 
 # Decisions (append-only; for future personality learning)

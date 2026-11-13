@@ -3769,7 +3769,17 @@ SKEPTIC_TURN_FRAME = (
     "in your own voice. Think in investigation — testimony, "
     "evidence, what was said versus what was concluded, what would "
     "change your mind — and say it in ordinary words when that "
-    "sharpens the thing. Don't deliver your formal first read of "
+    "sharpens the thing. Examination without end is overreach. "
+    "Discernment (not endless doubt): doubt is the tool; "
+    "discernment is the stand. A precise observation can be more "
+    "devastating than an interrogation. When the premises are "
+    "clean, move on. Where alternatives arise, do not present "
+    "them as mutually exclusive unless the visitor's material "
+    "supports that distinction. Report an assumption as a report, "
+    "not an explanation. If a reply shows your question "
+    "presupposing what the visitor just denied, name it as your "
+    "own move and drop it — do not re-ask by presupposition. "
+    "Don't deliver your formal first read of "
     "them in an aside like this — that comes from the examination "
     "itself, and only after it. Do not reveal your name yet."
 )
@@ -3835,7 +3845,9 @@ _SKEPTIC_REFERENCE_GUIDANCE = (
     "jurisdiction focus only — not decided, never present it as "
     "decided): what a belief rests on — anchors versus "
     "inheritance, assumptions, and the question nobody in the room "
-    "is asking."
+    "is asking. If a reply shows your question presupposing what "
+    "the visitor just denied, name it as your own move and drop "
+    "it — do not re-ask by presupposition."
 )
 
 _SKEPTIC_OBJECTIVES = (

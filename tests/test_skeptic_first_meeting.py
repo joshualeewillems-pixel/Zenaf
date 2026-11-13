@@ -546,7 +546,7 @@ def test_meeting_beginnable_after_guardian_done(ve_ctx, tmp_path):
         ve_models.TaskUpdate(status="Done"),
         uid,
     )
-    assert _seat_keystone_tasks(uid, "conductor")[0]["status"] == "Done"
+    assert _seat_keystone_tasks(uid, "guardian")[0]["status"] == "Done"
     # A Skeptic keystone task was seeded (so the chain check passes).
     assert _seat_keystone_tasks(uid, "skeptic")
     state = svc.start(uid, "skeptic")

@@ -311,10 +311,13 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     assert row["readback_response"] == "Mostly right — except I protect mornings first."
     assert json.loads(row["readback_strands"]) == ["Compass", "Logic"]
 
-    # Attention moves on: every seat now invites a meeting.
+    # Attention moves on (Guardian-first journey, one at a time):
+    # the Conductor's keystone 1 is Done, so she carries no marker;
+    # the single "meet" invitation moves to the next seat in the
+    # journey — the Champion. The Mentor is not lit yet.
     attention = keystone_seeding.keystone_attention(uid)
-    assert attention["markers"]["conductor"]["reason"] == "meet"  # K2 next in its chain
-    assert attention["markers"]["mentor"] == {"attention": True, "reason": "meet"}
+    assert attention["markers"] == {
+        "champion": {"attention": True, "reason": "meet"}}
 
 
 def test_pass_is_conversation_for_the_weaver(ve_ctx, tmp_path):
@@ -539,8 +542,13 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
     assert state["status"] == "active"
 
     # A meeting that isn't written maps the design refusal to 409.
+    # (All seven first meetings are written now, so the unwritten
+    # example is the Conductor's keystone 2.)
     with pytest.raises(HTTPException) as exc:
-        routes.meeting_start(routes.MeetingStartBody(archetype_id="mentor"), user)
+        routes.meeting_start(
+            routes.MeetingStartBody(archetype_id="conductor", keystone_index=2),
+            user,
+        )
     assert exc.value.status_code == 409
 
     # UPDATED for the Weaver pattern: the first turn begins the

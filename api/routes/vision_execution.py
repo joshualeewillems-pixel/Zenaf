@@ -2684,7 +2684,7 @@ async def post_workspace_identity_pick_directory():
 
 
 @router.get("/workspace-identity/translation-template")
-def get_workspace_identity_translation_template():
+def get_workspace_identity_translation_template(current_user: dict = Depends(get_current_user)):
     """Read optional translation-template.json (user vocabulary for packet merge)."""
     from local_ai.workspace_identity.translation_template import read_translation_template, translation_template_path
 
@@ -2695,7 +2695,7 @@ def get_workspace_identity_translation_template():
 
 
 @router.put("/workspace-identity/translation-template")
-def put_workspace_identity_translation_template(body: M.WorkspaceTranslationTemplateBody):
+def put_workspace_identity_translation_template(body: M.WorkspaceTranslationTemplateBody, current_user: dict = Depends(get_current_user)):
     """Write translation-template.json next to snapshot (gitignored)."""
     from local_ai.workspace_identity.translation_template import write_translation_template
 
@@ -2704,7 +2704,7 @@ def put_workspace_identity_translation_template(body: M.WorkspaceTranslationTemp
 
 
 @router.get("/workspace-identity")
-def get_workspace_identity():
+def get_workspace_identity(current_user: dict = Depends(get_current_user)):
     """
     Read local snapshot if present; validate branchKey. Returns extraction-sized workspacePacket
     only when usable (no silent stale mirror).
@@ -2846,13 +2846,14 @@ def dismiss_aspiration_proposal_route(proposal_id: str, current_user: dict = Dep
 
 
 @router.post("/workspace-identity/scan")
-def post_workspace_identity_scan(body: M.WorkspaceIdentityScanRequest):
+def post_workspace_identity_scan(body: M.WorkspaceIdentityScanRequest, current_user: dict = Depends(get_current_user)):
     """
     Bounded deep/light scan of provided roots (default: repo root). Writes .zenaf/workspace-identity/v1/.
     Does not run during meeting extract.
     """
     from local_ai.workspace_identity.snapshot import (
         REPO_ROOT,
+        ScanRootsRejectedError,
         build_workspace_identity_snapshot,
         build_workspace_packet_from_snapshot,
         write_workspace_identity_snapshot,
@@ -2860,11 +2861,15 @@ def post_workspace_identity_scan(body: M.WorkspaceIdentityScanRequest):
 
     roots = [str(r).strip() for r in (body.roots or []) if str(r).strip()]
     scan_kind = body.mode if body.mode in ("deep_initial", "light_refresh") else "light_refresh"
-    snapshot = build_workspace_identity_snapshot(
-        roots,
-        repo_root=REPO_ROOT,
-        scan_kind=scan_kind,
-    )
+    try:
+        snapshot = build_workspace_identity_snapshot(
+            roots,
+            repo_root=REPO_ROOT,
+            scan_kind=scan_kind,
+            allowed_roots=hosted_config.scan_allowed_roots(REPO_ROOT),
+        )
+    except ScanRootsRejectedError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     base = write_workspace_identity_snapshot(snapshot)[0].parent
     packet = build_workspace_packet_from_snapshot(snapshot)
     logger.info("[workspace-identity] scan complete mode=%s roots=%s", scan_kind, len(snapshot.get("sourceRoots") or []))

@@ -4,12 +4,13 @@ import { STRANDS } from '../living-tree/strands'
 
 /**
  * Per-conversation color + symbol identity (founder, 2026-11-12):
- * history entries are identified by color + symbol, not by text
- * titles. Stored in localStorage, keyed by conversation id — the
- * smallest path that fits: no backend change, no new table, no
- * migration (precedent: App.tsx PERSPECTIVE_STORAGE_KEY). Trade-off:
- * per-device only; it does not travel with the server conversation
- * record. A server field is a later step if the founder wants it.
+ * conversations are identified by color + symbol, not by text
+ * titles. The SERVER conversation row is the primary store now —
+ * the "+" disposition flow writes symbol + color there (archive /
+ * keep open), and list entries carry them. This localStorage map
+ * remains as the fallback for conversations that predate the
+ * server field and as the write-through mirror when the flow sets
+ * an identity, so badges agree across surfaces.
  */
 export type TalkIdentity = {
   color: string | null

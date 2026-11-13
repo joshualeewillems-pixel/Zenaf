@@ -22,13 +22,28 @@ from local_ai.eval.wash.fixtures import default_fixture_path, load_fixture_set
 from local_ai.eval.wash.manifest import new_manifest, read_manifest, write_manifest
 from local_ai.eval.wash.measures import aggregate_scores, score_fixture
 from local_ai.eval.wash.report import build_report, render_markdown, write_markdown, write_report
-from local_ai.eval.wash.validator import validate_segment_output
+from local_ai.eval.wash.validator import title_is_propositional, validate_segment_output
+
+
+def _admissible_text(g) -> str:
+    """The phrasing the perfect model proposes for a gold row: the gold text
+    when it passes the proposition gate, otherwise the row's first
+    equivalent that does (founder's bounded perfect-run construction
+    correction, 2026-11-12). Admissibility is decided by the validator's
+    own gate, never a copy of it. A row with no admissible phrasing fails
+    loudly — the perfect model must propose every gold row."""
+    if title_is_propositional(g.text):
+        return g.text
+    for equivalent in g.equivalents:
+        if title_is_propositional(equivalent):
+            return equivalent
+    raise AssertionError(f"gold row has no gate-admissible phrasing: {g.text!r}")
 
 
 def _perfect_raw(fx) -> str:
     rows = [
         {
-            "text": g.text,
+            "text": _admissible_text(g),
             "summary": "s",
             "evidence_quote": g.quote,
             "confidence": "high",

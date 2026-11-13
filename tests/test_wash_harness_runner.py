@@ -14,6 +14,7 @@ import pytest
 
 from local_ai.eval.wash.fixtures import default_fixture_path, load_fixture_set
 from local_ai.eval.wash.runner import main, score_candidate
+from local_ai.eval.wash.validator import title_is_propositional
 
 
 @pytest.fixture(scope="module")
@@ -21,10 +22,25 @@ def fixture_set():
     return load_fixture_set(default_fixture_path())
 
 
+def _admissible_text(g) -> str:
+    """The phrasing the perfect model proposes for a gold row: the gold text
+    when it passes the proposition gate, otherwise the row's first
+    equivalent that does (founder's bounded perfect-run construction
+    correction, 2026-11-12). Admissibility is decided by the validator's
+    own gate, never a copy of it. A row with no admissible phrasing fails
+    loudly — the perfect model must propose every gold row."""
+    if title_is_propositional(g.text):
+        return g.text
+    for equivalent in g.equivalents:
+        if title_is_propositional(equivalent):
+            return equivalent
+    raise AssertionError(f"gold row has no gate-admissible phrasing: {g.text!r}")
+
+
 def _perfect_raw(fx) -> str:
     rows = [
         {
-            "text": g.text,
+            "text": _admissible_text(g),
             "summary": "s",
             "evidence_quote": g.quote,
             "confidence": "high",

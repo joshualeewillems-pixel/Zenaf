@@ -20,7 +20,7 @@ from local_ai.eval.wash.measures import (
     score_fixture,
     variant_check,
 )
-from local_ai.eval.wash.validator import validate_segment_output
+from local_ai.eval.wash.validator import title_is_propositional, validate_segment_output
 
 
 @pytest.fixture(scope="module")
@@ -42,9 +42,24 @@ def _row(text, quote, stance="committed", confidence="high"):
     }
 
 
+def _admissible_text(g) -> str:
+    """The phrasing the perfect model proposes for a gold row: the gold text
+    when it passes the proposition gate, otherwise the row's first
+    equivalent that does (founder's bounded perfect-run construction
+    correction, 2026-11-12). Admissibility is decided by the validator's
+    own gate, never a copy of it. A row with no admissible phrasing fails
+    loudly — the perfect model must propose every gold row."""
+    if title_is_propositional(g.text):
+        return g.text
+    for equivalent in g.equivalents:
+        if title_is_propositional(equivalent):
+            return equivalent
+    raise AssertionError(f"gold row has no gate-admissible phrasing: {g.text!r}")
+
+
 def _perfect_raw(fx) -> str:
     rows = [
-        _row(g.text, g.quote, stance=g.stance) for g in fx.expected
+        _row(_admissible_text(g), g.quote, stance=g.stance) for g in fx.expected
     ]
     return _rows_json(rows)
 
@@ -195,12 +210,13 @@ def test_aggregate_perfect_run_passes_quality_measures(fixture_set):
 
 
 def test_aggregate_noisy_run_fails(fixture_set):
-    # Every fixture gets its gold rows plus one fabricated-quote row.
+    # Every fixture gets its gold rows (the admissible perfect construction)
+    # plus one fabricated-quote row.
     scores = []
     validations = {}
     segments = {}
     for fx in fixture_set.fixtures:
-        rows = [_row(g.text, g.quote, stance=g.stance) for g in fx.expected]
+        rows = [_row(_admissible_text(g), g.quote, stance=g.stance) for g in fx.expected]
         rows.append(_row("Something else entirely happened here today", "fabricated words here"))
         validation = _validate(fx, _rows_json(rows))
         validations[fx.id] = validation

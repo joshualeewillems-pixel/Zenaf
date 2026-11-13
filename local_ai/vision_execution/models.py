@@ -1001,24 +1001,34 @@ def row_to_task(row: tuple) -> dict[str, Any]:
 
 
 def row_to_person(row: tuple) -> dict[str, Any]:
+    # user_id is the trailing column when the SELECT includes it (Track B);
+    # older SELECTs without it still map cleanly (guarded by length).
+    n = len(row)
     return {
         "id": row[0], "name": row[1], "role": row[2], "relationship_type": row[3],
         "contact_info": row[4], "strengths": row[5], "needs": row[6], "wants": row[7],
         "availability": row[8], "notes": row[9], "created_at": row[10], "updated_at": row[11],
+        "user_id": row[12] if n > 12 else None,
     }
 
 
 def row_to_capacity(row: tuple) -> dict[str, Any]:
-    return {"person_id": row[0], "weekly_capacity_hours": row[1], "created_at": row[2], "updated_at": row[3]}
+    n = len(row)
+    return {
+        "person_id": row[0], "weekly_capacity_hours": row[1], "created_at": row[2],
+        "updated_at": row[3], "user_id": row[4] if n > 4 else None,
+    }
 
 
 def row_to_asset(row: tuple) -> dict[str, Any]:
+    n = len(row)
     return {
         "id": row[0], "name": row[1], "asset_type": row[2], "owner_id": row[3], "status": row[4],
         "availability": row[5], "cost": row[6], "time_availability": row[7],
         "linked_idea_ids": _json_loads_list(row[8]), "linked_initiative_ids": _json_loads_list(row[9]),
         "linked_project_ids": _json_loads_list(row[10]), "notes": row[11],
         "created_at": row[12], "updated_at": row[13],
+        "user_id": row[14] if n > 14 else None,
     }
 
 

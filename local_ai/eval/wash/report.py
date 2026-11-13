@@ -35,6 +35,71 @@ def _fmt(value: float | None, digits: int = 3) -> str:
     return f"{value:.{digits}f}"
 
 
+def _provenance_entry(rs: Any) -> dict[str, Any]:
+    """One scored row's provenance record (amendment B4/P2 shape)."""
+    return {
+        "fixture_id": rs.fixture_id,
+        "text": rs.text,
+        "status": rs.status,
+        "drop_reason": rs.drop_reason,
+        "gold_text": rs.gold_text,
+        "gold_stance": rs.gold_stance,
+        "row_stance": rs.row_stance,
+        "stance_outcome": rs.stance_outcome,
+        "speaker": rs.speaker,
+        "originator": rs.originator,
+        "reporter": rs.reporter,
+        "assenter": rs.assenter,
+        "decision_class": rs.decision_class,
+        "reported": rs.reported,
+    }
+
+
+def _outcome_tally(entries: list[dict[str, Any]]) -> dict[str, int]:
+    tally = {"total": len(entries), "correct": 0, "incorrect": 0,
+             "excluded_unset": 0, "not_scored": 0}
+    for e in entries:
+        tally[e["stance_outcome"]] = tally.get(e["stance_outcome"], 0) + 1
+    return tally
+
+
+def _decision_provenance(score: BenchmarkScore) -> dict[str, Any]:
+    """The report's decision-provenance section (amendment A4/B4, P3).
+
+    Reported-decision rows (matched gold classified ``reported_decision``)
+    are listed individually with provenance attached and tallied on their
+    own; every other gold-matched row is tallied separately as performed /
+    unclassified. The two tallies are never merged: a reported agreement
+    and a performed one are different claims about the world.
+    """
+    reported = [_provenance_entry(rs) for rs in score.row_scores if rs.reported]
+    performed = [
+        _provenance_entry(rs)
+        for rs in score.row_scores
+        if rs.matched_gold_index is not None and not rs.reported
+    ]
+    return {
+        "note": (
+            "Attribution figures measure evidence provenance — which line a "
+            "row's evidence quote sits on, and the roles preserved on the "
+            "gold record — NOT decision authorship, which this harness "
+            "does not measure (model outputs carry no author field)."
+        ),
+        "reported_decisions": {
+            "tally": _outcome_tally(reported),
+            "rows": reported,
+        },
+        "performed_decisions": {
+            "tally": _outcome_tally(performed),
+            "note": (
+                "Gold-matched rows whose gold record carries no "
+                "reported_decision classification (actual decisions, "
+                "refusals, and rows the gold record does not classify)."
+            ),
+        },
+    }
+
+
 def build_report(
     score: BenchmarkScore,
     *,
@@ -87,7 +152,25 @@ def build_report(
             "failures": score.failures,
             "failure_codes": score.failure_codes,
             "operational": score.operational,
+            # Amendment B2/B3: stance-unset exclusions and the
+            # unsupported-stance measure (attempted vs emitted kept
+            # separate; the B6 gate term is in pass_fail).
+            "stance_unset_matched": score.stance_unset_matched,
+            "unsupported_stance": {
+                "attempted": score.unsupported_attempted,
+                "emitted": score.unsupported_emitted,
+                "matched_unset": score.unsupported_matched,
+                "rate": score.unsupported_stance_rate,
+            },
         },
+        # Amendment A4/B4 (acceptance assertion P3): reported decisions
+        # stay distinguishable from performed ones end-to-end — listed
+        # individually with their gold provenance, tallied separately,
+        # never merged. These figures measure EVIDENCE provenance (which
+        # line a row's evidence sits on; the gold record's preserved
+        # roles) — NOT decision authorship, which this harness does not
+        # measure: the model-output side carries no author field.
+        "decision_provenance": _decision_provenance(score),
         "critical_errors": {
             "total": len(score.forbidden_hits),
             "by_class": score.forbidden_by_class,
@@ -175,6 +258,12 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines.append(f"Operational: latency {m['operational'].get('latency')}; "
                  f"memory/thermal {m['operational'].get('memory_thermal')}; "
                  f"cost {m['operational'].get('cost')}.")
+    us = m.get("unsupported_stance") or {}
+    lines.append(f"Stance-unset gold matched: {m.get('stance_unset_matched', 0)} "
+                 f"(excluded from stance accuracy both ways). "
+                 f"Unsupported stance: attempted {us.get('attempted', 0)}, "
+                 f"emitted {us.get('emitted', 0)} (gate: emitted must be 0), "
+                 f"rate {_fmt(us.get('rate'))}.")
     lines.append("")
     if report["critical_errors"]["hits"]:
         lines.append("## Critical errors")
@@ -198,6 +287,36 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.append(f"Passed: **{vc['passed']}**")
         for reason in vc["reasons"]:
             lines.append(f"- {reason}")
+        lines.append("")
+    prov = report.get("decision_provenance")
+    if prov is not None:
+        lines.append("## Decision provenance")
+        lines.append("")
+        lines.append(f"_{prov['note']}_")
+        lines.append("")
+        rep = prov["reported_decisions"]
+        lines.append(
+            f"Reported decisions: {rep['tally']['total']} scored row(s) "
+            f"(correct {rep['tally']['correct']}, incorrect {rep['tally']['incorrect']}, "
+            f"excluded-unset {rep['tally']['excluded_unset']}, "
+            f"not scored {rep['tally']['not_scored']})."
+        )
+        for e in rep["rows"]:
+            lines.append(
+                f"- **{e['fixture_id']}** \"{e['gold_text']}\" — "
+                f"gold stance {e['gold_stance']}, row stance {e['row_stance']}, "
+                f"outcome {e['stance_outcome']}; speaker {e['speaker']}, "
+                f"originator {e['originator']}, reporter {e['reporter']}, "
+                f"assenter {e['assenter']}"
+            )
+        perf = prov["performed_decisions"]
+        lines.append(
+            f"Performed / unclassified decisions: {perf['tally']['total']} scored row(s) "
+            f"(correct {perf['tally']['correct']}, incorrect {perf['tally']['incorrect']}, "
+            f"excluded-unset {perf['tally']['excluded_unset']}, "
+            f"not scored {perf['tally']['not_scored']}). "
+            f"Reported and performed tallies are kept separate, never merged."
+        )
         lines.append("")
     lines.append("## Still gated")
     lines.append("")

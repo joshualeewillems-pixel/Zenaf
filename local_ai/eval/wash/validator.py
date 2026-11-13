@@ -444,18 +444,39 @@ def validate_segment_output(
 
         # Attribution (2): the quote must belong to the speaker whose position
         # the row represents. Deterministic where boundaries are explicit.
+        # This is evidence-provenance checking only — which line the row's
+        # evidence sits on — never a judgment of decision authorship.
+        # Amendment B4: the admissible speaker set S(gold) is the gold
+        # speaker PLUS the speakers of the lines the gold row's declared
+        # supporting quotes sit on, so evidence that legitimately spans two
+        # speakers' lines (a proposal and its assent) is admissible from
+        # either line. A quote from a declared supporting-quote speaker is
+        # kept with a diagnostic; a quote from any other speaker still
+        # drops. Unknown speakers (unresolvable lines) never join the set.
         if has_speakers and gold is not None and gold.speaker is not None:
             line_speaker, ambiguous = resolve_quote_speaker(segment, row.evidence_quote)
             if line_speaker is not None:
                 if line_speaker != gold.speaker:
-                    result.dropped.append(
-                        DroppedRow(
-                            row,
-                            "quote_misattributed",
-                            f"quote is from {line_speaker}, gold attributes it to {gold.speaker}",
+                    supporting_speakers = {
+                        resolve_quote_speaker(segment, sq)[0]
+                        for sq in gold.supporting_quotes
+                    }
+                    supporting_speakers.discard(None)
+                    if line_speaker in supporting_speakers:
+                        result.diagnostics.append(
+                            f"attribution_multi_speaker: quote is from {line_speaker} "
+                            f"(a declared supporting-quote speaker for {fixture.id}); "
+                            f"gold speaker is {gold.speaker}"
                         )
-                    )
-                    continue
+                    else:
+                        result.dropped.append(
+                            DroppedRow(
+                                row,
+                                "quote_misattributed",
+                                f"quote is from {line_speaker}, gold attributes it to {gold.speaker}",
+                            )
+                        )
+                        continue
             else:
                 # Ambiguous or prefix-less line: fall back to the gold quote.
                 if not _quote_supports(row.evidence_quote, gold):

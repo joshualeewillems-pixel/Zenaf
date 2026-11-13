@@ -77,6 +77,37 @@ class ForbiddenHit:
 
 
 @dataclass
+class RowScore:
+    """Per-row scored record (ratified amendment B4/P2).
+
+    One record per proposed row (emitted or dropped), carrying the matched
+    gold row's identity and its preservation-only provenance (the gold
+    record's ``speaker`` and A4 role fields, and its decision class), so
+    the reported/performed distinction survives scoring into the run
+    outputs and the report. The provenance fields describe the GOLD
+    record the row matched; ``reported`` is true exactly when that gold
+    row is classified ``reported_decision``. Attribution here is
+    evidence provenance only — decision authorship is not measured.
+    """
+
+    fixture_id: str
+    text: str
+    status: str  # "emitted" | "dropped"
+    drop_reason: str | None = None
+    matched_gold_index: int | None = None  # index into fixture.expected
+    gold_text: str | None = None
+    gold_stance: str | None = None
+    row_stance: str | None = None
+    stance_outcome: str = "not_scored"  # correct | incorrect | excluded_unset | not_scored
+    speaker: str | None = None
+    originator: str | None = None
+    reporter: str | None = None
+    assenter: str | None = None
+    decision_class: str | None = None
+    reported: bool = False
+
+
+@dataclass
 class FixtureScore:
     """Everything scored for one fixture in one run."""
 
@@ -95,6 +126,14 @@ class FixtureScore:
     extra_rows: int = 0  # proposed rows matching no gold proposition (diagnostic)
     stance_correct: int = 0
     stance_total: int = 0
+    # Amendment B2/B3: emitted rows matched to stance-unset gold (excluded
+    # from measure 3 both ways, counted here), and the unsupported-stance
+    # measure on the proposed-row basis.
+    stance_unset_matched: int = 0
+    unsupported_attempted: int = 0  # proposed (non-duplicate) rows carrying a stance, matched to unset gold
+    unsupported_emitted: int = 0  # of those, the rows the gate emitted (B6 gate: must be 0)
+    unsupported_matched: int = 0  # denominator: proposed (non-duplicate) rows matched to unset gold
+    row_scores: list[RowScore] = field(default_factory=list)
     negation_preserved: int = 0  # 1 when a negation gold proposition is recovered cleanly
     negation_total: int = 0
     exactness_passed_proposed: int = 0
@@ -232,22 +271,83 @@ def score_fixture(
         score.honest_empty = validation.hard_empty and not validation.emitted
         score.recall = 1.0 if score.honest_empty else 0.0
 
-    # Stance distinction (measure 3): emitted rows matched to gold, stance equal.
+    # Proposed rows (emitted + gate-dropped) — the basis for measure 5,
+    # measure F, the B3 unsupported-stance measure, and the per-row scored
+    # records. Emitted rows carry drop reason None.
+    proposed: list[tuple[ProposedRow, str | None]] = [
+        (row, None) for row in validation.emitted
+    ] + [(d.row, d.reason) for d in validation.dropped]
+
+    def _gold_index(gold: Any) -> int:
+        return next(i for i, g in enumerate(fixture.expected) if g is gold)
+
+    def _row_score(
+        row: ProposedRow,
+        status: str,
+        drop_reason: str | None,
+        gold: Any | None,
+        stance_outcome: str,
+    ) -> RowScore:
+        if gold is None:
+            return RowScore(
+                fixture_id=fixture.id,
+                text=row.text,
+                status=status,
+                drop_reason=drop_reason,
+                row_stance=row.stance,
+                stance_outcome=stance_outcome,
+            )
+        return RowScore(
+            fixture_id=fixture.id,
+            text=row.text,
+            status=status,
+            drop_reason=drop_reason,
+            matched_gold_index=_gold_index(gold),
+            gold_text=gold.text,
+            gold_stance=gold.stance,
+            row_stance=row.stance,
+            stance_outcome=stance_outcome,
+            speaker=gold.speaker,
+            originator=gold.originator,
+            reporter=gold.reporter,
+            assenter=gold.assenter,
+            decision_class=gold.decision_class,
+            reported=gold.decision_class == "reported_decision",
+        )
+
+    # Stance distinction (measure 3): emitted rows matched to gold, stance
+    # equal. Amendment B2: a row matched to stance-unset gold is excluded
+    # from BOTH the numerator and the denominator (the model is neither
+    # right nor wrong about a stance the gold does not assert) and is
+    # counted separately as an excluded match.
+    row_scores: list[RowScore] = []
     for row in validation.emitted:
         gold = _row_matches_gold(row, fixture)
         if gold is None:
+            row_scores.append(_row_score(row, "emitted", None, None, "not_scored"))
             continue
-        score.stance_total += 1
-        if row.stance is not None and row.stance == gold.stance:
-            score.stance_correct += 1
+        if gold.stance is None:
+            score.stance_unset_matched += 1
+            outcome = "excluded_unset"
+        else:
+            score.stance_total += 1
+            if row.stance is not None and row.stance == gold.stance:
+                score.stance_correct += 1
+                outcome = "correct"
+            else:
+                outcome = "incorrect"
+        row_scores.append(_row_score(row, "emitted", None, gold, outcome))
+    for dropped in validation.dropped:
+        gold = _row_matches_gold(dropped.row, fixture)
+        row_scores.append(
+            _row_score(dropped.row, "dropped", dropped.reason, gold, "not_scored")
+        )
+    score.row_scores = row_scores
 
     # Negation + qualification preservation (measure 4) is computed after the
     # forbidden hits below (a negation inversion on the fixture zeroes it).
 
     # Measure 5 sub-checks on proposed rows (pass rates) + forbidden hits.
-    proposed: list[tuple[ProposedRow, str | None]] = [
-        (row, None) for row in validation.emitted
-    ] + [(d.row, d.reason) for d in validation.dropped]
     for row, dropped_reason in proposed:
         if dropped_reason not in ("missing_quote", "quote_not_verbatim"):
             score.exactness_passed_proposed += 1
@@ -269,6 +369,29 @@ def score_fixture(
             score.extra_rows += 1
 
     score.duplicates_dropped = score.dropped_counts.get("duplicate", 0)
+
+    # Unsupported-stance measure (amendment B3): on the proposed-row basis
+    # above, a row counts when its GOVERNING match — the same first-match
+    # mechanism (_row_matches_gold, first in fixture order) that row-level
+    # scoring uses — is a stance-unset gold row. Attempted (the row carries
+    # a stance) and emitted (the gate let it through) are counted
+    # separately; a stance-less row on unset gold is correct behaviour and
+    # counts only in the denominator. Rows the validator dropped as
+    # duplicates add no count of any kind: duplication is already its own
+    # measure, and a duplicate must never inflate the denominator, the
+    # attempt count, or the emitted count. (Recall's recovered-id set is a
+    # distinct basis — gold-identity recovery — and is not reused here.)
+    for row, dropped_reason in proposed:
+        if dropped_reason == "duplicate":
+            continue
+        gold = _row_matches_gold(row, fixture)
+        if gold is None or gold.stance is not None:
+            continue
+        score.unsupported_matched += 1
+        if row.stance is not None:
+            score.unsupported_attempted += 1
+            if dropped_reason is None:
+                score.unsupported_emitted += 1
 
     # Negation + qualification preservation (measure 4): negation-category gold
     # propositions recovered without a negation-inversion hit on the fixture.
@@ -314,6 +437,13 @@ class BenchmarkScore:
     reproducibility_structural: float | None = None  # set when 3 runs are compared
     reproducibility_semantic: float | None = None
     reproducibility_exact_identity: float | None = None  # diagnostic only
+    # Amendment B2/B3 aggregates + the per-row scored records (B4/P2).
+    stance_unset_matched: int = 0
+    unsupported_attempted: int = 0
+    unsupported_emitted: int = 0
+    unsupported_matched: int = 0
+    unsupported_stance_rate: float | None = None  # attempted / matched; None when no unset matches
+    row_scores: list[RowScore] = field(default_factory=list)
     operational: dict[str, Any] = field(default_factory=dict)  # measures 8-10: measured or "not measured"
     per_category: dict[str, dict[str, Any]] = field(default_factory=dict)
     thresholds: dict[str, float] = field(default_factory=dict)
@@ -347,6 +477,19 @@ def aggregate_scores(
     stance_total = sum(s.stance_total for s in scored)
     stance_correct = sum(s.stance_correct for s in scored)
     stance_acc = (stance_correct / stance_total) if stance_total else None
+
+    # Amendment B2/B3 aggregates (over all fixture scores, like the other
+    # proposed-row measures; failed fixtures contribute zeros).
+    unset_matched = sum(s.stance_unset_matched for s in fixture_scores)
+    unsupported_attempted = sum(s.unsupported_attempted for s in fixture_scores)
+    unsupported_emitted = sum(s.unsupported_emitted for s in fixture_scores)
+    unsupported_matched = sum(s.unsupported_matched for s in fixture_scores)
+    unsupported_rate = (
+        (unsupported_attempted / unsupported_matched) if unsupported_matched else None
+    )
+    all_row_scores: list[RowScore] = []
+    for s in fixture_scores:
+        all_row_scores.extend(s.row_scores)
 
     neg_total = sum(s.negation_total for s in scored)
     neg_preserved = sum(s.negation_preserved for s in scored)
@@ -471,6 +614,12 @@ def aggregate_scores(
         },
         per_category=per_category,
         thresholds=th,
+        stance_unset_matched=unset_matched,
+        unsupported_attempted=unsupported_attempted,
+        unsupported_emitted=unsupported_emitted,
+        unsupported_matched=unsupported_matched,
+        unsupported_stance_rate=unsupported_rate,
+        row_scores=all_row_scores,
     )
 
     # Pass rule (§7): all of measures 1-7 and R and the critical-error gate.
@@ -485,6 +634,11 @@ def aggregate_scores(
         ),
         "duplication": (dup_rate is not None and dup_rate <= th["duplication"]),
         "critical_error_gate": len(all_hits) == 0 and len(emitted_hits) == 0,
+        # Amendment B6 gate term: no stance the model asserted on
+        # stance-unset gold may survive the gate. A hard zero on the
+        # EMITTED count only — attempted-but-dropped rows are reported,
+        # not gated (the gate caught them). No threshold value changes.
+        "unsupported_stance": unsupported_emitted == 0,
         "reproducibility": None,  # set by compare_runs
     }
     score.pass_fail = pf
@@ -631,6 +785,7 @@ def variant_check(
 __all__ = [
     "DEFAULT_THRESHOLDS",
     "ForbiddenHit",
+    "RowScore",
     "FixtureScore",
     "BenchmarkScore",
     "score_fixture",

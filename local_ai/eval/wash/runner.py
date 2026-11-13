@@ -29,7 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -176,6 +176,25 @@ def score_candidate(
     return report, manifest, run_results
 
 
+def write_scores(path: str | Path, result: RunResult) -> Path:
+    """Serialize one run's per-fixture scores (amendment B4/P2).
+
+    The per-row scored records (``row_scores``) ride along: each carries
+    its matched gold row's identity and preservation-only provenance, so
+    the reported/performed distinction is verifiable from the run outputs
+    themselves, not only from the rendered report.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        fid: asdict(fs) for fid, fs in sorted(result.fixture_scores.items())
+    }
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return path
+
+
 def _load_inputs(path: str | Path) -> dict[str, Any]:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(data, dict):
@@ -196,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--inputs", required=True, help="run-input JSON file (see runner docstring)")
     parser.add_argument("--variant", default=VARIANT_MODEL_ON, choices=list(VARIANTS))
     parser.add_argument("--candidate", default=None)
-    parser.add_argument("--out", required=True, help="output directory for manifest.json, report.json, report.md")
+    parser.add_argument("--out", required=True, help="output directory for manifest.json, report.json, report.md, scores.json")
     parser.add_argument("--notes", default="")
     args = parser.parse_args(argv)
 
@@ -205,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     variant = inputs.get("variant", args.variant)
     candidate = inputs.get("candidate", args.candidate)
     runtime = inputs.get("runtime")
-    report, manifest, _ = score_candidate(
+    report, manifest, run_results = score_candidate(
         fixture_set,
         inputs["runs"],
         variant=variant,
@@ -218,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     write_manifest(out / "manifest.json", manifest)
     write_report(out / "report.json", report)
     write_markdown(out / "report.md", report)
+    write_scores(out / "scores.json", run_results[0])
     status = report["passed"]
     print(f"fixtures scored: {report['fixtures_scored']}  runs: {report['runs_scored']}  "
           f"variant: {report['variant']}  candidate: {report['candidate']}")

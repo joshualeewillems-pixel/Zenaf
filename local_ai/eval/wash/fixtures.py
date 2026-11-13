@@ -11,7 +11,9 @@ The loader refuses to run when versions disagree:
 
 Gold-integrity checks at load (fail loudly, never silently): fixture ids
 unique; categories known; segments non-empty; every expected quote and every
-supporting quote an exact substring of its segment; stance vocabulary;
+supporting quote an exact substring of its segment; stance vocabulary (an
+expected row's ``stance`` key is required; its value is one of the five
+values or an explicit ``null`` for a stance-unset row — amendment B1);
 forbidden classes known; ``has_explicit_speakers`` consistent with the
 segment text (a segment claiming explicit speakers must actually carry a
 speaker-prefixed line, and vice versa).
@@ -55,16 +57,45 @@ class FixtureError(ValueError):
     """The fixture file is invalid or its versions disagree — refuse to run."""
 
 
+# Preservation-only classification of a gold row's decision provenance
+# (ratified freeze-readiness amendment A4/B4). ``reported_decision`` marks
+# a row that preserves a speaker's report of a decision or agreement
+# reached elsewhere or by others; the other two values name the performed
+# classes so the vocabulary is complete. The classification rides on the
+# gold record so the reported/performed distinction survives into scored
+# records and reports (acceptance assertions P1–P3); it has NO scoring
+# role and is never inferred by the harness.
+DECISION_CLASSES = ("reported_decision", "actual_decision", "refusal_of_authorization")
+
+
 @dataclass(frozen=True)
 class ExpectedRow:
-    """One gold proposition a correct output must recover."""
+    """One gold proposition a correct output must recover.
+
+    ``stance`` is one of the five stance values, or ``None`` for a
+    stance-unset row: an attributed assertion preserved as gold with no
+    decision stance (amendment B1). Unset is the *absence* of a stance
+    judgment, not a sixth value; the fixture file encodes it as an
+    explicit JSON ``null`` and the ``stance`` key is required.
+
+    ``originator`` / ``reporter`` / ``assenter`` are preservation-only
+    attribution roles (amendment B4): the party a reported act originates
+    with, the speaker reporting it, and the speaker whose assent completes
+    a proposal. They are recorded, never scored; an unrecorded role stays
+    ``None`` (unknown stays unknown). ``decision_class`` is the
+    preservation-only A4 classification (see DECISION_CLASSES).
+    """
 
     text: str
-    stance: str
+    stance: str | None
     speaker: str | None  # e.g. "Speaker A" when boundaries are explicit, else None
     quote: str  # the exact verbatim span the row must carry
     equivalents: tuple[str, ...] = ()  # frozen semantic-equivalence judgments (§6.4.1)
     supporting_quotes: tuple[str, ...] = ()  # quotes that support this proposition
+    originator: str | None = None
+    reporter: str | None = None
+    assenter: str | None = None
+    decision_class: str | None = None
 
 
 @dataclass(frozen=True)
@@ -121,19 +152,43 @@ def _require(cond: bool, msg: str) -> None:
         raise FixtureError(msg)
 
 
+def _optional_role(raw: dict, key: str, fixture_id: str) -> str | None:
+    """A preservation-only role field: non-empty string or null/absent."""
+    value = raw.get(key)
+    _require(
+        value is None or (isinstance(value, str) and value.strip()),
+        f"{fixture_id}: expected.{key} must be a string or null",
+    )
+    return value.strip() if isinstance(value, str) else None
+
+
 def _parse_expected(raw: Any, fixture_id: str) -> ExpectedRow:
     _require(isinstance(raw, dict), f"{fixture_id}: expected row must be an object")
     text = raw.get("text")
     _require(isinstance(text, str) and text.strip(), f"{fixture_id}: expected.text required")
+    # B1: the stance KEY is required; its value is one of the five stance
+    # values or an explicit null (stance-unset). An absent key is ambiguous
+    # between "unset" and "forgot to label" and is refused.
+    _require(
+        "stance" in raw,
+        f"{fixture_id}: expected.stance key is required "
+        f"(use null for a stance-unset row)",
+    )
     stance = raw.get("stance")
     _require(
-        stance in _VALID_STANCES,
+        stance is None or stance in _VALID_STANCES,
         f"{fixture_id}: expected.stance {stance!r} is not in the stance vocabulary",
     )
     speaker = raw.get("speaker")
     _require(
         speaker is None or (isinstance(speaker, str) and speaker.strip()),
         f"{fixture_id}: expected.speaker must be a string or null",
+    )
+    decision_class = raw.get("decision_class")
+    _require(
+        decision_class is None or decision_class in DECISION_CLASSES,
+        f"{fixture_id}: expected.decision_class {decision_class!r} is not a "
+        f"known decision class",
     )
     quote = raw.get("quote")
     _require(
@@ -159,6 +214,10 @@ def _parse_expected(raw: Any, fixture_id: str) -> ExpectedRow:
         quote=quote.strip(),
         equivalents=tuple(e.strip() for e in equivalents),
         supporting_quotes=tuple(s.strip() for s in supporting),
+        originator=_optional_role(raw, "originator", fixture_id),
+        reporter=_optional_role(raw, "reporter", fixture_id),
+        assenter=_optional_role(raw, "assenter", fixture_id),
+        decision_class=decision_class,
     )
 
 
@@ -317,6 +376,7 @@ def default_fixture_path() -> Path:
 
 __all__ = [
     "CATEGORIES",
+    "DECISION_CLASSES",
     "FixtureError",
     "ExpectedRow",
     "ForbiddenRow",

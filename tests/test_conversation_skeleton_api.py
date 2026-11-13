@@ -180,8 +180,31 @@ def test_voice_chat_without_conversation_id_unchanged(client, monkeypatch):
     assert c.get("/conversation").json()["messages"] == []
 
 
-def test_suggestions_endpoint_cached_and_read_only(client):
+def test_suggestions_endpoint_cached_and_read_only(client, monkeypatch):
     c, store = client
+    # Permissions Slice 1: the suggestions route now consults
+    # steward_derivation at consumption (B-S2), including before
+    # serving a cached run. This test predates the gate; isolate the
+    # permissions read and opt the fixture user in so the cache
+    # behavior under test is unchanged. The gate itself is covered
+    # in tests/test_permissions_slice1_consumption.py.
+    import json as _json
+    import sqlite3 as _sqlite3
+
+    import local_ai.vision_execution.storage as _ve_storage
+
+    _conn = _sqlite3.connect(":memory:", check_same_thread=False)
+    _conn.execute(
+        "CREATE TABLE user_permissions_settings ("
+        "user_id TEXT, permissions_json TEXT, updated_at TEXT)"
+    )
+    _conn.execute(
+        "INSERT INTO user_permissions_settings VALUES (?, ?, ?)",
+        ("user-alice", _json.dumps({"steward_derivation": True}),
+         "2026-11-04T00:00:00+00:00"),
+    )
+    _conn.commit()
+    monkeypatch.setattr(_ve_storage, "get_connection", lambda: _conn)
     c.post("/conversation/turn", json={"archetype_id": "mentor", "message": "I protect my mornings"})
     before = len(store.history("user-alice", "skeleton"))
 

@@ -4,7 +4,6 @@ import type { VisionMapEntityBundle } from './blockersFromVe'
 import CouncilChat, { type ConversationMessage } from '../chat/CouncilChat'
 import { fetchDeferredPrompts } from '../vision-execution/promptSignalsApi'
 import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
-import { apiBase } from '../apiBase'
 
 /**
  * The stone sheet — a briefing conversation about the tapped stone.
@@ -12,11 +11,11 @@ import { apiBase } from '../apiBase'
  * Tap a stone in the garden and the sheet opens with:
  *  1. a synopsis paragraph composed live from the stone's entity state
  *     (where it's at, where it's going, last thing worked on),
- *  2. what's-next chips (the entity's own next steps + suggestion engine
- *     items) that drop into the composer without sending,
- *  3. the skeleton thread for the stone — `stone:{veType}:{id}` — rendered
+ *  2. the skeleton thread for the stone — `stone:{veType}:{id}` — rendered
  *     by the shared CouncilChat. Open questions for the stone arrive as
- *     messages in the thread, not as a separate notification list.
+ *     messages in the thread, not as a separate notification list, and
+ *     what's-next is offered conversationally in the thread (the old
+ *     suggestion-chip row was removed, founder 2026-11-13).
  *
  * Killed here: the INVITES button row (those are chat utterances now), the
  * old-model conversation block, the detail-dump inspector, and the
@@ -28,9 +27,7 @@ type Props = {
   selected: MapNodePayload | null
   entityBundle: VisionMapEntityBundle | null
   onClearSelection: () => void
-  canNestSelected?: boolean
   canExpandSelected?: boolean
-  onNestSelected?: () => void
   onExpandSelected?: () => void
   /** Selected stone is a member of a fanned-out cairn: offer stacking it back. */
   canCollapseCairnSelected?: boolean
@@ -169,23 +166,16 @@ export function composeSynopsis(selected: MapNodePayload, bundle: VisionMapEntit
   return parts
 }
 
-type Chip = { label: string; text: string }
-
 export function MapChatShell({
   selected,
   entityBundle,
   onClearSelection,
-  canNestSelected,
   canExpandSelected,
-  onNestSelected,
   onExpandSelected,
   canCollapseCairnSelected,
   onCollapseCairnSelected,
 }: Props) {
-  const base = apiBase()
-  const [chips, setChips] = useState<Chip[]>([])
   const [folded, setFolded] = useState<ConversationMessage[]>([])
-  const [prefill, setPrefill] = useState<{ text: string; nonce: number } | null>(null)
 
   const stoneKey = selected ? `${selected.ref.veType}:${selected.ref.id}` : null
   const conversationId = stoneKey ? `stone:${stoneKey}` : null
@@ -202,78 +192,6 @@ export function MapChatShell({
     () => (selected ? composeSynopsis(selected, entityBundle) : []),
     [selected, entityBundle],
   )
-
-  // What's-next chips: the entity's own next steps + open children, then
-  // suggestion-engine items for this stone's thread.
-  useEffect(() => {
-    if (!selected) {
-      setChips([])
-      return
-    }
-    let cancelled = false
-    const out: Chip[] = []
-    const se = resolveStoneEntity(selected, entityBundle)
-    if (se && (se.kind === 'initiative' || se.kind === 'project') && se.e.next_step_ai?.trim()) {
-      const t = se.e.next_step_ai.trim()
-      out.push({ label: `Next: ${truncate(t, 44)}`, text: t })
-    }
-    if (se && entityBundle) {
-      const openChildren: { title: string }[] =
-        se.kind === 'initiative'
-          ? entityBundle.projects
-              .filter((p) => p.initiative_id === se.e.id && !isDoneStatus(p.status))
-              .slice(0, 3)
-          : se.kind === 'project'
-            ? entityBundle.tasks
-                .filter((t) => t.project_id === se.e.id && !isDoneStatus(t.status))
-                .slice(0, 3)
-            : []
-      for (const c of openChildren) {
-        const title = (c.title || '').trim()
-        if (title) out.push({ label: truncate(title, 44), text: `Where does "${title}" stand?` })
-      }
-    }
-    const cid = `stone:${selected.ref.veType}:${selected.ref.id}`
-    fetch(`${base}/conversation/suggestions?conversation_id=${encodeURIComponent(cid)}`, {
-      credentials: 'include',
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return
-        const take = (arr: unknown, pick: (x: Record<string, unknown>) => string | null) => {
-          if (!Array.isArray(arr)) return
-          for (const raw of arr) {
-            if (out.length >= 5 || !raw || typeof raw !== 'object') continue
-            const t = pick(raw as Record<string, unknown>)
-            if (t && t.trim() && !out.some((c) => c.text === t.trim())) {
-              out.push({ label: truncate(t, 44), text: t.trim() })
-            }
-          }
-        }
-        take(data.trainable_moments, (x) =>
-          typeof x.question === 'string' && x.question.trim()
-            ? x.question
-            : typeof x.title === 'string'
-              ? x.title
-              : null,
-        )
-        take(data.project_proposals, (x) =>
-          typeof x.title === 'string' ? `What would it take to start "${x.title}"?` : null,
-        )
-        take(data.mint_suggestions, (x) =>
-          typeof x.title === 'string' ? x.title : typeof x.summary === 'string' ? x.summary : null,
-        )
-        if (!cancelled) setChips([...out])
-      })
-      .catch(() => {
-        if (!cancelled) setChips([...out])
-      })
-    // Entity-derived chips show immediately; suggestions merge in when they land.
-    setChips([...out])
-    return () => {
-      cancelled = true
-    }
-  }, [selected, entityBundle, base])
 
   // Fold the stone's open questions into the thread (as council-voice
   // messages when the skeleton thread is still empty). No separate card list.
@@ -344,19 +262,9 @@ export function MapChatShell({
         </div>
       ) : (
         <div className="flex-1 min-h-0 flex flex-col">
-          {(canNestSelected && onNestSelected) ||
-          (canExpandSelected && onExpandSelected) ||
+          {(canExpandSelected && onExpandSelected) ||
           (canCollapseCairnSelected && onCollapseCairnSelected) ? (
             <div className="px-3 py-2 flex flex-wrap gap-1.5 border-b border-stone-800">
-              {canNestSelected && onNestSelected ? (
-                <button
-                  type="button"
-                  onClick={onNestSelected}
-                  className="min-h-[44px] text-[11px] px-2 py-1 rounded bg-stone-800 border border-stone-600 hover:bg-stone-700"
-                >
-                  Nest group
-                </button>
-              ) : null}
               {canExpandSelected && onExpandSelected ? (
                 <button
                   type="button"
@@ -390,27 +298,6 @@ export function MapChatShell({
               </div>
             ) : null}
 
-            {chips.length > 0 ? (
-              <div className="space-y-1.5" data-testid="stone-whats-next">
-                <div className="text-[10px] uppercase tracking-wide text-stone-500">What&apos;s next</div>
-                <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
-                  {chips.map((chip, i) => (
-                    <button
-                      key={`${chip.label}-${i}`}
-                      type="button"
-                      onClick={() =>
-                        setPrefill((prev) => ({ text: chip.text, nonce: (prev?.nonce ?? 0) + 1 }))
-                      }
-                      className="shrink-0 min-h-[44px] max-w-[220px] truncate text-[12px] px-3 rounded-full border border-stone-600 bg-stone-800/70 hover:bg-stone-700 text-stone-200"
-                      title={chip.text}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
             <div className="space-y-1.5">
               <div className="text-[10px] uppercase tracking-wide text-stone-500">
                 Talk about this {growthKindLabel(selected.kind).toLowerCase().replace(/^this /, '')}
@@ -425,7 +312,6 @@ export function MapChatShell({
                   entity_id: selected.ref.id,
                 }}
                 seedMessages={folded.length > 0 ? folded : null}
-                prefill={prefill}
               />
             </div>
 

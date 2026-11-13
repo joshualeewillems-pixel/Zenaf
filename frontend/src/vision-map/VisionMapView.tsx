@@ -68,13 +68,9 @@ import { touchGestureGate, useActiveTouchPointerCount } from './touchGestureGate
 import {
   EMPTY_NEST_STATE,
   applyNestTransform,
-  canNestNode,
   computeNestGrowthTriad,
-  createNestGroup,
-  dissolveNestsMergedIntoAncestor,
   getNestGroupForRoot,
   updateNestAnchor,
-  withAddedNestGroup,
   withRemovedNestGroup,
   type NestGroupNodeData,
   type NestState,
@@ -1035,29 +1031,6 @@ function VisionMapFlow({
     }
   }, [rf, endArmedDrag])
 
-  const nestSelectedGroup = useCallback(() => {
-    if (!baseGraph || !selectedNodeId) return
-    const rootNode = baseGraph.nodes.find((n) => n.id === selectedNodeId)
-    if (!rootNode || !canNestNode(rootNode)) return
-    if (getNestGroupForRoot(rootNode.id, nestState)) return
-    const nodesWithPos = baseGraph.nodes.map((n) => ({
-      ...n,
-      position: positionOverrides[n.id] ? { ...positionOverrides[n.id]! } : n.position,
-    }))
-    const group = createNestGroup(
-      rootNode.id,
-      nodesWithPos as Node<MapNodePayload>[],
-      baseGraph.edges,
-      entityBundle,
-    )
-    if (!group) return
-    setNestState((prev) => withAddedNestGroup(dissolveNestsMergedIntoAncestor(prev, group), group))
-    if (selectedNodeId && group.memberNodeIds.includes(selectedNodeId)) {
-      setSelectedNodeId(group.rootNodeId)
-      setSelectedPayload(rootNode.data)
-    }
-  }, [baseGraph, selectedNodeId, nestState, positionOverrides, entityBundle])
-
   const expandSelectedGroup = useCallback(() => {
     if (!baseGraph || !selectedNodeId) return
     const g = getNestGroupForRoot(selectedNodeId, nestState)
@@ -1093,13 +1066,6 @@ function VisionMapFlow({
     setPositionOverrides((prev) => ({ ...prev, ...restored, ...repulsed }))
     setNestState((prev) => withRemovedNestGroup(prev, selectedNodeId))
   }, [baseGraph, selectedNodeId, nestState, positionOverrides])
-
-  const canNestSelected = (() => {
-    if (!selectedNodeId || !baseGraph) return false
-    const root = baseGraph.nodes.find((n) => n.id === selectedNodeId)
-    if (!root || !canNestNode(root)) return false
-    return !getNestGroupForRoot(root.id, nestState)
-  })()
 
   const canExpandSelected = (() => {
     if (!selectedNodeId) return false
@@ -1360,9 +1326,7 @@ function VisionMapFlow({
             selected={selectedPayload}
             entityBundle={entityBundle}
             onClearSelection={clearSelection}
-            canNestSelected={canNestSelected}
             canExpandSelected={canExpandSelected}
-            onNestSelected={nestSelectedGroup}
             onExpandSelected={expandSelectedGroup}
             canCollapseCairnSelected={!!selectedCairnId}
             onCollapseCairnSelected={

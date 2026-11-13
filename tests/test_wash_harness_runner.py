@@ -87,8 +87,9 @@ def test_bad_entry_is_a_crash_not_a_killed_run(fixture_set):
     assert run_results[0].crashes[0]["fixture_id"] == "neg-01"
     assert "bogus" in run_results[0].crashes[0]["error"]
     assert report["crashes"]
-    # The run continued past the crash: 61 fixtures scored, 1 crash recorded.
-    assert report["fixtures_scored"] == 61
+    # The run continued past the crash: 66 fixtures scored (67 shipped
+    # after the ratified amendment's C4 additions), 1 crash recorded.
+    assert report["fixtures_scored"] == 66
 
 
 def test_cli_writes_manifest_report_markdown(tmp_path, fixture_set):

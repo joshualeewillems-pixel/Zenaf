@@ -1,8 +1,9 @@
 """Loader tests for the wash harness (fixtures.py).
 
-Covers: the shipped set loads clean (62 fixtures, 10 per category + 2 empty),
-version agreement is enforced, and every gold-integrity violation fails
-loudly at load time instead of silently scoring.
+Covers: the shipped set loads clean (67 fixtures after the ratified
+freeze-readiness amendment added the five C4 fixtures), version agreement
+is enforced, and every gold-integrity violation fails loudly at load time
+instead of silently scoring.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ def _write_mutated(tmp_path: Path, data: dict, name: str = "mutated.json") -> Pa
 
 
 def test_shipped_set_loads_with_expected_shape(shipped_set):
-    assert len(shipped_set.fixtures) == 62
+    assert len(shipped_set.fixtures) == 67
     assert shipped_set.fixture_set_version == "1.0-draft"
     assert shipped_set.gold_label_version == "1.0-draft"
     assert shipped_set.semantic_contract_version == "1.0"
@@ -43,13 +44,16 @@ def test_shipped_set_loads_with_expected_shape(shipped_set):
     counts = {}
     for fx in shipped_set.fixtures:
         counts[fx.category] = counts.get(fx.category, 0) + 1
+    # The five C4 fixtures (ratified amendment) land one each in
+    # rejections (P-REV-01) and evidence_preservation (P-SUP-01) and
+    # attribution (P-INJ-01), and two in commitments (P-CON-01, P-DES-01).
     assert counts == {
         "negation": 10,
         "uncertainty": 10,
-        "commitments": 10,
-        "rejections": 10,
-        "attribution": 10,
-        "evidence_preservation": 10,
+        "commitments": 12,
+        "rejections": 11,
+        "attribution": 11,
+        "evidence_preservation": 11,
         "empty": 2,
     }
 
@@ -60,8 +64,10 @@ def test_segment_ids_are_stable_and_sequential(shipped_set):
         "seg-0001",
         "seg-0002",
     ]
-    assert shipped_set.fixtures[-1].segment_id == "seg-0061"
-    assert len({fx.segment_id for fx in shipped_set.fixtures}) == 62
+    # The amendment appended the C4 fixtures at the end, so every original
+    # segment id is unchanged and the new fixtures take seg-0062..seg-0066.
+    assert shipped_set.fixtures[-1].segment_id == "seg-0066"
+    assert len({fx.segment_id for fx in shipped_set.fixtures}) == 67
 
 
 def test_canonical_reversal_fixture_is_present(shipped_set):
@@ -69,15 +75,20 @@ def test_canonical_reversal_fixture_is_present(shipped_set):
     assert fx.segment.startswith("We agreed to ship Friday")
     assert len(fx.expected) == 2
     assert fx.expected[0].stance == "rejected"
-    assert fx.expected[1].stance == "proposed"
+    # Amendment A6: row 2 is an undertaking by the deciding voice —
+    # committed, not proposed (P-REV-01's matching line stays proposed).
+    assert fx.expected[1].stance == "committed"
     assert any(
         fb.forbidden_class == "commitment_inflation" for fb in fx.forbidden
     )
 
 
 def test_gold_counts(shipped_set):
-    assert sum(len(fx.expected) for fx in shipped_set.fixtures) == 67
-    assert sum(len(fx.forbidden) for fx in shipped_set.fixtures) == 62
+    # 81 expected rows / 73 forbidden entries after the ratified amendment
+    # (recomputed from the edited file; see the implementation report for
+    # the reconciliation against the paper record).
+    assert sum(len(fx.expected) for fx in shipped_set.fixtures) == 81
+    assert sum(len(fx.forbidden) for fx in shipped_set.fixtures) == 73
 
 
 def test_version_disagreement_refuses_to_run(tmp_path, shipped_data):

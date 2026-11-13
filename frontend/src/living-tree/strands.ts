@@ -16,6 +16,14 @@
 
 import { STRAND_COLORS, strandColor } from '../council/colors'
 
+import heartLogo from '../assets/strands/heart-logo.png'
+import handsLogo from '../assets/strands/hands-logo.png'
+import logicLogo from '../assets/strands/logic-logo.png'
+import voiceLogo from '../assets/strands/voice-logo.png'
+import earLogo from '../assets/strands/ear-logo.png'
+import compassLogo from '../assets/strands/compass-logo.png'
+import eyeLogo from '../assets/strands/eye-logo.png'
+
 export { strandColor }
 
 export type StrandKey = 'word' | 'number' | 'image' | 'sound' | 'body' | 'people' | 'self'
@@ -160,4 +168,35 @@ export const TAXONOMY_TO_DESIGN: Record<StrandKey, DesignStrandKey> = {
 /** The design strand key for a tree strand root's taxonomy key. */
 export function designStrandKeyForTaxonomy(key: StrandKey): DesignStrandKey {
   return TAXONOMY_TO_DESIGN[key]
+}
+
+/* ------------------------------------------------------------------ */
+/* Strand logos (Living Tree root nodes)                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Strand logos — the founder's strand logo concepts (2026-11-12):
+ * circular emblems in each strand's color, cropped from the concept
+ * sheet, keyed by design key (the asset names). These are the tree's
+ * ROOT marks: a strand root node shows its logo instead of its
+ * two-letter monogram. Unlike the seat logos there is NO reveal
+ * gate — strand roots carry no discovered/undiscovered state, so
+ * the logos show always.
+ */
+export const STRAND_LOGOS: Record<DesignStrandKey, string> = {
+  heart: heartLogo,
+  hands: handsLogo,
+  logic: logicLogo,
+  voice: voiceLogo,
+  ear: earLogo,
+  compass: compassLogo,
+  eye: eyeLogo,
+}
+
+/**
+ * The strand's logo for its Living Tree root node, by taxonomy key.
+ * Always resolves — no reveal gate for strands (see STRAND_LOGOS).
+ */
+export function resolveStrandLogo(key: StrandKey): string {
+  return STRAND_LOGOS[TAXONOMY_TO_DESIGN[key]]
 }

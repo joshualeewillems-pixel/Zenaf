@@ -121,8 +121,6 @@ import {
   VisionExecutionGraphDataProvider,
   VisionExecutionProfileGraphDataProvider,
   VisionExecutionFocusProvider,
-  VeVoiceRecordingProvider,
-  ContextActionBarContent,
   FocusInviteRunProvider,
   buildConversationalInvitePreface,
   buildStructuredFillInvitePreface,
@@ -130,7 +128,6 @@ import {
   buildScopedContextLabelFromCore,
   threadDisplayLineForCouncilQuestion,
   CONVERSATIONAL_INVITE_MARKER,
-  FocusContextRecordButton,
   TranscribableFieldRegion,
   focusFieldRegistryKey,
   ZENAF_VOICE_TRANSCRIPT_DOM_FIRST,
@@ -419,84 +416,16 @@ function useWorkspaceOrVeResonanceEntity(
 
 /** Council thread: per-seat resonance sliders; VE field focus on Vision & Execution, else workspace + folder hash. */
 
-/** Single top strip: focus tools + (when idle) workspace “where” crumbs. Renders under VisionExecutionFocusProvider. */
-function UniversalContextStrip({
-  mainView,
-  currentTopic,
-  currentFocusHasResult,
-  activeMode,
-  useLastResultAsContext,
-}: {
-  mainView:
-    | 'living_tree'
-    | 'workspace'
-    | 'perspectives'
-    | 'content'
-    | 'vision_map'
-    | 'vision_execution'
-    | 'agent_intake'
-    | 'review'
-    | 'signal_review'
-    | 'provenance'
-    | 'settings'
-  currentTopic: { label: string; modeLabel: string | null; summary: string; fullPath: string }
-  currentFocusHasResult: boolean
-  activeMode: string
-  useLastResultAsContext: boolean
-}) {
-  const focusOpt = useVisionExecutionFocusOptional()
-  const hasVeFieldFocus = Boolean(focusOpt?.focus)
-  const idleHint =
-    mainView === 'vision_map' ? 'map' : mainView === 'vision_execution' ? 've' : 'shell'
+/**
+ * NOTE (founder ruling, 2026-11-13): the universal context strip (focus record
+ * button, "Focus context" readout, Transcribe/Rewrite actions, invite chips,
+ * "where" crumbs) was removed from every surface — OS dictation covers voice
+ * input and form-filling belongs in conversation. The focus STATE plumbing
+ * (VisionExecutionFocusProvider, CouncilFocusBridge, preflight ve_focus,
+ * insert listeners) is untouched; only this user-facing strip is gone. The
+ * strip components remain parked under vision-execution/focus/.
+ */
 
-  return (
-    <div className="shrink-0 z-10 border-b border-stone-700 px-6 py-2.5 bg-stone-800/95 backdrop-blur-sm">
-      <VeVoiceRecordingProvider>
-        <div className="flex flex-wrap items-start gap-3 text-sm">
-          <span className="flex items-center gap-2 shrink-0 pt-0.5">
-            <FocusContextRecordButton />
-            <span className="text-stone-500 uppercase tracking-wide font-medium">Focus context</span>
-          </span>
-          <div className="flex-1 min-w-0 flex flex-wrap items-start gap-x-4 gap-y-2">
-            <ContextActionBarContent className="flex-1 min-w-0 min-w-[10rem]" idleHint={idleHint} />
-          {!hasVeFieldFocus && mainView !== 'vision_execution' && (
-            <div className="flex flex-wrap items-center gap-2 border-t border-stone-700/80 pt-2 sm:border-t-0 sm:pt-0 sm:border-l sm:border-stone-700 sm:pl-4 w-full sm:w-auto">
-              <span className="text-stone-500 uppercase text-[10px] tracking-wide font-medium">Where</span>
-              {mainView === 'vision_map' ? (
-                <span className="text-stone-300">Vision map</span>
-              ) : (
-                <>
-                  <span className="text-stone-300 font-mono truncate max-w-[220px]" title={currentTopic.fullPath}>
-                    {currentTopic.label}
-                  </span>
-                  {currentTopic.modeLabel && (
-                    <span className="px-2 py-0.5 rounded bg-stone-700 text-stone-300">{currentTopic.modeLabel}</span>
-                  )}
-                  {currentTopic.summary && (
-                    <span className="text-stone-400 truncate max-w-[320px]" title={currentTopic.summary}>
-                      {currentTopic.summary}
-                    </span>
-                  )}
-                </>
-              )}
-              {currentFocusHasResult && mainView === 'workspace' && (
-                <span className="px-2 py-0.5 rounded bg-emerald-900/45 text-emerald-200 border border-emerald-800/55 text-xs">
-                  Result ready
-                </span>
-              )}
-              {(mainView === 'workspace' || mainView === 'vision_map') && activeMode === 'council' && (
-                <span className={useLastResultAsContext ? 'text-yellow-500 text-xs' : 'text-stone-500 text-xs'}>
-                  {useLastResultAsContext ? 'Using result as context' : 'Context off'}
-                </span>
-              )}
-            </div>
-          )}
-          </div>
-        </div>
-      </VeVoiceRecordingProvider>
-    </div>
-  )
-}
 
 /** Synthetic focus for council reply — same registry path as other transcribable fields. */
 const COUNCIL_REPLY_FOCUS_ID = '__council_reply__'
@@ -4628,11 +4557,6 @@ function App() {
   const consumeVeFocusTabRequest = useCallback(() => setVeFocusTabRequest(null), [])
   const [veRadarScrollBucket, setVeRadarScrollBucket] = useState<VeRadarBucketId | null>(null)
   const clearVeRadarScrollBucket = useCallback(() => setVeRadarScrollBucket(null), [])
-  const handleOpenVeRadar = useCallback((bucket?: VeRadarBucketId) => {
-    setMainView('vision_execution')
-    setVeFocusTabRequest('radar')
-    setVeRadarScrollBucket(bucket ?? null)
-  }, [])
   const [mapDevelopmentalSnapshot, setMapDevelopmentalSnapshot] = useState<MapTriadDevelopmentalSnapshot | null>(null)
   const [mapExecutionFlowReadings, setMapExecutionFlowReadings] = useState<ExecutionFlowReadingSummary[]>([])
   const [perspectivesCoreProfiles, setPerspectivesCoreProfiles] = useState<CoreProfile[]>([])
@@ -5303,16 +5227,6 @@ function App() {
         </div>
       </header>
 
-      {mainView !== 'living_tree' && (
-        <UniversalContextStrip
-          mainView={mainView}
-          currentTopic={currentTopic}
-          currentFocusHasResult={currentFocusHasResult}
-          activeMode={activeMode}
-          useLastResultAsContext={useLastResultAsContext}
-        />
-      )}
-
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 min-w-0">
         {/* Left: main content (changes by tab) */}
         {mainView === 'today' ? (
@@ -5567,7 +5481,6 @@ function App() {
               onOpenOperatorMode={() => {
                 setMainView('vision_execution')
               }}
-              onOpenVeRadar={handleOpenVeRadar}
               councilQuestionDraft={question}
               onVisionMapCouncilInteraction={handleVisionMapCouncilInteraction}
               onDevelopmentalSignalsChange={setMapDevelopmentalSnapshot}

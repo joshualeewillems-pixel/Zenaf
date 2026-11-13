@@ -973,6 +973,18 @@
   }
 }
 
+/* Hold ladder tier 2: the toggle has fired — a deeper, steady ring and
+   a warm halo over the tier-1 pulse (the pulse animation is stopped so
+   the state reads as settled, not still-waiting). The press is spent
+   once this paints. */
+.map-cairn-toggle-armed {
+  outline: 3px solid rgba(217, 164, 65, 1);
+  outline-offset: 4px;
+  border-radius: 14px;
+  box-shadow: 0 0 0 7px rgba(217, 164, 65, 0.22);
+  animation: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .map-cairn-armed {
     animation: none;

@@ -339,3 +339,68 @@ def test_hard_empty_reports_no_rows(fixture_set):
     assert result.hard_empty is True
     assert result.emitted == []
     assert result.proposed_count == 0
+
+
+# --- att-08 gate collision: founder ruling alpha (2026-11-12) ----------------
+#
+# A1b's ratified gold text for att-08 row 1 ("Speaker A does not think the
+# new flow is ready") leads with a speaker prefix, so the proposition gate
+# drops a proposed row that carries the gold text verbatim. The ruling
+# keeps the gold text unchanged and adds ONE equivalent that expresses the
+# same hedged, attributed assessment without the prefix. The equivalent is
+# an admissible matching target, not an instruction to rewrite the model's
+# extracted proposition: the gate must still reject genuinely raw diarized
+# lines. These tests verify reachability through the existing validator
+# and matcher rather than assuming the equivalent resolves the collision.
+
+_ATT08_EQUIVALENT = "The new flow is not considered ready by Speaker A"
+
+
+def test_att08_equivalent_is_reachable_through_validator_and_matcher(fixture_set):
+    from local_ai.eval.wash.measures import _row_matches_gold, score_fixture
+
+    fx = fixture_set.by_id("att-08")
+    assert list(fx.expected[0].equivalents) == [_ATT08_EQUIVALENT]
+    result = validate_segment_output(
+        _rows_json(
+            [
+                _row(_ATT08_EQUIVALENT, "I don't think the new flow is ready", stance=None),
+                _row(
+                    "The new flow will be held for another week",
+                    "let's hold it for another week",
+                    stance="proposed",
+                ),
+            ]
+        ),
+        fx.segment,
+        fx,
+    )
+    # The equivalent row passes the proposition gate (it is not dropped as
+    # a diarized line) and survives exactness / attribution / support.
+    assert result.gate_counts == {}
+    assert [r.text for r in result.emitted] == [
+        _ATT08_EQUIVALENT,
+        "The new flow will be held for another week",
+    ]
+    # The existing matcher maps the emitted equivalent row to att-08 row 1.
+    assert _row_matches_gold(result.emitted[0], fx) is fx.expected[0]
+    assert score_fixture(fx, result).recall == 1.0
+
+
+def test_att08_gate_still_rejects_raw_diarized_line(fixture_set):
+    fx = fixture_set.by_id("att-08")
+    result = validate_segment_output(
+        _rows_json(
+            [
+                _row(
+                    "Speaker A: I don't think the new flow is ready",
+                    "I don't think the new flow is ready",
+                    stance=None,
+                )
+            ]
+        ),
+        fx.segment,
+        fx,
+    )
+    assert result.emitted == []
+    assert result.gate_counts == {"not_propositional": 1}

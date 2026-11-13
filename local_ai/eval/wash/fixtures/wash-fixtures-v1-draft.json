@@ -1306,7 +1306,7 @@
           "stance": null,
           "speaker": "Speaker A",
           "quote": "I don't think the new flow is ready",
-          "equivalents": [],
+          "equivalents": ["The new flow is not considered ready by Speaker A"],
           "supporting_quotes": ["I don't think the new flow is ready"]
         },
         {

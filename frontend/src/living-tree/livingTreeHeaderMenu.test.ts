@@ -60,6 +60,17 @@ describe('buildSeatHeaderMenu', () => {
       'Upload',
       'Provenance',
     ])
+    const skeptic = buildSeatHeaderMenu({
+      seatKey: 'skeptic',
+      invitationCount: 0,
+      currentChatId: null,
+    })
+    expect(skeptic.map((i) => i.title)).toEqual([
+      'Today',
+      'Review',
+      'Upload',
+      'Signal review',
+    ])
   })
 
   it('shows the shortcut when an invitation target differs from the open conversation', () => {

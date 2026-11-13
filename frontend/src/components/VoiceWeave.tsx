@@ -14,7 +14,7 @@ import { USER_WEAVE_COLOR } from '../council/colors'
 
 // Voice colors are defined once in `../council/colors` (single source of
 // truth); re-exported here so existing imports from this module keep working.
-export { VOICE_COLORS, voiceColor } from '../council/colors'
+export { DEFAULT_SEAT_COLOR, VOICE_COLORS, voiceColor } from '../council/colors'
 export { USER_WEAVE_COLOR }
 export type DemoVoice = {
   id: string

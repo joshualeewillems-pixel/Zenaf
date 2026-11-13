@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { VOICE_COLORS } from '../components/VoiceWeave'
+import { DEFAULT_SEAT_COLOR, VOICE_COLORS } from '../components/VoiceWeave'
 import { STRANDS } from '../living-tree/strands'
 
 /**
@@ -30,7 +30,7 @@ export const TALK_PALETTE: string[] = (() => {
     }
   }
   for (const id of ['mentor', 'champion', 'guardian', 'maverick', 'ambassador', 'conductor', 'skeptic']) {
-    push(VOICE_COLORS[id] ?? '#8a8a93')
+    push(VOICE_COLORS[id] ?? DEFAULT_SEAT_COLOR)
   }
   for (const s of STRANDS) push(s.color)
   push('#f5f0e8')

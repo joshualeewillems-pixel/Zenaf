@@ -4558,20 +4558,9 @@ function App() {
     }
     if (node.kind !== 'you') return null
     if (item === 'content') {
-      // Content lives with YOU now (it left the global menu with the rest
-      // of the distribution). Same honest placeholder the old Content
-      // page showed — the journal itself is still being thought through.
-      return (
-        <div className="px-2 py-6 text-center">
-          <div className="text-4xl mb-4">📝</div>
-          <h3 className="text-lg font-semibold text-stone-200 mb-2">Content — coming soon</h3>
-          <p className="text-stone-400 text-sm leading-relaxed">
-            This is where your journal will live — a place for reflections that feed
-            back into your training, and maybe into something more.
-            We're thinking it through.
-          </p>
-        </div>
-      )
+      // Content lives with YOU now. Un-parked 2026-11-12 (G3a): narrative
+      // packages + transcript tools; the journal stays in Provenance.
+      return <ContentFrontDoor apiBase={API_BASE} />
     }
     if (item === 'projects') {
       return (
@@ -5530,16 +5519,8 @@ function App() {
             </aside>
           </div>
         ) : mainView === 'content' ? (
-          <div className="flex-1 flex flex-col min-h-0 items-center justify-center px-6 text-center">
-            <div className="max-w-md">
-              <div className="text-4xl mb-4">📝</div>
-              <h2 className="text-xl font-semibold text-stone-200 mb-2">Content — coming soon</h2>
-              <p className="text-stone-400 text-[15px] leading-relaxed">
-                This is where your journal will live — a place for reflections that feed
-                back into your training, and maybe into something more.
-                We're thinking it through.
-              </p>
-            </div>
+          <div className="flex-1 flex flex-col min-h-0">
+            <ContentFrontDoor apiBase={API_BASE} />
           </div>
         ) : mainView === 'agent_intake' ? (
           <div className="flex-1 flex flex-col min-h-0">

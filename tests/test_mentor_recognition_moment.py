@@ -228,14 +228,15 @@ def test_do_reveal_silent_for_decoupled_mentor_still_completes(
     )
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    # Entry gate: the Weaver opens the council — complete her first
-    # meeting before the mentor can begin (same drive as
-    # test_meetings' orientation test).
-    svc.start(uid, "conductor")
-    svc.turn(uid, "conductor", "Slow is smooth, and smooth is fast in the end.")
-    svc.turn(uid, "conductor", "That's how I approach my own work, too.")
-    svc.turn(uid, "conductor", "Yes.")
-    svc.complete(uid, "conductor")
+    # Entry gate: the Guardian opens the council — mark her keystone
+    # 1 Done before the mentor can begin.
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution import models as ve_models
+
+    entry_tasks = _seat_keystone_tasks(uid, keystone_seeding.ENTRY_SEAT_REF)
+    assert entry_tasks and entry_tasks[0]["status"] != "Done"
+    ve.update_task(
+        entry_tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
     svc.start(uid, "mentor")
     said: list[str] = []
     svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]

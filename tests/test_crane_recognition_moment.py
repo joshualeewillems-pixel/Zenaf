@@ -24,7 +24,7 @@ recognition-moment suite). What this pins:
 Runtime tests use a fake host (no service, no DB). The _do_reveal
 and completion tests use the service fixtures (temp DBs), like the
 Weaver suite — with TEST-ONLY activation (script registration +
-release + Weaver-first gate satisfied by monkeypatch/seed), because
+release + Guardian-first gate satisfied by monkeypatch/seed), because
 the production gates are unchanged by this PR: the meeting stays
 unregistered and unreleased until Joshua's separate word. No model
 calls anywhere.
@@ -257,8 +257,8 @@ def _seeded_user(email="crane-recognition@example.com"):
 
 def _activate_test_only(monkeypatch):
     """Test-only activation: script registration + release, gates in
-    production code untouched. The Weaver-first entry gate is
-    satisfied by marking the Conductor's keystone 1 Done."""
+    production code untouched. The Guardian-first entry gate is
+    satisfied by marking the Guardian's keystone 1 Done."""
     monkeypatch.setitem(
         MT.SCRIPTS, ("ambassador", 1), MT.AMBASSADOR_FIRST_MEETING)
     monkeypatch.setattr(
@@ -270,9 +270,9 @@ def _activate_test_only(monkeypatch):
 def _ready_user(monkeypatch, email):
     uid = _seeded_user(email=email)
     _activate_test_only(monkeypatch)
-    conductor_tasks = _seat_keystone_tasks(uid, "conductor")
+    entry_tasks = _seat_keystone_tasks(uid, keystone_seeding.ENTRY_SEAT_REF)
     ve.update_task(
-        conductor_tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
+        entry_tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
     return uid
 
 

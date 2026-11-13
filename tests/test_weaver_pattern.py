@@ -167,7 +167,22 @@ def _svc(tmp_path, gen=None):
 def _seeded_user(email="pattern@example.com"):
     user = ve.create_user_account(email, "pw", "Pattern")
     keystone_seeding.seed_meet_your_council(user["id"])
+    _mark_entry_done(user["id"])
     return user["id"]
+
+
+def _mark_entry_done(uid):
+    """Entry-gate setup (Guardian-first): mark the entry seat's
+    keystone 1 Done via the task-update path, so the Conductor's
+    first meeting (this file's subject/vehicle) may begin."""
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution import models as ve_models
+
+    entry = keystone_seeding.ENTRY_SEAT_REF
+    tasks = _seat_keystone_tasks(uid, entry)
+    assert tasks, "seeded user has no entry-seat keystone tasks"
+    if tasks[0]["status"] != "Done":
+        ve.update_task(tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
 
 
 def _enc_state(svc, uid):

@@ -527,22 +527,22 @@ def test_script_registered():
     assert ENC.get_definition(MT.SKEPTIC_FIRST_MEETING) is not None
 
 
-def test_meeting_beginnable_after_weaver_done(ve_ctx, tmp_path):
+def test_meeting_beginnable_after_guardian_done(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
     # The script is registered (all-six release), so a seeded user
-    # without the Weaver's keystone 1 Done gets the entry-order
+    # without the Guardian's keystone 1 Done gets the entry-order
     # refusal, not a not-written refusal.
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid, "skeptic")
-    # Mark the Weaver's keystone 1 Done: the entry gate now passes,
+    # Mark the Guardian's keystone 1 Done: the entry gate now passes,
     # the chain task exists — and the meeting begins.
     from local_ai.conversation.meeting import _seat_keystone_tasks
 
-    conductor_tasks = _seat_keystone_tasks(uid, "conductor")
-    assert conductor_tasks and conductor_tasks[0]["status"] != "Done"
+    guardian_tasks = _seat_keystone_tasks(uid, "guardian")
+    assert guardian_tasks and guardian_tasks[0]["status"] != "Done"
     ve.update_task(
-        conductor_tasks[0]["id"],
+        guardian_tasks[0]["id"],
         ve_models.TaskUpdate(status="Done"),
         uid,
     )

@@ -4,8 +4,8 @@ budget, and the BUILDING ≠ AVAILABLE gate.
 The script is WRITTEN in local_ai/council/meetings.py but deliberately
 NOT registered in meetings.SCRIPTS, so no visitor can begin it: the
 meeting service refuses with "That meeting isn't written yet" (and,
-even if it were registered, the Weaver-first entry gate would still
-refuse until the Weaver's keystone 1 is Done). Activation is a
+even if it were registered, the Guardian-first entry gate would still
+refuse until the Guardian's keystone 1 is Done). Activation is a
 separate PR that adds the one-line registration — nothing else.
 
 Frames follow the Weaver #252 prompt-local pattern: guidance + the
@@ -169,8 +169,8 @@ def test_script_registered_and_beginnable(ve_ctx, tmp_path):
     assert ("ambassador", 1) in MT.SCRIPTS
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    # Without the Weaver's keystone 1 Done, the entry gate refuses.
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    # Without the Guardian's keystone 1 Done, the entry gate refuses.
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid, "ambassador")
     state = svc.state(uid, "ambassador")
     assert state["has_script"] is True
@@ -179,14 +179,14 @@ def test_script_registered_and_beginnable(ve_ctx, tmp_path):
 
 
 def test_entry_gate_is_a_second_layer(ve_ctx, tmp_path, monkeypatch):
-    """The script is registered (all-six release); the Weaver-first
-    entry gate still refuses until the Weaver's keystone 1 is Done —
+    """The script is registered (all-six release); the Guardian-first
+    entry gate still refuses until the Guardian's keystone 1 is Done —
     gate/keystone semantics for existing seats are unchanged."""
     uid = _seeded_user()
     monkeypatch.setitem(
         MT.SCRIPTS, ("ambassador", 1), MT.AMBASSADOR_FIRST_MEETING)
     svc = _svc(tmp_path)
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid, "ambassador")
 
 
@@ -433,9 +433,9 @@ def test_fallback_cap_combined_fit_reported_honestly():
 #
 # The script is still unregistered on this branch, so the harness
 # activates it test-only (the existing gate test's monkeypatch
-# pattern) and satisfies the Weaver-first entry gate by marking the
-# Conductor's keystone 1 Done — exactly what a visitor who has met
-# the Weaver looks like. The fake generation beats mirror
+# pattern) and satisfies the Guardian-first entry gate by marking
+# the Guardian's keystone 1 Done — exactly what a visitor who has
+# met the Guardian looks like. The fake generation beats mirror
 # tests/test_meeting_impressions.py's conductor fake (read-back on
 # the READ-BACK / correction prompts, an engaged reply on ENCOUNTER);
 # no test-to-test import, so this file stays self-contained.
@@ -477,13 +477,13 @@ def _supersede_store(tmp_path, uid):
 
 
 def _ambassador_ready_user(monkeypatch):
-    """Seeded user, script activated test-only, Weaver gate satisfied."""
+    """Seeded user, script activated test-only, Guardian gate satisfied."""
     uid = _seeded_user(email="amb-supersede@example.com")
     monkeypatch.setitem(
         MT.SCRIPTS, ("ambassador", 1), MT.AMBASSADOR_FIRST_MEETING)
-    conductor_tasks = _seat_keystone_tasks(uid, "conductor")
+    entry_tasks = _seat_keystone_tasks(uid, keystone_seeding.ENTRY_SEAT_REF)
     ve.update_task(
-        conductor_tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
+        entry_tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
     return uid
 
 

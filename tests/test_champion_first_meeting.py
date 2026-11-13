@@ -289,18 +289,18 @@ def test_champion_meeting_is_visitor_beginnable(ve_ctx, tmp_path):
     svc = _svc(tmp_path)
     # The script exists — state says so honestly — and the hold is
     # lifted (all-six release): the entry order is now the only
-    # refusal before the Weaver is met.
+    # refusal before the Guardian is met.
     assert svc.state(uid, "champion")["has_script"] is True
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid, "champion")
-    # And it changes nothing for the Conductor, which still begins.
-    state = svc.start(uid, "conductor")
+    # And it changes nothing for the Guardian, which still begins.
+    state = svc.start(uid, "guardian")
     assert state["status"] == "active"
-    # With the Weaver's keystone 1 Done, the Champion begins.
+    # With the Guardian's keystone 1 Done, the Champion begins.
     from local_ai.conversation.meeting import _seat_keystone_tasks
     from local_ai.vision_execution.models import TaskUpdate
 
-    tasks = _seat_keystone_tasks(uid, "conductor")
+    tasks = _seat_keystone_tasks(uid, "guardian")
     assert tasks and tasks[0]["status"] != "Done"
     ve.update_task(tasks[0]["id"], TaskUpdate(status="Done"), uid)
     state = svc.start(uid, "champion")
@@ -387,9 +387,9 @@ def test_composed_engage_frame_fits_with_all_seats_met():
 #
 # Harness note: the meeting's HELD hold was lifted in the all-six
 # release (2026-10-29). These tests keep the in-process lift
-# (monkeypatch) as a belt-and-braces guard, complete the
-# Conductor first (the entry-seat guard), then drive the Champion
-# arc with a fake voice — no model calls, no live runs.
+# (monkeypatch) as a belt-and-braces guard, mark the Guardian's
+# keystone 1 Done first (the entry-seat guard), then drive the
+# Champion arc with a fake voice — no model calls, no live runs.
 
 
 class _ArcGen:
@@ -430,24 +430,19 @@ def _agents(tmp_path, uid):
     return AgentStore(tmp_path / "agents.db", user_id=uid)
 
 
-def _run_conductor_to_completion(svc, uid):
-    # UPDATED for decoupled recognition (no-scripting build,
-    # 2026-10-29): recognition no longer closes — the visitor's
-    # own Complete action finishes it (cf.
-    # tests/test_conductor_supersede.py).
-    svc.start(uid, "conductor")
-    svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
-    svc.turn(
-        uid, "conductor",
-        "And in my own work it's the same — what breaks first gets my hands first.",
-    )
-    state = svc.turn(uid, "conductor", "That's right.")
-    if state["status"] != "complete":
-        state = svc.turn(uid, "conductor", "Got it.")
-    if state["status"] != "complete":
-        state = svc.complete(uid, "conductor")
-    assert state["status"] == "complete"
-    return state
+def _mark_entry_done(uid):
+    """Entry-gate setup (Guardian-first): mark the entry seat's
+    keystone 1 Done via the task-update path (the toggle satisfies
+    the gate exactly like a genuine completion), so the Champion's
+    meeting may begin. Parameterized on ENTRY_SEAT_REF."""
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution.models import TaskUpdate
+
+    entry = keystone_seeding.ENTRY_SEAT_REF
+    tasks = _seat_keystone_tasks(uid, entry)
+    assert tasks, "seeded user has no entry-seat keystone tasks"
+    if tasks[0]["status"] != "Done":
+        ve.update_task(tasks[0]["id"], TaskUpdate(status="Done"), uid)
 
 
 def _run_champion_to_completion(svc, uid, answer, response):
@@ -475,7 +470,7 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     _lift_hold(monkeypatch)
     uid = _seeded_user("superseed@example.com")
     svc = _svc_with_agents(tmp_path)
-    _run_conductor_to_completion(svc, uid)
+    _mark_entry_done(uid)
     _run_champion_to_completion(
         svc, uid,
         "I keep circling whether to quit my job and start the thing.",
@@ -518,7 +513,7 @@ def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path, monkeypatch):
     _lift_hold(monkeypatch)
     uid = _seeded_user("superseed2@example.com")
     svc = _svc_with_agents(tmp_path)
-    _run_conductor_to_completion(svc, uid)
+    _mark_entry_done(uid)
     _run_champion_to_completion(
         svc, uid,
         "I keep circling whether to quit my job and start the thing.",

@@ -94,15 +94,6 @@ def _seeded_user(email="guardian@example.com"):
     return user["id"]
 
 
-def _complete_conductor_k1(uid):
-    from local_ai.conversation.meeting import _seat_keystone_tasks
-
-    tasks = _seat_keystone_tasks(uid, "conductor")
-    assert tasks, "seeded user has no conductor keystone tasks"
-    ve.update_task(tasks[0]["id"], TaskUpdate(status="Done"), uid)
-    assert _seat_keystone_tasks(uid, "conductor")[0]["status"] == "Done"
-
-
 # ------------------------------------------------------------------ script
 
 
@@ -302,13 +293,11 @@ def test_no_steward_wiring_for_guardian():
 
 
 def test_guardian_meeting_is_visitor_accessible(ve_ctx, tmp_path):
-    """All-six release (2026-10-29): a seeded visitor with Weaver K1
-    complete satisfies every rule (seeded, scripted, entry done) —
-    the exact visitor script existence alone would have opened the
-    meeting to — and now begins it, with a row and no release
-    refusal."""
+    """Guardian-first (entry-seat correction): the Guardian IS the
+    entry seat, so a fresh seeded visitor satisfies every rule
+    (seeded, scripted, entry) with no other seat's keystone done —
+    and begins it, with a row and no release refusal."""
     uid = _seeded_user()
-    _complete_conductor_k1(uid)
     svc = _svc(tmp_path)
     # The script genuinely exists — this is not the unwritten-seat path.
     assert MT.get_script("guardian", 1) is not None

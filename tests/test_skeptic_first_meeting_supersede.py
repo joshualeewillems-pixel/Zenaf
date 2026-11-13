@@ -136,21 +136,23 @@ def _register_skeptic(monkeypatch):
     monkeypatch.setitem(MT.SCRIPTS, ("skeptic", 1), MT.SKEPTIC_FIRST_MEETING)
 
 
-def _mark_weaver_done(uid):
-    """Entry gate: the Weaver opens the council, so a Skeptic run
-    needs the conductor's keystone 1 Done (same step as the gate
-    test). Seeding alone is not enough."""
+def _mark_entry_done(uid):
+    """Entry gate: the Guardian opens the council, so a Skeptic run
+    needs the entry seat's keystone 1 Done (same step as the gate
+    test). Seeding alone is not enough. Parameterized on
+    ENTRY_SEAT_REF."""
     from local_ai.conversation.meeting import _seat_keystone_tasks
     from local_ai.vision_execution import models as ve_models
 
-    tasks = _seat_keystone_tasks(uid, "conductor")
+    entry = keystone_seeding.ENTRY_SEAT_REF
+    tasks = _seat_keystone_tasks(uid, entry)
     assert tasks and tasks[0]["status"] != "Done"
     ve.update_task(
         tasks[0]["id"],
         ve_models.TaskUpdate(status="Done"),
         uid,
     )
-    assert _seat_keystone_tasks(uid, "conductor")[0]["status"] == "Done"
+    assert _seat_keystone_tasks(uid, entry)[0]["status"] == "Done"
 
 
 def _run_skeptic_to_completion(svc, uid, answer, response):
@@ -195,7 +197,7 @@ def _impression_claims(tmp_path, uid):
 def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     _register_skeptic(monkeypatch)
     uid = _seeded_user()
-    _mark_weaver_done(uid)
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     _run_skeptic_to_completion(
         svc, uid,
@@ -234,7 +236,7 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
 def test_two_run_supersede_sequence(ve_ctx, tmp_path, monkeypatch):
     _register_skeptic(monkeypatch)
     uid = _seeded_user()
-    _mark_weaver_done(uid)
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     _run_skeptic_to_completion(
         svc, uid,

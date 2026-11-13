@@ -691,7 +691,22 @@ def _seeded_user(email="readback@example.com"):
     return user["id"]
 
 
+def _mark_entry_done(uid):
+    """Entry-gate setup (Guardian-first): mark the entry seat's
+    keystone 1 Done via the task-update path so the Conductor's
+    meeting (the readback vehicle) may begin."""
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution import models as ve_models
+
+    entry = keystone_seeding.ENTRY_SEAT_REF
+    tasks = _seat_keystone_tasks(uid, entry)
+    assert tasks, "seeded user has no entry-seat keystone tasks"
+    if tasks[0]["status"] != "Done":
+        ve.update_task(tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
+
+
 def _to_readback(svc, uid):
+    _mark_entry_done(uid)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
     svc.turn(
@@ -850,8 +865,9 @@ def test_service_fox_pass_speaks_fallback(ve_ctx, tmp_path):
     gen = MarkerGen("UNUSED — a pass never generates.")
     svc = _svc(tmp_path, gen)
     uid = _seeded_user()
-    # The Weaver opens the council: complete her first meeting,
-    # then the Fox's opens.
+    # The Guardian opens the council: her keystone 1 is Done (the
+    # _to_readback setup), the Weaver's meeting completes, then the
+    # Fox's opens.
     _to_readback(svc, uid)
     svc.turn(uid, "conductor", "Yeah, that's right.")
     svc.complete(uid, "conductor")

@@ -355,24 +355,24 @@ def test_maverick_released_not_in_unreleased_set():
 def test_begin_succeeds_for_a_fully_eligible_user(ve_ctx, tmp_path):
     """The exact user for whom script existence alone would have
     made the meeting begin-able before the release: seeded council,
-    Weaver keystone 1 Done, and the Maverick's own keystone chain
+    Guardian keystone 1 Done, and the Maverick's own keystone chain
     present. After the all-six release (2026-10-29) the begin
-    succeeds; the entry-seat rule still refuses before Weaver is
-    done."""
+    succeeds; the entry-seat rule still refuses before the Guardian
+    is done."""
     uid = _seeded_user()
-    conductor_k1 = _seat_keystone_tasks(uid, "conductor")[0]
-    ve.update_task(conductor_k1["id"], ve_models.TaskUpdate(status="Done"), uid)
+    guardian_k1 = _seat_keystone_tasks(uid, "guardian")[0]
+    ve.update_task(guardian_k1["id"], ve_models.TaskUpdate(status="Done"), uid)
     assert _seat_keystone_tasks(uid, "maverick"), "maverick chain must exist"
     assert MT.get_script("maverick", 1) is not None, "script is written"
     svc = _svc(tmp_path)
     state = svc.start(uid, "maverick")
     assert state["status"] == "active"
-    # And the entry-seat rule still refuses before Weaver is done.
+    # And the entry-seat rule still refuses before the Guardian is done.
     uid2 = _seeded_user("maverick2@example.com")
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid2, "maverick")
-    # The Conductor's meeting is untouched by the release.
-    state = svc.start(uid2, "conductor")
+    # The Guardian's meeting is untouched by the release.
+    state = svc.start(uid2, "guardian")
     assert state["status"] == "active"
 
 

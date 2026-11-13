@@ -399,6 +399,13 @@ def test_meeting_completion_emits_event(ve_ctx, tmp_path, activity_records):
     user = ve.create_user_account("meet@example.com", "pw", "Meet")
     uid = user["id"]
     keystone_seeding.seed_meet_your_council(uid)
+    # Entry-gate setup (Guardian-first): mark the entry seat's
+    # keystone 1 Done so the Conductor's meeting may begin.
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+
+    entry_tasks = _seat_keystone_tasks(uid, keystone_seeding.ENTRY_SEAT_REF)
+    ve.update_task(
+        entry_tasks[0]["id"], ve_models.TaskUpdate(status="Done"), uid)
     svc = MeetingService(
         ConversationStore(tmp_path / "conv.db"),
         MeetingStore(tmp_path / "meetings.db"),

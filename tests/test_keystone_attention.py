@@ -5,12 +5,14 @@ Covers the marker-state rules (local_ai.vision_execution.keystone_seeding
 route:
 
 - no initiative seeded → seeded=False, no markers, no error
-- fresh account → ONLY the Conductor (entry seat), reason "intro"
-- conductor's first keystone Done → the other six light up ("meet"),
-  conductor itself goes dark until recognition (a mid-chain seat
-  carries no marker — "meet" lights only while a seat's first
-  keystone is undone)
-- a seat with keystones 1–3 Done and 4 open → reason "recognition"
+- fresh account → ONLY the Guardian (entry seat), reason "intro"
+- guardian's first keystone Done → the journey offers ONE seat at a
+  time in JOURNEY_ORDER ("meet" on the next unfinished seat only);
+  later seats stay dark until their predecessor's first keystone is
+  Done (a mid-chain seat carries no marker — "meet" lights only
+  while a seat's first keystone is undone)
+- a seat with keystones 1–3 Done and 4 open → reason "recognition",
+  independent of journey position and of the entry intro
 - a seat with all four Done → no marker
 - per-user isolation
 
@@ -76,8 +78,30 @@ def _lit(state):
 # ------------------------------------------------------------------ rules
 
 
-def test_entry_seat_is_conductor():
-    assert ENTRY == "conductor"
+def test_entry_seat_is_guardian():
+    assert ENTRY == "guardian"
+
+
+def test_exactly_one_entry_seat_flagged():
+    flagged = [s["seat_ref"] for s in KD.SEATS if s.get("entry") == "true"]
+    assert flagged == ["guardian"]
+
+
+def test_entry_derivation_raises_on_zero_flags(monkeypatch):
+    stripped = tuple({**s, "entry": "false"} if s.get("entry") else s for s in KD.SEATS)
+    monkeypatch.setattr(KD, "SEATS", stripped)
+    with pytest.raises(ValueError, match="no entry seat configured"):
+        keystone_seeding._assert_single_entry_seat()
+
+
+def test_entry_derivation_raises_on_two_flags(monkeypatch):
+    doubled = tuple(
+        {**s, "entry": "true"} if s["seat_ref"] in ("guardian", "conductor") else s
+        for s in KD.SEATS
+    )
+    monkeypatch.setattr(KD, "SEATS", doubled)
+    with pytest.raises(ValueError, match="multiple entry seats configured"):
+        keystone_seeding._assert_single_entry_seat()
 
 
 def test_no_initiative_no_markers(ve_ctx):
@@ -88,36 +112,39 @@ def test_no_initiative_no_markers(ve_ctx):
     assert _lit(state) == {}
 
 
-def test_fresh_account_only_conductor_intro(ve_ctx):
+def test_fresh_account_only_guardian_intro(ve_ctx):
     user = _make_user()
     _seed(user["id"])
     state = keystone_seeding.keystone_attention(user["id"])
     assert state["seeded"] is True
-    assert _lit(state) == {"conductor": "intro"}
+    assert _lit(state) == {"guardian": "intro"}
 
 
-def test_conductor_intro_done_lights_the_rest(ve_ctx):
+def test_guardian_intro_done_offers_one_at_a_time(ve_ctx):
+    """One-at-a-time journey offering (O-I-6): after the Guardian's
+    first keystone, ONLY the next seat in JOURNEY_ORDER lights
+    ("meet"); completing each first keystone moves the marker to the
+    next seat; later seats stay dark until then."""
     user = _make_user()
     _seed(user["id"])
-    _complete(user["id"], "conductor", 1)
-    state = keystone_seeding.keystone_attention(user["id"])
-    lit = _lit(state)
-    # The other six now carry "meet"; the conductor is mid-chain and
-    # goes dark until recognition — a completed first meeting must not
-    # keep "!" over the seat. (Deliberate semantics change, 2026-11-05:
-    # "meet" lights only while a seat's first keystone is undone.)
-    for ref in SEAT_REFS:
-        if ref == "conductor":
-            assert ref not in lit, ref
+    journey = list(KD.JOURNEY_ORDER)
+    assert journey[0] == "guardian"
+    for i, ref in enumerate(journey):
+        _complete(user["id"], ref, 1)
+        state = keystone_seeding.keystone_attention(user["id"])
+        lit = _lit(state)
+        if i + 1 < len(journey):
+            assert lit == {journey[i + 1]: "meet"}, (ref, lit)
         else:
-            assert lit[ref] == "meet", ref
-    assert len(lit) == 6
+            # Every first keystone Done: no "meet" left to offer; each
+            # seat is mid-chain and dark until its recognition stage.
+            assert lit == {}, lit
 
 
 def test_recognition_when_only_keystone_four_remains(ve_ctx):
     user = _make_user()
     _seed(user["id"])
-    _complete(user["id"], "conductor", 1)
+    _complete(user["id"], "guardian", 1)
     _complete(user["id"], "mentor", 3)
     state = keystone_seeding.keystone_attention(user["id"])
     assert state["markers"]["mentor"] == {
@@ -126,24 +153,48 @@ def test_recognition_when_only_keystone_four_remains(ve_ctx):
     }
 
 
-def test_conductor_recognition(ve_ctx):
+def test_recognition_lights_while_entry_intro_undone(ve_ctx):
+    """Recognition is independent of the entry intro (addendum §3.2):
+    a recognition-stage seat lights even before the Guardian's first
+    keystone is Done — the entry gate governs "meet" offering only."""
     user = _make_user()
     _seed(user["id"])
+    _complete(user["id"], "mentor", 3)
+    state = keystone_seeding.keystone_attention(user["id"])
+    assert state["markers"]["mentor"]["reason"] == "recognition"
+    assert state["markers"]["guardian"]["reason"] == "intro"
+
+
+def test_guardian_recognition(ve_ctx):
+    user = _make_user()
+    _seed(user["id"])
+    _complete(user["id"], "guardian", 3)
+    state = keystone_seeding.keystone_attention(user["id"])
+    assert state["markers"]["guardian"]["reason"] == "recognition"
+
+
+def test_conductor_recognition_after_entry_done(ve_ctx):
+    """The recognition rule itself, on the Conductor's chain: with the
+    entry keystone Done and the conductor's 1–3 Done, the conductor
+    carries "recognition" while the journey's "meet" offer has moved
+    on to the champion."""
+    user = _make_user()
+    _seed(user["id"])
+    _complete(user["id"], "guardian", 1)
     _complete(user["id"], "conductor", 3)
     state = keystone_seeding.keystone_attention(user["id"])
     assert state["markers"]["conductor"]["reason"] == "recognition"
+    assert state["markers"]["champion"]["reason"] == "meet"
 
 
 def test_completed_seat_has_no_marker(ve_ctx):
     user = _make_user()
     _seed(user["id"])
-    _complete(user["id"], "conductor", 1)
     _complete(user["id"], "guardian", 4)
     state = keystone_seeding.keystone_attention(user["id"])
     assert state["markers"]["guardian"] == {"attention": False, "reason": None}
     # And everything fully done → nothing lit at all.
-    _complete(user["id"], "conductor", 4)
-    for ref in ("mentor", "champion", "ambassador", "skeptic", "maverick"):
+    for ref in SEAT_REFS:
         _complete(user["id"], ref, 4)
     state = keystone_seeding.keystone_attention(user["id"])
     assert _lit(state) == {}
@@ -172,7 +223,7 @@ def test_route_returns_state(ve_ctx):
     _seed(user["id"])
     out = get_keystone_attention({"id": user["id"]})
     assert out["seeded"] is True
-    assert _lit(out) == {"conductor": "intro"}
+    assert _lit(out) == {"guardian": "intro"}
 
 
 # ------------------------------------------------------------------ invitations
@@ -314,7 +365,7 @@ def test_invitation_read_failure_omits_fields(ve_ctx, tmp_path, monkeypatch):
     for ref in SEAT_REFS:
         assert "invitation_count" not in out["markers"][ref]
         assert "invitation_conversation_ids" not in out["markers"][ref]
-    assert _lit(out) == {"conductor": "intro"}
+    assert _lit(out) == {"guardian": "intro"}
 
 
 def test_obligation_merge_unchanged_with_invitations(ve_ctx, tmp_path, monkeypatch):

@@ -489,27 +489,27 @@ def test_meeting_visitor_accessible():
 def test_meeting_service_begins_mentor_start(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
-    # Seeded user without the Weaver's keystone 1 Done: the refusal
+    # Seeded user without the Guardian's keystone 1 Done: the refusal
     # is the entry order, not a missing registration — the script
     # is registered (all-six release) and the state reports it.
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid, "mentor")
     state = svc.state(uid, "mentor")
     assert state["has_script"] is True
     assert state["character"] == "Gardener"
     assert state["status"] == "not_started"
-    # With the Weaver's keystone 1 Done, the meeting begins.
+    # With the Guardian's keystone 1 Done, the meeting begins.
     from local_ai.conversation.meeting import _seat_keystone_tasks
     from local_ai.vision_execution import models as ve_models
 
-    conductor_tasks = _seat_keystone_tasks(uid, "conductor")
-    assert conductor_tasks and conductor_tasks[0]["status"] != "Done"
+    guardian_tasks = _seat_keystone_tasks(uid, "guardian")
+    assert guardian_tasks and guardian_tasks[0]["status"] != "Done"
     ve.update_task(
-        conductor_tasks[0]["id"],
+        guardian_tasks[0]["id"],
         ve_models.TaskUpdate(status="Done"),
         uid,
     )
-    assert _seat_keystone_tasks(uid, "conductor")[0]["status"] == "Done"
+    assert _seat_keystone_tasks(uid, "guardian")[0]["status"] == "Done"
     state = svc.start(uid, "mentor")
     assert state["status"] == "active"
 

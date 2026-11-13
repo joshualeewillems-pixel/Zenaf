@@ -12,8 +12,8 @@ the encounter runtime, Fellowship P3, 2026-10-23; the Weaver pattern,
     exchange) → reveal (scripted), and completing it marks keystone
     1 Done. The stage values asserted below are the derived position
     labels the API has always surfaced, not the engine's mechanism.
-  - The Conductor is met first; no other seat's first meeting begins until
-    the Weaver's keystone 1 is complete. Nobody is introduced by proxy.
+  - The Guardian is met first; no other seat's first meeting begins until
+    the Guardian's keystone 1 is complete. Nobody is introduced by proxy.
   - A seat with no written script has no meeting yet — refused honestly.
   - Passing is participation. For the Weaver there is no bank to
     pass through (retired with the dilemma): a pass is conversation.
@@ -128,6 +128,20 @@ def _conductor_k1_status(uid):
     return tasks[0]["status"] if tasks else None
 
 
+def _mark_entry_done(uid):
+    """Entry-gate setup (Guardian-first): mark the entry seat's
+    keystone 1 Done via the task-update path, so another seat's first
+    meeting may begin. Parameterized on ENTRY_SEAT_REF."""
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution.models import TaskUpdate
+
+    entry = keystone_seeding.ENTRY_SEAT_REF
+    tasks = _seat_keystone_tasks(uid, entry)
+    assert tasks, "seeded user has no entry-seat keystone tasks"
+    if tasks[0]["status"] != "Done":
+        ve.update_task(tasks[0]["id"], TaskUpdate(status="Done"), uid)
+
+
 # ------------------------------------------------------------------ start
 
 
@@ -140,6 +154,7 @@ def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
     introduction is the real first move, and nothing else is
     scripted to serve before the user's first turn.)"""
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     state = svc.start(uid, "conductor")
 
@@ -160,6 +175,7 @@ def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
 
 def test_resume_never_repeats_opening(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     first = svc.start(uid, "conductor")
     second = svc.start(uid, "conductor")
@@ -176,9 +192,9 @@ def test_start_refusals(ve_ctx, tmp_path):
 
     uid = _seeded_user("seeded@example.com")
     # Mentor's script is registered and released (all-six release,
-    # 2026-10-29) — for a seeded user without the Weaver's keystone
+    # 2026-10-29) — for a seeded user without the Guardian's keystone
     # 1 Done, the refusal is the entry order, not a missing script.
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid, "mentor")
     # Keystone 2 has no meeting in this build either.
     with pytest.raises(MeetingError, match="isn't written yet"):
@@ -205,14 +221,14 @@ def test_all_six_seats_released_and_registered():
         assert (arch_id, 1) not in _UNRELEASED_MEETINGS
 
 
-def test_conductor_first_guard(ve_ctx, tmp_path, monkeypatch):
+def test_guardian_first_guard(ve_ctx, tmp_path, monkeypatch):
     """Even with a script registered, another seat's first meeting waits
-    for the Weaver's — the entry order is a rule, not a default."""
+    for the Guardian's — the entry order is a rule, not a default."""
     uid = _seeded_user()
     fake = dataclasses.replace(MT.get_script("conductor", 1), archetype_id="mentor")
     monkeypatch.setitem(MT.SCRIPTS, ("mentor", 1), fake)
     svc = _svc(tmp_path)
-    with pytest.raises(MeetingError, match="Weaver opens the council"):
+    with pytest.raises(MeetingError, match="Guardian opens the council"):
         svc.start(uid, "mentor")
 
 
@@ -221,6 +237,7 @@ def test_conductor_first_guard(ve_ctx, tmp_path, monkeypatch):
 
 def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
@@ -313,6 +330,7 @@ def test_pass_is_conversation_for_the_weaver(ve_ctx, tmp_path):
     generic bank machinery remains in the runtime for future
     scripts; it is unit-tested there (test_weaver_pattern)."""
     uid = _seeded_user()
+    _mark_entry_done(uid)
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
@@ -337,6 +355,7 @@ def test_pass_is_conversation_for_the_weaver(ve_ctx, tmp_path):
 
 def test_substantive_no_is_an_answer_not_a_pass(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     # A substantive "no" engages the encounter (it is not routed as
@@ -355,6 +374,7 @@ def test_substantive_no_is_an_answer_not_a_pass(ve_ctx, tmp_path):
 
 def test_pause_and_resume(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     state = svc.pause(uid, "conductor")
@@ -374,6 +394,7 @@ def test_turn_without_a_meeting_is_refused(ve_ctx, tmp_path):
 
 def test_completed_meeting_cannot_be_replayed(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Deadlines first, then everything else.")
@@ -424,6 +445,7 @@ def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path
             return "A plain reply."
 
     uid = _seeded_user()
+    _mark_entry_done(uid)
     gen = ThreadGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
@@ -461,6 +483,7 @@ def test_script_without_orientation_goes_straight_to_reveal(ve_ctx, tmp_path, mo
     it too stays active until the visitor's Complete action. The
     shared point stands: no orientation stop anywhere."""
     uid = _seeded_user()
+    _mark_entry_done(uid)
     base = MT.get_script("conductor", 1)
     plain = dataclasses.replace(
         base, archetype_id="mentor", character="Gardener",
@@ -507,6 +530,7 @@ def test_api_flow_and_conflict_mapping(ve_ctx, tmp_path, monkeypatch):
     import api.routes.conversation_routes as routes
 
     uid = _seeded_user("api@example.com")
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     monkeypatch.setattr(routes, "_meeting_service", lambda: svc)
     user = {"id": uid}
@@ -573,7 +597,10 @@ def _run_conductor_to_completion(
     second (the read lands), then the response to the impression.
     UPDATED for decoupled recognition (no-scripting build,
     2026-10-29): recognition no longer closes — the visitor's own
-    Complete action finishes it."""
+    Complete action finishes it. Entry-gate setup (Guardian-first):
+    the entry seat's keystone 1 is marked Done first, so the
+    Conductor's meeting may begin."""
+    _mark_entry_done(uid)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", answer)
     svc.turn(
@@ -594,6 +621,7 @@ def _run_conductor_to_completion(
 
 def test_restart_refusals(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
 
     # No meeting on record at all.
@@ -655,6 +683,7 @@ def test_restart_archives_run_resets_state_and_reverts_keystone(ve_ctx, tmp_path
 
 def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     _run_conductor_to_completion(svc, uid)
     svc.restart(uid, "conductor")
@@ -736,6 +765,7 @@ def test_complete_active_meeting_without_recognition(ve_ctx, tmp_path):
     decoupled meetings), task Done, turns refused, restart unlocked.
     Nothing is filed without a read-back."""
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "Just poking around — a friend said to look in.")
@@ -759,6 +789,7 @@ def test_complete_active_meeting_without_recognition(ve_ctx, tmp_path):
 
 def test_complete_paused_meeting(ve_ctx, tmp_path):
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     svc.pause(uid, "conductor")
@@ -775,6 +806,7 @@ def test_complete_is_idempotent(ve_ctx, tmp_path):
     close, no-scripting build, 2026-10-29) — the second call returns
     the completed state unchanged."""
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     svc.start(uid, "conductor")
     first = svc.complete(uid, "conductor")
@@ -791,6 +823,7 @@ def test_complete_api_mapping(ve_ctx, tmp_path, monkeypatch):
     import api.routes.conversation_routes as routes
 
     uid = _seeded_user("complete-api@example.com")
+    _mark_entry_done(uid)
     svc = _svc(tmp_path)
     monkeypatch.setattr(routes, "_meeting_service", lambda: svc)
     user = {"id": uid}
@@ -835,6 +868,7 @@ def test_the_record_is_never_quoted_back_in_dialogue(ve_ctx, tmp_path):
     (interface layer); in the room, each is spoken exactly once: the
     claim by the Weaver, the answer by the user."""
     uid = _seeded_user()
+    _mark_entry_done(uid)
     long_answer = (
         "I decide by writing the whole tangle down first, then I sleep on "
         "it, then I ask the one person who will tell me the truth even "
@@ -908,6 +942,7 @@ def test_weave_markers_never_reach_dialogue_or_the_record(ve_ctx, tmp_path, monk
     monkeypatch.setitem(MT.SCRIPTS, ("conductor", 1), quoting_script)
 
     uid = _seeded_user()
+    _mark_entry_done(uid)
     svc = _svc(tmp_path, WovenGen())
     svc.start(uid, "conductor")
     svc.turn(
@@ -963,6 +998,7 @@ def test_ok_sounds_good_closes_on_recognition(ve_ctx, tmp_path):
     — the recognition turn spends a second generation on the live
     introduction, and no scripted reveal follows."""
     uid = _seeded_user()
+    _mark_entry_done(uid)
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
     svc.start(uid, "conductor")
@@ -1006,6 +1042,7 @@ def test_turn_frame_names_met_seats_and_roles_others(ve_ctx, tmp_path):
     # definition, and the turn frame names the met seat while
     # keeping unmet seats as roles.
     uid = _seeded_user()
+    _mark_entry_done(uid)
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
     svc.meetings.create(uid, "champion", 1)

@@ -1084,7 +1084,28 @@ export function LivingTreeView({
         }
       }
     }
-    if (!moved) return
+    if (!moved) {
+      // Nothing moved — but the target can still carry new DATA under
+      // the same positions: when the live archetype status resolves
+      // after first paint, a completed first meeting flips face_revealed
+      // (and may change names/twigs) on seats whose layout — on a
+      // zero-depth account, position-identical to the fallback's —
+      // does not move at all. Sync each node's data from the target in
+      // place, preserving its displayed position and opacity, or the
+      // rendered nodes keep the fallback datum forever (met seats stuck
+      // with their letters instead of their logos). The spread mirrors
+      // the animation path's own node construction: every field comes
+      // from the target except x/y/op, which stay as displayed.
+      let dirty = false
+      const synced = nodesRef.current.map((n) => {
+        const t = target.get(n.datum.id)
+        if (!t || (t.datum === n.datum && t.kids === n.kids)) return n
+        dirty = true
+        return { ...t, x: n.x, y: n.y, op: n.op }
+      })
+      if (dirty) setNodes(synced)
+      return
+    }
     const t0 = performance.now()
     const DUR = 480
     let raf = 0

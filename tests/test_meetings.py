@@ -316,8 +316,12 @@ def test_full_meeting_arc_completes_keystone(ve_ctx, tmp_path):
     # the single "meet" invitation moves to the next seat in the
     # journey — the Champion. The Mentor is not lit yet.
     attention = keystone_seeding.keystone_attention(uid)
-    assert attention["markers"] == {
-        "champion": {"attention": True, "reason": "meet"}}
+    assert attention["markers"]["conductor"] == {
+        "attention": False, "reason": None}
+    assert attention["markers"]["champion"] == {
+        "attention": True, "reason": "meet"}
+    assert attention["markers"]["mentor"] == {
+        "attention": False, "reason": None}
 
 
 def test_pass_is_conversation_for_the_weaver(ve_ctx, tmp_path):

@@ -448,9 +448,16 @@ def test_frame_sizes_and_headroom_measured():
     # (recovery 646); headroom 2,868 -> 3,514.
     # Maverick S1 (C1) extended HONESTY_GUARD by 65 chars, but the
     # guard rides the tier now, not this frame — no +65 here.
-    assert len(turn_frame) == 5486
+    # FC5 (2026-11-12): the 246-char filing instruction rides the
+    # composed turn frame (+2 separator = +248), so it grew
+    # 5,486 -> 5,734; headroom 3,514 -> 3,266 (still >= 300).
+    # The runtime engage frame grew the same +248 (8,035 -> 8,283,
+    # headroom 717); the composed engage pinned below is built from
+    # the definition frame and does not carry the instruction, so
+    # its 8,035 / 965 pins are unchanged.
+    assert len(turn_frame) == 5734
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3514
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3266
     # Read-back correction (2026-11-06): the founder-approved §F.1
     # readback frames lengthened the engage frame (Mentor 6128 -> 6563
     # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->

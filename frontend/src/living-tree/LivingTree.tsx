@@ -1263,75 +1263,102 @@ export function LivingTreeView({
   )
 
   /**
-   * Talk + Character, one tab: the seat's character card is the head of the
-   * conversation. Compact by default so the composer stays within a short
-   * scroll; the full panel expands inline via disclosure.
+   * The seat's identity row — Other actions, the emblem circle, and
+   * the name/tag pair. Since the header cleanup (founder, 2026-11-12)
+   * it renders in the sheet's chrome header (NodeSheet headerContent),
+   * where the fellowship title ("The Firebrand") used to sit: the seat
+   * is identified by its emblem and name, not by a title line. The tag
+   * is the seat's name (founder 2026-11-12): the personal name once
+   * opened/met, the role name until then (seatHeadTag). The emblem,
+   * the display name, and the tag all open the full character sheet
+   * (same disclosure) — no separate "Full character" link. The circle
+   * shows the seat's LOGO (its emblem, like the tree node), not its
+   * portrait face — the face lives in the character body's Face
+   * section; an unrevealed seat keeps the ??? placeholder.
    */
-  const renderCompactSeatHead = (arch: ArchetypeStatus) => {
-    // The tag is the seat's name (founder 2026-11-12): the personal
-    // name once opened/met, the role name until then (seatHeadTag).
-    // Both the display name and the tag open the full character sheet
-    // (same disclosure) — no separate "Full character" link.
+  const renderSeatIdentityRow = (arch: ArchetypeStatus) => {
     const tag = seatHeadTag(arch)
     const col = voiceColor(arch.id)
+    const expanded = charExpandedSeat === arch.id
+    return (
+      <div className="lavatar-head">
+        <button
+          type="button"
+          aria-label="Other actions"
+          aria-expanded={headerMenuSeat === arch.id}
+          onClick={() => setHeaderMenuSeat(headerMenuSeat === arch.id ? null : arch.id)}
+          style={{
+            minWidth: 44,
+            minHeight: 44,
+            padding: '0 12px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(245,240,232,.06)',
+            border: `1px solid rgba(${TREE_DEFAULT_RGB},.25)`,
+            borderRadius: 12,
+            color: '#f5f0e8',
+            fontSize: 20,
+            lineHeight: 1,
+            cursor: 'pointer',
+            flex: 'none',
+          }}
+        >
+          ···
+        </button>
+        <button
+          type="button"
+          className="lavatar-btn"
+          aria-label={`${arch.display_name} emblem`}
+          aria-expanded={expanded}
+          onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+        >
+          <SeatAvatar avatarUrl={resolveSeatLogo(arch)} displayName={arch.display_name} size={44} />
+        </button>
+        <div>
+          <button
+            type="button"
+            className="lname-btn"
+            aria-expanded={expanded}
+            onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+          >
+            {arch.display_name}
+          </button>
+          <button
+            type="button"
+            className="ltag"
+            aria-expanded={expanded}
+            onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+            style={{
+              color: col,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'inherit',
+              textAlign: 'left',
+            }}
+          >
+            {tag}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  /**
+   * Talk + Character, one tab: the seat's character card is the head of
+   * the conversation. The identity row lives in the sheet header (see
+   * renderSeatIdentityRow); this body head keeps the Other-actions
+   * menu (when open), the seat's quote, the meeting door, and the
+   * disclosed character body. Compact by default so the composer stays
+   * within a short scroll; the full panel expands inline via disclosure.
+   */
+  const renderCompactSeatHead = (arch: ArchetypeStatus) => {
     const expanded = charExpandedSeat === arch.id
     const door = meetingDoorState(attention?.markers[arch.id]?.reason, arch.face_revealed === true)
     return (
       <div>
-        <div className="lavatar-head">
-          <button
-            type="button"
-            aria-label="Other actions"
-            aria-expanded={headerMenuSeat === arch.id}
-            onClick={() => setHeaderMenuSeat(headerMenuSeat === arch.id ? null : arch.id)}
-            style={{
-              minWidth: 44,
-              minHeight: 44,
-              padding: '0 12px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'rgba(245,240,232,.06)',
-              border: `1px solid rgba(${TREE_DEFAULT_RGB},.25)`,
-              borderRadius: 12,
-              color: '#f5f0e8',
-              fontSize: 20,
-              lineHeight: 1,
-              cursor: 'pointer',
-              flex: 'none',
-            }}
-          >
-            ···
-          </button>
-          <SeatAvatar avatarUrl={resolveSeatFace(arch)} displayName={arch.display_name} size={44} />
-          <div>
-            <button
-              type="button"
-              className="lname-btn"
-              aria-expanded={expanded}
-              onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
-            >
-              {arch.display_name}
-            </button>
-            <button
-              type="button"
-              className="ltag"
-              aria-expanded={expanded}
-              onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
-              style={{
-                color: col,
-                background: 'transparent',
-                border: 'none',
-                padding: 0,
-                cursor: 'pointer',
-                font: 'inherit',
-                textAlign: 'left',
-              }}
-            >
-              {tag}
-            </button>
-          </div>
-        </div>
         {headerMenuSeat === arch.id && renderSeatHeaderMenu(arch)}
         <p>“{arch.prompt_frame}”</p>
         {door && (
@@ -1740,11 +1767,12 @@ export function LivingTreeView({
   /**
    * Seat-talk sheet header actions (founder, 2026-11-12): Viability
    * sits at the top right, near the close control. The full character
-   * has no separate link: the seat's display name in the compact head
-   * below IS the opener (same disclosure). Only for seat talk sheets;
-   * every other sheet keeps the plain header. Viability keeps its
-   * value and the "training comes first" association (shown when the
-   * seat is a seed); what Viability measures is unchanged.
+   * has no separate link: the seat's display name in the identity row
+   * IS the opener (same disclosure). Only for seat talk sheets; every
+   * other sheet keeps the plain header. Viability keeps its label and
+   * value; the "training comes first" caption that sat under the
+   * value on seed seats was removed by the founder (2026-11-12,
+   * header cleanup) — what Viability measures is unchanged.
    */
   const sheetArch =
     sheetNode?.kind === 'seat' && sheetItem === 'talk'
@@ -1754,7 +1782,6 @@ export function LivingTreeView({
     <div className="lhead-viab">
       <span className="lhead-viab-l">Viability</span>
       <span className="lhead-viab-v">{sheetArch.depth}%</span>
-      {sheetArch.depth <= 0 && <span className="lhead-viab-n">training comes first</span>}
     </div>
   ) : null
 
@@ -1827,6 +1854,7 @@ export function LivingTreeView({
 .lsheet-view{min-height:200px}
 .lsheet-view .lsub{font-style:normal}
 .lavatar-head{display:flex;gap:12px;align-items:center;margin-bottom:2px}
+.lavatar-btn{background:none;border:0;padding:0;margin:0;cursor:pointer;flex:none;border-radius:50%;display:inline-flex;line-height:0}
 .lname-btn{background:none;border:0;padding:0;margin:0;color:#f5f0e8;font-family:inherit;font-size:18px;font-weight:700;line-height:1.2;cursor:pointer;text-align:left;display:block}
 .lname-btn:active{color:${TREE_DEFAULT_COLOR}}
 .lhead-fullchar{flex:none;min-height:44px;padding:0 10px;background:rgba(${TREE_DEFAULT_RGB},.12);border:1px solid rgba(${TREE_DEFAULT_RGB},.5);border-radius:10px;color:#f5f0e8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
@@ -1834,7 +1862,6 @@ export function LivingTreeView({
 .lhead-viab{flex:none;text-align:right;line-height:1.3;min-width:52px}
 .lhead-viab-l{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(245,240,232,.55)}
 .lhead-viab-v{display:block;font-size:13px;font-weight:700;color:#f5f0e8}
-.lhead-viab-n{display:block;font-size:9px;color:rgba(245,240,232,.55)}
 .lavatar-head h3{margin:0}
 .nsh-panel{user-select:text;-webkit-user-select:text}
       `}</style>
@@ -2096,6 +2123,7 @@ export function LivingTreeView({
         title={sheetTitle}
         subtitle={sheetSubtitle}
         headerActions={sheetHeaderActions}
+        headerContent={sheetArch ? renderSeatIdentityRow(sheetArch) : undefined}
       >
         {renderSheetBody()}
       </NodeSheet>

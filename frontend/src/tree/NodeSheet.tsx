@@ -22,6 +22,7 @@ export function NodeSheet({
   onBack,
   backLabel,
   headerActions,
+  headerContent,
   children,
 }: {
   open: boolean
@@ -35,6 +36,11 @@ export function NodeSheet({
       and the close control (e.g. a seat sheet's viability + full
       character open). Rendered only when provided. */
   headerActions?: ReactNode
+  /** Optional content rendered in the header's title area INSTEAD of
+      the title/subtitle block (e.g. a seat talk sheet's identity row,
+      founder 2026-11-12). The `title` prop still names the dialog for
+      assistive technology. Rendered only when provided. */
+  headerContent?: ReactNode
   children: ReactNode
 }) {
   useEffect(() => {
@@ -93,10 +99,14 @@ export function NodeSheet({
               ‹
             </button>
           ) : null}
-          <div className="nsh-titles">
-            <h2>{title}</h2>
-            {subtitle ? <p>{subtitle}</p> : null}
-          </div>
+          {headerContent ? (
+            <div className="nsh-titles">{headerContent}</div>
+          ) : (
+            <div className="nsh-titles">
+              <h2>{title}</h2>
+              {subtitle ? <p>{subtitle}</p> : null}
+            </div>
+          )}
           {headerActions ? <div className="nsh-actions">{headerActions}</div> : null}
           <button
             type="button"

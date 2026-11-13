@@ -13,12 +13,14 @@
  * The App-side key remount on nonce bump is covered by
  * TreeTalkSheet.test.ts (fresh mount consumes the new override).
  *
- * Sheet header actions (2026-11-12): the seat sheet's header carries
- * Viability at the top right; the compact head's display name is the
- * full-character opener, its tag the personal name once the seat is
- * opened (role name until then); the compact head keeps only the
- * quote, the meeting door and the Other-actions button, which sits
- * left of the avatar.
+ * Sheet header (2026-11-12): the seat talk sheet's chrome header
+ * carries the seat's identity row (Other actions, emblem, name/tag)
+ * where the fellowship title used to sit, with Viability at the top
+ * right (label + value only — the "training comes first" caption is
+ * gone); the identity row's display name and emblem are the
+ * full-character openers, its tag the personal name once the seat is
+ * opened (role name until then); the body head keeps the quote and
+ * the meeting door.
  *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
@@ -194,7 +196,10 @@ describe('direct seat tap (T2)', () => {
     clickNode('ME')
     await flush()
     expect(dialog()).not.toBeNull()
-    expect(dialog()?.textContent).toContain('The Gardener')
+    // The fellowship chrome title is gone from the seat talk sheet
+    // (founder, 2026-11-12 header cleanup) — the seat is identified
+    // by its identity row in the header instead.
+    expect(dialog()?.textContent).not.toContain('The Gardener')
     // The compact head's Other actions button is always visible.
     expect(buttonByLabel('Other actions')).toBeDefined()
     // Direct navigation: the provider was called for 'talk' (the menu
@@ -365,9 +370,10 @@ describe('sheet header actions (2026-11-12)', () => {
     expect(actionsIdx).toBeLessThan(closeIdx)
     const actions = dlg?.querySelector('.nsh-actions')
     expect(actions?.textContent).toContain('Viability')
-    // Seed fallback: 0% with the training note, same value as before.
+    // Seed fallback: 0%, same value as before. The "training comes
+    // first" caption was removed (founder, 2026-11-12 header cleanup).
     expect(actions?.textContent).toContain('0%')
-    expect(actions?.textContent).toContain('training comes first')
+    expect(actions?.textContent).not.toContain('training comes first')
     // Exactly one Viability, and no Full character control anywhere in
     // the sheet — the display name is the opener now.
     expect((dlg?.textContent?.match(/Viability/g) ?? []).length).toBe(1)

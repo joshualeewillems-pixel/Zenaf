@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+from local_ai import hosted_config
 from local_ai.vision_execution import models as M
 from local_ai.vision_execution import service as S
 from local_ai.vision_execution import storage as VEStorage
@@ -2335,8 +2336,10 @@ def suggest_node_transform_route(body: dict = Body(...), current_user: dict = De
     return result
 
 
-@router.post("/extract-segment-summary")
-def extract_segment_summary(body: M.ExtractSegmentSummaryRequest):
+def extract_segment_summary(
+    body: M.ExtractSegmentSummaryRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Lightweight extraction for one transcript segment (topic, briefSummary, candidateTasks/Entities/Signals). For long-meeting hierarchical path. Optional priorContext for reference continuity."""
     from local_ai.vision_execution.meeting_extract import extract_segment_summary as _extract_summary
 
@@ -2387,8 +2390,10 @@ def extract_segment_summary(body: M.ExtractSegmentSummaryRequest):
     return out
 
 
-@router.post("/extract-meeting-segments")
-def extract_meeting_segments(body: M.ExtractMeetingSegmentsRequest):
+def extract_meeting_segments(
+    body: M.ExtractMeetingSegmentsRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Legacy / debug: segment summary extraction with rolling prior_context (not used by primary Vision Execution meeting-capture UI; UI uses chunked ``extract-meeting`` only)."""
     from local_ai.vision_execution.meeting_extract import extract_segments_with_rolling_prior_context
 
@@ -2449,8 +2454,10 @@ def extract_meeting_segments(body: M.ExtractMeetingSegmentsRequest):
     return out
 
 
-@router.post("/extract-meeting-synthesis")
-def extract_meeting_synthesis(body: M.ExtractMeetingSynthesisRequest):
+def extract_meeting_synthesis(
+    body: M.ExtractMeetingSynthesisRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Legacy / debug: full extraction from segment summaries (not used by primary meeting-capture UI; UI uses chunked ``extract-meeting`` + client merge)."""
     from local_ai.vision_execution.meeting_extract import extract_meeting_synthesis as _synthesize
 
@@ -2511,6 +2518,18 @@ def extract_meeting_synthesis(body: M.ExtractMeetingSynthesisRequest):
     except Exception:
         logger.warning("server_ai_trace extract-meeting-synthesis emission failed", exc_info=True)
     return out
+
+
+# Legacy / debug extraction routes: registered only outside hosted mode
+# (Track B ruling 2). On hosted deployments these routes do not exist
+# (404); in local dev they are present and authenticated (see the
+# Depends(get_current_user) on each handler above). The underlying
+# functions in meeting_extract.py are untouched; the primary
+# POST /extract-meeting path is authenticated and unaffected.
+if not hosted_config.is_prod():
+    router.post("/extract-segment-summary")(extract_segment_summary)
+    router.post("/extract-meeting-segments")(extract_meeting_segments)
+    router.post("/extract-meeting-synthesis")(extract_meeting_synthesis)
 
 
 @router.post("/prompt-signals")

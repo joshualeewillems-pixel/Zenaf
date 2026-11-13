@@ -197,12 +197,18 @@ type Props = {
   className?: string
   /** When false, pointer does not deform the sand field */
   rakeEnabled?: boolean
+  /**
+   * When true, the rake is momentarily suspended even though it is
+   * enabled — a hold-armed node drag is tracking this pointer, and the
+   * sand must not stamp under a dragged stone.
+   */
+  rakeSuspended?: boolean
   /** Fade deformation after this many ms since last sample (e.g. 12_000–20_000) */
   rakeFadeAfterMs?: number
 }
 
 const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSandCanvas(
-  { reducedMotion = false, className = '', rakeEnabled = true, rakeFadeAfterMs },
+  { reducedMotion = false, className = '', rakeEnabled = true, rakeSuspended = false, rakeFadeAfterMs },
   ref,
 ) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -226,6 +232,7 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
   /** Skip redundant pattern rebuilds when CSS size + DPR unchanged (ResizeObserver can fire often). */
   const lastResizeLogicalRef = useRef<{ w: number; h: number; dpr: number } | null>(null)
   const rakeEnabledRef = useRef(rakeEnabled)
+  const rakeSuspendedRef = useRef(rakeSuspended)
   const fadeAfterMsRef = useRef(rakeFadeAfterMs ?? DEFAULT_RAKE_FADE_MS)
   const debugDotsRef = useRef<{ x: number; y: number }[]>([])
   const debugRafTickRef = useRef(0)
@@ -237,6 +244,7 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
   }, [])
 
   rakeEnabledRef.current = rakeEnabled
+  rakeSuspendedRef.current = rakeSuspended
   fadeAfterMsRef.current = rakeFadeAfterMs ?? DEFAULT_RAKE_FADE_MS
 
   const resize = useCallback(() => {
@@ -620,6 +628,7 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
     () => ({
       trace(clientX, clientY) {
         if (!rakeEnabledRef.current) return
+        if (rakeSuspendedRef.current) return
         const el = wrapRef.current
         if (!el) return
         const r = el.getBoundingClientRect()
@@ -677,6 +686,13 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
          last sample too, so resuming at one pointer doesn't stamp a
          straight segment across the pinch path. */
       if (activePointersRef.current.size >= 2) {
+        lastRef.current = null
+        return
+      }
+      /* A hold-armed node drag owns this pointer: no stamping under a
+         dragged stone. Drop the last sample so lifting the suspension
+         doesn't stamp a segment across the drag path. */
+      if (rakeSuspendedRef.current) {
         lastRef.current = null
         return
       }

@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
  * Touch gesture contract for the Vision map (founder, 2026-11-12):
  *
  * - Exactly ONE active touch pointer: the finger only rakes the sand.
- *   No view pan, no node drag.
+ *   No view pan, no native node drag. (A one-finger press held still on
+ *   a stone arms that stone's drag — the hold ladder in VisionMapView
+ *   tracks it — and the rake yields while an armed drag runs.)
  * - TWO OR MORE active touch pointers: the fingers move the map — pan +
  *   pinch-zoom — and never rake (ZenSandCanvas suspends itself on the
  *   same "2+ pointers down" signal it observes on the window).
@@ -29,9 +31,12 @@ export type TouchGestureGate = {
    */
   panOnDrag: boolean | number[]
   /**
-   * React Flow `nodesDraggable`: stones drag only when no touch pointer
-   * is down — a touch never drags a stone, and a second finger landing
-   * mid-press can't hijack the first finger into a node drag.
+   * React Flow `nodesDraggable`: React Flow's native drag runs only
+   * when no touch pointer is down. A touch drags a stone a different
+   * way — hold it still to arm, and the view tracks the drag itself
+   * (the hold ladder) — so native drag stays off under touch and a
+   * second finger landing mid-press can't hijack the first finger
+   * into a node drag.
    */
   nodesDraggable: boolean
   /** True in the one-finger phase (rake only). */

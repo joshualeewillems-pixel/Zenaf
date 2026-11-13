@@ -433,7 +433,7 @@ CRANE_RECORD = {
                 "user's, informed by the Bear's boundaries; he "
                 "translates, he does not summon) and on which version "
                 "of events is true (the Raven's ground; he carries "
-                "both, he checks them)."
+                "both, she checks them)."
             ),
             "standing": "adopted",
             "category": "jurisdiction",

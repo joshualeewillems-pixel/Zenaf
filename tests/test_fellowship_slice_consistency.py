@@ -18,17 +18,19 @@ records or the registry).
 
 T8 — FC8 fellowship references (2026-11-07, founder ruling): Firebrand
 is "he/him/his" in all six other seats' fellowship references, and
-Bear/Crane/Raven are correct in Firebrand's own reference. This test
-deliberately does NOT audit Bear/Crane/Raven in the OTHER seats' refs:
-they are systematically misgendered there too (a known out-of-scope gap
-needing a founder ruling on which build owns them), and extending the
-audit to them would fail by design.
+Bear/Crane/Raven are correct in Firebrand's own reference. Since the
+2026-11-09 pronoun build (founder tap "One bounded build — all 162"),
+Bear/Crane/Raven are correct in the OTHER seats' refs too: the
+test_fellowship_references_gender_bear_crane_raven test below audits
+all three in all seven references.
 
 T9 — CC6 fellowship reference (2026-11-07, founder ruling): Bear is
 she and Raven is she in Crane's own fellowship reference; Firebrand
-is he there. The two lowercase "appeasement" prose uses in that
-reference stay per the Crane design §12 Q5 residual, so the test
-pins their count (== 2) rather than asserting absence.
+is he there. The all-seven audit of Bear/Crane/Raven lives in
+test_fellowship_references_gender_bear_crane_raven below. The two
+lowercase "appeasement" prose uses in that reference stay per the
+Crane design §12 Q5 residual, so the test pins their count (== 2)
+rather than asserting absence.
 
 The Fox has no fixed set (fox.py: "No fixed set — different characters
 call the Fox he, she, or they"): the test asserts only that every Fox
@@ -233,7 +235,8 @@ def test_fellowship_references_use_he_for_firebrand():
 def test_champion_fellowship_reference_genders_bear_crane_raven():
     """T8 (FC8): Bear is she, Crane is he, Raven is she in Firebrand's
     own fellowship reference. (Bear/Crane/Raven in the OTHER seats'
-    refs are a known out-of-scope gap — see the module docstring.)"""
+    refs are audited in all seven references by
+    test_fellowship_references_gender_bear_crane_raven below.)"""
     ref = REFERENCES["champion"]
     assert "She keeps the ledger of what must survive" in ref
     assert "He asks what each side actually needs" in ref
@@ -246,10 +249,9 @@ def test_champion_fellowship_reference_genders_bear_crane_raven():
 
 def test_crane_fellowship_reference_genders_bear_raven_firebrand():
     """T9 (CC6): Bear is she and Raven is she in Crane's own
-    fellowship reference; Firebrand is he there (FC8). (Crane
-    himself is still "she/her" in the OTHER seats' fellowship
-    references — the known out-of-scope gap, same as Bear/Raven
-    there — so this test audits only Crane's own reference.
+    fellowship reference; Firebrand is he there (FC8). (This test
+    audits only Crane's own reference; the all-seven audit lives in
+    test_fellowship_references_gender_bear_crane_raven below.)
     The two lowercase "appeasement" prose uses in this reference
     stay per the Crane design §12 Q5 residual — no ruling covers
     them — so this test asserts pronouns, never "appeasement"
@@ -265,3 +267,48 @@ def test_crane_fellowship_reference_genders_bear_raven_firebrand():
     assert "she's confusing examination" in ref
     assert "He names a side plainly" in ref
     assert ref.lower().count("appeasement") == 2
+
+
+def _seat_paragraph(reference: str, seat: str, role: str) -> str:
+    """One seat's paragraph inside a fellowship reference."""
+    match = re.search(
+        rf"- {seat} \({role}\): (.*?)(?=\n- |\nMention them|\Z)",
+        reference,
+        re.S,
+    )
+    assert match, f"reference carries no {seat} paragraph"
+    return match.group(0)
+
+
+# seat -> (role label, pronouns that must appear, pronouns that must not).
+_BEAR_CRANE_RAVEN = {
+    "Bear": ("Guardian", "guardian", r"\b(she|her|hers|She|Her|Hers)\b",
+             r"\b(he|him|his|He|Him|His)\b"),
+    "Crane": ("Ambassador", "ambassador", r"\b(he|him|his|He|Him|His)\b",
+              r"\b(she|her|hers|She|Her|Hers)\b"),
+    "Raven": ("Skeptic", "skeptic", r"\b(she|her|hers|She|Her|Hers)\b",
+              r"\b(he|him|his|He|Him|His)\b"),
+}
+
+
+def test_fellowship_references_gender_bear_crane_raven():
+    """T8/T9 extension (2026-11-09 pronoun build, founder tap "One
+    bounded build — all 162"): Bear is she/her, Crane is he/him/his,
+    Raven is she/her in ALL SEVEN fellowship references — not only in
+    Firebrand's and Crane's own. The Fox has no fixed set and is not
+    audited here; Gardener/Firebrand/Weaver paragraphs are covered by
+    the T8 Firebrand test and the canonical records."""
+    for arch_id, reference in REFERENCES.items():
+        for seat, (role, own_id, good, bad) in _BEAR_CRANE_RAVEN.items():
+            if arch_id == own_id:
+                continue  # A reference never names its own seat.
+            paragraph = _seat_paragraph(reference, seat, role)
+            assert not re.search(bad, paragraph), (arch_id, seat, paragraph)
+            assert re.search(good, paragraph), (arch_id, seat, paragraph)
+    # The one gendered noun in the references: Weaver's Raven paragraph
+    # says "Irritating woman", never "Irritating man".
+    assert "Irritating woman" in _seat_paragraph(
+        REFERENCES["conductor"], "Raven", "Skeptic"
+    )
+    for arch_id, reference in REFERENCES.items():
+        assert "Irritating man" not in reference, arch_id

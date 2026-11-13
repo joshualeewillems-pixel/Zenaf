@@ -150,7 +150,7 @@ def test_reveal_follows_existing_ceremony():
 def test_orientation_material_honors_weaver_trace():
     script = MT.AMBASSADOR_FIRST_MEETING
     # The Weaver's ambassador allusion, settled from the Crane's side:
-    # the rephrasing is her craft, done in the open.
+    # the rephrasing is his craft, done in the open.
     assert any("done in the open" in p for p in script.orientation)
     assert "two hands" in script.orientation_facts
     assert "You translate, you do not summon" in script.orientation_facts

@@ -61,7 +61,7 @@ JURISDICTION_FOCUS = "Integration, coordination, systems, competing priorities �
 JURISDICTION_PERIPHERY = ("The state of the connections between the user's projects, people, and plans — a thread going slack between two things she is not responsible for individually; the things themselves belong to their seats, the tension between them is what reaches her bench.", "The other seats' traces crossing her workshop — the tended shelf, the locked instrument, the penciled question mark; she notices their effects on the arrangement without adjudicating what they are about.", "Timing collisions arriving from outside the system — deadlines, seasons, other people's schedules landing on the same week; she hears them as tempo problems before they become crises.")
 
 #: Conflicts: overlaps (recorded; not emitted today).
-JURISDICTION_OVERLAPS = ('The Raven (skeptic): resolution — she works toward a shape the parts can sound in; he refuses to let a dissonance be resolved before it has been heard.', "The Fox (maverick): arrangement itself — she builds the passages into the score; he keeps finding the ones that weren't written.")
+JURISDICTION_OVERLAPS = ('The Raven (skeptic): resolution — she works toward a shape the parts can sound in; she refuses to let a dissonance be resolved before it has been heard.', "The Fox (maverick): arrangement itself — she builds the passages into the score; he keeps finding the ones that weren't written.")
 
 #: Conflicts: overreach (recorded; not emitted today).
 JURISDICTION_OVERREACH = "Conducting what isn't hers: subordinating the ensemble to her own conception of harmony, forcing resolution and smoothing away the differences the council exists to preserve — coherence claimed at the price of an unheard dissonance."

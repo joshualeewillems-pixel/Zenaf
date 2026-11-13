@@ -353,7 +353,8 @@ def test_fellowship_reference_sketches_shared_doctrine_computed_note():
     assert "He thinks I delay. I think he harvests early." in ref
     assert "which walls are shelter and which are starvation" in ref
     assert "I defend the trellis, and he questions it" in ref
-    assert "She won't let me get away with that" in ref
+    # (2026-11-09 pronoun build: "She" -> "He" — Crane is male.)
+    assert "He won't let me get away with that" in ref
     assert "She still disagrees. Good." in ref
     assert "The timing is the argument." in ref
     # Not merely instrumental: mention line + no-invented-memories.

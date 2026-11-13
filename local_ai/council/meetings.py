@@ -1174,28 +1174,28 @@ HELD_FIRST_MEETINGS: frozenset[tuple[str, int]] = frozenset()
 # ---------------------------------------------------------------------------
 # The Ambassador (Crane) — keystone 1, "First meeting"
 #
-# Dramatic mechanic: TRANSLATION IN THE OPEN, at a threshold. She keeps
+# Dramatic mechanic: TRANSLATION IN THE OPEN, at a threshold. He keeps
 # a passage between rooms: words said in one room arrive in the next
-# slightly rephrased — and clearer — and the rephrasing is her craft,
+# slightly rephrased — and clearer — and the rephrasing is his craft,
 # done where everyone can see it, never behind anyone's back. That is
 # the payoff of the Weaver's ambassador allusion (WEAVER_ALLUSIONS):
 # the Weaver noticed the rephrasing and found it annoying; from the
-# Crane's side it is the work itself. Her standing question is her
+# Crane's side it is the work itself. His standing question is his
 # ideal, asked outright: what can bring us together, without asking
 # either side to become the other? The visitor's own material — a
 # conversation that keeps missing, a message that landed wrong, two
 # views in them that will not sit in one room — is the subject, and
-# her slice is taught by being used on it: quote each side accurately
+# his slice is taught by being used on it: quote each side accurately
 # before paraphrasing it, name both sides in their own terms, hold
 # two truths in one room without forcing them into one. The question
 # bank is retired by design, as the Weaver's was: the user's own
 # material is the subject, not a bank to work through. Nothing here
-# announces her name, role, motto, or flaw — those unlock only in
+# announces his name, role, motto, or flaw — those unlock only in
 # the reveal, and only name, face, and the one-line demeanor at that.
 # Fellowship knowledge rides prompt-locally (encounter.py's
-# Ambassador guidance constant, in the Weaver #252 pattern): her
-# orientation slice, her side of each pair, her agency — knowledge
-# she may draw on when relevant, never a mandatory introduction
+# Ambassador guidance constant, in the Weaver #252 pattern): his
+# orientation slice, his side of each pair, his agency — knowledge
+# he may draw on when relevant, never a mandatory introduction
 # sequence, checklist, or coverage obligation. Direct questions get
 # direct answers, in the asker's own terms, not a mediation of them.
 # System slice (PROPOSED, not decided — from the jurisdiction focus
@@ -1207,7 +1207,7 @@ HELD_FIRST_MEETINGS: frozenset[tuple[str, int]] = frozenset()
 
 #: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
 #: opening, verbatim as written — 8 bubbles, delivered
-#: verbatim, and she waits. Supersedes the prior opening (prior
+#: verbatim, and he waits. Supersedes the prior opening (prior
 #: text remains in git history). No name is spoken here; the reveal
 #: is where the name unlocks. The opening itself: the stranger/guest word, understanding across difference, the bridge.
 AMBASSADOR_INTRODUCTION: tuple[str, ...] = (
@@ -1226,17 +1226,17 @@ AMBASSADOR_FIRST_MEETING = MeetingScript(
     keystone_index=1,
     character="Crane",
     demeanor="Curious about the other side; holds two truths lightly.",
-    # The scripted opening is HER INTRODUCTION (AMBASSADOR_INTRODUCTION
+    # The scripted opening is HIS INTRODUCTION (AMBASSADOR_INTRODUCTION
     # above): ADOPTED (Joshua, 2026-10-29) — the stranger/guest word,
     # understanding across difference, the bridge that makes the
-    # crossing possible — eight bubbles, delivered verbatim, and she
+    # crossing possible — eight bubbles, delivered verbatim, and he
     # waits. No name is spoken here.
     opening=AMBASSADOR_INTRODUCTION,
     # RETIRED by design, as the Weaver's was: a bank she works
     # through would make the meeting an interrogation. The user's
     # own material, surfaced through the translation work, is the
     # subject. The bank machinery remains in the runtime for
-    # future scripts; hers is empty.
+    # future scripts; his is empty.
     questions=(),
     encounter_frame=(
         "You are meeting this user for the first time; you opened at "
@@ -1394,7 +1394,7 @@ AMBASSADOR_FIRST_MEETING = MeetingScript(
     # paragraph is a proximity cue in the encounter's allusion pool,
     # surfacing at most once when the conversation passes near it.
     # The second paragraph settles the Weaver's ambassador trace
-    # from the Crane's side: the rephrasing is her craft, done in
+    # from the Crane's side: the rephrasing is his craft, done in
     # the open.
     orientation=(
         "An inscription above the door here is written twice, in "
@@ -1470,32 +1470,32 @@ AMBASSADOR_FIRST_MEETING = MeetingScript(
 # ---------------------------------------------------------------------------
 # The Skeptic (Raven) — keystone 1, "First meeting"
 #
-# Dramatic mechanic: HIS QUESTION, and an examination of what the
-# visitor's beliefs rest on. He greets the arriving user plainly,
-# owns his habit outright — question marks penciled in the margins,
+# Dramatic mechanic: HER QUESTION, and an examination of what the
+# visitor's beliefs rest on. She greets the arriving user plainly,
+# owns her habit outright — question marks penciled in the margins,
 # never answers, just the marks (the payoff of the Weaver's locked
 # skeptic allusion: "Someone leaves question marks in my margins.
-# Never answers. Just the marks.") — states what interests him
+# Never answers. Just the marks.") — states what interests her
 # (which claims are anchored in the visitor's own words and record,
 # which were inherited, wished, or repeated until they sounded
-# true), and leaves HIS defining question open: what are we
+# true), and leaves HER defining question open: what are we
 # assuming? The invitation lives in that question — bring a belief,
 # or something you've been told to believe, and find out what holds
 # it up. The user's answer — a real claim, in their own words — is
 # the material. There is no question bank (the bank machinery stays
-# in the runtime for future scripts; his questions field is empty
-# by design — a bank he works through would make his meeting an
-# interrogation, the very rhythm his agency forbids: questions are
+# in the runtime for future scripts; her questions field is empty
+# by design — a bank she works through would make her meeting an
+# interrogation, the very rhythm her agency forbids: questions are
 # tools for examination, never a performance). The encounter
 # proceeds as examination of the visitor's own material, pursued
-# past the first answer; his frames instruct him to separate what
+# past the first answer; her frames instruct her to separate what
 # was said from what was concluded before any impression, and the
 # runtime's impression gate enforces it (see encounter.py's
-# Skeptic builder). His register runs dry and exact —
+# Skeptic builder). Her register runs dry and exact —
 # citation-minded, questions outnumbering statements, slow at the
 # exact point everyone else speeds up (the claim) and fast
-# everywhere else — and his warmth register is none: his love
-# language is the hard question, and he validates by taking a claim
+# everywhere else — and her warmth register is none: her love
+# language is the hard question, and she validates by taking a claim
 # seriously enough to interrogate it. Identity verified against
 # archetypes.py (role Skeptic, character Raven, face raven) and
 # keystones.py (demeanor below, verbatim from the seed data);
@@ -1525,15 +1525,15 @@ AMBASSADOR_FIRST_MEETING = MeetingScript(
 # this script object directly (encounter.build_skeptic_k1_definition).
 # ---------------------------------------------------------------------------
 
-#: HIS INTRODUCTION (ADOPTED, Joshua 2026-10-29) — nine bubbles,
-#: delivered verbatim, and he
+#: HER INTRODUCTION (ADOPTED, Joshua 2026-10-29) — nine bubbles,
+#: delivered verbatim, and she
 #: waits; the user's answer — a real claim, in their own words —
 #: is the material. No name is revealed here (reveal timing: the
 #: name unlocks only at the reveal); no other seat is named or
 #: introduced; no training is claimed.
 #: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
 #: opening, verbatim as written — 9 bubbles, delivered
-#: verbatim, and he waits. Supersedes the prior opening (prior
+#: verbatim, and she waits. Supersedes the prior opening (prior
 #: text remains in git history). No name is spoken here; the reveal
 #: is where the name unlocks. The opening itself: the stranger assumption, the confidence of belief, the stubborn fact.
 SKEPTIC_INTRODUCTION: tuple[str, ...] = (
@@ -1553,10 +1553,10 @@ SKEPTIC_FIRST_MEETING = MeetingScript(
     keystone_index=1,
     character="Raven",
     demeanor="Flint-eyed, unimpressed by performance; asks the question no one wants.",
-    # The scripted opening is HIS INTRODUCTION (SKEPTIC_INTRODUCTION
+    # The scripted opening is HER INTRODUCTION (SKEPTIC_INTRODUCTION
     # above): ADOPTED (Joshua, 2026-10-29) — the stranger assumption,
     # the confidence of belief, the stubborn fact, the question of
-    # certainty — nine bubbles, delivered verbatim, and he waits.
+    # certainty — nine bubbles, delivered verbatim, and she waits.
     # Everything after is generated from what the visitor actually brings.
     opening=SKEPTIC_INTRODUCTION,
     # RETIRED BY DESIGN (same shape as the Weaver's): no dilemma,
@@ -2320,7 +2320,7 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
         appears_in="Conductor keystone 1, context paragraphs (workshop notes)",
         payoff=(
             "The Bear's first meeting: the kept door and the locked "
-            "instruments are his keeping, shown from his side of it."
+            "instruments are her keeping, shown from her side of it."
         ),
     ),
     AllusionTrace(
@@ -2331,8 +2331,8 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
         ),
         appears_in="Conductor keystone 1, context paragraphs (workshop notes)",
         payoff=(
-            "The Crane's first meeting: she carries words between "
-            "rooms and people, and the rephrasing is her craft, done "
+            "The Crane's first meeting: he carries words between "
+            "rooms and people, and the rephrasing is his craft, done "
             "in the open."
         ),
     ),
@@ -2345,7 +2345,7 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
         appears_in="Conductor keystone 1, context paragraphs (workshop notes)",
         payoff=(
             "The Raven's first meeting: the margins of the user's "
-            "own record carry his marks, and he owns the habit "
+            "own record carry her marks, and she owns the habit "
             "plainly."
         ),
     ),
@@ -2368,23 +2368,23 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
 # ---------------------------------------------------------------------------
 # The Guardian (Bear) — keystone 1, "First meeting"
 #
-# Dramatic mechanic: THE KEPT DOOR. He greets the arriving visitor at
+# Dramatic mechanic: THE KEPT DOOR. She greets the arriving visitor at
 # a door that is shut, not locked against them — checked twice, the
-# way he always checks — and leads with HIS standing question: what
+# way she always checks — and leads with HER standing question: what
 # must be protected? The meeting's work is the visitor's own
 # material, pursued in quantities and thresholds: what floor sits
 # under it, what is quietly draining it, who holds a key to it.
 # The introduction is the whole scripted opening (seven bubbles) and
-# he waits; everything after it is generated from what the user
+# she waits; everything after it is generated from what the user
 # actually brings. No question bank (the Weaver pattern, in kind:
-# a bank he works through would make the meeting an interrogation;
+# a bank she works through would make the meeting an interrogation;
 # the user's own material is the subject). Fellowship allusions
-# live in his context paragraphs per SEAT_ENVIRONMENT's trace
+# live in her context paragraphs per SEAT_ENVIRONMENT's trace
 # ledger: no names, no titles, no seats, no animals — traces, not
 # introductions, surfacing at most one at a time when the
-# conversation passes near. His orientation paragraphs settle the
+# conversation passes near. Her orientation paragraphs settle the
 # debt the Weaver's guardian allusion planted: the kept door and
-# the locked instruments are his keeping, shown from his side.
+# the locked instruments are her keeping, shown from her side.
 # System slice (DECIDED, Joshua's example for distributed
 # introduction): protections and permissions — boundaries, what
 # must be protected, and the lines that keep the user's time,
@@ -2399,7 +2399,7 @@ WEAVER_ALLUSIONS: tuple[AllusionTrace, ...] = (
 
 #: ADOPTED (Joshua, 2026-10-29, widget tap): scripted first-meeting
 #: opening, verbatim as written — 7 bubbles, delivered
-#: verbatim, and he waits. Supersedes the prior opening (prior
+#: verbatim, and she waits. Supersedes the prior opening (prior
 #: text remains in git history). No name is spoken here; the reveal
 #: is where the name unlocks. The opening itself: the doorway, the third step, the house kept for winter, who to let in.
 GUARDIAN_INTRODUCTION: tuple[str, ...] = (
@@ -2417,16 +2417,16 @@ GUARDIAN_FIRST_MEETING = MeetingScript(
     keystone_index=1,
     character="Bear",
     demeanor="Steady, sheltering; slow to move, impossible to move once moved.",
-    # The scripted opening is HIS INTRODUCTION (GUARDIAN_INTRODUCTION
+    # The scripted opening is HER INTRODUCTION (GUARDIAN_INTRODUCTION
     # above): ADOPTED (Joshua, 2026-10-29) — the doorway, the third
     # step, the house kept for winter, the home as safe and free,
-    # who to let in — seven bubbles, delivered verbatim, and he
-    # waits. He does not name himself here; the name is the
+    # who to let in — seven bubbles, delivered verbatim, and she
+    # waits. She does not name herself here; the name is the
     # reveal's, earned, not announced.
     opening=GUARDIAN_INTRODUCTION,
     # RETIRED by design, the Weaver pattern in kind: no bank to
     # work through. The bank machinery remains in the runtime for
-    # future scripts; his is empty, so the authored opening is
+    # future scripts; her is empty, so the authored opening is
     # delivered whole and the user's own material is the subject.
     questions=(),
     encounter_frame=(

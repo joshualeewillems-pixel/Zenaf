@@ -934,6 +934,25 @@ def _migrate_user_ownership_columns(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_ve_ownership_columns(conn: sqlite3.Connection) -> None:
+    """Track B (§2.2 of the ownership migration brief): owner columns for
+    the Vision Execution tables. A separate step from
+    _migrate_user_ownership_columns so the step that owns these three
+    columns is visible on its own. Adds the columns only — NO backfill:
+    pre-existing rows keep user_id NULL (quarantined, §2.4) until a
+    separately authorized reconciliation attributes them."""
+    _ensure_user_id_column(conn, "persons")
+    _ensure_user_id_column(conn, "assets")
+    _ensure_user_id_column(conn, "capacity_profiles")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_persons_user_id ON persons(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_assets_user_id ON assets(user_id)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_capacity_profiles_user_id"
+        " ON capacity_profiles(user_id)"
+    )
+    conn.commit()
+
+
 def _now_dt() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -1069,6 +1088,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _migrate_user_permissions_settings(conn)
     _migrate_studio_tables(conn)
     _migrate_user_ownership_columns(conn)
+    _migrate_ve_ownership_columns(conn)
     _migrate_llm_provider_prefs_json(conn)
     _migrate_workspace_messages(conn)
     _migrate_tasks_nullable_project_id(conn)

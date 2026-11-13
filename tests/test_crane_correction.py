@@ -50,6 +50,11 @@ the runtime):
 SCOPE SPLITS recorded in the tests: the Fox turn frame (§11.2) is the
 Maverick build's — this branch asserts the Fox frame is UNCHANGED
 (still the generic, 4,236); the Maverick build owns the 5,155 figure.
+Maverick S1 has since landed (post-L1 turn frame 4,494 on the
+dedicated frame): the Fox assertions in T1/T2/T4/T5/T7 were re-pinned
+to the post-Maverick contract on 2026-11-12 under the founder's
+authorization (round-two comparison: the seven failures were stale
+pre-Maverick expectations, not behavior defects).
 Raven's training line is implemented here per the founder's Q1b
 ruling; her own verdict round has not started and may revisit it.
 """
@@ -194,15 +199,17 @@ def test_t1_crane_post_edit_figures():
 
 def test_t1_fox_engage_post_guard():
     """§18.2: the Fox engage frame moves only by the §2 guard
-    (7,825 -> 8,067 pre-L1; 7,398 post-L1). The Fox turn frame is
-    the Maverick build's; this branch leaves it at the post-L1
-    baseline (3,567; 4,236 pre-L1) (see T7)."""
+    (7,825 -> 8,067 pre-L1; 7,398 post-L1). Re-pinned 2026-11-12
+    under the founder's authorization: Maverick S1 (§11.2) has
+    landed, so the Fox turn frame is now its dedicated frame
+    (see T7) — engage 7,670, turn 4,494; the meeting prompts move
+    with them (me +272 with engage, mt +927 with turn)."""
     defn = _definition("maverick")
     ef, tf, me, mt = _meeting_prompts(defn, FOX_MSG)
-    assert len(ef) == 7398
-    assert len(tf) == 3567
-    assert len(me) == 14372
-    assert len(mt) == 10541
+    assert len(ef) == 7670
+    assert len(tf) == 4494
+    assert len(me) == 14644
+    assert len(mt) == 11468
 
 
 # ---------------------------------------------------------------------------
@@ -272,13 +279,19 @@ def test_t2_generic_routing_absent_from_crane_turn():
     assert "Respond to what the user actually just communicated" not in mt
     assert "in character, briefly" not in tf
     assert "in character, briefly" not in mt
-    # The Fox still runs the generic frame until the Maverick build
-    # lands (§11.2 is not this branch): the routing sentence is still
-    # present there, and "lecture" is not yet in the Fox turn frame.
+    # Maverick S1 (§11.2) has landed (revised 2026-11-12 under the
+    # founder's authorization; this assertion previously pinned the
+    # pre-Maverick contract): the Fox now runs its dedicated turn
+    # frame, so the generic routing sentences are absent from the
+    # Fox turn frame exactly as they are from Crane's, and
+    # "lecture" is present.
     fox_defn = _definition("maverick")
     _, fox_tf, _, fox_mt = _meeting_prompts(fox_defn, FOX_MSG)
-    assert "Respond to what the user actually just communicated" in fox_tf
-    assert "in character, briefly" in fox_tf
+    assert fox_tf.startswith(ENC._MAVERICK_TURN_FRAME)
+    assert "Respond to what the user actually just communicated" not in fox_tf
+    assert "Respond to what the user actually just communicated" not in fox_mt
+    assert "in character, briefly" not in fox_tf
+    assert "lecture" in fox_tf
 
 
 def test_t2_name_and_lecture_in_crane_turn():
@@ -350,12 +363,16 @@ def test_t4_talk_byte_identical():
 
     assert len(_talk("ambassador", MSG, True)) == 3001
     assert len(_talk("ambassador", MSG, False)) == 2706
-    assert len(_talk("maverick", FOX_MSG, True)) == 3062
+    # Maverick S1 re-pin (2026-11-12, founder-authorized): the
+    # canonical Fox Talk grows +88 with the S1 middle-unit rewrite
+    # (3,062 -> 3,150); the non-canonical Talk is unchanged (2,791).
+    # Crane compact/fuller below are unchanged.
+    assert len(_talk("maverick", FOX_MSG, True)) == 3150
     assert len(_talk("maverick", FOX_MSG, False)) == 2791
     assert len("\n".join(R.render_crane_ordinary(CRANE_RECORD, detail="compact"))) == 1283
     assert len("\n".join(R.render_crane_ordinary(CRANE_RECORD, detail="fuller"))) == 1481
-    assert len("\n".join(R.render_fox_ordinary(FOX_RECORD, detail="compact"))) == 1391
-    assert len("\n".join(R.render_fox_ordinary(FOX_RECORD, detail="fuller"))) == 1489
+    assert len("\n".join(R.render_fox_ordinary(FOX_RECORD, detail="compact"))) == 1479
+    assert len("\n".join(R.render_fox_ordinary(FOX_RECORD, detail="fuller"))) == 1482
 
 
 # ---------------------------------------------------------------------------
@@ -393,15 +410,16 @@ def test_t5_other_seats_unmoved_by_section12_scope():
     turn frames are baseline-identical and their engage frames carry
     only the §2 guard (+242) and, for Raven/Bear, the §9 swap.
     Re-pinned post-Level-1 (2026-11-12) to the post-#342 main values;
-    the champion's move is the Firebrand S1 merge (#342), not this
-    branch."""
+    the champion's move is the Firebrand S1 merge (#342) and the
+    maverick's move (engage 7,670, turn 4,494) is its own S1 build
+    (§11.2) — neither is this branch."""
     expected_engage = {
         "conductor": 7943, "mentor": 8277, "champion": 8168,
-        "guardian": 7198, "maverick": 7398, "skeptic": 7586,
+        "guardian": 7198, "maverick": 7670, "skeptic": 7586,
     }
     expected_turn = {
         "conductor": 6176, "mentor": 5486, "champion": 5064,
-        "guardian": 4049, "maverick": 3567, "skeptic": 4921,
+        "guardian": 4049, "maverick": 4494, "skeptic": 4921,
     }
     for arch, want_eng in expected_engage.items():
         defn = _definition(arch)
@@ -451,14 +469,23 @@ def test_t7_crane_turn_frame_is_dedicated():
         "Respond to what the user actually just communicated")
 
 
-def test_t7_fox_turn_frame_unchanged_by_this_branch():
-    """§11.2 is the Maverick build's. This branch must not move the Fox
-    frame: it still starts with the generic frame at the post-L1
-    baseline 3,567 (4,236 pre-L1)."""
+def test_t7_fox_turn_frame_is_dedicated():
+    """§11.2 landed with Maverick S1 (revised 2026-11-12 under the
+    founder's authorization; this test previously asserted the Fox
+    frame was unchanged by the Crane branch — the pre-Maverick
+    contract). The Fox turn frame now starts with its dedicated
+    frame (1,257 chars) at 4,494 (3,567 on the generic frame
+    post-L1; 4,236 pre-L1). The generic frame remains the fallback
+    for seats without their own frame."""
     defn = _definition("maverick")
     _, tf, _, _ = _meeting_prompts(defn, FOX_MSG)
-    assert tf.startswith(ENC._GENERIC_TURN_FRAME)
-    assert len(tf) == 3567
+    assert tf.startswith(ENC._MAVERICK_TURN_FRAME)
+    assert len(ENC._MAVERICK_TURN_FRAME) == 1257
+    assert len(tf) == 4494
+    assert "Respond to what the user actually just communicated" not in tf
+    # The default stays as the fallback for seats without their own frame.
+    assert ENC._GENERIC_TURN_FRAME.startswith(
+        "Respond to what the user actually just communicated")
 
 
 # ---------------------------------------------------------------------------

@@ -365,12 +365,13 @@ def test_t10_scope_guards():
         "Skeptic may name: Paralysis and cynicism: mistaking "
         "disbelief for intelligence."
     ]
-    # The fellowship-reference misgendering is UNCHANGED (the
-    # fellowship build's scope): Bear rendered "He", Crane "She".
+    # The fellowship-reference pronouns are CORRECTED (the
+    # fellowship build, PR #349, has landed): Bear rendered "She",
+    # Crane "He" — the founder's gender law.
     d, _e, _t = _skeptic()
     ref = d.fellowship_reference or ""
-    assert "Bear (Guardian): He prices consequences" in ref
-    assert "Crane (Ambassador): She holds two" in ref
+    assert "Bear (Guardian): She prices consequences" in ref
+    assert "Crane (Ambassador): He holds two" in ref
     # The masculine prose in the Skeptic's script comments is
     # unchanged ("HIS INTRODUCTION" comment above the script).
     import local_ai.council.meetings as mt_mod

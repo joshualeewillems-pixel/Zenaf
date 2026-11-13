@@ -203,13 +203,16 @@ def test_t1_fox_engage_post_guard():
     under the founder's authorization: Maverick S1 (§11.2) has
     landed, so the Fox turn frame is now its dedicated frame
     (see T7) — engage 7,670, turn 4,494; the meeting prompts move
-    with them (me +272 with engage, mt +927 with turn)."""
+    with them (me +272 with engage, mt +927 with turn). Re-pinned
+    2026-11-13: PR #349 (fellowship-reference pronoun corrections)
+    moves the Fox meeting prompts by +4 net chars each (me 14,644 ->
+    14,648; mt 11,468 -> 11,472); engage and turn frames unmoved."""
     defn = _definition("maverick")
     ef, tf, me, mt = _meeting_prompts(defn, FOX_MSG)
     assert len(ef) == 7670
     assert len(tf) == 4494
-    assert len(me) == 14644
-    assert len(mt) == 11468
+    assert len(me) == 14648
+    assert len(mt) == 11472
 
 
 # ---------------------------------------------------------------------------

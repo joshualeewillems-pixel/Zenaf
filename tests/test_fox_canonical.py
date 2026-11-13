@@ -28,7 +28,7 @@ Scope notes (read before "fixing" a failure by weakening a test):
   captivity shadow. That meeting-path material is out of scope
   for this plan (ordinary renderer only) and is pinned here so it
   cannot silently grow.
-- Uses the REVISED §2 renderings (compact 1,164 / fuller 1,489,
+- Uses the REVISED §2 renderings (compact 1,479 / fuller 1,482,
   P-005 integrated) — NOT any earlier counts. §1.3's "P-005
   remains open" signature row and §5's pre-P-005 counts
   (941/1,480) are stale and are NOT followed.
@@ -146,12 +146,25 @@ LEAD_FULLER = (
 )
 MIDDLE_COMPACT = (
     "You look for the side door, the repurposed tool, the choice nobody "
-    "offered — and you invent possibilities nobody thought to ask for."
+    "offered. Make something of their material first; ask a question "
+    "only when a question is honestly the contribution. What you "
+    "imagine is yours, not theirs."
 )
 MIDDLE_FULLER_MARKERS = (
-    "You notice the artificial choice, the default choosing for someone",
-    "the untried route, and invent possibilities nobody thought to ask for, a new game",
-    "Doors and passages are your vocabulary when they illuminate",
+    "You notice the artificial choice and the game played after everyone forgot why",
+    "and make something of what they bring — a metaphor or a story — asking a question only when one is honestly the contribution",
+    "What you imagine from their material is yours, not theirs — never present an invention as their words, a fact about them, or a read-back.",
+)
+CREATIVE_TRANSFORMATION = (
+    "You challenge constraints actionably: you take what they bring — "
+    "experiences, ideas, contradictions, beliefs, emotions, metaphors, "
+    "emerging patterns — and translate it into creative expression: "
+    "metaphors, poetry, short stories, satire, humor, visual-art "
+    "concepts, unexpected associations, inventive names and scenes. "
+    "Make something of their material first; ask a question only when "
+    "a question is honestly the contribution. What you imagine from "
+    "their material is yours, not theirs — never present an invention "
+    "as their words, a fact about them, or a read-back."
 )
 VOICE_COMPACT_MARKERS = (
     "Your speech is quick-witted and sideways",
@@ -177,8 +190,9 @@ COMPACT_PROSE = (
     "Possibility through reframing — consensus can become captivity; refuse to "
     "confuse established order with necessary order. "
     "What if the rules are wrong? "
-    "You look for the side door, the repurposed tool, the choice nobody offered "
-    "— and you invent possibilities nobody thought to ask for. "
+    "You look for the side door, the repurposed tool, the choice nobody offered. "
+    "Make something of their material first; ask a question only when a question "
+    "is honestly the contribution. What you imagine is yours, not theirs. "
     "Your speech is quick-witted and sideways, with a storyteller's lyrical "
     "cadence and a beat poet's improvisation — unexpected juxtapositions, "
     "sentences that turn on themselves, a rhyme when it lands, never a "
@@ -201,14 +215,12 @@ FULLER_PROSE = (
     "Possibility through reframing — consensus can become captivity; refuse to "
     "confuse established order with necessary order. "
     "What if the rules are wrong? "
-    "You notice the artificial choice, the default choosing for someone, the "
-    "game played after everyone forgot why. "
+    "You notice the artificial choice and the game played after everyone forgot why. "
     "You look for the side door, the repurposed tool, the untried route, and "
-    "invent possibilities nobody thought to ask for, a new game. "
-    "You offer a reframed question when one is honestly there, or hold an exit "
-    "open without pressure. "
-    "Doors and passages are your vocabulary when they illuminate, never "
-    "decoration. "
+    "make something of what they bring — a metaphor or a story — asking a question "
+    "only when one is honestly the contribution. What you imagine from their "
+    "material is yours, not theirs — never present an invention as their words, a "
+    "fact about them, or a read-back. "
     "You speak with a storyteller's lyrical cadence and a beat poet's "
     "improvisation: unexpected juxtapositions, shifts in register, sentences "
     "that turn on themselves, a rhyme when it lands and never on compulsion. "
@@ -275,6 +287,7 @@ def test_record_sections_and_keys_match_exemplar():
     assert set(FOX_RECORD["characterization"]) == {
         "temperament", "lead_compact", "lead_fuller", "demeanor",
         "perceptual_habit", "middle_compact", "middle_fuller",
+        "creative_transformation",
         "expressive_terrain", "domain_tension", "governing_conviction",
         "voice_compact", "voice_fuller", "warmth", "tail",
         "friction", "implied_history", "established_biography",
@@ -291,7 +304,7 @@ def test_record_sections_and_keys_match_exemplar():
         "later_discoveries", "orientation",
     }
     assert set(FOX_RECORD["capabilities"]) == {
-        "byo_key", "export_all", "rename_reshape", "import_uploads",
+        "byo_key", "export_all", "import_uploads",
     }
     assert set(FOX_RECORD["protected"]) == {
         "developmental_knowledge", "shadow",
@@ -316,6 +329,10 @@ def test_record_core_values_verbatim():
     assert FOX_RECORD["characterization"]["lead_compact"]["text"] == LEAD_COMPACT
     assert FOX_RECORD["characterization"]["lead_fuller"]["text"] == LEAD_FULLER
     assert FOX_RECORD["characterization"]["middle_compact"]["text"] == MIDDLE_COMPACT
+    assert (
+        FOX_RECORD["characterization"]["creative_transformation"]["text"]
+        == CREATIVE_TRANSFORMATION
+    )
     assert FOX_RECORD["characterization"]["tail"]["text"] == TAIL
     assert FOX_RECORD["identity"]["role"]["text"] == "Maverick"
     assert FOX_RECORD["identity"]["character"]["text"] == "Fox"
@@ -386,6 +403,7 @@ EXPECTED_ELIGIBLE = {
     ("characterization", "perceptual_habit"),
     ("characterization", "middle_compact"),
     ("characterization", "middle_fuller"),
+    ("characterization", "creative_transformation"),
     ("characterization", "expressive_terrain"),
     ("characterization", "governing_conviction"),
     ("characterization", "voice_compact"),
@@ -485,8 +503,9 @@ def test_renderer_order_identity_lead_worldview_capability():
         FOX_RECORD, detail="compact",
         resolved_capability="Background knowledge — Doors.",
     )
-    # NOTE: with a 33-char capability, compact + capability fits
-    # (1,164 + 33 + 1 = 1,198). Voice intact here.
+    # NOTE: with a 33-char capability, the character-only compact
+    # (1,479) fits the ceiling; the capability is re-inserted after
+    # selection (total 1,479 + 33 + 1 = 1,513). Voice intact here.
     joined = _joined(block)
     anchors = [
         CANONICAL_MARKER,
@@ -501,14 +520,14 @@ def test_renderer_order_identity_lead_worldview_capability():
 
 def test_renderer_budgets_compact_and_fuller_exact():
     """Assembled blocks reproduce exemplar §2 exactly (same sentences,
-    same order, byte-identical prose): compact 1,164 chars, fuller 1,489
+    same order, byte-identical prose): compact 1,479 chars, fuller 1,482
     chars, both under the 1,500 ceiling."""
     compact = render_fox_ordinary(FOX_RECORD, detail="compact")
     fuller = render_fox_ordinary(FOX_RECORD, detail="fuller")
     assert _prose(compact) == COMPACT_PROSE
     assert _prose(fuller) == FULLER_PROSE
-    assert len(_joined(compact)) == 1391, len(_joined(compact))
-    assert len(_joined(fuller)) == 1489, len(_joined(fuller))
+    assert len(_joined(compact)) == 1479, len(_joined(compact))
+    assert len(_joined(fuller)) == 1482, len(_joined(fuller))
     assert len(_joined(compact)) < len(_joined(fuller)) <= CHARACTER_CEILING
     # Ideal + defining question verbatim in BOTH (no truncation here).
     assert IDEAL_VERBATIM in _joined(compact)
@@ -565,7 +584,15 @@ def test_renderer_naming_authorized_only():
     )
     assert post[0].endswith("The visitor calls you Kit.")
     assert post[0].startswith(CANONICAL_MARKER)
-    assert post[1:] == pre[1:]
+    # The name clause (~27 chars) pushes the 1,479-char compact block
+    # over the 1,500 ceiling, so the voice drops — the degradation
+    # ladder, not the name logic: every unit except the voice is
+    # unchanged (Maverick S1: compact headroom is 21 chars, so any
+    # authorized name costs the voice).
+    assert post[1:] == pre[1:-1]
+    assert MIDDLE_COMPACT in _joined(post)
+    for marker in VOICE_COMPACT_MARKERS:
+        assert marker not in _joined(post), marker
     # Empty/whitespace name = not authorized.
     assert render_fox_ordinary(
         FOX_RECORD, authorized_name="  ", detail="compact"
@@ -582,9 +609,13 @@ def test_renderer_naming_authorized_only():
         render_fox_ordinary(FOX_RECORD, authorized_name={"name": "Kit"})
 
 
-def test_renderer_fuller_with_name_degrades_to_compact():
-    """Fuller (1,489) + name clause (~27) exceeds the ceiling, so it
-    degrades to compact + name — valid ladder operation, not failure."""
+def test_renderer_fuller_with_name_degrades_past_compact():
+    """Fuller (1,482) + name clause (~27) exceeds the ceiling, and
+    compact + name (1,479 + 27) exceeds it too, so the render degrades
+    past compact to the voiceless candidate — valid ladder operation,
+    not failure. (Maverick S1: the C2 middle grew compact 1,391 ->
+    1,479, leaving 21 chars of headroom; any authorized name now
+    costs the voice. The degradation order is unchanged.)"""
     fuller_named = render_fox_ordinary(
         FOX_RECORD, detail="fuller", authorized_name="Kit"
     )
@@ -594,13 +625,17 @@ def test_renderer_fuller_with_name_degrades_to_compact():
     for marker in MIDDLE_FULLER_MARKERS:
         assert marker not in joined, marker
     assert TAIL not in joined
-    for marker in VOICE_COMPACT_MARKERS:
-        assert marker in joined, marker
+    assert MIDDLE_COMPACT in joined
     assert LEAD_COMPACT in joined
+    for marker in VOICE_COMPACT_MARKERS:
+        assert marker not in joined, marker
+    for marker in VOICE_FULLER_MARKERS:
+        assert marker not in joined, marker
 
 
 def test_renderer_capability_gating():
-    # Small capability (33 chars): compact + capability fits with voice intact.
+    # Small capability (33 chars): the capability is re-inserted
+    # after selection, never measured, so voice stays intact.
     without = render_fox_ordinary(FOX_RECORD, detail="compact")
     with_cap = render_fox_ordinary(
         FOX_RECORD, detail="compact",
@@ -631,58 +666,84 @@ def test_renderer_budget_degrades_then_fails_validation():
     ).strip()
     assert signed and unsigned and len(unsigned) > len(signed)
 
-    # Mid-size capability (100 chars): fuller overflows, compact fits
-    # with voice — fuller→compact is valid ladder operation, not failure.
+    # Mid-size capability (100 chars): under budget separation the
+    # ceiling measures character content ALONE, so the fuller
+    # candidate (1,482) keeps its voice and tail with the capability
+    # appended whole: total 1,482 + 1 + 100. No degradation: the
+    # capability never evicts a unit.
     mid = "y" * 100
     mid_out = render_fox_ordinary(
         FOX_RECORD, detail="fuller", resolved_capability=mid
     )
     joined_mid = _joined(mid_out)
-    assert len(joined_mid) <= CHARACTER_CEILING
+    assert len(joined_mid) == 1482 + 1 + len(mid)
     for marker in MIDDLE_FULLER_MARKERS:
-        assert marker not in joined_mid, marker
-    assert TAIL not in joined_mid
-    for marker in VOICE_COMPACT_MARKERS:
+        assert marker in joined_mid, marker
+    assert TAIL in joined_mid
+    for marker in VOICE_FULLER_MARKERS:
         assert marker in joined_mid, marker
     assert mid in joined_mid  # capability never truncated
+    # Capability sits at index 3 (after worldview), voice last.
+    assert mid_out[3] == mid
 
-    # Typical (signed-in) guidance: even compact + guidance overflows
-    # (1,164 + 398 + 1), so voice drops whole, middle kept — valid
-    # ladder operation, not failure. Fuller + typical degrades to
-    # the SAME output (ladder convergence, not a bug).
+    # Typical (signed-in) guidance: the ceiling measures character
+    # alone, so the fuller block keeps its voice with the guidance
+    # appended whole: total 1,482 + 1 + len(signed). Fuller and
+    # compact now DIFFER (no ladder convergence): fuller keeps the
+    # fuller middle + voice + tail, compact keeps the compact units.
+    # INTENTIONAL EXPECTATION REVERSAL, citing the C3 separation:
+    # this block previously asserted the voice-drop (voice absent,
+    # total <= ceiling, fuller == compact); the separation reverses
+    # that expectation.
     degraded = render_fox_ordinary(
         FOX_RECORD, detail="fuller", resolved_capability=signed
     )
     compact_typical = render_fox_ordinary(
         FOX_RECORD, detail="compact", resolved_capability=signed
     )
-    assert degraded == compact_typical
+    assert degraded != compact_typical
     joined = _joined(degraded)
-    assert len(joined) <= CHARACTER_CEILING
-    assert MIDDLE_COMPACT in joined  # middle kept
+    assert len(joined) == 1482 + 1 + len(signed)
+    for marker in MIDDLE_FULLER_MARKERS:
+        assert marker in joined, marker
+    assert TAIL in joined
+    for marker in VOICE_FULLER_MARKERS:
+        assert marker in joined, marker
+    assert MIDDLE_COMPACT not in joined
+    assert signed in joined  # capability never truncated
+    compact_joined = _joined(compact_typical)
+    assert len(compact_joined) == 1479 + 1 + len(signed)
+    assert MIDDLE_COMPACT in compact_joined  # middle kept
     for marker in VOICE_COMPACT_MARKERS:
-        assert marker not in joined, marker  # voice dropped whole
-    assert TAIL not in joined
+        assert marker in compact_joined, marker  # voice survives whole
+    assert signed in compact_joined
     assert CANONICAL_MARKER in joined
     assert QUESTION_VERBATIM in joined
-    assert signed in joined  # capability never truncated
 
-    # Maximal (unsigned) guidance: same ladder, still fits.
+    # Maximal (unsigned) guidance: same, unsigned guidance appended
+    # whole regardless of length. (Reversal of the old ceiling-capped
+    # expectation.)
     degraded_max = render_fox_ordinary(
         FOX_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(degraded_max)) <= CHARACTER_CEILING
+    assert len(_joined(degraded_max)) == 1482 + 1 + len(unsigned)
     assert unsigned in _joined(degraded_max)
-    assert MIDDLE_COMPACT in _joined(degraded_max)
+    assert MIDDLE_COMPACT not in _joined(degraded_max)
     assert CANONICAL_MARKER in _joined(degraded_max)
     assert QUESTION_VERBATIM in _joined(degraded_max)
 
-    # Compact + a huge capability: nothing left to drop → fail, never cut.
-    with pytest.raises(AssemblyError):
-        render_fox_ordinary(
-            FOX_RECORD, detail="compact",
-            resolved_capability="x" * (CHARACTER_CEILING + 500),
-        )
+    # Compact + a huge capability: guidance-length independence —
+    # a 2,000-char guidance string no longer raises AssemblyError
+    # and is appended whole. INTENTIONAL REVERSAL of the old
+    # huge-guidance failure, documented here rather than hidden:
+    # capability has no size backstop after separation, per the
+    # Bear pattern (same reversal documented there).
+    huge = render_fox_ordinary(
+        FOX_RECORD, detail="compact",
+        resolved_capability="x" * (CHARACTER_CEILING + 500),
+    )
+    assert len(_joined(huge)) == 1479 + 1 + CHARACTER_CEILING + 500
+    assert "x" * (CHARACTER_CEILING + 500) in _joined(huge)
     # No unit is ever truncated mid-thought: every character unit ends
     # with terminal punctuation.
     for line in degraded:
@@ -981,16 +1042,16 @@ def test_resolver_contract_already_resolved_and_clean():
     assert block.strip()
     for phrase in PROTECTED_PHRASES:
         assert phrase not in block, phrase
-    # The maverick slice renders exactly the 4 exemplar capabilities.
+    # The maverick slice renders exactly the 3 exemplar capabilities
+    # (rename_reshape removed by Maverick S1, C1).
     for name in (
         "Conversation-export import",
         "Bring-your-own key",
         "Export everything",
-        "Rename and reshape seats",
     ):
         assert name in block, name
     # Limited-experimental caps render qualified, never promised.
-    assert block.count("available in limited form (workflow not yet verified)") == 3
+    assert block.count("available in limited form (workflow not yet verified)") == 2
     # Export everything is planned, never offered.
     assert "Export everything — planned, not available yet" in block
     cap = CAP.get_capability("export_all")
@@ -999,10 +1060,11 @@ def test_resolver_contract_already_resolved_and_clean():
     assert cap.verification == "unverified"
     assert not CAP.currently_usable(cap, state)
     # Unsigned state renders the same slice with gated wording.
+    # (2, not 3: rename_reshape removed by Maverick S1, C1.)
     unsigned = CAP.continuation_block(
         "maverick", CAP.VisitorState(signed_in=False, consent_acknowledged=False)
     )
-    assert unsigned.count("not available to you yet") == 3
+    assert unsigned.count("not available to you yet") == 2
     assert "Export everything — planned, not available yet" in unsigned
 
 

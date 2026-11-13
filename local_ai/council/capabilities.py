@@ -95,7 +95,8 @@ INTENTION_LINE = (
 #: constraint; it is not an instruction to offer anything.
 HONESTY_GUARD = (
     "Never present a planned capability as available, a hypothetical "
-    "as an action, or a gated capability as immediately usable."
+    "as an action, a gated capability as immediately usable, or a "
+    "limited, unverified workflow as something you can do or offer."
 )
 
 
@@ -615,22 +616,6 @@ CAPABILITIES: tuple[Capability, ...] = (
         ),
         prerequisite_note=(
             "No export-all endpoint — do not claim full export exists."
-        ),
-    ),
-    Capability(
-        id="rename_reshape",
-        name="Rename and reshape seats",
-        primary_seat="maverick",
-        implementation="limited-experimental",
-        verification="unverified",
-        evidence=(
-            "Twigs approve/delete exist; user-renamed seats supported "
-            "in prompt lines; seat rename/reshape UI not verified."
-        ),
-        prerequisites=("signed_in",),
-        prerequisite_note=(
-            "Signed-in account; review approval where applicable; "
-            "seat rename/reshape UI not verified."
         ),
     ),
     # -- Unassigned: suggestions belong to no seat's slice until a

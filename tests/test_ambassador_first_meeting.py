@@ -322,7 +322,10 @@ def test_frame_budget_fits_live_cap_with_guard_intact():
     definition = _definition()
     composed = _composed_engage(definition)
     assert len(composed) <= _EXTRA_INSTRUCTIONS_CAP
-    # The guard rides the tier, not the frame.
+    # The guard rides the tier, not the frame. Maverick S1 (C1)
+    # extended the guard with a fourth clause; the guard-endswith
+    # pin now lives in the tier test (T-L1-1 asserts the tier ends
+    # with HONESTY_GUARD), so the frame-endswith pin is superseded.
     assert "immediately usable." not in composed
     # Worst-case naming note: every other seat already met.
     all_met = dataclasses.replace(

@@ -126,6 +126,12 @@ export type NodeSheetContentProvider = (
         null otherwise) so the header menu can hide the invitation
         shortcut when its target IS the open conversation. */
     onChatIdChange?: (id: string | null) => void
+    /** Opens the seat's first-meeting overlay (MeetingView) — the
+        chat list's route for a meeting conversation (founder,
+        2026-11-12: meetings join the chat list, then the compact
+        head's door button goes). The Tree owns the overlay state;
+        sheet content only asks. */
+    onOpenMeeting?: (seat: string) => void
   },
 ) => ReactNode | null
 
@@ -199,14 +205,16 @@ export type MeetingDoorState = 'begin' | 'revisit' | null
 /** Whether the seat's character head carries a door into the first-meeting
     overlay, and which one. 'intro' is the fresh-tree invitation — the
     "Begin" door. A seat already met (face_revealed — true exactly when
-    keystone 1 is Done or the face is depth-unlocked) gets the revisit
-    door instead, so the completed meeting stays reachable: MeetingView
-    renders the transcript and "Meet again" once open. An unmet seat
-    with a 'meet' marker — the post-entry invitation for a written,
-    released seat — also gets the Begin door (all-six release,
-    2026-10-29); the backend begin gates, not the marker, are what
-    refuse an unreleased seat. Seats with no marker, or a later-keystone
-    reason while unmet, have no door. */
+    keystone 1 is Done or the face is depth-unlocked) computes 'revisit',
+    but the head renders NO door for it (founder, 2026-11-12: the button
+    goes once the first meeting is done): the completed meeting joined
+    the chat list instead, and opening it there mounts MeetingView with
+    the transcript and "Meet again". An unmet seat with a 'meet' marker
+    — the post-entry invitation for a written, released seat — also gets
+    the Begin door (all-six release, 2026-10-29); the backend begin
+    gates, not the marker, are what refuse an unreleased seat. Seats
+    with no marker, or a later-keystone reason while unmet, have no
+    door. */
 export function meetingDoorState(
   reason: KeystoneAttentionReason | null | undefined,
   met = false,
@@ -1158,6 +1166,15 @@ export function LivingTreeView({
     })
   }
 
+  /** Opens a seat's first-meeting overlay: the sheet closes and
+      MeetingView mounts — the one route into the meeting, shared by
+      the compact head's Begin door and the chat list's meeting rows
+      (founder, 2026-11-12). */
+  const openMeeting = (seat: string) => {
+    closeSheet()
+    setMeetingSeat(seat)
+  }
+
   const onTap = (id: string) => {
     if (id === 'you') {
       setSel(null)
@@ -1361,17 +1378,17 @@ export function LivingTreeView({
       <div>
         {headerMenuSeat === arch.id && renderSeatHeaderMenu(arch)}
         <p>“{arch.prompt_frame}”</p>
-        {door && (
+        {/* Only a genuine first meeting gets a door here. A met seat
+            ('revisit') renders none — its completed meeting lives in
+            the chat list now (founder, 2026-11-12). */}
+        {door === 'begin' && (
           <button
             type="button"
             className="lcta"
             style={{ margin: '10px 0' }}
-            onClick={() => {
-              closeSheet()
-              setMeetingSeat(arch.id)
-            }}
+            onClick={() => openMeeting(arch.id)}
           >
-            {door === 'begin' ? 'Begin the first meeting →' : 'Your first meeting →'}
+            Begin the first meeting →
           </button>
         )}
         {expanded && renderSeatCharacterBody(arch)}
@@ -1742,6 +1759,7 @@ export function LivingTreeView({
         ...(talkOverride ? { conversationOverride: talkOverride } : {}),
         navNonce: talkNavNonce,
         onChatIdChange: setTalkChatId,
+        onOpenMeeting: openMeeting,
       })
       return (
         <div>
@@ -1750,7 +1768,9 @@ export function LivingTreeView({
         </div>
       )
     }
-    const content = renderSheetContent?.(sheetNode, sheetItem)
+    const content = renderSheetContent?.(sheetNode, sheetItem, {
+      onOpenMeeting: openMeeting,
+    })
     if (content) return <div className="lsheet-view">{content}</div>
     return renderStillGrowing(sheetNode, sheetItem)
   }

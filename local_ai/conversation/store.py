@@ -591,7 +591,11 @@ class ConversationStore:
         return int(row[0]) if row else 0
 
     def list_conversations(
-        self, user_id: str, limit: int = 20, seat: str | None = None
+        self,
+        user_id: str,
+        limit: int = 20,
+        seat: str | None = None,
+        include_meetings: bool = False,
     ) -> list[dict[str, Any]]:
         """Talk conversations for one user, newest message activity first.
 
@@ -622,8 +626,26 @@ class ConversationStore:
         message and drift the recency rule). Ordering, shape, and
         clamping are unchanged; an absent or empty seat means
         today's unfiltered behavior exactly.
+
+        ``include_meetings`` (founder, 2026-11-12: meetings join the
+        chat list) additionally admits ``meeting-*`` conversations —
+        the seats' first meetings — under the identical shape,
+        ordering, and owner scoping; an entry's ``kind`` is
+        ``'meeting'`` and its id is ``meeting-{seat}-{keystone}``,
+        so clients can tell it apart from a talk and route it to the
+        meeting view. It is opt-in because the seat-scoped resume
+        lookup deliberately resolves TALKS only: a meeting must never
+        become the thread a seat sheet auto-resumes. Callers that
+        render a browsable list (the you-node rediscovery list, the
+        seat History panel) opt in; the lookup does not, and every
+        call without the flag returns exactly what it returned before.
         """
         limit = max(1, min(int(limit or 20), 100))
+        id_clause = (
+            "(m.conversation_id LIKE 'talk-%' OR m.conversation_id LIKE 'meeting-%')"
+            if include_meetings
+            else "m.conversation_id LIKE 'talk-%'"
+        )
         seat_filter = seat if seat else None
         seat_clause = (
             "AND EXISTS (SELECT 1 FROM messages m2 WHERE m2.user_id = m.user_id "
@@ -645,7 +667,9 @@ class ConversationStore:
                 "ORDER BY m2.created_at DESC, m2.id DESC LIMIT 1) AS last_message_preview "
                 "FROM messages m LEFT JOIN conversations c "
                 "ON c.user_id = m.user_id AND c.conversation_id = m.conversation_id "
-                "WHERE m.user_id = ? AND m.conversation_id LIKE 'talk-%' "
+                "WHERE m.user_id = ? AND "
+                + id_clause
+                + " "
                 + seat_clause
                 + "GROUP BY m.conversation_id "
                 "ORDER BY last_message_at DESC, m.conversation_id ASC LIMIT ?",
@@ -654,7 +678,9 @@ class ConversationStore:
             seat_rows = self._conn.execute(
                 "SELECT m.conversation_id, m.archetype_id, MIN(m.created_at) AS first_seen "
                 "FROM messages m WHERE m.user_id = ? AND m.archetype_id IS NOT NULL "
-                "AND m.conversation_id LIKE 'talk-%' "
+                "AND "
+                + id_clause
+                + " "
                 "GROUP BY m.conversation_id, m.archetype_id "
                 "ORDER BY m.conversation_id, first_seen",
                 (user_id,),

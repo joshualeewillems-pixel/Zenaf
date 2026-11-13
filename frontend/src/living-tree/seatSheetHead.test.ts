@@ -14,6 +14,11 @@
  *   like the tree node), not its portrait face; an unrevealed seat
  *   keeps the ??? placeholder. The circle is a button with the same
  *   action as the name: it toggles the character-body disclosure.
+ * - The meeting door renders only for a genuine first meeting
+ *   ('begin'): a met seat shows no door button — its completed
+ *   meeting joined the chat list (founder, 2026-11-12) — and sheet
+ *   content receives onOpenMeeting so a chat-list meeting row can
+ *   open the meeting overlay.
  *
  * Two fetch shapes: the honest seed fallback (empty status list —
  * every seat unrevealed) with an 'intro' marker on the Mentor, and a
@@ -37,8 +42,10 @@ function ok(payload: unknown) {
 
 let container: HTMLDivElement
 let root: Root
+let lastProviderOpts: Record<string, unknown> | undefined
 
-function stubProvider(node: unknown, item: string) {
+function stubProvider(node: unknown, item: string, opts?: Record<string, unknown>) {
+  lastProviderOpts = opts
   const n = node as { kind: string }
   if (item === 'talk' && n.kind === 'seat') {
     return React.createElement('div', null, 'stub chat')
@@ -293,5 +300,40 @@ describe('seat talk sheet header cleanup (founder, 2026-11-12)', () => {
       (b) => (b.textContent ?? '').trim() === 'Begin the first meeting →',
     )
     expect(door).toBeDefined()
+  })
+
+  it('a met seat renders NO meeting door — its meeting lives in the chat list', async () => {
+    installRevealedFetch()
+    renderTree()
+    await flush()
+    clickNodeByLogo('champion-logo')
+    await flush()
+    const labels = Array.from(dialog()?.querySelectorAll('button') ?? []).map((b) =>
+      (b.textContent ?? '').trim(),
+    )
+    expect(labels).not.toContain('Begin the first meeting →')
+    expect(labels).not.toContain('Your first meeting →')
+  })
+
+  it('sheet content receives onOpenMeeting so chat-list meeting rows can open the overlay', async () => {
+    installFallbackFetch()
+    renderTree()
+    await flush()
+    // Seat talk sheet (the special-cased provider call).
+    clickNode('ME')
+    await flush()
+    expect(typeof lastProviderOpts?.onOpenMeeting).toBe('function')
+    // You-node Talk (the generic provider call).
+    const close = head()?.querySelector('.nsh-close') as HTMLElement | null
+    if (!close) throw new Error('close control not found')
+    await click(close)
+    clickNode('YOU')
+    await flush()
+    const talkRow = Array.from(dialog()?.querySelectorAll('button.lrow') ?? []).find(
+      (b) => b.querySelector('.lrow-t')?.textContent === 'Talk',
+    )
+    if (!talkRow) throw new Error('Talk menu row not found')
+    await click(talkRow)
+    expect(typeof lastProviderOpts?.onOpenMeeting).toBe('function')
   })
 })

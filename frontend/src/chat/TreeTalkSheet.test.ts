@@ -33,6 +33,11 @@ const TALK_MENTOR = 'talk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 const TALK_MENTOR_OLDER = 'talk-dddddddddddddddddddddddddddddddd'
 const TALK_CHAMPION = 'talk-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 const CONV_OVERRIDE = 'talk-cccccccccccccccccccccccccccccccc'
+const MEETING_MENTOR = 'meeting-mentor-1'
+
+function meeting(id: string, seats: string[], preview: string, count = 4): Talk {
+  return { ...talk(id, seats, preview, count), kind: 'meeting' }
+}
 
 function talk(
   id: string,
@@ -69,18 +74,27 @@ function installFetch() {
       return Promise.resolve(ok({ archetypes: [] }))
     }
     if (url.includes('/conversation/list')) {
-      const seat = new URL(url, 'http://x').searchParams.get('seat')
+      const params = new URL(url, 'http://x').searchParams
+      const seat = params.get('seat')
       if (listBehavior === 'fail' || (listBehavior === 'fail-seat' && seat)) {
         return Promise.reject(new Error('list down'))
       }
       // The server applies the seat filter before the limit: a
-      // seat-scoped fetch returns only that seat's threads.
+      // seat-scoped fetch returns only that seat's threads. Meeting
+      // conversations are listed only when the caller opts in
+      // (include_meetings=true) — the seat resume lookup never does.
+      const includeMeetings = params.get('include_meetings') === 'true'
       const all = [
+        meeting(MEETING_MENTOR, ['mentor'], 'meeting preview'),
         talk(TALK_CHAMPION, ['champion'], 'champion preview'),
         talk(TALK_MENTOR, ['mentor'], 'mentor preview'),
         talk(TALK_MENTOR_OLDER, ['mentor'], 'mentor older preview'),
       ]
-      const conversations = seat ? all.filter((t) => t.seats.includes(seat)) : all
+      const conversations = all.filter(
+        (t) =>
+          (includeMeetings || !t.conversation_id.startsWith('meeting-')) &&
+          (!seat || t.seats.includes(seat)),
+      )
       return Promise.resolve(ok({ conversations }))
     }
     if (url.includes('/conversation/invitations')) {
@@ -339,8 +353,83 @@ describe('conversation override (invitation navigation)', () => {
   })
 })
 
-describe('list failure', () => {
-  it('shows an error state and never falls back to client-history chat', async () => {
+describe('meetings in the chat list (founder, 2026-11-12)', () => {
+  it('you-node list labels the meeting as the seat’s first meeting and routes its tap to the meeting overlay', async () => {
+    const opened: string[] = []
+    renderSheet({ seatKey: null, onOpenMeeting: (seat: string) => opened.push(seat) })
+    await flush()
+    // The general list opted into meetings; the row names the meeting.
+    expect(
+      calls.some((u) => u.includes('/conversation/list') && u.includes('include_meetings=true')),
+    ).toBe(true)
+    const row = Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('First meeting'),
+    )
+    if (!row) throw new Error('first-meeting list row not found')
+    expect(row.textContent).toContain('meeting preview')
+    await click(row)
+    expect(opened).toEqual(['mentor'])
+    // It never opened as a talk thread: no hydration of the meeting id.
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${MEETING_MENTOR}`)),
+    ).toBe(false)
+  })
+
+  it('seat History lists the first meeting and routes its tap to the meeting overlay', async () => {
+    const opened: string[] = []
+    renderSheet({
+      seatKey: 'mentor',
+      displayName: 'Gardener',
+      onOpenMeeting: (seat: string) => opened.push(seat),
+    })
+    await flush()
+    await click(buttonByText('History'))
+    // History opted into meetings; the resume lookup did not (parse
+    // params properly — 'limit=10' contains the substring 'limit=1').
+    expect(
+      calls.some(
+        (u) =>
+          u.includes('/conversation/list') &&
+          u.includes('seat=mentor') &&
+          u.includes('include_meetings=true'),
+      ),
+    ).toBe(true)
+    expect(
+      calls.some((u) => {
+        if (!u.includes('/conversation/list')) return false
+        const p = new URL(u, 'http://x').searchParams
+        return (
+          p.get('seat') === 'mentor' && p.get('limit') === '1' && !p.has('include_meetings')
+        )
+      }),
+    ).toBe(true)
+    const row = Array.from(container.querySelectorAll('button')).find((b) =>
+      (b.textContent ?? '').includes('meeting preview'),
+    )
+    if (!row) throw new Error('meeting history row not found')
+    expect(row.textContent).toContain('First meeting')
+    await click(row)
+    expect(opened).toEqual(['mentor'])
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${MEETING_MENTOR}`)),
+    ).toBe(false)
+  })
+
+  it('the seat still auto-resumes its newest TALK even though a newer meeting exists', async () => {
+    renderSheet({ seatKey: 'mentor', displayName: 'Gardener' })
+    await flush()
+    // The lookup never opted into meetings, so the resume target is
+    // the talk — the meeting (listed first in History) is not it.
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${TALK_MENTOR}`)),
+    ).toBe(true)
+    expect(
+      calls.some((u) => u.includes(`/conversation?conversation_id=${MEETING_MENTOR}`)),
+    ).toBe(false)
+  })
+})
+
+describe('list failure', () => {  it('shows an error state and never falls back to client-history chat', async () => {
     listBehavior = 'fail'
     renderSheet({ seatKey: 'mentor', displayName: 'Gardener' })
     await flush()

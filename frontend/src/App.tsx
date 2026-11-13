@@ -4551,9 +4551,10 @@ function App() {
           displayName={node.fellowshipName}
           conversationOverride={opts?.conversationOverride}
           onChatIdChange={opts?.onChatIdChange}
+          onOpenMeeting={opts?.onOpenMeeting}
         />
       ) : (
-        <TreeTalkSheet key="talk-you" seatKey={null} />
+        <TreeTalkSheet key="talk-you" seatKey={null} onOpenMeeting={opts?.onOpenMeeting} />
       )
     }
     if (node.kind !== 'you') return null

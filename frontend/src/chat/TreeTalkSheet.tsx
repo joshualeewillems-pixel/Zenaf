@@ -58,11 +58,28 @@ export type TalkListItem = {
   last_message_preview: string | null
 }
 
+/** Meeting entries in the list (founder, 2026-11-12: meetings join
+ *  the chat list). A meeting conversation id is `meeting-{seat}-{n}`
+ *  by construction (the backend's conversation_id_for), disjoint from
+ *  `talk-` ids; `kind` says the same thing ('meeting') when the
+ *  conversation row exists. The id is the discriminator because it
+ *  is definitional, not data-dependent. */
+export function isMeetingListItem(t: TalkListItem): boolean {
+  return t.conversation_id.startsWith('meeting-')
+}
+
+/** The seat a meeting list entry belongs to, parsed from its id.
+ *  Seat ids are single lowercase tokens, so the parse is exact.
+ *  Null for non-meeting items and malformed ids. */
+export function meetingSeatOf(t: TalkListItem): string | null {
+  const m = /^meeting-([a-z]+)-\d+$/.exec(t.conversation_id)
+  return m ? m[1] : null
+}
+
 /** `talk-` + 32 lowercase hex chars (37 total, within the route's
  *  64-char max). Disjoint from `skeleton`, `meeting-*`, and `stone:*`
  *  by construction. */
-export function newTalkId(): string {
-  // Loosely typed on purpose: feature-detect at runtime instead of
+export function newTalkId(): string {  // Loosely typed on purpose: feature-detect at runtime instead of
   // letting the compiler narrow `crypto` to never after the first check.
   const c = (globalThis as unknown as {
     crypto?: {
@@ -126,6 +143,7 @@ export default function TreeTalkSheet({
   displayName,
   conversationOverride,
   onChatIdChange,
+  onOpenMeeting,
 }: {
   /** Seat node id, or null for the you-node rediscovery surface. */
   seatKey: string | null
@@ -145,6 +163,12 @@ export default function TreeTalkSheet({
       only; null otherwise) so the header menu can hide the invitation
       shortcut when its target IS the open conversation. */
   onChatIdChange?: (id: string | null) => void
+  /** Opens the seat's first-meeting overlay (the Tree's MeetingView)
+      when a meeting entry in a list is tapped (founder, 2026-11-12).
+      A meeting is never opened as a talk thread. When absent (a
+      mount outside the Tree), meeting rows fall back to opening as
+      a conversation, as every row did before. */
+  onOpenMeeting?: (seat: string) => void
 }) {
   const base = apiBase()
   const { names } = useSeatMeta()
@@ -173,7 +197,11 @@ export default function TreeTalkSheet({
       2026-11-12): the same GET /conversation/list the seat lookup
       already uses, seat-scoped, limit 10; fetched lazily when the
       panel opens. Zero-message conversations never appear — the
-      endpoint only lists conversations with at least one message. */
+      endpoint only lists conversations with at least one message.
+      It opts into meetings (include_meetings=true) so the seat's
+      first meeting is listed here too; the seat LOOKUP below never
+      does — it resolves talks to resume, and a meeting must not
+      become the resumed thread. */
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState<TalkListItem[] | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -186,7 +214,7 @@ export default function TreeTalkSheet({
     setHistoryError(false)
     try {
       const r = await fetch(
-        `${base}/conversation/list?seat=${encodeURIComponent(chatSeat)}&limit=10`,
+        `${base}/conversation/list?seat=${encodeURIComponent(chatSeat)}&limit=10&include_meetings=true`,
         { credentials: 'include' },
       )
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -287,7 +315,9 @@ export default function TreeTalkSheet({
       })
     } else {
       // You-node mount: the general list is the rediscovery surface.
-      fetch(`${base}/conversation/list`, { credentials: 'include' })
+      // It opts into meetings: a seat's first meeting is listed here
+      // and routes to the meeting overlay when tapped.
+      fetch(`${base}/conversation/list?include_meetings=true`, { credentials: 'include' })
         .then(async (r) => {
           if (r.status === 401) return { auth: true as const }
           if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -328,7 +358,7 @@ export default function TreeTalkSheet({
   useEffect(() => {
     if (mode !== 'list' || talksFetched) return
     let cancelled = false
-    fetch(`${base}/conversation/list`, { credentials: 'include' })
+    fetch(`${base}/conversation/list?include_meetings=true`, { credentials: 'include' })
       .then(async (r) => {
         if (r.status === 401) return { auth: true as const }
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -363,6 +393,20 @@ export default function TreeTalkSheet({
     setIdentityFor(null)
     setMode('chat')
   }, [])
+
+  /** Routes a meeting list entry to the Tree's meeting overlay and
+      reports whether it did. Talks (and meetings on a mount without
+      a meeting handler) return false and take the normal chat-open
+      path in the caller. A meeting is never opened as a talk thread
+      when the handler exists. */
+  const routeMeeting = (t: TalkListItem): boolean => {
+    const seat = meetingSeatOf(t)
+    if (seat && onOpenMeeting) {
+      onOpenMeeting(seat)
+      return true
+    }
+    return false
+  }
 
   if (mode === 'loading') {
     return <p className="text-sm text-stone-400 px-1 py-2">Loading conversation…</p>
@@ -439,11 +483,14 @@ export default function TreeTalkSheet({
           </p>
         ) : (
           <div className="flex flex-col gap-2">
-            {talks.map((t) => (
+            {talks.map((t) => {
+              const meetingSeat = meetingSeatOf(t)
+              return (
               <button
                 key={t.conversation_id}
                 type="button"
                 onClick={() => {
+                  if (routeMeeting(t)) return
                   setChatSeat(null)
                   setFromList(true)
                   setChatId(t.conversation_id)
@@ -452,7 +499,9 @@ export default function TreeTalkSheet({
                 className="text-left rounded-2xl border border-stone-700/60 bg-stone-900/70 px-3 py-2"
               >
                 <span className="block text-sm text-stone-200">
-                  {t.seats.map((s) => names[s] ?? s).join(', ') || 'Conversation'}
+                  {meetingSeat
+                    ? `${names[meetingSeat] ?? meetingSeat} · First meeting`
+                    : t.seats.map((s) => names[s] ?? s).join(', ') || 'Conversation'}
                 </span>
                 {t.last_message_preview && (
                   <span className="block text-xs text-stone-400 truncate">
@@ -464,7 +513,8 @@ export default function TreeTalkSheet({
                   {formatWhen(t.last_message_at) ? ` · ${formatWhen(t.last_message_at)}` : ''}
                 </span>
               </button>
-            ))}
+              )
+            })}
           </div>
         )}
         <button
@@ -480,9 +530,12 @@ export default function TreeTalkSheet({
 
   // mode === 'chat'
   // History shows past conversations with this seat (seat-scoped list,
-  // most recent first); the open conversation is excluded — it is the
-  // one already on screen. Rows are identified by color + symbol,
-  // never by a text title; the ✎ opens the color/symbol picker.
+  // most recent first), including the seat's first meeting — a meeting
+  // row routes to the meeting overlay instead of opening as a thread,
+  // and carries no color/symbol picker. The open conversation is
+  // excluded — it is the one already on screen. Rows are identified by
+  // color + symbol, never by a text title; the ✎ opens the
+  // color/symbol picker.
   const historyRows = (history ?? []).filter((t) => t.conversation_id !== chatId)
   const currentIdentity = chatId ? identities[chatId] ?? { color: null, symbol: null } : null
   return (
@@ -550,6 +603,7 @@ export default function TreeTalkSheet({
                 <button
                   type="button"
                   onClick={() => {
+                    if (routeMeeting(t)) return
                     setFromList(true)
                     setChatId(t.conversation_id)
                     setHistoryOpen(false)
@@ -568,6 +622,7 @@ export default function TreeTalkSheet({
                       </span>
                     )}
                     <span className="block text-[11px] text-stone-500">
+                      {isMeetingListItem(t) ? 'First meeting · ' : ''}
                       {t.message_count} messages
                       {formatWhen(t.last_message_at)
                         ? ` · ${formatWhen(t.last_message_at)}`
@@ -575,19 +630,21 @@ export default function TreeTalkSheet({
                     </span>
                   </span>
                 </button>
-                <button
-                  type="button"
-                  aria-label="Choose a color and symbol for this conversation"
-                  title="Choose a color and symbol"
-                  onClick={() =>
-                    setIdentityFor(
-                      identityFor === t.conversation_id ? null : t.conversation_id,
-                    )
-                  }
-                  className="min-h-[44px] min-w-[44px] px-2 text-sm text-stone-400"
-                >
-                  ✎
-                </button>
+                {!isMeetingListItem(t) && (
+                  <button
+                    type="button"
+                    aria-label="Choose a color and symbol for this conversation"
+                    title="Choose a color and symbol"
+                    onClick={() =>
+                      setIdentityFor(
+                        identityFor === t.conversation_id ? null : t.conversation_id,
+                      )
+                    }
+                    className="min-h-[44px] min-w-[44px] px-2 text-sm text-stone-400"
+                  >
+                    ✎
+                  </button>
+                )}
               </div>
             ))
           )}

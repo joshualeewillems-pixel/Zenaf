@@ -631,11 +631,55 @@ const ZenSandCanvasInner = forwardRef<ZenSandCanvasHandle, Props>(function ZenSa
     [addPoint, clearRakePaths],
   )
 
+  /**
+   * Active pointers currently down anywhere on the window (any type).
+   * The rake belongs to a single cursor: while two or more pointers are
+   * down the fingers are navigating the map (pan/pinch), not raking, so
+   * the move listener suspends until the count drops back below two
+   * (founder gesture contract, 2026-11-12).
+   */
+  const activePointersRef = useRef<ReadonlySet<number>>(new Set())
+
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      if (activePointersRef.current.has(e.pointerId)) return
+      const next = new Set(activePointersRef.current)
+      next.add(e.pointerId)
+      activePointersRef.current = next
+    }
+    const onUpOrCancel = (e: PointerEvent) => {
+      if (!activePointersRef.current.has(e.pointerId)) return
+      const next = new Set(activePointersRef.current)
+      next.delete(e.pointerId)
+      activePointersRef.current = next
+    }
+    const onBlur = () => {
+      activePointersRef.current = new Set()
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    window.addEventListener('pointerup', onUpOrCancel, true)
+    window.addEventListener('pointercancel', onUpOrCancel, true)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true)
+      window.removeEventListener('pointerup', onUpOrCancel, true)
+      window.removeEventListener('pointercancel', onUpOrCancel, true)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [])
+
   useEffect(() => {
     const onPointerMove = (e: PointerEvent) => {
       if (!rakeEnabledRef.current) return
       /* One rake cursor: ignore secondary pointers (multi-touch). No button requirement — trail follows mouse. */
       if (!e.isPrimary) return
+      /* Two or more pointers down = map navigation, not raking. Drop the
+         last sample too, so resuming at one pointer doesn't stamp a
+         straight segment across the pinch path. */
+      if (activePointersRef.current.size >= 2) {
+        lastRef.current = null
+        return
+      }
       const wrap = wrapRef.current
       if (!wrap) return
       const r = wrap.getBoundingClientRect()

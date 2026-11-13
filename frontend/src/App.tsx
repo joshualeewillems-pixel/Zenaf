@@ -5575,7 +5575,6 @@ function App() {
                 councilVeEntityBundleRef.current = bundle
               }}
               onMapEntitySelectionChange={onMapEntitySelectionChange}
-              layoutPersistenceContext={currentUser ? String(currentUser.id) : 'anonymous'}
             />
           </div>
         ) : mainView === 'vision_execution' ? (

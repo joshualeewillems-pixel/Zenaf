@@ -1,10 +1,4 @@
 export { VisionMapView } from './VisionMapView'
-export {
-  clearVisionMapLayout,
-  loadVisionMapLayout,
-  saveVisionMapLayout,
-  visionMapLayoutStorageKey,
-} from './visionMapLayoutPersistence'
 export type {
   MapEntityKind,
   GrowthState,

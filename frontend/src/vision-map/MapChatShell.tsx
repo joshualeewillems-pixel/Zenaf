@@ -32,6 +32,9 @@ type Props = {
   canExpandSelected?: boolean
   onNestSelected?: () => void
   onExpandSelected?: () => void
+  /** Selected stone is a member of a fanned-out cairn: offer stacking it back. */
+  canCollapseCairnSelected?: boolean
+  onCollapseCairnSelected?: () => void
 }
 
 function growthKindLabel(kind: MapNodePayload['kind']): string {
@@ -176,6 +179,8 @@ export function MapChatShell({
   canExpandSelected,
   onNestSelected,
   onExpandSelected,
+  canCollapseCairnSelected,
+  onCollapseCairnSelected,
 }: Props) {
   const base = apiBase()
   const [chips, setChips] = useState<Chip[]>([])
@@ -339,7 +344,9 @@ export function MapChatShell({
         </div>
       ) : (
         <div className="flex-1 min-h-0 flex flex-col">
-          {(canNestSelected && onNestSelected) || (canExpandSelected && onExpandSelected) ? (
+          {(canNestSelected && onNestSelected) ||
+          (canExpandSelected && onExpandSelected) ||
+          (canCollapseCairnSelected && onCollapseCairnSelected) ? (
             <div className="px-3 py-2 flex flex-wrap gap-1.5 border-b border-stone-800">
               {canNestSelected && onNestSelected ? (
                 <button
@@ -357,6 +364,15 @@ export function MapChatShell({
                   className="min-h-[44px] text-[11px] px-2 py-1 rounded bg-stone-800 border border-stone-600 hover:bg-stone-700"
                 >
                   Expand group
+                </button>
+              ) : null}
+              {canCollapseCairnSelected && onCollapseCairnSelected ? (
+                <button
+                  type="button"
+                  onClick={onCollapseCairnSelected}
+                  className="min-h-[44px] text-[11px] px-2 py-1 rounded bg-stone-800 border border-stone-600 hover:bg-stone-700"
+                >
+                  Stack back into cairn
                 </button>
               ) : null}
             </div>

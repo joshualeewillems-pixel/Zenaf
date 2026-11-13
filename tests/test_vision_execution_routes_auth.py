@@ -78,9 +78,9 @@ def _seed_person(ve_ctx, name="Seed Person") -> str:
     pid = ve_models.new_id()
     ve_ctx.execute(
         "INSERT INTO persons (id, name, role, relationship_type, contact_info,"
-        " strengths, needs, wants, availability, notes, created_at, updated_at)"
+        " strengths, needs, wants, availability, notes, created_at, updated_at, user_id)"
         " VALUES (?, ?, '', '', '', '', '', '', '', '', '2026-01-01T00:00:00Z',"
-        " '2026-01-01T00:00:00Z')",
+        " '2026-01-01T00:00:00Z', 'test-user-a')",
         (pid, name),
     )
     ve_ctx.commit()
@@ -92,9 +92,9 @@ def _seed_asset(ve_ctx, name="Seed Asset") -> str:
     ve_ctx.execute(
         "INSERT INTO assets (id, name, asset_type, owner_id, status, availability,"
         " cost, time_availability, linked_idea_ids, linked_initiative_ids,"
-        " linked_project_ids, notes, created_at, updated_at)"
+        " linked_project_ids, notes, created_at, updated_at, user_id)"
         " VALUES (?, ?, '', NULL, '', '', '', '', '[]', '[]', '[]', '',"
-        " '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        " '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z', 'test-user-a')",
         (aid, name),
     )
     ve_ctx.commit()
@@ -104,8 +104,8 @@ def _seed_asset(ve_ctx, name="Seed Asset") -> str:
 def _seed_capacity(ve_ctx, person_id: str, hours: float = 10.0) -> None:
     ve_ctx.execute(
         "INSERT INTO capacity_profiles (person_id, weekly_capacity_hours,"
-        " created_at, updated_at) VALUES (?, ?, '2026-01-01T00:00:00Z',"
-        " '2026-01-01T00:00:00Z')",
+        " created_at, updated_at, user_id) VALUES (?, ?, '2026-01-01T00:00:00Z',"
+        " '2026-01-01T00:00:00Z', 'test-user-a')",
         (person_id, hours),
     )
     ve_ctx.commit()

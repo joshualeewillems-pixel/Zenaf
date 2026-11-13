@@ -213,7 +213,10 @@ export function applyCairnMode(
 /**
  * Expand a cairn: members fan out around the anchor (the cairn's current
  * position), keeping their relative layout offsets. Members are tagged
- * `expandedFromCairn` so a long-press on any of them collapses back.
+ * `expandedFromCairn` so the view can tell a fanned member from a free
+ * stone: a long-press on a member opens that stone's data (it no longer
+ * collapses the cairn — the collapse path lives on the stone sheet), and
+ * drag positions are tracked per-cairn while the fan is open.
  */
 export function expandCairn(
   nodes: Node<MapNodePayload>[],
@@ -282,22 +285,26 @@ export function branchAnchorForCairn(
 }
 
 export type StoneLongPressTarget =
-  | { action: 'collapseCairn'; cairnId: string }
+  | { action: 'openStoneData'; cairnId: string }
   | { action: 'toggleGardenStack'; treeId: string }
   | { action: 'none' }
 
 /**
- * What a long-press on a stone should do. Expanded members collapse their
- * own cairn back; an initiative (tree) stone toggles that initiative's
- * stack — its children as the pile on its stone vs the full subtree. Everything
- * else: no long-press action, so tap/drag behavior is untouched.
+ * What a long-press on a stone should do (founder gesture contract,
+ * 2026-11-12). A member of an already-fanned cairn opens its own data —
+ * the same selection a tap produces — instead of collapsing the cairn:
+ * a hold means "show me this stone", and collapsing is the stone sheet's
+ * job now ("Stack back into cairn"). An initiative (tree) stone toggles
+ * that initiative's garden stack — its children as the pile on its stone
+ * vs the full subtree. Everything else: no long-press action, so
+ * tap/drag behavior is untouched.
  */
 export function longPressTargetFor(
   kind: MapNodePayload['kind'],
   expandedFromCairn: string | null,
   nodeId: string,
 ): StoneLongPressTarget {
-  if (expandedFromCairn) return { action: 'collapseCairn', cairnId: expandedFromCairn }
+  if (expandedFromCairn) return { action: 'openStoneData', cairnId: expandedFromCairn }
   if (kind === 'tree') return { action: 'toggleGardenStack', treeId: nodeId }
   return { action: 'none' }
 }

@@ -34,10 +34,11 @@ const handleClass =
 /**
  * One symbolic stone per node: a single SVG (river-stone silhouette +
  * growth glyph + urgency ring + project color wash) with the label block
- * beneath. Long-press collapses an expanded cairn member back into its
- * cairn; long-press on the initiative (tree) stone toggles the whole-garden
- * stack — the pile on its own stone vs the full garden; tap keeps the existing
- * select/focus behavior.
+ * beneath. Long-press on a member of an already-fanned cairn opens that
+ * stone's data (the same selection a tap produces; collapsing the cairn
+ * lives on the stone sheet); long-press on the initiative (tree) stone
+ * toggles the whole-garden stack — the pile on its own stone vs the full
+ * garden; tap keeps the existing select/focus behavior.
  */
 export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const labelTone = stoneTextTone(data.kind)
@@ -50,13 +51,13 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const layoutPx = mapEntityNodeLayoutPx(data.kind)
   const wash = washColorFor(washKeyForPayload(data))
 
-  const { onToggleCairn, onToggleGardenStack } = useCairnInteraction()
+  const { onToggleGardenStack, onOpenStoneData } = useCairnInteraction()
   const expandedFromCairn = (data as { expandedFromCairn?: string }).expandedFromCairn ?? null
   const target = longPressTargetFor(data.kind, expandedFromCairn, id)
 
   const lp = useLongPress(
-    target.action === 'collapseCairn'
-      ? () => onToggleCairn(target.cairnId)
+    target.action === 'openStoneData'
+      ? () => onOpenStoneData(id)
       : target.action === 'toggleGardenStack'
         ? () => onToggleGardenStack(target.treeId)
         : null,

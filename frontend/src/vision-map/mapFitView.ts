@@ -2,8 +2,8 @@ import type { XYPosition } from '@xyflow/react'
 import { MAP_ENTITY_FALLBACK_LAYOUT_PX } from './mapEntityNodeLayout'
 
 /**
- * Fit-all helpers for the Vision map open view — pure, so the open behavior
- * is testable without mounting React Flow.
+ * Fit helpers for the Vision map — pure, so the open/fit behavior is
+ * testable without mounting React Flow.
  *
  * `fitZoomForBounds` mirrors the zoom math of the installed @xyflow/system
  * `getViewportForBounds` exactly (verified against node_modules source):
@@ -40,6 +40,25 @@ export function graphBounds(nodes: ReadonlyArray<BoundedNode>): GraphBounds | nu
   }
   if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return null
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
+}
+
+export type PopulatedNode = BoundedNode & {
+  /** React Flow node type ('entityMap' | 'cairn' | 'nestGroup' | …). */
+  type?: string | null
+  hidden?: boolean | null
+}
+
+/**
+ * Bounds over POPULATED nodes only — the rendered entities (trees, cairns,
+ * stones, seeds). Nest-group container boxes and any other non-entity
+ * scaffolding are excluded, as are hidden nodes: a big empty nest frame
+ * parked out past the garden must not drag the fit out to no man's land
+ * (founder, 2026-11-12: the fit control "isn't object aware of what's
+ * populated"). `graphBounds` stays the all-nodes variant for its other
+ * callers; this is the object-aware one the fit control uses.
+ */
+export function populatedBounds(nodes: ReadonlyArray<PopulatedNode>): GraphBounds | null {
+  return graphBounds(nodes.filter((n) => !n.hidden && n.type !== 'nestGroup'))
 }
 
 /**

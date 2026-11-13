@@ -332,3 +332,77 @@ def test_nav_seat_lookup_is_owner_scoped(client):
     r = c.get("/conversation/list", params={"seat": "mentor", "limit": 1})
     assert r.status_code == 200, r.text
     assert r.json()["conversations"] == []
+
+
+MEETING_MENTOR = "meeting-mentor-1"
+
+
+def _seed_meeting(store, user_id, cid=MEETING_MENTOR, seat="mentor"):
+    """A meeting conversation the way MeetingService leaves it: the
+    conversation row ensured with kind='meeting', messages from both
+    roles carrying the seat's archetype id."""
+    store.ensure_conversation(user_id, cid, kind="meeting")
+    store.append_message(user_id, cid, seat, "user", "meeting hello")
+    store.append_message(user_id, cid, seat, "voice", "meeting reply")
+
+
+def test_meetings_join_list_only_when_requested(client):
+    """include_meetings=true lists the caller's meeting in the same
+    shape; without the flag the talk listing is byte-identical to
+    before, meetings included in the fixture or not."""
+    c, store = client
+    store.append_message("user-alice", TALK_A, "mentor", "user", "a1")
+    store.append_message("user-alice", TALK_A, "mentor", "voice", "a2")
+    baseline = c.get("/conversation/list").json()["conversations"]
+    assert [x["conversation_id"] for x in baseline] == [TALK_A]
+
+    _seed_meeting(store, "user-alice")
+    _seed_meeting(store, "user-bob", cid="meeting-champion-1", seat="champion")
+
+    # Default call: unchanged, byte for byte — the meeting stays out.
+    after = c.get("/conversation/list").json()["conversations"]
+    assert after == baseline
+
+    # Opted-in call: the caller's meeting joins, identifiable as the
+    # seat's first meeting (kind + meeting-{seat}-{n} id), same shape.
+    r = c.get("/conversation/list", params={"include_meetings": True})
+    assert r.status_code == 200, r.text
+    convs = r.json()["conversations"]
+    by_id = {x["conversation_id"]: x for x in convs}
+    assert set(by_id) == {TALK_A, MEETING_MENTOR}  # Bob's meeting never leaks.
+    meeting = by_id[MEETING_MENTOR]
+    assert meeting["kind"] == "meeting"
+    assert meeting["seats"] == ["mentor"]
+    assert meeting["message_count"] == 2
+    assert meeting["last_message_preview"] == "meeting reply"
+    # The talk entry is untouched by the meeting's presence.
+    assert by_id[TALK_A] == baseline[0]
+
+
+def test_meetings_seat_scoped_surfaces(client):
+    """Seat History (seat + include_meetings) sees the seat's meeting;
+    the resume lookup (seat, no flag) still resolves talks only, even
+    when the meeting is the seat's newest conversation."""
+    c, store = client
+    _insert_message(store, "user-alice", TALK_A, "mentor", "2026-11-01T00:00:00+00:00")
+    _seed_meeting(store, "user-alice")  # appended now: newer than the talk
+
+    # Lookup semantics preserved: the newest TALK is the resume target.
+    r = c.get("/conversation/list", params={"seat": "mentor", "limit": 1})
+    assert r.status_code == 200, r.text
+    assert [x["conversation_id"] for x in r.json()["conversations"]] == [TALK_A]
+
+    # History semantics: the meeting appears, newest first.
+    r = c.get(
+        "/conversation/list",
+        params={"seat": "mentor", "limit": 10, "include_meetings": True},
+    )
+    assert r.status_code == 200, r.text
+    ids = [x["conversation_id"] for x in r.json()["conversations"]]
+    assert ids == [MEETING_MENTOR, TALK_A]
+    # Another seat's history never picks it up.
+    r = c.get(
+        "/conversation/list",
+        params={"seat": "champion", "limit": 10, "include_meetings": True},
+    )
+    assert r.json()["conversations"] == []

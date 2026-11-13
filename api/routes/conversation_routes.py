@@ -1610,6 +1610,7 @@ def upload_stuck_outcomes(
 def list_conversations(
     limit: int = Query(default=20, ge=1, le=100),
     seat: str | None = Query(default=None, max_length=64),
+    include_meetings: bool = Query(default=False),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """List the caller's talk conversations, newest message activity first.
@@ -1626,11 +1627,23 @@ def list_conversations(
     in are returned, via an EXISTS membership predicate applied
     before the limit (see ConversationStore.list_conversations).
     An absent or empty seat returns today's unfiltered list.
+
+    ``include_meetings=true`` (founder, 2026-11-12) additionally lists
+    the caller's ``meeting-*`` conversations — the seats' first
+    meetings — in the same shape (``kind`` is ``'meeting'``), so the
+    chat list can offer them and route a tap to the meeting view.
+    Browsable list surfaces opt in; the seat resume lookup does not,
+    so a meeting can never become a seat's auto-resumed talk. Calls
+    without the flag are unchanged.
     """
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
-    return {"conversations": _store().list_conversations(user_id, limit=limit, seat=seat)}
+    return {
+        "conversations": _store().list_conversations(
+            user_id, limit=limit, seat=seat, include_meetings=include_meetings
+        )
+    }
 
 
 @router.get("")

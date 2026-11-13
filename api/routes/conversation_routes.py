@@ -2106,8 +2106,22 @@ def get_suggestions(
     service = _service()
     store = service.store
 
+    # Permissions Slice 1 (B-S2): the thread summaries folded into
+    # suggestion minting below are steward-derived material, and a
+    # cached run carries their citations (thread_note / thread ids) —
+    # both are consumptions of steward_derivation. The check runs on
+    # every request, so a revocation takes effect at the next
+    # request, cached runs included; already-served suggestions are
+    # not recalled. Governed by steward_derivation ALONE (O-S1-5):
+    # this is same-conversation consumption of the user's own thread
+    # state, not cross-branch coordination, so no coordination flag
+    # is consulted here.
+    from local_ai.permissions.consumption import consumption_allowed
+
+    steward_ok = consumption_allowed(user_id, "steward_derivation")
+
     latest_id = store.latest_message_id(user_id, cid)
-    if latest_id:
+    if latest_id and steward_ok:
         cached = store.get_suggestion_run(user_id, cid)
         if cached and cached["up_to_message_id"] == latest_id:
             return {
@@ -2134,21 +2148,25 @@ def get_suggestions(
     # state out, which is exactly the pre-Phase 5 behavior. Threads
     # are the user's own state surfaced in their own conversation;
     # this is not cross-branch coordination, so no coordination flag
-    # gates it (the route itself is already current-user-only).
+    # gates it (the route itself is already current-user-only). The
+    # steward_derivation consumption check above does gate it
+    # (Slice 1, B-S2): when derivation is off the summaries are not
+    # built at all, and minting takes its existing no-threads path.
     thread_summaries = None
-    try:
-        from api.routes.steward_routes import get_narrative_store
-        from local_ai.narrative.read_model import active_thread_summaries
-
-        _narrative_store = get_narrative_store()
+    if steward_ok:
         try:
-            thread_summaries = active_thread_summaries(
-                _narrative_store.snapshot_for_read(user_id)
-            )
-        finally:
-            _narrative_store.close()
-    except Exception:
-        thread_summaries = None
+            from api.routes.steward_routes import get_narrative_store
+            from local_ai.narrative.read_model import active_thread_summaries
+
+            _narrative_store = get_narrative_store()
+            try:
+                thread_summaries = active_thread_summaries(
+                    _narrative_store.snapshot_for_read(user_id)
+                )
+            finally:
+                _narrative_store.close()
+        except Exception:
+            thread_summaries = None
 
     payload = sugg.generate_suggestions(
         turns, live_context, generate_fn=None, seat_names=seat_names,

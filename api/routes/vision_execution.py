@@ -357,7 +357,26 @@ def get_keystone_attention(current_user: dict = Depends(get_current_user)):
             if not _cid:
                 continue
             _by_seat.setdefault(_seat, []).append(_cid)
+        # Permissions Slice 1 (B-R4b): the invitation fields are the
+        # proactive, system-initiated surface of a seat's pending
+        # invitations, governed per-seat by R4 ("Intervene on my
+        # behalf" / seat-initiated contact). Where a seat's R4 stance
+        # is not Just do it, the fields are OMITTED for that seat —
+        # the same omitted-on-unavailable shape as the obligation
+        # precedent above. Checked per seat on every request, so a
+        # revocation takes effect at the next read. Per O-S1-3 this
+        # gates unsolicited initiation signals only: the invitation
+        # rows, the invitations list route, and the user joining from
+        # the conversation are untouched — explicit user invocation
+        # overrides initiation restrictions for that interaction, and
+        # never overrides derivation/coordination permissions.
+        from local_ai.permissions.consumption import consumption_allowed
+
         for _seat, _marker in markers.items():
+            if not consumption_allowed(
+                current_user["id"], "R4", scope_row=_seat
+            ):
+                continue
             _cids = _by_seat.get(_seat, [])
             # Most-recent-first (reverse of the store's created_at
             # ASC order), deduplicated: one entry per conversation.

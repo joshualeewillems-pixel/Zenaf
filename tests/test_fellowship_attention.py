@@ -83,6 +83,24 @@ def ve_ctx(tmp_path, monkeypatch):
     return {}
 
 
+@pytest.fixture(autouse=True)
+def _fellowship_derivation_on(ve_ctx):
+    """Permissions Slice 1: the attention read model now consults
+    fellowship_derivation at consumption (B-F1). These tests predate
+    the gate and assert marker behavior with derivation permitted —
+    opt both fixture users in. The gate itself is covered in
+    tests/test_permissions_slice1_consumption.py."""
+    import local_ai.vision_execution.storage as ve_store
+
+    for uid in (USER, OTHER):
+        ve_store.upsert_user_permissions_settings(
+            uid,
+            permissions={"fellowship_derivation": True},
+            consent_acknowledged=False,
+            consent_version="",
+        )
+
+
 def _obs(store, seat="conductor", interpretation="Noted.", **kwargs):
     kwargs.setdefault("user_id", USER)
     kwargs.setdefault("event_ref", "evt-1")
@@ -301,7 +319,18 @@ def test_unknown_seat_observation_is_not_dropped(store):
 
 
 def _make_user(email="ally@example.com"):
-    return ve.create_user_account(email, "pw-hunter2", "Ally")
+    user = ve.create_user_account(email, "pw-hunter2", "Ally")
+    # Permissions Slice 1 (B-F1): opt the created user into
+    # fellowship_derivation, matching the autouse fixture above.
+    import local_ai.vision_execution.storage as ve_store
+
+    ve_store.upsert_user_permissions_settings(
+        user["id"],
+        permissions={"fellowship_derivation": True},
+        consent_acknowledged=False,
+        consent_version="",
+    )
+    return user
 
 
 def test_keystone_markers_unchanged_without_observations(store, ve_ctx):

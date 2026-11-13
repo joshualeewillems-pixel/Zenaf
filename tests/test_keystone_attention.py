@@ -45,7 +45,21 @@ def ve_ctx(tmp_path, monkeypatch):
 
 
 def _make_user(email="ally@example.com"):
-    return ve.create_user_account(email, "pw-hunter2", "Ally")
+    user = ve.create_user_account(email, "pw-hunter2", "Ally")
+    # Permissions Slice 1: the attention read model now consults
+    # fellowship_derivation at consumption (B-F1). These tests
+    # predate the gate; run them with derivation permitted for the
+    # created user. The gate itself is covered in
+    # tests/test_permissions_slice1_consumption.py.
+    import local_ai.vision_execution.storage as ve_store
+
+    ve_store.upsert_user_permissions_settings(
+        user["id"],
+        permissions={"fellowship_derivation": True},
+        consent_acknowledged=False,
+        consent_version="",
+    )
+    return user
 
 
 def _seed(user_id):

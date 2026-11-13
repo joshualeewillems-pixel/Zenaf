@@ -5,7 +5,9 @@
  * an unmet seat keeps its letters, and the center you-node wears the
  * user's profile photo (the same avatar_data_url the header uses) instead
  * of the "YOU" text — falling back to the letters when no photo is set.
- * The "YOU · TAP FOR OPTIONS" pill is untouched.
+ * (The "YOU · TAP FOR OPTIONS" pill under the node and the footer text
+ * were removed by the founder later the same day — strandLogoNodes.test.ts
+ * covers those removals and the strand logos that landed with them.)
  *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
@@ -144,17 +146,18 @@ describe('seat logos on the tree', () => {
     await flush()
     expect(nodeImageHrefs()).toContain(YOU_PHOTO)
     expect(nodeInitials()).not.toContain('YOU')
-    // The pill below the node is untouched.
-    expect(container.textContent).toContain('YOU · TAP FOR OPTIONS')
+    // The pill below the node is gone (founder, 2026-11-12).
+    expect(container.textContent).not.toContain('TAP FOR OPTIONS')
   })
 
   it('without a photo the you-node falls back to the YOU letters', async () => {
     renderTree()
     await flush()
     const hrefs = nodeImageHrefs()
-    expect(hrefs).toHaveLength(1)
-    expect(hrefs[0]).toContain('mentor-logo')
+    // The met seat's logo plus the seven always-on strand logos.
+    expect(hrefs).toHaveLength(8)
+    expect(hrefs.some((h) => h.includes('mentor-logo'))).toBe(true)
     expect(nodeInitials()).toContain('YOU')
-    expect(container.textContent).toContain('YOU · TAP FOR OPTIONS')
+    expect(container.textContent).not.toContain('TAP FOR OPTIONS')
   })
 })

@@ -27,7 +27,7 @@
  * collapse even if the <style> block is ever stripped.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BRAID_ORDER, STRANDS, designStrandKeyForTaxonomy, strandColor, type DesignStrandKey, type StrandKey } from './strands'
+import { BRAID_ORDER, STRANDS, designStrandKeyForTaxonomy, resolveStrandLogo, strandColor, type DesignStrandKey, type StrandKey } from './strands'
 import {
   STOCK_ARCHETYPE_FALLBACK,
   dominantStrandKey,
@@ -1797,7 +1797,6 @@ export function LivingTreeView({
 .lavatar-input:focus{border-color:#e8c476;outline:none}
 .lavatar-err{font-style:normal;color:#e89a9a;font-size:11.5px;margin:6px 0 0}
 .lnarr{max-height:340px;overflow-y:auto}
-.lfoot{margin:10px 6px 0;text-align:center;font-size:10.5px;color:rgba(245,240,232,.45);line-height:1.6}
 .lrow-t{display:block;font-size:13.5px;font-weight:700;color:#f5f0e8}
 .lrow-d{display:block;font-size:11.5px;font-weight:400;color:rgba(245,240,232,.55);margin-top:2px;line-height:1.45}
 .llegacy{margin-top:6px}
@@ -1877,12 +1876,17 @@ export function LivingTreeView({
             const initialsText = isYou ? initials ?? 'YOU' : p.datum.name.split(' ')[0].slice(0, 2).toUpperCase()
             // Met seats wear their logo instead of their letters (the
             // founder's 2026-11-12 logo sheet); unmet seats keep letters.
+            // Strand roots wear their strand logo the same way (the
+            // founder's 2026-11-12 strand logo sheet) — always, with no
+            // reveal gate: strands have no undiscovered state.
             // The you-node wears the user's profile photo when one is set
             // — falling back to the letters if the photo fails to load.
             // Either image is circular-cropped to the node below.
             const seatLogo = p.datum.archetype ? resolveSeatLogo(p.datum.archetype) : null
+            const strandLogo =
+              p.side === 'dn' && p.datum.strand ? resolveStrandLogo(p.datum.strand) : null
             const youPhoto = isYou && userAvatarUrl && !youImgBroken ? userAvatarUrl : null
-            const nodeImage = seatLogo ?? youPhoto
+            const nodeImage = seatLogo ?? strandLogo ?? youPhoto
             // Keystone attention: a seat that wants the user carries a small
             // "!" badge at its top-right, in the app's amber attention
             // accent. Decorative — it lives inside the node's own <g>, so
@@ -2000,10 +2004,14 @@ export function LivingTreeView({
           {nodes.map((p) => {
             const col = strandCol(p)
             const isYou = p.side === 'c'
-            const label = isYou ? 'YOU · TAP FOR OPTIONS' : p.datum.name
-            const fs = isYou ? 8 : p.depth >= 3 ? 6.5 : 7.5
-            const rlx = isYou ? 0 : Math.cos(p.ang) * 36
-            const rly = isYou ? 56 : Math.sin(p.ang) * 36
+            // The you-node carries no label pill (founder, 2026-11-12):
+            // the photo node alone marks the center, and its tap target
+            // is the node itself (the pills never took clicks).
+            if (isYou) return null
+            const label = p.datum.name
+            const fs = p.depth >= 3 ? 6.5 : 7.5
+            const rlx = Math.cos(p.ang) * 36
+            const rly = Math.sin(p.ang) * 36
             const tw = label.length * fs * 0.56 + 14
             return (
               <g key={`lbl-${p.datum.id}`} opacity={p.op} style={{ pointerEvents: 'none' }}>
@@ -2056,10 +2064,6 @@ export function LivingTreeView({
           )}
         </div>
       )}
-      <div className="lfoot">
-        Training first, rent later —<br />
-        the tree is yours; the marketplace is a lens on it, one tap deep.
-      </div>
       <NodeSheet
         open={!!sheetNode}
         onClose={closeSheet}

@@ -6137,9 +6137,9 @@ def create_checklist_item(
         parent = _get_checklist_item_any(parent_id, user_id)
         if parent is None or parent["idea_id"] != idea_id:
             raise ValueError("parent item not found on this idea")
-    if person_id is not None and get_person(person_id) is None:
+    if person_id is not None and get_person(person_id, user_id) is None:
         raise ValueError("person not found")
-    if asset_id is not None and get_asset(asset_id) is None:
+    if asset_id is not None and get_asset(asset_id, user_id) is None:
         raise ValueError("asset not found")
     conn = get_connection()
     iid = M.new_id()
@@ -6242,9 +6242,9 @@ def update_checklist_item(
         return None
     if status is not None and status not in CHECKLIST_STATUSES:
         raise ValueError(f"unknown checklist status: {status!r}")
-    if person_id is not None and get_person(person_id) is None:
+    if person_id is not None and get_person(person_id, user_id) is None:
         raise ValueError("person not found")
-    if asset_id is not None and get_asset(asset_id) is None:
+    if asset_id is not None and get_asset(asset_id, user_id) is None:
         raise ValueError("asset not found")
     updates: list[str] = []
     args: list[Any] = []
@@ -8806,46 +8806,52 @@ def delete_task(task_id: str, user_id: str) -> bool:
 
 # --- Persons ---
 
-def list_persons() -> list[dict[str, Any]]:
+def list_persons(user_id: str) -> list[dict[str, Any]]:
+    _require_owner_id(user_id)
     conn = get_connection()
     cur = conn.execute(
         "SELECT id, name, role, relationship_type, contact_info, strengths, needs, wants, availability, "
-        "notes, created_at, updated_at FROM persons ORDER BY name"
+        "notes, created_at, updated_at, user_id FROM persons WHERE user_id = ? ORDER BY name",
+        (user_id,),
     )
     return [M.row_to_person(tuple(r)) for r in cur.fetchall()]
 
 
-def get_person(person_id: str) -> dict[str, Any] | None:
+def get_person(person_id: str, user_id: str) -> dict[str, Any] | None:
+    _require_owner_id(user_id)
     conn = get_connection()
     cur = conn.execute(
         "SELECT id, name, role, relationship_type, contact_info, strengths, needs, wants, availability, "
-        "notes, created_at, updated_at FROM persons WHERE id = ?",
-        (person_id,),
+        "notes, created_at, updated_at, user_id FROM persons WHERE id = ? AND user_id = ?",
+        (person_id, user_id),
     )
     row = cur.fetchone()
     return M.row_to_person(tuple(row)) if row else None
 
 
-def create_person(data: M.PersonCreate) -> dict[str, Any]:
+def create_person(data: M.PersonCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     pid = M.new_id()
     now = _now()
     conn.execute(
         """INSERT INTO persons (
           id, name, role, relationship_type, contact_info, strengths, needs, wants, availability,
-          notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+          notes, created_at, updated_at, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             pid, data.name, data.role, data.relationship_type, data.contact_info,
             data.strengths, data.needs, data.wants, data.availability, data.notes, now, now,
+            user_id,
         ),
     )
     conn.commit()
-    return get_person(pid) or {}
+    return get_person(pid, user_id) or {}
 
 
-def update_person(person_id: str, data: M.PersonUpdate) -> dict[str, Any] | None:
-    if get_person(person_id) is None:
+def update_person(person_id: str, data: M.PersonUpdate, user_id: str) -> dict[str, Any] | None:
+    _require_owner_id(user_id)
+    if get_person(person_id, user_id) is None:
         return None
     conn = get_connection()
     updates = []
@@ -8855,109 +8861,138 @@ def update_person(person_id: str, data: M.PersonUpdate) -> dict[str, Any] | None
             updates.append(f"{k} = ?")
             args.append(v)
     if not updates:
-        return get_person(person_id)
+        return get_person(person_id, user_id)
     updates.append("updated_at = ?")
     args.append(_now())
     args.append(person_id)
-    conn.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id = ?", args)
+    args.append(user_id)
+    conn.execute(f"UPDATE persons SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args)
     conn.commit()
-    return get_person(person_id)
+    return get_person(person_id, user_id)
 
 
-def delete_person(person_id: str) -> bool:
-    if get_person(person_id) is None:
+def delete_person(person_id: str, user_id: str) -> bool:
+    _require_owner_id(user_id)
+    if get_person(person_id, user_id) is None:
         return False
     conn = get_connection()
-    conn.execute("UPDATE initiatives SET owner_id = NULL WHERE owner_id = ?", (person_id,))
-    conn.execute("UPDATE projects SET owner_id = NULL WHERE owner_id = ?", (person_id,))
-    conn.execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id = ?", (person_id,))
-    conn.execute("UPDATE assets SET owner_id = NULL WHERE owner_id = ?", (person_id,))
-    conn.execute("DELETE FROM capacity_profiles WHERE person_id = ?", (person_id,))
-    conn.execute("DELETE FROM persons WHERE id = ?", (person_id,))
+    # Owner-scoped cascade: only this user's rows that reference the
+    # person are detached. A person id is a UUID, but the scoping
+    # predicate is the discipline, not the collision odds.
+    conn.execute("UPDATE initiatives SET owner_id = NULL WHERE owner_id = ? AND user_id = ?", (person_id, user_id))
+    conn.execute("UPDATE projects SET owner_id = NULL WHERE owner_id = ? AND user_id = ?", (person_id, user_id))
+    conn.execute("UPDATE tasks SET assignee_id = NULL WHERE assignee_id = ? AND user_id = ?", (person_id, user_id))
+    conn.execute("UPDATE assets SET owner_id = NULL WHERE owner_id = ? AND user_id = ?", (person_id, user_id))
+    conn.execute("DELETE FROM capacity_profiles WHERE person_id = ? AND user_id = ?", (person_id, user_id))
+    conn.execute("DELETE FROM persons WHERE id = ? AND user_id = ?", (person_id, user_id))
     conn.commit()
     return True
 
 
 # --- Capacity profiles ---
 
-def list_capacity_profiles() -> list[dict[str, Any]]:
+def list_capacity_profiles(user_id: str) -> list[dict[str, Any]]:
+    _require_owner_id(user_id)
     conn = get_connection()
     cur = conn.execute(
-        "SELECT person_id, weekly_capacity_hours, created_at, updated_at FROM capacity_profiles"
+        "SELECT person_id, weekly_capacity_hours, created_at, updated_at, user_id"
+        " FROM capacity_profiles WHERE user_id = ?",
+        (user_id,),
     )
     return [M.row_to_capacity(tuple(r)) for r in cur.fetchall()]
 
 
-def get_capacity_profile(person_id: str) -> dict[str, Any] | None:
+def get_capacity_profile(person_id: str, user_id: str) -> dict[str, Any] | None:
+    _require_owner_id(user_id)
     conn = get_connection()
     cur = conn.execute(
-        "SELECT person_id, weekly_capacity_hours, created_at, updated_at FROM capacity_profiles WHERE person_id = ?",
-        (person_id,),
+        "SELECT person_id, weekly_capacity_hours, created_at, updated_at, user_id"
+        " FROM capacity_profiles WHERE person_id = ? AND user_id = ?",
+        (person_id, user_id),
     )
     row = cur.fetchone()
     return M.row_to_capacity(tuple(row)) if row else None
 
 
-def upsert_capacity_profile(data: M.CapacityProfileUpsert) -> dict[str, Any]:
+def upsert_capacity_profile(data: M.CapacityProfileUpsert, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
+    # Ownership check (brief §3.2): the profile is attributed WITH its
+    # person, so the person must belong to the session user first.
+    if get_person(data.person_id, user_id) is None:
+        raise ValueError("Person not found")
     conn = get_connection()
     now = _now()
     conn.execute(
-        """INSERT INTO capacity_profiles (person_id, weekly_capacity_hours, created_at, updated_at)
-           VALUES (?, ?, ?, ?)
-           ON CONFLICT(person_id) DO UPDATE SET weekly_capacity_hours = ?, updated_at = ?""",
-        (data.person_id, data.weekly_capacity_hours, now, now, data.weekly_capacity_hours, now),
+        """INSERT INTO capacity_profiles (person_id, weekly_capacity_hours, created_at, updated_at, user_id)
+           VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT(person_id) DO UPDATE SET weekly_capacity_hours = ?, user_id = ?, updated_at = ?""",
+        (data.person_id, data.weekly_capacity_hours, now, now, user_id,
+         data.weekly_capacity_hours, user_id, now),
     )
     conn.commit()
-    return get_capacity_profile(data.person_id) or {}
+    return get_capacity_profile(data.person_id, user_id) or {}
 
 
 # --- Assets ---
 
-def list_assets() -> list[dict[str, Any]]:
+def list_assets(user_id: str) -> list[dict[str, Any]]:
+    _require_owner_id(user_id)
     conn = get_connection()
     cur = conn.execute(
         "SELECT id, name, asset_type, owner_id, status, availability, cost, time_availability, "
-        "linked_idea_ids, linked_initiative_ids, linked_project_ids, notes, created_at, updated_at "
-        "FROM assets ORDER BY name"
+        "linked_idea_ids, linked_initiative_ids, linked_project_ids, notes, created_at, updated_at, user_id "
+        "FROM assets WHERE user_id = ? ORDER BY name",
+        (user_id,),
     )
     return [M.row_to_asset(tuple(r)) for r in cur.fetchall()]
 
 
-def get_asset(asset_id: str) -> dict[str, Any] | None:
+def get_asset(asset_id: str, user_id: str) -> dict[str, Any] | None:
+    _require_owner_id(user_id)
     conn = get_connection()
     cur = conn.execute(
         "SELECT id, name, asset_type, owner_id, status, availability, cost, time_availability, "
-        "linked_idea_ids, linked_initiative_ids, linked_project_ids, notes, created_at, updated_at "
-        "FROM assets WHERE id = ?",
-        (asset_id,),
+        "linked_idea_ids, linked_initiative_ids, linked_project_ids, notes, created_at, updated_at, user_id "
+        "FROM assets WHERE id = ? AND user_id = ?",
+        (asset_id, user_id),
     )
     row = cur.fetchone()
     return M.row_to_asset(tuple(row)) if row else None
 
 
-def create_asset(data: M.AssetCreate) -> dict[str, Any]:
+def create_asset(data: M.AssetCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
+    # owner_id is a person FK, never a scoping predicate and never the
+    # source of the asset's owner (brief §2.4): the asset is attributed
+    # to the session user. A referenced person must belong to the
+    # session user; another user's person cannot be referenced.
+    if data.owner_id is not None and get_person(data.owner_id, user_id) is None:
+        raise ValueError("Person not found")
     conn = get_connection()
     aid = M.new_id()
     now = _now()
     conn.execute(
         """INSERT INTO assets (
           id, name, asset_type, owner_id, status, availability, cost, time_availability,
-          linked_idea_ids, linked_initiative_ids, linked_project_ids, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+          linked_idea_ids, linked_initiative_ids, linked_project_ids, notes, created_at, updated_at, user_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             aid, data.name, data.asset_type, data.owner_id, data.status, data.availability,
             data.cost, data.time_availability, M._json_dumps_list(data.linked_idea_ids),
             M._json_dumps_list(data.linked_initiative_ids), M._json_dumps_list(data.linked_project_ids),
-            data.notes, now, now,
+            data.notes, now, now, user_id,
         ),
     )
     conn.commit()
-    return get_asset(aid) or {}
+    return get_asset(aid, user_id) or {}
 
 
-def update_asset(asset_id: str, data: M.AssetUpdate) -> dict[str, Any] | None:
-    if get_asset(asset_id) is None:
+def update_asset(asset_id: str, data: M.AssetUpdate, user_id: str) -> dict[str, Any] | None:
+    _require_owner_id(user_id)
+    if get_asset(asset_id, user_id) is None:
         return None
+    if data.owner_id is not None and get_person(data.owner_id, user_id) is None:
+        raise ValueError("Person not found")
     conn = get_connection()
     updates = []
     args = []
@@ -8970,20 +9005,22 @@ def update_asset(asset_id: str, data: M.AssetUpdate) -> dict[str, Any] | None:
                 updates.append(f"{k} = ?")
                 args.append(v)
     if not updates:
-        return get_asset(asset_id)
+        return get_asset(asset_id, user_id)
     updates.append("updated_at = ?")
     args.append(_now())
     args.append(asset_id)
-    conn.execute(f"UPDATE assets SET {', '.join(updates)} WHERE id = ?", args)
+    args.append(user_id)
+    conn.execute(f"UPDATE assets SET {', '.join(updates)} WHERE id = ? AND user_id = ?", args)
     conn.commit()
-    return get_asset(asset_id)
+    return get_asset(asset_id, user_id)
 
 
-def delete_asset(asset_id: str) -> bool:
-    if get_asset(asset_id) is None:
+def delete_asset(asset_id: str, user_id: str) -> bool:
+    _require_owner_id(user_id)
+    if get_asset(asset_id, user_id) is None:
         return False
     conn = get_connection()
-    conn.execute("DELETE FROM assets WHERE id = ?", (asset_id,))
+    conn.execute("DELETE FROM assets WHERE id = ? AND user_id = ?", (asset_id, user_id))
     conn.commit()
     return True
 

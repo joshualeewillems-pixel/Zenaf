@@ -1,31 +1,21 @@
 import { useEffect, useState } from 'react'
+import { USER_WEAVE_COLOR } from '../council/colors'
 
 /**
  * Shared voice-color + user-weave rendering for council voices.
  *
- * - VOICE_COLORS mirrors local_ai/council/archetypes.py VOICE_COLORS.
- *   The backend /demo/voices endpoint is the source of truth at runtime;
- *   this map is the offline fallback.
+ * - Seat/strand colors live in `../council/colors` (single source of truth,
+ *   mirroring `local_ai/council/archetypes.py` VOICE_COLORS). The backend
+ *   /demo/voices endpoint is the source of truth at runtime; the colors
+ *   module is the offline fallback.
  * - WeaveText renders [[u]]...[[/u]] markers (visitor/user words woven into
  *   a voice's reply) as spans in USER_WEAVE_COLOR.
  */
 
-export const VOICE_COLORS: Record<string, string> = {
-  mentor: '#92b692',
-  champion: '#e24e4e',
-  guardian: '#ac7c5b',
-  maverick: '#a55cce',
-  ambassador: '#5c9cea',
-  conductor: '#8892c3',
-  skeptic: '#a29ac1',
-}
-
-export const USER_WEAVE_COLOR = '#e8a33d'
-
-export function voiceColor(id: string): string {
-  return VOICE_COLORS[(id || '').trim().toLowerCase()] ?? '#8892c3'
-}
-
+// Voice colors are defined once in `../council/colors` (single source of
+// truth); re-exported here so existing imports from this module keep working.
+export { DEFAULT_SEAT_COLOR, VOICE_COLORS, voiceColor } from '../council/colors'
+export { USER_WEAVE_COLOR }
 export type DemoVoice = {
   id: string
   name: string

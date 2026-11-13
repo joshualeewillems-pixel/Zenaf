@@ -18,11 +18,11 @@
  */
 import type { CSSProperties } from 'react'
 import type { ConditionSeverity, GrowthState, MapEntityKind, MapEntityRef } from './ontology'
+import { STRAND_PALETTE } from '../council/colors'
 
 export const STONE_SVG_VIEWBOX = '0 0 64 64'
 
-/** Seven strand colors (living-tree/strands.ts) — the garden's palette. */
-const STRAND_PALETTE = ['#e7aa89', '#91b6d1', '#edc87c', '#dea1b8', '#b3c98d', '#bfa1de', '#88b899']
+/** Seven strand colors come from `../council/colors` (STRAND_PALETTE) — the garden's palette. */
 const NEUTRAL_WASH = '#a8a29e'
 const URGENCY_RING = '#d9a441'
 const PULSE_RING = '#86b89a'

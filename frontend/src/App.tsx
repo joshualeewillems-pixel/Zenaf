@@ -20,8 +20,7 @@ import {
   isUserDefined,
   createAgent,
 } from './perspectives/types'
-import { apiBase } from './apiBase'; import { iconHintFor } from './perspectives/roleIcons'
-import { AvatarDisplay } from './components/AvatarDisplay'
+import { apiBase } from './apiBase'
 import {
   PerspectivesView,
   AgentDetailPanel,
@@ -78,23 +77,15 @@ import {
   deriveInjectPreviewQuestionText,
   inferInjectPreviewOrigin,
   metaForSeededGuideContent,
-  resolveGuideQuestionMeta,
 } from './developmentalGuidance/guideQuestionDisplay'
-import { InlineThreadGuideCard } from './conversation/InlineThreadGuideCard'
-import { ThreadInlineGuideStack } from './conversation/ThreadInlineGuideStack'
 import { appendChatDroppedFiles, dataTransferHasFiles } from './conversation/chatFileDrop'
-import { SubjectHandoffReview } from './conversation/SubjectHandoffReview'
 import {
   councilPhaseDetail,
   deriveMediationPanelMode,
-  mainViewLabel,
-  mediationPanelHeadline,
-  workspaceRunModeLabel,
   type CouncilStreamPhase,
   type CouncilTransportTimings,
   type MediationThreadItemKind,
 } from './conversation/mediationSurfaceTypes'
-import { MediationFlowHint } from './flow/MediationFlowHint'
 import type { ConversationSubject } from './conversation/conversationTrunkTypes'
 import {
   contentForSuggestionExtraction,
@@ -117,7 +108,10 @@ import {
 import { VISION_EXECUTION_API, type CoreProfile } from './vision-execution/types'
 import { canonicalCoreProfileId, coreProfileInfluencePickLabel } from './vision-execution/canonicalCoreProfile'
 import { ZenafPresence } from './components/ZenafPresence'
-import { EntityMentionText, type EntityMentionOpenPayload } from './components/EntityMentionText'
+// NOTE (dead-code removal, 2026-11-12): EntityMentionText was removed as
+// unused, but the type EntityMentionOpenPayload from the same import is
+// still used — the import stays for the type only.
+import { type EntityMentionOpenPayload } from './components/EntityMentionText'
 import { enrichScopedDigressionLabel } from './council/enrichScopedDigressionLabel'
 import { postCouncilInsightRecognition } from './vision-execution/recognitionDecisions'
 import { BrandStructuredProfilePanel, CoreHowItWorksPanel } from './vision-execution/coreProfilePanels'
@@ -164,7 +158,6 @@ import {
   isKnownMandateId,
 } from './mandateSeatAccent'
 import { CouncilMandatePicker, CouncilPerspectivePicker } from './council/CouncilSeatPickers'
-import { CouncilPersonalityModeSelector } from './council/CouncilPersonalityModeSelector'
 import {
   fetchCouncilPersonalityMode,
   saveCouncilPersonalityMode,
@@ -197,7 +190,6 @@ import { BuildCouncilSubmitView } from './build-council/BuildCouncilSubmitView'
 import {
   fetchLLMSettings,
   fetchUserPermissionsSettings,
-  saveCouncilSeatLlm,
   saveUserPermissionsSettings,
   type ProviderStatusRow,
   type UserPermissionFlags,
@@ -304,151 +296,6 @@ function postWorkspaceLearningFromRef(
   })
 }
 
-function CouncilSynthesisIntegrityNote({
-  includeSynthesis,
-  state,
-  warning,
-  envelope,
-}: {
-  includeSynthesis: boolean
-  state: CouncilSynthesisIntegrityState | null
-  warning: string | null
-  envelope: CouncilIntegrityEnvelopePayload | null
-}) {
-  if (!includeSynthesis || !state) return null
-
-  const primaryInPacket = state !== 'weak'
-  let synthesisAnchorLabel: string
-  if (state === 'weak') synthesisAnchorLabel = 'Not evaluated'
-  else if (state === 'anchored') synthesisAnchorLabel = 'Detected (heuristic)'
-  else synthesisAnchorLabel = 'Not detected (heuristic)'
-
-  const policies = envelope?.policies_applied?.filter(Boolean) ?? []
-  const runId = envelope?.provenance?.run_id
-  const mode = (envelope?.integrity_mode ?? envelope?.default_mode ?? 'bounded').trim() || 'bounded'
-  const synthesisType = (envelope?.synthesis_type ?? null)?.trim() || null
-  const refs = envelope?.subject_refs ?? []
-  const refsLine =
-    refs.length === 0
-      ? '—'
-      : refs
-          .map((r) => [r.entity_type, r.entity_id].filter(Boolean).join(' ') || '—')
-          .slice(0, 4)
-          .join(' · ')
-  const supportExplain = explainSynthesisSupportStatus(envelope?.synthesis_support_status)
-  const combined = deriveCouncilSynthesisCombinedSummary(state, warning, envelope?.synthesis_support_status)
-  const combinedPresentation = councilSynthesisCombinedPresentation(combined)
-
-  return (
-    <div className="mt-2 pt-2 border-t border-stone-700/60 text-[11px] text-stone-500">
-      <div className="mb-2 pb-2 border-b border-stone-700/40">
-        <span className="text-stone-500">Combined reading: </span>
-        <span className={combinedPresentation.labelClassName}>{labelCouncilSynthesisCombinedSummary(combined)}</span>
-        <p className={`mt-1 text-[10px] leading-snug ${combinedPresentation.descriptionClassName}`}>
-          {councilSynthesisCombinedSummaryLine(combined)}
-        </p>
-      </div>
-      <div>
-        <span>Synthesis integrity: </span>
-        <span className={`font-medium ${councilSynthesisIntegrityClass(state)}`}>{labelCouncilSynthesisIntegrity(state)}</span>
-        {warning === 'missing_primary_anchor' ? (
-          <span className="block text-amber-400/85 mt-1">
-            Note: the closing summary may not tie back clearly to your main topic. Ask for a tighter recap if that matters.
-          </span>
-        ) : warning === 'synthesis_failure_template' ? (
-          <span className="block text-amber-300/85 mt-1">
-            Note: the closing summary looked like a system message rather than a normal answer; treat anchor checks as approximate.
-          </span>
-        ) : null}
-      </div>
-      <details className="mt-1.5 group">
-        <summary className="cursor-pointer text-stone-400 hover:text-stone-200 list-none flex items-center gap-1 select-none [&::-webkit-details-marker]:hidden">
-          <span className="text-[10px] uppercase tracking-wide text-stone-500 group-open:text-stone-400">
-            Why this rating?
-          </span>
-          <span aria-hidden className="text-stone-600 group-open:rotate-90 transition-transform inline-block">
-            ›
-          </span>
-        </summary>
-        <div className="mt-2 pl-2 border-l border-stone-600/80 space-y-2 text-stone-400">
-          <p className="text-[10px] text-stone-500 leading-snug">
-            The headline blends two checks: whether the summary stayed on your main topic, and how well different voices
-            supported it. Technical details are below.
-          </p>
-          <p className="text-stone-400 leading-snug">{councilSynthesisWhyLine(state)}</p>
-          <dl className="space-y-1.5">
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Combined summary (derived)</dt>
-              <dd>
-                <span className={combinedPresentation.labelClassName}>{labelCouncilSynthesisCombinedSummary(combined)}</span>
-                <span className="block font-mono text-[10px] text-stone-500/75 mt-0.5">{combined}</span>
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Integrity mode</dt>
-              <dd className="text-stone-300 font-mono text-[10px]">{mode}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Synthesis type</dt>
-              <dd className="text-stone-300 font-mono text-[10px]">{synthesisType ?? 'normal'}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Main topic in this run&apos;s context</dt>
-              <dd className="text-stone-300">
-                {primaryInPacket ? 'Included as the main focus' : 'Light context only — grounding is weaker'}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Main topic reflected in closing summary</dt>
-              <dd className="text-stone-300">{synthesisAnchorLabel}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">How voices supported the answer (heuristic)</dt>
-              <dd className="text-stone-300">
-                {supportExplain ? (
-                  <>
-                    <span className="font-medium text-[11px]">{supportExplain.label}</span>
-                    <span className="block text-stone-400 mt-0.5 text-[10px] leading-snug">{supportExplain.body}</span>
-                  </>
-                ) : (
-                  <span className="text-stone-500 font-mono text-[10px]">—</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Integrity warning</dt>
-              <dd className="text-stone-300 font-mono text-[10px]">{warning ?? '—'}</dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Policies applied</dt>
-              <dd className="text-stone-300">
-                {policies.length > 0 ? (
-                  <ul className="list-disc pl-4 space-y-0.5 font-mono text-[10px] text-stone-400">
-                    {policies.map((p, idx) => (
-                      <li key={`${idx}-${p}`}>{p}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-stone-500">Not in stream payload</span>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Run id</dt>
-              <dd className="text-stone-300 font-mono text-[10px]" title={runId ?? undefined}>
-                {shortIntegrityRunId(runId)}
-              </dd>
-            </div>
-            <div>
-              <dt className="text-stone-500 text-[10px] uppercase tracking-wide">Related items (focus)</dt>
-              <dd className="text-stone-300 text-[10px] leading-snug break-words">{refsLine}</dd>
-            </div>
-          </dl>
-        </div>
-      </details>
-    </div>
-  )
-}
 
 /** Map workflow JSON panel modes → trace intents for copy / outcome attribution. */
 /** Syncs VE field focus into a ref for council preflight (must render under VisionExecutionFocusProvider). */
@@ -569,83 +416,8 @@ function useWorkspaceOrVeResonanceEntity(
   }, [mainView, ve?.focus?.core?.entity_id, ve?.focus?.core?.entity_type, folderPath, lastFolderPath])
 }
 
-function AgentChatResonanceSlider({
-  responseId,
-  agentLabel,
-  mainView,
-  folderPath,
-  lastFolderPath,
-  folderWorkflow,
-}: {
-  responseId: string
-  agentLabel: string | undefined
-  mainView: MainViewForResonance
-  folderPath: string
-  lastFolderPath: string
-  folderWorkflow?: boolean
-}) {
-  const { entityType, entityId } = useWorkspaceOrVeResonanceEntity(mainView, folderPath, lastFolderPath)
-  const { seatId, contextKind } = chatResonanceIntegration(agentLabel, { folderWorkflow })
-  return (
-    <ResonanceSlider
-      responseId={responseId}
-      seatId={seatId}
-      contextKind={contextKind}
-      entityType={entityType}
-      entityId={entityId}
-    />
-  )
-}
 
 /** Council thread: per-seat resonance sliders; VE field focus on Vision & Execution, else workspace + folder hash. */
-function CouncilTranscriptResonanceBridge({
-  text,
-  stripZenafSynthesis,
-  decorateSeatHeaders,
-  responseIdPrefix,
-  mainView,
-  folderPath,
-  lastFolderPath,
-  agentLabelForResonance,
-  folderWorkflowResonance,
-  integrationCommit,
-  pendingIntegration,
-  onOpenEntity,
-}: {
-  text: string
-  stripZenafSynthesis: boolean
-  decorateSeatHeaders: boolean
-  responseIdPrefix: string
-  mainView: MainViewForResonance
-  folderPath: string
-  lastFolderPath: string
-  agentLabelForResonance?: string
-  folderWorkflowResonance?: boolean
-  integrationCommit?: IntegrationCommitPayload | null
-  pendingIntegration?: PendingIntegrationPayload | null
-  onOpenEntity?: (p: EntityMentionOpenPayload) => void
-}) {
-  const { entityType, entityId } = useWorkspaceOrVeResonanceEntity(mainView, folderPath, lastFolderPath)
-  const { seatId, contextKind } = chatResonanceIntegration(agentLabelForResonance, {
-    folderWorkflow: folderWorkflowResonance,
-  })
-
-  return (
-    <CouncilTranscriptWithResonance
-      text={text}
-      stripZenafSynthesis={stripZenafSynthesis}
-      decorateSeatHeaders={decorateSeatHeaders}
-      responseIdPrefix={responseIdPrefix}
-      entityType={entityType}
-      entityId={entityId}
-      integratedSeatId={seatId}
-      integratedContextKind={contextKind}
-      integrationCommit={integrationCommit}
-      pendingIntegration={pendingIntegration}
-      onOpenEntity={onOpenEntity}
-    />
-  )
-}
 
 /** Single top strip: focus tools + (when idle) workspace “where” crumbs. Renders under VisionExecutionFocusProvider. */
 function UniversalContextStrip({
@@ -749,141 +521,6 @@ function focusTextareaRefEnd(textareaRef: Ref<HTMLTextAreaElement>) {
 }
 
 /** Council “Your reply” — registers focus/selection for record + insert; voice still uses DOM-first when the textarea stays active. Renders under VisionExecutionFocusProvider. */
-function CouncilQuestionTextarea({
-  value,
-  onChange,
-  textareaRef,
-  onInput,
-  onKeyDown,
-  placeholder,
-  className,
-  onAfterFilesDropped,
-}: {
-  value: string
-  onChange: (e: ChangeEvent<HTMLTextAreaElement>) => void
-  textareaRef: Ref<HTMLTextAreaElement>
-  onInput: () => void
-  onKeyDown?: (e: KeyboardEvent<HTMLTextAreaElement>) => void
-  placeholder: string
-  className: string
-  onAfterFilesDropped?: () => void
-}) {
-  const ctx = useVisionExecutionFocusOptional()
-  const valueRef = useRef(value)
-  valueRef.current = value
-  const [dragActive, setDragActive] = useState(false)
-
-  const onComposerDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    if (!dataTransferHasFiles(e.dataTransfer)) return
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'copy'
-    setDragActive(true)
-  }, [])
-
-  const onComposerDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    e.stopPropagation()
-    const t = e.currentTarget
-    const rel = e.relatedTarget as Node | null
-    if (rel && t.contains(rel)) return
-    setDragActive(false)
-  }, [])
-
-  const onComposerDrop = useCallback(
-    async (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault()
-      e.stopPropagation()
-      setDragActive(false)
-      const files = e.dataTransfer.files
-      if (!files?.length) return
-      const next = await appendChatDroppedFiles(valueRef.current, files)
-      onChange({ target: { value: next } } as ChangeEvent<HTMLTextAreaElement>)
-      focusTextareaRefEnd(textareaRef)
-      onAfterFilesDropped?.()
-    },
-    [onChange, onAfterFilesDropped, textareaRef],
-  )
-
-  const dropZoneClass = dragActive
-    ? 'ring-2 ring-amber-500/75 ring-offset-2 ring-offset-stone-900 rounded-lg'
-    : ''
-
-  const desc = useMemo(
-    () =>
-      ({
-        surface: 'workspace' as const,
-        entity_type: 'council' as const,
-        entity_id: COUNCIL_REPLY_FOCUS_ID,
-        field_key: 'reply',
-        field_label: 'Council reply',
-        field_kind: 'idea_body' as const,
-      }) as const,
-    [],
-  )
-
-  useEffect(() => {
-    if (!ctx) return
-    const getter = () => valueRef.current
-    ctx.registerFieldTextGetter(COUNCIL_REPLY_FOCUS_FIELD_KEY, getter)
-    return () => ctx.unregisterFieldTextGetter(COUNCIL_REPLY_FOCUS_FIELD_KEY)
-  }, [ctx])
-
-  const ta = (
-    <textarea
-      data-testid="council-question-input"
-      data-zenaf-voice-insert="council-question"
-      ref={textareaRef}
-      value={value}
-      onChange={onChange}
-      onInput={onInput}
-      onKeyDown={onKeyDown}
-      placeholder={placeholder}
-      rows={1}
-      className={className}
-    />
-  )
-
-  if (!ctx) {
-    return (
-      <div
-        className={`min-w-0 ${dropZoneClass}`}
-        onDragOver={onComposerDragOver}
-        onDragLeave={onComposerDragLeave}
-        onDrop={(e) => void onComposerDrop(e)}
-      >
-        {ta}
-      </div>
-    )
-  }
-
-  const { notifyFieldFocused, notifyFieldBlurred, recordFieldSelection } = ctx
-
-  const syncSelection = useCallback(
-    (e: SyntheticEvent) => {
-      const t = e.target
-      if (!(t instanceof HTMLTextAreaElement)) return
-      recordFieldSelection(COUNCIL_REPLY_FOCUS_FIELD_KEY, t.selectionStart ?? 0, t.selectionEnd ?? 0)
-    },
-    [recordFieldSelection],
-  )
-
-  return (
-    <div
-      className={`min-w-0 ${dropZoneClass}`}
-      onFocusCapture={() => notifyFieldFocused(desc)}
-      onBlurCapture={() => notifyFieldBlurred()}
-      onSelectCapture={syncSelection}
-      onKeyUpCapture={syncSelection}
-      onClickCapture={syncSelection}
-      onDragOver={onComposerDragOver}
-      onDragLeave={onComposerDragLeave}
-      onDrop={(e) => void onComposerDrop(e)}
-    >
-      {ta}
-    </div>
-  )
-}
 
 const WORKFLOW_JSON_INTENT_BY_MODE: Record<'analyze' | 'simulate' | 'assess' | 'recommend', string> = {
   analyze: WORKSPACE_ACTION_INTENTS.analyze,
@@ -1028,7 +665,6 @@ const COUNCIL_STREAM_MAX_MS = 15 * 60 * 1000
  */
 const COUNCIL_STREAM_IDLE_MS = 3 * 60 * 1000
 /** Non-council agent bubbles stay short; council + folder advisor can be long (many seats + synthesis). */
-const AGENT_THREAD_DISPLAY_MAX_CHARS = 2000
 
 function newScopedThreadNestId(): string {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -1903,20 +1539,6 @@ function App() {
     el.style.overflowY = fullScroll > maxH ? 'auto' : 'hidden'
   }, [])
 
-  const appendFilesToCouncilQuestion = useCallback(async (files: FileList | null) => {
-    if (!files?.length) return
-    const next = await appendChatDroppedFiles(questionRef.current, files)
-    setQuestion(next)
-    requestAnimationFrame(() => {
-      adjustCouncilQuestionTextareaHeight()
-      councilQuestionTextareaRef.current?.focus()
-      const ta = councilQuestionTextareaRef.current
-      if (ta) {
-        const len = ta.value.length
-        ta.setSelectionRange(len, len)
-      }
-    })
-  }, [adjustCouncilQuestionTextareaHeight])
 
   useLayoutEffect(() => {
     adjustCouncilQuestionTextareaHeight()
@@ -2079,11 +1701,6 @@ function App() {
   /** Matches `councilRunId` for the in-flight / last council reply — keeps resonance slider key stable stream → final message. */
   const councilResonanceRunIdRef = useRef<string | null>(null)
   /** Stable id for the orphan “agent response” strip when `agentThread` is empty (avoids shared `thread-fallback` key). */
-  const threadAgentStripResonanceIdRef = useRef<string>(
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID()
-      : `agent-strip-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-  )
   const councilVeEntityBundleRef = useRef<VisionMapEntityBundle | null>(null)
   const councilRuntimeRef = useRef<{
     mainView: string
@@ -2129,7 +1746,6 @@ function App() {
     })
   }, [scopedDigressionKey, councilIdeaLiveLabelsSeq])
   /** Expanded `scoped_thread_nest` rows in the council transcript (collapsed by default). */
-  const [councilExpandedNestIds, setCouncilExpandedNestIds] = useState<Set<string>>(() => new Set())
   const [councilSeatSlots, setCouncilSeatSlots] = useState<CouncilSeatSlot[]>(() =>
     Array.from({ length: EXPANDED_MAX_SEATS }, (_, i) => ({
       id: `cs-${i}`,
@@ -2144,12 +1760,16 @@ function App() {
   const councilInvocationNextRef = useRef<'default' | 'full_multiseat'>('default')
   /** When map triggers council, stash payload so bounded transforms resolve anchor + title without re-streaming. */
   const councilRunMapPayloadRef = useRef<MapNodePayload | null>(null)
-  const [expandedThreadGuidePromptId, setExpandedThreadGuidePromptId] = useState<string | null>(null)
-  const [activeConversationalSuggestionPromptId, setActiveConversationalSuggestionPromptId] =
+  // NOTE (dead-code removal, 2026-11-12): the VALUE bindings of these five
+  // guide-stack states were removed as unused (tsc noUnusedLocals), but
+  // their setters are still called by live handlers — so the declarations
+  // stay with the value slot elided ([, setter]), not deleted outright.
+  const [, setExpandedThreadGuidePromptId] = useState<string | null>(null)
+  const [, setActiveConversationalSuggestionPromptId] =
     useState<string | null>(null)
-  const [guideStackListOpen, setGuideStackListOpen] = useState(false)
-  const [nestedStackGuidePromptId, setNestedStackGuidePromptId] = useState<string | null>(null)
-  const [seenStackGuidePromptIds, setSeenStackGuidePromptIds] = useState<string[]>([])
+  const [, setGuideStackListOpen] = useState(false)
+  const [, setNestedStackGuidePromptId] = useState<string | null>(null)
+  const [, setSeenStackGuidePromptIds] = useState<string[]>([])
   const [councilAdvancedOptions, setCouncilAdvancedOptions] = useState(false)
   // Council personality mode: which version of each seat to use (user's choice, per purpose).
   const [councilPersonalityMode, setCouncilPersonalityMode] =
@@ -4261,16 +3881,6 @@ function App() {
     }
   }, [currentUser])
 
-  const handleCouncilPersonalityModeChange = useCallback(
-    (mode: CouncilPersonalityMode) => {
-      const prev = councilPersonalityMode
-      setCouncilPersonalityMode(mode)
-      void saveCouncilPersonalityMode(mode).then((ok) => {
-        if (!ok) setCouncilPersonalityMode(prev) // revert: the default didn't persist
-      })
-    },
-    [councilPersonalityMode],
-  )
 
   const councilAgentList = useMemo(() => {
     const base = perspectiveAgents.length > 0 ? perspectiveAgents : BUILT_IN_PERSPECTIVES
@@ -4357,31 +3967,7 @@ function App() {
     [buildWorkoutPerspectiveDefinition],
   )
 
-  const councilLlmSelectOptions = useMemo(() => {
-    const auto = { value: 'auto', label: 'Auto (policy)' }
-    const staticOrder: { value: string; label: string }[] = [
-      auto,
-      { value: 'meta', label: 'Meta (Muse)' },
-      { value: 'ollama', label: 'Ollama (local)' },
-      { value: 'openai', label: 'OpenAI' },
-      { value: 'anthropic', label: 'Anthropic' },
-      { value: 'google', label: 'Google (Gemini)' },
-      { value: 'xai', label: 'xAI (Grok)' },
-      { value: 'openrouter', label: 'OpenRouter' },
-    ]
-    if (!currentUser || llmProviderRows.length === 0) return staticOrder
-    const rowById = new Map(llmProviderRows.map((p) => [p.id, p]))
-    return staticOrder.map((o) => {
-      if (o.value === 'auto') return o
-      const r = rowById.get(o.value)
-      if (!r) return o
-      if (r.available) return { value: o.value, label: r.display_name }
-      if (!r.enabled) return { value: o.value, label: `${r.display_name} (off in Settings)` }
-      return { value: o.value, label: `${r.display_name} (add key in Settings)` }
-    })
-  }, [currentUser, llmProviderRows])
   const councilMaxSeats = councilExpandedMode ? EXPANDED_MAX_SEATS : MAX_COUNCIL_SEATS
-  const councilSelectedCount = councilSeatSlots.slice(0, councilMaxSeats).filter((s) => s.actorId).length
   useEffect(() => {
     const visibleIds = councilSeatSlots.slice(0, councilMaxSeats).map((s) => s.id)
     if (visibleIds.length === 0) return
@@ -4390,17 +3976,6 @@ function App() {
     }
   }, [councilSeatSlots, councilMaxSeats, selectedCouncilSlotId])
 
-  const applyCouncilSeatClear = useCallback((slotId: string) => {
-    setCouncilSeatSlots((prev) => {
-      const vis = prev.slice(0, councilMaxSeats)
-      const othersFilled = vis.filter((s) => s.id !== slotId && s.actorId != null).length
-      if (othersFilled === 0) {
-        setMandatesBySeatId((m) => ({ ...m, [slotId]: 'thinking_partner' }))
-        return prev.map((s) => (s.id === slotId ? { ...s, actorId: 'zenaf' } : s))
-      }
-      return prev.map((s) => (s.id === slotId ? { ...s, actorId: null } : s))
-    })
-  }, [councilMaxSeats])
 
   // Conversational thread: last agent output / user input so next run can continue the thread
   type AgentThreadMessage = {
@@ -4451,34 +4026,7 @@ function App() {
   const agentThreadRef = useRef(agentThread)
   agentThreadRef.current = agentThread
 
-  const handleCouncilEntityMentionOpen = useCallback((p: EntityMentionOpenPayload) => {
-    const enriched = enrichScopedDigressionLabel(p, {
-      ideaLabels: councilIdeaLabelsRef.current,
-      bundle: councilVeEntityBundleRef.current,
-    })
-    setCouncilScopeThreadStartIndex(agentThreadRef.current.length)
-    setCouncilScopedDigression(enriched)
-  }, [])
 
-  const foldScopedThreadIntoNest = useCallback(() => {
-    const start = councilScopeThreadStartIndexRef.current
-    const label = councilScopedDigressionRef.current?.label ?? 'Focused thread'
-    setCouncilScopedDigression(null)
-    setCouncilScopeThreadStartIndex(null)
-    setAgentThread((prev) => {
-      if (start == null || start >= prev.length) return prev
-      const nestId = newScopedThreadNestId()
-      const children = prev.slice(start).map((row) => ({ ...row }))
-      const before = prev.slice(0, start)
-      const nest: AgentThreadMessage = {
-        role: 'system',
-        content: '',
-        threadItemKind: 'scoped_thread_nest',
-        nestedScopedThread: { id: nestId, label, children },
-      }
-      return [...before, nest]
-    })
-  }, [])
 
   const lastConversationalFocusInviteRef = useRef<{ key: string; t: number } | null>(null)
 
@@ -4490,17 +4038,6 @@ function App() {
     if (sig?.stackRowId) return sig.stackRowId
     return sig?.promptId ?? ephemeralGuidePromptIdFromContent(row.content)
   }, [])
-  const removeGuideRowsForPromptId = useCallback(
-    (promptId: string) => {
-      setExpandedThreadGuidePromptId((e) => (e === promptId ? null : e))
-      setNestedStackGuidePromptId((n) => (n === promptId ? null : n))
-      setActiveConversationalSuggestionPromptId((a) => (a === promptId ? null : a))
-      setAgentThread((prev) =>
-        prev.filter((row) => !(row.role === 'guide' && guideRowPromptId(row) === promptId)),
-      )
-    },
-    [guideRowPromptId],
-  )
 
   const dismissGuideFromThread = useCallback(
     (stackRowOrPromptId: string) => {
@@ -4520,7 +4057,6 @@ function App() {
     [guideRowPromptId],
   )
 
-  const removeAgentThreadGuidesForPromptId = dismissGuideFromThread
   const hidePromptActionsForPromptId = useCallback(
     (promptId: string) => {
       setAgentThread((prev) =>
@@ -4538,10 +4074,14 @@ function App() {
   const [councilStreamPhase, setCouncilStreamPhase] = useState<CouncilStreamPhase>('idle')
   const councilTransportTimingRef = useRef<CouncilTransportTimings | null>(null)
   /** How to render last completed council output when thread is empty (transcript vs plain). */
-  const [lastCouncilPresentationKind, setLastCouncilPresentationKind] = useState<
+  // NOTE (dead-code removal, 2026-11-12): the VALUE bindings of these two
+  // states were removed as unused (tsc noUnusedLocals), but their setters
+  // are still called by live code — declarations stay with the value slot
+  // elided ([, setter]).
+  const [, setLastCouncilPresentationKind] = useState<
     'thinking' | 'multiseat' | 'folder'
   >('multiseat')
-  const [lastCouncilWasFolderWorkflow, setLastCouncilWasFolderWorkflow] = useState(false)
+  const [, setLastCouncilWasFolderWorkflow] = useState(false)
   /** When true, server runs integrator pass and UI shows “Zenaf synthesis”; default off. */
   const [includeCouncilSynthesis, setIncludeCouncilSynthesis] = useState(false)
   const [councilSynthesisIntegrity, setCouncilSynthesisIntegrity] = useState<CouncilSynthesisIntegrityState | null>(null)
@@ -4572,8 +4112,6 @@ function App() {
       agentConversationEndRef.current?.scrollIntoView({ block: 'end', behavior: 'auto' })
     }
   }, [streamingCouncilText, loading])
-  const [councilInsightSaving, setCouncilInsightSaving] = useState(false)
-  const [councilInsightNotice, setCouncilInsightNotice] = useState<string | null>(null)
   useEffect(() => {
     if (activeMode !== 'council' && councilStreamPhase === 'completed') {
       setCouncilStreamPhase('idle')
@@ -4916,11 +4454,7 @@ function App() {
     setQuery(q)
     runWebResearch(q)
   }
-  const runSelectedAgent = () => {
-    void runCouncil(undefined)
-  }
   // Only block while a run is in flight. Empty question is OK (runCouncil defaults). At least one seat is always implied (default Zenaf thinking partner).
-  const agentRunDisabled = loading || councilTransformLoading
   const agentResponse: string | null =
     lastMode === 'council' && lastCouncilResult ? lastCouncilResult
     : lastMode === 'web_research' && lastWebResearchResult
@@ -4941,24 +4475,6 @@ function App() {
     return null
   }, [streamingCouncilText, agentThread, lastMode, agentResponse])
 
-  const handleRecordCouncilInsight = useCallback(async () => {
-    const text = resolveCouncilInsightText()
-    if (!text?.trim()) return
-    setCouncilInsightSaving(true)
-    setCouncilInsightNotice(null)
-    try {
-      await postCouncilInsightRecognition(veApiPost, {
-        bodyText: text,
-        label: streamingCouncilRunLabel || undefined,
-        userId: currentUser?.id ?? null,
-      })
-      setCouncilInsightNotice('Recorded as decision (meaning-only recognition).')
-    } catch (e) {
-      setCouncilInsightNotice(e instanceof Error ? e.message : 'Could not record insight')
-    } finally {
-      setCouncilInsightSaving(false)
-    }
-  }, [resolveCouncilInsightText, currentUser?.id, streamingCouncilRunLabel])
 
   // Tree-as-organism (phase 1): the Living Tree's node sheets mount the real
   // existing views — same props and data flow as their pages, rendered in
@@ -5106,9 +4622,6 @@ function App() {
   const [mainView, setMainView] = useState<MainView>('living_tree')
   // Mobile: the conversation panel starts collapsed so the view's content owns
   // the screen; expand on demand. Desktop (lg+) always shows it.
-  const [chatPanelCollapsed, setChatPanelCollapsed] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023.98px)').matches,
-  )
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
   /** Avoid new object identity on every VisionExecutionView `bundleForFocus` refresh when ids are unchanged. */
   const stableVeSelectionForExecutionView = useMemo(
@@ -5176,27 +4689,6 @@ function App() {
   const [workoutExitToast, setWorkoutExitToast] = useState<string | null>(null)
   const showFolderReviewPanel = mainView === 'workspace' && lastRecommendResult != null && !lastRecommendResult.error
 
-  const mediationPanelMode = useMemo(
-    () =>
-      deriveMediationPanelMode({
-        showFolderReviewPanel,
-        workoutActive,
-        councilTransformLoading,
-        activeMode,
-        loading,
-        agentThreadLength: agentThread.length,
-        councilStreamPhase,
-      }),
-    [
-      showFolderReviewPanel,
-      workoutActive,
-      councilTransformLoading,
-      activeMode,
-      loading,
-      agentThread.length,
-      councilStreamPhase,
-    ],
-  )
 
   useEffect(() => {
     if (!workoutExitToast) return
@@ -5599,13 +5091,6 @@ function App() {
     () => new Set(stackedGuides.map((g) => guideRowPromptId(g))),
     [stackedGuides, guideRowPromptId],
   )
-  const firstStackedGuideIndex = useMemo(() => {
-    for (let i = 0; i < agentThread.length; i++) {
-      const m = agentThread[i]
-      if (m?.role === 'guide' && stackedPromptIdSet.has(guideRowPromptId(m))) return i
-    }
-    return -1
-  }, [agentThread, stackedPromptIdSet, guideRowPromptId])
 
   /** Prune seen ids to current stack; collapse nested UI when stack becomes empty (same node). */
   useEffect(() => {
@@ -5634,17 +5119,7 @@ function App() {
    * and on map seed (`mergedCtx`). Entity/triad/evidence text changes alter the string → deferred prompt
    * does not reappear in-thread until context stabilizes; server still owns schedule via check API.
    */
-  const registerDeferContextForPrompt = useCallback(
-    (promptId: string) => {
-      const fp = buildDevelopmentalMapFingerprint(developmentalGuidancePreview)
-      deferResurfaceFingerprintRef.current.set(promptId, fp)
-    },
-    [developmentalGuidancePreview],
-  )
 
-  const markGuideInteracted = useCallback((_promptId: string) => {
-    /* session hook reserved; prompt-signal actions already post to server */
-  }, [])
 
   const [pendingThreadSuggestions, setPendingThreadSuggestions] = useState<PendingThreadSuggestion[]>([])
   const pendingThreadSuggestionsRef = useRef(pendingThreadSuggestions)
@@ -5654,8 +5129,6 @@ function App() {
   const lastConversationSubjectLabelRef = useRef<string>('')
 
   const [resolvedHandoffItemIds, setResolvedHandoffItemIds] = useState<string[]>([])
-  const resolvedHandoffSet = useMemo(() => new Set(resolvedHandoffItemIds), [resolvedHandoffItemIds])
-  const [handoffNotesBusyId, setHandoffNotesBusyId] = useState<string | null>(null)
 
   useEffect(() => {
     if (agentThread.length === 0) return
@@ -5775,65 +5248,11 @@ function App() {
     return WORKSPACE_DEFER_ENTITY
   }, [veSelection])
 
-  const runGuideDiscussFromCollapsed = useCallback(
-    (stackRowId: string, questionText: string, canonicalPromptId: string) => {
-      engageGuideDiscussion(stackRowId, { councilPrefill: councilPrefillForGuideQuestion(questionText) })
-      hidePromptActionsForPromptId(stackRowId)
-      void postPromptSignal({
-        prompt_id: canonicalPromptId,
-        action: 'engaged',
-        entity_type: promptSignalAttachRef.entity_type,
-        entity_id: promptSignalAttachRef.entity_id,
-        prompt_summary: questionText.slice(0, 400),
-        deferred_until: null,
-      })
-    },
-    [engageGuideDiscussion, hidePromptActionsForPromptId, promptSignalAttachRef],
-  )
 
-  const markStackGuideSeen = useCallback((promptId: string) => {
-    if (!promptId) return
-    setSeenStackGuidePromptIds((prev) => (prev.includes(promptId) ? prev : [...prev, promptId]))
-  }, [])
 
-  const toggleGuideStackList = useCallback(() => {
-    setGuideStackListOpen((o) => !o)
-    setNestedStackGuidePromptId(null)
-  }, [])
 
-  const handleHandoffCommitNow = useCallback(
-    (item: { id: string; text: string }) => {
-      setResolvedHandoffItemIds((r) => [...r, item.id])
-      setActiveMode('council')
-      setQuestion(HANDOFF_COMMIT_STARTER)
-      window.setTimeout(() => {
-        const el = councilQuestionTextareaRef.current
-        el?.focus()
-        const len = el?.value.length ?? 0
-        el?.setSelectionRange(len, len)
-      }, 0)
-    },
-    [],
-  )
 
-  const handleHandoffSaveNotes = useCallback(
-    async (item: { id: string; text: string }, previousSubjectKey: string) => {
-      setHandoffNotesBusyId(item.id)
-      try {
-        await appendEntityNotesLine(previousSubjectKey, item.text)
-        setResolvedHandoffItemIds((r) => [...r, item.id])
-      } catch {
-        /* non-blocking; user can copy from thread */
-      } finally {
-        setHandoffNotesBusyId(null)
-      }
-    },
-    [appendEntityNotesLine],
-  )
 
-  const handleHandoffDismissItem = useCallback((item: { id: string; text: string }) => {
-    setResolvedHandoffItemIds((r) => [...r, item.id])
-  }, [])
 
   if (authLoading) {
     return (
@@ -6198,6 +5617,164 @@ function App() {
         ) : (
           /* Workspace Organizer */
           <main className="flex-1 min-w-0 min-h-0 overflow-auto p-4 lg:p-6 max-w-3xl mx-auto space-y-10">
+            {workoutActive && workoutPerspective ? (
+              <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+                <PerspectiveWorkoutPanel
+                  perspective={workoutPerspective}
+                  thread={workoutThread}
+                  input={workoutInput}
+                  onInputChange={setWorkoutInput}
+                  onSendSeat1={() => void handleWorkoutSendSeat1()}
+                  onInvokeSeat={(a) => void handleWorkoutInvokeSeat(a)}
+                  invokingSeatId={workoutInvokingSeat}
+                  availableSeats={perspectiveAgents.filter((a) => a.id !== workoutPerspective.id)}
+                  onRequestExit={handleWorkoutExitRequest}
+                />
+              </div>
+            ) : (
+              <>
+            {/* Folder review result — moved here from the retired legacy chat panel (2026-11-12): the folder workflow's AI suggestions live with the organizer now. */}
+            {showFolderReviewPanel ? (
+            <>
+              <div className="shrink-0 p-4 border-b border-stone-700">
+                <h2 className="text-base font-semibold text-stone-100">Folder review result</h2>
+                <p className="text-stone-400 text-xs mt-1">AI suggestions for your folder list. Use Refine Categories in step 3 to run.</p>
+              </div>
+              <div className="flex-1 min-h-0 basis-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 overscroll-contain">
+                {folderAdvisorLoading || folderAdvisorStreaming ? (
+                  <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 border border-yellow-700/50">
+                    <p className="text-xs text-yellow-500/90 font-medium mb-1">Refine Categories (AI)</p>
+                    <CouncilTranscript text={folderAdvisorStreaming} decorateSeatHeaders={false} stripZenafSynthesis={false} />
+                    <span className="inline-block w-2 h-4 ml-0.5 bg-yellow-500 animate-pulse" aria-hidden />
+                  </div>
+                ) : folderAdvisorResult ? (
+                  folderAdvisorParsedSuggestions.length > 0 ? (
+                    <>
+                      <div className="space-y-2">
+                        {folderAdvisorParsedSuggestions.map((s, i) => {
+                          const applied = appliedFolderSuggestions.has(normalizeFolderKey(s.folder))
+                          return (
+                            <div
+                              key={i}
+                              className={`rounded-lg border px-3 py-2 text-xs ${applied ? 'border-stone-600 bg-stone-800/50 text-stone-500' : 'border-stone-600 bg-stone-900/50'}`}
+                            >
+                              <span className="font-medium text-stone-200">{s.folder}</span>
+                              {applied && <span className="ml-2 text-[10px] text-emerald-400/90 uppercase">Added</span>}
+                              {s.reason && <p className="text-stone-500 mt-0.5">{s.reason}</p>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <div className="flex flex-col gap-2 pt-2 border-t border-stone-700">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            folderAdvisorParsedSuggestions.forEach((s) => {
+                              const key = normalizeFolderKey(s.folder)
+                              if (appliedFolderSuggestions.has(key)) return
+                              const existing = findExistingFolderMatch(s.folder, approvedFolders)
+                              if (existing) {
+                                setAppliedAiMatchedFolders((prev) => (prev.includes(existing) ? prev : [...prev, existing]))
+                                setAppliedFolderSuggestions((prev) => new Set(prev).add(key))
+                              } else {
+                                addCustomRecommendation(s.folder)
+                                setAppliedFolderSuggestions((prev) => new Set(prev).add(key))
+                              }
+                            })
+                            const w = workspaceOutcomeTargetRef.current
+                            if (w?.action_intent === WORKSPACE_ACTION_INTENTS.folder_advisor) {
+                              try {
+                                recordWorkspaceTraceUserOutcome(w.trace, 'applied')
+                              } catch {
+                                /* ignore */
+                              }
+                              postWorkspaceLearningFromRef(w, 'applied')
+                            }
+                          }}
+                          className="w-full px-4 py-2 rounded-lg bg-yellow-700 hover:bg-yellow-600 text-stone-50 text-sm font-medium"
+                        >
+                          Add suggestion
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReplaceListConfirmOpen(true)}
+                          className="w-full px-4 py-2 rounded-lg border border-stone-500 bg-stone-800 text-stone-300 text-sm hover:bg-stone-700"
+                        >
+                          Replace list
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const w = workspaceOutcomeTargetRef.current
+                            if (w?.action_intent === WORKSPACE_ACTION_INTENTS.folder_advisor) {
+                              try {
+                                // Declining suggestions without adding — triage, same spirit as rejectRecommendation.
+                                recordWorkspaceTraceUserOutcome(w.trace, 'edited')
+                              } catch {
+                                /* ignore */
+                              }
+                              postWorkspaceLearningFromRef(w, 'edited')
+                            }
+                            setFolderAdvisorResult(null)
+                          }}
+                          className="w-full px-4 py-2 rounded-lg border border-stone-600 text-stone-400 text-sm hover:text-stone-300"
+                        >
+                          Ignore
+                        </button>
+                      </div>
+                      {replaceListConfirmOpen && (
+                        <div className="fixed inset-0 z-20 flex items-center justify-center p-4 bg-black/60" onClick={() => setReplaceListConfirmOpen(false)}>
+                          <div className="bg-stone-800 border border-stone-600 rounded-xl shadow-xl max-w-sm w-full p-4" onClick={(e) => e.stopPropagation()}>
+                            <p className="text-stone-200 text-sm mb-4">
+                              Replace current folder list with these {folderAdvisorParsedSuggestions.length} suggestions? This will reject all current suggested folders and set the list to the AI suggestions.
+                            </p>
+                            <div className="flex justify-end gap-2">
+                              <button type="button" onClick={() => setReplaceListConfirmOpen(false)} className="px-4 py-2 rounded-lg border border-stone-600 text-stone-400 hover:text-stone-300 text-sm">
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const suggested = lastRecommendResult?.suggested_child_folders ?? []
+                                  setRejectedRecommendations(new Set(suggested))
+                                  const deduped = folderAdvisorParsedSuggestions.reduce<string[]>((acc, s) => {
+                                    const name = s.folder.trim()
+                                    if (findExistingFolderMatch(name, acc)) return acc
+                                    return [...acc, name]
+                                  }, [])
+                                  setCustomRecommendations(deduped)
+                                  setReplaceListConfirmOpen(false)
+                                  const w = workspaceOutcomeTargetRef.current
+                                  if (w?.action_intent === WORKSPACE_ACTION_INTENTS.folder_advisor) {
+                                    try {
+                                      recordWorkspaceTraceUserOutcome(w.trace, 'applied')
+                                    } catch {
+                                      /* ignore */
+                                    }
+                                    postWorkspaceLearningFromRef(w, 'applied')
+                                  }
+                                }}
+                                className="px-4 py-2 rounded-lg bg-yellow-700 hover:bg-yellow-600 text-stone-50 text-sm font-medium"
+                              >
+                                Replace
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 border border-stone-600">
+                      <p className="text-xs text-stone-500 mb-2">Could not parse suggestions. Full response:</p>
+                      <CouncilTranscript text={folderAdvisorResult} decorateSeatHeaders={false} stripZenafSynthesis={false} />
+                    </div>
+                  )
+                ) : (
+                  <p className="text-stone-500 text-sm">Use <strong>Refine Categories</strong> in step 3 to get AI suggestions for your folder list.</p>
+                )}
+              </div>
+            </>
+            ) : null}
             {error && (
               <div className="rounded-lg bg-red-900/30 border border-red-700 text-red-200 text-sm p-3">
                 {error}
@@ -6373,1006 +5950,21 @@ function App() {
               />
             </div>
           )}
+              </>
+            )}
+            {workoutExitToast ? (
+              <div className="shrink-0 px-3 py-2 text-center text-xs text-stone-500 border-t border-stone-700 bg-stone-900/50">
+                {workoutExitToast}
+              </div>
+            ) : null}
           </main>
         )}
 
-        {/* Right: Folder review result (when in folder workflow) or conversation panel.
-            Hidden on the Living Tree home view so the tree owns the screen.
-            Hidden on the Vision map too: the map sheet (MapChatShell) hosts the
-            briefing conversation there — this legacy chat panel is retired. */}
-        {mainView !== 'living_tree' && mainView !== 'vision_map' && (
-        <aside
-          className={`w-full lg:w-[380px] lg:shrink-0 lg:sticky lg:top-0 flex flex-col min-h-0 h-auto lg:h-[calc(100vh-8rem)] max-h-[78vh] lg:max-h-[calc(100vh-4.5rem)] bg-stone-800/60 overflow-x-hidden shadow-lg ${
-            mainView === 'vision_map'
-              ? 'order-first border-t lg:border-t-0 lg:border-r border-stone-700 rounded-t-lg lg:rounded-t-none lg:rounded-r-lg'
-              : 'border-t lg:border-t-0 lg:border-l border-stone-700 rounded-t-lg lg:rounded-t-none lg:rounded-l-lg'
-          }`}
-        >
-          <button
-            type="button"
-            onClick={() => setChatPanelCollapsed((v) => !v)}
-            aria-expanded={!chatPanelCollapsed}
-            aria-label={chatPanelCollapsed ? 'Show conversation panel' : 'Hide conversation panel'}
-            className="lg:hidden flex items-center justify-between w-full px-4 min-h-[48px] text-sm font-semibold text-stone-200 shrink-0"
-          >
-            <span>Conversation</span>
-            <svg
-              viewBox="0 0 24 24"
-              className={`h-5 w-5 transition-transform ${chatPanelCollapsed ? '' : 'rotate-180'}`}
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              aria-hidden
-            >
-              <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-          <div
-            className={`${
-              chatPanelCollapsed ? 'hidden' : 'flex'
-            } lg:flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden`}
-          >
-          {error && (mainView !== 'workspace' || workoutActive) && (
-            <div
-              className="shrink-0 p-3 border-b border-red-800/50 bg-red-900/25 text-red-200 text-xs"
-              role="alert"
-            >
-              {error}
-            </div>
-          )}
-          <div className="flex flex-col flex-1 min-h-0 overflow-hidden overflow-x-hidden overscroll-contain">
-          <div
-            className="shrink-0 px-3 py-2.5 border-b border-amber-900/35 bg-gradient-to-r from-stone-900/95 via-stone-900/85 to-stone-800/80"
-            role="region"
-            aria-label="Current chat mode"
-          >
-            <p className="text-[10px] uppercase tracking-wider text-amber-500/90 font-semibold mb-1">
-              Chat mode
-            </p>
-            <p className="text-sm font-medium text-stone-100 leading-snug">
-              {mediationPanelHeadline(mediationPanelMode, councilStreamPhase)}
-            </p>
-            <p className="text-[11px] text-stone-500 mt-1.5 font-mono">
-              {mediationPanelMode}
-            </p>
-            <p className="text-xs text-stone-400 mt-1">
-              Workspace:{' '}
-              <span className="text-stone-200">{workspaceRunModeLabel(activeMode)}</span>
-              {foundationTrainingMode ? (
-                <span className="text-stone-500"> · Foundation training</span>
-              ) : null}
-            </p>
-            <p className="text-xs text-stone-500 mt-0.5">
-              Surface: <span className="text-stone-400">{mainViewLabel(mainView)}</span>
-            </p>
-            <MediationFlowHint veSelection={veSelection} />
-          </div>
-          {showFolderReviewPanel ? (
-            <>
-              <div className="shrink-0 p-4 border-b border-stone-700">
-                <h2 className="text-base font-semibold text-stone-100">Folder review result</h2>
-                <p className="text-stone-400 text-xs mt-1">AI suggestions for your folder list. Use Refine Categories in step 3 to run.</p>
-              </div>
-              <div className="flex-1 min-h-0 basis-0 overflow-y-auto overflow-x-hidden p-3 space-y-3 overscroll-contain">
-                {folderAdvisorLoading || folderAdvisorStreaming ? (
-                  <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 border border-yellow-700/50">
-                    <p className="text-xs text-yellow-500/90 font-medium mb-1">Refine Categories (AI)</p>
-                    <CouncilTranscript text={folderAdvisorStreaming} decorateSeatHeaders={false} stripZenafSynthesis={false} />
-                    <span className="inline-block w-2 h-4 ml-0.5 bg-yellow-500 animate-pulse" aria-hidden />
-                  </div>
-                ) : folderAdvisorResult ? (
-                  folderAdvisorParsedSuggestions.length > 0 ? (
-                    <>
-                      <div className="space-y-2">
-                        {folderAdvisorParsedSuggestions.map((s, i) => {
-                          const applied = appliedFolderSuggestions.has(normalizeFolderKey(s.folder))
-                          return (
-                            <div
-                              key={i}
-                              className={`rounded-lg border px-3 py-2 text-xs ${applied ? 'border-stone-600 bg-stone-800/50 text-stone-500' : 'border-stone-600 bg-stone-900/50'}`}
-                            >
-                              <span className="font-medium text-stone-200">{s.folder}</span>
-                              {applied && <span className="ml-2 text-[10px] text-emerald-400/90 uppercase">Added</span>}
-                              {s.reason && <p className="text-stone-500 mt-0.5">{s.reason}</p>}
-                            </div>
-                          )
-                        })}
-                      </div>
-                      <div className="flex flex-col gap-2 pt-2 border-t border-stone-700">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            folderAdvisorParsedSuggestions.forEach((s) => {
-                              const key = normalizeFolderKey(s.folder)
-                              if (appliedFolderSuggestions.has(key)) return
-                              const existing = findExistingFolderMatch(s.folder, approvedFolders)
-                              if (existing) {
-                                setAppliedAiMatchedFolders((prev) => (prev.includes(existing) ? prev : [...prev, existing]))
-                                setAppliedFolderSuggestions((prev) => new Set(prev).add(key))
-                              } else {
-                                addCustomRecommendation(s.folder)
-                                setAppliedFolderSuggestions((prev) => new Set(prev).add(key))
-                              }
-                            })
-                            const w = workspaceOutcomeTargetRef.current
-                            if (w?.action_intent === WORKSPACE_ACTION_INTENTS.folder_advisor) {
-                              try {
-                                recordWorkspaceTraceUserOutcome(w.trace, 'applied')
-                              } catch {
-                                /* ignore */
-                              }
-                              postWorkspaceLearningFromRef(w, 'applied')
-                            }
-                          }}
-                          className="w-full px-4 py-2 rounded-lg bg-yellow-700 hover:bg-yellow-600 text-stone-50 text-sm font-medium"
-                        >
-                          Add suggestion
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setReplaceListConfirmOpen(true)}
-                          className="w-full px-4 py-2 rounded-lg border border-stone-500 bg-stone-800 text-stone-300 text-sm hover:bg-stone-700"
-                        >
-                          Replace list
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const w = workspaceOutcomeTargetRef.current
-                            if (w?.action_intent === WORKSPACE_ACTION_INTENTS.folder_advisor) {
-                              try {
-                                // Declining suggestions without adding — triage, same spirit as rejectRecommendation.
-                                recordWorkspaceTraceUserOutcome(w.trace, 'edited')
-                              } catch {
-                                /* ignore */
-                              }
-                              postWorkspaceLearningFromRef(w, 'edited')
-                            }
-                            setFolderAdvisorResult(null)
-                          }}
-                          className="w-full px-4 py-2 rounded-lg border border-stone-600 text-stone-400 text-sm hover:text-stone-300"
-                        >
-                          Ignore
-                        </button>
-                      </div>
-                      {replaceListConfirmOpen && (
-                        <div className="fixed inset-0 z-20 flex items-center justify-center p-4 bg-black/60" onClick={() => setReplaceListConfirmOpen(false)}>
-                          <div className="bg-stone-800 border border-stone-600 rounded-xl shadow-xl max-w-sm w-full p-4" onClick={(e) => e.stopPropagation()}>
-                            <p className="text-stone-200 text-sm mb-4">
-                              Replace current folder list with these {folderAdvisorParsedSuggestions.length} suggestions? This will reject all current suggested folders and set the list to the AI suggestions.
-                            </p>
-                            <div className="flex justify-end gap-2">
-                              <button type="button" onClick={() => setReplaceListConfirmOpen(false)} className="px-4 py-2 rounded-lg border border-stone-600 text-stone-400 hover:text-stone-300 text-sm">
-                                Cancel
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const suggested = lastRecommendResult?.suggested_child_folders ?? []
-                                  setRejectedRecommendations(new Set(suggested))
-                                  const deduped = folderAdvisorParsedSuggestions.reduce<string[]>((acc, s) => {
-                                    const name = s.folder.trim()
-                                    if (findExistingFolderMatch(name, acc)) return acc
-                                    return [...acc, name]
-                                  }, [])
-                                  setCustomRecommendations(deduped)
-                                  setReplaceListConfirmOpen(false)
-                                  const w = workspaceOutcomeTargetRef.current
-                                  if (w?.action_intent === WORKSPACE_ACTION_INTENTS.folder_advisor) {
-                                    try {
-                                      recordWorkspaceTraceUserOutcome(w.trace, 'applied')
-                                    } catch {
-                                      /* ignore */
-                                    }
-                                    postWorkspaceLearningFromRef(w, 'applied')
-                                  }
-                                }}
-                                className="px-4 py-2 rounded-lg bg-yellow-700 hover:bg-yellow-600 text-stone-50 text-sm font-medium"
-                              >
-                                Replace
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 border border-stone-600">
-                      <p className="text-xs text-stone-500 mb-2">Could not parse suggestions. Full response:</p>
-                      <CouncilTranscript text={folderAdvisorResult} decorateSeatHeaders={false} stripZenafSynthesis={false} />
-                    </div>
-                  )
-                ) : (
-                  <p className="text-stone-500 text-sm">Use <strong>Refine Categories</strong> in step 3 to get AI suggestions for your folder list.</p>
-                )}
-              </div>
-            </>
-          ) : workoutActive && workoutPerspective ? (
-            <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
-              <PerspectiveWorkoutPanel
-                perspective={workoutPerspective}
-                thread={workoutThread}
-                input={workoutInput}
-                onInputChange={setWorkoutInput}
-                onSendSeat1={() => void handleWorkoutSendSeat1()}
-                onInvokeSeat={(a) => void handleWorkoutInvokeSeat(a)}
-                invokingSeatId={workoutInvokingSeat}
-                availableSeats={perspectiveAgents.filter((a) => a.id !== workoutPerspective.id)}
-                onRequestExit={handleWorkoutExitRequest}
-              />
-            </div>
-          ) : (
-            <div className="flex flex-col flex-1 min-h-0 min-w-0">
-              {councilScopedDigression && activeMode === 'council' ? (
-                <div
-                  className="shrink-0 mx-3 mt-3 mb-1 rounded-lg border border-cyan-500/45 bg-cyan-950/35 shadow-[0_0_20px_rgba(34,211,238,0.12)] px-3 py-2.5 flex items-start justify-between gap-3"
-                  role="status"
-                >
-                  <div className="min-w-0">
-                    <p className="text-[10px] uppercase tracking-wide text-cyan-400/95 font-semibold">
-                      Scoped sub-thread
-                    </p>
-                    <p className="text-sm text-cyan-100/95 font-medium truncate" title={councilScopedDigression.label}>
-                      Focus: {councilScopedDigression.label}
-                    </p>
-                    <p className="text-[11px] text-cyan-200/60 mt-0.5">
-                      Replies use a narrow context until you return or finalize a save.
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => foldScopedThreadIntoNest()}
-                    className="shrink-0 px-3 py-1.5 rounded-md text-xs font-medium bg-stone-900/90 text-cyan-100 border border-cyan-600/50 hover:bg-stone-800"
-                  >
-                    Return
-                  </button>
-                </div>
-              ) : null}
-              {/* Split ~50/50: transcript vs composer+seats so the thread is not starved by tall seat controls */}
-              <div className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
-                <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
-                  <div className="shrink-0 border-b border-stone-700 p-4">
-                    <h2 className="text-base font-semibold text-stone-100">Conversation</h2>
-                  </div>
-                  <div
-                    ref={agentConversationScrollRef}
-                    className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 space-y-3 ${
-                      councilScopedDigression && activeMode === 'council'
-                        ? 'rounded-b-lg mx-1 mb-1 ring-1 ring-cyan-600/25 bg-cyan-950/[0.07]'
-                        : ''
-                    }`}
-                    onDragOver={(e) => {
-                      if (!dataTransferHasFiles(e.dataTransfer)) return
-                      e.preventDefault()
-                      e.dataTransfer.dropEffect = 'copy'
-                    }}
-                    onDrop={(e) => {
-                      if (!dataTransferHasFiles(e.dataTransfer)) return
-                      e.preventDefault()
-                      void appendFilesToCouncilQuestion(e.dataTransfer.files)
-                    }}
-                  >
-                {agentThread.length === 0 &&
-                  !agentResponse &&
-                  !streamingCouncilText &&
-                  !(loading && activeMode === 'council') &&
-                  councilStreamPhase === 'idle' && (
-                  <p className="text-stone-500 text-xs">Ask a question or run an agent to start the thread.</p>
-                )}
-                {/* One ThreadInlineGuideStack per render: only at first stacked guide index; other stacked rows are skipped (return null). */}
-                {(() => {
-                  const renderRow = (
-                    m: AgentThreadMessage,
-                    i: number,
-                    keyPrefix: string,
-                    insideNest: boolean,
-                  ): ReactNode => {
-                  if (m.threadItemKind === 'scoped_thread_nest' && m.nestedScopedThread) {
-                    const { id, label, children } = m.nestedScopedThread
-                    const expanded = councilExpandedNestIds.has(id)
-                    const count = children.length
-                    return (
-                      <div
-                        key={keyPrefix}
-                        className="rounded-lg border border-cyan-700/35 bg-stone-950/55 mx-2 overflow-hidden"
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setCouncilExpandedNestIds((prev) => {
-                              const next = new Set(prev)
-                              if (next.has(id)) next.delete(id)
-                              else next.add(id)
-                              return next
-                            })
-                          }
-                          className="w-full text-left px-3 py-2.5 flex items-start gap-2 text-sm hover:bg-stone-900/50"
-                        >
-                          <span className="text-cyan-400/90 shrink-0 font-mono text-xs mt-0.5" aria-hidden>
-                            {expanded ? '▼' : '▶'}
-                          </span>
-                          <span className="min-w-0">
-                            <span className="text-[10px] uppercase tracking-wide text-cyan-500/85 font-semibold block">
-                              Scoped thread
-                            </span>
-                            <span className="block truncate text-stone-100 font-medium" title={label}>
-                              {label}
-                            </span>
-                            <span className="text-[11px] text-stone-500">
-                              {count} message{count === 1 ? '' : 's'} · {expanded ? 'Collapse' : 'Expand'}
-                            </span>
-                          </span>
-                        </button>
-                        {expanded ? (
-                          <div className="px-2 pb-2 pt-1 space-y-2 border-t border-cyan-900/25 bg-stone-950/40">
-                            {children.map((c, j) => renderRow(c, j, `${keyPrefix}-c${j}`, true))}
-                          </div>
-                        ) : null}
-                      </div>
-                    )
-                  }
-                  if (m.role === 'system') {
-                    return (
-                      <div
-                        key={m.ephemeralRunId ? `session-${m.ephemeralRunId}` : keyPrefix}
-                        className="rounded-lg px-3 py-2 text-xs text-stone-400 bg-stone-900/40 border border-stone-700/60 mx-2"
-                        role="status"
-                        aria-live="polite"
-                      >
-                        <p className="text-[10px] uppercase tracking-wide text-stone-500 mb-1">Session</p>
-                        <p className="whitespace-pre-wrap font-sans">{m.content}</p>
-                      </div>
-                    )
-                  }
-                  if (m.threadItemKind === 'streaming_placeholder') {
-                    const statusLine =
-                      councilPhaseDetail(councilStreamPhase) || 'Preparing response…'
-                    return (
-                      <div
-                        key={m.ephemeralRunId ? `placeholder-${m.ephemeralRunId}` : keyPrefix}
-                        className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 mr-4 border border-yellow-700/40"
-                        role="status"
-                        aria-live="polite"
-                      >
-                        {m.agentLabel ? (
-                          <p className="text-xs text-yellow-500/90 font-medium mb-1">{m.agentLabel}</p>
-                        ) : null}
-                        <p className="text-xs text-stone-400 whitespace-pre-wrap">{statusLine}</p>
-                        <span
-                          className="inline-block w-2 h-4 mt-2 bg-yellow-500/60 animate-pulse"
-                          aria-hidden
-                        />
-                      </div>
-                    )
-                  }
-                  if (m.role === 'guide') {
-                    const gid = guideRowPromptId(m)
-                    if (!insideNest && stackedPromptIdSet.has(gid)) {
-                      if (i === firstStackedGuideIndex && stackedGuides.length > 0) {
-                        return (
-                          <ThreadInlineGuideStack
-                            key={`inline-guide-stack-${guideStackKeyFingerprint}`}
-                            barSubtitle={guideStackBarSubtitle}
-                            guides={stackedGuides}
-                            getPromptId={guideRowPromptId}
-                            seenPromptIds={seenStackGuidePromptIds}
-                            onMarkSeen={markStackGuideSeen}
-                            listOpen={guideStackListOpen}
-                            onToggleList={toggleGuideStackList}
-                            nestedExpandedPromptId={nestedStackGuidePromptId}
-                            onSetNestedExpandedPromptId={setNestedStackGuidePromptId}
-                            veSelection={veSelection}
-                            activeConversationalSuggestionPromptId={activeConversationalSuggestionPromptId}
-                            onCollapseItem={(pid) => {
-                              setNestedStackGuidePromptId((e) => (e === pid ? null : e))
-                              setActiveConversationalSuggestionPromptId((a) => (a === pid ? null : a))
-                            }}
-                            onFocusQuestion={(rowId, q) => {
-                              markStackGuideSeen(rowId)
-                              engageGuideDiscussion(rowId, { councilPrefill: councilPrefillForGuideQuestion(q) })
-                            }}
-                            onDiscussEngage={(rowId, q) =>
-                              engageGuideDiscussion(rowId, { councilPrefill: councilPrefillForGuideQuestion(q) })
-                            }
-                            onDiscussFromCollapsed={runGuideDiscussFromCollapsed}
-                            registerDeferContextForPrompt={registerDeferContextForPrompt}
-                            removeGuideRowsForPromptId={removeGuideRowsForPromptId}
-                            dismissGuideFromThread={dismissGuideFromThread}
-                            markGuideInteracted={markGuideInteracted}
-                            hidePromptActionsForPromptId={hidePromptActionsForPromptId}
-                            councilTextareaFocus={() => {
-                              window.setTimeout(() => councilQuestionTextareaRef.current?.focus(), 0)
-                            }}
-                          />
-                        )
-                      }
-                      return null
-                    }
-                    const gm = m as GuideThreadMessage
-                    const guideQuestionText = resolveGuideQuestionMeta(gm).questionText
-                    const guideCanonicalPromptId =
-                      gm.promptSignal?.promptId ?? ephemeralGuidePromptIdFromContent(gm.content)
-                    return (
-                      <InlineThreadGuideCard
-                        key={keyPrefix}
-                        message={gm}
-                        mainView={mainView}
-                        mapNodeKind={mapDevelopmentalSnapshot?.node_kind ?? null}
-                        veTypeHint={developmentalGuidancePreview?.vm_entity_type ?? null}
-                        mapNodeLabel={mapDevelopmentalSnapshot?.node_label ?? null}
-                        nestAggregate={mapDevelopmentalSnapshot?.node_kind === 'nest'}
-                        formatSystemPromptContextTitle={formatSystemPromptContextTitle}
-                        veSelection={veSelection}
-                        registerDeferContextForPrompt={registerDeferContextForPrompt}
-                        removeGuideRowsForPromptId={removeGuideRowsForPromptId}
-                        dismissGuideFromThread={dismissGuideFromThread}
-                        markGuideInteracted={markGuideInteracted}
-                        hidePromptActionsForPromptId={hidePromptActionsForPromptId}
-                        isExpanded={expandedThreadGuidePromptId === gid}
-                        isActiveConversationalSuggestion={activeConversationalSuggestionPromptId === gid}
-                        onShowInThread={() => {
-                          setExpandedThreadGuidePromptId(gid)
-                          setActiveConversationalSuggestionPromptId(null)
-                        }}
-                        onCollapse={() => {
-                          setExpandedThreadGuidePromptId((e) => (e === gid ? null : e))
-                          setActiveConversationalSuggestionPromptId((a) => (a === gid ? null : a))
-                        }}
-                        onDiscussEngage={() =>
-                          engageGuideDiscussion(gid, {
-                            councilPrefill: councilPrefillForGuideQuestion(guideQuestionText),
-                          })
-                        }
-                        onDiscussFromCollapsed={() =>
-                          runGuideDiscussFromCollapsed(gid, guideQuestionText, guideCanonicalPromptId)
-                        }
-                        councilTextareaFocus={() => {
-                          window.setTimeout(() => councilQuestionTextareaRef.current?.focus(), 0)
-                        }}
-                      />
-                    )
-                  }
-                  return (
-                    <div
-                      key={keyPrefix}
-                      className={`rounded-lg px-3 py-2 text-sm ${
-                        m.role === 'user'
-                          ? 'bg-stone-700/80 text-stone-200 ml-4'
-                          : 'bg-stone-900/90 text-stone-300 mr-4 border border-stone-600'
-                      }`}
-                    >
-                      {m.role === 'agent' && m.agentLabel && (
-                        <p className="text-xs text-yellow-500/90 font-medium mb-1">{m.agentLabel}</p>
-                      )}
-                      {m.role === 'agent' && m.threadHandoffReview ? (
-                        <>
-                          <pre className="whitespace-pre-wrap font-sans text-xs text-stone-300 mb-2">
-                            {m.content.slice(0, AGENT_THREAD_DISPLAY_MAX_CHARS)}
-                            {m.content.length > AGENT_THREAD_DISPLAY_MAX_CHARS ? '\n…' : ''}
-                          </pre>
-                          <SubjectHandoffReview
-                            reviewId={m.threadHandoffReview.reviewId}
-                            forSubjectLabel={m.threadHandoffReview.forSubjectLabel}
-                            items={m.threadHandoffReview.items}
-                            resolvedIds={resolvedHandoffSet}
-                            showSaveInNotes={Boolean(
-                              parseSubjectEntityRef(m.threadHandoffReview.previousSubjectKey),
-                            )}
-                            busyId={handoffNotesBusyId}
-                            onCommitNow={handleHandoffCommitNow}
-                            onSaveNotes={(item) =>
-                              void handleHandoffSaveNotes(item, m.threadHandoffReview!.previousSubjectKey)
-                            }
-                            onDismissItem={handleHandoffDismissItem}
-                          />
-                          <AgentChatResonanceSlider
-                            responseId={`handoff-${m.threadHandoffReview.reviewId}`}
-                            agentLabel={m.agentLabel || 'Handoff'}
-                            mainView={mainView}
-                            folderPath={folderPath}
-                            lastFolderPath={lastFolderPath}
-                          />
-                        </>
-                      ) : m.role === 'agent' &&
-                        (m.agentLabel === 'Council' ||
-                          m.agentLabel === 'Folder review' ||
-                          m.agentLabel === 'Zenaf' ||
-                          m.agentLabel === 'Thinking Partner' ||
-                          m.agentLabel === 'Zenaf (Thinking Partner)') ? (
-                        <>
-                          <CouncilTranscriptResonanceBridge
-                            text={m.content}
-                            decorateSeatHeaders={m.agentLabel === 'Council'}
-                            stripZenafSynthesis={
-                              m.agentLabel === 'Council' ? !includeCouncilSynthesis : true
-                            }
-                            responseIdPrefix={
-                              m.resonanceResponseId ??
-                              councilSynthesisIntegrityEnvelope?.provenance?.run_id ??
-                              `${keyPrefix}-msg`
-                            }
-                            mainView={mainView}
-                            folderPath={folderPath}
-                            lastFolderPath={lastFolderPath}
-                            agentLabelForResonance={m.agentLabel}
-                            folderWorkflowResonance={m.agentLabel === 'Folder review'}
-                            integrationCommit={m.integrationCommit}
-                            pendingIntegration={m.pendingIntegration}
-                            onOpenEntity={handleCouncilEntityMentionOpen}
-                          />
-                          {!insideNest && i === agentThread.length - 1 &&
-                            m.role === 'agent' &&
-                            m.agentLabel === 'Council' &&
-                            includeCouncilSynthesis &&
-                            /\bZenaf synthesis:/i.test(m.content) && (
-                              <CouncilSynthesisIntegrityNote
-                                includeSynthesis
-                                state={councilSynthesisIntegrity}
-                                warning={councilIntegrityWarning}
-                                envelope={councilSynthesisIntegrityEnvelope}
-                              />
-                            )}
-                        </>
-                      ) : (
-                        <>
-                          {m.role === 'user' && activeMode === 'council' ? (
-                            <div className="whitespace-pre-wrap font-sans text-xs text-stone-200">
-                              <EntityMentionText
-                                text={m.councilThreadDisplayContent ?? m.content}
-                                maxChars={AGENT_THREAD_DISPLAY_MAX_CHARS}
-                                onOpenEntity={handleCouncilEntityMentionOpen}
-                              />
-                            </div>
-                          ) : (
-                            <pre className="whitespace-pre-wrap font-sans text-xs">
-                              {(m.councilThreadDisplayContent ?? m.content).slice(
-                                0,
-                                AGENT_THREAD_DISPLAY_MAX_CHARS,
-                              )}
-                              {(m.councilThreadDisplayContent ?? m.content).length >
-                              AGENT_THREAD_DISPLAY_MAX_CHARS
-                                ? '\n…'
-                                : ''}
-                            </pre>
-                          )}
-                          {m.role === 'agent' ? (
-                            <AgentChatResonanceSlider
-                              responseId={m.resonanceResponseId ?? `${keyPrefix}-integrated`}
-                              agentLabel={m.agentLabel}
-                              mainView={mainView}
-                              folderPath={folderPath}
-                              lastFolderPath={lastFolderPath}
-                            />
-                          ) : null}
-                        </>
-                      )}
-                    </div>
-                  )
-                }
-                  return agentThread.map((m, i) => {
-                    if (councilScopeThreadStartIndex != null) {
-                      const start = Math.min(councilScopeThreadStartIndex, agentThread.length)
-                      if (i < start) return null
-                    }
-                    return renderRow(m, i, `row-${i}`, false)
-                  })
-                })()}
-                {streamingCouncilText && (
-                  <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 mr-4 border border-yellow-700/50">
-                    <p className="text-xs text-yellow-500/90 font-medium mb-1">
-                      {lastCouncilWasFolderWorkflow ? 'Folder review' : streamingCouncilRunLabel}
-                    </p>
-                    <CouncilTranscriptResonanceBridge
-                      text={streamingCouncilText}
-                      decorateSeatHeaders={
-                        !lastCouncilWasFolderWorkflow && streamingCouncilRunLabel === 'Council'
-                      }
-                      stripZenafSynthesis={
-                        lastCouncilWasFolderWorkflow ||
-                        streamingCouncilRunLabel === 'Zenaf' ||
-                        streamingCouncilRunLabel === 'Thinking Partner' ||
-                        streamingCouncilRunLabel === 'Zenaf (Thinking Partner)' ||
-                        !includeCouncilSynthesis
-                      }
-                      responseIdPrefix={
-                        councilResonanceRunIdRef.current ??
-                        councilSynthesisIntegrityEnvelope?.provenance?.run_id ??
-                        streamingCouncilResonanceKeyRef.current
-                      }
-                      mainView={mainView}
-                      folderPath={folderPath}
-                      lastFolderPath={lastFolderPath}
-                      agentLabelForResonance={
-                        lastCouncilWasFolderWorkflow ? 'Folder review' : streamingCouncilRunLabel
-                      }
-                      folderWorkflowResonance={lastCouncilWasFolderWorkflow}
-                      onOpenEntity={handleCouncilEntityMentionOpen}
-                    />
-                    {!lastCouncilWasFolderWorkflow && streamingCouncilRunLabel === 'Council' && (
-                      <CouncilSynthesisIntegrityNote
-                        includeSynthesis={includeCouncilSynthesis}
-                        state={councilSynthesisIntegrity}
-                        warning={councilIntegrityWarning}
-                        envelope={councilSynthesisIntegrityEnvelope}
-                      />
-                    )}
-                    <span className="inline-block w-2 h-4 ml-0.5 bg-yellow-500 animate-pulse" aria-hidden />
-                  </div>
-                )}
-                {agentResponse && agentThread.length === 0 && !streamingCouncilText && (
-                  <div className="rounded-lg px-3 py-2 text-sm bg-stone-900/90 text-stone-300 border border-stone-600">
-                    {lastMode === 'council' ? (
-                      <>
-                        <CouncilTranscriptResonanceBridge
-                          text={agentResponse}
-                          decorateSeatHeaders={
-                            lastCouncilPresentationKind === 'multiseat' && !lastCouncilWasFolderWorkflow
-                          }
-                          stripZenafSynthesis={
-                            lastCouncilPresentationKind !== 'multiseat' ||
-                            lastCouncilWasFolderWorkflow ||
-                            !includeCouncilSynthesis
-                          }
-                          responseIdPrefix={threadAgentStripResonanceIdRef.current}
-                          mainView={mainView}
-                          folderPath={folderPath}
-                          lastFolderPath={lastFolderPath}
-                          agentLabelForResonance={
-                            lastCouncilWasFolderWorkflow ? 'Folder review' : streamingCouncilRunLabel || 'Council'
-                          }
-                          folderWorkflowResonance={lastCouncilWasFolderWorkflow}
-                          onOpenEntity={handleCouncilEntityMentionOpen}
-                        />
-                        {lastCouncilPresentationKind === 'multiseat' &&
-                          !lastCouncilWasFolderWorkflow &&
-                          includeCouncilSynthesis &&
-                          /\bZenaf synthesis:/i.test(agentResponse) && (
-                            <CouncilSynthesisIntegrityNote
-                              includeSynthesis={includeCouncilSynthesis}
-                              state={councilSynthesisIntegrity}
-                              warning={councilIntegrityWarning}
-                              envelope={councilSynthesisIntegrityEnvelope}
-                            />
-                          )}
-                      </>
-                    ) : (
-                      <>
-                        <pre className="whitespace-pre-wrap font-sans text-xs">
-                          {agentResponse.slice(0, AGENT_THREAD_DISPLAY_MAX_CHARS)}
-                          {agentResponse.length > AGENT_THREAD_DISPLAY_MAX_CHARS ? '\n…' : ''}
-                        </pre>
-                        <AgentChatResonanceSlider
-                          responseId={`${threadAgentStripResonanceIdRef.current}-other`}
-                          agentLabel={
-                            lastMode === 'web_research'
-                              ? 'Web'
-                              : lastMode === 'next_step'
-                                ? 'Next Step'
-                                : 'Assistant'
-                          }
-                          mainView={mainView}
-                          folderPath={folderPath}
-                          lastFolderPath={lastFolderPath}
-                        />
-                      </>
-                    )}
-                  </div>
-                )}
-                    <div ref={agentConversationEndRef} className="h-px w-full shrink-0 scroll-mt-2" aria-hidden />
-                  </div>
-                </div>
-                <div className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain border-t border-stone-700 bg-stone-800/80">
-                  <div className="space-y-3 p-4">
-                <p className="rounded-lg border border-stone-700 bg-stone-900/70 px-3 py-2 text-[11px] leading-snug text-stone-400">
-                  Talking with your council lives in one place now — open any seat on the
-                  tree and choose Talk; “choose multiple” there sends one message to the
-                  seats you check, in one thread. This console is the deliberation desk:
-                  folder runs, synthesis, and recorded insights.
-                </p>
-                <div>
-                  <label className="block text-xs text-stone-500 mb-1">Your reply</label>
-                  <CouncilQuestionTextarea
-                    textareaRef={councilQuestionTextareaRef}
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    onInput={() => {
-                      adjustCouncilQuestionTextareaHeight()
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key !== 'Enter' || e.shiftKey) return
-                      e.preventDefault()
-                      if (!agentRunDisabled) runSelectedAgent()
-                    }}
-                    placeholder="Type your question or response for the council…"
-                    className="w-full px-3 py-2.5 rounded-lg bg-stone-900 border border-stone-600 text-stone-100 text-sm placeholder-stone-500 focus:outline-none focus:ring-1 focus:ring-yellow-700 resize-none leading-relaxed"
-                  />
-                  <button
-                    type="button"
-                    className="mt-2 text-[10px] text-stone-500 hover:text-stone-300 underline-offset-2 hover:underline"
-                    onClick={() => setCouncilAdvancedOptions((v) => !v)}
-                  >
-                    {councilAdvancedOptions ? 'Hide advanced options' : 'Advanced options'}
-                  </button>
-                  {councilAdvancedOptions ? (
-                    <div className="mt-2 space-y-2 border-l border-stone-700/80 pl-2">
-                      <label className="flex items-center gap-2 text-xs text-stone-400 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={useLastResultAsContext}
-                          onChange={(e) => setUseLastResultAsContext(e.target.checked)}
-                          className="rounded border-stone-600 bg-stone-900 text-yellow-700"
-                        />
-                        Use current result as context
-                      </label>
-                      <label className="flex items-center gap-2 text-xs text-stone-400 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={includeCouncilSynthesis}
-                          onChange={(e) => setIncludeCouncilSynthesis(e.target.checked)}
-                          className="rounded border-stone-600 bg-stone-900 text-yellow-700"
-                        />
-                        Include Zenaf synthesis (final integrator pass)
-                      </label>
-                    </div>
-                  ) : null}
-                </div>
-                <button
-                  onClick={runSelectedAgent}
-                  disabled={agentRunDisabled}
-                  className="w-full px-4 py-2.5 rounded-lg bg-yellow-700 hover:bg-yellow-600 disabled:opacity-50 text-stone-50 text-sm font-medium"
-                >
-                  {councilTransformLoading ? 'Working…' : loading ? 'Running…' : 'Ask council'}
-                </button>
-                <CouncilPersonalityModeSelector
-                  value={councilPersonalityMode}
-                  onChange={handleCouncilPersonalityModeChange}
-                  disabled={agentRunDisabled}
-                />
-                {mirrorNotice ? (
-                  <p
-                    role="status"
-                    className="rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-2 text-[11px] text-amber-200/90 leading-snug"
-                  >
-                    {mirrorNotice}
-                  </p>
-                ) : null}
-                {lastMode === 'council' ? (
-                  <div className="space-y-1">
-                    <button
-                      type="button"
-                      onClick={() => void handleRecordCouncilInsight()}
-                      disabled={
-                        councilInsightSaving ||
-                        !(resolveCouncilInsightText()?.trim() ?? '')
-                      }
-                      className="w-full px-3 py-2 rounded-lg border border-stone-600 text-stone-200 hover:bg-stone-700/80 disabled:opacity-40 text-xs font-medium"
-                      title="Persist council output as an append-only decision (no new VE entity row)"
-                    >
-                      {councilInsightSaving ? 'Recording…' : 'Record council insight'}
-                    </button>
-                    {councilInsightNotice ? (
-                      <p className="text-[11px] text-stone-400">{councilInsightNotice}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <label className="block text-xs text-stone-500 uppercase tracking-wide">
-                      Seats <span className="text-stone-500 font-normal normal-case">({councilSelectedCount} / {councilMaxSeats})</span>
-                    </label>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="rounded-xl border border-stone-700/80 bg-stone-900/45 p-3 min-w-0 overflow-x-auto">
-                      <div className="flex flex-nowrap items-center justify-center gap-2.5 min-w-min px-0.5">
-                        {councilSeatSlots.slice(0, councilMaxSeats).map((slot) => {
-                          const perspective = slot.actorId
-                            ? councilAgentList.find((x) => x.id === slot.actorId)
-                            : null
-                          const isFilled = slot.actorId != null
-                          const isSelectedSeat = selectedCouncilSlotId === slot.id
-                          const seatMandateForOrb = mandatesBySeatId[slot.id] ?? ''
-                          const hasSeatMandate =
-                            seatMandateForOrb !== '' && isKnownMandateId(seatMandateForOrb)
-                          const orbStroke = mandateOrbStrokeStyle(hasSeatMandate ? seatMandateForOrb : null)
-                          const mandateOrbGlow = mandateSeatOrbGlowClass(seatMandateForOrb || null)
-                          return (
-                            <button
-                              key={slot.id}
-                              type="button"
-                              onClick={() => setSelectedCouncilSlotId(slot.id)}
-                              onDoubleClick={() => applyCouncilSeatClear(slot.id)}
-                              title={
-                                perspective
-                                  ? `${perspective.name} — ${perspective.role || iconHintFor(perspective)}. Double-click to clear this seat.`
-                                  : 'Empty seat — choose an actor in the panel below (double-click to clear).'
-                              }
-                              style={orbStroke ?? undefined}
-                              className={`relative inline-flex h-12 w-12 items-center justify-center rounded-full border transition-all ${
-                                isSelectedSeat
-                                  ? 'ring-2 ring-yellow-700/75 ring-offset-2 ring-offset-stone-900'
-                                  : ''
-                              } ${
-                                isFilled
-                                  ? `bg-stone-700${hasSeatMandate ? '' : ' text-stone-100'}`
-                                  : `bg-stone-900/45${hasSeatMandate ? '' : ' text-stone-500'}`
-                              } ${
-                                hasSeatMandate
-                                  ? 'border border-solid'
-                                  : isFilled
-                                    ? 'border-stone-400/75'
-                                    : 'border-stone-600/70'
-                              } ${
-                                mandateOrbGlow ||
-                                (!hasSeatMandate && isFilled
-                                  ? 'shadow-[0_0_16px_rgba(164,132,74,0.18)]'
-                                  : '')
-                              } ${hasSeatMandate ? '' : 'hover:border-stone-300/70'}`}
-                            >
-                              {perspective ? (
-                                <AvatarDisplay agent={perspective} size="sm" className="text-stone-200" />
-                              ) : (
-                                <span
-                                  className={`text-[10px] font-medium ${hasSeatMandate ? '' : 'text-stone-500'}`}
-                                  aria-hidden
-                                >
-                                  —
-                                </span>
-                              )}
-                            </button>
-                          )
-                        })}
-                        {!councilExpandedMode && (
-                          <button
-                            type="button"
-                            className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-stone-600/70 bg-stone-900/45 text-stone-400 hover:text-stone-200 hover:border-stone-300/70 transition-colors"
-                            title="Add more council seats (up to 7). May slow the system — longer runs and timeouts."
-                            onClick={() => {
-                              const ok = window.confirm(
-                                'Expanding council seats may slow the system and cause longer runs/timeouts.\n\nContinue?',
-                              )
-                              if (ok) setCouncilExpandedMode(true)
-                            }}
-                          >
-                            <span className="text-xl leading-none font-medium">+</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    {(() => {
-                      const slot = councilSeatSlots.find((s) => s.id === selectedCouncilSlotId) ?? null
-                      if (!slot) return null
-                      const seatFilled = slot.actorId != null
-                      const seatMandateId = mandatesBySeatId[slot.id] ?? ''
-                      return (
-                        <div className="rounded-xl border border-stone-700 bg-stone-900/55 p-3 space-y-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-[10px] uppercase tracking-wide text-stone-500">
-                              Seat {councilSeatSlots.slice(0, councilMaxSeats).findIndex((s) => s.id === slot.id) + 1}
-                            </p>
-                            <button
-                              type="button"
-                              onClick={() => applyCouncilSeatClear(slot.id)}
-                              className={`text-[10px] px-2 py-0.5 rounded border ${
-                                seatFilled
-                                  ? 'border-yellow-700/60 bg-yellow-900/30 text-yellow-200'
-                                  : 'border-stone-600 text-stone-300 hover:text-stone-200'
-                              }`}
-                            >
-                              {seatFilled ? 'Clear seat' : 'Empty'}
-                            </button>
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <p className="text-[11px] uppercase tracking-wide text-stone-400">Role</p>
-                            <p className="text-[10px] text-stone-500 leading-snug">
-                              Seat job on the council — what question this seat answers (separate from actor).
-                            </p>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-transparent bg-stone-800/90 text-stone-400 ${mandateSeatIconAccentClass(seatMandateId || null)}`}
-                                title="Seat role"
-                              >
-                                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
-                                  <path d="M6 20h12M8 17h8M7 17l-1.6-8 3.2 2.2L12 5l3.4 6.2L18.6 9 17 17" />
-                                </svg>
-                              </span>
-                              <CouncilMandatePicker
-                                idPrefix={`council-seat-${slot.id}`}
-                                value={seatMandateId}
-                                onChange={(id) =>
-                                  setMandatesBySeatId((prev) => ({
-                                    ...prev,
-                                    [slot.id]: id,
-                                  }))
-                                }
-                                mandates={BUILT_IN_MANDATES}
-                              />
-                            </div>
-                          </div>
-
-                          <div className="space-y-1.5 pb-1">
-                            <p className="text-[11px] uppercase tracking-wide text-stone-400">Actor</p>
-                            <p className="text-[10px] text-stone-500 leading-snug">
-                              Saved actor that speaks from this seat (identity, values, style).
-                            </p>
-                            <CouncilPerspectivePicker
-                              idPrefix={`council-perspective-${slot.id}`}
-                              value={slot.actorId}
-                              onChange={(perspectiveId) =>
-                                setCouncilSeatSlots((prev) =>
-                                  prev.map((s) => (s.id === slot.id ? { ...s, actorId: perspectiveId } : s)),
-                                )
-                              }
-                              agents={councilAgentList}
-                            />
-                          </div>
-
-                          <div className="space-y-1.5">
-                            <p className="text-[11px] uppercase tracking-wide text-stone-400">Voiced by</p>
-                            <div className="flex items-center gap-2">
-                              {(() => {
-                                const currentValue = councilSeatLlmById[slot.id] ?? 'meta';
-                                const rowById = new Map((llmProviderRows ?? []).map((p) => [p.id, p]));
-                                const currentRow = rowById.get(currentValue);
-                                const isReady = currentValue === 'auto' || currentValue === 'ollama' || (currentRow && currentRow.available);
-                                return (
-                                  <>
-                                    <span
-                                      className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${isReady ? 'bg-emerald-400' : 'bg-red-400'}`}
-                                      title={isReady ? 'Provider ready' : 'Provider not configured'}
-                                    />
-                                    <select
-                                      value={currentValue}
-                                      onChange={(e) => {
-                                        const v = e.target.value;
-                                        setCouncilSeatLlmById((prev) => ({ ...prev, [slot.id]: v }));
-                                        if (currentUser) {
-                                          void saveCouncilSeatLlm(slot.id, v)
-                                            .then((map) => setCouncilSeatLlmById(map))
-                                            .catch(() => {});
-                                        }
-                                      }}
-                                      className="flex-1 min-w-0 bg-stone-900 border border-stone-600 rounded-lg px-3 py-2 text-sm text-stone-200 min-h-[44px]"
-                                    >
-                                      {councilLlmSelectOptions.map((o) => (
-                                        <option key={o.value} value={o.value}>
-                                          {o.label}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <button
-                                      type="button"
-                                      onClick={() => setMainView('settings')}
-                                      className="shrink-0 text-xs text-stone-400 underline underline-offset-2 hover:text-stone-200 px-2 py-2 min-h-[44px]"
-                                    >
-                                      Settings
-                                    </button>
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
-                  </div>
-                </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          </div>
-          {workoutExitToast ? (
-            <div className="shrink-0 px-3 py-2 text-center text-xs text-stone-500 border-t border-stone-700 bg-stone-900/50">
-              {workoutExitToast}
-            </div>
-          ) : null}
-          <ZenafPresence brandCoreProfileId={brandCoreProfileId} onOpen={() => setMainView('perspectives')} />
-          </div>
-        </aside>
-        )}
       </div>
+      {/* Zenaf presence footer — moved here from the retired legacy chat panel (2026-11-12); same views the panel served. */}
+      {mainView !== 'living_tree' && mainView !== 'vision_map' && (
+        <ZenafPresence brandCoreProfileId={brandCoreProfileId} onOpen={() => setMainView('perspectives')} />
+      )}
     </div>
     </FocusInviteRunProvider>
     </VisionExecutionFocusProvider>

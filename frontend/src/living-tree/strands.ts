@@ -7,8 +7,16 @@
  * without a backend round-trip; if the Python table changes, update this file
  * to match.
  *
+ * Colors: the `color` values below come from `../council/colors`
+ * (STRAND_COLORS) — the frontend's single source of truth for character +
+ * strand colors. Do not hardcode a strand hex here.
+ *
  * The 7 faculties are FIXED. "World"/environment is context, NOT a strand.
  */
+
+import { STRAND_COLORS, strandColor } from '../council/colors'
+
+export { strandColor }
 
 export type StrandKey = 'word' | 'number' | 'image' | 'sound' | 'body' | 'people' | 'self'
 
@@ -33,7 +41,7 @@ export const STRANDS: Strand[] = [
     key: 'word',
     faculty: 'Word',
     agentName: 'Voice',
-    color: '#e7aa89',
+    color: STRAND_COLORS.word,
     gardner: 'linguistic',
     tagline: 'Language, rhetoric, writing, voice — how things get said.',
   },
@@ -41,7 +49,7 @@ export const STRANDS: Strand[] = [
     key: 'number',
     faculty: 'Number',
     agentName: 'Logic',
-    color: '#91b6d1',
+    color: STRAND_COLORS.number,
     gardner: 'logical-mathematical',
     tagline: 'Analysis, systems, evidence — how patterns get read.',
   },
@@ -49,7 +57,7 @@ export const STRANDS: Strand[] = [
     key: 'image',
     faculty: 'Image',
     agentName: 'Eye',
-    color: '#edc87c',
+    color: STRAND_COLORS.image,
     gardner: 'spatial',
     tagline: 'Visual taste, design, spatial thinking — how things get seen.',
   },
@@ -57,7 +65,7 @@ export const STRANDS: Strand[] = [
     key: 'sound',
     faculty: 'Sound',
     agentName: 'Ear',
-    color: '#dea1b8',
+    color: STRAND_COLORS.sound,
     gardner: 'musical',
     tagline: 'Music, rhythm, listening — how things get heard.',
   },
@@ -65,7 +73,7 @@ export const STRANDS: Strand[] = [
     key: 'body',
     faculty: 'Body',
     agentName: 'Hands',
-    color: '#b3c98d',
+    color: STRAND_COLORS.body,
     gardner: 'bodily-kinesthetic',
     tagline: 'Craft, making, doing — how things get built.',
   },
@@ -73,7 +81,7 @@ export const STRANDS: Strand[] = [
     key: 'people',
     faculty: 'People',
     agentName: 'Heart',
-    color: '#bfa1de',
+    color: STRAND_COLORS.people,
     gardner: 'interpersonal',
     tagline: 'Leadership, teaching, care — how people get held.',
   },
@@ -81,7 +89,7 @@ export const STRANDS: Strand[] = [
     key: 'self',
     faculty: 'Self',
     agentName: 'Compass',
-    color: '#88b899',
+    color: STRAND_COLORS.self,
     gardner: 'intrapersonal',
     tagline: 'Judgment, values, direction — how choices get made.',
   },
@@ -89,14 +97,6 @@ export const STRANDS: Strand[] = [
 
 /** Braid display order: keeps the original three demo strands first. */
 export const BRAID_ORDER: StrandKey[] = ['image', 'self', 'sound', 'word', 'number', 'body', 'people']
-
-const _BY_KEY: Record<StrandKey, Strand> = Object.fromEntries(
-  STRANDS.map((s) => [s.key, s]),
-) as Record<StrandKey, Strand>
-
-export function strandColor(key: StrandKey): string {
-  return _BY_KEY[key].color
-}
 
 /** Strand lookup by warm agent name (e.g. "Voice"). */
 export function strandForAgentName(agentName: string): Strand | undefined {

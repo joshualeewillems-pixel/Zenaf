@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react'
+import { TREE_DEFAULT_RGB } from '../council/colors'
 
 /**
  * NodeSheet — the tree-as-organism surface (phase 1).
@@ -57,15 +58,15 @@ export function NodeSheet({
       <style>{`
 .nsh-root{position:fixed;inset:0;z-index:60;font-family:system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
 .nsh-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);animation:nsh-fade .22s ease-out}
-.nsh-panel{position:absolute;left:0;right:0;bottom:0;max-height:88vh;max-height:88dvh;display:flex;flex-direction:column;background:#0b0a09;border:1px solid rgba(201,168,106,.3);border-bottom:none;border-radius:20px 20px 0 0;color:#f5f0e8;animation:nsh-up .24s ease-out;box-shadow:0 -12px 48px rgba(0,0,0,.5)}
+.nsh-panel{position:absolute;left:0;right:0;bottom:0;max-height:88vh;max-height:88dvh;display:flex;flex-direction:column;background:#0b0a09;border:1px solid rgba(${TREE_DEFAULT_RGB},.3);border-bottom:none;border-radius:20px 20px 0 0;color:#f5f0e8;animation:nsh-up .24s ease-out;box-shadow:0 -12px 48px rgba(0,0,0,.5)}
 .nsh-grab{width:40px;height:4px;border-radius:2px;background:rgba(245,240,232,.25);margin:10px auto 0;flex:none}
-.nsh-head{display:flex;align-items:center;gap:10px;padding:8px 12px 10px;border-bottom:1px solid rgba(201,168,106,.18);flex:none}
+.nsh-head{display:flex;align-items:center;gap:10px;padding:8px 12px 10px;border-bottom:1px solid rgba(${TREE_DEFAULT_RGB},.18);flex:none}
 .nsh-titles{flex:1;min-width:0}
 .nsh-titles h2{margin:0;font-size:16px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nsh-titles p{margin:2px 0 0;font-size:11.5px;color:rgba(245,240,232,.55);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nsh-actions{display:flex;align-items:center;gap:8px;flex:none}
-.nsh-back,.nsh-close{flex:none;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;background:rgba(245,240,232,.06);border:1px solid rgba(201,168,106,.25);border-radius:12px;color:#f5f0e8;font-size:20px;line-height:1;cursor:pointer;font-family:inherit;padding:0}
-.nsh-back:active,.nsh-close:active{background:rgba(201,168,106,.18)}
+.nsh-back,.nsh-close{flex:none;min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;background:rgba(245,240,232,.06);border:1px solid rgba(${TREE_DEFAULT_RGB},.25);border-radius:12px;color:#f5f0e8;font-size:20px;line-height:1;cursor:pointer;font-family:inherit;padding:0}
+.nsh-back:active,.nsh-close:active{background:rgba(${TREE_DEFAULT_RGB},.18)}
 .nsh-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;padding:14px 14px 24px;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 @keyframes nsh-up{from{transform:translateY(24px);opacity:.55}to{transform:none;opacity:1}}
 @keyframes nsh-fade{from{opacity:0}to{opacity:1}}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
+import { TREE_DEFAULT_RGB } from '../council/colors'
 
 /**
  * The per-seat QC surface — "what's being fashioned" about you.
@@ -149,7 +150,7 @@ export function YouEchoPanel({ archetypeId }: { archetypeId: string }) {
               aria-label="Your echo's personal name"
               style={{
                 minHeight: 44, padding: '8px 12px', borderRadius: 10, flex: '1 1 160px',
-                background: 'rgba(245,240,232,.06)', border: '1px solid rgba(201,168,106,.35)',
+                background: 'rgba(245,240,232,.06)', border: `1px solid rgba(${TREE_DEFAULT_RGB},.35)`,
                 color: '#f5f0e8', fontFamily: 'inherit', fontSize: 14,
               }}
             />

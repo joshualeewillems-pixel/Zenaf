@@ -46,7 +46,7 @@ import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
 import { DraftStoreProvider } from '../chat/draftStore'
 import StrandPanel from '../chat/StrandPanel'
 import { isRevealed, resolveSeatFace, resolveSeatLogo, resolveSeatPanel, type SeatFaceSource } from './seatFaces'
-import { USER_WEAVE_COLOR, voiceColor } from '../components/VoiceWeave'
+import { TREE_DEFAULT_COLOR, TREE_DEFAULT_RGB, USER_WEAVE_COLOR, voiceColor } from '../council/colors'
 import { NodeSheet } from '../tree/NodeSheet'
 import { YouEchoPanel } from './YouEchoPanel'
 import { MeetingView } from './MeetingView'
@@ -606,12 +606,12 @@ function relax(P: Map<string, Placed>): Map<string, Placed> {
 }
 
 function strandCol(p: { side: string; strand: StrandKey | null; datum?: TreeDatum }): string {
-  if (p.side === 'c') return '#c9a86a'
+  if (p.side === 'c') return TREE_DEFAULT_COLOR
   // A seat node wears its own seat color (the founder's logo-sheet palette);
   // the Skeptic's hollow branch (dashed stroke, dark fill) is drawn at the
   // node itself and is unaffected by the color.
   if (p.datum?.archetype) return voiceColor(p.datum.archetype.id)
-  if (!p.strand) return '#c9a86a'
+  if (!p.strand) return TREE_DEFAULT_COLOR
   return strandColor(p.strand)
 }
 
@@ -1261,7 +1261,7 @@ export function LivingTreeView({
               alignItems: 'center',
               justifyContent: 'center',
               background: 'rgba(245,240,232,.06)',
-              border: '1px solid rgba(201,168,106,.25)',
+              border: `1px solid rgba(${TREE_DEFAULT_RGB},.25)`,
               borderRadius: 12,
               color: '#f5f0e8',
               fontSize: 20,
@@ -1317,6 +1317,7 @@ export function LivingTreeView({
           </button>
         )}
         {expanded && renderSeatCharacterBody(arch)}
+
       </div>
     )
   }
@@ -1514,7 +1515,7 @@ export function LivingTreeView({
       return null
     }
     const live = nodeById.get(sel!)
-    const col = live ? strandCol(live) : '#c9a86a'
+    const col = live ? strandCol(live) : TREE_DEFAULT_COLOR
     const raw = Math.max(0, d.depth ?? 0)
     const eff = effectiveDepth(d.depth, d.lastTended)
     const fallow = raw > 0.3 && eff < raw * 0.4
@@ -1732,8 +1733,9 @@ export function LivingTreeView({
       style={{ boxSizing: 'border-box', width: '100%', maxWidth: 430, margin: '0 auto' }}
     >
       <style>{`
-.ltree{box-sizing:border-box;width:100%;max-width:430px;margin:0 auto;background:#0b0a09;border:1px solid rgba(201,168,106,.25);border-radius:20px;padding:18px 12px 14px;color:#f5f0e8;font-family:system-ui,-apple-system,sans-serif;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overflow-x:clip}
+.ltree{box-sizing:border-box;width:100%;max-width:430px;margin:0 auto;background:#0b0a09;border:1px solid rgba(${TREE_DEFAULT_RGB},.25);border-radius:20px;padding:18px 12px 14px;color:#f5f0e8;font-family:system-ui,-apple-system,sans-serif;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overflow-x:clip}
 .ltree *{box-sizing:border-box}
+
 .lsvg{display:block;width:100%;height:auto}
 .lnode{cursor:pointer}
 .lnode circle.face{fill:#141210;stroke-width:1.8}
@@ -1741,17 +1743,17 @@ export function LivingTreeView({
 .lnode .nm{font-size:9px;font-weight:700}
 .lnode .bud{fill:#0b0a09;stroke-width:1.2}
 .lnode .budt{font-size:8px;font-weight:800}
-.lnarr{margin:10px 4px 0;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.3);border-radius:14px;padding:12px 14px;min-height:120px}
+.lnarr{margin:10px 4px 0;background:rgba(245,240,232,.05);border:1px solid rgba(${TREE_DEFAULT_RGB},.3);border-radius:14px;padding:12px 14px;min-height:120px}
 .lnarr h3{margin:0 0 3px;font-size:13.5px}
 .lnarr .ltag{font-size:10.5px;font-weight:700;letter-spacing:.08em;margin-bottom:5px}
 .lnarr p{margin:0;font-size:12px;line-height:1.6;color:rgba(245,240,232,.82);font-style:italic;overflow-wrap:break-word}
 .lnarr .lnote{font-style:normal;color:rgba(245,240,232,.6);font-size:11.5px;margin-bottom:8px}
-.lrow{display:flex;align-items:center;justify-content:space-between;width:100%;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.25);border-radius:10px;color:#f5f0e8;font-size:13px;font-weight:600;padding:10px 12px;min-height:44px;margin:0 0 6px;cursor:pointer;font-family:inherit;text-align:left}
-.lrow:active{background:rgba(201,168,106,.15)}
-.lrow .lchev{color:#c9a86a;font-weight:400}
-.lback{background:none;border:none;color:#c9a86a;font-size:12px;font-weight:700;padding:2px 0 8px;min-height:44px;cursor:pointer;font-family:inherit}
-.lcta{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:rgba(201,168,106,.12);border:1px solid rgba(201,168,106,.5);border-radius:10px;color:#f5f0e8;font-size:12.5px;font-weight:700;padding:10px 14px;min-height:44px;cursor:pointer;font-family:inherit}
-.lcta:active{background:rgba(201,168,106,.25)}
+.lrow{display:flex;align-items:center;justify-content:space-between;width:100%;background:rgba(245,240,232,.05);border:1px solid rgba(${TREE_DEFAULT_RGB},.25);border-radius:10px;color:#f5f0e8;font-size:13px;font-weight:600;padding:10px 12px;min-height:44px;margin:0 0 6px;cursor:pointer;font-family:inherit;text-align:left}
+.lrow:active{background:rgba(${TREE_DEFAULT_RGB},.15)}
+.lrow .lchev{color:${TREE_DEFAULT_COLOR};font-weight:400}
+.lback{background:none;border:none;color:${TREE_DEFAULT_COLOR};font-size:12px;font-weight:700;padding:2px 0 8px;min-height:44px;cursor:pointer;font-family:inherit}
+.lcta{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:rgba(${TREE_DEFAULT_RGB},.12);border:1px solid rgba(${TREE_DEFAULT_RGB},.5);border-radius:10px;color:#f5f0e8;font-size:12.5px;font-weight:700;padding:10px 14px;min-height:44px;cursor:pointer;font-family:inherit}
+.lcta:active{background:rgba(${TREE_DEFAULT_RGB},.25)}
 .lsub{margin-top:10px;font-size:12px;color:rgba(245,240,232,.55);font-style:italic}
 .lstats{margin-top:2px}
 .lstat{display:flex;align-items:center;gap:8px;margin:7px 0;font-style:normal}
@@ -1760,22 +1762,22 @@ export function LivingTreeView({
 .lstat .lpct{font-size:11px;color:rgba(245,240,232,.55);min-width:30px;text-align:right}
 .lstat .lbar{flex:1;height:6px;border-radius:3px;background:rgba(245,240,232,.1);overflow:hidden}
 .lstat .lfill{height:100%;border-radius:3px}
-.lsect{margin:12px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.1em;color:rgba(201,168,106,.85);text-transform:uppercase}
+.lsect{margin:12px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.1em;color:rgba(${TREE_DEFAULT_RGB},.85);text-transform:uppercase}
 .lblend{margin-top:2px}
 .ltwigs{margin-top:2px}
-.ltwig{display:flex;align-items:center;justify-content:space-between;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.2);border-radius:8px;padding:8px 10px;margin:5px 0;min-height:44px}
+.ltwig{display:flex;align-items:center;justify-content:space-between;background:rgba(245,240,232,.05);border:1px solid rgba(${TREE_DEFAULT_RGB},.2);border-radius:8px;padding:8px 10px;margin:5px 0;min-height:44px}
 .ltwig .lname{font-size:12.5px;font-weight:600;color:#f5f0e8}
 .ltwig .ldomain{font-size:11px;color:rgba(245,240,232,.55);font-style:italic}
-.lmarket{margin-top:4px;border-top:1px solid rgba(201,168,106,.2);padding-top:2px}
+.lmarket{margin-top:4px;border-top:1px solid rgba(${TREE_DEFAULT_RGB},.2);padding-top:2px}
 .lavatar-sect{margin-top:2px}
 .lavatar-row{display:flex;gap:12px;align-items:center;margin:6px 0}
 .lavatar-ph{position:relative;flex:none;border-radius:50%;overflow:hidden}
 .lavatar-qqq{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;letter-spacing:.08em;color:rgba(245,240,232,.75)}
-.lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,106,.5)}
+.lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(${TREE_DEFAULT_RGB},.5)}
 .lchar-cols{display:flex;gap:12px;align-items:flex-start}
 .lchar-art{flex:0 0 38%;min-width:0;padding-top:12px}
 .lchar-main{flex:1 1 auto;min-width:0}
-.lavatar-panel{display:block;width:100%;height:auto;max-width:100%;object-fit:contain;border-radius:12px;border:1px solid rgba(201,168,106,.25);margin:0}
+.lavatar-panel{display:block;width:100%;height:auto;max-width:100%;object-fit:contain;border-radius:12px;border:1px solid rgba(${TREE_DEFAULT_RGB},.25);margin:0}
 .lavatar-meta{flex:1;min-width:0}
 .lavatar-meta .lnote{margin:0}
 .lavatar-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
@@ -1796,9 +1798,9 @@ export function LivingTreeView({
 .lsheet-view .lsub{font-style:normal}
 .lavatar-head{display:flex;gap:12px;align-items:center;margin-bottom:2px}
 .lname-btn{background:none;border:0;padding:0;margin:0;color:#f5f0e8;font-family:inherit;font-size:18px;font-weight:700;line-height:1.2;cursor:pointer;text-align:left;display:block}
-.lname-btn:active{color:#c9a86a}
-.lhead-fullchar{flex:none;min-height:44px;padding:0 10px;background:rgba(201,168,106,.12);border:1px solid rgba(201,168,106,.5);border-radius:10px;color:#f5f0e8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
-.lhead-fullchar:active{background:rgba(201,168,106,.25)}
+.lname-btn:active{color:${TREE_DEFAULT_COLOR}}
+.lhead-fullchar{flex:none;min-height:44px;padding:0 10px;background:rgba(${TREE_DEFAULT_RGB},.12);border:1px solid rgba(${TREE_DEFAULT_RGB},.5);border-radius:10px;color:#f5f0e8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.lhead-fullchar:active{background:rgba(${TREE_DEFAULT_RGB},.25)}
 .lhead-viab{flex:none;text-align:right;line-height:1.3;min-width:52px}
 .lhead-viab-l{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(245,240,232,.55)}
 .lhead-viab-v{display:block;font-size:13px;font-weight:700;color:#f5f0e8}

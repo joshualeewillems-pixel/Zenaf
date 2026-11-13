@@ -157,7 +157,7 @@ def test_assign_owner_requires_exact_person_name(ve_conn) -> None:
     uid = "u-owner"
     ini = ve_storage.create_initiative(M.InitiativeCreate(title="Own", brief="b"), uid)
     iid = str(ini["id"])
-    ve_storage.create_person(M.PersonCreate(name="Alice Example", role=""))
+    ve_storage.create_person(M.PersonCreate(name="Alice Example", role=""), uid)
     r = evaluate_direct_ve_action(
         question="Set owner to Bob Nobody",
         context=_ctx_initiative(iid),
@@ -170,7 +170,7 @@ def test_assign_owner_exact_name(ve_conn) -> None:
     uid = "u-owner2"
     ini = ve_storage.create_initiative(M.InitiativeCreate(title="Own2", brief="b"), uid)
     iid = str(ini["id"])
-    ve_storage.create_person(M.PersonCreate(name="Alice Example", role=""))
+    ve_storage.create_person(M.PersonCreate(name="Alice Example", role=""), uid)
     r = evaluate_direct_ve_action(
         question="Set owner to Alice Example",
         context=_ctx_initiative(iid),
@@ -179,7 +179,7 @@ def test_assign_owner_exact_name(ve_conn) -> None:
     assert r["status"] == "handled"
     assert "Owner" in r["message"] and "Alice" in r["message"]
     row = ve_storage.get_initiative(iid, uid)
-    people = ve_storage.list_persons()
+    people = ve_storage.list_persons(uid)
     alice = next(p for p in people if p.get("name") == "Alice Example")
     assert row and row.get("owner_id") == alice["id"]
 

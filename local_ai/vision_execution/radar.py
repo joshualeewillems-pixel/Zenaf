@@ -67,10 +67,10 @@ def get_radar(user_id: str) -> dict[str, list[dict[str, Any]]]:
     for p in projects:
         D.add_project_derived(p)
     tasks = S.list_tasks(user_id)
-    capacity_list = S.list_capacity_profiles()
+    capacity_list = S.list_capacity_profiles(user_id)
     for c in capacity_list:
         D.add_capacity_derived(c, c["person_id"], projects)
-    persons = {p["id"]: p for p in S.list_persons()}
+    persons = {p["id"]: p for p in S.list_persons(user_id)}
 
     initiative_ids_with_projects = {p["initiative_id"] for p in projects if p.get("initiative_id")}
 

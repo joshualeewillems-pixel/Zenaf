@@ -490,25 +490,25 @@ def test_get_idea_includes_checklist_progress(ve_ctx):
 # --- people + assets: checklist links, unfolding carry-over, mining suggestions --
 
 
-def _mk_person(name: str = "Jim"):
+def _mk_person(name: str = "Jim", uid: str | None = None):
     import local_ai.vision_execution.storage as ve_store
     from local_ai.vision_execution import models as M
 
-    return ve_store.create_person(M.PersonCreate(name=name, role="Supplier"))
+    return ve_store.create_person(M.PersonCreate(name=name, role="Supplier"), uid)
 
 
-def _mk_asset(name: str = "Clinic room"):
+def _mk_asset(name: str = "Clinic room", uid: str | None = None):
     import local_ai.vision_execution.storage as ve_store
     from local_ai.vision_execution import models as M
 
-    return ve_store.create_asset(M.AssetCreate(name=name, asset_type="room"))
+    return ve_store.create_asset(M.AssetCreate(name=name, asset_type="room"), uid)
 
 
 def test_checklist_item_links_person_and_asset(ve_ctx):
     uid = ve_ctx["uid"]
     idea = _mk_idea(uid, "Linked work")
-    jim = _mk_person("Jim")
-    room = _mk_asset("Clinic room")
+    jim = _mk_person("Jim", uid)
+    room = _mk_asset("Clinic room", uid)
     item = ve.create_checklist_items_batch(
         idea["id"],
         [{"title": "Ask Jim about the clinic room", "person_id": jim["id"], "asset_id": room["id"]}],
@@ -532,8 +532,8 @@ def test_checklist_item_rejects_unknown_person(ve_ctx):
 def test_unfolding_carries_person_asset_links_to_tasks(ve_ctx):
     uid = ve_ctx["uid"]
     idea = _mk_idea(uid, "Carry-over")
-    jim = _mk_person("Jim")
-    room = _mk_asset("Clinic room")
+    jim = _mk_person("Jim", uid)
+    room = _mk_asset("Clinic room", uid)
     ve.create_checklist_items_batch(
         idea["id"],
         [{"title": "Ask Jim to book the clinic room", "done": True,
@@ -552,12 +552,13 @@ def test_unfolding_carries_person_asset_links_to_tasks(ve_ctx):
 def test_mining_suggests_person_asset_links_by_keyword(ve_ctx):
     from local_ai.agent_intake import mining_chat
 
-    jim = _mk_person("Jim")
-    room = _mk_asset("Clinic room")
-    hit = mining_chat._suggest_checklist_links("Ask Jim to book the clinic room")
+    uid = ve_ctx["uid"]
+    jim = _mk_person("Jim", uid)
+    room = _mk_asset("Clinic room", uid)
+    hit = mining_chat._suggest_checklist_links("Ask Jim to book the clinic room", uid)
     assert hit.get("person_id") == jim["id"]
     assert hit.get("asset_id") == room["id"]
-    miss = mining_chat._suggest_checklist_links("Buy more socks")
+    miss = mining_chat._suggest_checklist_links("Buy more socks", uid)
     assert miss == {}
 
 
@@ -565,5 +566,5 @@ def test_mining_suggestion_uses_word_boundaries(ve_ctx):
     """'Al' must not match inside 'also' — v1 heuristic stays honest."""
     from local_ai.agent_intake import mining_chat
 
-    _mk_person("Al")
-    assert mining_chat._suggest_checklist_links("also buy socks") == {}
+    _mk_person("Al", ve_ctx["uid"])
+    assert mining_chat._suggest_checklist_links("also buy socks", ve_ctx["uid"]) == {}

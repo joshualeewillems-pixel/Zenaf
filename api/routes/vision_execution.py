@@ -2667,8 +2667,9 @@ def _workspace_identity_status_payload() -> dict[str, Any]:
     }
 
 
-@router.post("/workspace-identity/pick-directory")
-async def post_workspace_identity_pick_directory():
+async def post_workspace_identity_pick_directory(
+    current_user: dict = Depends(get_current_user),
+):
     """
     Open a native folder dialog on the machine running this API and return the absolute path.
     The browser cannot read full filesystem paths; this bridges scan roots to the server FS.
@@ -2681,6 +2682,14 @@ async def post_workspace_identity_pick_directory():
     if err:
         raise HTTPException(status_code=503, detail=err)
     return {"ok": True, "path": path, "cancelled": path is None}
+
+
+# Native directory picker: registered only outside hosted mode
+# (Track B ruling 4). On hosted deployments this route does not exist
+# (404); in local dev it is present and authenticated. The frontend
+# already handles the failure through its existing error banner.
+if not hosted_config.is_prod():
+    router.post("/workspace-identity/pick-directory")(post_workspace_identity_pick_directory)
 
 
 @router.get("/workspace-identity/translation-template")

@@ -1451,7 +1451,7 @@ def project_suggested_work(project_id: str, current_user: dict = Depends(get_cur
     if proj is None:
         raise HTTPException(status_code=404, detail="Project not found")
     tasks = S.list_tasks(uid, project_id)
-    persons = S.list_persons()
+    persons = S.list_persons(uid)
     persons_by_id = {str(p["id"]): str(p.get("name") or p["id"]) for p in persons if p.get("id")}
     from local_ai.vision_execution.project_suggested_work import generate_project_suggested_work
 
@@ -1687,12 +1687,12 @@ def delete_task(task_id: str, current_user: dict = Depends(get_current_user)):
 # --- Persons ---
 @router.get("/persons")
 def list_persons(current_user: dict = Depends(get_current_user)):
-    return S.list_persons()
+    return S.list_persons(current_user["id"])
 
 
 @router.get("/persons/{person_id}")
 def get_person(person_id: str, current_user: dict = Depends(get_current_user)):
-    out = S.get_person(person_id)
+    out = S.get_person(person_id, current_user["id"])
     if out is None:
         raise HTTPException(status_code=404, detail="Person not found")
     return out
@@ -1700,12 +1700,12 @@ def get_person(person_id: str, current_user: dict = Depends(get_current_user)):
 
 @router.post("/persons")
 def create_person(body: M.PersonCreate, current_user: dict = Depends(get_current_user)):
-    return S.create_person(body)
+    return S.create_person(body, current_user["id"])
 
 
 @router.patch("/persons/{person_id}")
 def update_person(person_id: str, body: M.PersonUpdate, current_user: dict = Depends(get_current_user)):
-    out = S.update_person(person_id, body)
+    out = S.update_person(person_id, body, current_user["id"])
     if out is None:
         raise HTTPException(status_code=404, detail="Person not found")
     return out
@@ -1713,7 +1713,7 @@ def update_person(person_id: str, body: M.PersonUpdate, current_user: dict = Dep
 
 @router.delete("/persons/{person_id}")
 def delete_person(person_id: str, current_user: dict = Depends(get_current_user)):
-    if not S.delete_person(person_id):
+    if not S.delete_person(person_id, current_user["id"]):
         raise HTTPException(status_code=404, detail="Person not found")
     return {"ok": True}
 
@@ -1734,18 +1734,22 @@ def get_capacity_profile(person_id: str, current_user: dict = Depends(get_curren
 
 @router.put("/capacity-profiles")
 def upsert_capacity_profile(body: M.CapacityProfileUpsert, current_user: dict = Depends(get_current_user)):
-    return S.upsert_capacity_profile(body)
+    try:
+        return S.upsert_capacity_profile(body, current_user["id"])
+    except ValueError as e:
+        # The referenced person does not belong to the session user.
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 # --- Assets ---
 @router.get("/assets")
 def list_assets(current_user: dict = Depends(get_current_user)):
-    return S.list_assets()
+    return S.list_assets(current_user["id"])
 
 
 @router.get("/assets/{asset_id}")
 def get_asset(asset_id: str, current_user: dict = Depends(get_current_user)):
-    out = S.get_asset(asset_id)
+    out = S.get_asset(asset_id, current_user["id"])
     if out is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return out
@@ -1753,12 +1757,19 @@ def get_asset(asset_id: str, current_user: dict = Depends(get_current_user)):
 
 @router.post("/assets")
 def create_asset(body: M.AssetCreate, current_user: dict = Depends(get_current_user)):
-    return S.create_asset(body)
+    try:
+        return S.create_asset(body, current_user["id"])
+    except ValueError as e:
+        # The referenced owner person does not belong to the session user.
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.patch("/assets/{asset_id}")
 def update_asset(asset_id: str, body: M.AssetUpdate, current_user: dict = Depends(get_current_user)):
-    out = S.update_asset(asset_id, body)
+    try:
+        out = S.update_asset(asset_id, body, current_user["id"])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     if out is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return out
@@ -1766,7 +1777,7 @@ def update_asset(asset_id: str, body: M.AssetUpdate, current_user: dict = Depend
 
 @router.delete("/assets/{asset_id}")
 def delete_asset(asset_id: str, current_user: dict = Depends(get_current_user)):
-    if not S.delete_asset(asset_id):
+    if not S.delete_asset(asset_id, current_user["id"]):
         raise HTTPException(status_code=404, detail="Asset not found")
     return {"ok": True}
 

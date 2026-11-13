@@ -103,7 +103,7 @@ CRANE_RECORD = {
             "category": "identity",
         },
         "voice_color": {
-            "text": "Sky blue #7aa3b8 — 'the public face'",
+            "text": "Sky blue #5c9cea — 'the public face'",
             "standing": "adopted",
             "category": "identity",
         },

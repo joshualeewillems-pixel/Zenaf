@@ -16,7 +16,9 @@ What this pins, on origin/main only (no PR #254/#255 code):
   prompt-local guidance constant (the Weaver #252 pattern): the
   script's frames become the definition's frames, the guidance
   rides both live generation paths (turn and engage), and to no
-  other seat.
+  other seat. The turn path opens on the Fox's dedicated turn
+  frame (Crane §11.2, Q3 ruling "Both get one"), not the generic
+  frame.
 - Integrity invariants: naming (roles until met), direct-answer-
   first, honesty guard + honesty floor, grounding, reveal timing,
   no invented training, recognition note, and the parser contract
@@ -214,6 +216,43 @@ def test_guidance_rides_both_frames_and_no_other_seat():
     assert "An unbuilt replacement is my known debt" not in weaver.engage_frame
 
 
+def test_dedicated_turn_frame_fox_voice():
+    """Crane revised design §11.2 (Q3 ruling "Both get one"): the Fox
+    gets a dedicated turn frame like Crane's, wired in
+    build_maverick_k1_definition for the Maverick only. The generic
+    frame no longer opens the Maverick's turn path."""
+    definition = _maverick_definition()
+    for needle in (
+        "You are the Fox, the Maverick, in your first meeting with this visitor.",
+        "Think in reframes",
+        "ask who the rule serves",
+        "Make something of what they brought",
+        "never interrupt a meaningful exchange to introduce yourself or to lecture",
+        "Do not reveal your name yet.",
+    ):
+        assert needle in definition.turn_frame, needle
+    assert len(ENC._MAVERICK_TURN_FRAME) == 1257
+    assert definition.turn_frame.startswith(ENC._MAVERICK_TURN_FRAME)
+    # The generic frame no longer opens the Maverick's turn path.
+    assert "Respond to what the user actually just communicated" not in definition.turn_frame
+    # Assembled runtime frames: the turn frame grows by the frame swap
+    # (+927 over the L1 turn 3,567); the engage frame is 7,670 on the
+    # rebased head (7,428 post-L1 + 242 from #345's contrast guard,
+    # which rides the shared tier into the engage frame). Both fit
+    # the 9,000 cap.
+    runtime = ENC.EncounterRuntime(definition)
+    turn, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
+    assert len(turn) == 4494
+    assert len(turn) < 9000
+    assert len(runtime._engage_frame()) == 7670
+    # No other seat carries the Fox text; Crane now opens on his own
+    # dedicated frame (#345), not the generic frame.
+    crane = ENC.get_definition(MT.get_script("ambassador", 1))
+    assert "You are the Fox, the Maverick" not in crane.turn_frame
+    assert "You are Crane, the Ambassador" in crane.turn_frame
+    assert "Respond to what the user actually just communicated" not in crane.turn_frame
+
+
 # ---------------------------------------------------------------------------
 # Integrity invariants.
 # ---------------------------------------------------------------------------
@@ -232,12 +271,36 @@ def test_direct_answer_first_and_yielding():
     assert "yield procedure" not in script.encounter_frame.lower()
 
 
+def test_encounter_frame_generative_default_and_attribution():
+    """Maverick S1 (C2/C5): the encounter frame's default move is making,
+    and the evidence/art attribution line is present verbatim."""
+    script = _maverick_script()
+    assert (
+        "Make something of what they brought — a metaphor, a story, a "
+        "reframed image, a completed creative thought — and ask a question "
+        "only when a question is honestly the contribution, or hold an exit "
+        "open without pressure to take it."
+        in script.encounter_frame
+    )
+    assert (
+        "Offer a reframed question if one is honestly there"
+        not in script.encounter_frame
+    )
+    assert (
+        "What you imagine from their material is yours, not theirs — never "
+        "present an invention as their words, a fact about them, or a read-back."
+        in script.encounter_frame
+    )
+
+
 def test_honesty_guard_honesty_floor_and_no_invented_training():
     script = _maverick_script()
     definition = _maverick_definition()
-    # The capability block carries the standing honesty guard.
-    assert HONESTY_GUARD in definition.capability_context
-    assert "Never present a planned capability as available" in definition.capability_context
+    # The capability block no longer carries the standing honesty
+    # guard (Level 1, 2026-11-10): the guard rides the canonical
+    # tier, asserted there by T-L1-1 (tests/test_canonical_tier.py).
+    assert HONESTY_GUARD not in definition.capability_context
+    assert "Never present a planned capability as available" not in definition.capability_context
     # Layer A honesty floor, prompt-local on both paths.
     assert "say you don't remember rather than filling the gap" in script.encounter_frame
     assert "say you don't remember rather than filling the gap" in definition.turn_frame
@@ -315,7 +378,7 @@ _SLICE_LINES = (
     "he mediates where I refuse; translation is not conforming, and meeting leaves refusal intact. (Pair 16.)",
     "she arranges where I refuse arrangement; a system can still hold passages that weren't written. (Pair 17.)",
     "she verifies where I reframe; verification is not closing the door, it is how a reframe stands. (Pair 18.)",
-    "Agency: pursue unchosen rules and untried routes; offer a reframed question and an exit held open; challenge artificial choices; answer direct questions directly.",
+    "Agency: pursue unchosen rules and untried routes; make something of their material and hold an exit open; challenge artificial choices; answer direct questions directly.",
     "An unbuilt replacement is my known debt.",
 )
 
@@ -396,11 +459,18 @@ def test_composed_frames_fit_the_voice_builder_cap():
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     engage_frame = definition.engage_frame
-    engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
-    engage_frame += "\n\n" + ENC._naming_note(definition)
+    # Aligned to runtime composition (Level 1, 2026-11-10): the test
+    # composes engage + capability + naming — capability BEFORE the
+    # naming note, exactly as _engage_frame does. The old order
+    # (capability last) was the test's own composition, not the
+    # runtime's. The standing Zenaf question note no longer rides
+    # the frame; it rides the canonical tier. Runtime ordering is
+    # not altered. Length assertions are unaffected (same parts,
+    # same separators — order does not change lengths).
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
+    engage_frame += "\n\n" + ENC._naming_note(definition)
     assert len(engage_frame) < _EXTRA_INSTRUCTIONS_CAP
-    # The honesty guard sits last in the capability block: under the
-    # cap, nothing is truncated, so it can never be the content lost.
-    assert engage_frame.rstrip().endswith(HONESTY_GUARD)
+    # The honesty guard rides the canonical tier, not the frame —
+    # asserted there by T-L1-1 (tests/test_canonical_tier.py).
+    assert HONESTY_GUARD not in engage_frame

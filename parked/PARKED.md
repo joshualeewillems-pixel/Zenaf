@@ -23,7 +23,6 @@ of the active product surface.
 ## Parked in place (not moved — too deeply wired to relocate safely)
 
 - **File Steward** (`tools/file_steward/`): the initial build, now deprioritized. `local_ai/zenaf_tools.py` lazily imports its `app.py` by path for the `/run` modes (`analyze`/`recommend`/`assess`/`simulate`), so relocation would break the import chain; it stays put, marked deprecated here. Four stale generated CSV reports (~60MB) were deleted per the repo's no-tracked-logs policy.
-- **Content product surface** (`frontend/src/content/`): briefs, script/newsletter UI. Only `App.tsx` imports it, but `App.tsx` (7,700 lines) cannot be safely rewritten in this pass; the surface stays, marked deprecated in its index.
 - **Workspace organizer UI** (`frontend/src/App.tsx`, workspace mode): the council UI lives inside the workspace shell, so the mode stays. File-organizer-specific features within it are deprioritized.
 - **Meeting intelligence** (`frontend/src/meeting-intelligence/`): imported by kept modules (`vision-execution` views, `ai-actions`). Left untouched.
 

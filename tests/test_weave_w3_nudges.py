@@ -53,6 +53,15 @@ def ve_conn(tmp_path, monkeypatch):
     conn.row_factory = sqlite3.Row
     S.init_db(conn)
     monkeypatch.setattr(S, "get_connection", lambda: conn)
+    # Permissions Slice 1: compute_nudges now consults the R6 stance
+    # at entry (B-R6; the default is Don't do it). These tests
+    # predate the gate and assert feed behavior with nudges
+    # permitted — opt the fixture user in through the real stance
+    # store. The gate itself is covered in
+    # tests/test_permissions_slice1_consumption.py.
+    from local_ai.permissions.store import set_stance
+
+    set_stance(ALICE, "R6", "all", "just_do_it", surface="test", connection=conn)
     yield conn
     conn.close()
 

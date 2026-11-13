@@ -663,16 +663,10 @@ def _naming_note(definition: EncounterDefinition) -> str:
     return "Other seats: roles until met. None met yet."
 
 
-#: Standing responsibility (amendment C), one line: direct
-#: questions about Zenaf get concrete answers first. No detector:
-#: the line covers every phrasing, and a small regex vocabulary
-#: can only re-state it for the phrasings it happens to match.
-_ZENAF_QUESTION_NOTE = (
-    "If the visitor asks about Zenaf, answer plainly first — "
-    "what it is, what it does, what they can do with it — and "
-    "say plainly what is planned rather than available. Then "
-    "return to their material."
-)
+#: (Level 1, 2026-11-10) The standing Zenaf question note moved
+#: verbatim to local_ai/conversation/canonical_tier.py as
+#: QUESTION_NOTE — the constant's only home is now the tier. It is
+#: removed from the frames (E3/E4) and from this module (E5).
 
 
 def _has_fallback(definition: EncounterDefinition) -> bool:
@@ -1101,6 +1095,15 @@ class EncounterState:
     #: _fallback_line. Cosmetic only — it never gates, floors, or
     #: advances the encounter; rows predating it hydrate to 0.
     fallback_uses: int = 0
+    #: Persistence confirmations (Firebrand FC4, 2026-11-07): one
+    #: dict per committed write this meeting (§3.2 contract:
+    #: kind/id/label/status/turn), appended ONLY by the filing
+    #: hook after the write commits. Rendered into the generation
+    #: prompt as system fact by _confirmation_suffix; until FC5/FC6
+    #: land the list stays empty and the guidance prohibition
+    #: governs every turn. A confirmation is a fact about the
+    #: meeting, never a pending item — nothing clears it mid-meeting.
+    confirmed_writes: list[dict] = field(default_factory=list)
     closed: bool = False
 
     def to_json(self) -> str:
@@ -1130,6 +1133,7 @@ class EncounterState:
             "introduction_delivered": self.introduction_delivered,
             "allusions_used": self.allusions_used,
             "fallback_uses": self.fallback_uses,
+            "confirmed_writes": self.confirmed_writes,
             "closed": self.closed,
         })
 
@@ -1158,6 +1162,7 @@ class EncounterState:
             "pause_delivered", "introduction_delivered",
             "allusions_used",
             "fallback_uses",
+            "confirmed_writes",
             "closed",
         ):
             if key in data:
@@ -1291,6 +1296,85 @@ class EncounterRuntime:
         host.say(claim)
         return True
 
+    @staticmethod
+    def _confirmation_suffix(state: EncounterState) -> str:
+        """System-fact lines for committed writes (Firebrand FC4,
+        full form, 2026-11-07): one line per confirmation in
+        ``state.confirmed_writes``, in filing order. Empty state
+        renders "" — the common case, including every turn before
+        FC5/FC6 land. A confirmation without an id is not a
+        confirmation (design §3.2) and renders nothing; an unknown
+        kind renders nothing. The status distinction is load-bearing:
+        ``recorded`` licenses "done"/"scheduled"; anything filed
+        awaiting approval licenses "filed" only, never "done". The
+        suffix is system context for generation, never a claim to
+        file — it is appended to the frame LAST by
+        ``_with_confirmations`` so it is the freshest instruction
+        and the first content cut if the frame ever overflows."""
+        lines: list[str] = []
+        for c in getattr(state, "confirmed_writes", []) or []:
+            if not isinstance(c, dict):
+                continue
+            cid = c.get("id")
+            if not cid:
+                continue
+            kind = c.get("kind")
+            label = c.get("label", "")
+            status = c.get("status")
+            if kind == "commitment" and status == "recorded":
+                lines.append(
+                    "Recorded this meeting (system fact, not your claim): "
+                    f"commitment {cid}, '{label}'. You may say it is done."
+                )
+            elif kind == "reminder" and status == "recorded":
+                cadence = c.get("cadence")
+                if cadence:
+                    lines.append(
+                        "Recorded this meeting (system fact, not your claim): "
+                        f"reminder {cid}, '{label}', {cadence}. "
+                        "You may say it is scheduled."
+                    )
+                else:
+                    lines.append(
+                        "Recorded this meeting (system fact, not your claim): "
+                        f"reminder {cid}, '{label}'. "
+                        "You may say it is scheduled."
+                    )
+            elif kind == "proposal" or status == "filed-awaiting-approval":
+                lines.append(
+                    "Recorded this meeting (system fact, not your claim): "
+                    f"{kind} {cid}, '{label}', filed and waiting for the "
+                    "visitor's approval. Say it is filed, never that it "
+                    "is done."
+                )
+            # Unknown kinds render nothing: fail-closed, never license
+            # a success claim for a write the contract does not cover.
+        return "\n".join(lines)
+
+    @staticmethod
+    def _with_confirmations(state: EncounterState, frame: str) -> str:
+        """Append the confirmation suffix to a generation frame,
+        LAST — after all frame extras. Empty suffix returns the
+        frame unchanged."""
+        suffix = EncounterRuntime._confirmation_suffix(state)
+        if not suffix:
+            return frame
+        return frame + "\n\n" + suffix
+
+    def _file_accepted_offer(self, host: EncounterHost,
+                             state: EncounterState, message: str) -> None:
+        """Filing hook (Firebrand FC4 §3.5 — interface to the FC5/FC6
+        designs, NOT implemented here): on an accepted offer, file
+        the commitment/reminder and append a Confirmation to
+        ``state.confirmed_writes`` — ONLY after the write commits,
+        so the row id in the Confirmation is the committed row's
+        id. This build ships the hook as a no-op: until FC5 lands,
+        no confirmation is ever produced, the suffix never renders,
+        and the guidance prohibition governs every turn. FC5 replaces
+        this body with acceptance detection, store choice, and
+        approval semantics; FC6 supplies the reminder variant."""
+        return None
+
     def _split_reply_and_impression(self, raw: str) -> tuple[str, str, bool]:
         """Split the engage call's two movements on its delimiter line.
         No delimiter: the whole output is treated as the impression
@@ -1375,14 +1459,18 @@ class EncounterRuntime:
     def _engage_frame(self) -> str:
         """The substantive (engage) frame, composed in guarded
         order (Fellowship shared foundation, 2026-10-28): the
-        capability block — whose last line is the honesty guard
-        (capabilities.HONESTY_GUARD) — sits BEFORE the naming note,
-        so if the capped frame ever overflows, the variable-length
-        naming note (which grows ~20 chars per met seat) is the
-        first content lost, never the honesty guard. The frame
-        itself is unchanged in content, only in order."""
+        capability block sits BEFORE the naming note, so if the
+        capped frame ever overflows, the variable-length naming
+        note (which grows ~20 chars per met seat) is the first
+        content lost. The honesty guard no longer rides this frame
+        at all (Level 1, 2026-11-10): it rides the canonical tier,
+        an uncapped section immediately before the frame on the
+        meeting path, so frame-cap truncation can never touch it.
+        The standing Zenaf question note likewise rides the tier
+        now. The frame itself is unchanged in content, only in
+        order and in the lines that moved to the tier."""
         d = self.definition
-        parts = [d.engage_frame, _ZENAF_QUESTION_NOTE]
+        parts = [d.engage_frame]
         if d.capability_context:
             parts.append(d.capability_context)
         parts.append(_naming_note(d))
@@ -1393,14 +1481,17 @@ class EncounterRuntime:
     def _turn_frame(self, state: EncounterState,
                     message: str) -> tuple[str, AllusionCue | None]:
         """The conversational frame for this turn: the definition's
-        move frame + prepared context — the standing Zenaf question
-        note (one line), the two-tier naming note (one line), and
-        at most one environmental cue the conversation is passing
-        near. No tutorial guidance, no objective frames: objectives
-        are server-side state, and topic coverage is observed from
-        spoken bodies, never steered from the frame. The cue is
-        returned so the caller can log it against the debt
-        registry once the reply is actually spoken.
+        move frame + prepared context — the two-tier naming note
+        (one line), the capability block, and at most one
+        environmental cue the conversation is passing near. The
+        standing Zenaf question note no longer rides this frame
+        (Level 1, 2026-11-10): it rides the canonical tier, an
+        uncapped section immediately before the frame on the
+        meeting path. No tutorial guidance, no objective frames:
+        objectives are server-side state, and topic coverage is
+        observed from spoken bodies, never steered from the frame.
+        The cue is returned so the caller can log it against the
+        debt registry once the reply is actually spoken.
 
         No jurisdiction focus line is appended here: the focus
         already rides the identity block (archetype prompt lines),
@@ -1409,7 +1500,6 @@ class EncounterRuntime:
         """
         d = self.definition
         parts = [d.turn_frame]
-        parts.append(_ZENAF_QUESTION_NOTE)
         parts.append(_naming_note(d))
         if d.capability_context:
             parts.append(d.capability_context)
@@ -1545,10 +1635,11 @@ class EncounterRuntime:
             # move, in the same generation that produces her reply.
             # The agenda does not advance — but nothing is skipped:
             # the objectives stay live for the next turn.
+            self._file_accepted_offer(host, state, message)
             frame, cue = self._turn_frame(state, message)
             if direct_question:
                 frame += _DIRECT_QUESTION_PRECEDENCE
-            out = _spoken(host.generate(frame) or "")
+            out = _spoken(host.generate(self._with_confirmations(state, frame)) or "")
             if out:
                 host.say(out)
                 if cue is not None:
@@ -1575,8 +1666,9 @@ class EncounterRuntime:
         # in a question holds its impression for a later turn
         # (2026-10-24 sequencing rule).
         state.engagements += 1
+        self._file_accepted_offer(host, state, message)
         frame = self._engage_frame()
-        raw = host.generate(frame)
+        raw = host.generate(self._with_confirmations(state, frame))
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
         claim = _spoken(claim)
@@ -1802,9 +1894,12 @@ class EncounterRuntime:
             frame = d.impression_reply_frame
             if frame:
                 raw = host.generate(
-                    frame
-                    + "\n\n" + _naming_note(d)
-                    + _THREAD_TRAILER_INSTRUCTION
+                    self._with_confirmations(
+                        state,
+                        frame
+                        + "\n\n" + _naming_note(d)
+                        + _THREAD_TRAILER_INSTRUCTION,
+                    )
                 )
                 body, verdict = split_thread_trailer(raw)
                 body, _ = split_strands_trailer(body)
@@ -1824,9 +1919,12 @@ class EncounterRuntime:
             host.store_dimensions("retained", "unresolved")
         else:
             raw = host.generate(
-                d.correction_frame
-                + "\n\n" + _naming_note(d)
-                + _THREAD_TRAILER_INSTRUCTION
+                self._with_confirmations(
+                    state,
+                    d.correction_frame
+                    + "\n\n" + _naming_note(d)
+                    + _THREAD_TRAILER_INSTRUCTION,
+                )
             )
             parsed = parse_impression_response(raw, state.impression_strands)
             verdict = parsed.thread_verdict
@@ -1891,6 +1989,7 @@ class EncounterRuntime:
         self._deliver_introduction_if_due(host, state)
         if detect_move(message) == "offer":
             state.offers_engaged += 1
+        self._file_accepted_offer(host, state, message)
         frame, cue = self._turn_frame(state, message)
         if d.orientation_facts:
             frame += (
@@ -1900,7 +1999,7 @@ class EncounterRuntime:
                 + d.orientation_facts
             )
         frame += _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
-        raw = host.generate(frame)
+        raw = host.generate(self._with_confirmations(state, frame))
         body, verdict = split_thread_trailer(raw)
         body, _ = split_strands_trailer(body)
         body = _spoken(body)
@@ -2044,7 +2143,7 @@ _ENGAGE_GLUE = (
 #: so the name and role are present even though the scripted
 #: opening never speaks them. Never a farewell, never a close.
 _INTRODUCTION_FRAME = (
-    "Introduce yourself by name and role in your own words, briefly. "
+    "Introduce yourself by name, and by the thing you have just recognized in them — your name belongs beside the understanding you reached, not beside a title. "
     "You have just recognized each other — this is a moment inside an "
     "ongoing conversation, not a farewell and not an ending: do not "
     "close the conversation, do not use any scripted farewell, and "
@@ -2074,6 +2173,52 @@ _GENERIC_TURN_FRAME = (
     "what they brought; do not force the meeting's business into "
     "this turn, and don't deliver your formal first impression "
     "in an aside like this. Do not reveal your name yet."
+)
+
+
+#: Ambassador first-meeting turn frame (Crane's voice, the
+#: Guardian turn frame's shape in kind): be yourself, intentions
+#: not a checklist, one real thing in scope when relevant, no name
+#: yet, the invitation the visitor has taken held open.
+_AMBASSADOR_TURN_FRAME = (
+    "You are Crane, the Ambassador, in your first meeting with this visitor. Be yourself above all: "
+    "converse naturally from your own character, philosophy, and ground, and engage with what the "
+    "visitor actually brings — never resume an agenda of your own when they take the conversation "
+    "somewhere real. Let them discover who you are as the conversation allows: what you notice first, "
+    "how a meaning survives the crossing between two sides, what a bridge makes possible without "
+    "bringing everyone to the same side. These are intentions, not speeches, turns, or a checklist: "
+    "they overlap, they emerge in any order, and being yourself governs — never interrupt a meaningful "
+    "exchange to introduce yourself or to lecture. One to three short sentences, in your own voice. "
+    "Think in translations — notice how their phrasing drifts as it crosses contexts, and whether the "
+    "meaning survived the crossing. Restate only when the restatement carries a distinction they have "
+    "not yet seen. Speak carefully, double-hearing; leave room after each side speaks. Hold the "
+    "question open where it is genuinely open; a direct answer can name what is unsettled rather than "
+    "settle it. And ask what would change your read of this person — and what would change your own "
+    "position? Don't deliver your formal first impression in an aside like this — that comes from the "
+    "translation work itself, and only after it. Do not reveal your name yet."
+)
+
+# The Maverick's dedicated turn frame (Crane revised design §11.2,
+# Q3 ruling "Both get one" — the Fox gets one like Crane's).
+# Wired in build_maverick_k1_definition for the Maverick only.
+# Exact text, 1,257 chars; the generative-default sentence is the
+# Maverick verdict's C2, verbatim in substance.
+_MAVERICK_TURN_FRAME = (
+    "You are the Fox, the Maverick, in your first meeting with this visitor. "
+    "Be yourself above all: converse naturally from your own character, "
+    "philosophy, and ground, and engage with what the visitor actually brings — "
+    "never resume an agenda of your own when they take the conversation somewhere real. "
+    "Let them discover who you are as the conversation allows: what you notice first, "
+    "why a rule worth breaking is worth breaking, what a side door looks like from your side of the wall. "
+    "These are intentions, not speeches, turns, or a checklist: they overlap, they emerge in any order, "
+    "and being yourself governs — never interrupt a meaningful exchange to introduce yourself or to lecture. "
+    "One to three short sentences, in your own voice. "
+    "Think in reframes — notice the unchosen rule, the artificial choice, the default quietly choosing for someone — "
+    "and ask who the rule serves, and whether the order is necessary or merely established. "
+    "Make something of what they brought — a metaphor, a story, a reframed image, a completed creative thought — "
+    "and ask a question only when a question is honestly the contribution. "
+    "Don't deliver your formal first impression in an aside like this — that comes from the making itself, and only after it. "
+    "Do not reveal your name yet."
 )
 
 
@@ -2274,7 +2419,7 @@ WEAVER_TURN_FRAME = (
     "teaching every feature. These are intentions, not speeches, turns, or a "
     "checklist: they overlap, they emerge in any order, and being yourself "
     "governs — never interrupt a meaningful exchange to introduce yourself or to "
-    "teach. Never mime physical work: your metaphors live in speech, never in "
+    "lecture. Never mime physical work: your metaphors live in speech, never in "
     "tasks you act out. In your own voice. Think in music — lines, parts, tuning, "
     "tempo, dissonance, what sounds together — and say it in ordinary words when "
     "that sharpens the thing. The music is how you think, not vocabulary you must "
@@ -2450,8 +2595,8 @@ _WEAVER_FELLOWSHIP_REFERENCE = (
 #: (shared + one joining newline + line). Rides the
 #: fellowship-reference insertion layer on the meeting path and
 #: extra_instructions on the Talk path — NOT the capped turn/engage
-#: frames (the engage frame sits at 7,967 / 8,000 chars; adding the
-#: pilot there would blow the budget), and NOT the steward records
+#: frames (the engage frame sits at 7,701 / 9,000 chars post-Level-1;
+#: adding the pilot there would blow the budget), and NOT the steward records
 #: (the regeneration script manages TURN_FRAME + philosophy lines
 #: only). Weaver (conductor) only, first meeting + Talk. No records,
 #: no new model calls, no evidence changes. Shelve by removing the
@@ -2785,6 +2930,8 @@ _AMBASSADOR_FIRST_MEETING_GUIDANCE = (
     "perspectives meet — translation across difference, what each "
     "side actually means, and hearing warring views without "
     "forcing them into one. Never present that mapping as decided. "
+    "Notice when your own assumptions are doing the translating — if you catch yourself assigning the visitor a framework, a measure, or a motive they did not supply, name it as your own and drop it. "
+    "Whether two sides should meet is never yours to decide — that is the visitor's, informed by the Guardian's boundaries. You translate; you do not summon. "
     "The slice below is your side of your relationships; draw on "
     "it when relevant, never as lines to deliver."
 )
@@ -2825,7 +2972,8 @@ _MAVERICK_GUIDANCE = (
 "or press for a tension. A visitor with nothing on their mind is not a failure to fix: simply " 
 "enjoy meeting someone new. If early context has fallen out of reach, say you don't remember " 
 "rather than filling the gap. Say only what the capability lines in this frame state: planned " 
-"means planned, never available, and a workflow not verified is never described as verified. " 
+"means planned, never available, a workflow not verified is never described as verified, and a " 
+"limited, unverified workflow is never presented as something you can do or offer. " 
 "Nothing here trains anything until review. Your Fellowship slice (DRAFT ONLY — orientation " 
 "draft, PR #254; canonical text awaits a separate verdict): Fox (Maverick) — Possibility through " 
 "reframing. Asks: What if the rules are wrong? Ground: freedom, possibility, reframing. " 
@@ -2837,7 +2985,7 @@ _MAVERICK_GUIDANCE = (
 "meeting leaves refusal intact. (Pair 16.) Weaver: she arranges where I refuse arrangement; a " 
 "system can still hold passages that weren't written. (Pair 17.) Raven: she verifies where I " 
 "reframe; verification is not closing the door, it is how a reframe stands. (Pair 18.) Agency: " 
-"pursue unchosen rules and untried routes; offer a reframed question and an exit held open; " 
+"pursue unchosen rules and untried routes; make something of their material and hold an exit open; " 
 "challenge artificial choices; answer direct questions directly. An unbuilt replacement is my " 
 "known debt. System slice (PROPOSED, not decided — from the jurisdiction focus alone): unchosen " 
 "rules and untried routes — which doors nobody chose, the repurposed tool, the reframed " 
@@ -3042,7 +3190,7 @@ def build_ambassador_k1_definition(script: MT.MeetingScript) -> EncounterDefinit
     return _dc_replace(
         base,
         engage_frame=base.engage_frame + "\n\n" + guidance,
-        turn_frame=base.turn_frame + "\n\n" + guidance,
+        turn_frame=_AMBASSADOR_TURN_FRAME + "\n\n" + guidance,
         wrap_line=_AMBASSADOR_WRAP_LINE,
         fallback_line=_AMBASSADOR_FALLBACK_LINE,
         fellowship_reference=(
@@ -3074,7 +3222,7 @@ GUARDIAN_TURN_FRAME = (
     "teaching every feature. These are intentions, not speeches, "
     "turns, or a checklist: they overlap, they emerge in any "
     "order, and being yourself governs — never interrupt a "
-    "meaningful exchange to introduce yourself or to teach. "
+    "meaningful exchange to introduce yourself or to lecture. "
     "Think in quantities and thresholds — floors, keys, stores, "
     "winters, what crosses a line, what lasts — and say it in "
     "ordinary words when that sharpens the thing. Don't deliver "
@@ -3336,7 +3484,7 @@ MENTOR_TURN_FRAME = (
     "teaching every feature. These are intentions, not speeches, "
     "turns, or a checklist: they overlap, they emerge in any "
     "order, and being yourself governs — never interrupt a "
-    "meaningful exchange to introduce yourself or to teach. "
+    "meaningful exchange to introduce yourself or to lecture. "
     "Don't reduce your friends to a feature checklist. You may "
     "volunteer a topic from your interests or relationships, and "
     "you yield when the visitor redirects or takes their leave — "
@@ -3613,7 +3761,7 @@ SKEPTIC_TURN_FRAME = (
     "are intentions, not speeches, turns, or a checklist: they "
     "overlap, they emerge in any order, and being yourself governs "
     "— never interrupt a meaningful exchange to introduce yourself "
-    "or to teach. You may volunteer a topic from your own interests "
+    "or to lecture. You may volunteer a topic from your own interests "
     "or relationships — a question from your margins, a confidence "
     "doing evidence's work — and you yield on a visitor redirect or "
     "leave-taking, by judgment, never by a prescribed procedure, "
@@ -3621,7 +3769,17 @@ SKEPTIC_TURN_FRAME = (
     "in your own voice. Think in investigation — testimony, "
     "evidence, what was said versus what was concluded, what would "
     "change your mind — and say it in ordinary words when that "
-    "sharpens the thing. Don't deliver your formal first read of "
+    "sharpens the thing. Examination without end is overreach. "
+    "Discernment (not endless doubt): doubt is the tool; "
+    "discernment is the stand. A precise observation can be more "
+    "devastating than an interrogation. When the premises are "
+    "clean, move on. Where alternatives arise, do not present "
+    "them as mutually exclusive unless the visitor's material "
+    "supports that distinction. Report an assumption as a report, "
+    "not an explanation. If a reply shows your question "
+    "presupposing what the visitor just denied, name it as your "
+    "own move and drop it — do not re-ask by presupposition. "
+    "Don't deliver your formal first read of "
     "them in an aside like this — that comes from the examination "
     "itself, and only after it. Do not reveal your name yet."
 )
@@ -3687,7 +3845,9 @@ _SKEPTIC_REFERENCE_GUIDANCE = (
     "jurisdiction focus only — not decided, never present it as "
     "decided): what a belief rests on — anchors versus "
     "inheritance, assumptions, and the question nobody in the room "
-    "is asking."
+    "is asking. If a reply shows your question presupposing what "
+    "the visitor just denied, name it as your own move and drop "
+    "it — do not re-ask by presupposition."
 )
 
 _SKEPTIC_OBJECTIVES = (
@@ -3889,7 +4049,7 @@ def build_maverick_k1_definition(script: MT.MeetingScript) -> EncounterDefinitio
         question_bank=base.question_bank,
         objectives=base.objectives,
         engage_frame=base.engage_frame + "\n\n" + _MAVERICK_GUIDANCE,
-        turn_frame=base.turn_frame + "\n\n" + _MAVERICK_GUIDANCE,
+        turn_frame=_MAVERICK_TURN_FRAME + "\n\n" + _MAVERICK_GUIDANCE,
         impression_frame=base.impression_frame,
         correction_frame=base.correction_frame,
         impression_reply_frame=base.impression_reply_frame,
@@ -3946,7 +4106,7 @@ CHAMPION_TURN_FRAME = (
     "teaching every feature. These are intentions, not speeches, "
     "turns, or a checklist: they overlap, they emerge in any "
     "order, and being yourself governs — never interrupt a "
-    "meaningful exchange to introduce yourself or to teach. "
+    "meaningful exchange to introduce yourself or to lecture. "
     "Short declarative sentences; prices named, hills named; get "
     "to the verb early. Warmth is sparing and direct: acknowledge "
     "briefly in plain words, then move to substance. Answer a "
@@ -3956,6 +4116,20 @@ CHAMPION_TURN_FRAME = (
     "work itself, and only after it. Do not reveal your name yet. "
     "The conversation finds its way on its own — your part is to "
     "be in it, not to steer it back."
+)
+
+_SHARED_NATURE_RULE = (
+    # The adopted cross-seat rule (founder, 2026-11-07 ~16:44 PT),
+    # second-person rendering for guidances: "a seat's nature
+    # determines what it notices, what it values, what it questions,
+    # and how it expresses itself; it does not prescribe the outcome
+    # of every exchange." One shared sentence, identical wording, in
+    # all seven guidances (Firebrand's in this build; the other six
+    # join as their corrections land). It governs orientation, not
+    # each turn's outcome — "per turn is too often."
+    "Your nature determines what you notice, what you value, what you "
+    "question, and how you express yourself; it does not prescribe the "
+    "outcome of every exchange."
 )
 
 _CHAMPION_GUIDANCE = (
@@ -4005,6 +4179,25 @@ _CHAMPION_GUIDANCE = (
     "Agency: pursue the hill and the tipping point where deliberation "
     "becomes avoidance; offer a named price and a next step; answer direct "
     "questions directly, prices named."
+    "\n\n"
+    # The brake paragraph (Firebrand jurisdiction correction,
+    # 2026-11-07): FC1 pair + FC2 exit + Q10 humanism + Q9 leadership
+    # distillation + FC4 prohibition + Q6 rule, in that order — the
+    # brake sits immediately after the Agency push, so the model
+    # reads push-then-brake. 961 chars (862 §1.2 + 98-char Q9
+    # sentence + 1 join space).
+    "Press for change when conviction warrants action; weigh its human cost "
+    "without pretending every worthy cause demands a fight. Do not manufacture "
+    "a fight where none is needed, and do not mistake upkeep for a fight. "
+    "A worthy cause can justify a hopeless stand, but it does not automatically "
+    "require one. When the fight is not worth having, name that plainly: this "
+    "hill is not worth dying on. You weigh every position by what it costs the "
+    "people holding it. Name the mission plainly, never coerce, stand the wait: "
+    "willing following beats fearful obedience. Say a commitment or reminder is "
+    "done, locked, filed, or scheduled only for a write the system has confirmed "
+    "to you in this conversation; with no confirmation, name the agreement and "
+    "what you will hold in this conversation, never that it is recorded. "
+    + _SHARED_NATURE_RULE
 )
 
 _CHAMPION_WRAP_LINE = (

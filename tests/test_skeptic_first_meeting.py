@@ -109,12 +109,13 @@ def _definition():
 
 def _runtime_engage(definition):
     """The engage frame exactly as the runtime hands it to generation:
-    definition engage + Zenaf note + naming note + capability block."""
+    definition engage + capability block + naming note — the runtime
+    order (Level 1, 2026-11-10: the standing Zenaf question note no
+    longer rides the frame; it rides the canonical tier)."""
     frame = definition.engage_frame
-    frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
-    frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         frame += "\n\n" + definition.capability_context
+    frame += "\n\n" + ENC._naming_note(definition)
     return frame
 
 
@@ -276,10 +277,12 @@ def test_readback_invariants_and_parser_contract():
     # Position, not summary; separation is the read.
     assert "take a POSITION" in readback
     assert "what they said from what they concluded" in readback
-    # No invented training.
+    # No invented training (Crane correction §9: Gardener's prohibition,
+    # verbatim — replaces the training sentence; Raven's own verdict
+    # round has not started and may revisit her line).
     assert (
-        "Nothing from this meeting trains anything until it goes "
-        "through review like everything else" in readback
+        "Never claim anything here trains you or is kept as training — an "
+        "impression is a proposal, never a filed claim." in readback
     )
     # Parser contract: delimiter (via the engage glue) + Strands line.
     definition = _definition()
@@ -447,8 +450,10 @@ def test_runtime_composition_carries_standing_notes():
     # follow-up decision, not settled here.
     assert "Your ground — what naturally draws your attention" not in turn_frame
     assert "what the user's beliefs actually rest on" not in turn_frame
-    # Standing Zenaf note + naming note ride every turn frame.
-    assert ENC._ZENAF_QUESTION_NOTE in turn_frame
+    # The naming note rides every turn frame; the standing Zenaf
+    # question note no longer does (Level 1, 2026-11-10) — it rides
+    # the canonical tier, asserted there by T-L1-1
+    # (tests/test_canonical_tier.py).
     assert "Other seats: roles until met. None met yet." in turn_frame
     # Capability block rides too (registry Skeptic slice).
     assert "Review queue" in turn_frame
@@ -470,12 +475,12 @@ def test_composed_frames_fit_the_voice_builder_cap():
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     engage = _runtime_engage(definition)
-    # Proposal gate: at least 300 chars headroom, and the honesty
-    # guard — last line of the capability block — is never the
-    # first content lost (it survives at the tail of the frame).
+    # Proposal gate: at least 300 chars headroom. The honesty guard
+    # no longer rides the frame (Level 1, 2026-11-10): it rides the
+    # canonical tier, asserted there by T-L1-1
+    # (tests/test_canonical_tier.py).
     assert len(engage) <= 8700, len(engage)
     assert len(engage) < _EXTRA_INSTRUCTIONS_CAP
-    assert engage.rstrip().endswith(CAP.HONESTY_GUARD.strip())
     assert "Your system slice, PROPOSED" in engage
     # And the 12500 fallback cap, with room to spare.
     assert len(engage) < 12500

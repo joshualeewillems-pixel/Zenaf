@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiBase } from '../apiBase'
 import { useAutoGrowTextarea } from '../components/useAutoGrowTextarea'
 import { isCoarsePointer } from '../components/isCoarsePointer'
-import { normalizeWeave, WeaveText, voiceColor } from '../components/VoiceWeave'
+import { normalizeWeave, WeaveText } from '../components/VoiceWeave'
+import { TREE_DEFAULT_RGB, voiceColor } from '../council/colors'
 
 /* ------------------------------------------------------------------ */
 /* Streaming reveal (Joshua, 2026-10-23): meeting messages type out   */
@@ -90,13 +91,13 @@ type MeetingState = {
 const STYLE = `
 .mtg-root{position:fixed;inset:0;z-index:70;font-family:system-ui,-apple-system,sans-serif;-webkit-tap-highlight-color:transparent}
 .mtg-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.6)}
-.mtg-panel{position:absolute;left:0;right:0;bottom:0;top:4vh;display:flex;flex-direction:column;background:#0b0a09;border:1px solid rgba(201,168,106,.3);border-bottom:none;border-radius:20px 20px 0 0;color:#f5f0e8;box-shadow:0 -12px 48px rgba(0,0,0,.5);user-select:text;-webkit-user-select:text}
-.mtg-head{display:flex;align-items:flex-start;gap:10px;padding:16px 18px 10px;border-bottom:1px solid rgba(201,168,106,.18)}
+.mtg-panel{position:absolute;left:0;right:0;bottom:0;top:4vh;display:flex;flex-direction:column;background:#0b0a09;border:1px solid rgba(${TREE_DEFAULT_RGB},.3);border-bottom:none;border-radius:20px 20px 0 0;color:#f5f0e8;box-shadow:0 -12px 48px rgba(0,0,0,.5);user-select:text;-webkit-user-select:text}
+.mtg-head{display:flex;align-items:flex-start;gap:10px;padding:16px 18px 10px;border-bottom:1px solid rgba(${TREE_DEFAULT_RGB},.18)}
 .mtg-title{margin:0;font-size:17px;font-weight:600}
 .mtg-sub{font-size:12px;color:#a89f8d;letter-spacing:.04em;text-transform:uppercase}
-.mtg-close{margin-left:auto;min-width:44px;min-height:44px;border-radius:999px;border:1px solid rgba(201,168,106,.35);background:transparent;color:#f5f0e8;font-size:16px}
+.mtg-close{margin-left:auto;min-width:44px;min-height:44px;border-radius:999px;border:1px solid rgba(${TREE_DEFAULT_RGB},.35);background:transparent;color:#f5f0e8;font-size:16px}
 .mtg-body{flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 16px}
-.mtg-foot{padding:10px 14px 16px;border-top:1px solid rgba(201,168,106,.18)}
+.mtg-foot{padding:10px 14px 16px;border-top:1px solid rgba(${TREE_DEFAULT_RGB},.18)}
 .mtg-reveal{margin:4px 0 14px;padding:14px;border:1px solid rgba(232,163,61,.55);border-radius:14px;background:rgba(232,163,61,.08)}
 `
 

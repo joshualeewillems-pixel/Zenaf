@@ -5,7 +5,6 @@ import { AvatarDisplay } from '../components/AvatarDisplay'
 export function AgentDetailPanel({
   agent,
   onEdit,
-  onChat,
   onUseInWorkspace,
   onDelete,
   isUserDefined,
@@ -16,13 +15,12 @@ export function AgentDetailPanel({
 }: {
   agent: PerspectiveAgent
   onEdit: () => void
-  onChat: () => void
   onUseInWorkspace: () => void
   onDelete?: (agent: PerspectiveAgent) => void
   isUserDefined?: boolean
   /** Optional block below action buttons (e.g. Influences / links). */
   footerExtra?: ReactNode
-  /** When true, hide chat / workspace / edit / delete (built-in system actors). */
+  /** When true, hide workspace / edit / delete (built-in system actors). */
   readOnlyActions?: boolean
   /** User-defined actors only: opens Perspective Workout (not shown for built-in system actors). */
   showWorkout?: boolean
@@ -74,13 +72,6 @@ export function AgentDetailPanel({
       </div>
       {!readOnlyActions ? (
         <div className="p-4 border-t border-[color:var(--color-border)] flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={onChat}
-            className="px-3 py-1.5 rounded-lg bg-accent hover:opacity-90 text-warm-white text-xs font-medium"
-          >
-            Chat with this actor
-          </button>
           <button
             type="button"
             onClick={onUseInWorkspace}

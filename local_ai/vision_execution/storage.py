@@ -3697,6 +3697,18 @@ _USER_PERMISSION_DEFAULTS: dict[str, bool] = {
     # persists via the API + defaults, and its row lands with the
     # Slice 2 Settings surface.
     "steward_coordination": False,
+    # Phase 0 consent correction — fellowship derivation gate.
+    # Dedicated default-off flag, distinct from steward_derivation
+    # by design (a visitor may want steward threads without
+    # fellowship readings, and vice versa). Default off; existing
+    # rows read False for it until the visitor turns it on —
+    # nobody is opted in by the addition. NOTE: this key-list
+    # entry IS required — normalize_user_permission_prefs filters
+    # to these keys and would otherwise drop the flag on write.
+    # The toggle wording is a founder decision; no Settings UI row
+    # is added here (bounds) — the flag persists via the API +
+    # defaults, and its row lands once the wording is ruled.
+    "fellowship_derivation": False,
 }
 
 _USER_PERMISSION_KEYS = tuple(_USER_PERMISSION_DEFAULTS.keys())

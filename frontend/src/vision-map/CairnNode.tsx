@@ -10,7 +10,7 @@ import {
 import { isGardenStackData, type CairnPreviewStone } from './cairn'
 import { towerLayout, type TowerStone } from './cairnTower'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
-import { useLongPress } from './useLongPress'
+import { useNodeHoldGestures } from './useLongPress'
 import { useCairnInteraction } from './cairnContext'
 import { hierarchyTitleClass, entitySubtitleClass, stoneTextTone, entityLabelTextClass } from './mapNodeAppearance'
 
@@ -41,13 +41,18 @@ const NEUTRAL_PREVIEW: CairnPreviewStone = {
 /**
  * Cairn — a project's stones as one trail-cairn tower. The sub-stones are
  * purely decorative (aria-hidden, pointer-events-none): the cairn node is
- * the single hit target for tap (select/inspect), long-press (fan out — or
- * unstack for a garden stack), and drag (move the pile).
+ * the single hit target for tap (select/inspect), double-tap or the
+ * longer hold (fan out — or unstack for a garden stack), the first hold
+ * (arm drag), and drag (move the pile).
  */
 export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
-  const { onToggleCairn } = useCairnInteraction()
+  const { onToggleCairn, onDragArm, onPressSpent } = useCairnInteraction()
   const toggle = useCallback(() => onToggleCairn(id), [onToggleCairn, id])
-  const lp = useLongPress(toggle)
+  const lp = useNodeHoldGestures({
+    onDragArm: (info) => onDragArm(id, info.pointerId, info.clientX, info.clientY),
+    onToggle: toggle,
+    onPressSpent,
+  })
 
   const isMega = isGardenStackData(data)
   const preview = (data.cairnPreview ?? []) as CairnPreviewStone[]
@@ -72,11 +77,11 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
         : null
 
   const hint = isMega
-    ? `${count} stones · long-press to unstack`
-    : `${count} stones · long-press to fan out`
+    ? `${count} stones · double-tap to unstack`
+    : `${count} stones · double-tap to fan out`
   const title = isMega
-    ? `${data.label} — ${count} stones stacked. Long-press to unstack; tap to inspect.`
-    : `${data.label} — ${count} stones stacked. Long-press to fan out; tap to inspect.`
+    ? `${data.label} — ${count} stones stacked. Double-tap or hold longer to unstack; tap to inspect.`
+    : `${data.label} — ${count} stones stacked. Double-tap or hold longer to fan out; tap to inspect.`
 
   return (
     <div
@@ -95,7 +100,7 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
     >
       <div className="relative mx-auto" style={{ width: towerW, height: towerH + 10 }}>
         {/* Decorative pile only — no pointer affordances here; the node
-            root above is the single tap/long-press/drag target. */}
+            root above is the single tap/hold/drag target. */}
         <div aria-hidden="true" className="pointer-events-none absolute inset-0">
           {ring ? (
             <svg

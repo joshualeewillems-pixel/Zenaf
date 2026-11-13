@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveSeatFace, resolveSeatPanel, type SeatFaceSource } from './seatFaces'
+import { resolveSeatFace, resolveSeatLogo, resolveSeatPanel, SEAT_LOGOS, type SeatFaceSource } from './seatFaces'
 
 /**
  * The reveal gate (2026-10-23 reconciliation): the assigned fellowship
@@ -41,5 +41,24 @@ describe('resolveSeatPanel', () => {
     expect(resolveSeatPanel(arch({ face_revealed: true }))).toBeTruthy()
     expect(resolveSeatPanel(arch({ avatar_unlocked: true }))).toBeTruthy()
     expect(resolveSeatPanel(arch({}))).toBeNull()
+  })
+})
+
+describe('resolveSeatLogo', () => {
+  it('shows the logo after the first meeting', () => {
+    expect(resolveSeatLogo(arch({ face_revealed: true }))).toBe(SEAT_LOGOS.conductor)
+  })
+
+  it('shows the logo at the depth milestone', () => {
+    expect(resolveSeatLogo(arch({ avatar_unlocked: true }))).toBe(SEAT_LOGOS.conductor)
+  })
+
+  it('stays null before either door opens (letters stay on the tree)', () => {
+    expect(resolveSeatLogo(arch({ face_revealed: false }))).toBeNull()
+  })
+
+  it('a custom avatar does not override the logo', () => {
+    const url = 'https://example.com/custom.png'
+    expect(resolveSeatLogo(arch({ avatar_url: url, face_revealed: true }))).toBe(SEAT_LOGOS.conductor)
   })
 })

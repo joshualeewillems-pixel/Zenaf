@@ -182,7 +182,6 @@ def test_composed_frames_fit_the_voice_builder_cap():
         ENC.EncounterState(), "Hello.")
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
     engage_frame = definition.engage_frame
-    engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context

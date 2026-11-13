@@ -129,6 +129,29 @@ function installFetch() {
         }),
       )
     }
+    if (url.includes('/feedback?')) {
+      // Read-back feedback prefill: one saved record for conversation
+      // A (response m2), none for any other conversation.
+      const cid = new URL(url, 'http://x').searchParams.get('conversation_id') ?? ''
+      return Promise.resolve(
+        ok({
+          records:
+            cid === A
+              ? [
+                  {
+                    id: 'fb1',
+                    response_ref: 'm2',
+                    conversation_id: A,
+                    seat: 'mentor',
+                    slider: 6,
+                    checks: ['Helpful'],
+                    note: 'Landed well.',
+                  },
+                ]
+              : [],
+        }),
+      )
+    }
     if (url.includes('/conversation?')) {
       const id = new URL(url, 'http://x').searchParams.get('conversation_id') ?? ''
       const d = deferred()
@@ -255,6 +278,26 @@ describe('T8 hydration', () => {
     expect(sendButton().disabled).toBe(false)
   })
 
+  it('loads saved feedback once per conversation and prefills the widget minimized', async () => {
+    renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'mentor' })
+    await flush()
+    expect(
+      calls.filter((c) => c.url.includes('/feedback?')).map((c) => c.url),
+    ).toEqual([expect.stringContaining(`/feedback?conversation_id=${A}`)])
+    hydrations[A].resolve(ok({
+      conversation_id: A,
+      messages: [u('m1', 'hello A'), v('m2', 'reply A')],
+      total: 2,
+    }))
+    await flush()
+    expect(container.textContent).toContain('reply A')
+    // The m2 widget mounts minimized with the saved face — the reply
+    // itself is untouched.
+    expect(container.textContent).toContain('😊')
+    expect(container.textContent).toContain('Saved, tap to change')
+    expect(calls.filter((c) => c.url.includes('/feedback?'))).toHaveLength(1)
+  })
+
   it('re-hydrates identically on remount with the same id', async () => {
     renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'mentor' })
     await flush()
@@ -369,5 +412,81 @@ describe('Firebrand lightning round (S1)', () => {
     await click(sendButton())
     expect(container.textContent).toContain('turn reply')
     expect(container.textContent).not.toContain('Lightning round')
+  })
+})
+
+describe('choose multiple (checkbox fan-out)', () => {
+  const SEATS = ['mentor', 'champion', 'guardian', 'maverick', 'ambassador', 'conductor', 'skeptic']
+
+  function chooseMultipleButton(): HTMLButtonElement {
+    const btn = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.textContent?.includes('choose multiple'),
+    )
+    if (!btn) throw new Error('choose multiple button not found')
+    return btn as HTMLButtonElement
+  }
+
+  function multiChip(seat: string): HTMLButtonElement {
+    const group = container.querySelector('[aria-label="Choose which seats answer"]')
+    if (!group) throw new Error('checkbox chip group not found')
+    const btn = Array.from(group.querySelectorAll('button')).find(
+      (b) => b.textContent?.includes(seat),
+    )
+    if (!btn) throw new Error(`checkbox chip for ${seat} not found`)
+    return btn as HTMLButtonElement
+  }
+
+  async function renderHydrated() {
+    renderChat({ environment: 'sheet', conversationId: A, initialArchetypeId: 'mentor' })
+    await flush()
+    hydrations[A].resolve(ok({ conversation_id: A, messages: [], total: 0 }))
+    await flush()
+  }
+
+  it('entering checks every seat: the send fans out to all seven', async () => {
+    await renderHydrated()
+    await click(chooseMultipleButton())
+    expect(container.textContent).toContain('only the checked seats answer here')
+    typeText('hello council')
+    await click(sendButton())
+    expect(turnBodies).toHaveLength(7)
+    expect(turnBodies.map((b) => b.archetype_id).sort()).toEqual([...SEATS].sort())
+  })
+
+  it('unchecking narrows the fan-out to exactly the checked seats', async () => {
+    await renderHydrated()
+    await click(chooseMultipleButton())
+    await click(multiChip('champion'))
+    await click(multiChip('mentor'))
+    expect(multiChip('champion').textContent).toContain('☐')
+    expect(multiChip('guardian').textContent).toContain('☑')
+    typeText('hello subset')
+    await click(sendButton())
+    expect(turnBodies).toHaveLength(5)
+    const sent = turnBodies.map((b) => b.archetype_id)
+    expect(sent).not.toContain('champion')
+    expect(sent).not.toContain('mentor')
+    expect(sent).toContain('guardian')
+  })
+
+  it('nothing checked disables send and says so', async () => {
+    await renderHydrated()
+    await click(chooseMultipleButton())
+    for (const s of SEATS) await click(multiChip(s))
+    expect(container.textContent).toContain('Choose at least one seat above')
+    typeText('hello nobody')
+    expect(sendButton().disabled).toBe(true)
+    expect(turnBodies).toHaveLength(0)
+  })
+
+  it('tapping again exits checkbox mode and restores the single-seat send', async () => {
+    await renderHydrated()
+    await click(chooseMultipleButton())
+    await click(chooseMultipleButton())
+    expect(container.querySelector('[aria-label="Choose which seats answer"]')).toBeNull()
+    typeText('hello mentor')
+    await click(sendButton())
+    expect(turnBodies).toHaveLength(1)
+    expect(turnBodies[0].archetype_id).toBe('mentor')
   })
 })

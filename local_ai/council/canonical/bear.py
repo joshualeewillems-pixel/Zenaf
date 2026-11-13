@@ -90,7 +90,7 @@ BEAR_RECORD = {
             "category": "identity",
         },
         "voice_color": {
-            "text": "Warm green #7ba889 — 'care, protection'",
+            "text": "Warm bronze #ac7c5b — 'care, protection'",
             "standing": "adopted",
             "category": "identity",
         },

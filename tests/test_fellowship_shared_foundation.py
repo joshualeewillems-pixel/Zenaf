@@ -362,22 +362,20 @@ def test_state_json_round_trip_for_new_fields():
 
 def test_engage_frame_guarded_honesty_guard_position():
     # Weaver's current frames, composed for real: the engage frame
-    # fits the 9,000-char cap with headroom, and the honesty guard
-    # is no longer the last content — the variable-length naming
-    # note sits after the capability block, so truncation would eat
-    # the naming note first, never the guard.
+    # fits the 9,000-char cap with headroom. Level 1 (2026-11-10):
+    # the honesty guard no longer rides the frame at all — it rides
+    # the canonical tier, an uncapped section immediately before the
+    # frame on the meeting path, so truncation can never touch it
+    # (asserted in the tier by T-L1-1, tests/test_canonical_tier.py).
     # Cap raised 8000 -> 9000 for the read-back frames (2026-11-06):
-    # the Weaver engage frame is 8,375 chars (625 headroom), where
+    # the Weaver engage frame is 7,701 chars (1,299 headroom), where
     # the old cap left 33 — this test FAILED on the old cap.
     definition = _weaver_definition()
     runtime = ENC.EncounterRuntime(definition)
     frame = runtime._engage_frame()
     assert len(frame) <= _EXTRA_INSTRUCTIONS_CAP
     assert len(frame) >= 300  # sanity: a real frame, not an empty one
-    assert CAP.HONESTY_GUARD in frame
-    guard_at = frame.index(CAP.HONESTY_GUARD)
-    naming_at = frame.index("Other seats: roles until met.")
-    assert guard_at < naming_at
+    assert CAP.HONESTY_GUARD not in frame
     # Budget (measured here, reported in the PR description):
     # engage frame must leave >= 300 chars of headroom.
     assert _EXTRA_INSTRUCTIONS_CAP - len(frame) >= 300

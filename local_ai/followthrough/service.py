@@ -212,6 +212,19 @@ class FollowthroughService:
         step resolves cleared ones. The RENDER step (_render_rows)
         performs no writes.
         """
+        # Permissions Slice 1 (B-R6): the nudge feed is proactive
+        # system initiative, governed by the R6 stance. Unless R6
+        # resolves to Just do it, no watchers run, no rows are
+        # created or resolved, and the feed is empty. The gate sits
+        # at this entry point — the single choke point the nudge
+        # route and the Today deck both consume through — and is
+        # consulted on every call, so a revocation takes effect at
+        # the next call. Already-created rows are retained data
+        # (Slice 5's concern), never deleted here.
+        from local_ai.permissions.consumption import consumption_allowed
+
+        if not consumption_allowed(user_id, "R6"):
+            return []
         now = datetime.now(timezone.utc)
         candidates = []
         unknown_task_ids: set[str] = set()

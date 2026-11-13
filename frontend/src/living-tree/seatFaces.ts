@@ -36,6 +36,14 @@ import ambassadorPanel from '../assets/seats/ambassador-panel.jpg'
 import conductorPanel from '../assets/seats/conductor-panel.jpg'
 import skepticPanel from '../assets/seats/skeptic-panel.jpg'
 
+import mentorLogo from '../assets/seats/mentor-logo.png'
+import championLogo from '../assets/seats/champion-logo.png'
+import guardianLogo from '../assets/seats/guardian-logo.png'
+import maverickLogo from '../assets/seats/maverick-logo.png'
+import ambassadorLogo from '../assets/seats/ambassador-logo.png'
+import conductorLogo from '../assets/seats/conductor-logo.png'
+import skepticLogo from '../assets/seats/skeptic-logo.png'
+
 /** Square avatar crops (160px), keyed by stock archetype id. */
 export const SEAT_FACES: Record<string, string> = {
   mentor: mentorAvatar,
@@ -58,6 +66,26 @@ export const SEAT_PANELS: Record<string, string> = {
   skeptic: skepticPanel,
 }
 
+/**
+ * Fellowship logos — the founder's character logo concepts (2026-11-12):
+ * single-color line-art emblems in each seat's color, cropped from the
+ * concept sheet. These are the TREE marks: a met seat's node shows its
+ * logo instead of its letters. Gated on the same reveal as the face
+ * (first meeting or depth milestone) — unmet seats keep their letters.
+ * Unlike the face, a custom user avatar does NOT override the logo:
+ * the tree node never showed the custom face, and the logo is the
+ * seat's emblem, not its portrait.
+ */
+export const SEAT_LOGOS: Record<string, string> = {
+  mentor: mentorLogo,
+  champion: championLogo,
+  guardian: guardianLogo,
+  maverick: maverickLogo,
+  ambassador: ambassadorLogo,
+  conductor: conductorLogo,
+  skeptic: skepticLogo,
+}
+
 /** Minimal shape needed to resolve a seat's face. */
 export interface SeatFaceSource {
   id: string
@@ -68,7 +96,12 @@ export interface SeatFaceSource {
   face_revealed?: boolean
 }
 
-function isRevealed(arch: SeatFaceSource): boolean {
+/** Revealed by the first meeting or the depth milestone. Exported:
+    the compact head's name tag uses the same reveal as the face —
+    a seat that has not been opened/met has not revealed its name.
+    `face_revealed` decides when present; `avatar_unlocked` is the
+    fallback for older payloads. */
+export function isRevealed(arch: SeatFaceSource): boolean {
   return arch.face_revealed ?? arch.avatar_unlocked
 }
 
@@ -92,4 +125,15 @@ export function resolveSeatFace(arch: SeatFaceSource): string | null {
 export function resolveSeatPanel(arch: SeatFaceSource): string | null {
   if (!isRevealed(arch)) return null
   return SEAT_PANELS[arch.id] ?? null
+}
+
+/**
+ * The seat's logo for its Living Tree node — shown once the seat is met
+ * (same reveal as the face: first meeting complete, or the depth
+ * milestone). Unmet seats get null and keep their letters on the tree.
+ * A custom avatar does not override the logo (see SEAT_LOGOS).
+ */
+export function resolveSeatLogo(arch: SeatFaceSource): string | null {
+  if (!isRevealed(arch)) return null
+  return SEAT_LOGOS[arch.id] ?? null
 }

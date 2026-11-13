@@ -133,7 +133,7 @@ EXPECTED_SLICES = {
                    "listing_disclosures", "represented_in_councils"],
     "skeptic": ["review_intake", "review_insights_ui", "anchored_evidence",
                 "contest_read", "recurrence", "blend_view"],
-    "maverick": ["import_uploads", "byo_key", "export_all", "rename_reshape"],
+    "maverick": ["import_uploads", "byo_key", "export_all"],
 }
 
 
@@ -159,10 +159,15 @@ NOT_CONSENTED = CAP.VisitorState(signed_in=True, consent_acknowledged=False)
 UNKNOWN_CONSENT = CAP.VisitorState(signed_in=True, consent_acknowledged=None)
 
 
-def test_first_meeting_block_carries_slice_plus_intention_line():
+def test_first_meeting_block_carries_lead_in_plus_slice_bullets():
+    # Level 1 (2026-11-10): the block is the adopted lead-in plus
+    # the seat's capability bullets only. The intention line and
+    # honesty guard moved to the canonical tier — asserted there by
+    # T-L1-2 (tests/test_canonical_tier.py).
     block = CAP.first_meeting_block("conductor", CONSENTED)
-    assert CAP.INTENTION_LINE in block
-    assert CAP.HONESTY_GUARD in block
+    assert CAP.INTENTION_LINE not in block
+    assert CAP.HONESTY_GUARD not in block
+    assert block.split("\n")[0] == "From your scope:"
     for name in ("First meetings", "Fellowship attention (!)",
                  "Convened multi-seat council", "Artifact provenance"):
         assert name in block
@@ -193,7 +198,10 @@ def test_weaver_definition_carries_the_block_and_turn_frame_renders_it():
     runtime = ENC.EncounterRuntime(definition)
     frame, _cue = runtime._turn_frame(ENC.EncounterState(), "hello there")
     assert definition.capability_context in frame
-    assert CAP.INTENTION_LINE in frame
+    # Level 1 (2026-11-10): the intention line rides the canonical
+    # tier, not the frame — asserted in the tier section of the
+    # assembled prompt by T-L1-1 (tests/test_canonical_tier.py).
+    assert CAP.INTENTION_LINE not in frame
 
 
 def test_engage_path_frame_carries_the_block():
@@ -236,7 +244,11 @@ def test_engage_path_frame_carries_the_block():
         0,
     )
     assert host.frames, "engage path spent no generation"
-    assert any(CAP.INTENTION_LINE in f for f in host.frames)
+    # Level 1 (2026-11-10): the intention line rides the canonical
+    # tier, not the frames — asserted there by T-L1-1
+    # (tests/test_canonical_tier.py). The capability bullets still
+    # ride the frames.
+    assert not any(CAP.INTENTION_LINE in f for f in host.frames)
     assert any("First meetings" in f for f in host.frames)
 
 
@@ -431,3 +443,110 @@ def test_meeting_turn_generation_carries_first_meeting_block(
     assert CAP.INTENTION_LINE in joined
     assert "First meetings" in joined
     assert "Convened multi-seat council — planned, not available yet" in joined
+
+
+# ---------------------------------------------------------------------------
+# FC4 companion: the "naming does not create it" note (Firebrand, 2026-11-07)
+# ---------------------------------------------------------------------------
+# C1–C3 (design §7.4). The note rides ONLY the commitments line, and
+# only when the capability is currently usable (signed-in). The other
+# six seats' blocks are pinned byte-identical to the post-Level-1
+# rendering (lead-in + bullets only, starting "From your scope:" —
+# the three shared lines moved into the canonical tier by Level 1,
+# PR #353). The pins below were rendered from pristine main (213a084)
+# and verified byte-identical to this branch (2026-11-11 #342
+# correction): this build changes exactly one line on one seat.
+#
+# REBASE NOTE: the Maverick S1 build (running) removes "Rename and
+# reshape seats" from the registry (its C1 verdict). If it lands
+# before this build rebases, the maverick pin below fails at rebase
+# time and is updated then — the removal, not this build, owns the
+# difference.
+
+_OTHER_SEATS_POST_L1 = {
+    'mentor': (
+        'From your scope:\n'
+        '- Conversation-export import — available in limited form (workflow not yet verified)\n'
+        '- Training and distillation — available in limited form (workflow not yet verified)\n'
+        '- Snapshots and eras — available in limited form (workflow not yet verified)\n'
+        '- Signal decay — available in limited form (workflow not yet verified)\n'
+        '- Growth records — available in limited form (workflow not yet verified)\n'
+        '- Specializations (twigs) — available in limited form (workflow not yet verified)'
+    ),
+    'guardian': (
+        'From your scope:\n'
+        '- Redaction at capture — available (workflow not yet verified)\n'
+        '- Consent-scope enforcement — available (workflow not yet verified)\n'
+        '- Consent onboarding gate — available (workflow not yet verified)\n'
+        '- Per-scope toggles — available (workflow not yet verified)\n'
+        '- Never observed (a data-handling policy guarantee, not a configurable setting or toggle) — available (workflow not yet verified)'
+    ),
+    'maverick': (
+        'From your scope:\n'
+        '- Conversation-export import — available in limited form (workflow not yet verified)\n'
+        '- Bring-your-own key — available in limited form (workflow not yet verified)\n'
+        '- Export everything — planned, not available yet'
+    ),
+    'ambassador': (
+        'From your scope:\n'
+        '- Voice chat — available (workflow not yet verified)\n'
+        '- Echo rentals — planned, not available yet\n'
+        '- Zones (rental slicing) — planned, not available yet\n'
+        '- Listing disclosures — planned, not available yet\n'
+        "- Being represented in other people's councils — planned, not available yet"
+    ),
+    'conductor': (
+        'From your scope:\n'
+        '- First meetings — available\n'
+        '- One-on-one seat chat — available (workflow not yet verified)\n'
+        '- Fellowship attention (!) — available\n'
+        '- Tree view and branch panels (the tree mapping conversations and artifacts) — available (workflow not yet verified)\n'
+        '- Convened multi-seat council — planned, not available yet\n'
+        '- Marketplace info via the tree — planned, not available yet\n'
+        '- Artifact provenance (recorded origin of an artifact — not rental or listing disclosure) — available (workflow not yet verified)'
+    ),
+    'skeptic': (
+        'From your scope:\n'
+        '- Review queue — intake candidates — available (workflow not yet verified)\n'
+        '- Review queue — personality claims — planned, not available yet\n'
+        '- Anchored evidence — available in limited form (workflow not yet verified)\n'
+        '- Contesting a read — available in limited form (workflow not yet verified)\n'
+        '- Recurrence patterns — available in limited form (workflow not yet verified)\n'
+        '- Blend view — available in limited form (workflow not yet verified)'
+    ),
+}
+
+
+def test_c1_companion_note_renders_when_usable():
+    """C1: for a signed-in, consenting visitor, the champion's
+    commitments line carries the note — and keeps its verification
+    status."""
+    block = CAP.first_meeting_block("champion", CONSENTED)
+    assert (
+        "- Commitments — available (workflow not yet verified). "
+        "Naming one does not create it." in block
+    )
+
+
+def test_c2_no_other_seat_changes():
+    """C2: the other six seats' first-meeting blocks are
+    byte-identical to the post-Level-1 baseline (rendered from pristine
+    main, 213a084). The companion rides exactly one line on one seat."""
+    for seat, pinned in _OTHER_SEATS_POST_L1.items():
+        assert CAP.first_meeting_block(seat, CONSENTED) == pinned, seat
+
+
+def test_c3_no_duplication_when_gated():
+    """C3: signed-out, the champion's commitments line renders the
+    prerequisite note (which already contains 'naming one does not
+    create it') exactly once — and the prompt_note form (capital N,
+    its own sentence) never appears."""
+    block = CAP.first_meeting_block(
+        "champion", CAP.VisitorState(signed_in=False)
+    )
+    assert block.count("naming one does not create it") == 1
+    assert "Naming one does not create it." not in block
+    assert (
+        "- Commitments — not available to you yet — Signed-in account; "
+        "the visitor chooses — naming one does not create it." in block
+    )

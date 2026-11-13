@@ -46,14 +46,16 @@ _SUM_EPSILON = 1e-6
 #: landing demo chips, Foundation voice console, chat accents, Living Tree
 #: branches, journal story cast. Distinct from strand colors (strands.py).
 #: The user-weave accent marks visitor/user words woven into a voice's reply.
+#: Values sampled 2026-11-12 from the founder's "Zenaf Fellowship — Character
+#: Logo Concepts" sheet (logo-ring colors, measured from the image file).
 VOICE_COLORS: dict[str, str] = {
-    "mentor": "#c9a86a",      # deep gold — the long view
-    "champion": "#c96a5a",    # ember red — courage, action
-    "guardian": "#7ba889",    # warm green — care, protection
-    "maverick": "#9a7bc9",    # electric violet — pattern-breaking
-    "ambassador": "#7aa3b8",  # sky blue — the public face
-    "conductor": "#8a8a93",   # neutral slate — synthesis
-    "skeptic": "#6b6b76",     # ash gray — the uncomfortable question
+    "mentor": "#92b692",      # sage green — the long view
+    "champion": "#e24e4e",    # ember red — courage, action
+    "guardian": "#ac7c5b",    # warm bronze — care, protection
+    "maverick": "#a55cce",    # electric violet — pattern-breaking
+    "ambassador": "#5c9cea",  # sky blue — the public face
+    "conductor": "#8892c3",   # periwinkle — synthesis
+    "skeptic": "#a29ac1",     # muted lavender — the uncomfortable question
 }
 
 #: Accent for user/visitor words woven into a voice's reply ([[u]] spans).
@@ -63,8 +65,8 @@ USER_WEAVE_COLOR = "#e8a33d"  # bright amber — "your words"
 
 
 def voice_color(archetype_id: str) -> str:
-    """Canonical hex color for an archetype voice. Falls back to slate."""
-    return VOICE_COLORS.get((archetype_id or "").strip().lower(), "#8a8a93")
+    """Canonical hex color for an archetype voice. Falls back to the Conductor's periwinkle."""
+    return VOICE_COLORS.get((archetype_id or "").strip().lower(), "#8892c3")
 
 
 #: Archetype philosophies for the council seats — what makes each voice a mind

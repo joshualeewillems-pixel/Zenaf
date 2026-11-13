@@ -54,7 +54,6 @@ from local_ai.conversation.encounter import (
     EncounterRuntime,
     EncounterState,
     _naming_note,
-    _ZENAF_QUESTION_NOTE,
     split_strands_trailer,
 )
 from local_ai.conversation.meeting import (
@@ -178,8 +177,9 @@ INVARIANTS = [
     ("Ground the impression ONLY in their substantive material", "readback"),
     # No invented training.
     ("Never invent training they don't have", "readback"),
-    # Recognition note: proposal, never a filed claim.
-    ("A first impression is a proposal, never a filed claim", "readback"),
+    # Recognition note: proposal, never a filed claim (Crane correction
+    # §9: Gardener's prohibition, verbatim — replaces the old form).
+    ("Never claim anything here trains you or is kept as training — an impression is a proposal, never a filed claim", "readback"),
     # No-checklist principle, exact sentence.
     ("Don't reduce your friends to a feature checklist.", "guidance"),
 ]
@@ -196,10 +196,11 @@ def test_integrity_invariants_present_verbatim():
             assert text in script.readback_frame, text
         else:
             assert text in frames, text
-    # The honesty guard rides the capability block (last line), which
-    # the runtime appends to both composed frames — asserted with the
-    # budget test below, where the composed frames are built.
-    assert CAP.HONESTY_GUARD in CAP.first_meeting_block(
+    # The honesty guard rides the canonical tier (Level 1, 2026-11-10),
+    # not the capability block — asserted in the tier by T-L1-2
+    # (tests/test_canonical_tier.py), where the block is lead-in +
+    # bullets only.
+    assert CAP.HONESTY_GUARD not in CAP.first_meeting_block(
         "guardian", CAP.VisitorState()
     )
 
@@ -336,7 +337,6 @@ def test_unwritten_seats_keep_their_original_refusal(ve_ctx, tmp_path):
 def _composed_engage(definition, capability_block):
     frame = (
         definition.engage_frame
-        + "\n\n" + _ZENAF_QUESTION_NOTE
         + "\n\n" + _naming_note(definition)
     )
     if capability_block:
@@ -350,9 +350,12 @@ def test_frame_sizes_measured_with_headroom():
     fits the live frame cap (reply.py, _EXTRA_INSTRUCTIONS_CAP) with >= 300 chars
     headroom in the default, worst-case capability (signed-out),
     and fully-met naming variants; the composed turn frame fits
-    with room for an allusion cue (~300 chars). The honesty guard,
-    the capability block's last line, is therefore never the first
-    content lost to truncation. Cap raised 8000 -> 9000 for the
+    with room for an allusion cue (~300 chars). The honesty guard
+    no longer rides the frame at all (Level 1, 2026-11-10): it rides
+    the canonical tier, an uncapped section immediately before the
+    frame on the meeting path, so frame-cap truncation can never
+    touch it — asserted in the tier by T-L1-1
+    (tests/test_canonical_tier.py). Cap raised 8000 -> 9000 for the
     read-back frames (2026-11-06)."""
     definition = ENC.get_definition(MT.get_script("guardian", 1))
     cap_default = CAP.first_meeting_block("guardian", CAP.VisitorState())
@@ -376,10 +379,12 @@ def test_frame_sizes_measured_with_headroom():
     for name, frame in variants.items():
         assert len(frame) <= _EXTRA_INSTRUCTIONS_CAP, (name, len(frame))
         assert _EXTRA_INSTRUCTIONS_CAP - len(frame) >= 300, (name, len(frame))
-        assert CAP.HONESTY_GUARD in frame, name
+        # Level 1: the guard rides the tier, not the frame (T-L1-1).
+        assert CAP.HONESTY_GUARD not in frame, name
         assert len(frame) <= 12500, (name, len(frame))
     runtime = EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(EncounterState(), "test message")
     assert len(turn_frame) <= _EXTRA_INSTRUCTIONS_CAP
     assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) >= 300
-    assert CAP.HONESTY_GUARD in turn_frame
+    # Level 1: the guard rides the tier, not the frame (T-L1-1).
+    assert CAP.HONESTY_GUARD not in turn_frame

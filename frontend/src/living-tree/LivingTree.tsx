@@ -27,7 +27,7 @@
  * collapse even if the <style> block is ever stripped.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { BRAID_ORDER, STRANDS, designStrandKeyForTaxonomy, strandColor, type DesignStrandKey, type StrandKey } from './strands'
+import { BRAID_ORDER, STRANDS, designStrandKeyForTaxonomy, resolveStrandLogo, strandColor, type DesignStrandKey, type StrandKey } from './strands'
 import {
   STOCK_ARCHETYPE_FALLBACK,
   dominantStrandKey,
@@ -45,8 +45,8 @@ import {
 import { INVITATIONS_CHANGED_EVENT } from '../chat/InvitationList'
 import { DraftStoreProvider } from '../chat/draftStore'
 import StrandPanel from '../chat/StrandPanel'
-import { resolveSeatFace, resolveSeatPanel } from './seatFaces'
-import { USER_WEAVE_COLOR } from '../components/VoiceWeave'
+import { isRevealed, resolveSeatFace, resolveSeatLogo, resolveSeatPanel, type SeatFaceSource } from './seatFaces'
+import { TREE_DEFAULT_COLOR, TREE_DEFAULT_RGB, USER_WEAVE_COLOR, voiceColor } from '../council/colors'
 import { NodeSheet } from '../tree/NodeSheet'
 import { YouEchoPanel } from './YouEchoPanel'
 import { MeetingView } from './MeetingView'
@@ -78,6 +78,7 @@ export type NodeMenuItemId =
   | 'talk'
   | 'review'
   | 'upload'
+  | 'mint'
   | 'projects'
   | 'settings'
   | 'content'
@@ -91,6 +92,8 @@ export type SheetNavView =
   | 'provenance'
   | 'perspectives'
   | 'agent_intake'
+  | 'signal_review'
+  | 'workspace'
 
 /**
  * Cross-component ask: jump the open seat sheet to that seat's review
@@ -123,6 +126,12 @@ export type NodeSheetContentProvider = (
         null otherwise) so the header menu can hide the invitation
         shortcut when its target IS the open conversation. */
     onChatIdChange?: (id: string | null) => void
+    /** Opens the seat's first-meeting overlay (MeetingView) — the
+        chat list's route for a meeting conversation (founder,
+        2026-11-12: meetings join the chat list, then the compact
+        head's door button goes). The Tree owns the overlay state;
+        sheet content only asks. */
+    onOpenMeeting?: (seat: string) => void
   },
 ) => ReactNode | null
 
@@ -135,6 +144,37 @@ const FELLOWSHIP_NAMES: Record<string, string> = {
   conductor: 'The Weaver',
   skeptic: 'The Raven',
   maverick: 'The Fox',
+}
+
+/** The adopted personal names (naming slate, founder 2026-11-10 — see
+    ~/workspace/your_files/zenaf-naming-implementation-design-brief-2026-11-10.md).
+    Shown in the compact head's tag ONLY once the seat is opened/met;
+    until then the tag shows the role name. This is the one surface
+    where a personal name appears before the visitor names the seat —
+    the Conductor ruling (role until the visitor names it) is
+    superseded here only; renaming a seat later is untouched. */
+const SEAT_PERSONAL_NAMES: Record<string, string> = {
+  mentor: 'Rumi',
+  champion: 'Valen',
+  guardian: 'Maeve',
+  ambassador: 'Lucian',
+  conductor: 'Aria',
+  skeptic: 'Severine',
+  maverick: 'Jynx',
+}
+
+/**
+ * The compact-head tag: the seat's personal name once opened/met
+ * (isRevealed — first meeting complete or the depth milestone), the
+ * role name in caps until then. An unopened seat has not revealed its
+ * name, so there is no "???" — the role name is what shows. The
+ * personal name renders in normal case (a name); the role name in
+ * caps (a label).
+ */
+export function seatHeadTag(arch: SeatFaceSource): string {
+  return isRevealed(arch)
+    ? (SEAT_PERSONAL_NAMES[arch.id] ?? arch.id.toUpperCase())
+    : arch.id.toUpperCase()
 }
 
 /** Spoken form of a seat's attention marker, by reason. The intro line is
@@ -165,14 +205,16 @@ export type MeetingDoorState = 'begin' | 'revisit' | null
 /** Whether the seat's character head carries a door into the first-meeting
     overlay, and which one. 'intro' is the fresh-tree invitation — the
     "Begin" door. A seat already met (face_revealed — true exactly when
-    keystone 1 is Done or the face is depth-unlocked) gets the revisit
-    door instead, so the completed meeting stays reachable: MeetingView
-    renders the transcript and "Meet again" once open. An unmet seat
-    with a 'meet' marker — the post-entry invitation for a written,
-    released seat — also gets the Begin door (all-six release,
-    2026-10-29); the backend begin gates, not the marker, are what
-    refuse an unreleased seat. Seats with no marker, or a later-keystone
-    reason while unmet, have no door. */
+    keystone 1 is Done or the face is depth-unlocked) computes 'revisit',
+    but the head renders NO door for it (founder, 2026-11-12: the button
+    goes once the first meeting is done): the completed meeting joined
+    the chat list instead, and opening it there mounts MeetingView with
+    the transcript and "Meet again". An unmet seat with a 'meet' marker
+    — the post-entry invitation for a written, released seat — also gets
+    the Begin door (all-six release, 2026-10-29); the backend begin
+    gates, not the marker, are what refuse an unreleased seat. Seats
+    with no marker, or a later-keystone reason while unmet, have no
+    door. */
 export function meetingDoorState(
   reason: KeystoneAttentionReason | null | undefined,
   met = false,
@@ -277,7 +319,7 @@ const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
   { id: 'talk', title: 'Talk', desc: 'Think something through with your whole council.' },
   { id: 'review', title: 'Review', desc: 'Moments awaiting your verdict before anything trains.' },
   { id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
-  { id: 'content', title: 'Content', desc: 'Your journal and reflections — the material that is yours.' },
+  { id: 'content', title: 'Content', desc: 'Narrative packages and transcript tools — briefs, scripts, and sorted transcripts.' },
   { id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
 ]
 
@@ -293,19 +335,39 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
 
 /** Seat-owned destinations (the distributed menu, 2026-10-22): a full-screen
     surface belongs to the seat whose slice of the system it is, and its
-    sheet carries the door. The Firebrand owns the execution surface (talk
-    into action); the Bear owns provenance (where your material came from
-    and where it went). Everything else left the global menu the same way:
+    sheet carries the door. The Mentor owns the execution surface (the
+    vision map and its tables); the Bear owns provenance (where your material came from
+    and where it went); the Raven owns signal review (distilled signals
+    from imports, awaiting your verdict); the Conductor owns the Workspace
+    Organizer (preview-only planning). Everything else left the global menu the same way:
     Today lives in every seat's menu above and in YOU's, Review is already
     per-seat, Settings and Content live with YOU, and Connect is gone —
     its intake remains reachable from the you-sheet's upload entry. */
 const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: string; nav: SheetNavView }>> = {
-  champion: [
+  mentor: [
     { id: 'vision_map', title: 'Vision map', desc: 'The execution surface — initiatives, projects, and their stones.', nav: 'vision_map' },
     { id: 'vision_tables', title: 'Vision (tables)', desc: 'The same work, as tables.', nav: 'vision_execution' },
   ],
   guardian: [
     { id: 'provenance', title: 'Provenance', desc: 'Where your material came from — and where it went.', nav: 'provenance' },
+  ],
+  skeptic: [
+    { id: 'signal_review', title: 'Signal review', desc: 'Distilled signals from your imports, awaiting your verdict.', nav: 'signal_review' },
+  ],
+  conductor: [
+    { id: 'workspace', title: 'Workspace Organizer', desc: 'Plan and preview a folder tidy-up — the moves stay yours to make.', nav: 'workspace' },
+  ],
+}
+
+/** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —
+    the Fox's expressive standalone mint, mounted in the sheet like
+    Today/Review/Upload. No other seat gets it. The flow is the
+    shared StandaloneMint component (see App's renderTreeSheetContent);
+    the mint itself carries no seat attribution — the standalone
+    endpoints take no seat (open question, 2026-11-12). */
+const SEAT_SHEET_ITEMS: Record<string, Array<{ id: NodeMenuItemId; title: string; desc: string }>> = {
+  maverick: [
+    { id: 'mint', title: 'Mint', desc: 'Mint a photo, a song, a piece — standalone, no journal entry needed.' },
   ],
 }
 
@@ -316,7 +378,7 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
  * the visibility rules are unit-testable without rendering the tree.
  *
  * Never contains Talk (tapping the node IS talk), Full character
- * (already a head disclosure), or the first-meeting door (a direct
+ * (already the display-name disclosure), or the first-meeting door (a direct
  * header button). The shortcut appears ONLY when the seat has a
  * pending invitation AND its most-recent invitation conversation is
  * not the open one — when the target IS the open conversation, the
@@ -340,6 +402,9 @@ export function buildSeatHeaderMenu(args: {
     title: m.title,
     desc: m.desc,
   }))
+  for (const extra of SEAT_SHEET_ITEMS[args.seatKey] ?? []) {
+    items.push({ kind: 'sheet' as const, id: extra.id, title: extra.title, desc: extra.desc })
+  }
   for (const nav of SEAT_NAV_ITEMS[args.seatKey] ?? []) {
     items.push({ kind: 'nav', id: nav.id, title: nav.title, desc: nav.desc, nav: nav.nav })
   }
@@ -558,13 +623,13 @@ function relax(P: Map<string, Placed>): Map<string, Placed> {
   return P
 }
 
-/** The Skeptic's hollow branch — the inverse voice, rendered in muted slate. */
-const SKEPTIC_COLOR = '#6b6480'
-
 function strandCol(p: { side: string; strand: StrandKey | null; datum?: TreeDatum }): string {
-  if (p.side === 'c') return '#c9a86a'
-  if (p.datum?.archetype?.is_skeptic) return SKEPTIC_COLOR
-  if (!p.strand) return '#c9a86a'
+  if (p.side === 'c') return TREE_DEFAULT_COLOR
+  // A seat node wears its own seat color (the founder's logo-sheet palette);
+  // the Skeptic's hollow branch (dashed stroke, dark fill) is drawn at the
+  // node itself and is unaffected by the color.
+  if (p.datum?.archetype) return voiceColor(p.datum.archetype.id)
+  if (!p.strand) return TREE_DEFAULT_COLOR
   return strandColor(p.strand)
 }
 
@@ -750,30 +815,16 @@ function AvatarSection({
       <div className="lsect">Face</div>
       <div className="lavatar-row">
         <SeatAvatar avatarUrl={face} displayName={arch.display_name} />
-        <div className="lavatar-meta">
-          {arch.avatar_url ? (
-            <p className="lnote">
-              This is {arch.display_name}'s face — the one you've earned the right to see.
-            </p>
-          ) : face && arch.avatar_unlocked ? (
-            <p className="lnote">
-              The fellowship's face for {arch.display_name}. Generate or upload an
-              image to replace it with your own.
-            </p>
-          ) : face ? (
-            <p className="lnote">
-              The fellowship's face for {arch.display_name} — revealed when the two
-              of you met.
-            </p>
-          ) : (
-            <p className="lnote">
-              <strong>???</strong> — this seat's face is still undiscovered. Meet this
-              seat — or train it ({arch.avatar_signals_to_unlock} more depth to go) —
-              and you'll earn the right to see it.
-            </p>
-          )}
-          {error && <p className="lavatar-err">{error}</p>}
-        </div>
+        {(!face || error) && (
+          <div className="lavatar-meta">
+            {!face && (
+              <p className="lnote">
+                Undiscovered — {arch.avatar_signals_to_unlock} more depth to go.
+              </p>
+            )}
+            {error && <p className="lavatar-err">{error}</p>}
+          </div>
+        )}
       </div>
       {showPanel && panelArt && (
         <img
@@ -876,6 +927,7 @@ export function LivingTreeView({
   initials,
   renderSheetContent,
   currentUserId,
+  userAvatarUrl,
 }: {
   /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
   onNavigate: (view: SheetNavView) => void
@@ -886,8 +938,18 @@ export function LivingTreeView({
   /** Signed-in user id (null when signed out): keys the draft store
       and purges it on auth change. */
   currentUserId?: string | null
+  /** The signed-in user's profile photo — App's currentUser.avatar_data_url,
+      the same source the header avatar uses. The you-node wears it instead
+      of the "YOU" letters; null/undefined keeps the letters. */
+  userAvatarUrl?: string | null
 }) {
   const [sel, setSel] = useState<string | null>(null)
+  /** The you-node photo failed to load — fall back to the "YOU" letters
+      (mirrors the header avatar's broken-image fallback). */
+  const [youImgBroken, setYouImgBroken] = useState(false)
+  useEffect(() => {
+    setYouImgBroken(false)
+  }, [userAvatarUrl])
   /** Weaver strand interview open in the bottom panel (rev2): the
       design strand key, or null when no strand conversation is open.
       A strand root tap opens it; a re-tap closes it. */
@@ -1030,7 +1092,28 @@ export function LivingTreeView({
         }
       }
     }
-    if (!moved) return
+    if (!moved) {
+      // Nothing moved — but the target can still carry new DATA under
+      // the same positions: when the live archetype status resolves
+      // after first paint, a completed first meeting flips face_revealed
+      // (and may change names/twigs) on seats whose layout — on a
+      // zero-depth account, position-identical to the fallback's —
+      // does not move at all. Sync each node's data from the target in
+      // place, preserving its displayed position and opacity, or the
+      // rendered nodes keep the fallback datum forever (met seats stuck
+      // with their letters instead of their logos). The spread mirrors
+      // the animation path's own node construction: every field comes
+      // from the target except x/y/op, which stay as displayed.
+      let dirty = false
+      const synced = nodesRef.current.map((n) => {
+        const t = target.get(n.datum.id)
+        if (!t || (t.datum === n.datum && t.kids === n.kids)) return n
+        dirty = true
+        return { ...t, x: n.x, y: n.y, op: n.op }
+      })
+      if (dirty) setNodes(synced)
+      return
+    }
     const t0 = performance.now()
     const DUR = 480
     let raf = 0
@@ -1081,6 +1164,15 @@ export function LivingTreeView({
       const d = findDatum(s, up)
       return d?.archetype ? null : s
     })
+  }
+
+  /** Opens a seat's first-meeting overlay: the sheet closes and
+      MeetingView mounts — the one route into the meeting, shared by
+      the compact head's Begin door and the chat list's meeting rows
+      (founder, 2026-11-12). */
+  const openMeeting = (seat: string) => {
+    closeSheet()
+    setMeetingSeat(seat)
   }
 
   const onTap = (id: string) => {
@@ -1172,9 +1264,7 @@ export function LivingTreeView({
         first.
       </p>
       {archetypes.map((a) => {
-        const domKey = dominantStrandKey(a)
-        const s = STRANDS.find((x) => x.key === domKey)
-        const col = a.is_skeptic ? SKEPTIC_COLOR : (s?.color ?? '#c9a86a')
+        const col = voiceColor(a.id)
         return (
           <div key={a.id} className="lstat">
             <span className="ldot" style={{ background: col }} />
@@ -1190,55 +1280,25 @@ export function LivingTreeView({
   )
 
   /**
-   * Talk + Character, one tab: the seat's character card is the head of the
-   * conversation. Compact by default so the composer stays within a short
-   * scroll; the full panel expands inline via disclosure.
+   * The seat's identity row — Other actions, the emblem circle, and
+   * the name/tag pair. Since the header cleanup (founder, 2026-11-12)
+   * it renders in the sheet's chrome header (NodeSheet headerContent),
+   * where the fellowship title ("The Firebrand") used to sit: the seat
+   * is identified by its emblem and name, not by a title line. The tag
+   * is the seat's name (founder 2026-11-12): the personal name once
+   * opened/met, the role name until then (seatHeadTag). The emblem,
+   * the display name, and the tag all open the full character sheet
+   * (same disclosure) — no separate "Full character" link. The circle
+   * shows the seat's LOGO (its emblem, like the tree node), not its
+   * portrait face — the face lives in the character body's Face
+   * section; an unrevealed seat keeps the ??? placeholder.
    */
-  const renderCompactSeatHead = (arch: ArchetypeStatus) => {
-    const isSeed = arch.depth <= 0
-    const tag = isSeed ? 'SEED' : arch.band.toUpperCase()
-    const col = arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a'
+  const renderSeatIdentityRow = (arch: ArchetypeStatus) => {
+    const tag = seatHeadTag(arch)
+    const col = voiceColor(arch.id)
     const expanded = charExpandedSeat === arch.id
-    const door = meetingDoorState(attention?.markers[arch.id]?.reason, arch.face_revealed === true)
     return (
-      <div>
-        <div className="lavatar-head">
-          <SeatAvatar avatarUrl={resolveSeatFace(arch)} displayName={arch.display_name} size={44} />
-          <div>
-            <h3 style={{ margin: 0 }}>{arch.display_name}</h3>
-            <div className="ltag" style={{ color: col }}>
-              {arch.is_skeptic ? 'THE SKEPTIC · ' : ''}{tag}
-            </div>
-          </div>
-        </div>
-        <p>“{arch.prompt_frame}”</p>
-        {door && (
-          <button
-            type="button"
-            className="lcta"
-            style={{ margin: '10px 0' }}
-            onClick={() => {
-              closeSheet()
-              setMeetingSeat(arch.id)
-            }}
-          >
-            {door === 'begin' ? 'Begin the first meeting →' : 'Your first meeting →'}
-          </button>
-        )}
-        <div className="lstat">
-          <span className="lname">Viability</span>
-          <span className="lpct">{arch.depth}%</span>
-          {isSeed && <span className="lnote"> — training comes first</span>}
-        </div>
-        <button
-          type="button"
-          className="lback"
-          aria-expanded={expanded}
-          onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
-        >
-          {expanded ? 'Hide full character ↑' : 'Full character →'}
-        </button>
-        {expanded && renderSeatCharacterBody(arch)}
+      <div className="lavatar-head">
         <button
           type="button"
           aria-label="Other actions"
@@ -1247,23 +1307,92 @@ export function LivingTreeView({
           style={{
             minWidth: 44,
             minHeight: 44,
-            marginTop: 8,
             padding: '0 12px',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
             background: 'rgba(245,240,232,.06)',
-            border: '1px solid rgba(201,168,106,.25)',
+            border: `1px solid rgba(${TREE_DEFAULT_RGB},.25)`,
             borderRadius: 12,
             color: '#f5f0e8',
             fontSize: 20,
             lineHeight: 1,
             cursor: 'pointer',
+            flex: 'none',
           }}
         >
           ···
         </button>
+        <button
+          type="button"
+          className="lavatar-btn"
+          aria-label={`${arch.display_name} emblem`}
+          aria-expanded={expanded}
+          onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+        >
+          <SeatAvatar avatarUrl={resolveSeatLogo(arch)} displayName={arch.display_name} size={44} />
+        </button>
+        <div>
+          <button
+            type="button"
+            className="lname-btn"
+            aria-expanded={expanded}
+            onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+          >
+            {arch.display_name}
+          </button>
+          <button
+            type="button"
+            className="ltag"
+            aria-expanded={expanded}
+            onClick={() => setCharExpandedSeat(expanded ? null : arch.id)}
+            style={{
+              color: col,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              font: 'inherit',
+              textAlign: 'left',
+            }}
+          >
+            {tag}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  /**
+   * Talk + Character, one tab: the seat's character card is the head of
+   * the conversation. The identity row lives in the sheet header (see
+   * renderSeatIdentityRow); this body head keeps the Other-actions
+   * menu (when open), the seat's quote, the meeting door, and the
+   * disclosed character body. Compact by default so the composer stays
+   * within a short scroll; the full panel expands inline via disclosure.
+   */
+  const renderCompactSeatHead = (arch: ArchetypeStatus) => {
+    const expanded = charExpandedSeat === arch.id
+    const door = meetingDoorState(attention?.markers[arch.id]?.reason, arch.face_revealed === true)
+    return (
+      <div>
         {headerMenuSeat === arch.id && renderSeatHeaderMenu(arch)}
+        <p>“{arch.prompt_frame}”</p>
+        {/* Only a genuine first meeting gets a door here. A met seat
+            ('revisit') renders none — its completed meeting lives in
+            the chat list now (founder, 2026-11-12). */}
+        {door === 'begin' && (
+          <button
+            type="button"
+            className="lcta"
+            style={{ margin: '10px 0' }}
+            onClick={() => openMeeting(arch.id)}
+          >
+            Begin the first meeting →
+          </button>
+        )}
+        {expanded && renderSeatCharacterBody(arch)}
+
       </div>
     )
   }
@@ -1358,8 +1487,8 @@ export function LivingTreeView({
   }
 
   /** The full character panel body — face unlock, strand blend, twigs,
-      marketplace. Shown via the Talk tab's "Full character" disclosure.
-      When the seat's panel art is revealed it becomes a left-justified
+      marketplace. Shown via the display-name disclosure in the compact
+      head. When the seat's panel art is revealed it becomes a left-justified
       column and every profile section flows in a column to its right
       (Joshua, 2026-10-23); without art the body is the single column
       it has always been — no empty gutter. */
@@ -1370,7 +1499,7 @@ export function LivingTreeView({
       <>
         <AvatarSection arch={arch} onChanged={refreshArchetypes} showPanel={!panelArt} />
         <StrandBlendBars weights={arch.strand_weights} />
-        {(arch.twigs ?? []).length > 0 ? (
+        {(arch.twigs ?? []).length > 0 && (
           <div className="ltwigs">
             <div className="lsect">Specializations</div>
             {(arch.twigs ?? []).map((t) => (
@@ -1383,30 +1512,18 @@ export function LivingTreeView({
               </div>
             ))}
           </div>
-        ) : (
-          <p className="lsub">
-            No specializations yet — they sprout when your training clusters in a specific domain.
-          </p>
         )}
         <div className="lmarket">
           <div className="lsect">Marketplace</div>
           <div className="lstat">
             <span className="lname">Viability</span>
             <div className="lbar">
-              <div className="lfill" style={{ width: `${arch.depth}%`, background: arch.is_skeptic ? SKEPTIC_COLOR : '#c9a86a' }} />
+              <div className="lfill" style={{ width: `${arch.depth}%`, background: voiceColor(arch.id) }} />
             </div>
             <span className="lpct">{arch.depth}%</span>
           </div>
-          <p className="lnote">
-            {isSeed
-              ? 'Nothing to rent yet — training comes first. You set the price when there is something worth renting.'
-              : 'No rental price set yet — you set the price per archetype when there is training worth renting.'}
-          </p>
         </div>
-        <YouEchoPanel
-          archetypeId={arch.id}
-          character={FELLOWSHIP_NAMES[arch.id] ?? arch.display_name}
-        />
+        <YouEchoPanel archetypeId={arch.id} />
         {(() => {
           // Phase 5 — recent stories, true from state: the seat's live
           // threads (active, cast) with latest confirmed change. State
@@ -1432,8 +1549,12 @@ export function LivingTreeView({
             type="button"
             className="lcta"
             onClick={() => {
-              closeSheet()
-              onNavigate('agent_intake')
+              // Seat-aimed upload (founder 2026-11-12): the sheet's own
+              // upload item mounts AgentIntakeView with this seat's
+              // fellowship name, so the copy and the review jump aim at
+              // this seat. The generic intake (onNavigate('agent_intake'),
+              // no seatName) is not used from a seat's profile.
+              setSheetItem('upload')
             }}
           >
             Upload source materials to begin training ›
@@ -1462,15 +1583,14 @@ export function LivingTreeView({
       you-node and the seats open sheets. */
   const renderPanel = () => {
     const d = sel ? findDatum(sel, up) : null
+    // No selection — or a seat selected, which opens its sheet: the panel
+    // is empty. (The old "Tap the trunk…" hint bar was removed 2026-11-12;
+    // the panel box itself is hidden by showPanel below.)
     if (!d || d.archetype) {
-      return (
-        <div className="lhint">
-          Tap the trunk for your options — tap any branch to meet its character.
-        </div>
-      )
+      return null
     }
     const live = nodeById.get(sel!)
-    const col = live ? strandCol(live) : '#c9a86a'
+    const col = live ? strandCol(live) : TREE_DEFAULT_COLOR
     const raw = Math.max(0, d.depth ?? 0)
     const eff = effectiveDepth(d.depth, d.lastTended)
     const fallow = raw > 0.3 && eff < raw * 0.4
@@ -1507,6 +1627,13 @@ export function LivingTreeView({
     )
   }
 
+  /** The panel box shows only when there is panel content: the open
+      strand interview, or a selected strand's narrative. With nothing
+      selected — or a seat selected, which opens its sheet — the box is
+      gone entirely (the old hint bar was removed 2026-11-12). */
+  const panelDatum = sel ? findDatum(sel, up) : null
+  const showPanel = !!strandPanelKey || (!!panelDatum && !panelDatum.archetype)
+
   /* ---------------- node sheet: menus + mounted views ---------------- */
 
   /** The node's menu — the one grammar. Tapping a row mounts its view. */
@@ -1517,10 +1644,31 @@ export function LivingTreeView({
     // old seat-menu invitation row is deleted (its shortcut lives in
     // the head menu). The you-node menu is unchanged, Talk included.
     const items = node.kind === 'you' ? YOU_MENU : SEAT_MENU
+    const extraItems =
+      node.kind === 'seat' ? (SEAT_SHEET_ITEMS[node.seatKey] ?? []) : []
     const navItems = node.kind === 'seat' ? (SEAT_NAV_ITEMS[node.seatKey] ?? []) : []
     return (
       <div>
         {items.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            className="lrow"
+            onClick={() => {
+              // Any non-invitation row ends an invitation navigation
+              // episode: a stale override must never resurrect.
+              setTalkOverride(null)
+              setSheetItem(m.id)
+            }}
+          >
+            <span>
+              <span className="lrow-t">{m.title}</span>
+              <span className="lrow-d">{m.desc}</span>
+            </span>
+            <span className="lchev">›</span>
+          </button>
+        ))}
+        {extraItems.map((m) => (
           <button
             key={m.id}
             type="button"
@@ -1611,6 +1759,7 @@ export function LivingTreeView({
         ...(talkOverride ? { conversationOverride: talkOverride } : {}),
         navNonce: talkNavNonce,
         onChatIdChange: setTalkChatId,
+        onOpenMeeting: openMeeting,
       })
       return (
         <div>
@@ -1619,7 +1768,9 @@ export function LivingTreeView({
         </div>
       )
     }
-    const content = renderSheetContent?.(sheetNode, sheetItem)
+    const content = renderSheetContent?.(sheetNode, sheetItem, {
+      onOpenMeeting: openMeeting,
+    })
     if (content) return <div className="lsheet-view">{content}</div>
     return renderStillGrowing(sheetNode, sheetItem)
   }
@@ -1633,21 +1784,36 @@ export function LivingTreeView({
     ? 'The source'
     : sheetNode.archetypeName
 
+  /**
+   * Seat-talk sheet header actions (founder, 2026-11-12): Viability
+   * sits at the top right, near the close control. The full character
+   * has no separate link: the seat's display name in the identity row
+   * IS the opener (same disclosure). Only for seat talk sheets; every
+   * other sheet keeps the plain header. Viability keeps its label and
+   * value; the "training comes first" caption that sat under the
+   * value on seed seats was removed by the founder (2026-11-12,
+   * header cleanup) — what Viability measures is unchanged.
+   */
+  const sheetArch =
+    sheetNode?.kind === 'seat' && sheetItem === 'talk'
+      ? (archetypes.find((a) => a.id === sheetNode.seatKey) ?? null)
+      : null
+  const sheetHeaderActions = sheetArch ? (
+    <div className="lhead-viab">
+      <span className="lhead-viab-l">Viability</span>
+      <span className="lhead-viab-v">{sheetArch.depth}%</span>
+    </div>
+  ) : null
+
   return (
     <div
       className="ltree"
       style={{ boxSizing: 'border-box', width: '100%', maxWidth: 430, margin: '0 auto' }}
     >
       <style>{`
-.ltree{box-sizing:border-box;width:100%;max-width:430px;margin:0 auto;background:#0b0a09;border:1px solid rgba(201,168,106,.25);border-radius:20px;padding:18px 12px 14px;color:#f5f0e8;font-family:system-ui,-apple-system,sans-serif;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overflow-x:clip}
+.ltree{box-sizing:border-box;width:100%;max-width:430px;margin:0 auto;background:#0b0a09;border:1px solid rgba(${TREE_DEFAULT_RGB},.25);border-radius:20px;padding:18px 12px 14px;color:#f5f0e8;font-family:system-ui,-apple-system,sans-serif;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;overflow-x:clip}
 .ltree *{box-sizing:border-box}
-.lhead{text-align:center}
-.lhead h2{margin:0;font-size:18px;font-weight:650}
-.lhead h2 em{color:#c9a86a;font-style:italic}
-.lhead p{margin:6px 8px 0;font-size:11.5px;color:rgba(245,240,232,.6);line-height:1.55;overflow-wrap:break-word}
-.llegend{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;margin:10px 4px 0;font-size:10px;color:rgba(245,240,232,.55)}
-.llegend span{display:inline-flex;align-items:center;gap:4px}
-.llegend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+
 .lsvg{display:block;width:100%;height:auto}
 .lnode{cursor:pointer}
 .lnode circle.face{fill:#141210;stroke-width:1.8}
@@ -1655,18 +1821,17 @@ export function LivingTreeView({
 .lnode .nm{font-size:9px;font-weight:700}
 .lnode .bud{fill:#0b0a09;stroke-width:1.2}
 .lnode .budt{font-size:8px;font-weight:800}
-.lnarr{margin:10px 4px 0;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.3);border-radius:14px;padding:12px 14px;min-height:120px}
+.lnarr{margin:10px 4px 0;background:rgba(245,240,232,.05);border:1px solid rgba(${TREE_DEFAULT_RGB},.3);border-radius:14px;padding:12px 14px;min-height:120px}
 .lnarr h3{margin:0 0 3px;font-size:13.5px}
 .lnarr .ltag{font-size:10.5px;font-weight:700;letter-spacing:.08em;margin-bottom:5px}
 .lnarr p{margin:0;font-size:12px;line-height:1.6;color:rgba(245,240,232,.82);font-style:italic;overflow-wrap:break-word}
-.lnarr .lhint{color:rgba(245,240,232,.45);font-style:normal;text-align:center;padding:12px 0 4px;font-size:12px}
 .lnarr .lnote{font-style:normal;color:rgba(245,240,232,.6);font-size:11.5px;margin-bottom:8px}
-.lrow{display:flex;align-items:center;justify-content:space-between;width:100%;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.25);border-radius:10px;color:#f5f0e8;font-size:13px;font-weight:600;padding:10px 12px;min-height:44px;margin:0 0 6px;cursor:pointer;font-family:inherit;text-align:left}
-.lrow:active{background:rgba(201,168,106,.15)}
-.lrow .lchev{color:#c9a86a;font-weight:400}
-.lback{background:none;border:none;color:#c9a86a;font-size:12px;font-weight:700;padding:2px 0 8px;min-height:44px;cursor:pointer;font-family:inherit}
-.lcta{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:rgba(201,168,106,.12);border:1px solid rgba(201,168,106,.5);border-radius:10px;color:#f5f0e8;font-size:12.5px;font-weight:700;padding:10px 14px;min-height:44px;cursor:pointer;font-family:inherit}
-.lcta:active{background:rgba(201,168,106,.25)}
+.lrow{display:flex;align-items:center;justify-content:space-between;width:100%;background:rgba(245,240,232,.05);border:1px solid rgba(${TREE_DEFAULT_RGB},.25);border-radius:10px;color:#f5f0e8;font-size:13px;font-weight:600;padding:10px 12px;min-height:44px;margin:0 0 6px;cursor:pointer;font-family:inherit;text-align:left}
+.lrow:active{background:rgba(${TREE_DEFAULT_RGB},.15)}
+.lrow .lchev{color:${TREE_DEFAULT_COLOR};font-weight:400}
+.lback{background:none;border:none;color:${TREE_DEFAULT_COLOR};font-size:12px;font-weight:700;padding:2px 0 8px;min-height:44px;cursor:pointer;font-family:inherit}
+.lcta{display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:rgba(${TREE_DEFAULT_RGB},.12);border:1px solid rgba(${TREE_DEFAULT_RGB},.5);border-radius:10px;color:#f5f0e8;font-size:12.5px;font-weight:700;padding:10px 14px;min-height:44px;cursor:pointer;font-family:inherit}
+.lcta:active{background:rgba(${TREE_DEFAULT_RGB},.25)}
 .lsub{margin-top:10px;font-size:12px;color:rgba(245,240,232,.55);font-style:italic}
 .lstats{margin-top:2px}
 .lstat{display:flex;align-items:center;gap:8px;margin:7px 0;font-style:normal}
@@ -1675,22 +1840,22 @@ export function LivingTreeView({
 .lstat .lpct{font-size:11px;color:rgba(245,240,232,.55);min-width:30px;text-align:right}
 .lstat .lbar{flex:1;height:6px;border-radius:3px;background:rgba(245,240,232,.1);overflow:hidden}
 .lstat .lfill{height:100%;border-radius:3px}
-.lsect{margin:12px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.1em;color:rgba(201,168,106,.85);text-transform:uppercase}
+.lsect{margin:12px 0 4px;font-size:10.5px;font-weight:700;letter-spacing:.1em;color:rgba(${TREE_DEFAULT_RGB},.85);text-transform:uppercase}
 .lblend{margin-top:2px}
 .ltwigs{margin-top:2px}
-.ltwig{display:flex;align-items:center;justify-content:space-between;background:rgba(245,240,232,.05);border:1px solid rgba(201,168,106,.2);border-radius:8px;padding:8px 10px;margin:5px 0;min-height:44px}
+.ltwig{display:flex;align-items:center;justify-content:space-between;background:rgba(245,240,232,.05);border:1px solid rgba(${TREE_DEFAULT_RGB},.2);border-radius:8px;padding:8px 10px;margin:5px 0;min-height:44px}
 .ltwig .lname{font-size:12.5px;font-weight:600;color:#f5f0e8}
 .ltwig .ldomain{font-size:11px;color:rgba(245,240,232,.55);font-style:italic}
-.lmarket{margin-top:4px;border-top:1px solid rgba(201,168,106,.2);padding-top:2px}
+.lmarket{margin-top:4px;border-top:1px solid rgba(${TREE_DEFAULT_RGB},.2);padding-top:2px}
 .lavatar-sect{margin-top:2px}
 .lavatar-row{display:flex;gap:12px;align-items:center;margin:6px 0}
 .lavatar-ph{position:relative;flex:none;border-radius:50%;overflow:hidden}
 .lavatar-qqq{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;letter-spacing:.08em;color:rgba(245,240,232,.75)}
-.lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(201,168,106,.5)}
+.lavatar-img{flex:none;border-radius:50%;object-fit:cover;border:2px solid rgba(${TREE_DEFAULT_RGB},.5)}
 .lchar-cols{display:flex;gap:12px;align-items:flex-start}
 .lchar-art{flex:0 0 38%;min-width:0;padding-top:12px}
 .lchar-main{flex:1 1 auto;min-width:0}
-.lavatar-panel{display:block;width:100%;height:auto;max-width:100%;object-fit:contain;border-radius:12px;border:1px solid rgba(201,168,106,.25);margin:0}
+.lavatar-panel{display:block;width:100%;height:auto;max-width:100%;object-fit:contain;border-radius:12px;border:1px solid rgba(${TREE_DEFAULT_RGB},.25);margin:0}
 .lavatar-meta{flex:1;min-width:0}
 .lavatar-meta .lnote{margin:0}
 .lavatar-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
@@ -1700,7 +1865,6 @@ export function LivingTreeView({
 .lavatar-input:focus{border-color:#e8c476;outline:none}
 .lavatar-err{font-style:normal;color:#e89a9a;font-size:11.5px;margin:6px 0 0}
 .lnarr{max-height:340px;overflow-y:auto}
-.lfoot{margin:10px 6px 0;text-align:center;font-size:10.5px;color:rgba(245,240,232,.45);line-height:1.6}
 .lrow-t{display:block;font-size:13.5px;font-weight:700;color:#f5f0e8}
 .lrow-d{display:block;font-size:11.5px;font-weight:400;color:rgba(245,240,232,.55);margin-top:2px;line-height:1.45}
 .llegacy{margin-top:6px}
@@ -1710,30 +1874,17 @@ export function LivingTreeView({
 .lsheet-view{min-height:200px}
 .lsheet-view .lsub{font-style:normal}
 .lavatar-head{display:flex;gap:12px;align-items:center;margin-bottom:2px}
+.lavatar-btn{background:none;border:0;padding:0;margin:0;cursor:pointer;flex:none;border-radius:50%;display:inline-flex;line-height:0}
+.lname-btn{background:none;border:0;padding:0;margin:0;color:#f5f0e8;font-family:inherit;font-size:18px;font-weight:700;line-height:1.2;cursor:pointer;text-align:left;display:block}
+.lname-btn:active{color:${TREE_DEFAULT_COLOR}}
+.lhead-fullchar{flex:none;min-height:44px;padding:0 10px;background:rgba(${TREE_DEFAULT_RGB},.12);border:1px solid rgba(${TREE_DEFAULT_RGB},.5);border-radius:10px;color:#f5f0e8;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.lhead-fullchar:active{background:rgba(${TREE_DEFAULT_RGB},.25)}
+.lhead-viab{flex:none;text-align:right;line-height:1.3;min-width:52px}
+.lhead-viab-l{display:block;font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(245,240,232,.55)}
+.lhead-viab-v{display:block;font-size:13px;font-weight:700;color:#f5f0e8}
 .lavatar-head h3{margin:0}
 .nsh-panel{user-select:text;-webkit-user-select:text}
       `}</style>
-      <div className="lhead">
-        <h2>
-          The <em>Living Tree</em>
-        </h2>
-        <p>
-          Seven strands braid through the trunk and root below. Your council branches above — Mentor, Champion,
-          Guardian, Maverick, Ambassador, Conductor, and the Skeptic. Tap a branch to meet its character; the
-          marketplace lives one tap deeper, inside each branch.
-        </p>
-        <div className="llegend" aria-hidden="true">
-          {BRAID_ORDER.map((key) => {
-            const s = STRANDS.find((x) => x.key === key)!
-            return (
-              <span key={key}>
-                <i style={{ background: s.color }} />
-                {s.agentName}
-              </span>
-            )
-          })}
-        </div>
-      </div>
       <svg
         className="lsvg"
         viewBox={viewBox}
@@ -1791,6 +1942,19 @@ export function LivingTreeView({
             const collapsed = p.kids.length > 0 && !exp[p.datum.id]
             const faceR = nodeR(p)
             const initialsText = isYou ? initials ?? 'YOU' : p.datum.name.split(' ')[0].slice(0, 2).toUpperCase()
+            // Met seats wear their logo instead of their letters (the
+            // founder's 2026-11-12 logo sheet); unmet seats keep letters.
+            // Strand roots wear their strand logo the same way (the
+            // founder's 2026-11-12 strand logo sheet) — always, with no
+            // reveal gate: strands have no undiscovered state.
+            // The you-node wears the user's profile photo when one is set
+            // — falling back to the letters if the photo fails to load.
+            // Either image is circular-cropped to the node below.
+            const seatLogo = p.datum.archetype ? resolveSeatLogo(p.datum.archetype) : null
+            const strandLogo =
+              p.side === 'dn' && p.datum.strand ? resolveStrandLogo(p.datum.strand) : null
+            const youPhoto = isYou && userAvatarUrl && !youImgBroken ? userAvatarUrl : null
+            const nodeImage = seatLogo ?? strandLogo ?? youPhoto
             // Keystone attention: a seat that wants the user carries a small
             // "!" badge at its top-right, in the app's amber attention
             // accent. Decorative — it lives inside the node's own <g>, so
@@ -1823,11 +1987,42 @@ export function LivingTreeView({
                   strokeWidth={selected ? 3 : 1.8}
                   strokeDasharray={isSkeptic ? '5 4' : undefined}
                   fill={isSkeptic ? '#0b0a09' : undefined}
-                  style={selected ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
+                  style={selected && !nodeImage ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
                 />
-                <text className="nm" y={isYou ? 7 : 4} style={{ fontSize: isYou ? '15px' : '9px' }}>
-                  {initialsText}
-                </text>
+                {nodeImage ? (
+                  <>
+                    <defs>
+                      <clipPath id={`node-img-${p.datum.id}`}>
+                        <circle r={faceR} />
+                      </clipPath>
+                    </defs>
+                    <image
+                      href={nodeImage}
+                      x={-faceR}
+                      y={-faceR}
+                      width={faceR * 2}
+                      height={faceR * 2}
+                      clipPath={`url(#node-img-${p.datum.id})`}
+                      preserveAspectRatio="xMidYMid slice"
+                      onError={youPhoto ? () => setYouImgBroken(true) : undefined}
+                    />
+                    {/* Re-draw the ring on top: the image covers the base
+                        circle's stroke, and the selected glow lives here
+                        (one glow, not two). */}
+                    <circle
+                      r={faceR}
+                      fill="none"
+                      stroke={col}
+                      strokeWidth={selected ? 3 : 1.8}
+                      strokeDasharray={isSkeptic ? '5 4' : undefined}
+                      style={selected ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
+                    />
+                  </>
+                ) : (
+                  <text className="nm" y={isYou ? 7 : 4} style={{ fontSize: isYou ? '15px' : '9px' }}>
+                    {initialsText}
+                  </text>
+                )}
                 {showMarker && (
                   <g
                     className="attn"
@@ -1877,10 +2072,14 @@ export function LivingTreeView({
           {nodes.map((p) => {
             const col = strandCol(p)
             const isYou = p.side === 'c'
-            const label = isYou ? 'YOU · TAP FOR OPTIONS' : p.datum.name
-            const fs = isYou ? 8 : p.depth >= 3 ? 6.5 : 7.5
-            const rlx = isYou ? 0 : Math.cos(p.ang) * 36
-            const rly = isYou ? 56 : Math.sin(p.ang) * 36
+            // The you-node carries no label pill (founder, 2026-11-12):
+            // the photo node alone marks the center, and its tap target
+            // is the node itself (the pills never took clicks).
+            if (isYou) return null
+            const label = p.datum.name
+            const fs = p.depth >= 3 ? 6.5 : 7.5
+            const rlx = Math.cos(p.ang) * 36
+            const rly = Math.sin(p.ang) * 36
             const tw = label.length * fs * 0.56 + 14
             return (
               <g key={`lbl-${p.datum.id}`} opacity={p.op} style={{ pointerEvents: 'none' }}>
@@ -1918,23 +2117,21 @@ export function LivingTreeView({
           own conversation). It covers ONLY the Tree subtree, so
           workspace/console mounts never see it. */}
       <DraftStoreProvider userId={currentUserId ?? null}>
-      <div className="lnarr">
-        {strandPanelKey ? (
-          <StrandPanel
-            strandKey={strandPanelKey}
-            onClose={() => {
-              setStrandPanelKey(null)
-              setSel(null)
-            }}
-          />
-        ) : (
-          renderPanel()
-        )}
-      </div>
-      <div className="lfoot">
-        Training first, rent later —<br />
-        the tree is yours; the marketplace is a lens on it, one tap deep.
-      </div>
+      {showPanel && (
+        <div className="lnarr">
+          {strandPanelKey ? (
+            <StrandPanel
+              strandKey={strandPanelKey}
+              onClose={() => {
+                setStrandPanelKey(null)
+                setSel(null)
+              }}
+            />
+          ) : (
+            renderPanel()
+          )}
+        </div>
+      )}
       <NodeSheet
         open={!!sheetNode}
         onClose={closeSheet}
@@ -1945,6 +2142,8 @@ export function LivingTreeView({
         backLabel="Back to menu"
         title={sheetTitle}
         subtitle={sheetSubtitle}
+        headerActions={sheetHeaderActions}
+        headerContent={sheetArch ? renderSeatIdentityRow(sheetArch) : undefined}
       >
         {renderSheetBody()}
       </NodeSheet>

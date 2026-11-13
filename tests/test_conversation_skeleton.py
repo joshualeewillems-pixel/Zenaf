@@ -232,7 +232,7 @@ def test_generate_voice_reply_meta():
     )
     assert reply.reply == "Fake reply."
     assert reply.archetype_id == "maverick"
-    assert reply.voice_color == "#9a7bc9"
+    assert reply.voice_color == "#a55cce"
     assert reply.mode_used in ("trained", "base")
 
 

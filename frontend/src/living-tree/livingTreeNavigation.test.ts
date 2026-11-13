@@ -275,6 +275,17 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     expect(navigations).toContain('signal_review')
   })
 
+  it('the conductor head menu carries the Workspace Organizer', async () => {
+    renderTree()
+    await flush()
+    clickNode('CO')
+    await flush()
+    await click(buttonByLabel('Other actions'))
+    expect(rowByTitle('Workspace Organizer')).toBeDefined()
+    await click(rowByTitle('Workspace Organizer'))
+    expect(navigations).toContain('workspace')
+  })
+
   it('the invitation shortcut fires an override + nonce bump (C1) from an open conversation', async () => {
     renderTree()
     await flush()

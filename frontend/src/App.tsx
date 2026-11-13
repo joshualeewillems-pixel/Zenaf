@@ -5478,8 +5478,7 @@ function App() {
                       setFoundationEditAgent(foundationSelectedAgent)
                       setFoundationActorUi('edit_actor')
                     }}
-                    onChat={() => {}}
-                    onUseInWorkspace={() => {}}
+                    onUseInWorkspace={() => setMainView('workspace')}
                     onDelete={
                       isUserDefined(foundationSelectedAgent)
                         ? (ag) => {
@@ -5595,7 +5594,7 @@ function App() {
               onRadarScrollBucketConsumed={clearVeRadarScrollBucket}
             />
           </div>
-        ) : (
+        ) : mainView === 'workspace' ? (
           /* Workspace Organizer */
           <main className="flex-1 min-w-0 min-h-0 overflow-auto p-4 lg:p-6 max-w-3xl mx-auto space-y-10">
             {workoutActive && workoutPerspective ? (
@@ -5782,7 +5781,9 @@ function App() {
             </button>
           </div>
           <p className="text-slate-400 text-sm mb-6">
-            Select a folder, get suggestions, edit the list, run simulation, then accept or save the plan.
+            Select a folder, get suggestions, edit the list, and run a simulation to preview the moves.
+            The organizer plans and previews — applying the moves is yours to do.
+            When Zenaf runs hosted, the folders shown are the server’s, not your computer’s.
           </p>
 
           {!workspaceCollapsed && (
@@ -5886,28 +5887,16 @@ function App() {
               )}
             </div>
 
-            {/* 4. Final actions */}
+            {/* 4. Preview complete — the organizer plans and previews only (G4, preview-only). */}
             <div>
-              <h3 className="text-sm font-medium text-slate-300 mb-2">Final actions</h3>
+              <h3 className="text-sm font-medium text-slate-300 mb-2">Preview complete</h3>
               {lastSimulateResult ? (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium"
-                    onClick={() => { /* TODO: execute plan */ alert('Accept plan: execute moves (not implemented yet).') }}
-                  >
-                    Accept plan
-                  </button>
-                  <button
-                    type="button"
-                    className="px-4 py-2 rounded-lg border border-slate-500 bg-slate-800 text-slate-300 text-sm hover:bg-slate-700"
-                    onClick={() => { /* TODO: persist plan */ alert('Save for later (not implemented yet).') }}
-                  >
-                    Save for later
-                  </button>
-                </div>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  Preview complete — apply the moves yourself. The organizer plans and
+                  previews; moving the files is yours to do.
+                </p>
               ) : (
-                <p className="text-slate-500 text-sm">Run simulation above, then accept or save the plan.</p>
+                <p className="text-slate-500 text-sm">Run simulation above to preview the moves. The organizer plans and previews — applying the moves is yours to do.</p>
               )}
             </div>
           </div>
@@ -5939,6 +5928,17 @@ function App() {
               </div>
             ) : null}
           </main>
+        ) : (
+          /* Unknown view — bug-catcher, not a feature: every MainView member
+             has an explicit branch above, so reaching here is a bug. */
+          <div className="flex-1 flex flex-col min-h-0 items-center justify-center px-6 text-center">
+            <div className="max-w-md">
+              <h2 className="text-xl font-semibold text-stone-200 mb-2">Unknown view</h2>
+              <p className="text-stone-400 text-[15px] leading-relaxed">
+                Zenaf does not know this view. Return to the Living Tree.
+              </p>
+            </div>
+          </div>
         )}
 
       </div>

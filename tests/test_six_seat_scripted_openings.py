@@ -53,11 +53,15 @@ def _seeded_user(email):
     return user["id"]
 
 
-def _complete_conductor_k1(uid):
-    tasks = _seat_keystone_tasks(uid, "conductor")
-    assert tasks, "seeded user has no conductor keystone tasks"
+def _complete_entry_k1(uid):
+    """Entry-gate setup (Guardian-first): mark the entry seat's
+    keystone 1 Done so any seat's first meeting may begin.
+    Parameterized on ENTRY_SEAT_REF."""
+    entry = keystone_seeding.ENTRY_SEAT_REF
+    tasks = _seat_keystone_tasks(uid, entry)
+    assert tasks, "seeded user has no entry-seat keystone tasks"
     ve.update_task(tasks[0]["id"], TaskUpdate(status="Done"), uid)
-    assert _seat_keystone_tasks(uid, "conductor")[0]["status"] == "Done"
+    assert _seat_keystone_tasks(uid, entry)[0]["status"] == "Done"
 
 
 def _voice_bodies(state):
@@ -153,7 +157,12 @@ def test_start_delivers_opening_verbatim_and_resume_does_not_repeat(
 ):
     """Fresh start speaks the adopted bubbles in order; a resume repeats none."""
     uid = _seeded_user(f"{arch}@example.com")
-    _complete_conductor_k1(uid)
+    # Gate setup: non-entry seats need the entry seat's K1 Done before
+    # their first meeting may begin. The entry seat herself needs no
+    # setup — and her own K1 must stay Todo, or start() would report
+    # her first meeting already complete instead of delivering it.
+    if arch != keystone_seeding.ENTRY_SEAT_REF:
+        _complete_entry_k1(uid)
     svc = _svc(tmp_path)
     state = svc.start(uid, arch)
     assert state["status"] == "active"

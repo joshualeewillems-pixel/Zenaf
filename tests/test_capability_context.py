@@ -431,6 +431,15 @@ def test_meeting_turn_generation_carries_first_meeting_block(
     user = ve.create_user_account("capctx@example.com", "pw", "CapCtx")
     uid = user["id"]
     keystone_seeding.seed_meet_your_council(uid)
+    # Entry-gate setup (Guardian-first): the Conductor's first meeting
+    # begins only once the entry seat's keystone 1 is Done.
+    from local_ai.conversation.meeting import _seat_keystone_tasks
+    from local_ai.vision_execution.models import TaskUpdate
+
+    entry_tasks = _seat_keystone_tasks(
+        uid, keystone_seeding.ENTRY_SEAT_REF)
+    assert entry_tasks, "seeded user has no entry-seat keystone tasks"
+    ve.update_task(entry_tasks[0]["id"], TaskUpdate(status="Done"), uid)
     svc.start(uid, "conductor", 1)
     svc.turn(
         uid, "conductor",

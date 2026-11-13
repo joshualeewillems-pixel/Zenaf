@@ -316,10 +316,10 @@ def test_keystone_markers_unchanged_without_observations(store, ve_ctx):
 def test_keystone_reason_wins_reason_when_both_lit(store, ve_ctx):
     user = _make_user()
     keystone_seeding.seed_meet_your_council(user["id"])
-    _obs(store, user_id=user["id"],
+    _obs(store, user_id=user["id"], seat="guardian",
          interpretation="What does dependable mean here?")
     state = attention_for_user(user["id"], observation_store=store)
-    marker = state["markers"]["conductor"]
+    marker = state["markers"]["guardian"]
     # The Begin door keys off reason == "intro": an observation must
     # never mask it. The observation reason survives separately.
     assert marker["reason"] == "intro"
@@ -331,9 +331,9 @@ def test_keystone_reason_wins_reason_when_both_lit(store, ve_ctx):
 def test_observation_only_seat_uses_observation_reason(store, ve_ctx):
     user = _make_user()
     keystone_seeding.seed_meet_your_council(user["id"])
-    # Fresh seed: only the Conductor carries a keystone marker; the
-    # other seats wait for her intro. The Mentor's marker here comes
-    # purely from its observation.
+    # Fresh seed: only the Guardian (entry seat) carries a keystone
+    # marker; the other seats wait for her intro. The Mentor's marker
+    # here comes purely from its observation.
     _obs(store, user_id=user["id"], seat="mentor",
          interpretation="Consider letting it rest for a season.")
     state = attention_for_user(user["id"], observation_store=store)
@@ -417,11 +417,11 @@ def test_route_returns_merged_model(store, ve_ctx, monkeypatch):
     assert _lit(out) == {}
 
     keystone_seeding.seed_meet_your_council(user["id"])
-    _obs(store, user_id=user["id"],
+    _obs(store, user_id=user["id"], seat="guardian",
          interpretation="What does dependable mean here?")
     out = get_keystone_attention({"id": user["id"]})
     assert out["seeded"] is True
-    marker = out["markers"]["conductor"]
+    marker = out["markers"]["guardian"]
     assert marker["reason"] == "intro"  # keystone wins, door preserved
     assert marker["observation_reason"] == "clarify"
     assert marker["observation_count"] == 1

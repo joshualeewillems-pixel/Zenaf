@@ -551,6 +551,31 @@ class _MeetingHost:
             self._user_id, self._cid, limit=limit
         )
 
+    def commitment_statuses(self, ids: list[str]) -> dict:
+        """FC5 hybrid (correction 3, dismissal reconciliation): the
+        follow-through store status for each commitment id, keyed
+        by id — None for an id with no row. Read from the default
+        follow-through store, constructed lazily in the filing
+        hook's idiom; every row is scoped by the host's own user
+        id (FollowthroughStore.get_commitment), so one visitor's
+        statuses are never visible to another's meeting. The
+        runtime fails soft when this raises — a store problem
+        leaves the confirmations unreconciled for one turn and
+        never blocks it."""
+        from local_ai.followthrough.store import FollowthroughStore
+
+        store = FollowthroughStore()
+        try:
+            out: dict[str, Any] = {}
+            for cid in ids or []:
+                row = store.get_commitment(cid, self._user_id)
+                out[cid] = (
+                    row.get("status") if isinstance(row, dict) else None
+                )
+            return out
+        finally:
+            store.close()
+
 
 def _is_ceiling_filed(row: dict[str, Any]) -> bool:
     """Whether this run's impression was filed by the ceiling wrap

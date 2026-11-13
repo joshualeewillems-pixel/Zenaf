@@ -455,9 +455,14 @@ def test_frame_sizes_and_headroom_measured():
     # headroom 717); the composed engage pinned below is built from
     # the definition frame and does not carry the instruction, so
     # its 8,035 / 965 pins are unchanged.
-    assert len(turn_frame) == 5734
+    # FC5 hybrid (2026-11-12): Variant C shortened the filing
+    # instruction 246 -> 157 chars (the enforcement prose left the
+    # prompt; the gate, parser, and write are software), so the
+    # composed turn frame shrank 5,734 -> 5,645; headroom
+    # 3,266 -> 3,355.
+    assert len(turn_frame) == 5645
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3266
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3355
     # Read-back correction (2026-11-06): the founder-approved §F.1
     # readback frames lengthened the engage frame (Mentor 6128 -> 6563
     # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->

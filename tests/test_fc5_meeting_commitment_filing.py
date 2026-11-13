@@ -890,9 +890,8 @@ _ALL_MET = (
     "ambassador", "conductor", "skeptic",
 )
 _ONE_SUFFIX_LINE = (
-    "Recorded this meeting (system fact, not your claim): "
-    "commitment abc123def456, 'non-complicity at home'. "
-    "You may say it is done."
+    "commitment abc123def456, 'non-complicity at home' "
+    "(recorded). You may say it is done."
 )
 
 
@@ -921,11 +920,15 @@ def test_f5_11_instruction_in_all_seven_seats_prompts():
 
 
 def test_f5_12_frame_budget_tightest_with_instruction_and_suffix():
-    """Measured from post-L1 renders at current main (not
-    arithmetic): the tightest frame — Mentor all-met engage — with
-    the ~246-char instruction and one ~127-char suffix line is
-    8,534 chars, headroom 466, above the 300 floor. If this ever
-    fails, the instruction is shortened, never the block format."""
+    """Rendered frames, composed exactly as the seam composes
+    them: the tightest frame — Mentor all-met engage — with the
+    157-char Variant C instruction and one 85-char compact
+    confirmation line is 8,645 chars, headroom 355, above the
+    300 floor. (The pre-hybrid form — the 246-char instruction
+    and the ~127-char full line — composed to 8,776 on the
+    rebased branch, headroom 224: the failure that commissioned
+    the hybrid correction.) If this ever fails, the instruction
+    is shortened, never the block format."""
     worst = 0
     worst_label = ""
     for arch, variant, kind, frame in _frames():
@@ -937,7 +940,7 @@ def test_f5_12_frame_budget_tightest_with_instruction_and_suffix():
     assert CAP - worst >= 300, worst_label
     # Pin the measured tightest frame so a future drift is visible.
     assert worst_label == "mentor all-met engage"
-    assert worst == 8534
+    assert worst == 8645
 
 
 # ---------------------------------------------------------------------------
@@ -987,3 +990,435 @@ def test_migration_adds_columns_and_index_to_legacy_db(tmp_path):
     assert again["id"] == row["id"]
     assert len(store.list_commitments(UID)) == 2
     store.close()
+
+
+# ---------------------------------------------------------------------------
+# T-F5-13 — hybrid confirmation rendering (founder rulings 2026-11-12)
+# ---------------------------------------------------------------------------
+#
+# Context-relevant selection (S1–S4) with the compact line,
+# corrected by (1) the all-or-nothing overflow marker, (2) the
+# unshown-records framing line, (3) dismissal reconciliation.
+# Design: your_files/zenaf-fc5-hybrid-correction-design-2026-11-12.md.
+# Every figure below is rendered through the real seam against the
+# real frame assembly — never hand-computed. Both gates are the
+# standing ones (9,000 cap, 300 floor; a composed frame satisfies
+# both iff it is at most 8,700).
+
+L58 = "finish the proposal draft and send it to the client Friday"
+FRAMING = "Unshown records are unconfirmed. Ask; do not assert."
+
+
+def _conf(i, label, turn, status="recorded", kind="commitment"):
+    return {
+        "kind": kind,
+        "id": f"{i:012d}"[-12:],
+        "label": label,
+        "status": status,
+        "turn": turn,
+        "source_message_id": f"msg-{i}",
+    }
+
+
+def _tightest_frame(kind):
+    return max((f for _, _, k, f in _frames() if k == kind), key=len)
+
+
+def _block(state, frame, message):
+    out = EncounterRuntime._with_confirmations(state, frame, message)
+    assert out.startswith(frame + "\n\n")
+    return out[len(frame) + 2:]
+
+
+def test_hybrid_texts_pinned_verbatim():
+    """The hybrid texts and Variant C are pinned verbatim (T2.2 +
+    the instruction economy pin): any growth is a deliberate,
+    visible change. The marker stays fixed-cost at every
+    reachable count (T1.7)."""
+    assert ENC._COMMITMENT_OFFER_INSTRUCTION == (
+        "When you offer to lock something in, append a "
+        "```commitment-offer block: one line, "
+        "`label: <the thing in the visitor's words, short>`. "
+        "Never say it is filed."
+    )
+    assert len(ENC._COMMITMENT_OFFER_INSTRUCTION) == 157
+    assert ENC._CONFIRMATION_FRAMING_LINE == FRAMING
+    assert len(FRAMING) == 52
+    assert ENC._CONFIRMATION_OVERFLOW_MARKER.format(k=2) == (
+        "System fact: recorded commitments (2) are not shown here "
+        "(frame limit); this view is incomplete. Claim no status "
+        "this turn."
+    )
+    for k in range(1, 100):
+        assert len(ENC._CONFIRMATION_OVERFLOW_MARKER.format(k=k)) <= 140
+
+
+def test_hybrid_compact_line_fields_and_lengths():
+    """The D5 compact line keeps every field — kind, id, exact
+    label, status, license phrase — at 85 chars for a 22-char
+    label (121 at 58, 263 at 200)."""
+    line = EncounterRuntime._confirmation_line(_conf(1, LABEL, 1))
+    assert line == (
+        "commitment 000000000001, 'non-complicity at home' "
+        "(recorded). You may say it is done."
+    )
+    assert len(line) == 85
+    assert len(EncounterRuntime._confirmation_line(_conf(1, L58, 1))) == 121
+    assert len(
+        EncounterRuntime._confirmation_line(_conf(1, "x" * 200, 1))
+    ) == 263
+
+
+def test_hybrid_selection_s1_s2_windows():
+    """S1 selects this turn's filing and S2 last turn's; an older
+    entry is not selected by an unrelated message, and the
+    framing line leads because the rendered set is partial."""
+    state = EncounterState(user_turns=5, confirmed_writes=[
+        _conf(1, "the oldest record", 3),
+        _conf(2, "last turns record", 4),
+        _conf(3, "this turns record", 5),
+    ])
+    block = _block(state, "FRAME", "Tell me more about that.")
+    assert block.split("\n")[0] == FRAMING
+    assert "this turns record" in block
+    assert "last turns record" in block
+    assert "the oldest record" not in block
+
+
+def test_hybrid_selection_s3_names_the_record():
+    """T2.3: naming the label (or the id) verbatim in the current
+    message selects that record for the next generation; a
+    paraphrase selects nothing — the honest limit, pinned."""
+    state = EncounterState(user_turns=6, confirmed_writes=[
+        _conf(1, LABEL, 2),
+        _conf(2, "water the plants", 3),
+    ])
+    by_label = _block(state, "FRAME", f"About {LABEL} — is that set?")
+    assert LABEL in by_label
+    assert "water the plants" not in by_label
+    by_id = _block(state, "FRAME", "What about 000000000002?")
+    assert "water the plants" in by_id
+    assert LABEL not in by_id
+    paraphrase = _block(state, "FRAME", "That home thing from before?")
+    assert paraphrase == FRAMING
+
+
+def test_hybrid_selection_s4_general_inquiry_renders_full_set():
+    """S4: a general inquiry renders the full set for that
+    generation — no framing line (R == N) — byte-identical to
+    the full suffix rendering."""
+    state = EncounterState(user_turns=6, confirmed_writes=[
+        _conf(1, LABEL, 2),
+        _conf(2, "water the plants", 3),
+    ])
+    block = _block(state, "FRAME", "What have I locked in so far?")
+    assert FRAMING not in block
+    assert block == EncounterRuntime._confirmation_suffix(state)
+
+
+def test_hybrid_quiet_turn_and_empty_state():
+    """T2.1 presence matrix: a quiet turn (R = 0, N ≥ 1) renders
+    the framing line alone; empty state leaves the frame
+    byte-identical and the suffix empty."""
+    state = EncounterState(
+        user_turns=6, confirmed_writes=[_conf(1, LABEL, 2)]
+    )
+    assert _block(state, "FRAME", "Tell me more about that.") == FRAMING
+    empty = EncounterState()
+    assert EncounterRuntime._with_confirmations(empty, "FRAME", "hi") == "FRAME"
+    assert EncounterRuntime._confirmation_suffix(empty) == ""
+    # No message context (message=None): selection is undefined,
+    # so the seam renders the full set — the pre-hybrid contract
+    # the firebrand p6 plumbing test pins. Every production
+    # generation site passes its message.
+    bare = EncounterRuntime._with_confirmations(state, "FRAME")
+    assert "You may say it is done" in bare
+    assert FRAMING not in bare
+
+
+def test_hybrid_rendering_never_mutates_state_and_keeps_order():
+    """T1.5: rendering is a pure view — repeat calls on identical
+    (state, message, frame) are byte-identical, state is
+    deep-equal after, and filing order is preserved."""
+    state = EncounterState(user_turns=6, confirmed_writes=[
+        _conf(1, LABEL, 2),
+        _conf(2, "water the plants", 3),
+    ])
+    before = [dict(c) for c in state.confirmed_writes]
+    first = _block(state, "FRAME", "What have I locked in so far?")
+    second = _block(state, "FRAME", "What have I locked in so far?")
+    assert first == second
+    assert state.confirmed_writes == before
+    assert first.index(LABEL) < first.index("water the plants")
+
+
+def test_hybrid_worst_case_headroom_302():
+    """The corrected design's binding case, rendered: a partial
+    R = 1 selection with the framing line riding, ordinary label,
+    on the tightest frame in the system composes to 8,698 —
+    headroom 302, both gates hold. A quiet turn on the same frame
+    renders the framing line alone at 8,612 (headroom 388)."""
+    engage = _tightest_frame("engage")
+    state = EncounterState(user_turns=5, confirmed_writes=[
+        _conf(1, "an older record", 1),
+        _conf(2, LABEL, 5),
+    ])
+    out = EncounterRuntime._with_confirmations(state, engage, "Go on.")
+    assert len(out) == 8698
+    assert CAP - len(out) == 302
+    block = out[len(engage) + 2:]
+    assert block.split("\n")[0] == FRAMING
+    assert LABEL in block
+    quiet = EncounterState(user_turns=9, confirmed_writes=[
+        _conf(1, LABEL, 2),
+        _conf(2, "water the plants", 3),
+    ])
+    out = EncounterRuntime._with_confirmations(quiet, engage, "Go on.")
+    assert len(out) == 8612
+
+
+def test_hybrid_overflow_boundary_is_exact():
+    """T1.1/T1.2: at the fit limit the lines render (composed
+    exactly 8,700); one char past it the whole block defers to
+    the marker (8,683) — the marker names no record and carries
+    the no-claim instruction."""
+    engage = _tightest_frame("engage")
+    older = _conf(1, "an older record", 1)
+    fits = EncounterState(user_turns=5, confirmed_writes=[
+        older, _conf(2, "x" * 24, 5),
+    ])
+    out = EncounterRuntime._with_confirmations(fits, engage, "Go on.")
+    assert len(out) == 8700
+    assert "Claim no status" not in out
+    over = EncounterState(user_turns=5, confirmed_writes=[
+        older, _conf(2, "x" * 25, 5),
+    ])
+    out = EncounterRuntime._with_confirmations(over, engage, "Go on.")
+    assert len(out) == 8683
+    block = out[len(engage) + 2:]
+    assert block == ENC._CONFIRMATION_OVERFLOW_MARKER.format(k=2)
+    assert "incomplete" in block
+    assert "x" * 25 not in block
+    assert "an older record" not in block
+
+
+def test_hybrid_marker_cases_compose_8683_8684():
+    """Every generation the uncorrected hybrid failed now
+    composes at 8,683–8,684 via the marker: back-to-back filings
+    (R = 2) on the tightest frame, and a general inquiry at the
+    mechanical maximum (N = 11 — the count's second digit costs
+    the marker one char)."""
+    engage = _tightest_frame("engage")
+    state = EncounterState(user_turns=5, confirmed_writes=[
+        _conf(1, LABEL, 4),
+        _conf(2, "water the plants", 5),
+    ])
+    out = EncounterRuntime._with_confirmations(state, engage, "Go on.")
+    assert len(out) == 8683
+    big = EncounterState(user_turns=12, confirmed_writes=[
+        _conf(i, LABEL, i + 1) for i in range(1, 12)
+    ])
+    out = EncounterRuntime._with_confirmations(
+        big, engage, "What did you record for me?"
+    )
+    assert len(out) == 8684
+    assert out.endswith(ENC._CONFIRMATION_OVERFLOW_MARKER.format(k=11))
+
+
+def test_hybrid_s4_full_set_renders_on_turn_frames():
+    """T1.6, second half: the same N = 11 general inquiry on the
+    tightest turn frame renders all 11 lines — composed 7,844,
+    pinned."""
+    turn = _tightest_frame("turn")
+    big = EncounterState(user_turns=12, confirmed_writes=[
+        _conf(i, LABEL, i + 1) for i in range(1, 12)
+    ])
+    out = EncounterRuntime._with_confirmations(
+        big, turn, "What did you record for me?"
+    )
+    assert len(out) == 7844
+    assert out.count("You may say it is done.") == 11
+
+
+def test_hybrid_marker_preserves_state_and_defers_not_loses():
+    """T1.3/T1.4: an overflow generation touches nothing durable
+    — state deep-equal after, the full record still renders from
+    the same state (the receipt reads state, never the block),
+    and a later generation whose selection fits renders the same
+    lines byte-identically."""
+    engage = _tightest_frame("engage")
+    turn = _tightest_frame("turn")
+    state = EncounterState(user_turns=5, confirmed_writes=[
+        _conf(1, LABEL, 4),
+        _conf(2, "water the plants", 5),
+    ])
+    before = [dict(c) for c in state.confirmed_writes]
+    EncounterRuntime._with_confirmations(state, engage, "Go on.")
+    assert state.confirmed_writes == before
+    assert EncounterRuntime._confirmation_suffix(state).count("\n") == 1
+    later = EncounterRuntime._with_confirmations(state, turn, "Go on.")
+    assert later == (
+        turn + "\n\n" + EncounterRuntime._confirmation_suffix(state)
+    )
+
+
+class _StatusHost(_Host):
+    """_Host plus the optional dismissal-reconciliation getter."""
+
+    def __init__(self, statuses=None, raises=False, **kwargs):
+        super().__init__(**kwargs)
+        self._statuses = statuses or {}
+        self._raises = raises
+        self.asked: list[str] = []
+
+    def commitment_statuses(self, ids):
+        self.asked.extend(ids)
+        if self._raises:
+            raise RuntimeError("store is down")
+        return {i: self._statuses.get(i) for i in ids}
+
+
+def test_hybrid_reconciliation_table():
+    """T3.1: store dismissed → flip; open → unchanged; done →
+    unchanged (excluded by design — a fulfilled commitment stays
+    an active record); row missing → flip; already dismissed →
+    unchanged; reminder entries are never consulted; provenance
+    is byte-identical after a flip; a second pass is idempotent."""
+    state = EncounterState(user_turns=3, confirmed_writes=[
+        _conf(1, "to dismiss", 2),
+        _conf(2, "stays open", 2),
+        _conf(3, "fulfilled", 2),
+        _conf(4, "vanished", 2),
+        _conf(5, "already gone", 2, status="dismissed"),
+        _conf(6, "a reminder", 2, kind="reminder"),
+    ])
+    host = _StatusHost({
+        "000000000001": "dismissed",
+        "000000000002": "open",
+        "000000000003": "done",
+        # 000000000004 is absent from the map: no row → None.
+    })
+    _runtime()._reconcile_dismissed_confirmations(host, state)
+    by_id = {c["id"]: c for c in state.confirmed_writes}
+    assert by_id["000000000001"]["status"] == "dismissed"
+    assert by_id["000000000002"]["status"] == "recorded"
+    assert by_id["000000000003"]["status"] == "recorded"
+    assert by_id["000000000004"]["status"] == "dismissed"
+    assert by_id["000000000005"]["status"] == "dismissed"
+    assert by_id["000000000006"]["status"] == "recorded"
+    assert set(host.asked) == {
+        "000000000001", "000000000002",
+        "000000000003", "000000000004",
+    }
+    flipped = by_id["000000000001"]
+    assert flipped["label"] == "to dismiss"
+    assert flipped["turn"] == 2
+    assert flipped["source_message_id"] == "msg-1"
+    _runtime()._reconcile_dismissed_confirmations(host, state)
+    assert [c["status"] for c in state.confirmed_writes] == [
+        "dismissed", "recorded", "recorded",
+        "dismissed", "dismissed", "recorded",
+    ]
+
+
+def test_hybrid_reconciliation_fails_soft():
+    """T3.1 failure rows: a host without the getter, or a getter
+    that raises, leaves every entry unchanged — reconciliation
+    fails soft to the pre-correction behavior and never blocks
+    the turn."""
+    state = EncounterState(
+        user_turns=3, confirmed_writes=[_conf(1, LABEL, 2)]
+    )
+    _runtime()._reconcile_dismissed_confirmations(_Host(), state)
+    assert state.confirmed_writes[0]["status"] == "recorded"
+    _runtime()._reconcile_dismissed_confirmations(
+        _StatusHost(raises=True), state
+    )
+    assert state.confirmed_writes[0]["status"] == "recorded"
+
+
+def test_hybrid_dismissed_rendering():
+    """T3.2: a dismissed entry renders the was-recorded line —
+    id and label verbatim, the license withdrawn in words — and
+    never alongside an active license."""
+    line = EncounterRuntime._confirmation_line(
+        _conf(1, LABEL, 2, status="dismissed")
+    )
+    assert line == (
+        "commitment 000000000001, 'non-complicity at home' "
+        "(was recorded; dismissed — never say it is done)."
+    )
+    assert len(line) == 99
+    state = EncounterState(
+        user_turns=3,
+        confirmed_writes=[_conf(1, LABEL, 2, status="dismissed")],
+    )
+    suffix = EncounterRuntime._confirmation_suffix(state)
+    assert "never say it is done" in suffix
+    assert "You may say it is done" not in suffix
+
+
+def test_hybrid_dismissed_line_budgets():
+    """Rendered pins from the design table: a lone dismissed
+    confirmation in its S2 window composes to 8,659 (22-char
+    label) and 8,695 (58-char) on the tightest frame — both
+    gates hold."""
+    engage = _tightest_frame("engage")
+    for label, total in ((LABEL, 8659), (L58, 8695)):
+        state = EncounterState(user_turns=3, confirmed_writes=[
+            _conf(1, label, 2, status="dismissed"),
+        ])
+        out = EncounterRuntime._with_confirmations(
+            state, engage, "Tell me more about that."
+        )
+        assert len(out) == total
+
+
+def test_hybrid_dismissed_status_survives_round_trip():
+    """T3.4: the reconciled status is one new VALUE in the
+    existing field — it survives the to_json/from_json
+    round-trip byte-equal. No schema change."""
+    state = EncounterState(
+        user_turns=3,
+        confirmed_writes=[_conf(1, LABEL, 2, status="dismissed")],
+    )
+    back = EncounterState.from_json(state.to_json())
+    assert back.confirmed_writes == state.confirmed_writes
+    assert back.confirmed_writes[0]["status"] == "dismissed"
+
+
+def test_hybrid_dismissal_end_to_end(ve_ctx, ft_ctx, tmp_path):
+    """T3.3 (the f5_7 pattern): file through the real hook,
+    dismiss the row in the store, and the next turn's persisted
+    state carries the entry as dismissed, rendering the
+    was-recorded form. The same flow without dismissal keeps
+    the recorded form and its license."""
+    svc, uid = _offered_meeting(tmp_path, with_block=True)
+    svc.turn(uid, "conductor", "Yes, lock it in")
+    service = _ft_service(ft_ctx)
+    row = service.list_commitments(uid)[0]
+    service.set_commitment_status(uid, row["id"], "dismissed")
+    svc.turn(uid, "conductor", "Tell me more about that.")
+    enc = EncounterState.from_json(
+        svc.meetings.get(uid, "conductor", 1)["state_json"]
+    )
+    assert enc.confirmed_writes[0]["status"] == "dismissed"
+    suffix = EncounterRuntime._confirmation_suffix(enc)
+    assert "was recorded; dismissed" in suffix
+    assert "You may say it is done" not in suffix
+    service.store.close()
+
+
+def test_hybrid_no_dismissal_keeps_recorded_form(ve_ctx, ft_ctx, tmp_path):
+    """T3.3 control: the same two turns without a dismissal —
+    the entry stays recorded and keeps its license."""
+    svc, uid = _offered_meeting(tmp_path, with_block=True)
+    svc.turn(uid, "conductor", "Yes, lock it in")
+    svc.turn(uid, "conductor", "Tell me more about that.")
+    enc = EncounterState.from_json(
+        svc.meetings.get(uid, "conductor", 1)["state_json"]
+    )
+    assert enc.confirmed_writes[0]["status"] == "recorded"
+    assert "You may say it is done" in EncounterRuntime._confirmation_suffix(
+        enc
+    )

@@ -1262,6 +1262,16 @@ class EncounterHost(Protocol):
     # implement it resolves the immediately preceding offer only
     # (the hook reads it through getattr and fails closed).
 
+    def commitment_statuses(self, ids: list[str]) -> dict: ...
+    # FC5 hybrid (correction 3, dismissal reconciliation): the
+    # follow-through store status ('open' / 'done' / 'dismissed')
+    # for each commitment id, keyed by id — None for an id with
+    # no row. The runtime reads it once per turn to reconcile the
+    # in-meeting confirmations against dismissal, so a dismissed
+    # commitment stops licensing "done". Optional: a host that
+    # does not implement it never reconciles (the runtime reads
+    # it through getattr and fails soft).
+
 
 # ---------------------------------------------------------------------------
 # The runtime.
@@ -1279,21 +1289,27 @@ _WHOLE_EXCHAUST_NOTE = (
     "across this meeting — the exchange itself is the evidence."
 )
 
-#: FC5 (design §2.5): the block-emission instruction, appended as a
-#: shared constant in both meeting frames (_engage_frame and
-#: _turn_frame) — mechanism, not character, so it rides every
-#: seat's meeting prompts identically from one constant and two
-#: append sites. The block is the filing trigger: without it the
-#: model offers lock-ins in prose and the hook files nothing. The
-#: instruction is ~250 chars; the frame budget is pinned by the
-#: FC5 render tests (T-F5-12) — if the measurement ever fails, this
-#: text is shortened, never the block format.
+#: FC5 (design §2.5; Variant C, founder ruling 2026-11-12): the
+#: block-emission instruction, appended as a shared constant in
+#: both meeting frames (_engage_frame and _turn_frame) —
+#: mechanism, not character, so it rides every seat's meeting
+#: prompts identically from one constant and two append sites.
+#: The block is the filing trigger: without it the model offers
+#: lock-ins in prose and the hook files nothing. The text carries
+#: no enforcement prose: the deny-first gate, the block parser,
+#: and the write itself are software (the filing hook below), so
+#: what remains is the offer block, the exact label format, and
+#: the short prohibition against claiming filing before the
+#: system files — interpretive uncertainty belongs in the
+#: conversation; operational authority belongs in the software.
+#: 157 chars; the frame budget is pinned by the FC5 render tests
+#: (T-F5-12) — if the measurement ever fails, this text is
+#: shortened, never the block format.
 _COMMITMENT_OFFER_INSTRUCTION = (
     "When you offer to lock something in, append a "
     "```commitment-offer block: one line, "
-    "`label: <the thing in the visitor's words, short>`. The block "
-    "is the filing trigger; never claim it is filed — the system "
-    "files it only after the visitor says yes."
+    "`label: <the thing in the visitor's words, short>`. "
+    "Never say it is filed."
 )
 
 #: FC5 (design §2.4.3 + founder correction 1): the deterministic
@@ -1418,6 +1434,90 @@ def parse_commitment_offer(body: str) -> str | None:
     if not label or len(label) > _COMMITMENT_OFFER_LABEL_MAX:
         return None
     return label
+
+#: FC5 hybrid confirmation rendering (founder rulings 2026-11-12):
+#: the composed-frame budget for the confirmation block. Both
+#: gates — the 9,000-char extra-instructions cap
+#: (reply._EXTRA_INSTRUCTIONS_CAP) and the 300-char headroom
+#: floor — hold on a suffix-carrying frame iff its composed
+#: length is at most 8,700. The fit test lives at the
+#: _with_confirmations seam (correction 1).
+_CONFIRMATION_FIT_LIMIT = 9000 - 300
+
+#: Rendered as the confirmation block's first line exactly when
+#: the set selected for this generation is a proper subset of
+#: state.confirmed_writes (correction 2): what is not in frame is
+#: conversational recollection, never system fact — the model
+#: asks rather than asserts. 52 chars, pinned verbatim by the
+#: FC5 hybrid tests.
+_CONFIRMATION_FRAMING_LINE = (
+    "Unshown records are unconfirmed. Ask; do not assert."
+)
+
+#: The overflow marker (correction 1): when the selected block
+#: cannot compose within both gates, the ENTIRE block is replaced
+#: by this one fixed-cost line — confirmation authority is never
+#: silently truncated (the frame cap would otherwise cut the
+#: last-appended block newest-first) and a partial set is never
+#: implied complete. State, store, and the client receipt are
+#: untouched; selection is recomputed every generation, so the
+#: lines render again on a later generation whose selection fits.
+#: ``{k}`` is the count of confirmed writes in state.
+_CONFIRMATION_OVERFLOW_MARKER = (
+    "System fact: recorded commitments ({k}) are not shown here "
+    "(frame limit); this view is incomplete. Claim no status "
+    "this turn."
+)
+
+#: S4 (general record inquiry): the deterministic stem list over
+#: the normalized current message — a visitor asking after the
+#: meeting's records in general selects the full set for that
+#: generation only. The phrase-list idiom of _AFFIRM_FORMS: a
+#: false positive costs characters for one generation (more
+#: authority in frame, never less); a false negative degrades to
+#: the S1/S2 windows.
+_RECORD_INQUIRY_STEMS = (
+    "commitment",
+    "recorded",
+    "locked in",
+    "lock in",
+    "filed",
+    "saved",
+    "what did you record",
+    "what have i",
+)
+
+
+def _select_confirmations(state: EncounterState,
+                          message: str) -> list[dict]:
+    """The confirmations live for one generation (FC5 hybrid
+    rendering): **S1** filed this turn, **S2** filed last turn,
+    **S3** named — label or id — verbatim in the current message,
+    **S4** the current message asks after the meeting's records
+    in general (the full set, that generation only). A pure
+    predicate over (state, message): no store, no retrieval, no
+    model judgment; filing order preserved; state never mutated.
+    Paraphrase and anaphoric references select nothing — by
+    design: an unretrieved record's status is recollection, and
+    the framing line at the seam says so."""
+    entries = getattr(state, "confirmed_writes", []) or []
+    msg = message or ""
+    low = msg.lower()
+    if any(stem in low for stem in _RECORD_INQUIRY_STEMS):
+        return list(entries)
+    out: list[dict] = []
+    for c in entries:
+        if not isinstance(c, dict):
+            continue
+        turn = c.get("turn")
+        if turn == state.user_turns or turn == state.user_turns - 1:
+            out.append(c)
+        elif c.get("label") and str(c["label"]).lower() in low:
+            out.append(c)
+        elif c.get("id") and str(c["id"]) in msg:
+            out.append(c)
+    return out
+
 
 #: FC5 (founder ruling 2026-11-12, read-back offer continuity): the
 #: bounded history window the filing hook may read to resolve an
@@ -1568,69 +1668,128 @@ class EncounterRuntime:
         return True
 
     @staticmethod
+    def _confirmation_line(c: dict) -> str | None:
+        """One confirmation's compact system-fact line (FC5 hybrid
+        rendering, 2026-11-12): kind, id, exact label, status, and
+        the license phrase on one line — the D5 compaction, every
+        field kept; what leaves is the repeated "Recorded this
+        meeting (system fact, not your claim): " scaffolding. A
+        confirmation without an id is not a confirmation (design
+        §3.2) and renders nothing; an unknown kind renders nothing:
+        fail-closed, never license a success claim for a write the
+        contract does not cover. The status distinction is
+        load-bearing: ``recorded`` licenses "done"/"scheduled";
+        ``dismissed`` (correction 3) states the past fact — was
+        recorded — and withdraws the license in words; anything
+        filed awaiting approval licenses "filed" only, never
+        "done"."""
+        if not isinstance(c, dict):
+            return None
+        cid = c.get("id")
+        if not cid:
+            return None
+        kind = c.get("kind")
+        label = c.get("label", "")
+        status = c.get("status")
+        if kind == "commitment" and status == "recorded":
+            return (
+                f"commitment {cid}, '{label}' (recorded). "
+                "You may say it is done."
+            )
+        if kind == "commitment" and status == "dismissed":
+            return (
+                f"commitment {cid}, '{label}' (was recorded; "
+                "dismissed — never say it is done)."
+            )
+        if kind == "reminder" and status == "recorded":
+            cadence = c.get("cadence")
+            if cadence:
+                return (
+                    f"reminder {cid}, '{label}', {cadence} "
+                    "(recorded). You may say it is scheduled."
+                )
+            return (
+                f"reminder {cid}, '{label}' (recorded). "
+                "You may say it is scheduled."
+            )
+        if kind == "proposal" or status == "filed-awaiting-approval":
+            return (
+                f"{kind} {cid}, '{label}' ({status}), filed and "
+                "waiting for the visitor's approval. Say it is "
+                "filed, never that it is done."
+            )
+        return None
+
+    @staticmethod
     def _confirmation_suffix(state: EncounterState) -> str:
-        """System-fact lines for committed writes (Firebrand FC4,
-        full form, 2026-11-07): one line per confirmation in
-        ``state.confirmed_writes``, in filing order. Empty state
-        renders "" — the common case, including every turn before
-        FC5/FC6 land. A confirmation without an id is not a
-        confirmation (design §3.2) and renders nothing; an unknown
-        kind renders nothing. The status distinction is load-bearing:
-        ``recorded`` licenses "done"/"scheduled"; anything filed
-        awaiting approval licenses "filed" only, never "done". The
-        suffix is system context for generation, never a claim to
-        file — it is appended to the frame LAST by
-        ``_with_confirmations`` so it is the freshest instruction
-        and the first content cut if the frame ever overflows."""
+        """System-fact lines for committed writes (Firebrand FC4
+        contract; FC5 hybrid line format, 2026-11-12): one compact
+        line per confirmation in ``state.confirmed_writes``, in
+        filing order — the FULL set, the complete record view.
+        Which of these lines a given generation actually carries
+        is the selection seam's decision (_with_confirmations);
+        membership here is unchanged from the FC4 form. Empty
+        state renders "" — the common case, including every turn
+        before FC5/FC6 land. The suffix is system context for
+        generation, never a claim to file."""
         lines: list[str] = []
         for c in getattr(state, "confirmed_writes", []) or []:
-            if not isinstance(c, dict):
-                continue
-            cid = c.get("id")
-            if not cid:
-                continue
-            kind = c.get("kind")
-            label = c.get("label", "")
-            status = c.get("status")
-            if kind == "commitment" and status == "recorded":
-                lines.append(
-                    "Recorded this meeting (system fact, not your claim): "
-                    f"commitment {cid}, '{label}'. You may say it is done."
-                )
-            elif kind == "reminder" and status == "recorded":
-                cadence = c.get("cadence")
-                if cadence:
-                    lines.append(
-                        "Recorded this meeting (system fact, not your claim): "
-                        f"reminder {cid}, '{label}', {cadence}. "
-                        "You may say it is scheduled."
-                    )
-                else:
-                    lines.append(
-                        "Recorded this meeting (system fact, not your claim): "
-                        f"reminder {cid}, '{label}'. "
-                        "You may say it is scheduled."
-                    )
-            elif kind == "proposal" or status == "filed-awaiting-approval":
-                lines.append(
-                    "Recorded this meeting (system fact, not your claim): "
-                    f"{kind} {cid}, '{label}', filed and waiting for the "
-                    "visitor's approval. Say it is filed, never that it "
-                    "is done."
-                )
-            # Unknown kinds render nothing: fail-closed, never license
-            # a success claim for a write the contract does not cover.
+            line = EncounterRuntime._confirmation_line(c)
+            if line is not None:
+                lines.append(line)
         return "\n".join(lines)
 
     @staticmethod
-    def _with_confirmations(state: EncounterState, frame: str) -> str:
-        """Append the confirmation suffix to a generation frame,
-        LAST — after all frame extras. Empty suffix returns the
-        frame unchanged."""
-        suffix = EncounterRuntime._confirmation_suffix(state)
-        if not suffix:
+    def _with_confirmations(state: EncounterState, frame: str,
+                            message: str | None = None) -> str:
+        """Append the confirmation block to a generation frame,
+        LAST — after all frame extras (FC5 hybrid rendering,
+        founder rulings 2026-11-12). The block is context-relevant:
+        ``_select_confirmations`` chooses the entries live for
+        this generation (S1 filed this turn, S2 filed last turn,
+        S3 named in the current message, S4 a general inquiry
+        renders the full set). Every generation call site passes
+        the current message it already holds; a caller with no
+        message context (``message=None``) renders the full set —
+        selection is undefined without the message, and the fit
+        test below still guards the budget in that mode.
+        Rendering never mutates state, and the durable records —
+        the state list itself, the store rows behind it, the
+        §2.6 receipt — are untouched by what one generation
+        carries.
+
+        Two honesty rules ride the seam. When the selected set is
+        a proper subset of state, the framing line leads the
+        block: unshown records are unconfirmed recollection, not
+        system fact (correction 2). And the block is
+        all-or-nothing against the budget: if the composed frame
+        would exceed the fit limit (the 9,000 cap minus the 300
+        headroom floor), the entire block is replaced by the
+        overflow marker (correction 1) — authority is never
+        silently truncated, a partial set is never implied
+        complete, and the lines render again on a later
+        generation whose selection fits. Empty state returns the
+        frame unchanged, byte-identical to before."""
+        entries = getattr(state, "confirmed_writes", []) or []
+        if not entries:
             return frame
-        return frame + "\n\n" + suffix
+        selected = (
+            list(entries) if message is None
+            else _select_confirmations(state, message)
+        )
+        lines: list[str] = []
+        if len(selected) < len(entries):
+            lines.append(_CONFIRMATION_FRAMING_LINE)
+        for c in selected:
+            line = EncounterRuntime._confirmation_line(c)
+            if line is not None:
+                lines.append(line)
+        block = "\n".join(lines)
+        if not block:
+            return frame
+        if len(frame) + 2 + len(block) > _CONFIRMATION_FIT_LIMIT:
+            block = _CONFIRMATION_OVERFLOW_MARKER.format(k=len(entries))
+        return frame + "\n\n" + block
 
     def _resolve_carried_offer(self, host: EncounterHost,
                                state: EncounterState,
@@ -1655,6 +1814,55 @@ class EncounterRuntime:
         return _carried_offer_from_history(
             history, state.impression_text, message
         )
+
+    def _reconcile_dismissed_confirmations(
+            self, host: EncounterHost, state: EncounterState) -> None:
+        """Dismissal reconciliation (FC5 hybrid correction 3):
+        once per user turn, before the first generation, each
+        recorded commitment confirmation is checked against the
+        follow-through store through the host's optional
+        ``commitment_statuses`` getter; an entry whose row is
+        dismissed — or gone — flips to ``dismissed`` in state, so
+        its line stops licensing "done" and renders the
+        was-recorded form instead. Provenance (id, label, turn,
+        source_message_id) is untouched; only the entry's status
+        value changes, and the flip persists on the turn's normal
+        state save. Store ``done`` deliberately does NOT flip: a
+        fulfilled commitment remains an active record of the
+        meeting, and the suffix's "done" language licenses the
+        filing claim — a different axis. Only dismissal (and
+        disappearance) negates the record's standing.
+
+        Failure posture mirrors the filing hook's: a host without
+        the getter, or a getter that raises, leaves every entry
+        unchanged — fail-soft to the pre-correction behavior —
+        and never blocks the turn."""
+        entries = [
+            c for c in getattr(state, "confirmed_writes", []) or []
+            if isinstance(c, dict)
+            and c.get("kind") == "commitment"
+            and c.get("status") == "recorded"
+            and c.get("id")
+        ]
+        if not entries:
+            return
+        getter = getattr(host, "commitment_statuses", None)
+        if not callable(getter):
+            return
+        try:
+            statuses = getter([c["id"] for c in entries])
+        except Exception:
+            logger.exception(
+                "FC5: commitment_statuses failed; confirmations "
+                "left unreconciled this turn"
+            )
+            return
+        if not isinstance(statuses, dict):
+            return
+        for c in entries:
+            store_status = statuses.get(c["id"])
+            if store_status == "dismissed" or store_status is None:
+                c["status"] = "dismissed"
 
     def _file_accepted_offer(self, host: EncounterHost,
                              state: EncounterState, message: str,
@@ -1985,6 +2193,11 @@ class EncounterRuntime:
             # thread was taken up, not merely opened.
             state.pursuit_turns += 1
 
+        # FC5 hybrid (correction 3): reconcile dismissed
+        # confirmations against the store once per turn, before
+        # any generation this turn renders them.
+        self._reconcile_dismissed_confirmations(host, state)
+
         # Completion, FIRST — before the impression-response, post-
         # recognition, and ceiling branches, so a visitor who wants
         # to leave is never routed into answering an impression or
@@ -2053,7 +2266,7 @@ class EncounterRuntime:
             frame, cue = self._turn_frame(state, message)
             if direct_question:
                 frame += _DIRECT_QUESTION_PRECEDENCE
-            out = _spoken(host.generate(self._with_confirmations(state, frame)) or "")
+            out = _spoken(host.generate(self._with_confirmations(state, frame, message)) or "")
             if out:
                 host.say(out)
                 if cue is not None:
@@ -2082,7 +2295,7 @@ class EncounterRuntime:
         state.engagements += 1
         self._file_accepted_offer(host, state, message)
         frame = self._engage_frame()
-        raw = host.generate(self._with_confirmations(state, frame))
+        raw = host.generate(self._with_confirmations(state, frame, message))
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)
         claim = _spoken(claim)
@@ -2313,6 +2526,7 @@ class EncounterRuntime:
                         frame
                         + "\n\n" + _naming_note(d)
                         + _THREAD_TRAILER_INSTRUCTION,
+                        message,
                     )
                 )
                 body, verdict = split_thread_trailer(raw)
@@ -2338,6 +2552,7 @@ class EncounterRuntime:
                     d.correction_frame
                     + "\n\n" + _naming_note(d)
                     + _THREAD_TRAILER_INSTRUCTION,
+                    message,
                 )
             )
             parsed = parse_impression_response(raw, state.impression_strands)
@@ -2413,7 +2628,7 @@ class EncounterRuntime:
                 + d.orientation_facts
             )
         frame += _RECOGNITION_NOTE + _THREAD_TRAILER_INSTRUCTION
-        raw = host.generate(self._with_confirmations(state, frame))
+        raw = host.generate(self._with_confirmations(state, frame, message))
         body, verdict = split_thread_trailer(raw)
         body, _ = split_strands_trailer(body)
         body = _spoken(body)

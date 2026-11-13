@@ -412,14 +412,17 @@ def test_t5_other_seats_unmoved_by_section12_scope():
     Re-pinned post-Level-1 (2026-11-12) to the post-#342 main values;
     the champion's move is the Firebrand S1 merge (#342) and the
     maverick's move (engage 7,670, turn 4,494) is its own S1 build
-    (§11.2) — neither is this branch."""
+    (§11.2) — neither is this branch. Re-pinned again for the Raven
+    S1 build (2026-11-12): the skeptic's move (engage 7,968, turn
+    5,615) is Raven's own S1 correction (RC3/RC4/RC6) — not this
+    branch."""
     expected_engage = {
         "conductor": 7943, "mentor": 8277, "champion": 8168,
-        "guardian": 7198, "maverick": 7670, "skeptic": 7586,
+        "guardian": 7198, "maverick": 7670, "skeptic": 7968,
     }
     expected_turn = {
         "conductor": 6176, "mentor": 5486, "champion": 5064,
-        "guardian": 4049, "maverick": 4494, "skeptic": 4921,
+        "guardian": 4049, "maverick": 4494, "skeptic": 5615,
     }
     for arch, want_eng in expected_engage.items():
         defn = _definition(arch)

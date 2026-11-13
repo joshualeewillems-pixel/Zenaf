@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS conversations (
   kind TEXT NOT NULL DEFAULT 'skeleton',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0,
+  symbol INTEGER,
+  color TEXT,
   PRIMARY KEY (user_id, conversation_id)
 );
 CREATE TABLE IF NOT EXISTS messages (
@@ -387,6 +390,7 @@ class ConversationStore:
             self._conn.executescript(_SCHEMA)
             self._migrate_paste_text_columns()
             self._migrate_upload_amendment_columns()
+            self._migrate_conversation_lifecycle_columns()
             self._conn.commit()
 
     def close(self) -> None:
@@ -476,6 +480,44 @@ class ConversationStore:
             "CREATE INDEX IF NOT EXISTS idx_upload_spans_hash_loc "
             "ON upload_spans (span_hash, location)"
         )
+
+    def _migrate_conversation_lifecycle_columns(self) -> None:
+        """Talk conversation lifecycle (founder, 2026-11-12): the
+        conversations row gains the disposition + identity fields the
+        "+" flow writes — ``archived`` (out of the queue, still
+        rediscoverable), ``symbol`` (index into the 24-symbol set)
+        and ``color`` (palette hex). The symbol + color ARE the
+        conversation's title — a "save as" with no words — chosen only
+        when the user dispositions the conversation (archive for data
+        / keep open), never before. All nullable/defaulted; rows that
+        predate the lifecycle read archived=0, symbol/color NULL
+        (absent = absent). Guarded by PRAGMA table_info — a no-op
+        when the columns already exist (the paste-text migration's
+        precedent). Caller holds the lock.
+        """
+        cols = [
+            r["name"]
+            for r in self._conn.execute(
+                "PRAGMA table_info(conversations)"
+            ).fetchall()
+        ]
+        for column, ddl in (
+            (
+                "archived",
+                "ALTER TABLE conversations ADD COLUMN "
+                "archived INTEGER NOT NULL DEFAULT 0",
+            ),
+            (
+                "symbol",
+                "ALTER TABLE conversations ADD COLUMN symbol INTEGER",
+            ),
+            (
+                "color",
+                "ALTER TABLE conversations ADD COLUMN color TEXT",
+            ),
+        ):
+            if column not in cols:
+                self._conn.execute(ddl)
 
     # -- conversations --------------------------------------------------------
 
@@ -596,6 +638,7 @@ class ConversationStore:
         limit: int = 20,
         seat: str | None = None,
         include_meetings: bool = False,
+        include_archived: bool = False,
     ) -> list[dict[str, Any]]:
         """Talk conversations for one user, newest message activity first.
 
@@ -637,14 +680,31 @@ class ConversationStore:
         lookup deliberately resolves TALKS only: a meeting must never
         become the thread a seat sheet auto-resumes. Callers that
         render a browsable list (the you-node rediscovery list, the
-        seat History panel) opt in; the lookup does not, and every
+        seat conversation strip) opt in; the lookup does not, and every
         call without the flag returns exactly what it returned before.
+
+        Archived conversations (founder, 2026-11-12: "archive for
+        data" takes a conversation out of the queue) are excluded by
+        default on EVERY call — the strip, the rediscovery list, and
+        the resume lookup alike — via the joined row's ``archived``
+        flag (a missing row reads unarchived: such talks have no
+        disposition yet). ``include_archived`` is the same opt-in
+        shape as ``include_meetings``: the you-node archive section
+        passes it and partitions on each entry's ``archived`` field.
+        Every entry also carries the conversation row's ``symbol``
+        and ``color`` (NULL when never chosen) so list surfaces can
+        render the conversation's identity emblem.
         """
         limit = max(1, min(int(limit or 20), 100))
         id_clause = (
             "(m.conversation_id LIKE 'talk-%' OR m.conversation_id LIKE 'meeting-%')"
             if include_meetings
             else "m.conversation_id LIKE 'talk-%'"
+        )
+        archived_clause = (
+            ""
+            if include_archived
+            else "AND (c.archived IS NULL OR c.archived = 0) "
         )
         seat_filter = seat if seat else None
         seat_clause = (
@@ -660,6 +720,7 @@ class ConversationStore:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT m.conversation_id, c.kind, c.created_at, c.updated_at, "
+                "c.archived, c.symbol, c.color, "
                 "COUNT(*) AS message_count, "
                 "MAX(m.created_at) AS last_message_at, "
                 "(SELECT m2.body FROM messages m2 WHERE m2.user_id = m.user_id "
@@ -670,6 +731,7 @@ class ConversationStore:
                 "WHERE m.user_id = ? AND "
                 + id_clause
                 + " "
+                + archived_clause
                 + seat_clause
                 + "GROUP BY m.conversation_id "
                 "ORDER BY last_message_at DESC, m.conversation_id ASC LIMIT ?",
@@ -700,6 +762,9 @@ class ConversationStore:
                     "seats": seats.get(r["conversation_id"], []),
                     "last_message_at": r["last_message_at"],
                     "last_message_preview": r["last_message_preview"],
+                    "archived": bool(r["archived"]),
+                    "symbol": r["symbol"],
+                    "color": r["color"],
                 }
             )
         return out
@@ -794,6 +859,125 @@ class ConversationStore:
                 (user_id, conversation_id),
             )
             self._conn.commit()
+
+    def get_conversation(
+        self, user_id: str, conversation_id: str
+    ) -> dict[str, Any] | None:
+        """The conversations row for one owner, or None. Read-only.
+
+        Includes the lifecycle fields (archived / symbol / color).
+        Owner-scoped like every read: another user's row is
+        indistinguishable from a missing one."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT user_id, conversation_id, kind, created_at, updated_at, "
+                "archived, symbol, color FROM conversations "
+                "WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+        if row is None:
+            return None
+        out = dict(row)
+        out["archived"] = bool(out["archived"])
+        return out
+
+    def set_conversation_disposition(
+        self,
+        user_id: str,
+        conversation_id: str,
+        *,
+        archived: bool,
+        symbol: int | None,
+        color: str | None,
+    ) -> dict[str, Any]:
+        """Write a "+"-flow disposition (founder, 2026-11-12): the
+        archived flag plus the conversation's save-as identity
+        (symbol + color — the conversation's title, no words).
+
+        ``archived=True`` is "archive for data": the row stays, the
+        lists stop offering it. ``archived=False`` is "keep open":
+        identity only, the conversation stays in the queue (and an
+        archived conversation the user reopens this way returns to
+        it). The row is ensured first — a talk can carry messages
+        before its row exists (see list_conversations) — with the
+        kind inferred from the id exactly as the list does. Caller
+        (the route) refuses meetings before this is reached; the
+        meeting refusal is a route concern, not re-decided here.
+        Returns the row as written."""
+        now = _utcnow()
+        kind = "meeting" if conversation_id.startswith("meeting-") else "skeleton"
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO conversations "
+                "(user_id, conversation_id, kind, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (user_id, conversation_id, kind, now, now),
+            )
+            self._conn.execute(
+                "UPDATE conversations SET archived = ?, symbol = ?, color = ?, "
+                "updated_at = ? WHERE user_id = ? AND conversation_id = ?",
+                (
+                    1 if archived else 0,
+                    symbol,
+                    color,
+                    now,
+                    user_id,
+                    conversation_id,
+                ),
+            )
+            self._conn.commit()
+        row = self.get_conversation(user_id, conversation_id)
+        assert row is not None  # ensured above, same owner scope
+        return row
+
+    def delete_conversation(self, user_id: str, conversation_id: str) -> bool:
+        """The REAL delete (founder, 2026-11-12: "delete all system
+        references"): remove the conversations row and every
+        conversation-keyed row in THIS store, in one transaction.
+
+        Cascade: messages, thread_state, suggestion_runs, invitations
+        (deleted outright — unlike clear_conversation, which expires
+        pending invitations to preserve the meeting-restart audit;
+        a user-directed delete keeps nothing), round_parked_ids,
+        upload_rounds, upload_artifacts, strand_sources, and
+        strand_threads rows pointing at the conversation.
+
+        NOT touched, by design: anything outside this store that
+        names the conversation as provenance — VE ``tasks``
+        (origin_conversation_id) and ``task_proposals``, feedback
+        rows — keeps its pointer; their fate is a separate founder
+        decision, and dangling provenance there is inert (reads
+        resolve the conversation as absent). Round reservations
+        (round_reserved_ids) are keyed by (user, kind, item), not by
+        conversation, so there is nothing to cascade.
+
+        Returns True when anything existed (the row, or messages
+        under a never-ensured row) and was removed."""
+        with self._lock:
+            found = self._conn.execute(
+                "SELECT 1 FROM conversations WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            ).fetchone() is not None
+            deleted = 0
+            for table in (
+                "messages",
+                "thread_state",
+                "suggestion_runs",
+                "invitations",
+                "round_parked_ids",
+                "upload_rounds",
+                "upload_artifacts",
+                "strand_sources",
+                "strand_threads",
+                "conversations",
+            ):
+                cur = self._conn.execute(
+                    f"DELETE FROM {table} WHERE user_id = ? AND conversation_id = ?",
+                    (user_id, conversation_id),
+                )
+                deleted += max(cur.rowcount, 0)
+            self._conn.commit()
+        return found or deleted > 0
 
     def latest_message_id(self, user_id: str, conversation_id: str = "skeleton") -> str | None:
         with self._lock:

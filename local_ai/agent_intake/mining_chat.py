@@ -167,23 +167,28 @@ def _strip_proposal_tags(text: str) -> str:
     ).strip()
 
 
-def _suggest_checklist_links(title: str) -> dict[str, Any]:
+def _suggest_checklist_links(title: str, user_id: str | None) -> dict[str, Any]:
     """Light-touch person/asset tagging for a checklist item title.
 
     Keyword matching (word-boundary, case-insensitive) against known persons
     and assets. Informational only — the amber box shows the suggestion and the
     user confirms (or dismisses) it. Not NER; v1 heuristic.
+
+    Suggestions come only from the session user's own persons/assets
+    (Track B). Without a user there is nothing to suggest.
     """
     from local_ai.vision_execution import storage as ve_store
 
     out: dict[str, Any] = {}
+    if not user_id:
+        return out
     low = f" {title.lower()} "
     try:
-        persons = ve_store.list_persons()
+        persons = ve_store.list_persons(user_id)
     except Exception:
         persons = []
     try:
-        assets = ve_store.list_assets()
+        assets = ve_store.list_assets(user_id)
     except Exception:
         assets = []
     for p in persons:
@@ -201,7 +206,7 @@ def _suggest_checklist_links(title: str) -> dict[str, Any]:
     return out
 
 
-def _enrich_proposal_checklist_links(proposal: dict[str, Any]) -> None:
+def _enrich_proposal_checklist_links(proposal: dict[str, Any], user_id: str | None) -> None:
     """Attach suggested person/asset links to a proposal's checklist items (in place)."""
     raw = proposal.get("checklist")
     if not isinstance(raw, list):
@@ -213,7 +218,7 @@ def _enrich_proposal_checklist_links(proposal: dict[str, Any]) -> None:
                 continue
             title = (node.get("title") or "").strip()
             if title:
-                node.update(_suggest_checklist_links(title))
+                node.update(_suggest_checklist_links(title, user_id))
             _enrich(node.get("children") or [])
 
     _enrich(raw)
@@ -429,7 +434,7 @@ Respond as Zenaf. {'Give a brief opening: what kinds of practical things you spo
     if proposal and proposal.get("type") == "idea" and proposal.get("checklist"):
         # Light-touch: tag person/asset mentions in proposed checklist items.
         # Informational — the amber box shows them and the user confirms.
-        _enrich_proposal_checklist_links(proposal)
+        _enrich_proposal_checklist_links(proposal, user_id)
 
     # If LLM claimed to file without a tag, strip the hallucination
     if not proposal:

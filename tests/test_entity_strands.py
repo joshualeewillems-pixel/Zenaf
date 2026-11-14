@@ -7,6 +7,7 @@ from local_ai.entity_strands import (
     StrandWeighting,
     clear_entity_strands,
     get_entity_strands,
+    list_weightings_for_user,
     set_entity_strands,
     suggest_weights,
     uniform_weights,
@@ -84,3 +85,26 @@ def test_storage_round_trip_isolated_user():
     assert clear_entity_strands("test-u-1", "project", "p1") is True
     assert get_entity_strands("test-u-1", "project", "p1").strand_weights is None
     assert clear_entity_strands("test-u-1", "project", "p1") is False
+
+
+def test_list_weightings_for_user_surfaces_only_weighed_entities():
+    user = "test-u-list"
+    try:
+        set_entity_strands(user, "project", "lp1", dict(FULL), "user_stated")
+        set_entity_strands(
+            user, "task", "lt1", {"Logic": 0.6, "Hands": 0.4}, "user_stated"
+        )
+
+        rows = list_weightings_for_user(user)
+        by_key = {(w.entity_type, w.entity_id): w for w in rows}
+        assert set(by_key) == {("project", "lp1"), ("task", "lt1")}
+        assert abs(by_key[("project", "lp1")].strand_weights["Voice"] - 0.3) < 1e-9
+        assert abs(by_key[("task", "lt1")].strand_weights["Logic"] - 0.6) < 1e-9
+
+        # Unweighed entities stay absent — unknown is honest, never zero.
+        assert ("project", "never-weighed") not in by_key
+        # Another user sees none of it.
+        assert list_weightings_for_user("test-u-list-other") == []
+    finally:
+        clear_entity_strands(user, "project", "lp1")
+        clear_entity_strands(user, "task", "lt1")

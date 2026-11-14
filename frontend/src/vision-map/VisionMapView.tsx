@@ -54,7 +54,7 @@ import {
 import { CairnInteractionContext } from './cairnContext'
 import { MapFlowEdge } from './MapFlowEdge'
 import { MapChatShell } from './MapChatShell'
-import { fetchNodeVitalityMap, fetchVisionMapEntities } from './veMapApi'
+import { fetchNodeVitalityMap, fetchStrandWeightings, fetchVisionMapEntities } from './veMapApi'
 import { fetchStudioCouncilRuns } from './fetchStudioCouncilRuns'
 import { buildLiveVisionMapGraph } from './liveProjection'
 import { MAP_ENTITY_FALLBACK_LAYOUT_PX, mapEntityNodeLayoutPx } from './mapEntityNodeLayout'
@@ -513,15 +513,17 @@ function VisionMapFlow({
     setMapViewportReady(false)
     setLoadErr(null)
     try {
-      const [entities, runs, serverVitality] = await Promise.all([
+      const [entities, runs, serverVitality, strandWeights] = await Promise.all([
         fetchVisionMapEntities(),
         fetchStudioCouncilRuns(80),
         fetchNodeVitalityMap().catch(() => undefined),
+        fetchStrandWeightings().catch(() => undefined),
       ])
       const narrow =
         typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
       const g = buildLiveVisionMapGraph(entities, runs, serverVitality, {
         cairnThreshold: narrow ? CAIRN_NARROW_THRESHOLD : CAIRN_WIDE_THRESHOLD,
+        strandWeights,
       })
       /* No saved layout is restored: the map always opens on the computed
          garden. (The old localStorage restore applied a previous session's

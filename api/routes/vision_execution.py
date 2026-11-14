@@ -451,6 +451,32 @@ def list_node_vitality(
     return {"vitality": vitality}
 
 
+@router.get("/strand-weightings")
+def list_strand_weightings(current_user: dict = Depends(get_current_user)):
+    """The caller's strand weightings, for the vision-map projection.
+
+    Entities carry a 7-strand weight vector, never a single category
+    (local_ai.entity_strands). Only weighed entities appear — an absent
+    entity is unweighed (unknown), never a zero vector. Weights are
+    keyed by their plain strand names (Voice, Logic, Eye, Ear, Hands,
+    Heart, Compass), the same form the per-entity strands endpoint
+    uses.
+    """
+    from local_ai.entity_strands import list_weightings_for_user
+
+    rows = list_weightings_for_user(current_user["id"])
+    return {
+        "weightings": [
+            {
+                "entity_type": w.entity_type,
+                "entity_id": w.entity_id,
+                "weights": w.strand_weights,
+            }
+            for w in rows
+        ]
+    }
+
+
 @router.post("/core-profiles")
 def create_core_profile(body: M.CoreProfileCreate, current_user: dict = Depends(get_current_user)):
     return S.create_core_profile(body, current_user["id"])

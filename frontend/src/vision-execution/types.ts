@@ -138,6 +138,12 @@ export interface Task {
   dependency_ids: string[]
   /** Execution dependency: asset ids required for this task (backend may return). */
   required_asset_ids?: string[]
+  /** Council seat this task belongs to (canonical archetype id, e.g.
+      "mentor"); "" for ordinary tasks. Keystone-scoped on the backend:
+      the "Meet your council" chains carry it so the frontend can link
+      a task to its seat's conversation. Backend always serializes it;
+      optional here because older fixtures omit it. */
+  seat_ref?: string
   completion_criteria: string
   notes: string
   /** Timeframe commitment dimension, separate from status: null =

@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import type { ConditionSeverity, MapEntityKind, MapNodePayload } from './ontology'
 import {
@@ -12,7 +13,7 @@ import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { SymbolicStone, washColorFor, washKeyForPayload } from './symbolicStone'
 import { CairnStoneSprite } from './CairnStoneSprite'
 import type { PortedStone } from './cairnTower'
-import { longPressTargetFor } from './cairn'
+import { longPressTargetFor, paintedSingleStoneFor } from './cairn'
 import { useNodeHoldGestures } from './useLongPress'
 import { useCairnInteraction } from './cairnContext'
 
@@ -39,14 +40,20 @@ const URGENCY_RING = '#d9a441'
 const PULSE_RING = '#86b89a'
 
 /**
- * One stone per node, with the label block beneath. A plain node wears
- * the symbolic stone (silhouette + wash + urgency ring — no on-stone
- * marks; the label block carries the stone's name and status, never
- * its type). A member of a
- * fanned cairn wears its painted pile stone instead — the exact sprite
+ * One stone per node, with the label block beneath. A member of a
+ * fanned cairn wears its painted pile stone — the exact sprite
  * and tint the pile's layout gave it, threaded onto the node as
  * `fannedStone` by expandCairn — over the same label block, with the
- * same ring channel around the painted stone. Holds run the ladder:
+ * same ring channel around the painted stone. A stone standing alone
+ * paints too when it has a painted form of its own (cairn.ts
+ * paintedSingleStoneFor): an unstacked initiative (tree) always —
+ * the legacy oval was its only unstacked form and read as a different,
+ * older map — and a branch/flower carrying effective strand weights
+ * (stated or conversation colour) paints as a one-member pile stone
+ * with its blend. A plain node with neither wears
+ * the symbolic stone (silhouette + wash + urgency ring — no on-stone
+ * marks; the label block carries the stone's name and status, never
+ * its type). Holds run the ladder:
  * hold still to arm drag for the stone; keep holding (tier 2) and a
  * member of an already-fanned cairn stacks its cairn back, while the
  * initiative (tree) stone toggles the whole-garden stack — the pile
@@ -65,7 +72,17 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const layoutPx = mapEntityNodeLayoutPx(data.kind)
   const wash = washColorFor(washKeyForPayload(data))
   const fannedStone = (data as { fannedStone?: PortedStone }).fannedStone ?? null
-  const fannedRing = fannedStone
+  /* The stone this node paints with, if any: the fanned pile stone
+     when expandCairn threaded one, else the synthesized one-member
+     stone for a lone tree / weighed branch / weighed flower. The
+     synthesis runs the pile layout, so it is memoized on the node's
+     identity + payload like CairnNode's own layout memo. */
+  const singleStone = useMemo(
+    () => (fannedStone ? null : paintedSingleStoneFor({ id, data } as unknown as Node<MapNodePayload>)),
+    [fannedStone, id, data],
+  )
+  const paintedStone = fannedStone ?? singleStone
+  const paintedRing = paintedStone
     ? conditionSeverity > 0
       ? { color: URGENCY_RING, opacity: 0.45 + 0.18 * conditionSeverity }
       : data.fertilizer_pulse
@@ -105,24 +122,24 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
       {...lp}
     >
       <div className="flex w-full items-center justify-center pt-2" aria-hidden>
-        {fannedStone ? (
-          <div className="relative" style={{ width: fannedStone.width, height: fannedStone.height }}>
+        {paintedStone ? (
+          <div className="relative" style={{ width: paintedStone.width, height: paintedStone.height }}>
             <div
               className="absolute"
               style={{
                 left: 0,
                 top: 0,
-                width: fannedStone.width,
-                height: fannedStone.height,
-                transform: `rotate(${fannedStone.rotation}deg)`,
+                width: paintedStone.width,
+                height: paintedStone.height,
+                transform: `rotate(${paintedStone.rotation}deg)`,
                 // Rotate around the stone body's centre — the layout
                 // reports it in frame-box coordinates.
-                transformOrigin: `${fannedStone.originX}px ${fannedStone.originY}px`,
+                transformOrigin: `${paintedStone.originX}px ${paintedStone.originY}px`,
               }}
             >
-              <CairnStoneSprite src={fannedStone.spriteUrl} tint={fannedStone.tint} />
+              <CairnStoneSprite src={paintedStone.spriteUrl} tint={paintedStone.tint} />
             </div>
-            {fannedRing ? (
+            {paintedRing ? (
               <svg
                 className="absolute -inset-1.5"
                 style={{ width: 'calc(100% + 12px)', height: 'calc(100% + 12px)' }}
@@ -135,10 +152,10 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
                   rx="46"
                   ry="46"
                   fill="none"
-                  stroke={fannedRing.color}
+                  stroke={paintedRing.color}
                   strokeWidth={3}
                   vectorEffect="non-scaling-stroke"
-                  opacity={fannedRing.opacity}
+                  opacity={paintedRing.opacity}
                 />
               </svg>
             ) : null}

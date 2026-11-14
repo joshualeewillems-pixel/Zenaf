@@ -1003,6 +1003,20 @@
   display: block;
   width: 100%;
   height: 100%;
+  /* The painted stone is a real <img>, so without this iOS asserts its
+     native long-press image callout (Share / Save to Photos) over the
+     stone — and the press dies as a pointercancel long before the hold
+     ladder's tier-2 stack toggle (1100ms) can fire. Suppressing the
+     callout hands the hold back to the ladder; it is a CSS-level fix
+     only, no gesture code changes. Scoped to this class, which exists
+     only on Vision Map sprites — real photos elsewhere in the app
+     keep their native callout behaviour. */
+  -webkit-touch-callout: none;
+}
+/* Belt-and-braces: any image inside a map stone surface (the sprite
+   today, anything painted tomorrow) gets the same suppression. */
+.map-stone-surface img {
+  -webkit-touch-callout: none;
 }
 .cairn-tint-layer {
   position: absolute;

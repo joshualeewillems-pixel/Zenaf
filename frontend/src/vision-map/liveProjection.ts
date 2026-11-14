@@ -14,6 +14,11 @@ import type { StudioCouncilRunRow } from './studioCouncilTypes'
 import type { VisionMapEntityBundle } from './blockersFromVe'
 import type { ServerNodeVitalityMap, ServerStrandWeightsMap } from './veMapApi'
 import { PROJECTION_UNSCOPED_INITIATIVE_ID } from './mapCouncilActions'
+import {
+  effectiveStrandWeights,
+  keystoneConversationCountsByProject,
+  type SeatConversationCounts,
+} from './conversationColour'
 import { applyCairnMode, type CairnIndex, type CairnModeResult } from './cairn'
 export type { CairnIndex, CairnModeResult }
 import { computeMapEdgeVitality, type MapEdgeEndpointMeta } from './mapEdgeVitality'
@@ -167,7 +172,10 @@ export type LiveVisionMapGraphOptions = {
   /**
    * Strand weightings keyed `${entity_type}:${entity_id}` (from
    * fetchStrandWeightings). Branch/flower payloads pick up their own
-   * entity's vector as `entity_strand_weights`; absent = unweighed
+   * entity's EFFECTIVE vector as `entity_strand_weights`: the stated
+   * vector, replaced by the conversation colour when the entity has
+   * linked completed conversations (conversationColour.ts — keystone
+   * chains are the source that exists today). Absent = unweighed
    * (null), never zeros. Omit = no member carries a vector.
    */
   strandWeights?: ServerStrandWeightsMap
@@ -182,6 +190,14 @@ export function buildLiveVisionMapGraph(
   const { ideas, initiatives, projects, tasks } = bundle
   const nodes: Node<MapNodePayload>[] = []
   const edges: Edge[] = []
+
+  /* Conversation colour (founder's law, 2026-11-14): per-project
+     completed-conversation counts by seat, derived from the keystone
+     chains in this same bundle — the one (seat, project) conversation
+     link the map's data carries today. Empty for accounts without
+     met keystones, in which case every payload below is exactly the
+     pre-conversation-colour stated-weights behaviour. */
+  const convoCounts = keystoneConversationCountsByProject(tasks)
 
   const initiativesSorted = [...initiatives].sort((a, b) => (a.title || '').localeCompare(b.title || ''))
   const ideaById = new Map(ideas.map((i) => [i.id, i]))
@@ -299,6 +315,7 @@ export function buildLiveVisionMapGraph(
       bundle,
       serverVitality,
       opts?.strandWeights,
+      convoCounts,
     )
   }
 
@@ -406,7 +423,7 @@ export function buildLiveVisionMapGraph(
       treeTouch: ini.updated_at ?? null,
       treeCondition: treeCond,
       treeWaterLevel: waterLevelFromVital(vIni),
-    }, bundle, serverVitality, opts?.strandWeights)
+    }, bundle, serverVitality, opts?.strandWeights, convoCounts)
   })
 
   // --- Landmarks: people & assets. No growth narrative, no edges — they orient
@@ -478,6 +495,7 @@ function layoutProjectsUnderTree(
   bundle: VisionMapEntityBundle,
   serverVitality?: ServerNodeVitalityMap,
   strandWeights?: ServerStrandWeightsMap,
+  convoCounts?: Map<string, SeatConversationCounts>,
 ) {
   const treeId = `tree-${initiativeKey}`
   const sorted = [...plist].sort((a, b) => (a.title || '').localeCompare(b.title || ''))
@@ -511,9 +529,14 @@ function layoutProjectsUnderTree(
             growth: growthFromStatus(proj.status),
             condition: branchBaseCond,
             entity_created_at: proj.created_at ?? null,
-            // The member's own strand weight vector (Blend ruling):
-            // its entity's weighting, or null when unweighed.
-            entity_strand_weights: strandWeights?.[`project:${proj.id}`] ?? null,
+            // The member's EFFECTIVE strand weight vector: its stated
+            // weighting, or the conversation colour when conversations
+            // with a character have happened within this project
+            // (founder's law, 2026-11-14). Null when neither exists.
+            entity_strand_weights: effectiveStrandWeights(
+              strandWeights?.[`project:${proj.id}`] ?? null,
+              convoCounts?.get(proj.id),
+            ),
           },
           councilRuns,
           vProj,
@@ -614,7 +637,20 @@ function layoutProjectsUnderTree(
               growth: growthFromStatus(t.status),
               condition: taskBase,
               entity_created_at: t.created_at ?? null,
-              entity_strand_weights: strandWeights?.[`task:${t.id}`] ?? null,
+              // The task shares its project's conversational history
+              // (the conversation was within the project), so its
+              // effective vector composes its own stated weighting
+              // with the project's conversation counts the same way
+              // the branch's does.
+              entity_strand_weights: effectiveStrandWeights(
+                strandWeights?.[`task:${t.id}`] ?? null,
+                convoCounts?.get(proj.id),
+              ),
+              // The seat link, threaded from the wire (keystone tasks
+              // carry seat_ref; ordinary tasks carry "" and omit it).
+              ...((t.seat_ref ?? '').trim()
+                ? { seat_ref: (t.seat_ref ?? '').trim() }
+                : {}),
             },
             councilRuns,
             vTask,

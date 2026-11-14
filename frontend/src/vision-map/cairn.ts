@@ -360,6 +360,42 @@ export function expandCairn(
 }
 
 /**
+ * The painted form of a stone standing alone (founder acceptance
+ * round 2, 2026-11-14): unstacked, a tree fell back to the legacy
+ * SymbolicStone oval — the only unpainted object left in a painted
+ * garden — because `fannedStone` is threaded only onto fanned cairn
+ * members, and a tree is never one. This synthesis gives a lone stone
+ * its painted form from the pile machinery itself: a one-member tower
+ * (cairnMembersOf → towerLayoutForMembers), the member's own column
+ * stone. Pure.
+ *
+ * Who paints:
+ * - A tree ALWAYS paints. Its tint is the neutral wash (initiatives
+ *   carry no weights — form changes, colour doesn't). The layout seed
+ *   is the tree's own node id, the same seed its garden stack uses, so
+ *   the stone it wears alone is drawn from the same hand as in the
+ *   pile.
+ * - A branch/flower paints when it HAS effective strand weights
+ *   (stated, or conversation colour) — the pile seed (`cairn-<project
+ *   id>`) keeps its sprite and tint jitter keyed exactly as in its
+ *   project's pile. With no weights it returns null and the caller
+ *   keeps today's symbolic oval + hash wash, unchanged.
+ * - Every other kind (seed, landmark, fruit, cairn) returns null:
+ *   person/asset landmarks keep their ovals by design, and fruit is
+ *   not a weighable entity.
+ */
+export function paintedSingleStoneFor(node: Node<MapNodePayload>): PortedStone | null {
+  const d = node.data as MapNodePayload
+  if (d.kind !== 'tree' && d.kind !== 'branch' && d.kind !== 'flower') return null
+  if (d.kind !== 'tree' && !strandWeightsOf(d)) return null
+  const pid = projectIdOf(node)
+  const seed = d.kind === 'tree' ? node.id : pid ? `cairn-${pid}` : node.id
+  const members = cairnMembersOf([node], d.kind === 'flower' ? undefined : node.id)
+  const layout = towerLayoutForMembers(seed, members)
+  return layout.stones.find((s) => s.role === 'column' && s.memberId === node.id) ?? null
+}
+
+/**
  * Collapse expanded members back into their cairn, placed at the anchor
  * (the branch stone's current position, so the cairn follows a drag).
  */

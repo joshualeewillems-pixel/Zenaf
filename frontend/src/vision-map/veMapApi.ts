@@ -1,5 +1,6 @@
 import { VISION_EXECUTION_API } from '../vision-execution/types'
 import type { Asset, Idea, Initiative, Person, Project, Task } from '../vision-execution/types'
+import type { StrandKey } from '../council/colors'
 
 function formatFetchFailure(res: Response, bodyText: string): string {
   if (res.status === 401 || res.status === 403) {
@@ -79,6 +80,55 @@ type NodeVitalityRow = {
   water?: unknown
   soil?: unknown
   fruit?: unknown
+}
+
+/**
+ * Keyed `${entity_type}:${entity_id}` for buildLiveVisionMapGraph; failures
+ * should be caught by caller. Values are strand weight vectors keyed by
+ * strand taxonomy key — only weighed entities appear (absent = unweighed,
+ * never a zero vector).
+ */
+export type ServerStrandWeightsMap = Record<string, Partial<Record<StrandKey, number>>>
+
+type StrandWeightingRow = {
+  entity_type?: unknown
+  entity_id?: unknown
+  weights?: unknown
+}
+
+/** Backend weights are keyed by plain strand name; the frontend speaks
+    taxonomy keys. (Mirror of local_ai/council/archetypes.py PLAIN_TO_KEY.) */
+const PLAIN_TO_STRAND_KEY: Record<string, StrandKey> = {
+  Voice: 'word',
+  Logic: 'number',
+  Eye: 'image',
+  Ear: 'sound',
+  Hands: 'body',
+  Heart: 'people',
+  Compass: 'self',
+}
+
+export async function fetchStrandWeightings(): Promise<ServerStrandWeightsMap> {
+  const res = await fetch(`${VISION_EXECUTION_API}/strand-weightings`, { credentials: 'include' })
+  const j = (await readJson<{ weightings?: unknown }>(res)) as { weightings?: unknown }
+  const rows = Array.isArray(j.weightings) ? (j.weightings as StrandWeightingRow[]) : []
+  const out: ServerStrandWeightsMap = {}
+  for (const r of rows) {
+    if (!r || typeof r !== 'object') continue
+    const et = String(r.entity_type ?? '').trim()
+    const eid = String(r.entity_id ?? '').trim()
+    if (!et || !eid) continue
+    const raw = r.weights
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue
+    const weights: Partial<Record<StrandKey, number>> = {}
+    for (const [plain, v] of Object.entries(raw as Record<string, unknown>)) {
+      const key = PLAIN_TO_STRAND_KEY[plain]
+      const n = Number(v)
+      if (key && Number.isFinite(n)) weights[key] = n
+    }
+    if (Object.keys(weights).length) out[`${et}:${eid}`] = weights
+  }
+  return out
 }
 
 export async function fetchNodeVitalityMap(): Promise<ServerNodeVitalityMap> {

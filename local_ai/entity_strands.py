@@ -145,6 +145,43 @@ def _conn() -> sqlite3.Connection:
     return get_connection()
 
 
+def list_weightings_for_user(user_id: str) -> list[StrandWeighting]:
+    """Every weighed entity of one user (vision-map projection feed).
+
+    Only rows that carry a real weighting are returned — an entity with
+    no row is unweighed, and unweighed stays absent (unknown is honest,
+    never zero). Rows whose stored JSON no longer validates are skipped
+    rather than served.
+    """
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT entity_type, entity_id, weights_json, source, updated_at "
+        "FROM strand_weightings WHERE user_id = ? ORDER BY entity_id",
+        (user_id,),
+    ).fetchall()
+    out: list[StrandWeighting] = []
+    for entity_type, entity_id, weights_json, source, updated_at in rows:
+        try:
+            weights = json.loads(weights_json or "{}") or None
+        except (TypeError, ValueError):
+            continue
+        if weights is None:
+            continue
+        try:
+            out.append(
+                StrandWeighting(
+                    entity_id=entity_id,
+                    entity_type=entity_type,
+                    strand_weights=weights,
+                    source=source,
+                    updated_at=updated_at or _now_iso(),
+                )
+            )
+        except ValueError:
+            continue
+    return out
+
+
 def set_entity_strands(
     user_id: str,
     entity_type: str,

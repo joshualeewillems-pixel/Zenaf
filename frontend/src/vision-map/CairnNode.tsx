@@ -1,18 +1,8 @@
 import { useCallback, useMemo } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import type { ConditionSeverity, GrowthState, MapEntityKind, MapNodePayload } from './ontology'
-import {
-  StoneGlyphMark,
-  washColorFor,
-  glyphForGrowth,
-  type StoneGlyph,
-} from './symbolicStone'
+import type { ConditionSeverity, MapNodePayload } from './ontology'
 import { isGardenStackData, type CairnPreviewStone } from './cairn'
-import {
-  towerLayoutForMembers,
-  type CairnMemberInput,
-  type PortedStone,
-} from './cairnTower'
+import { towerLayoutForMembers, type CairnMemberInput } from './cairnTower'
 import { CairnStoneSprite } from './CairnStoneSprite'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { useNodeHoldGestures } from './useLongPress'
@@ -118,7 +108,6 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
   const isMega = isGardenStackData(data)
   const preview = (data.cairnPreview ?? []) as CairnPreviewStone[]
   const count = (data.cairnCount as number) ?? preview.length
-  const wash = washColorFor((data.cairnProjectId as string) ?? null)
   const severity: ConditionSeverity = effectiveConditionSeverity(data)
   const labelTone = stoneTextTone('branch')
 
@@ -145,20 +134,17 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, count, JSON.stringify(data.cairnMembers ?? null), preview.length])
 
-  const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
-  const layoutKey = `${id}|${wash}|${members.map((m) => `${m.id}@${m.createdAt ?? ''}`).join(',')}`
+  /* Each stone's stain is its own member's strand blend (the Blend
+     ruling) — there is no pile wash — so a member's weights are part of
+     the layout key: a weighting change re-tints the pile. */
+  const layoutKey = `${id}|${members
+    .map((m) => `${m.id}@${m.createdAt ?? ''}@${m.weights ? JSON.stringify(m.weights) : ''}`)
+    .join(',')}`
   const layout = useMemo(
-    () => towerLayoutForMembers(id, members, { wash }),
+    () => towerLayoutForMembers(id, members),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [layoutKey],
   )
-
-  const glyphOf = (st: PortedStone): StoneGlyph | null => {
-    if (st.role !== 'column' || !st.memberId) return null
-    const m = memberById.get(st.memberId)
-    if (!m) return null
-    return glyphForGrowth((m.growth ?? 'dormant') as GrowthState, (m.kind ?? 'branch') as MapEntityKind)
-  }
 
   const ring =
     severity > 0
@@ -234,43 +220,29 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
               />
             </svg>
           ) : null}
-          {layout.stones.map((s) => {
-            const glyph = glyphOf(s)
-            const glyphSize = Math.min(s.bodyWidth, s.bodyHeight) * 0.6
-            return (
-              <div
-                key={s.seed}
-                className="absolute"
-                style={{
-                  left: s.left,
-                  top: s.top,
-                  width: s.width,
-                  height: s.height,
-                  transform: `rotate(${s.rotation}deg)`,
-                  // Rotate around the stone body's centre — the layout
-                  // reports it in frame-box coordinates.
-                  transformOrigin: `${s.originX}px ${s.originY}px`,
-                }}
-              >
-                <CairnStoneSprite src={s.spriteUrl} tint={s.tint} />
-                {glyph ? (
-                  <svg
-                    viewBox="0 0 64 64"
-                    style={{
-                      position: 'absolute',
-                      left: s.originX - glyphSize / 2,
-                      top: s.originY - glyphSize / 2,
-                      width: glyphSize,
-                      height: glyphSize,
-                    }}
-                    aria-hidden="true"
-                  >
-                    <StoneGlyphMark glyph={glyph} />
-                  </svg>
-                ) : null}
-              </div>
-            )
-          })}
+          {/* Pile stones carry NO on-stone kind glyphs (founder,
+              2026-11-13): kind is no longer marked on the stone — the
+              node's name and count/gesture hint below carry identity.
+              (CairnNode renders no kind subtitle; the payload codename
+              subtitles live on the single-stone surface.) */}
+          {layout.stones.map((s) => (
+            <div
+              key={s.seed}
+              className="absolute"
+              style={{
+                left: s.left,
+                top: s.top,
+                width: s.width,
+                height: s.height,
+                transform: `rotate(${s.rotation}deg)`,
+                // Rotate around the stone body's centre — the layout
+                // reports it in frame-box coordinates.
+                transformOrigin: `${s.originX}px ${s.originY}px`,
+              }}
+            >
+              <CairnStoneSprite src={s.spriteUrl} tint={s.tint} />
+            </div>
+          ))}
         </div>
         <div
           className="absolute -right-0.5 -bottom-0.5 z-20 flex h-6 min-w-6 items-center justify-center rounded-full bg-stone-900 px-1 text-[11px] font-semibold text-stone-100 border border-stone-600"
@@ -294,5 +266,11 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
   )
 }
 
-/** Re-exported for the harness: glyph choice is part of the stone contract. */
-export { glyphForGrowth, type StoneGlyph }
+/**
+ * Re-exported for the harness. CairnNode itself no longer paints glyph
+ * marks on pile stones (founder, 2026-11-13 — kind is not marked on the
+ * stone); the helper remains the single-stone surface's glyph choice
+ * (symbolicStone / EntityMapNode) and stays importable from here so
+ * existing harness imports keep resolving.
+ */
+export { glyphForGrowth, type StoneGlyph } from './symbolicStone'

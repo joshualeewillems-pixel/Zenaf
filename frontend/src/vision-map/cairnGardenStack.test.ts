@@ -137,7 +137,7 @@ describe('garden stack — the tree nests as a member (founder ruling, 2026-11-1
     const members = (stack.data as { cairnMembers?: CairnMemberInput[] }).cairnMembers!
     expect(members.map((m) => m.id)).toEqual(['init-1', 'branch-proj-9', 'flower-9'])
     expect(members.filter((m) => m.parent).map((m) => m.id)).toEqual(['init-1'])
-    const dbg = towerDebugForMembers(stack.id, members, { wash: '#a8a29e' })
+    const dbg = towerDebugForMembers(stack.id, members)
     expect(dbg.col[0]!.role).toBe('slab')
     expect(dbg.col[1]!.memberId).toBe('init-1')
   })

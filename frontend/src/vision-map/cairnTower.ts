@@ -47,6 +47,7 @@ import {
   type CairnSegment,
   type CairnSprite,
 } from './cairnSprites'
+import { CAIRN_STAINS, type StrandKey } from '../council/colors'
 import type { GrowthState } from './ontology'
 
 /* ================= public types ================= */
@@ -60,9 +61,10 @@ export type CairnMemberInput = {
   activity: number
   /** Entity creation time (ISO) — the member's arrival. Null = unknown. */
   createdAt: string | null
-  /** Lifecycle growth state — vitality's visual outlet (the glyph the
-      renderer overlays on the member's stone). Placement never reads
-      it: vitality is current, placement is historical. */
+  /** Lifecycle growth state, carried on the member record. Placement
+      never reads it (vitality is current, placement is historical),
+      and the pile renderer no longer paints it on the stone — on-stone
+      glyph marks were removed by founder ruling, 2026-11-13. */
   growth?: GrowthState
   /**
    * The pile's parent stone (founder ruling, 2026-11-13): the project
@@ -76,7 +78,16 @@ export type CairnMemberInput = {
    * At most one member per pile carries this.
    */
   parent?: boolean
+  /** The member's own strand weight vector (strand keys → weights), as
+      surfaced by the vision-map projection. Null/absent = unweighed —
+      the member renders grayscale (unknown is honest, never zero). The
+      vector keys the member's stain colour only; placement never reads
+      it (identity is permanent, arrangement historical). */
+  weights?: CairnStrandWeights | null
 }
+
+/** A member's strand weight vector, keyed by strand taxonomy key. */
+export type CairnStrandWeights = Partial<Record<StrandKey, number>>
 
 export type PortedStone = {
   /** Frame box in fitted px (the sprite raster's full frame). */
@@ -281,14 +292,113 @@ function hslToHex(h: number, s: number, l: number): string {
   return '#' + rgb.map((v) => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('')
 }
 
-function jitterTint(washHex: string, key: string, f: number): string {
-  if (!f) return washHex
-  const [h, s, l] = hexToHsl(washHex)
+function jitterTint(baseHex: string, key: string, f: number): string {
+  if (!f) return baseHex
+  const [h, s, l] = hexToHsl(baseHex)
   return hslToHex(
     h + (hash01(key + ':th') - 0.5) * 24 * f,
     s + (hash01(key + ':ts') - 0.5) * 16 * f,
     l + (hash01(key + ':tl') - 0.5) * 20 * f,
   )
+}
+
+/* ================= strand blend stains (the Blend ruling) =================
+ *
+ * Founder's ruling, 2026-11-13: each stone's stain is its OWN strand
+ * weight vector mixed in CIELAB over the subdued L2 wood stains
+ * (CAIRN_STAINS) — never one wash per pile. The math below ports the
+ * colour-comparison sheet's renderer (render-cairn-color-options.py):
+ * sRGB → XYZ (D65) → Lab, weighted average by weight, back to sRGB.
+ * Unweighed members, fruit, the slab, rim accents and companions carry
+ * no stain: they render through NEUTRAL_WASH, which the tint stack
+ * reads as grayscale.
+ */
+
+function hexToRgb01(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16)
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
+}
+
+function srgbToLab(rgb: [number, number, number]): [number, number, number] {
+  const [r, g, b] = rgb.map((c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4))) as [
+    number,
+    number,
+    number,
+  ]
+  const x = (0.4124564 * r + 0.3575761 * g + 0.1804375 * b) / 0.95047
+  const y = 0.2126729 * r + 0.7151522 * g + 0.0721750 * b
+  const z = (0.0193339 * r + 0.1191920 * g + 0.9503041 * b) / 1.08883
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116)
+  const fx = f(x)
+  const fy = f(y)
+  const fz = f(z)
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)]
+}
+
+function labToSrgbHex(lab: [number, number, number]): string {
+  const [L, a, b] = lab
+  const fy = (L + 16) / 116
+  const fx = fy + a / 500
+  const fz = fy - b / 200
+  const inv = (t: number) => {
+    const t3 = t * t * t
+    return t3 > 0.008856 ? t3 : (t - 16 / 116) / 7.787
+  }
+  const x = inv(fx) * 0.95047
+  const y = inv(fy)
+  const z = inv(fz) * 1.08883
+  const lin: [number, number, number] = [
+    3.2404542 * x - 1.5371385 * y - 0.4985314 * z,
+    -0.969266 * x + 1.8760108 * y + 0.041556 * z,
+    0.0556434 * x - 0.2040259 * y + 1.0572252 * z,
+  ]
+  return (
+    '#' +
+    lin
+      .map((c) => {
+        const v = c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055
+        return Math.round(clamp(v, 0, 1) * 255)
+          .toString(16)
+          .padStart(2, '0')
+      })
+      .join('')
+  )
+}
+
+const STRAND_KEY_ORDER: StrandKey[] = ['word', 'number', 'image', 'sound', 'body', 'people', 'self']
+
+/**
+ * The Blend ruling's mix: a strand weight vector → its CIELAB-blended
+ * stain hex over CAIRN_STAINS. Null when the vector carries no positive
+ * weight (unweighed) — the caller renders the neutral grayscale.
+ */
+export function blendStainHex(weights: CairnStrandWeights): string | null {
+  let sw = 0
+  let L = 0
+  let A = 0
+  let B = 0
+  for (const k of STRAND_KEY_ORDER) {
+    const w = weights[k]
+    if (typeof w !== 'number' || !Number.isFinite(w) || w <= 0) continue
+    const lab = srgbToLab(hexToRgb01(CAIRN_STAINS[k]))
+    L += lab[0] * w
+    A += lab[1] * w
+    B += lab[2] * w
+    sw += w
+  }
+  if (sw <= 0) return null
+  return labToSrgbHex([L / sw, A / sw, B / sw])
+}
+
+/**
+ * A member stone's base stain before the member-keyed jitter: its own
+ * blend, or the neutral wash when unweighed. Fruit is not a weighable
+ * entity type, so fruit stones stay grayscale even if a caller hands
+ * them a vector.
+ */
+function memberBaseTint(member: CairnMemberInput): string {
+  if (member.kind === 'fruit' || !member.weights) return NEUTRAL_WASH
+  return blendStainHex(member.weights) ?? NEUTRAL_WASH
 }
 
 /* ================= stone records ================= */
@@ -1310,15 +1420,21 @@ function buildAccents(
   seed: string,
   col: StoneRec[],
   memberCount: number,
-  wash: string,
-  B: Blend,
+  companions: StoneRec[],
   dropped: string[],
 ): StoneRec[] {
   const n = memberCount
   const nAccents = n < 6 ? 0 : n <= 8 ? 2 : 3
   const accents: StoneRec[] = []
   // Column indices (slab = 0, members = 1..n): eligible hosts are
-  // member positions 1..n-3 -> column indices 2..n-2.
+  // member positions 1..n-3 -> column indices 2..n-2. Accents host ONLY
+  // on stack members — never on the slab, and never on a companion:
+  // October's placement checked contact against the host alone, so an
+  // accent seated on a member's rim could overlap the leaner leaning
+  // against that flank and, painted last, read as sitting ON the
+  // companion (founder's correction, 2026-11-13). Companions are built
+  // first and any candidate overlapping one beyond the accent-accent
+  // tolerance is rejected here; the host loop then tries other members.
   const eligHosts: number[] = []
   for (let h = 2; h <= n - 2; h++) eligHosts.push(h)
   if (nAccents === 0) return accents
@@ -1326,6 +1442,7 @@ function buildAccents(
     dropped.push('accent')
     return accents
   }
+  const companionCells = companions.map((c) => stoneCells(c))
   const placedCells: Array<Set<number>> = []
   for (let k = 0; k < nAccents; k++) {
     const K = `${seed}:accent:${k}`
@@ -1363,7 +1480,7 @@ function buildAccents(
           host.cx + rx,
           host.cy + ry - 0.35 * hA,
           (hash01(K + ':rot') * 2 - 1) * 25,
-          jitterTint(wash, `${seed}:tint:accent:${k}`, B.jitter),
+          NEUTRAL_WASH,
         )
         cand.role = 'accent'
         cand.host = hostIdx
@@ -1378,6 +1495,9 @@ function buildAccents(
         if (cand.contact < 11) continue
         const cc = stoneCells(cand)
         if (placedCells.some((pc) => contactCells(cc, pc) > 3)) continue
+        // Host law: an accent never overlaps a companion (leaner/wedge)
+        // beyond the same tolerance two accents allow each other.
+        if (companionCells.some((pc) => contactCells(cc, pc) > 3)) continue
         placedCells.push(cc)
         return cand
       }
@@ -1405,13 +1525,7 @@ function buildAccents(
    is dropped and disclosed. (Column indices are the study's +1: the
    slab occupies position 0.) */
 
-function buildLeaner(
-  seed: string,
-  col: StoneRec[],
-  groundY: number,
-  wash: string,
-  B: Blend,
-): StoneRec | null {
+function buildLeaner(seed: string, col: StoneRec[], groundY: number): StoneRec | null {
   const sprite = hash01(`${seed}:comp:leaner:kind`) < 0.55 ? 'stone-standing' : 'stone-angular'
   const side = hash01(`${seed}:comp:leaner:side`) < 0.5 ? -1 : 1
   const hostIdx = Math.min(col.length - 1, 2 + Math.floor(hash01(`${seed}:comp:leaner:host`) * Math.min(2, col.length - 2)))
@@ -1449,7 +1563,7 @@ function buildLeaner(
             cx,
             cy,
             rot,
-            jitterTint(wash, `${seed}:tint:comp:leaner`, B.jitter),
+            NEUTRAL_WASH,
           )
           st.cy += groundY - lowestY(st)
           place(st)
@@ -1523,8 +1637,6 @@ function buildWedge(
   seed: string,
   col: StoneRec[],
   groundY: number,
-  wash: string,
-  B: Blend,
   leaner: StoneRec | null,
 ): StoneRec | null {
   const sprite = ['pebble', 'stone-chunk', 'stone-small'][Math.floor(hash01(`${seed}:comp:wedge:kind`) * 3)]!
@@ -1538,7 +1650,7 @@ function buildWedge(
   const base = col[0]!
   const baseCells = stoneCells(base)
   for (const tilt of [tilt0, tilt0 * 0.5, 0, tilt0 * 0.25, tilt0 > 0 ? -3 : 3, tilt0 > 0 ? -6 : 6]) {
-    const st = mkStone(sprite, -3, w, h, side * base.w * 0.46 + side * w * 0.38, 0, tilt, jitterTint(wash, `${seed}:tint:comp:wedge`, B.jitter))
+    const st = mkStone(sprite, -3, w, h, side * base.w * 0.46 + side * w * 0.38, 0, tilt, NEUTRAL_WASH)
     st.cy = groundY - h / 2
     place(st)
     settleCentral(st, groundY)
@@ -1619,20 +1731,15 @@ export function cairnBlend(cairnId: string): number {
 
 /* ================= the layout ================= */
 
-export type CairnLayoutOptions = {
-  /** Pile wash hex (the project's strand-palette wash). */
-  wash?: string
-}
-
 type InternalLayout = {
   ported: PortedTowerLayout
   col: StoneRec[]
   accents: StoneRec[]
+  companions: StoneRec[]
   scale: number
 }
 
-function computeLayout(cairnId: string, membersIn: CairnMemberInput[], opts?: CairnLayoutOptions): InternalLayout {
-  const wash = opts?.wash ?? NEUTRAL_WASH
+function computeLayout(cairnId: string, membersIn: CairnMemberInput[]): InternalLayout {
   const blendIdx = cairnBlend(cairnId)
   const B = BLENDS[blendIdx]!
   const leadRight = hash01(`${cairnId}:cairn-drift-phase`) >= 0.5
@@ -1648,21 +1755,22 @@ function computeLayout(cairnId: string, membersIn: CairnMemberInput[], opts?: Ca
   const slabMeta = meta(SLAB_SPRITE)
   const slabW = BASE_W
   const slabH = (slabW * slabMeta.bodyH) / slabMeta.bodyW
-  const slab = mkStone(SLAB_SPRITE, 0, slabW, slabH, 0, 0, 0, wash)
+  const slab = mkStone(SLAB_SPRITE, 0, slabW, slabH, 0, 0, 0, NEUTRAL_WASH)
   slab.role = 'slab'
   slab.pos = 0
   const col: StoneRec[] = [slab]
   const groundY = slabH / 2
 
   /* Members, in historical order. Each is seated by the arrival
-     search; the tint is member-keyed, with the current cap's jitter
-     damped to a third (summit discipline — a visual treatment of the
-     stone's CURRENT role; its sprite and seat never change). */
+     search; the tint is the member's OWN strand blend (the Blend
+     ruling) under the member-keyed jitter, with the current cap's
+     jitter damped to a third (summit discipline — a visual treatment
+     of the stone's CURRENT role; its sprite and seat never change). */
   for (let pos = 0; pos < n; pos++) {
     const member = rendered[pos]!
     const sprite = assigned.get(member.id)!
     const isCap = pos === n - 1
-    const tint = jitterTint(wash, `${cairnId}:tint:m${member.id}`, isCap ? B.jitter / 3 : B.jitter)
+    const tint = jitterTint(memberBaseTint(member), `${cairnId}:tint:m${member.id}`, isCap ? B.jitter / 3 : B.jitter)
     const res = placeMember(cairnId, member, sprite, pos, n, col, B, leadRight, tint)
     res.st.pos = col.length - 1
     repairs += res.repairs
@@ -1678,25 +1786,27 @@ function computeLayout(cairnId: string, membersIn: CairnMemberInput[], opts?: Ca
     })
   }
 
-  const accents = buildAccents(cairnId, col, n, wash, B, dropped)
-  accents.forEach((a, k) => {
-    a.pos = -10 - k
-  })
-
-  /* Companions, seeded by the cairn id. */
+  /* Companions, seeded by the cairn id — built BEFORE the accents so
+     accent placement can honour the host law (accents sit on stack
+     members only, never overlapping a companion). */
   const companions: StoneRec[] = []
   const roll = hash01(`${cairnId}:companions:roll`)
   const pattern = roll < 0.34 ? 'none' : roll < 0.67 ? 'leaner' : 'leaner+wedge'
   if (pattern !== 'none' && n >= 2) {
-    const ln = buildLeaner(cairnId, col, groundY, wash, B)
+    const ln = buildLeaner(cairnId, col, groundY)
     if (ln) companions.push(ln)
     else dropped.push('leaner')
     if (pattern === 'leaner+wedge') {
-      const wg = buildWedge(cairnId, col, groundY, wash, B, ln)
+      const wg = buildWedge(cairnId, col, groundY, ln)
       if (wg) companions.push(wg)
       else dropped.push('wedge')
     }
   }
+
+  const accents = buildAccents(cairnId, col, n, companions, dropped)
+  accents.forEach((a, k) => {
+    a.pos = -10 - k
+  })
 
   /* Fit: bounding box over every stone's rotated frame box, uniform
      scale into the production fit box. */
@@ -1786,16 +1896,12 @@ function computeLayout(cairnId: string, membersIn: CairnMemberInput[], opts?: Ca
       repairs,
     },
   }
-  return { ported, col, accents, scale: s }
+  return { ported, col, accents, companions, scale: s }
 }
 
 /** The ported layout for a cairn's real members. Pure + deterministic. */
-export function towerLayoutForMembers(
-  cairnId: string,
-  members: CairnMemberInput[],
-  opts?: CairnLayoutOptions,
-): PortedTowerLayout {
-  return computeLayout(cairnId, members, opts).ported
+export function towerLayoutForMembers(cairnId: string, members: CairnMemberInput[]): PortedTowerLayout {
+  return computeLayout(cairnId, members).ported
 }
 
 export type CairnDebugBody = {
@@ -1809,33 +1915,38 @@ export type CairnDebugBody = {
   h: number
   rot: number
   pairOK: boolean
+  /** Accents only: the host's member index (column index − 1). */
+  host?: number
 }
 
 /**
- * Unfitted (layout-space) column bodies for member piles — the growth
- * law's immobility is a layout-space property (the fit scale is a
- * viewport transform over the whole pile), so tests assert against
- * these coordinates, not the fitted output.
+ * Unfitted (layout-space) bodies for member piles — the growth law's
+ * immobility is a layout-space property (the fit scale is a viewport
+ * transform over the whole pile), so tests assert against these
+ * coordinates, not the fitted output. Accents and companions ride
+ * along so the accent host law can be asserted geometrically.
  */
 export function towerDebugForMembers(
   cairnId: string,
   members: CairnMemberInput[],
-  opts?: CairnLayoutOptions,
-): { col: CairnDebugBody[]; scale: number } {
-  const internal = computeLayout(cairnId, members, opts)
+): { col: CairnDebugBody[]; accents: CairnDebugBody[]; companions: CairnDebugBody[]; scale: number } {
+  const internal = computeLayout(cairnId, members)
+  const body = (st: StoneRec): CairnDebugBody => ({
+    memberId: st.memberId,
+    role: st.role,
+    sprite: st.sprite,
+    x: st.cx,
+    y: st.cy,
+    cenX: st.cenX,
+    w: st.w,
+    h: st.h,
+    rot: st.tilt,
+    pairOK: st.pairOK,
+  })
   return {
-    col: internal.col.map((st) => ({
-      memberId: st.memberId,
-      role: st.role,
-      sprite: st.sprite,
-      x: st.cx,
-      y: st.cy,
-      cenX: st.cenX,
-      w: st.w,
-      h: st.h,
-      rot: st.tilt,
-      pairOK: st.pairOK,
-    })),
+    col: internal.col.map(body),
+    accents: internal.accents.map((a) => ({ ...body(a), host: a.host - 1 })),
+    companions: internal.companions.map(body),
     scale: internal.scale,
   }
 }

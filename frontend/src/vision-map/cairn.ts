@@ -20,8 +20,13 @@ import type { Edge, Node, XYPosition } from '@xyflow/react'
 import type { ConditionSeverity, MapNodePayload } from './ontology'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { activityScore } from './nesting'
-import { towerLayoutForMembers, type CairnMemberInput, type PortedStone } from './cairnTower'
-import { washColorFor } from './symbolicStone'
+import {
+  towerLayoutForMembers,
+  type CairnMemberInput,
+  type CairnStrandWeights,
+  type PortedStone,
+} from './cairnTower'
+import type { StrandKey } from '../council/colors'
 
 /**
  * Legacy threshold constants, retained for call-site compatibility.
@@ -129,9 +134,39 @@ export function cairnMembersOf(
       activity: activityScore(d),
       createdAt: typeof created === 'string' && created ? created : null,
       growth: d.growth,
+      weights: strandWeightsOf(d),
       ...(parentNodeId && m.id === parentNodeId ? { parent: true } : {}),
     }
   })
+}
+
+/**
+ * The member's strand weight vector off its node payload
+ * (`entity_strand_weights`, threaded from the projection), shape-checked
+ * at this boundary: a plain object whose values are finite numbers.
+ * Anything else — absent, null, malformed — is unweighed (null), never
+ * a zero vector: unknown is honest.
+ */
+const STRAND_KEYS: ReadonlySet<string> = new Set([
+  'word',
+  'number',
+  'image',
+  'sound',
+  'body',
+  'people',
+  'self',
+])
+
+function strandWeightsOf(d: MapNodePayload): CairnStrandWeights | null {
+  const raw = (d as { entity_strand_weights?: unknown }).entity_strand_weights
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const out: CairnStrandWeights = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (STRAND_KEYS.has(k) && typeof v === 'number' && Number.isFinite(v)) {
+      out[k as StrandKey] = v
+    }
+  }
+  return Object.keys(out).length ? out : null
 }
 
 /**
@@ -301,9 +336,7 @@ export function expandCairn(
     Array.isArray(stored) && stored.length
       ? (stored as CairnMemberInput[])
       : cairnMembersOf(entry.memberNodes, branchId)
-  const layout = towerLayoutForMembers(entry.cairnId, members, {
-    wash: washColorFor(entry.projectId),
-  })
+  const layout = towerLayoutForMembers(entry.cairnId, members)
   const stoneByMemberId = new Map<string, PortedStone>()
   for (const s of layout.stones) {
     if (s.role === 'column' && s.memberId) stoneByMemberId.set(s.memberId, s)

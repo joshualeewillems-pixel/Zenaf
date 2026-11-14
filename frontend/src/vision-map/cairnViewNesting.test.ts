@@ -40,7 +40,6 @@ import {
   type CairnEntry,
 } from './cairn'
 import { towerLayoutForMembers, type CairnMemberInput, type PortedStone } from './cairnTower'
-import { washColorFor } from './symbolicStone'
 import { SymbolicStone } from './symbolicStone'
 import { EntityMapNode } from './EntityMapNode'
 import { buildLiveVisionMapGraph } from './liveProjection'
@@ -145,7 +144,7 @@ describe('A · fan-out painted — members keep their pile stones', () => {
 
     // The pile's own layout, recomputed from the cairn node's members.
     const members = entry.cairnNode.data.cairnMembers as CairnMemberInput[]
-    const layout = towerLayoutForMembers('cairn-p1', members, { wash: washColorFor('p1') })
+    const layout = towerLayoutForMembers('cairn-p1', members)
     const pileStoneByMember = new Map(
       layout.stones.filter((s) => s.role === 'column' && s.memberId).map((s) => [s.memberId!, s]),
     )
@@ -258,7 +257,7 @@ describe('rendered stones — no on-stone marks, labels and rings kept', () => {
       { id: 'flower-t1', kind: 'flower', activity: 0.5, createdAt: '2026-01-03T00:00:00.000Z', growth: 'germinating' },
       { id: 'flower-t2', kind: 'flower', activity: 0.4, createdAt: '2026-01-04T00:00:00.000Z', growth: 'dormant' },
     ]
-    const layout = towerLayoutForMembers('cairn-p1', members, { wash: washColorFor('p1') })
+    const layout = towerLayoutForMembers('cairn-p1', members)
     const stone = layout.stones.find((s) => s.memberId === 'flower-t1')!
     const data = payload({
       kind: 'flower',

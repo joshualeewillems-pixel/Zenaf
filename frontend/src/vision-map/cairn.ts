@@ -1,12 +1,13 @@
 /**
  * Cairn mode — dense-garden stacking for the Vision map.
  *
- * When a garden grows past the render threshold, project subtrees
- * (branch + its task flowers + outcome fruit) collapse into a single
- * **cairn** node: a small vertical stack of symbolic stones with a count
- * badge. Nothing is dropped — stones are stacked, not hidden.
- *
- * Below the threshold the graph passes through untouched.
+ * Project subtrees (branch + its task flowers + outcome fruit)
+ * collapse into a single **cairn** node: a small vertical stack of
+ * symbolic stones with a count badge. Nothing is dropped — stones
+ * are stacked, not hidden. Any project group with at least two linked
+ * members forms a cairn, whatever the garden's size (founder ruling,
+ * 2026-11-13 — the earlier total-graph-size gate is gone; small
+ * gardens pile too).
  *
  * Urgency ordering reuses the map's existing severity scale
  * (`effectiveConditionSeverity`, 0–3, the same signal that paints stone
@@ -19,10 +20,21 @@ import type { Edge, Node, XYPosition } from '@xyflow/react'
 import type { ConditionSeverity, MapNodePayload } from './ontology'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { activityScore } from './nesting'
-import type { CairnMemberInput, CairnStrandWeights } from './cairnTower'
+import {
+  towerLayoutForMembers,
+  type CairnMemberInput,
+  type CairnStrandWeights,
+  type PortedStone,
+} from './cairnTower'
 import type { StrandKey } from '../council/colors'
 
-/** Rendered-node thresholds: past these, project subtrees become cairns. */
+/**
+ * Legacy threshold constants, retained for call-site compatibility.
+ * They no longer gate anything: since the founder's 2026-11-13 ruling
+ * every project group with ≥2 linked members forms a cairn regardless
+ * of garden size. Callers still pass one to say "cairn mode on" (and
+ * omit it to say "off"); the value itself is not consulted.
+ */
 export const CAIRN_NARROW_THRESHOLD = 40
 export const CAIRN_WIDE_THRESHOLD = 80
 /**
@@ -104,9 +116,15 @@ export type CairnPreviewStone = {
  * the member node's own id (its permanent identity), `createdAt` its
  * entity arrival time threaded from the projection
  * (`entity_created_at`), `activity` April's score (vitality — current,
- * never an ordering input for placement).
+ * never an ordering input for placement). The member whose node id is
+ * `parentNodeId` — the project's own branch stone — is flagged as the
+ * pile's parent, so the layout seats it at the base (founder ruling,
+ * 2026-11-13: the parent nests with the rest of its project).
  */
-export function cairnMembersOf(memberNodes: Node<MapNodePayload>[]): CairnMemberInput[] {
+export function cairnMembersOf(
+  memberNodes: Node<MapNodePayload>[],
+  parentNodeId?: string,
+): CairnMemberInput[] {
   return memberNodes.map((m) => {
     const d = m.data as MapNodePayload
     const created = (d as { entity_created_at?: unknown }).entity_created_at
@@ -117,6 +135,7 @@ export function cairnMembersOf(memberNodes: Node<MapNodePayload>[]): CairnMember
       createdAt: typeof created === 'string' && created ? created : null,
       growth: d.growth,
       weights: strandWeightsOf(d),
+      ...(parentNodeId && m.id === parentNodeId ? { parent: true } : {}),
     }
   })
 }
@@ -151,18 +170,20 @@ function strandWeightsOf(d: MapNodePayload): CairnStrandWeights | null {
 }
 
 /**
- * Collapse project subtrees into cairns when the node count passes the
- * threshold. Trees, seeds and landmarks always stay individual.
+ * Collapse project subtrees into cairns. Every project group with at
+ * least two linked members forms a cairn, whatever the total garden
+ * size (founder ruling, 2026-11-13 — the graph-size gate is gone).
+ * Trees, seeds and landmarks always stay individual. The `threshold`
+ * parameter is retained for call-site compatibility only — callers
+ * pass one to request cairn mode; its value no longer gates grouping.
  */
 export function applyCairnMode(
   nodes: Node<MapNodePayload>[],
   edges: Edge[],
   threshold: number,
 ): CairnModeResult {
+  void threshold
   const totalStones = nodes.length
-  if (!Number.isFinite(threshold) || threshold <= 0 || totalStones <= threshold) {
-    return { nodes, edges, totalStones, cairnCount: 0, cairned: false, cairnIndex: {} }
-  }
 
   const branches = new Map<string, Node<MapNodePayload>>()
   const membersByProject = new Map<string, Node<MapNodePayload>[]>()
@@ -232,7 +253,7 @@ export function applyCairnMode(
         cairnProjectId: pid,
         cairnCount: all.length,
         cairnPreview: preview,
-        cairnMembers: cairnMembersOf(all),
+        cairnMembers: cairnMembersOf(all, branch.id),
       },
     }
 
@@ -287,6 +308,15 @@ export function applyCairnMode(
  * on a member opens that stone's data (the stone sheet also offers
  * "Stack back into cairn"), and drag positions are tracked per-cairn
  * while the fan is open.
+ *
+ * Fanned members keep their painted form (founder ruling, 2026-11-13):
+ * each member node carries its `fannedStone` — the very PortedStone the
+ * pile's own tower layout assigned it (same pure layout, same inputs:
+ * member-id-keyed, so the sprite a member wears fanned out is the
+ * sprite it wears in the pile) — and the node renderer paints that
+ * sprite over the member's label block instead of restoring the old
+ * symbolic stone. Members past the layout's render cap have no stone
+ * in the pile; they carry no `fannedStone` and keep the symbolic form.
  */
 export function expandCairn(
   nodes: Node<MapNodePayload>[],
@@ -296,12 +326,32 @@ export function expandCairn(
 ): { nodes: Node<MapNodePayload>[]; edges: Edge[] } {
   const dx = anchor.x - entry.branchPosition.x
   const dy = anchor.y - entry.branchPosition.y
+  /* The pile's own member list, exactly as the cairn node renders it —
+     so the layout computed here is the pile's layout, not a re-derivation
+     that could drift on member ordering. Entries built before member
+     threading fall back to deriving members from the member nodes. */
+  const stored = (entry.cairnNode.data as { cairnMembers?: unknown }).cairnMembers
+  const branchId = entry.memberNodes.find((m) => (m.data as MapNodePayload).kind === 'branch')?.id
+  const members =
+    Array.isArray(stored) && stored.length
+      ? (stored as CairnMemberInput[])
+      : cairnMembersOf(entry.memberNodes, branchId)
+  const layout = towerLayoutForMembers(entry.cairnId, members)
+  const stoneByMemberId = new Map<string, PortedStone>()
+  for (const s of layout.stones) {
+    if (s.role === 'column' && s.memberId) stoneByMemberId.set(s.memberId, s)
+  }
   const nextNodes = nodes.filter((n) => n.id !== entry.cairnId)
   for (const m of entry.memberNodes) {
+    const fannedStone = stoneByMemberId.get(m.id)
     nextNodes.push({
       ...m,
       position: { x: m.position.x + dx, y: m.position.y + dy },
-      data: { ...(m.data as object), expandedFromCairn: entry.cairnId } as MapNodePayload,
+      data: {
+        ...(m.data as object),
+        expandedFromCairn: entry.cairnId,
+        ...(fannedStone ? { fannedStone } : {}),
+      } as MapNodePayload,
     })
   }
   const nextEdges = edges.filter((e) => e.source !== entry.cairnId && e.target !== entry.cairnId)
@@ -477,6 +527,13 @@ function cairnStoneCount(n: Node<MapNodePayload>): number {
  * points at its own initiative, so tapping it opens that initiative's
  * briefing sheet (`stone:initiative:{id}`), and its preview carries the
  * subtree's most urgent stones (most urgent on top, like project cairns).
+ *
+ * The tree itself is a MEMBER of the stack's pile (founder ruling,
+ * 2026-11-13: the main stone nests with the rest of its project) — the
+ * first member, flagged parent, so the layout seats it at the base.
+ * The subtree cairns' own branch members keep their membership but not
+ * their parent flag: in the stack, only the tree is parent. The stone
+ * count includes the tree's own stone.
  */
 export function buildGardenStackNode(
   tree: Node<MapNodePayload>,
@@ -499,17 +556,35 @@ export function buildGardenStackNode(
     }
   }
   previews.sort((a, b) => b.severity - a.severity)
-  const totalStones = subtreeCairns.reduce((t, c) => t + cairnStoneCount(c), 0)
-  /* The stack's pile is built from the subtree cairns' real members
-     where the cairn-mode pass provided them. Aggregates that predate
-     member threading (fixtures, sample graphs) fall back to synthetic
-     members keyed by the cairn id — order within the aggregate is
-     then preview order, disclosed in the port PR. */
-  const stackMembers: CairnMemberInput[] = []
+  // +1: the tree's own stone is a member of the pile now, and is counted.
+  const totalStones = subtreeCairns.reduce((t, c) => t + cairnStoneCount(c), 0) + 1
+  /* The stack's pile is built from the tree itself plus the subtree
+     cairns' real members where the cairn-mode pass provided them.
+     Aggregates that predate member threading (fixtures, sample graphs)
+     fall back to synthetic members keyed by the cairn id — order within
+     the aggregate is then preview order, disclosed in the port PR. */
+  const treeCreated = (treeData as { entity_created_at?: unknown }).entity_created_at
+  const stackMembers: CairnMemberInput[] = [
+    {
+      id: tree.id,
+      kind: 'tree',
+      activity: activityScore(treeData),
+      createdAt: typeof treeCreated === 'string' && treeCreated ? treeCreated : null,
+      growth: treeData.growth,
+      weights: strandWeightsOf(treeData),
+      parent: true,
+    },
+  ]
   for (const c of subtreeCairns) {
     const cm = (c.data as { cairnMembers?: unknown }).cairnMembers
     if (Array.isArray(cm) && cm.length) {
-      for (const m of cm as CairnMemberInput[]) stackMembers.push(m)
+      for (const m of cm as CairnMemberInput[]) {
+        // A branch is the parent of its own project's pile, never of
+        // the stack — strip the flag so the tree is the stack's only
+        // parent.
+        const { parent: _parentFlag, ...rest } = m
+        stackMembers.push(rest)
+      }
     } else {
       const count = cairnStoneCount(c)
       const cp = (c.data as { cairnPreview?: unknown }).cairnPreview
@@ -555,6 +630,21 @@ export function buildGardenStackNode(
       ref: treeData.ref,
     },
   }
+}
+
+/**
+ * The stacked set the map opens with (founder ruling, 2026-11-13):
+ * every initiative starts stacked — its garden sits as the pile on its
+ * own stone, the tree nested at the pile's base — and the long-hold
+ * toggle unstacks/restacks per initiative from there. Pure: the view
+ * seeds its stacked state from this on load.
+ */
+export function defaultStackedTreeIds(nodes: Node<MapNodePayload>[]): Set<string> {
+  const ids = new Set<string>()
+  for (const n of nodes) {
+    if ((n.data as MapNodePayload).kind === 'tree') ids.add(n.id)
+  }
+  return ids
 }
 
 /**

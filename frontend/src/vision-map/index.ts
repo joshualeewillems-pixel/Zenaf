@@ -17,6 +17,7 @@ export {
   applyCairnMode,
   expandCairn,
   collapseCairn,
+  defaultStackedTreeIds,
 } from './cairn'
 export { SymbolicStone, washColorFor, glyphForGrowth } from './symbolicStone'
 export { createLongPressMachine } from './longPressMachine'

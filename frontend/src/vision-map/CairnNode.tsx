@@ -31,13 +31,36 @@ const PULSE_RING = '#86b89a'
  * unstack for a garden stack), the first hold (arm drag), and drag.
  */
 
+/** Px the innermost groove's front arc tucks behind the base stone's
+    bottom on the raised sand plane (see gardenSandPlaneY). */
+export const SAND_TUCK_PX = 2
+
+/**
+ * The sand plane the garden rings are drawn on (founder, 2026-11-14:
+ * "raise it up to the bottom of the stone so that it looks like the
+ * stone is in the sand"). The ring ellipses are centred on this plane.
+ * Centring them on the ground line left the innermost groove's front
+ * arc a full ry (≈24px on a typical pile) below the base stone's
+ * bottom — with the old blurred shadow in between, the pile read as
+ * floating. Raising the plane by that ry plus a small tuck brings the
+ * groove up to just behind the base stone's bottom (layout.groundY IS
+ * the slab's bottom), so the cairn reads as seated IN the sand. The
+ * rings' radii and footprint-extent behaviour are unchanged; only the
+ * plane moved.
+ */
+export function gardenSandPlaneY(groundY: number, halfWidth: number): number {
+  return groundY - ((halfWidth + 6) * 0.3 + SAND_TUCK_PX)
+}
+
 /** Garden rings (port spec §6): concentric, dash-broken, squashed to
     the garden plane, anchored to the pile's measured footprint. The
     first ring sits 6px beyond the footprint, spacing 10.5px, groove
     fading ~0.78 per ring — extent is a continuous function of the
     footprint, so the rings grow gradually with the pile. The global
     rake register is the sand bed itself (ZenSandCanvas); these local
-    rings yield while the user rakes (cairnContext.rakeActive). */
+    rings yield while the user rakes (cairnContext.rakeActive). The
+    ring plane is raised to the base stone's bottom (gardenSandPlaneY)
+    so the pile sits in the sand, not above it. */
 function GardenRings({
   cx,
   groundY,
@@ -49,6 +72,7 @@ function GardenRings({
   halfWidth: number
   yielding: boolean
 }) {
+  const planeY = gardenSandPlaneY(groundY, halfWidth)
   const rings = []
   for (let k = 0; k < 24; k++) {
     const rx = halfWidth + 6 + k * 10.5
@@ -60,7 +84,7 @@ function GardenRings({
       <g key={k}>
         <ellipse
           cx={cx}
-          cy={groundY + 1.4}
+          cy={planeY + 1.4}
           rx={rx}
           ry={ry}
           fill="none"
@@ -71,7 +95,7 @@ function GardenRings({
         />
         <ellipse
           cx={cx}
-          cy={groundY}
+          cy={planeY}
           rx={rx}
           ry={ry}
           fill="none"
@@ -185,21 +209,12 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
             halfWidth={layout.footprintHalfWidth}
             yielding={rakeActive}
           />
-          <svg
-            style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', filter: 'blur(3px)' }}
-            width="100%"
-            height="100%"
-            aria-hidden="true"
-          >
-            <ellipse
-              cx={layout.footprintCx}
-              cy={layout.groundY + 2}
-              rx={layout.footprintHalfWidth * 0.92}
-              ry={layout.footprintHalfWidth * 0.92 * 0.3}
-              fill="#000000"
-              opacity={0.32}
-            />
-          </svg>
+          {/* No drop shadow under the pile (founder, 2026-11-14 —
+              closing his October verdict on the cairn study, "perfect,
+              except for the floating shadows"): the blurred ground
+              ellipse that sat here is gone for piles and garden stacks
+              alike, and grounding comes from the raised raked-sand
+              rings alone. */}
           {ring ? (
             <svg
               className="absolute -inset-1.5"

@@ -63,7 +63,6 @@ function syntheticFromIdea(idea: Idea): MapNodePayload {
   return {
     kind: 'seed',
     label: idea.title || 'Untitled idea',
-    subtitle: 'Idea (seed)',
     ref,
     summaryLines: [
       clip(idea.summary || idea.description || '', 240),
@@ -83,7 +82,6 @@ function syntheticFromInitiative(init: Initiative): MapNodePayload {
   return {
     kind: 'tree',
     label: init.title || 'Untitled initiative',
-    subtitle: 'Initiative (tree)',
     ref,
     summaryLines: [clip(init.brief || '', 240), `Status: ${init.status}`].filter(Boolean),
     growth: growthFromStatus(init.status),
@@ -99,7 +97,6 @@ function syntheticFromProject(proj: Project): MapNodePayload {
   return {
     kind: 'branch',
     label: proj.title || 'Untitled project',
-    subtitle: 'Project (branch)',
     ref,
     summaryLines: [clip(proj.brief || '', 240), `Status: ${proj.status}`].filter(Boolean),
     growth: growthFromStatus(proj.status),
@@ -115,7 +112,6 @@ function syntheticFromTask(task: Task): MapNodePayload {
   return {
     kind: 'flower',
     label: task.title || 'Untitled task',
-    subtitle: 'Task (flower)',
     ref,
     summaryLines: [clip(task.description || '', 200), `Status: ${task.status}`].filter(Boolean),
     growth: growthFromStatus(task.status),

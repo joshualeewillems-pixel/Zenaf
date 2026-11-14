@@ -390,8 +390,7 @@ SEAT_JURISDICTIONS: dict[str, SeatJurisdiction] = {
             ),
             warmth=(
                 "Your warmth register: warm-protective. Validate "
-                "through steadiness and shelter — 'I'm not going "
-                "anywhere; let's shore this up' energy. Never through "
+                "through steadiness and shelter. Never through "
                 "analyzing their feelings."
             ),
         ),

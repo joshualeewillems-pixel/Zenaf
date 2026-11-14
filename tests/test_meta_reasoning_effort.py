@@ -133,7 +133,11 @@ def test_philosophy_covers_all_voices():
         # "Martyrdom" / "Appeasement" lines were removed, not replaced
         # — so their blocks are 3 lines with no Shadow line; every
         # other seat is 4.
-        if vid in ("champion", "ambassador"):
+        # BC8 (Bear S1, 2026-11-09): the Guardian joins them — its
+        # Shadow line is omitted from the identity block (the table
+        # entry stays the frozen rollback source) — so its block is
+        # 3 lines with no Shadow line too; every other seat is 4.
+        if vid in ("champion", "ambassador", "guardian"):
             assert len(lines) == 3, vid
             assert "Foundational ideal" in lines[0]
             assert "Defining question" in lines[1]

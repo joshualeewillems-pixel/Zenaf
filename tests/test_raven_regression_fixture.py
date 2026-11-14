@@ -335,7 +335,7 @@ def test_t9_lengths():
     # the pre-S1 baseline (RC1 is in the tier, not their frames).
     expected_frames = {
         "weaver": (7943, 6176), "ambassador": (8082, 4790),
-        "guardian": (7198, 4049), "mentor": (8277, 5486),
+        "guardian": (8041, 4863), "mentor": (8277, 5486),
         "maverick": (7670, 4494), "champion": (8168, 5064),
     }
     for seat, arch, script, builder in SEATS:
@@ -390,7 +390,7 @@ def test_t10_scope_guards():
 
 def test_t11_name_guard_counts_unchanged():
     expected = {
-        "weaver": (1, 1), "ambassador": (2, 1), "guardian": (1, 1),
+        "weaver": (1, 1), "ambassador": (2, 1), "guardian": (2, 1),
         "mentor": (1, 1), "skeptic": (2, 1), "maverick": (2, 1),
         "champion": (2, 1),
     }

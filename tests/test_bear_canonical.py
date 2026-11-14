@@ -13,21 +13,21 @@ every test is deterministic prompt inspection.
 
 Scope notes (read before "fixing" a failure by weakening a test):
 
-- The legacy ``philosophy_prompt_lines`` function is INTENTIONALLY
-  untouched (frozen rollback source). Its output still contains
-  shadow/tension lines; the canonical branch bypasses it for
-  ordinary Bear turns instead of modifying it. There is
-  deliberately NO test asserting it returns ideal+question only.
+- The ``ARCHETYPE_PHILOSOPHY`` table is the frozen rollback source
+  and stays untouched. The ``philosophy_prompt_lines`` function
+  that renders it now omits the Shadow line for the guardian (BC8,
+  Bear S1 2026-11-07) and for any seat with no "shadow" entry
+  (Champion, FC7); every other seat's lines are byte-identical.
+  The canonical branch bypasses the function for ordinary Bear
+  turns instead of modifying it further.
 - Meeting turns (canonical=False) keep the exact legacy assembly,
-  including its philosophy lines. The encounter-eligibility test
-  pins the encounter's OWN material (scripts + frames): the
-  script texts carry no protected formulations, while the
-  composed definition frames carry exactly ONE known pre-existing
-  pattern — the definition line "Shadow: smothering." — the
-  LEGACY label word, not the adopted possessiveness-disguised-
-  as-care formulation. That meeting-path material is out of scope
-  for this plan (ordinary renderer only) and is pinned here so it
-  cannot silently grow.
+  including its philosophy lines — minus the guardian's Shadow
+  line (BC8). The encounter-eligibility test pins the encounter's
+  OWN material (scripts + frames): the script texts carry no
+  protected formulations, and no "Shadow:" label remains in any
+  frame — the Gardener correction's G4/D1 removed the slice line
+  "Shadow: smothering." system-wide, and its absence is pinned
+  (count == 0) so it cannot silently return.
 - The §2 rendering form of the ideal is an ALTERED sentence
   ("You protect the conditions in which life can flourish, and
   preservation takes tenderness and sometimes ferocity."): the
@@ -73,6 +73,7 @@ from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import (
     ANTI_PRESUMPTION_STYLE,
     build_archetype_prompt_lines,
+    philosophy_prompt_lines,
 )
 from local_ai.council.canonical.bear import BEAR_RECORD
 from local_ai.council.render import (
@@ -265,7 +266,7 @@ def test_record_sections_and_keys_match_exemplar():
         "temperament", "personality", "demeanor", "perceptual_habit",
         "fuller_middle", "expressive_terrain", "domain_tension",
         "governing_conviction", "ideal_rendering_form",
-        "affirmative_conviction", "voice_and_humor", "voice_fuller",
+        "affirmative_conviction", "generosity_as_keeping", "voice_and_humor", "voice_fuller",
         "warmth", "friction", "implied_history",
         "established_biography", "invariants", "expressive_defaults",
     }
@@ -370,6 +371,7 @@ EXPECTED_ELIGIBLE = {
     ("characterization", "governing_conviction"),
     ("characterization", "ideal_rendering_form"),
     ("characterization", "affirmative_conviction"),
+    ("characterization", "generosity_as_keeping"),
     ("characterization", "voice_and_humor"),
     ("characterization", "voice_fuller"),
     ("characterization", "warmth"),
@@ -391,6 +393,8 @@ def test_eligibility_matrix():
     assert ("characterization", "ideal_rendering_form") in eligible
     assert ("characterization", "fuller_middle") in eligible
     assert ("characterization", "voice_fuller") in eligible
+    # Bear S1 (Q1): generosity as keeping is adopted + characterization.
+    assert ("characterization", "generosity_as_keeping") in eligible
     # Adopted + protected → EXCLUDED despite adopted standing.
     assert ("protected", "shadow") not in eligible
     assert ("protected", "developmental_knowledge") not in eligible
@@ -734,24 +738,36 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
     monkeypatch.setattr(R, "BEAR_CANONICAL_CUTOVER", False)
     lines, _ = build_voice_prompt("u1", "guardian", "hello", [], mode="base")
     assert lines == _legacy_minimal_prompt(monkeypatch)
-    # EXPLICIT legacy assertion: the old shadow and tension lines
-    # are PRESENT exactly in the OFF branch. They are unacceptable
-    # in the canonical branch and intentional here — the rollback
-    # branch is frozen, not sanitized. NOTE: the shadow line MATCHES
-    # the adopted shadow's diagnosis and is STILL present here by
-    # design (rollback fidelity) and STILL absent from the canonical
-    # branch (protection regardless of source).
+    # BC8 (Bear S1, 2026-11-07): the identity-block shadow line is
+    # ABSENT from the guardian's legacy lines — philosophy_prompt_lines
+    # no longer emits it for the guardian — while the tension line
+    # stands. The ARCHETYPE_PHILOSOPHY table stays the frozen rollback
+    # source (the shadow text remains in it); only the function's
+    # guardian output changed. Scoping proof: the four seats that
+    # still carry a shadow line keep it; the Champion (FC7) and the
+    # Ambassador (CC5) have none because their table entries were
+    # removed by those corrections, not this one.
     joined = _joined(lines)
     assert (
         "Shadow — your characteristic failure mode, which the Skeptic "
         "may name: Smothering: possessiveness, shielding people from "
         "necessary growth."
-    ) in joined
+    ) not in joined
     assert (
         "Live tension with the other seats: Accuses the Maverick of "
         "irresponsibility; fears the Champion's battles will burn "
         "what the Guardian keeps."
     ) in joined
+    for other in ("mentor", "maverick", "conductor", "skeptic"):
+        other_joined = "\n".join(philosophy_prompt_lines(other))
+        assert (
+            "Shadow — your characteristic failure mode, which the Skeptic "
+            "may name:" in other_joined
+        ), other
+    for shadowless in ("champion", "ambassador"):
+        assert "Shadow — your characteristic failure mode" not in "\n".join(
+            philosophy_prompt_lines(shadowless)
+        ), shadowless
 
 
 def test_branch_meeting_path_keeps_exact_legacy_prompt(monkeypatch):

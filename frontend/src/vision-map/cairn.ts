@@ -18,6 +18,8 @@
 import type { Edge, Node, XYPosition } from '@xyflow/react'
 import type { ConditionSeverity, MapNodePayload } from './ontology'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
+import { activityScore } from './nesting'
+import type { CairnMemberInput } from './cairnTower'
 
 /** Rendered-node thresholds: past these, project subtrees become cairns. */
 export const CAIRN_NARROW_THRESHOLD = 40
@@ -93,6 +95,28 @@ export type CairnPreviewStone = {
   kind: MapNodePayload['kind']
   severity: number
   pulse: boolean
+}
+
+/**
+ * The cairn's real members, in the payload shape the ported tower
+ * layout consumes (cairnTower.ts). Placement is historical: `id` is
+ * the member node's own id (its permanent identity), `createdAt` its
+ * entity arrival time threaded from the projection
+ * (`entity_created_at`), `activity` April's score (vitality — current,
+ * never an ordering input for placement).
+ */
+export function cairnMembersOf(memberNodes: Node<MapNodePayload>[]): CairnMemberInput[] {
+  return memberNodes.map((m) => {
+    const d = m.data as MapNodePayload
+    const created = (d as { entity_created_at?: unknown }).entity_created_at
+    return {
+      id: m.id,
+      kind: d.kind,
+      activity: activityScore(d),
+      createdAt: typeof created === 'string' && created ? created : null,
+      growth: d.growth,
+    }
+  })
 }
 
 /**
@@ -177,6 +201,7 @@ export function applyCairnMode(
         cairnProjectId: pid,
         cairnCount: all.length,
         cairnPreview: preview,
+        cairnMembers: cairnMembersOf(all),
       },
     }
 
@@ -444,6 +469,31 @@ export function buildGardenStackNode(
   }
   previews.sort((a, b) => b.severity - a.severity)
   const totalStones = subtreeCairns.reduce((t, c) => t + cairnStoneCount(c), 0)
+  /* The stack's pile is built from the subtree cairns' real members
+     where the cairn-mode pass provided them. Aggregates that predate
+     member threading (fixtures, sample graphs) fall back to synthetic
+     members keyed by the cairn id — order within the aggregate is
+     then preview order, disclosed in the port PR. */
+  const stackMembers: CairnMemberInput[] = []
+  for (const c of subtreeCairns) {
+    const cm = (c.data as { cairnMembers?: unknown }).cairnMembers
+    if (Array.isArray(cm) && cm.length) {
+      for (const m of cm as CairnMemberInput[]) stackMembers.push(m)
+    } else {
+      const count = cairnStoneCount(c)
+      const cp = (c.data as { cairnPreview?: unknown }).cairnPreview
+      const cpArr = Array.isArray(cp) ? (cp as CairnPreviewStone[]) : []
+      for (let i = 0; i < count; i++) {
+        stackMembers.push({
+          id: `${c.id}:stack:${i}`,
+          kind: cpArr[i]?.kind ?? 'branch',
+          activity: 0.5,
+          createdAt: null,
+          growth: cpArr[i]?.growth ?? 'dormant',
+        })
+      }
+    }
+  }
   let maxSeverity: ConditionSeverity = 0
   let anyPulse = false
   for (const c of subtreeCairns) {
@@ -470,6 +520,7 @@ export function buildGardenStackNode(
       cairnProjectId: null,
       cairnCount: totalStones,
       cairnPreview: previews.slice(0, 4),
+      cairnMembers: stackMembers,
       ref: treeData.ref,
     },
   }

@@ -990,3 +990,39 @@
     animation: none;
   }
 }
+
+/* Cairn port (2026-11-13): painted-stone tint stacks. Structure only —
+   the blend layers' mask + tint background are assigned after mount by
+   CairnStoneSprite (isolation row E construction; see that file). The
+   mask-image itself is per-sprite, so it cannot live in this sheet. */
+.cairn-tint-stack {
+  position: absolute;
+  inset: 0;
+}
+.cairn-stone-base {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.cairn-tint-layer {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: color;
+  pointer-events: none;
+}
+.cairn-soft-layer {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: soft-light;
+  opacity: 0.5;
+  pointer-events: none;
+}
+/* Garden rings (cairn port): decorative rake circles anchored to each
+   cairn's footprint. They yield to the user's own rake interaction —
+   the view flags rake activity and the rings fade to a whisper. */
+.cairn-garden-rings {
+  transition: opacity 0.45s ease;
+}
+.cairn-garden-rings--yielding {
+  opacity: 0.12;
+}

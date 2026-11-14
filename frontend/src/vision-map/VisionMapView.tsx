@@ -677,6 +677,33 @@ function VisionMapFlow({
     [nodes],
   )
 
+  /**
+   * Garden rings yield: while the rake is live (enabled, not suspended
+   * by an armed drag) and the pointer is moving over the map, the
+   * decorative rings around each cairn fade so the user's own rake
+   * work owns the sand. Clears ~1.5s after the last pointer activity.
+   */
+  const [rakeActive, setRakeActive] = useState(false)
+  useEffect(() => {
+    if (!rakeEnabled || dragArmedActive) {
+      setRakeActive(false)
+      return
+    }
+    let idle: ReturnType<typeof setTimeout> | null = null
+    const onActivity = () => {
+      setRakeActive(true)
+      if (idle) clearTimeout(idle)
+      idle = setTimeout(() => setRakeActive(false), 1500)
+    }
+    window.addEventListener('pointermove', onActivity, { passive: true })
+    window.addEventListener('pointerdown', onActivity, { passive: true })
+    return () => {
+      window.removeEventListener('pointermove', onActivity)
+      window.removeEventListener('pointerdown', onActivity)
+      if (idle) clearTimeout(idle)
+    }
+  }, [rakeEnabled, dragArmedActive])
+
   const cairnInteractionValue = useMemo(
     () => ({
       onToggleCairn: toggleCairn,
@@ -684,8 +711,9 @@ function VisionMapFlow({
       onOpenStoneData,
       onDragArm,
       onPressSpent,
+      rakeActive,
     }),
-    [toggleCairn, toggleGardenStack, onOpenStoneData, onDragArm, onPressSpent],
+    [toggleCairn, toggleGardenStack, onOpenStoneData, onDragArm, onPressSpent, rakeActive],
   )
 
   /** After a failed load the graph is empty; reset pan/zoom so a prior 20% zoom doesn’t hide the next success. */

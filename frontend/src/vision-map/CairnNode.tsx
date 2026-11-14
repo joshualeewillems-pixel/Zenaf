@@ -1,14 +1,19 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import type { ConditionSeverity, MapNodePayload } from './ontology'
+import type { ConditionSeverity, GrowthState, MapEntityKind, MapNodePayload } from './ontology'
 import {
-  SymbolicStone,
+  StoneGlyphMark,
   washColorFor,
   glyphForGrowth,
   type StoneGlyph,
 } from './symbolicStone'
 import { isGardenStackData, type CairnPreviewStone } from './cairn'
-import { towerLayout, type TowerStone } from './cairnTower'
+import {
+  towerLayoutForMembers,
+  type CairnMemberInput,
+  type PortedStone,
+} from './cairnTower'
+import { CairnStoneSprite } from './CairnStoneSprite'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { useNodeHoldGestures } from './useLongPress'
 import { useCairnInteraction } from './cairnContext'
@@ -24,29 +29,85 @@ const URGENCY_RING = '#d9a441'
 const PULSE_RING = '#86b89a'
 
 /**
- * Trail-cairn tower geometry lives in ./cairnTower (pure, deterministic):
- * a rule-of-thirds procedural sculpture — each consecutive triple stays
- * balanced, so the tower can lean, cantilever and recover like a real
- * rock-balancing sculpture — with small accent pebbles perched precariously
- * on column rims as the count grows toward twelve.
+ * Cairn — a project's stones as one cairn pile, rendered by the ported
+ * tower layout (./cairnTower): sumi-e sprite stones seated on a
+ * structural slab by the settled layout law (April spine + October
+ * triples + bearing segments + profile seating + growth law), tinted
+ * per member through the post-mount mask construction
+ * (./CairnStoneSprite), with raked garden rings anchored to the pile's
+ * actual footprint. The sub-stones are purely decorative (aria-hidden,
+ * pointer-events-none): the cairn node is the single hit target for
+ * tap (select/inspect), double-tap or the longer hold (fan out — or
+ * unstack for a garden stack), the first hold (arm drag), and drag.
  */
 
-const NEUTRAL_PREVIEW: CairnPreviewStone = {
-  growth: 'dormant',
-  kind: 'branch',
-  severity: 0,
-  pulse: false,
+/** Garden rings (port spec §6): concentric, dash-broken, squashed to
+    the garden plane, anchored to the pile's measured footprint. The
+    first ring sits 6px beyond the footprint, spacing 10.5px, groove
+    fading ~0.78 per ring — extent is a continuous function of the
+    footprint, so the rings grow gradually with the pile. The global
+    rake register is the sand bed itself (ZenSandCanvas); these local
+    rings yield while the user rakes (cairnContext.rakeActive). */
+function GardenRings({
+  cx,
+  groundY,
+  halfWidth,
+  yielding,
+}: {
+  cx: number
+  groundY: number
+  halfWidth: number
+  yielding: boolean
+}) {
+  const rings = []
+  for (let k = 0; k < 24; k++) {
+    const rx = halfWidth + 6 + k * 10.5
+    const grooveOpacity = 0.36 * Math.pow(0.78, k)
+    if (grooveOpacity < 0.03) break
+    const ry = rx * 0.3
+    const dash = `${6 + (k % 3) * 2.5} ${4 + (k % 2) * 2}`
+    rings.push(
+      <g key={k}>
+        <ellipse
+          cx={cx}
+          cy={groundY + 1.4}
+          rx={rx}
+          ry={ry}
+          fill="none"
+          stroke="#9c7a4c"
+          strokeWidth={1.6}
+          strokeDasharray={dash}
+          opacity={0.13 * Math.pow(0.78, k)}
+        />
+        <ellipse
+          cx={cx}
+          cy={groundY}
+          rx={rx}
+          ry={ry}
+          fill="none"
+          stroke="#120b06"
+          strokeWidth={1.6}
+          strokeDasharray={dash}
+          opacity={grooveOpacity}
+        />
+      </g>,
+    )
+  }
+  return (
+    <svg
+      className={`cairn-garden-rings${yielding ? ' cairn-garden-rings--yielding' : ''}`}
+      style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible' }}
+      width="100%"
+      height="100%"
+      aria-hidden="true"
+    >
+      {rings}
+    </svg>
+  )
 }
 
-/**
- * Cairn — a project's stones as one trail-cairn tower. The sub-stones are
- * purely decorative (aria-hidden, pointer-events-none): the cairn node is
- * the single hit target for tap (select/inspect), double-tap or the
- * longer hold (fan out — or unstack for a garden stack), the first hold
- * (arm drag), and drag (move the pile).
- */
 export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
-  const { onToggleCairn, onDragArm, onPressSpent } = useCairnInteraction()
+  const { onToggleCairn, onDragArm, onPressSpent, rakeActive } = useCairnInteraction()
   const toggle = useCallback(() => onToggleCairn(id), [onToggleCairn, id])
   const lp = useNodeHoldGestures({
     onDragArm: (info) => onDragArm(id, info.pointerId, info.clientX, info.clientY),
@@ -61,13 +122,43 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
   const severity: ConditionSeverity = effectiveConditionSeverity(data)
   const labelTone = stoneTextTone('branch')
 
-  const { stones, height: towerH, width: towerW } = towerLayout(id, Math.max(count, 1))
-  // Most urgent on top: preview arrives urgency-ordered. Accent pebbles
-  // are neutral (a plain seed glyph reads cleanest at small scale).
-  const stoneData = (st: TowerStone): CairnPreviewStone =>
-    st.accent || st.previewIndex < 0
-      ? NEUTRAL_PREVIEW
-      : (preview[st.previewIndex] ?? preview[preview.length - 1] ?? NEUTRAL_PREVIEW)
+  /* The pile's members: the cairn pass threads the real members
+     (stable ids, arrival times, activity, growth) onto the node.
+     Graphs and fixtures without member threading fall back to
+     preview-shaped members — the same information the legacy renderer
+     had — so the pile still builds. */
+  const members = useMemo<CairnMemberInput[]>(() => {
+    const raw = (data.cairnMembers ?? null) as CairnMemberInput[] | null
+    if (Array.isArray(raw) && raw.length) return raw
+    const out: CairnMemberInput[] = []
+    for (let i = 0; i < Math.max(count, 1); i++) {
+      const p = preview[i]
+      out.push({
+        id: `${id}:preview:${i}`,
+        kind: p?.kind ?? 'branch',
+        activity: 0.5,
+        createdAt: null,
+        growth: p?.growth ?? 'dormant',
+      })
+    }
+    return out
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, count, JSON.stringify(data.cairnMembers ?? null), preview.length])
+
+  const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
+  const layoutKey = `${id}|${wash}|${members.map((m) => `${m.id}@${m.createdAt ?? ''}`).join(',')}`
+  const layout = useMemo(
+    () => towerLayoutForMembers(id, members, { wash }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layoutKey],
+  )
+
+  const glyphOf = (st: PortedStone): StoneGlyph | null => {
+    if (st.role !== 'column' || !st.memberId) return null
+    const m = memberById.get(st.memberId)
+    if (!m) return null
+    return glyphForGrowth((m.growth ?? 'dormant') as GrowthState, (m.kind ?? 'branch') as MapEntityKind)
+  }
 
   const ring =
     severity > 0
@@ -98,10 +189,31 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
       title={title}
       {...lp}
     >
-      <div className="relative mx-auto" style={{ width: towerW, height: towerH + 10 }}>
+      <div className="relative mx-auto" style={{ width: layout.width, height: layout.height + 10 }}>
         {/* Decorative pile only — no pointer affordances here; the node
             root above is the single tap/hold/drag target. */}
         <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+          <GardenRings
+            cx={layout.footprintCx}
+            groundY={layout.groundY}
+            halfWidth={layout.footprintHalfWidth}
+            yielding={rakeActive}
+          />
+          <svg
+            style={{ position: 'absolute', left: 0, top: 0, overflow: 'visible', filter: 'blur(3px)' }}
+            width="100%"
+            height="100%"
+            aria-hidden="true"
+          >
+            <ellipse
+              cx={layout.footprintCx}
+              cy={layout.groundY + 2}
+              rx={layout.footprintHalfWidth * 0.92}
+              ry={layout.footprintHalfWidth * 0.92 * 0.3}
+              fill="#000000"
+              opacity={0.32}
+            />
+          </svg>
           {ring ? (
             <svg
               className="absolute -inset-1.5"
@@ -122,34 +234,40 @@ export function CairnNode({ id, data, selected }: NodeProps<CairnRfNode>) {
               />
             </svg>
           ) : null}
-          {stones.map((s, i) => {
-            const p = stoneData(s)
+          {layout.stones.map((s) => {
+            const glyph = glyphOf(s)
+            const glyphSize = Math.min(s.bodyWidth, s.bodyHeight) * 0.6
             return (
               <div
-                key={i}
+                key={s.seed}
                 className="absolute"
                 style={{
                   left: s.left,
                   top: s.top,
-                  width: s.size,
-                  height: s.size,
+                  width: s.width,
+                  height: s.height,
                   transform: `rotate(${s.rotation}deg)`,
-                  // rotate around the stone body's center (viewbox 31.5,38)
-                  transformOrigin: '49.2% 59.4%',
+                  // Rotate around the stone body's centre — the layout
+                  // reports it in frame-box coordinates.
+                  transformOrigin: `${s.originX}px ${s.originY}px`,
                 }}
               >
-                <SymbolicStone
-                  growth={s.accent ? 'dormant' : p.growth}
-                  kind={p.kind}
-                  severity={0}
-                  fertilizerPulse={false}
-                  washColor={wash}
-                  variantSeed={s.seed}
-                  size={s.size}
-                  // Only the base stone (index 0 — column is bottom-up)
-                  // touches the ground; stacked stones cast no shadow.
-                  groundShadow={i === 0}
-                />
+                <CairnStoneSprite src={s.spriteUrl} tint={s.tint} />
+                {glyph ? (
+                  <svg
+                    viewBox="0 0 64 64"
+                    style={{
+                      position: 'absolute',
+                      left: s.originX - glyphSize / 2,
+                      top: s.originY - glyphSize / 2,
+                      width: glyphSize,
+                      height: glyphSize,
+                    }}
+                    aria-hidden="true"
+                  >
+                    <StoneGlyphMark glyph={glyph} />
+                  </svg>
+                ) : null}
               </div>
             )
           })}

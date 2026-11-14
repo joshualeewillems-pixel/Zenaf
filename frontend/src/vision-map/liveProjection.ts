@@ -502,6 +502,7 @@ function layoutProjectsUnderTree(
             ].filter(Boolean),
             growth: growthFromStatus(proj.status),
             condition: branchBaseCond,
+            entity_created_at: proj.created_at ?? null,
           },
           councilRuns,
           vProj,
@@ -548,6 +549,10 @@ function layoutProjectsUnderTree(
               ],
               growth: 'fruiting',
               condition: 'healthy',
+              // The fruit is synthesized from the project brief at
+              // completion; the project's updated_at is the only
+              // recoverable arrival time for the outcome.
+              entity_created_at: proj.updated_at ?? null,
             },
             councilRuns,
             vProj,
@@ -599,6 +604,7 @@ function layoutProjectsUnderTree(
               ].filter(Boolean),
               growth: growthFromStatus(t.status),
               condition: taskBase,
+              entity_created_at: t.created_at ?? null,
             },
             councilRuns,
             vTask,

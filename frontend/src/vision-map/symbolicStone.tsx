@@ -204,6 +204,13 @@ function Glyph({ glyph }: { glyph: StoneGlyph }) {
   }
 }
 
+/** The lifecycle glyph alone, in SymbolicStone's 64×64 viewBox — for
+    overlays on sprite-rendered stones (the ported cairn pile), where
+    vitality still needs its visual outlet. */
+export function StoneGlyphMark({ glyph }: { glyph: StoneGlyph }) {
+  return <Glyph glyph={glyph} />
+}
+
 export type SymbolicStoneProps = {
   growth: GrowthState
   kind: MapEntityKind

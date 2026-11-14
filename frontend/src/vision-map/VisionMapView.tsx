@@ -43,6 +43,7 @@ import {
   applyDragPositions,
   applyGardenStack,
   branchAnchorForCairn,
+  defaultStackedTreeIds,
   doubleTapTargetFor,
   dropDragPositions,
   expandCairn,
@@ -360,8 +361,10 @@ function VisionMapFlow({
   /** Cairn mode: honest counts for the notice; the index + anchors live in refs (not render state). */
   const [cairnMeta, setCairnMeta] = useState({ totalStones: 0, cairnCount: 0, cairned: false })
   const [expandedCairns, setExpandedCairns] = useState<ReadonlySet<string>>(new Set())
-  /** Per-initiative stacking: stacked tree ids. Each stacked initiative
-      becomes its garden stack; its descendant cairns hide beneath the pile. */
+  /** Per-initiative stacking: stacked tree ids, seeded with every
+      initiative on load (stacks on by default, 2026-11-13) and toggled
+      per initiative from there. Each stacked initiative becomes its
+      garden stack; its descendant cairns hide beneath the pile. */
   const [stackedInitiatives, setStackedInitiatives] = useState<ReadonlySet<string>>(new Set())
   const cairnIndexRef = useRef<CairnIndex>({})
   const cairnAnchorRef = useRef<Record<string, XYPosition>>({})
@@ -532,7 +535,10 @@ function VisionMapFlow({
       cairnAnchorRef.current = {}
       setCairnMeta({ totalStones: g.totalStones, cairnCount: g.cairnCount, cairned: g.cairned })
       setExpandedCairns(new Set())
-      setStackedInitiatives(new Set())
+      /* Stacks on by default (founder ruling, 2026-11-13): every
+         initiative opens as the pile on its own stone, its tree nested
+         at the base; the hold ladder unstacks per initiative. */
+      setStackedInitiatives(defaultStackedTreeIds(g.nodes))
       setBaseGraph({ nodes: g.nodes, edges: g.edges })
       setNestState(EMPTY_NEST_STATE)
       setPositionOverrides({})

@@ -157,10 +157,11 @@ function finalizeMapNodePayload(
 
 export type LiveVisionMapGraphOptions = {
   /**
-   * Rendered-node threshold for cairn mode. When the projected graph holds
-   * more nodes than this, project subtrees collapse into cairns (stacked
-   * stones, nothing dropped). Omit / undefined = no cairning, today's
-   * behavior exactly.
+   * Requests cairn mode: project subtrees collapse into cairns (stacked
+   * stones, nothing dropped). Since the founder's 2026-11-13 ruling the
+   * value no longer gates by garden size — any project group with ≥2
+   * linked members piles, in a garden of any size. Omit / undefined =
+   * no cairning, the plain graph exactly.
    */
   cairnThreshold?: number
 }
@@ -209,7 +210,6 @@ export function buildLiveVisionMapGraph(
           {
             kind: 'seed',
             label: idea.title || 'Untitled idea',
-            subtitle: 'Idea (seed)',
             ref,
             summaryLines: [
               clip(idea.summary || idea.description || '', 240),
@@ -258,7 +258,6 @@ export function buildLiveVisionMapGraph(
           {
             kind: 'tree',
             label: 'Unscoped work',
-            subtitle: 'Initiative (projection)',
             ref,
             summaryLines: [
               'Projects with no initiative_id; shown for visibility. Assign an initiative in operator mode.',
@@ -324,7 +323,6 @@ export function buildLiveVisionMapGraph(
               {
                 kind: 'seed',
                 label: idea.title || 'Idea',
-                subtitle: 'Idea (seed)',
                 ref: iref,
                 summaryLines: [
                   clip(idea.summary || idea.description || '', 200),
@@ -370,7 +368,6 @@ export function buildLiveVisionMapGraph(
           {
             kind: 'tree',
             label: ini.title || 'Initiative',
-            subtitle: 'Initiative (tree)',
             ref: iniRef,
             summaryLines: [
               clip(ini.brief || '', 220),
@@ -379,6 +376,10 @@ export function buildLiveVisionMapGraph(
             ].filter(Boolean),
             growth: growthFromStatus(ini.status),
             condition: conditionFromSignals({ stale: iniStale }),
+            // The tree's arrival, threaded like branches/flowers/fruit:
+            // the garden stack seats the tree as its pile's parent
+            // member, and placement reads arrival (cairn.ts).
+            entity_created_at: ini.created_at ?? null,
           },
           councilRuns,
           vIni,
@@ -435,7 +436,6 @@ export function buildLiveVisionMapGraph(
           {
             kind: 'landmark',
             label: lm.label,
-            subtitle: lm.subtitle,
             ref: lm.ref,
             summaryLines: [`${lm.subtitle} — a landmark, not a crop`],
             growth: 'dormant',
@@ -493,7 +493,6 @@ function layoutProjectsUnderTree(
           {
             kind: 'branch',
             label: proj.title || 'Project',
-            subtitle: 'Project (branch)',
             ref: pref,
             summaryLines: [
               clip(proj.brief || '', 180),
@@ -540,7 +539,6 @@ function layoutProjectsUnderTree(
             {
               kind: 'fruit',
               label: clip(proj.brief.trim(), 72),
-              subtitle: 'Outcome (fruit)',
               ref: fruitRef,
               parentRef: pref,
               summaryLines: [
@@ -595,7 +593,6 @@ function layoutProjectsUnderTree(
             {
               kind: 'flower',
               label: t.title || 'Task',
-              subtitle: 'Task (flower)',
               ref: taskRef,
               summaryLines: [
                 `Status: ${t.status}`,

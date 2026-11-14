@@ -249,7 +249,6 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
   map.set(`seed:${idea.id}`, finalize({
     kind: 'seed',
     label: idea.title,
-    subtitle: 'Idea',
     growth: growthFromStatus(idea.status),
     condition: 'healthy',
     ref: { veType: 'idea', id: idea.id },
@@ -265,7 +264,6 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
   map.set(`tree:${initiative.id}`, finalize({
     kind: 'tree',
     label: initiative.title,
-    subtitle: 'Initiative',
     growth: growthFromStatus(initiative.status),
     condition: 'healthy',
     ref: { veType: 'initiative', id: initiative.id },
@@ -285,7 +283,6 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
     map.set(`branch:${p.id}`, finalize({
       kind: 'branch',
       label: p.title,
-      subtitle: 'Project',
       growth: growthFromStatus(p.status),
       condition: conditionFromSignals({ stale, blocked: false }),
       ref: { veType: 'project', id: p.id },
@@ -308,7 +305,6 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
     map.set(`flower:${t.id}`, finalize({
       kind: 'flower',
       label: t.title,
-      subtitle: 'Task',
       growth: growthFromStatus(t.status),
       condition: conditionFromSignals({
         blocked,
@@ -333,7 +329,6 @@ export function buildSampleNodePayloads(bundle: VisionMapSampleBundle): Map<stri
     map.set(`fruit:${o.id}`, finalize({
       kind: 'fruit',
       label: o.title,
-      subtitle: 'Outcome',
       growth: growthFromStatus(o.status),
       condition: 'healthy',
       ref: { veType: 'outcome', id: o.id },

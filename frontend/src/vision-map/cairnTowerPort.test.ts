@@ -195,6 +195,73 @@ describe('cairn port — structure', () => {
   })
 })
 
+describe('cairn port — parent base seat (founder ruling, 2026-11-13)', () => {
+  /** A pile whose parent is deliberately unremarkable: the LATEST
+      arrival and the LOWEST activity in the pile. Under the old law
+      (pure historical build order, April base = highest-activity
+      structural) this member would sit nowhere near the base — the
+      reservation, and only the reservation, seats it at the bottom. */
+  function parentedMembers(n: number): CairnMemberInput[] {
+    const base = members(n)
+    const parent: CairnMemberInput = {
+      id: 'parent-branch',
+      kind: 'branch',
+      activity: 0.01,
+      // Later than every sibling's arrival.
+      createdAt: new Date(1700000000000 + n * 86400000).toISOString(),
+      growth: 'growing',
+      parent: true,
+    }
+    return [...base, parent]
+  }
+
+  it('the parent is the bottom member — above the slab, beneath the stack — whatever its arrival or activity', { timeout: T }, () => {
+    const dbg = towerDebugForMembers('cairn-proj-parent', parentedMembers(5), { wash: '#e7aa89' })
+    expect(dbg.col[0]!.role).toBe('slab')
+    const bottom = dbg.col[1]!
+    expect(bottom.memberId).toBe('parent-branch')
+    expect(bottom.pairOK).toBe(true)
+  })
+
+  it('the parent always renders: past the 12-member cap a late-arriving parent is not sliced off', { timeout: T }, () => {
+    const layout = towerLayoutForMembers('cairn-proj-parent-cap', parentedMembers(13), { wash: '#e7aa89' })
+    expect(layout.columnCount).toBe(12)
+    const columnIds = layout.stones.filter((s) => s.role === 'column').map((s) => s.memberId)
+    expect(columnIds).toContain('parent-branch')
+    // And it is the FIRST column stone in paint order (the bottom).
+    expect(columnIds[0]).toBe('parent-branch')
+  })
+
+  it('growth immobility composes with the reservation: arrivals append above the parent, nothing seated moves', { timeout: T }, () => {
+    const withParent = (n: number): CairnMemberInput[] => {
+      const parent: CairnMemberInput = {
+        id: 'parent-branch',
+        kind: 'branch',
+        activity: 0.4,
+        createdAt: new Date(1700000000000).toISOString(),
+        growth: 'growing',
+        parent: true,
+      }
+      return [parent, ...members(n - 1, 'g')]
+    }
+    let prev = towerDebugForMembers('cairn-proj-parent-growth', withParent(2), { wash: '#9db8c9' })
+    expect(prev.col[1]!.memberId).toBe('parent-branch')
+    for (let n = 3; n <= 8; n++) {
+      const next = towerDebugForMembers('cairn-proj-parent-growth', withParent(n), { wash: '#9db8c9' })
+      const prevByMember = new Map(prev.col.filter((b) => b.memberId).map((b) => [b.memberId, b]))
+      for (const body of next.col) {
+        if (!body.memberId) continue
+        const p = prevByMember.get(body.memberId)
+        if (!p) continue
+        expect([body.x, body.y, body.w, body.h, body.rot, body.sprite]).toEqual([p.x, p.y, p.w, p.h, p.rot, p.sprite])
+      }
+      // The parent never leaves the base as the pile grows.
+      expect(next.col[1]!.memberId).toBe('parent-branch')
+      prev = next
+    }
+  })
+})
+
 describe('cairn port — legacy wrappers (harness compatibility)', () => {
   it('towerLayout / towerDebug keep their October shapes', { timeout: T }, () => {
     const layout = towerLayout('cairn-legacy', 5)

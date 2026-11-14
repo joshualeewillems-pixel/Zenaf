@@ -3,7 +3,7 @@
  *
  * ONE `<svg>` subtree per stone (no defs/ids, so any number can share the
  * page): an irregular granite silhouette (4 hand-drawn variants, stable per
- * stone), speckles, a soft ground shadow, a growth-state glyph, a thin
+ * stone), speckles, a soft ground shadow, a thin
  * urgency ring only when the stone needs attention, and a faint
  * strand-palette wash. Matte on purpose — no gloss highlights.
  * Cairn stacks reuse this at smaller scale.
@@ -12,9 +12,13 @@
  * - silhouette: field stone — asymmetric, wider than tall, slight rotation
  * - granite: warm gray tones, deterministic per stone
  * - wash: faint strand-palette tint per project (subtle, not the whole stone)
- * - glyph (lifecycle): seed / sprout / sapling / bloom / fruit (+ wilted)
  * - ring: thin amber ring only when structural severity > 0 (calm, not an
  *   alarm); soft green ring when recently updated (fertilizer pulse)
+ *
+ * No mark is drawn ON the stone (founder ruling, 2026-11-13): a stone
+ * shows its name and its status — its type is not displayed, and its
+ * lifecycle gets no on-stone glyph. The lifecycle glyph survives only
+ * as the StoneGlyphMark export below, for overlays rendered elsewhere.
  */
 import type { CSSProperties } from 'react'
 import type { ConditionSeverity, GrowthState, MapEntityKind, MapEntityRef } from './ontology'
@@ -231,8 +235,8 @@ export type SymbolicStoneProps = {
 }
 
 export function SymbolicStone({
-  growth,
-  kind,
+  growth: _growth,
+  kind: _kind,
   severity,
   fertilizerPulse,
   washColor,
@@ -242,7 +246,9 @@ export function SymbolicStone({
   className,
   style,
 }: SymbolicStoneProps) {
-  const glyph = glyphForGrowth(growth, kind)
+  // `growth`/`kind` remain in the props contract (callers pass them;
+  // the glyph helpers below still key off them) but the stone itself
+  // no longer wears a mark — see the header note.
   const h = hash32(variantSeed ?? washColor)
   const variant = VARIANTS[h % VARIANTS.length]!
   const granite = GRANITE_TONES[(h >>> 4) % GRANITE_TONES.length]!
@@ -262,7 +268,6 @@ export function SymbolicStone({
       style={style}
       role="img"
       aria-hidden
-      data-glyph={glyph}
       data-severity={severity}
       data-wash={washColor}
     >
@@ -284,7 +289,8 @@ export function SymbolicStone({
           strokeLinecap="round"
           opacity={0.13}
         />
-        <Glyph glyph={glyph} />
+        {/* No on-stone glyph — kind/lifecycle live in the label text
+            now (founder ruling, 2026-11-13). */}
       </g>
       {ring ? (
         <circle

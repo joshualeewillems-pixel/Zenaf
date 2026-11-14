@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, Node } from 'reactflow'
-import { applyGardenStack, isGardenStackData } from './cairn'
+import { applyGardenStack, buildGardenStackNode, isGardenStackData } from './cairn'
+import { towerDebugForMembers, type CairnMemberInput } from './cairnTower'
 import type { MapNodePayload } from './ontology'
 
 /**
@@ -66,7 +67,10 @@ describe('applyGardenStack — one object on the parent stone', () => {
     expect(stack.type).toBe('cairn')
     expect(isGardenStackData(stack.data)).toBe(true)
     expect(stack.position).toEqual({ x: 100, y: 100 })
-    expect((stack.data as { cairnCount?: number }).cairnCount).toBe(5)
+    // NEW LAW (founder ruling, 2026-11-13): the tree's own stone is a
+    // member of the pile and is counted — 5 subtree stones + the tree.
+    // (This assertion pinned 5 under the old host-not-member law.)
+    expect((stack.data as { cairnCount?: number }).cairnCount).toBe(6)
     // No second object anywhere: no node offset below the parent, no cairn left.
     expect(out.nodes.some((n) => n.position.y === 320)).toBe(false)
     expect(out.nodes.some((n) => n.id === 'cairn-proj-1')).toBe(false)
@@ -85,5 +89,56 @@ describe('applyGardenStack — one object on the parent stone', () => {
     const out = applyGardenStack(nodes, edges, new Set())
     expect(out.nodes).toHaveLength(3)
     expect(out.nodes.find((n) => n.id === 'init-1')!.data.kind).toBe('tree')
+  })
+})
+
+describe('garden stack — the tree nests as a member (founder ruling, 2026-11-13)', () => {
+  it('the tree is the stack pile’s first member, flagged parent, with its arrival threaded', () => {
+    const { nodes } = fixture()
+    const tree = {
+      ...nodes[0]!,
+      data: payload({ kind: 'tree', entity_created_at: '2026-01-15T00:00:00.000Z' }),
+    }
+    const cairn = nodes[1]!
+    const stack = buildGardenStackNode(tree, [cairn])
+    const members = (stack.data as { cairnMembers?: CairnMemberInput[] }).cairnMembers!
+    // 5 synthetic subtree members + the tree itself.
+    expect(members).toHaveLength(6)
+    expect(members[0]).toMatchObject({
+      id: 'init-1',
+      kind: 'tree',
+      parent: true,
+      createdAt: '2026-01-15T00:00:00.000Z',
+    })
+    // The tree is the stack's ONLY parent.
+    expect(members.filter((m) => m.parent)).toHaveLength(1)
+  })
+
+  it('a project branch’s parent flag does not survive into the stack — and the layout seats the tree at the base', () => {
+    const { nodes } = fixture()
+    const tree = nodes[0]!
+    const cairnWithMembers: Node<MapNodePayload> = {
+      id: 'cairn-proj-9',
+      type: 'cairn',
+      position: { x: 320, y: 420 },
+      data: payload({
+        kind: 'cairn',
+        label: 'Project Nine',
+        cairnProjectId: 'proj-9',
+        cairnCount: 2,
+        cairnPreview: [],
+        cairnMembers: [
+          { id: 'branch-proj-9', kind: 'branch', activity: 0.9, createdAt: '2026-01-01T00:00:00.000Z', growth: 'growing', parent: true },
+          { id: 'flower-9', kind: 'flower', activity: 0.4, createdAt: '2026-02-01T00:00:00.000Z', growth: 'germinating' },
+        ] as CairnMemberInput[],
+      }),
+    }
+    const stack = buildGardenStackNode(tree, [cairnWithMembers])
+    const members = (stack.data as { cairnMembers?: CairnMemberInput[] }).cairnMembers!
+    expect(members.map((m) => m.id)).toEqual(['init-1', 'branch-proj-9', 'flower-9'])
+    expect(members.filter((m) => m.parent).map((m) => m.id)).toEqual(['init-1'])
+    const dbg = towerDebugForMembers(stack.id, members, { wash: '#a8a29e' })
+    expect(dbg.col[0]!.role).toBe('slab')
+    expect(dbg.col[1]!.memberId).toBe('init-1')
   })
 })

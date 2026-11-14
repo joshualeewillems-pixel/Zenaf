@@ -64,6 +64,18 @@ export type CairnMemberInput = {
       renderer overlays on the member's stone). Placement never reads
       it: vitality is current, placement is historical. */
   growth?: GrowthState
+  /**
+   * The pile's parent stone (founder ruling, 2026-11-13): the project
+   * branch in a project cairn, the initiative tree in a garden stack.
+   * The parent is seated as the BOTTOM member — structural, beneath
+   * the activity/historical stack, directly above the slab (the slab
+   * itself stays a non-member structural sprite). The parent is
+   * present from the pile's creation, so reserving build position 0
+   * for it composes with the growth law: arrivals still append after
+   * it and no seated stone's position ever depends on a later arrival.
+   * At most one member per pile carries this.
+   */
+  parent?: boolean
 }
 
 export type PortedStone = {
@@ -1548,15 +1560,19 @@ function buildWedge(
 
 /* ================= ordering ================= */
 
-/** Historical build order: arrival (createdAt) ascending, id tiebreak.
-    Undated members keep their relative input order (stable sort). */
+/** Historical build order: the parent stone first (its reserved base
+    seat — see CairnMemberInput.parent), then arrival (createdAt)
+    ascending, id tiebreak. Undated members keep their relative input
+    order (stable sort). */
 function buildOrderOf(members: CairnMemberInput[]): CairnMemberInput[] {
   const decorated = members.map((m, idx) => ({
     m,
     idx,
+    parentRank: m.parent ? 0 : 1,
     t: m.createdAt ? Date.parse(m.createdAt) : NaN,
   }))
   decorated.sort((a, b) => {
+    if (a.parentRank !== b.parentRank) return a.parentRank - b.parentRank
     const at = Number.isNaN(a.t) ? null : a.t
     const bt = Number.isNaN(b.t) ? null : b.t
     if (at != null && bt != null && at !== bt) return at - bt

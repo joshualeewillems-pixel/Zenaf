@@ -12,7 +12,7 @@ import { findCouncilPreviewForRef } from './councilCorrelation'
 import type { ConditionState, MapEntityRef, MapNodePayload, WaterLevel } from './ontology'
 import type { StudioCouncilRunRow } from './studioCouncilTypes'
 import type { VisionMapEntityBundle } from './blockersFromVe'
-import type { ServerNodeVitalityMap } from './veMapApi'
+import type { ServerNodeVitalityMap, ServerStrandWeightsMap } from './veMapApi'
 import { PROJECTION_UNSCOPED_INITIATIVE_ID } from './mapCouncilActions'
 import { applyCairnMode, type CairnIndex, type CairnModeResult } from './cairn'
 export type { CairnIndex, CairnModeResult }
@@ -163,6 +163,13 @@ export type LiveVisionMapGraphOptions = {
    * behavior exactly.
    */
   cairnThreshold?: number
+  /**
+   * Strand weightings keyed `${entity_type}:${entity_id}` (from
+   * fetchStrandWeightings). Branch/flower payloads pick up their own
+   * entity's vector as `entity_strand_weights`; absent = unweighed
+   * (null), never zeros. Omit = no member carries a vector.
+   */
+  strandWeights?: ServerStrandWeightsMap
 }
 
 export function buildLiveVisionMapGraph(
@@ -292,6 +299,7 @@ export function buildLiveVisionMapGraph(
       },
       bundle,
       serverVitality,
+      opts?.strandWeights,
     )
   }
 
@@ -397,7 +405,7 @@ export function buildLiveVisionMapGraph(
       treeTouch: ini.updated_at ?? null,
       treeCondition: treeCond,
       treeWaterLevel: waterLevelFromVital(vIni),
-    }, bundle, serverVitality)
+    }, bundle, serverVitality, opts?.strandWeights)
   })
 
   // --- Landmarks: people & assets. No growth narrative, no edges — they orient
@@ -469,6 +477,7 @@ function layoutProjectsUnderTree(
   treeCtx: TreeProjectionCtx,
   bundle: VisionMapEntityBundle,
   serverVitality?: ServerNodeVitalityMap,
+  strandWeights?: ServerStrandWeightsMap,
 ) {
   const treeId = `tree-${initiativeKey}`
   const sorted = [...plist].sort((a, b) => (a.title || '').localeCompare(b.title || ''))
@@ -503,6 +512,9 @@ function layoutProjectsUnderTree(
             growth: growthFromStatus(proj.status),
             condition: branchBaseCond,
             entity_created_at: proj.created_at ?? null,
+            // The member's own strand weight vector (Blend ruling):
+            // its entity's weighting, or null when unweighed.
+            entity_strand_weights: strandWeights?.[`project:${proj.id}`] ?? null,
           },
           councilRuns,
           vProj,
@@ -605,6 +617,7 @@ function layoutProjectsUnderTree(
               growth: growthFromStatus(t.status),
               condition: taskBase,
               entity_created_at: t.created_at ?? null,
+              entity_strand_weights: strandWeights?.[`task:${t.id}`] ?? null,
             },
             councilRuns,
             vTask,

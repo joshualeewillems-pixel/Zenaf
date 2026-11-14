@@ -19,7 +19,8 @@ import type { Edge, Node, XYPosition } from '@xyflow/react'
 import type { ConditionSeverity, MapNodePayload } from './ontology'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { activityScore } from './nesting'
-import type { CairnMemberInput } from './cairnTower'
+import type { CairnMemberInput, CairnStrandWeights } from './cairnTower'
+import type { StrandKey } from '../council/colors'
 
 /** Rendered-node thresholds: past these, project subtrees become cairns. */
 export const CAIRN_NARROW_THRESHOLD = 40
@@ -115,8 +116,38 @@ export function cairnMembersOf(memberNodes: Node<MapNodePayload>[]): CairnMember
       activity: activityScore(d),
       createdAt: typeof created === 'string' && created ? created : null,
       growth: d.growth,
+      weights: strandWeightsOf(d),
     }
   })
+}
+
+/**
+ * The member's strand weight vector off its node payload
+ * (`entity_strand_weights`, threaded from the projection), shape-checked
+ * at this boundary: a plain object whose values are finite numbers.
+ * Anything else — absent, null, malformed — is unweighed (null), never
+ * a zero vector: unknown is honest.
+ */
+const STRAND_KEYS: ReadonlySet<string> = new Set([
+  'word',
+  'number',
+  'image',
+  'sound',
+  'body',
+  'people',
+  'self',
+])
+
+function strandWeightsOf(d: MapNodePayload): CairnStrandWeights | null {
+  const raw = (d as { entity_strand_weights?: unknown }).entity_strand_weights
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const out: CairnStrandWeights = {}
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (STRAND_KEYS.has(k) && typeof v === 'number' && Number.isFinite(v)) {
+      out[k as StrandKey] = v
+    }
+  }
+  return Object.keys(out).length ? out : null
 }
 
 /**

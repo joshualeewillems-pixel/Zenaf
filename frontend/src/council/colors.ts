@@ -79,6 +79,25 @@ export function strandColor(key: StrandKey): string {
   return STRAND_COLORS[key]
 }
 
+/**
+ * Cairn stone stains: the subdued L2 wood-stain register sampled from the
+ * founder's Fellowship artwork for the tree study (2026-11-13), NOT the
+ * saturated STRAND_COLORS above. A cairn stone's stain is its own strand
+ * weight vector mixed in CIELAB over these seven stains (founder's Blend
+ * ruling, 2026-11-13): image is the warm wood gold, self the moss green,
+ * sound the muted rust, word the walnut, number the slate, body the sage,
+ * people the plum. Used only by the cairn renderer (vision-map/cairnTower).
+ */
+export const CAIRN_STAINS: Record<StrandKey, string> = {
+  image: '#b98d55',
+  self: '#5c7a64',
+  sound: '#a06a63',
+  word: '#96604a',
+  number: '#5d6d80',
+  body: '#7d8a64',
+  people: '#77598a',
+}
+
 /** Accent for user/visitor words woven into a voice's reply ([[u]] spans). */
 export const USER_WEAVE_COLOR = '#e8a33d'
 

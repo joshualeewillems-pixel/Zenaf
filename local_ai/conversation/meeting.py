@@ -2366,9 +2366,37 @@ class MeetingService:
         offered and answered. A read-back the meetings row records
         but the encounter state doesn't is a legacy (pre-runtime)
         impression — the recognition floor is waived for it, never
-        for one the runtime itself has run."""
+        for one the runtime itself has run.
+
+        The pending impression is reconciled the same way: the
+        meetings row is a live writer of state during a run, so a
+        held impression recorded in its state_json but absent from
+        the encounter row's is adopted — otherwise the run acts as
+        if nothing were held, the discard on a voluntary end never
+        fires, and the next persist overwrites the held text with
+        no reason recorded: an unaudited erasure. Adoption is
+        scoped to a state showing no impression lifecycle of its
+        own (nothing pending, offered, or discarded; not closed),
+        so a run that already delivered or discarded its impression
+        never has one resurrected from the mirror."""
         state = EncounterState.from_json(row.get("state_json"))
         source = meetings_row if meetings_row is not None else row
+        if meetings_row is not None:
+            mirror_state = EncounterState.from_json(
+                meetings_row.get("state_json"))
+            if (
+                mirror_state.impression_pending_text
+                and not state.impression_pending_text
+                and not state.impression_offered
+                and not state.pending_impression_discarded
+                and not state.closed
+            ):
+                state.impression_pending_text = (
+                    mirror_state.impression_pending_text)
+                state.impression_pending_strands = list(
+                    mirror_state.impression_pending_strands)
+                state.impression_held_at_pursuit = (
+                    mirror_state.impression_held_at_pursuit)
         if row.get("state_json") and not (source.get("readback_claim") or "").strip():
             return state
         if (source.get("readback_claim") or "").strip():

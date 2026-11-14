@@ -120,6 +120,19 @@ def _lit(user_id):
     }
 
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 def _run_conductor_to_completion(svc, uid):
     """Drive the Weaver's meeting to its close (test_meetings pattern)."""
     svc.start(uid, "conductor")
@@ -141,22 +154,26 @@ def _run_conductor_to_completion(svc, uid):
 # ------------------------------------------------------------------ (a)
 
 
-def test_restart_keeps_six_doors_lit(ve_ctx, tmp_path):
-    """Weaver Done → six doors lit → Weaver restart → six STILL lit."""
+def test_meet_again_keeps_six_doors_lit(ve_ctx, tmp_path):
+    """Weaver Done → six doors lit → Weaver meet-again → six STILL lit.
+    Weaver's own door goes dark (not "intro"): her first meeting stays
+    complete — meeting again never un-meets her (the keystone never
+    reverts, AC13)."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     _run_conductor_to_completion(svc, uid)
     assert all(_lit(uid)[ref] == "meet" for ref in SIX)
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
 
     lit = _lit(uid)
     for ref in SIX:
         assert lit[ref] == "meet", ref
-    # Weaver's own state reverts (its restart semantics unchanged):
-    # back to the intro marker, face locked again.
-    assert lit["conductor"] == "intro"
-    assert naming.keystone_one_done(uid, "conductor") is False
+    # Weaver's own state stays met: no intro marker, keystone Done.
+    # (seat_unlocked is never True for the entry seat itself — the
+    # unlock table records only the six non-entry seats.)
+    assert "conductor" not in lit
+    assert naming.keystone_one_done(uid, "conductor") is True
 
 
 # ------------------------------------------------------------------ (b)
@@ -226,24 +243,24 @@ def test_begin_guard_refuses_never_opened(ve_ctx, tmp_path):
 # ------------------------------------------------------------------ (e)
 
 
-def test_weaver_own_door_reverts_on_restart(ve_ctx, tmp_path):
-    """Weaver's own restart semantics are unchanged by stickiness.
+def test_weaver_own_door_stays_met_on_meet_again(ve_ctx, tmp_path):
+    """Weaver's own door does NOT revert on Meet Again.
 
-    After its own restart, Weaver's door returns to the pre-completion
-    Begin-fresh state (intro marker, face locked) — it does NOT keep
-    a revisit door — while the six stay lit. Weaver's seat is never
-    recorded as unlocked.
+    After meeting again, Weaver's door is dark (not "intro"): her
+    first meeting stays complete and the keystone stays Done — while
+    the six stay lit. Meeting again never un-meets her. (seat_unlocked
+    is never True for the entry seat itself — the unlock table records
+    only the six non-entry seats.)
     """
     uid = _seeded_user()
     svc = _svc(tmp_path)
     _run_conductor_to_completion(svc, uid)
     assert naming.keystone_one_done(uid, "conductor") is True
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
 
-    assert keystone_seeding.seat_unlocked(uid, "conductor") is False
-    assert _lit(uid)["conductor"] == "intro"
-    assert naming.keystone_one_done(uid, "conductor") is False
+    assert "conductor" not in _lit(uid)
+    assert naming.keystone_one_done(uid, "conductor") is True
     for ref in SIX:
         assert _lit(uid)[ref] == "meet", ref
 

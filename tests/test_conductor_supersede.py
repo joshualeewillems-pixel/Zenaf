@@ -120,6 +120,19 @@ def _svc(tmp_path):
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _agents(tmp_path, uid) -> AgentStore:
     return AgentStore(tmp_path / "agents.db", user_id=uid)
@@ -173,7 +186,7 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path):
     assert first.claim_type == "meeting_impression"
     store.update_claim(first.id, status="accepted")
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
 
     claims = store.get_claims("meeting-conductor-1")
     assert len(claims) == 1
@@ -198,7 +211,7 @@ def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path):
     store.update_claim(first.id, status="accepted")
     assert len(_standing(store.get_claims("meeting-conductor-1"))) == 1
 
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
     _run_conductor_to_completion(
         svc, uid,
         answer="Second time: I start with people, not tasks.",

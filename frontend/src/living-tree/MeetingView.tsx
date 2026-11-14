@@ -86,6 +86,54 @@ type MeetingState = {
   character: string | null
   demeanor: string | null
   messages: MeetingMessage[]
+  // Non-destructive Meet Again (Slice 5): the encounter this state
+  // belongs to, and whether it is a historical (read-only) one.
+  run_id?: string
+  read_only?: boolean
+}
+
+/** One past encounter, from GET /conversation/meeting/encounters. */
+type Encounter = {
+  run_id: string
+  run_number: number
+  status: string
+  stage: string | null
+  verification_status: string
+  message_count: number
+  created_at: string
+  completed_at: string | null
+  predecessor_run_id: string | null
+  predecessor_link_kind: string
+  identity_kind: string
+  lineage_label: string | null
+  conversation_id: string
+  read_only: boolean
+  fence_state: string | null
+}
+
+/** The verification badge wording follows the renamed enum exactly
+ *  (readiness amendment §A): a badge reading "read consistency
+ *  verified" cannot be mistaken for "transcript proven complete". */
+function verificationBadge(status: string): string {
+  if (status === 'read_consistency_verified') return 'read consistency verified'
+  if (status === 'read_consistency_failed') return 'read consistency failed'
+  if (status === 'legacy-unverified') return 'archive record — completeness not established'
+  return 'unverified'
+}
+
+/** A uuid4-hex Idempotency-Key (corrections §2): generated once per
+ *  Meet Again tap, reused across retries of that tap, never re-minted
+ *  on a timeout; a new tap mints a new one. */
+function newIdempotencyKey(): string {
+  try {
+    const bytes = new Uint8Array(16)
+    crypto.getRandomValues(bytes)
+    return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+  } catch {
+    let out = ''
+    for (let i = 0; i < 32; i++) out += Math.floor(Math.random() * 16).toString(16)
+    return out
+  }
 }
 
 const STYLE = `
@@ -115,6 +163,20 @@ export function MeetingView({
   const composerRef = useAutoGrowTextarea(input)
   const [busy, setBusy] = useState(false)
   const endRef = useRef<HTMLDivElement | null>(null)
+  // Encounter history (non-destructive Meet Again, Slice 5): past
+  // encounters for this seat and keystone, newest first.
+  const [encounters, setEncounters] = useState<Encounter[] | null>(null)
+  // A historical encounter being revisited read-only (its detail:
+  // the encounter + its transcript). Null means the live meeting.
+  const [viewing, setViewing] = useState<{
+    encounter: Encounter
+    messages: MeetingMessage[]
+    verification_note: string | null
+  } | null>(null)
+  // The Idempotency-Key of the in-flight Meet Again tap: generated
+  // once per tap, reused across retries, cleared on success — so a
+  // timeout re-sends the same key and never mints a new one.
+  const meetAgainKeyRef = useRef<string | null>(null)
 
   // Streaming reveal state: ids already shown in full, whether the
   // first hydration has happened (history never retypes), and the
@@ -207,19 +269,71 @@ export function MeetingView({
     setError(null)
   }, [])
 
+  // Re-hydrate the live meeting state (the latest encounter).
+  const rehydrate = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `${base}/conversation/meeting?archetype_id=${encodeURIComponent(archetypeId)}&keystone_index=1`,
+        { credentials: 'include' },
+      )
+      const data = await res.json().catch(() => null)
+      if (res.ok && data) apply(data as MeetingState)
+      else setError('Could not load the meeting just now.')
+    } catch {
+      setError('Could not load the meeting just now.')
+    }
+  }, [base, archetypeId, apply])
+
+  // The encounter history for this seat and keystone, newest first.
+  const loadEncounters = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `${base}/conversation/meeting/encounters?archetype_id=${encodeURIComponent(archetypeId)}&keystone_index=1`,
+        { credentials: 'include' },
+      )
+      const data = await res.json().catch(() => null)
+      if (res.ok && data && Array.isArray(data.encounters)) {
+        setEncounters([...data.encounters].reverse())
+      }
+    } catch {
+      // The history is a history, not the meeting: a failed load
+      // leaves the section absent rather than breaking the room.
+    }
+  }, [base, archetypeId])
+
   const call = useCallback(
-    async (path: string, body?: Record<string, unknown>) => {
+    async (
+      path: string,
+      body?: Record<string, unknown>,
+      extraHeaders?: Record<string, string>,
+    ) => {
       setBusy(true)
       try {
         const res = await fetch(`${base}/conversation/meeting${path}`, {
           method: body ? 'POST' : 'GET',
           credentials: 'include',
-          headers: body ? { 'Content-Type': 'application/json' } : undefined,
+          headers: {
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+            ...extraHeaders,
+          },
           body: body ? JSON.stringify(body) : undefined,
         })
         const data = await res.json().catch(() => null)
         if (!res.ok) {
-          setError((data && data.detail) || 'The meeting could not continue just now.')
+          // The detail may be a plain string (older refusals) or a
+          // {code, message} object (the encounter refusals).
+          const detail = data && data.detail
+          const code = detail && typeof detail === 'object' ? detail.code : null
+          const message =
+            (detail && typeof detail === 'object' ? detail.message : detail) ||
+            'The meeting could not continue just now.'
+          setError(message)
+          // A 409 on a turn means the encounter has reached its
+          // close: show it as complete, with the last stored message
+          // as its last word — no auto-retry, no re-send.
+          if (code === 'encounter_finalized') {
+            await rehydrate()
+          }
           return null
         }
         return data as MeetingState
@@ -230,27 +344,19 @@ export function MeetingView({
         setBusy(false)
       }
     },
-    [base],
+    [base, rehydrate],
   )
 
   useEffect(() => {
     let cancelled = false
-    fetch(
-      `${base}/conversation/meeting?archetype_id=${encodeURIComponent(archetypeId)}&keystone_index=1`,
-      { credentials: 'include' },
-    )
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled && data) apply(data as MeetingState)
-        else if (!cancelled) setError('Could not load the meeting just now.')
-      })
-      .catch(() => {
-        if (!cancelled) setError('Could not load the meeting just now.')
-      })
+    void (async () => {
+      if (!cancelled) await rehydrate()
+      if (!cancelled) await loadEncounters()
+    })()
     return () => {
       cancelled = true
     }
-  }, [archetypeId, base, apply])
+  }, [rehydrate, loadEncounters])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -261,18 +367,86 @@ export function MeetingView({
     if (s) apply(s)
   }
 
-  // Meet again: the server archives the finished run's full transcript,
-  // verified complete, and resets the meeting; starting right away runs
-  // the new meeting in place. The fresh messages carry new ids, so the
-  // streaming reveal types them like any new run — and the composer
-  // works without a reload.
+  // Meet again (non-destructive, Slice 5): one POST to /meet-again
+  // opens the next encounter after the completed one — the predecessor
+  // stays on record, byte-identical, and the new run starts in place.
+  // The Idempotency-Key is generated once per tap and reused across
+  // retries of that tap (a timeout re-sends the same key, never a new
+  // one); a new tap mints a new key. The predecessor is the encounter
+  // the visitor was viewing.
   const meetAgain = async () => {
     finishTyping() // settle the old run's bubbles before it leaves
-    const s = await call('/restart', { archetype_id: archetypeId, keystone_index: 1 })
-    if (!s) return
-    apply(s)
-    const started = await call('/start', { archetype_id: archetypeId, keystone_index: 1 })
-    if (started) apply(started)
+    const predecessorRunId = state?.run_id
+    if (!predecessorRunId) {
+      setError('There is no completed meeting to meet again from yet.')
+      return
+    }
+    if (!meetAgainKeyRef.current) meetAgainKeyRef.current = newIdempotencyKey()
+    const key = meetAgainKeyRef.current
+    setBusy(true)
+    try {
+      const res = await fetch(`${base}/conversation/meeting/meet-again`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify({
+          archetype_id: archetypeId,
+          keystone_index: 1,
+          predecessor_run_id: predecessorRunId,
+        }),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        const detail = data && data.detail
+        setError(
+          (detail && typeof detail === 'object' ? detail.message : detail) ||
+            'Meet again could not start just now.',
+        )
+        return // the key stays: a retry of this tap reuses it
+      }
+      meetAgainKeyRef.current = null // the tap succeeded; a new tap mints a new key
+      if (data && data.state) apply(data.state as MeetingState)
+      await loadEncounters()
+    } catch {
+      setError('Meet again could not start just now.')
+      // the key stays: a retry of this tap reuses it
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Read-only revisit: tap a past encounter to read its transcript.
+  // The input stays disabled while viewing history; the live meeting
+  // waits underneath.
+  const viewEncounter = async (runId: string) => {
+    finishTyping()
+    setBusy(true)
+    try {
+      const res = await fetch(
+        `${base}/conversation/meeting/encounters/${encodeURIComponent(runId)}?limit=100&offset=0`,
+        { credentials: 'include' },
+      )
+      const data = await res.json().catch(() => null)
+      if (res.ok && data && data.encounter) {
+        setViewing({
+          encounter: data.encounter as Encounter,
+          messages: (data.messages || []) as MeetingMessage[],
+          verification_note: data.verification_note ?? null,
+        })
+        setError(null)
+      } else {
+        setError('That encounter could not be opened just now.')
+      }
+    } catch {
+      setError('That encounter could not be opened just now.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const backToLive = async () => {
+    setViewing(null)
+    await rehydrate()
   }
 
   const send = async () => {
@@ -356,7 +530,7 @@ export function MeetingView({
             </div>
           )}
 
-          {state && state.messages.length > 0 && (
+          {!viewing && state && state.messages.length > 0 && (
             <div className="space-y-2" aria-live="polite">
               {state.messages.map((m) => {
                 if (m.role === 'user') {
@@ -395,7 +569,7 @@ export function MeetingView({
           is still active, so her words and the meeting's state
           cannot disagree: the meeting is NOT over until the
           visitor taps Complete. */}
-          {inRoom && state?.completion_offered && !complete && (
+          {inRoom && !viewing && state?.completion_offered && !complete && (
             <div className="mt-3 rounded-2xl border border-amber-600/50 bg-amber-600/10 px-3 py-2 text-sm text-amber-100 leading-snug">
               She heard you want to finish — the meeting is still open. Tap
               “Complete this meeting” below when you’re ready, or just keep talking
@@ -418,9 +592,116 @@ export function MeetingView({
               </p>
             </div>
           )}
+
+          {/* Read-only revisit (non-destructive Meet Again, Slice 5):
+          a past encounter's transcript, read-only. */}
+          {viewing && (
+            <div className="mt-4 rounded-2xl border border-stone-700 bg-stone-900/60 px-3 py-3">
+              <div className="text-xs font-semibold tracking-wide text-amber-200/90">
+                RUN {viewing.encounter.run_number} — READ ONLY
+              </div>
+              <div className="mt-1 text-sm text-stone-300">
+                {viewing.encounter.message_count} messages ·{' '}
+                {verificationBadge(viewing.encounter.verification_status)}
+                {viewing.encounter.lineage_label ? ` · ${viewing.encounter.lineage_label}` : ''}
+              </div>
+              <div className="mt-3 space-y-2">
+                {viewing.messages.map((m) => (
+                  <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : 'flex justify-start'}>
+                    <div className="max-w-[88%] rounded-2xl px-3 py-2 text-sm leading-snug bg-stone-800/80 text-stone-200">
+                      <WeaveText text={m.body} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {viewing.verification_note && (
+                <p className="mt-3 text-xs text-stone-500 leading-relaxed">{viewing.verification_note}</p>
+              )}
+            </div>
+          )}
+
+          {/* Encounter history (non-destructive Meet Again, Slice 5):
+          past encounters for this seat and keystone, newest first —
+          completion date, message count, verification badge. */}
+          {!viewing && encounters && encounters.length > 0 && (
+            <div className="mt-5">
+              <div className="text-xs font-semibold tracking-wide text-stone-400">
+                EARLIER MEETINGS
+              </div>
+              <ul className="mt-2 space-y-2">
+                {encounters.map((e) => {
+                  const isCurrent = state?.run_id === e.run_id && e.status === 'in_progress'
+                  const date = e.completed_at || e.created_at
+                  const label = date ? new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : ''
+                  const interrupted =
+                    e.status === 'creating'
+                      ? 'Interrupted during creation'
+                      : e.status === 'in_progress' && e.fence_state === 'closed'
+                        ? 'Interrupted during completion'
+                        : null
+                  return (
+                    <li key={e.run_id} className="rounded-2xl border border-stone-700/70 bg-stone-900/40 px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => void (isCurrent ? backToLive() : viewEncounter(e.run_id))}
+                        disabled={busy}
+                        className="w-full text-left disabled:opacity-40"
+                      >
+                        <span className="text-sm font-semibold text-stone-200">
+                          Run {e.run_number}
+                          {isCurrent ? ' · Current' : ''}
+                          {interrupted ? ` · ${interrupted}` : ''}
+                        </span>
+                        <span className="block text-xs text-stone-400">
+                          {label}
+                          {label ? ' · ' : ''}
+                          {e.message_count} messages · {verificationBadge(e.verification_status)}
+                        </span>
+                        {e.lineage_label && (
+                          <span className="block text-xs text-stone-500">{e.lineage_label}</span>
+                        )}
+                        {e.identity_kind === 'legacy-record' && (
+                          <span className="block text-xs text-stone-500">archive record</span>
+                        )}
+                      </button>
+                      {interrupted === 'Interrupted during creation' && (
+                        <button
+                          type="button"
+                          onClick={begin}
+                          disabled={busy}
+                          className="mt-1 min-h-[36px] px-3 rounded-full border border-amber-600/60 text-amber-100 text-xs font-semibold disabled:opacity-40"
+                        >
+                          Resume
+                        </button>
+                      )}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
         </div>
 
-        {inRoom && state.status === 'active' && (
+        {viewing && (
+          <div className="mtg-foot">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void backToLive()}
+                disabled={busy}
+                className="min-h-[44px] px-5 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold disabled:opacity-40"
+              >
+                Back to the current meeting
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-stone-500 leading-relaxed">
+              This is a read-only record of a past meeting — the input is closed
+              while you are reading history.
+            </p>
+          </div>
+        )}
+
+        {!viewing && inRoom && state.status === 'active' && (
           <div className="mtg-foot">
             <div className="flex gap-2">
               <textarea
@@ -474,7 +755,7 @@ export function MeetingView({
           </div>
         )}
 
-        {inRoom && state.status === 'paused' && (
+        {!viewing && inRoom && state.status === 'paused' && (
           <div className="mtg-foot">
             <div className="flex gap-2">
               <button
@@ -497,7 +778,7 @@ export function MeetingView({
           </div>
         )}
 
-        {showComplete && (
+        {!viewing && showComplete && (
           <div className="mtg-foot">
             <div className="flex gap-2">
               <button

@@ -691,6 +691,19 @@ def _seeded_user(email="readback@example.com"):
     return user["id"]
 
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 def _to_readback(svc, uid):
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "I triage by what breaks first if I ignore it.")
@@ -878,7 +891,7 @@ def test_service_fox_pass_speaks_fallback(ve_ctx, tmp_path):
     )
 
 
-def test_service_archive_carries_the_three_columns(ve_ctx, tmp_path):
+def test_predecessor_encounter_carries_the_three_columns(ve_ctx, tmp_path):
     gen = MarkerGen(
         "Fair catch.\n"
         "---\n"
@@ -892,14 +905,17 @@ def test_service_archive_carries_the_three_columns(ve_ctx, tmp_path):
     _to_readback(svc, uid)
     svc.turn(uid, "conductor", "Another false dichotomy.")
     svc.complete(uid, "conductor")
-    svc.restart(uid, "conductor")
-    archives = svc.meetings.list_archives(uid, "conductor", 1)
-    assert len(archives) == 1
-    archived = archives[0]
-    assert archived["readback_seat_outcome"] == "revised"
-    assert archived["readback_visitor_response"] == "disputed"
-    assert archived["readback_claim"] == "A revised read."
-    assert archived["readback_original_claim"].startswith("A first impression")
+    # Meet Again creates no archive; the predecessor encounter itself
+    # carries the three read-back columns (its own record, synced at
+    # finalize — never the successor's).
+    run1 = svc.meetings.get_latest_encounter(uid, "conductor", 1)
+    _meet_again(svc, uid, "conductor")
+    assert svc.meetings.list_archives(uid, "conductor", 1) == []
+    pred = svc.meetings.get_encounter(uid, run1["run_id"])
+    assert pred["readback_seat_outcome"] == "revised"
+    assert pred["readback_visitor_response"] == "disputed"
+    assert pred["readback_claim"] == "A revised read."
+    assert pred["readback_original_claim"].startswith("A first impression")
 
 
 # --------------------------------------------------------------------------

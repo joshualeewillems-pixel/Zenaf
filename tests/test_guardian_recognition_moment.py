@@ -239,7 +239,7 @@ def test_do_reveal_silent_for_decoupled_still_completes_and_files(ve_ctx, tmp_pa
     assert store.get_claims("meeting-guardian-1") == []
     script = MT.get_script("guardian", 1)
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     definition = ENC.get_definition(script)
     assert definition.decoupled_recognition is True
     svc._do_reveal(uid, "guardian", 1, script, wrap_line="wrap line",
@@ -262,7 +262,7 @@ def test_do_reveal_spoken_when_not_silent(ve_ctx, tmp_path):
     svc.meetings.create(uid, "guardian", 1)
     script = MT.get_script("guardian", 1)
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     svc._do_reveal(uid, "guardian", 1, script, wrap_line="wrap line",
                    silent_close=False)
     assert said == ["wrap line", *script.reveal]

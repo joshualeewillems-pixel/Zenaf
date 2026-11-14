@@ -67,7 +67,15 @@ def _affirmed_row(svc, uid, arch="mentor", created_at="2026-10-20T10:00:00+00:00
                   claim="You tend patiently.", response="Yes, that's right.",
                   visitor_response="affirmed"):
     """An active meeting row with a read-back and a visitor response."""
-    svc.meetings.delete(uid, arch, 1)
+    # S3: MeetingStore.delete is retired with restart(); the helper
+    # resets the row with a direct DELETE (it already writes
+    # created_at through the connection below).
+    svc.meetings._conn.execute(
+        "DELETE FROM meetings WHERE user_id = ? AND archetype_id = ? "
+        "AND keystone_index = 1",
+        (uid, arch),
+    )
+    svc.meetings._conn.commit()
     svc.meetings.create(uid, arch, 1)
     svc.meetings._conn.execute(
         "UPDATE meetings SET created_at = ? WHERE user_id = ? "

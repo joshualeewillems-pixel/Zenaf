@@ -66,6 +66,19 @@ def _svc(tmp_path):
         MeetingStore(tmp_path / "meetings.db"),
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _seeded_user(email="champ@example.com"):
     user = ve.create_user_account(email, "pw", "Champ")
@@ -470,8 +483,8 @@ def _lift_hold(monkeypatch):
     monkeypatch.setattr(MT, "HELD_FIRST_MEETINGS", frozenset())
 
 
-def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
-    """Restart archives verbatim; the run-1 claim stays standing."""
+def test_meet_again_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
+    """Meet again opens run 2 without touching run 1; the run-1 claim stays standing."""
     _lift_hold(monkeypatch)
     uid = _seeded_user("superseed@example.com")
     svc = _svc_with_agents(tmp_path)
@@ -490,12 +503,18 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path, monkeypatch):
     # verdict-bearing claim, not just a pending one.
     store.update_claim(claims[0].id, status="accepted")
 
-    state = svc.restart(uid, "champion")
-    assert state["status"] == "not_started"
-    # The prior run is archived verbatim, not deleted.
-    archives = svc.meetings.list_archives(uid, "champion", 1)
-    assert len(archives) == 1
-    assert archives[0]["readback_claim"].startswith("A first impression")
+    # Meet again alone: opens run 2 and touches no claim — run 1
+    # stays standing, and nothing is archived (there is no delete to
+    # archive for). The prior run is preserved verbatim in its own
+    # encounter row, not deleted.
+    run1 = svc.meetings.get_latest_encounter(uid, "champion", 1)
+    out = _meet_again(svc, uid, "champion")
+    assert out["encounter"]["run_number"] == 2
+    assert out["encounter"]["status"] == "in_progress"
+    assert svc.meetings.list_archives(uid, "champion", 1) == []
+    assert svc.meetings.get_encounter(uid, run1["run_id"])["readback_claim"].startswith(
+        "A first impression"
+    )
     # And the run-1 claim is untouched: same row, same verdict,
     # still the standing claim.
     after = store.get_claims("meeting-champion-1")
@@ -529,7 +548,7 @@ def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path, monkeypatch):
     assert len(first) == 1
     store.update_claim(first[0].id, status="accepted")
 
-    svc.restart(uid, "champion")
+    _meet_again(svc, uid, "champion")
     _run_champion_to_completion(
         svc, uid,
         "I keep circling whether to take the promotion or leave.",

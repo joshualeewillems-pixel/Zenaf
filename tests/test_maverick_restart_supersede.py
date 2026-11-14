@@ -9,9 +9,9 @@ voluntary end); supersede covers prior ACCEPTED/filed claims replaced
 by a new filed claim.
 
 Precise semantics under test:
-1. Restart ALONE does not supersede: restart archives the prior run
-   verbatim; the prior claim stays current until a new run completes
-   and files.
+1. Meet again ALONE does not supersede: meet again preserves the
+   prior run verbatim as its own encounter; the prior claim stays
+   current until a new run completes and files.
 2. At new filing, prior meeting_impression claim(s) for the same
    agent id (meeting-maverick-1) become superseded: row retained,
    prior verdict preserved visibly in the retained row, retrievable
@@ -84,6 +84,19 @@ def _svc(tmp_path):
         agent_store_factory=lambda uid: AgentStore(agents_db, user_id=uid),
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _seeded_user(email="maverick-supersede@example.com"):
     user = ve.create_user_account(email, "pw", "Mav")
@@ -136,9 +149,9 @@ def _standing(claims):
 
 
 def test_restart_alone_does_not_supersede(ve_ctx, tmp_path):
-    """Semantics 1: restart archives verbatim and touches no claim.
-    Passes on this branch today; guards the shared implementation
-    against superseding at restart instead of at new filing."""
+    """Semantics 1: meet again preserves the prior run verbatim and
+    touches no claim. Guards the shared implementation against
+    superseding at meet-again instead of at new filing."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
     _complete_run(
@@ -152,10 +165,19 @@ def test_restart_alone_does_not_supersede(ve_ctx, tmp_path):
     # The visitor rules on run 1: verdict recorded.
     AgentStore(tmp_path / "agents.db", user_id=uid).update_claim(
         run1.id, "accepted", "Yes — that is how I orient.")
-    svc.restart(uid, "maverick")
-    # The archive kept the run; the claim is untouched and current.
-    assert svc.meetings.get(uid, "maverick", 1) is None
-    assert svc.meetings.list_archives(uid, "maverick", 1), "run archived verbatim"
+    run1_enc = svc.meetings.get_latest_encounter(uid, "maverick", 1)
+    _meet_again(svc, uid, "maverick")
+    # The predecessor encounter kept the run verbatim; the meetings
+    # row now points at the new run — nothing was deleted or archived
+    # away, and the claim is untouched and current.
+    encounters = svc.meetings.list_encounters(uid, "maverick", 1)
+    assert len(encounters) == 2
+    predecessor = next(
+        e for e in encounters if e["run_id"] == run1_enc["run_id"])
+    assert predecessor["status"] == "complete"
+    current = svc.meetings.get(uid, "maverick", 1)
+    assert current is not None
+    assert current["run_id"] != run1_enc["run_id"]
     after = _meeting_claims(tmp_path, uid)
     assert len(after) == 1
     assert after[0].id == run1.id
@@ -185,7 +207,7 @@ def test_completion_is_silent_under_decoupling(ve_ctx, tmp_path):
         readback_strands=json.dumps(["Compass"]),
     )
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     state = svc.complete(uid, "maverick")
     assert state["status"] == "complete"
     assert said == []
@@ -206,7 +228,7 @@ def test_second_filing_supersedes_prior_claim(ve_ctx, tmp_path):
     run1 = _meeting_claims(tmp_path, uid)[0]
     AgentStore(tmp_path / "agents.db", user_id=uid).update_claim(
         run1.id, "accepted", "Yes — that is how I orient.")
-    svc.restart(uid, "maverick")
+    _meet_again(svc, uid, "maverick")
     assert len(_standing(_meeting_claims(tmp_path, uid))) == 1  # restart alone: no change
     _complete_run(
         svc, uid, "2026-10-28T11:00:00+00:00",

@@ -219,7 +219,7 @@ def test_do_reveal_silent_for_decoupled_still_completes(ve_ctx, tmp_path):
     svc.meetings.create(uid, "maverick", 1)
     script = MT.get_script("maverick", 1)
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     svc._do_reveal(uid, "maverick", 1, script, wrap_line="wrap line",
                    silent_close=True)
     assert said == []
@@ -234,7 +234,7 @@ def test_do_reveal_spoken_for_coupled(ve_ctx, tmp_path):
     svc.meetings.create(uid, "maverick", 1)
     script = MT.get_script("maverick", 1)
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     svc._do_reveal(uid, "maverick", 1, script, wrap_line="wrap line",
                    silent_close=False)
     assert said == ["wrap line", *script.reveal]

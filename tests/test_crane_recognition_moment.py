@@ -248,6 +248,19 @@ def _svc(tmp_path, generate_fn=None):
         generate_fn=generate_fn,
     )
 
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
 
 def _seeded_user(email="crane-recognition@example.com"):
     user = ve.create_user_account(email, "pw", "Crane")
@@ -282,7 +295,7 @@ def test_do_reveal_silent_for_decoupled_still_completes(ve_ctx, tmp_path, monkey
     svc.start(uid, "ambassador")
     script = MT.AMBASSADOR_FIRST_MEETING
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     definition = ENC.get_definition(script)
     assert definition.decoupled_recognition is True
     svc._do_reveal(uid, "ambassador", 1, script, wrap_line="wrap line",
@@ -373,7 +386,7 @@ def test_second_run_supersedes_prior_claim_via_visitor_completion(ve_ctx, tmp_pa
     first_claim = first[0]
     store.update_claim(first_claim.id, status="accepted")
 
-    svc.restart(uid, "ambassador")
+    _meet_again(svc, uid, "ambassador")
     _run_crane_turns(
         svc, uid,
         "Second time: I start with people, not tasks.",

@@ -238,7 +238,7 @@ def test_do_reveal_silent_for_decoupled_mentor_still_completes(
     svc.complete(uid, "conductor")
     svc.start(uid, "mentor")
     said: list[str] = []
-    svc._say = lambda user_id, cid, arch_id, body: said.append(body)  # type: ignore[method-assign]
+    svc._say = lambda user_id, cid, arch_id, body, **_: said.append(body)  # type: ignore[method-assign]
     svc._do_reveal(uid, "mentor", 1, MT.MENTOR_FIRST_MEETING,
                    wrap_line="wrap line", silent_close=True)
     assert said == []

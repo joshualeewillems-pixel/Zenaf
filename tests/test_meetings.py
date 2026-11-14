@@ -38,7 +38,12 @@ import pytest
 from fastapi import HTTPException
 
 from local_ai.council import meetings as MT
-from local_ai.conversation.meeting import MeetingError, MeetingService, MeetingStore
+from local_ai.conversation.meeting import (
+    MeetingError,
+    MeetingNotFoundError,
+    MeetingService,
+    MeetingStore,
+)
 from local_ai.conversation.store import ConversationStore
 from local_ai.vision_execution import keystone_seeding
 from local_ai.vision_execution import service as ve
@@ -145,7 +150,12 @@ def test_start_delivers_opening_and_first_question(ve_ctx, tmp_path):
 
     assert state["status"] == "active"
     assert state["stage"] == "encounter"
-    assert state["conversation_id"] == "meeting-conductor-1"
+    # Non-destructive Meet Again (Slice 2): the conversation id is
+    # run-specific — one conversation per encounter, never shared
+    # across runs (AC2).
+    assert state["conversation_id"] == f"meeting-conductor-1-{state['run_id']}"
+    assert state["run_id"]
+    assert state["read_only"] is False
     script = MT.get_script("conductor", 1)
     bodies = [m["body"] for m in state["messages"]]
     assert bodies == list(script.opening)
@@ -389,8 +399,12 @@ def test_completed_meeting_cannot_be_replayed(ve_ctx, tmp_path):
     assert state["status"] == "complete"
     state = svc.start(uid, "conductor")
     assert state["status"] == "complete"
-    with pytest.raises(MeetingError, match="No meeting is in progress"):
+    # S2: a turn to a completed encounter is refused with the
+    # encounter_finalized code (AC7) — the wording changed with the
+    # encounter lifecycle; the refusal itself is unchanged.
+    with pytest.raises(MeetingError, match="has reached its close") as exc_info:
         svc.turn(uid, "conductor", "again?")
+    assert exc_info.value.code == "encounter_finalized"
 
 
 def test_question_after_recognition_is_answered_in_conversation(ve_ctx, tmp_path):
@@ -592,77 +606,60 @@ def _run_conductor_to_completion(
     return state
 
 
-def test_restart_refusals(ve_ctx, tmp_path):
+def _meet_again(svc, uid, arch):
+    """Open the next run after the latest completed one (the
+    non-destructive replacement for restart())."""
+    import uuid
+
+    latest = svc.meetings.get_latest_encounter(uid, arch, 1)
+    return svc.meet_again(
+        uid, arch, 1,
+        predecessor_run_id=latest["run_id"],
+        request_id=uuid.uuid4().hex,
+    )
+
+
+def test_meet_again_refusals(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
 
     # No meeting on record at all.
-    with pytest.raises(MeetingError, match="hasn't been met yet"):
-        svc.restart(uid, "conductor")
-    # A seat with no meeting on record — same row gate as above.
-    with pytest.raises(MeetingError, match="hasn't been met yet"):
-        svc.restart(uid, "mentor")
+    with pytest.raises(MeetingNotFoundError, match="No encounter ever existed"):
+        svc.meet_again(uid, "conductor", 1, predecessor_run_id="no-such-run", request_id="req-1")
+    # A seat with no meeting on record — same gate as above.
+    with pytest.raises(MeetingNotFoundError, match="No encounter ever existed"):
+        svc.meet_again(uid, "mentor", 1, predecessor_run_id="no-such-run", request_id="req-2")
     with pytest.raises(ValueError, match="Unknown seat"):
-        svc.restart(uid, "not-a-seat")
+        svc.meet_again(uid, "not-a-seat", 1, predecessor_run_id="x", request_id="req-3")
 
-    # In progress (active or paused) is resumable, never restartable.
+    # In progress (active or paused) is resumable, never a predecessor.
     svc.start(uid, "conductor")
+    run = svc.meetings.get_latest_encounter(uid, "conductor", 1)
     with pytest.raises(MeetingError, match="still in progress"):
-        svc.restart(uid, "conductor")
+        svc.meet_again(uid, "conductor", 1, predecessor_run_id=run["run_id"], request_id="req-4")
     svc.pause(uid, "conductor")
     with pytest.raises(MeetingError, match="still in progress"):
-        svc.restart(uid, "conductor")
+        svc.meet_again(uid, "conductor", 1, predecessor_run_id=run["run_id"], request_id="req-5")
 
 
-def test_restart_archives_run_resets_state_and_reverts_keystone(ve_ctx, tmp_path):
-    from local_ai.council import naming
+# test_restart_archives_run_resets_state_and_reverts_keystone REMOVED
+# (Slice 6, AC10): it asserted the delete-based restart — the archive,
+# the keystone revert to Todo, the face re-locking. All of it is
+# superseded by the non-destructive model; the preservation properties
+# it pinned now live in tests/test_meet_again_ac1_ac2_ac4.py (AC1: the
+# successor leaves the predecessor byte-identical, including its
+# archive rows; the keystone stays Done, AC13).
 
-    uid = _seeded_user()
-    svc = _svc(tmp_path)
-    done = _run_conductor_to_completion(
-        svc, uid,
-        answer="I triage by what breaks first if I ignore it.",
-        response="Mostly right — except I protect mornings first.",
-    )
-    assert done["status"] == "complete"
-    assert _conductor_k1_status(uid) == "Done"
-    assert naming.keystone_one_done(uid, "conductor") is True
-    first_bodies = [m["body"] for m in done["messages"]]
-    row = svc.meetings.get(uid, "conductor", 1)
-    assert row is not None
-
-    state = svc.restart(uid, "conductor")
-
-    # Fresh not-started state: no live row, no messages, keystone task
-    # back to the exact status it was seeded with ("Todo"), and the face
-    # the meeting revealed is locked again behind the new run.
-    assert state["status"] == "not_started"
-    assert state["messages"] == []
-    assert svc.meetings.get(uid, "conductor", 1) is None
-    assert _conductor_k1_status(uid) == "Todo"
-    assert naming.keystone_one_done(uid, "conductor") is False
-
-    # The prior run survives verbatim in the archive: full transcript and
-    # the read-back impression, both sides.
-    archives = svc.meetings.list_archives(uid, "conductor", 1)
-    assert len(archives) == 1
-    archive = archives[0]
-    assert [m["body"] for m in archive["transcript"]] == first_bodies
-    assert archive["readback_claim"] == row["readback_claim"]
-    assert archive["readback_response"] == "Mostly right — except I protect mornings first."
-    assert archive["readback_strands"] == ["Compass", "Logic"]
-
-
-def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
+def test_meet_again_reruns_and_recompletes(ve_ctx, tmp_path):
     uid = _seeded_user()
     svc = _svc(tmp_path)
     _run_conductor_to_completion(svc, uid)
-    svc.restart(uid, "conductor")
+    _meet_again(svc, uid, "conductor")
 
     # A fresh run delivers the opening again and runs the whole arc;
-    # completing it flips keystone 1 back to Done. (Opening shape as
-    # in test_start_delivers_opening_and_first_question — her
-    # introduction, four authored bubbles.)
+    # completing it keeps keystone 1 Done (it never reverts, AC13).
+    # (Opening shape as in test_start_delivers_opening_and_first_question
+    # — her introduction, four authored bubbles.)
     state = svc.start(uid, "conductor")
     assert state["status"] == "active"
     script = MT.get_script("conductor", 1)
@@ -681,33 +678,31 @@ def test_restarted_meeting_reruns_and_recompletes(ve_ctx, tmp_path):
     assert state["status"] == "complete"
     assert _conductor_k1_status(uid) == "Done"
 
-    # A second restart archives the second run alongside the first.
-    svc.restart(uid, "conductor")
-    archives = svc.meetings.list_archives(uid, "conductor", 1)
-    assert len(archives) == 2
-    assert any(
-        "Second time: I start with people, not tasks." in [m["body"] for m in a["transcript"]]
-        for a in archives
-    )
+    # A second Meet Again opens run 3; all three runs are retained as
+    # encounters (nothing is archived-away), and the second run's
+    # transcript still carries its own second-time lines.
+    run2 = svc.meetings.get_latest_encounter(uid, "conductor", 1)
+    _meet_again(svc, uid, "conductor")
+    encounters = svc.list_encounters(uid, "conductor", 1)
+    assert [e["run_number"] for e in encounters] == [1, 2, 3]
+    run2_bodies = [
+        m["body"]
+        for m in svc.conversations.history(uid, run2["conversation_id"], limit=500)
+    ]
+    assert "Second time: I start with people, not tasks." in run2_bodies
 
 
-def test_restart_api_mapping(ve_ctx, tmp_path, monkeypatch):
+def test_restart_route_is_retired():
+    """AC3: POST /conversation/meeting/restart is gone — the route
+    table carries meet-again and no restart (T-S3-11 pins the
+    function-level retirement; this pins the HTTP surface)."""
     import api.routes.conversation_routes as routes
 
-    uid = _seeded_user("restart-api@example.com")
-    svc = _svc(tmp_path)
-    monkeypatch.setattr(routes, "_meeting_service", lambda: svc)
-    user = {"id": uid}
-
-    # Nothing to restart yet → the refusal maps to 409.
-    with pytest.raises(HTTPException) as exc:
-        routes.meeting_restart(routes.MeetingRestartBody(archetype_id="conductor"), user)
-    assert exc.value.status_code == 409
-
-    _run_conductor_to_completion(svc, uid)
-    state = routes.meeting_restart(routes.MeetingRestartBody(archetype_id="conductor"), user)
-    assert state["status"] == "not_started"
-    assert _conductor_k1_status(uid) == "Todo"
+    paths = {r.path for r in routes.router.routes}
+    assert "/conversation/meeting/restart" not in paths
+    assert "/conversation/meeting/meet-again" in paths
+    assert not hasattr(routes, "meeting_restart")
+    assert not hasattr(routes, "MeetingRestartBody")
 
 
 # -- Visitor-initiated completion (the close fix, 2026-10-24) ---------------
@@ -733,7 +728,7 @@ def test_complete_refusals(ve_ctx, tmp_path):
 def test_complete_active_meeting_without_recognition(ve_ctx, tmp_path):
     """The stuck case: a short exchange that never produced an impression
     still completes cleanly — silent close (no scripted reveal for
-    decoupled meetings), task Done, turns refused, restart unlocked.
+    decoupled meetings), task Done, turns refused, Meet Again unlocked.
     Nothing is filed without a read-back."""
     uid = _seeded_user()
     svc = _svc(tmp_path)
@@ -750,11 +745,18 @@ def test_complete_active_meeting_without_recognition(ve_ctx, tmp_path):
         assert paragraph not in bodies
 
     # A completed meeting takes no more turns, and Meet again is open.
-    with pytest.raises(MeetingError, match="No meeting is in progress"):
+    # S2: refused with the encounter_finalized code (AC7).
+    with pytest.raises(MeetingError, match="has reached its close") as exc_info:
         svc.turn(uid, "conductor", "One more thing.")
-    state = svc.restart(uid, "conductor")
-    assert state["status"] == "not_started"
-    assert _conductor_k1_status(uid) == "Todo"
+    assert exc_info.value.code == "encounter_finalized"
+    # Meet Again opens run 2; the keystone never reverts (AC13) and
+    # the face stays unlocked — a later run never re-locks it.
+    from local_ai.council import naming
+
+    out = _meet_again(svc, uid, "conductor")
+    assert out["encounter"]["run_number"] == 2
+    assert _conductor_k1_status(uid) == "Done"
+    assert naming.keystone_one_done(uid, "conductor") is True
 
 
 def test_complete_paused_meeting(ve_ctx, tmp_path):
@@ -989,14 +991,37 @@ def test_ok_sounds_good_closes_on_recognition(ve_ctx, tmp_path):
 def test_met_seats_counts_completed_first_meetings_only(tmp_path):
     # A completed K1 unlocks the character name; a begun-but-active
     # meeting, a K2 completion, or another user's row does not.
+    # Non-destructive Meet Again (Slice 2): met_seats reads the
+    # ENCOUNTERS, never the meetings rows (amendment §1) — the setup
+    # creates encounter rows directly, and a meetings row marked
+    # complete WITHOUT an encounter row does not count.
     store = MeetingStore(tmp_path / "meetings.db")
-    store.create("u1", "champion", 1)
-    store.create("u1", "mentor", 1)
-    store.create("u1", "conductor", 2)
-    store.create("u2", "champion", 1)
-    store.update("u1", "champion", 1, status="complete")
-    store.update("u1", "conductor", 2, status="complete")
-    store.update("u2", "champion", 1, status="complete")
+    store.create_encounter(
+        run_id="run-champion-1", user_id="u1", archetype_id="champion",
+        keystone_index=1, run_number=1,
+        conversation_id="meeting-champion-1-run-champion-1",
+        status="complete", finalized_at="2026-11-09T00:00:00Z",
+    )
+    store.create_encounter(
+        run_id="run-mentor-1", user_id="u1", archetype_id="mentor",
+        keystone_index=1, run_number=1,
+        conversation_id="meeting-mentor-1-run-mentor-1",
+        status="in_progress",
+    )
+    store.create_encounter(
+        run_id="run-conductor-2", user_id="u1", archetype_id="conductor",
+        keystone_index=2, run_number=1,
+        conversation_id="meeting-conductor-2-run-conductor-2",
+        status="complete", finalized_at="2026-11-09T00:00:00Z",
+    )
+    store.create_encounter(
+        run_id="run-champion-u2", user_id="u2", archetype_id="champion",
+        keystone_index=1, run_number=1,
+        conversation_id="meeting-champion-1-run-champion-u2",
+        status="complete", finalized_at="2026-11-09T00:00:00Z",
+    )
+    store.create("u1", "guardian", 1)
+    store.update("u1", "guardian", 1, status="complete")
     assert store.met_seats("u1") == ["champion"]
     assert store.met_seats("nobody") == []
 
@@ -1008,8 +1033,14 @@ def test_turn_frame_names_met_seats_and_roles_others(ve_ctx, tmp_path):
     uid = _seeded_user()
     gen = FakeGen()
     svc = _svc(tmp_path, gen)
-    svc.meetings.create(uid, "champion", 1)
-    svc.meetings.update(uid, "champion", 1, status="complete")
+    # S2: met_seats is derived from encounters only (amendment §1) —
+    # a meetings-row-only completion no longer counts.
+    svc.meetings.create_encounter(
+        run_id="run-champion-frame", user_id=uid, archetype_id="champion",
+        keystone_index=1, run_number=1,
+        conversation_id="meeting-champion-1-run-champion-frame",
+        status="complete", finalized_at="2026-11-09T00:00:00Z",
+    )
     svc.start(uid, "conductor")
     svc.turn(uid, "conductor", "What is this place?")
     frames = "\n".join(gen.prompts)

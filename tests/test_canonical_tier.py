@@ -348,7 +348,16 @@ def test_meeting_control_tier_present(tmp_path, seat, arch, script, builder):
     cid = f"meeting-{arch}-1"
     store = svc.conversations
     store.ensure_conversation(uid)
-    store.append_message(uid, cid, arch, "user", MSG)
+    # Non-destructive Meet Again (Slice 1): the seed message is written
+    # through the meeting path — the meeting conversation ensured first
+    # (which creates the fence), then appended with via_meeting=True,
+    # exactly as the meeting engine writes. The strict S1 fence refuses
+    # ordinary writes to reserved meeting ids; this test exercises
+    # meeting behavior, so the fixture seeds through the authorized
+    # path rather than forcing a weaker contract (founder ruling,
+    # 2026-11-13: tests adapt to a justified safety invariant).
+    store.ensure_conversation(uid, cid, kind="meeting")
+    store.append_message(uid, cid, arch, "user", MSG, via_meeting=True)
     reply = svc._generate_framed(uid, arch, 1, engage)
     assert reply == "A plain engaged reply, hearing the work."
     assert len(prompts) == 1

@@ -76,9 +76,24 @@ def _disposition(c, cid, action, symbol=None, color=None):
 
 
 def _seed_meeting(store, user_id, cid=MEETING_MENTOR, seat="mentor"):
+    """A meeting conversation the way MeetingService leaves it: the
+    conversation row ensured with kind='meeting', messages from both
+    roles carrying the seat's archetype id.
+
+    Non-destructive Meet Again (Slice 1): the messages are written
+    through the meeting path — ensured first (which creates the
+    fence), then appended with via_meeting=True, exactly as the
+    meeting engine writes. The strict S1 fence refuses ordinary
+    writes to reserved meeting ids; the tests using this helper
+    exercise meeting behavior, so the fixture seeds through the
+    authorized path rather than forcing a weaker contract (founder
+    ruling, 2026-11-13: tests adapt to a justified safety
+    invariant)."""
     store.ensure_conversation(user_id, cid, kind="meeting")
-    store.append_message(user_id, cid, seat, "user", "meeting hello")
-    store.append_message(user_id, cid, seat, "voice", "meeting reply")
+    store.append_message(user_id, cid, seat, "user", "meeting hello",
+                         via_meeting=True)
+    store.append_message(user_id, cid, seat, "voice", "meeting reply",
+                         via_meeting=True)
 
 
 def test_archive_excludes_by_default_and_surfaces_with_opt_in(client):

@@ -328,9 +328,19 @@ def test_network_boundary_meeting_framed(monkeypatch, tmp_path):
     meet = MeetingStore(tmp_path / "meet.db")
     try:
         cid = conversation_id_for("conductor", 1)
-        conv.ensure_conversation("parity-nobody", cid)
+        # Non-destructive Meet Again (Slice 1): the seed message is
+        # written through the meeting path — the meeting conversation
+        # ensured first with kind='meeting' (which creates the fence),
+        # then appended with via_meeting=True, exactly as the meeting
+        # engine writes. The strict S1 fence refuses ordinary writes
+        # to reserved meeting ids; this test exercises meeting
+        # behavior, so the fixture seeds through the authorized path
+        # rather than forcing a weaker contract (founder ruling,
+        # 2026-11-13: tests adapt to a justified safety invariant).
+        conv.ensure_conversation("parity-nobody", cid, kind="meeting")
         conv.append_message("parity-nobody", cid, "conductor", "user",
-                            "I run a small bakery.", mode="base")
+                            "I run a small bakery.", mode="base",
+                            via_meeting=True)
         captured = {}
 
         def gen(prompt, **_kw):

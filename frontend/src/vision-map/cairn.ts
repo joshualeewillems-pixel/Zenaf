@@ -22,8 +22,21 @@ import { effectiveConditionSeverity } from './resolveConditionSeverity'
 /** Rendered-node thresholds: past these, project subtrees become cairns. */
 export const CAIRN_NARROW_THRESHOLD = 40
 export const CAIRN_WIDE_THRESHOLD = 80
-/** Long-press dwell that toggles a cairn (tap keeps select/focus behavior). */
-export const CAIRN_LONG_PRESS_MS = 550
+/**
+ * Hold ladder, tier 1 (founder gesture revision, 2026-11-13): a still
+ * hold of this long on a node ARMS DRAG for it — moving from there drags
+ * the stone. This is also the mouse hold dwell: a mouse hold commits its
+ * toggle action on release, as it always has.
+ */
+export const CAIRN_LONG_PRESS_MS = 450
+/**
+ * Hold ladder, tier 2: keep holding the same still press to here (from
+ * press start) and the cairn/stack toggles — fan out, stack back, or
+ * (un)stack the initiative. Once it fires, the press is spent.
+ */
+export const CAIRN_HOLD_TOGGLE_MS = 1100
+/** Two taps on the same node within this window read as a double-tap. */
+export const MAP_DOUBLE_TAP_MS = 350
 
 export type CairnEntry = {
   cairnId: string
@@ -157,7 +170,7 @@ export function applyCairnMode(
         subtitle: `${all.length} stones`,
         condition_severity: topSeverity,
         summaryLines: [
-          `${all.length} stones stacked — long-press to fan them out.`,
+          `${all.length} stones stacked — double-tap or hold longer to fan them out.`,
           ...bd.summaryLines.slice(0, 2),
         ],
         fertilizer_pulse: ranked.some((m) => !!((m.data as MapNodePayload).fertilizer_pulse)),
@@ -213,7 +226,11 @@ export function applyCairnMode(
 /**
  * Expand a cairn: members fan out around the anchor (the cairn's current
  * position), keeping their relative layout offsets. Members are tagged
- * `expandedFromCairn` so a long-press on any of them collapses back.
+ * `expandedFromCairn` so the view can tell a fanned member from a free
+ * stone: a longer hold on a member stacks the cairn back, a double-tap
+ * on a member opens that stone's data (the stone sheet also offers
+ * "Stack back into cairn"), and drag positions are tracked per-cairn
+ * while the fan is open.
  */
 export function expandCairn(
   nodes: Node<MapNodePayload>[],
@@ -287,10 +304,14 @@ export type StoneLongPressTarget =
   | { action: 'none' }
 
 /**
- * What a long-press on a stone should do. Expanded members collapse their
- * own cairn back; an initiative (tree) stone toggles that initiative's
- * stack — its children as the pile on its stone vs the full subtree. Everything
- * else: no long-press action, so tap/drag behavior is untouched.
+ * What the LONGER hold — tier 2 of the hold ladder — on a stone toggles
+ * (founder gesture revision, 2026-11-13). The ladder's first tier only
+ * arms drag; it toggles nothing. Keep holding the same still press: a
+ * member of an already-fanned cairn stacks its cairn back (the sheet's
+ * "Stack back into cairn" is the same action, explicitly); an initiative
+ * (tree) stone toggles that initiative's garden stack — its children as
+ * the pile on its stone vs the full subtree. A plain stone toggles
+ * nothing: opening it is the double-tap's job, and a tap still selects.
  */
 export function longPressTargetFor(
   kind: MapNodePayload['kind'],
@@ -299,6 +320,35 @@ export function longPressTargetFor(
 ): StoneLongPressTarget {
   if (expandedFromCairn) return { action: 'collapseCairn', cairnId: expandedFromCairn }
   if (kind === 'tree') return { action: 'toggleGardenStack', treeId: nodeId }
+  return { action: 'none' }
+}
+
+export type DoubleTapTarget =
+  | { action: 'fanOutCairn'; cairnId: string }
+  | { action: 'unstackGardenStack'; treeId: string }
+  | { action: 'openStoneData'; nodeId: string }
+  | { action: 'none' }
+
+/**
+ * What a double-tap on a node opens (founder gesture revision,
+ * 2026-11-13 — the double-tap took over "open" from the retired
+ * double-tap zoom): a cairn fans out; a garden stack (the pile node
+ * standing on its initiative's stone) unstacks; any other stone opens
+ * its data sheet — the same selection a tap produces. Containers and
+ * unknown node types have no double-tap action: their tap behavior
+ * stands alone.
+ */
+export function doubleTapTargetFor(
+  nodeId: string,
+  nodeType: string | undefined,
+  data: unknown,
+): DoubleTapTarget {
+  if (nodeType === 'cairn') {
+    return isGardenStackData(data)
+      ? { action: 'unstackGardenStack', treeId: nodeId }
+      : { action: 'fanOutCairn', cairnId: nodeId }
+  }
+  if (nodeType === 'entityMap') return { action: 'openStoneData', nodeId }
   return { action: 'none' }
 }
 
@@ -413,7 +463,7 @@ export function buildGardenStackNode(
       subtitle: `${totalStones} stones`,
       condition_severity: maxSeverity,
       summaryLines: [
-        `${totalStones} stones stacked — long-press to unstack.`,
+        `${totalStones} stones stacked — double-tap or hold longer to unstack.`,
         ...((treeData.summaryLines ?? []).slice(0, 2)),
       ],
       fertilizer_pulse: anyPulse,

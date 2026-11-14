@@ -1630,6 +1630,8 @@ def upload_stuck_outcomes(
 def list_conversations(
     limit: int = Query(default=20, ge=1, le=100),
     seat: str | None = Query(default=None, max_length=64),
+    include_meetings: bool = Query(default=False),
+    include_archived: bool = Query(default=False),
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """List the caller's talk conversations, newest message activity first.
@@ -1646,11 +1648,133 @@ def list_conversations(
     in are returned, via an EXISTS membership predicate applied
     before the limit (see ConversationStore.list_conversations).
     An absent or empty seat returns today's unfiltered list.
+
+    ``include_meetings=true`` (founder, 2026-11-12) additionally lists
+    the caller's ``meeting-*`` conversations — the seats' first
+    meetings — in the same shape (``kind`` is ``'meeting'``), so the
+    chat list can offer them and route a tap to the meeting view.
+    Browsable list surfaces opt in; the seat resume lookup does not,
+    so a meeting can never become a seat's auto-resumed talk. Calls
+    without the flag are unchanged.
+
+    Archived conversations are excluded unless
+    ``include_archived=true`` (founder, 2026-11-12: archive takes a
+    conversation out of the queue, still accessible elsewhere). The
+    you-node archive section opts in and partitions on each entry's
+    ``archived`` field; entries also carry the conversation's
+    ``symbol``/``color`` identity when one was chosen.
     """
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
-    return {"conversations": _store().list_conversations(user_id, limit=limit, seat=seat)}
+    return {
+        "conversations": _store().list_conversations(
+            user_id,
+            limit=limit,
+            seat=seat,
+            include_meetings=include_meetings,
+            include_archived=include_archived,
+        )
+    }
+
+
+# ---------------------------------------------------------------------------
+# Talk conversation lifecycle (founder, 2026-11-12): the "+" flow's
+# dispositions — archive for data / delete all system references /
+# keep open — and the save-as identity (symbol + color) chosen only
+# at that moment. Meetings are NOT dispositionable: a meeting
+# conversation's lifecycle belongs to the meeting system, so every
+# endpoint here refuses meeting ids (and kind='meeting' rows)
+# cleanly with 422.
+# ---------------------------------------------------------------------------
+
+
+class ConversationDispositionBody(BaseModel):
+    conversation_id: str = Field(max_length=64)
+    action: str = Field(max_length=16)  # "archive" | "keep_open"
+    symbol: int | None = Field(default=None, ge=1, le=24)
+    color: str | None = Field(default=None, max_length=32)
+
+
+def _refuse_meeting(user_id: str, conversation_id: str) -> None:
+    """422 when the target is a meeting conversation — by id (the
+    definitional discriminator) or by its row's kind. Owner-scoped:
+    the row read is the caller's own, so another user's meeting is
+    indistinguishable from an ordinary conversation here (and the
+    disposition write below is owner-scoped regardless)."""
+    if conversation_id.startswith("meeting-"):
+        raise HTTPException(
+            status_code=422,
+            detail="Meetings are not dispositionable conversations.",
+        )
+    row = _store().get_conversation(user_id, conversation_id)
+    if row is not None and row.get("kind") == "meeting":
+        raise HTTPException(
+            status_code=422,
+            detail="Meetings are not dispositionable conversations.",
+        )
+
+
+@router.post("/disposition")
+def conversation_disposition(
+    body: ConversationDispositionBody,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Apply a "+"-flow disposition to one of the caller's talks.
+
+    ``archive`` flags the conversation out of every default list
+    (still stored, still rediscoverable via include_archived);
+    ``keep_open`` leaves it in the queue. Both write the save-as
+    identity (symbol + color) chosen in the same step. The write is
+    owner-scoped: another user's conversation id is ensured/updated
+    only under the CALLER's id, so it can never touch the owner's
+    row (it would create the caller's own empty row instead — and
+    the conversation itself, having no messages under the caller,
+    appears in no list of theirs)."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    cid = (body.conversation_id or "").strip()
+    if not cid:
+        raise HTTPException(status_code=422, detail="conversation_id is required.")
+    if body.action not in ("archive", "keep_open"):
+        raise HTTPException(status_code=422, detail=f"Unknown action: {body.action!r}")
+    color = (body.color or "").strip() or None
+    _refuse_meeting(user_id, cid)
+    row = _store().set_conversation_disposition(
+        user_id,
+        cid,
+        archived=body.action == "archive",
+        symbol=body.symbol,
+        color=color,
+    )
+    return {"conversation": row}
+
+
+@router.delete("/{conversation_id}")
+def delete_conversation(
+    conversation_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Delete all system references to one of the caller's talks:
+    the conversation row and every conversation-keyed row in the
+    conversation store (messages, thread state, suggestion runs,
+    invitations, parked round items, upload rounds/artifacts, strand
+    sources and strand-thread pointers). Irreversible. Provenance
+    pointers held OUTSIDE the conversation store (VE tasks and task
+    proposals, feedback rows) are deliberately not followed — see
+    ConversationStore.delete_conversation. 404 when the caller has
+    no such conversation."""
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    cid = (conversation_id or "").strip()
+    if not cid:
+        raise HTTPException(status_code=422, detail="conversation_id is required.")
+    _refuse_meeting(user_id, cid)
+    if not _store().delete_conversation(user_id, cid):
+        raise HTTPException(status_code=404, detail="No such conversation.")
+    return {"deleted": True, "conversation_id": cid}
 
 
 @router.get("")
@@ -2244,8 +2368,22 @@ def get_suggestions(
     service = _service()
     store = service.store
 
+    # Permissions Slice 1 (B-S2): the thread summaries folded into
+    # suggestion minting below are steward-derived material, and a
+    # cached run carries their citations (thread_note / thread ids) —
+    # both are consumptions of steward_derivation. The check runs on
+    # every request, so a revocation takes effect at the next
+    # request, cached runs included; already-served suggestions are
+    # not recalled. Governed by steward_derivation ALONE (O-S1-5):
+    # this is same-conversation consumption of the user's own thread
+    # state, not cross-branch coordination, so no coordination flag
+    # is consulted here.
+    from local_ai.permissions.consumption import consumption_allowed
+
+    steward_ok = consumption_allowed(user_id, "steward_derivation")
+
     latest_id = store.latest_message_id(user_id, cid)
-    if latest_id:
+    if latest_id and steward_ok:
         cached = store.get_suggestion_run(user_id, cid)
         if cached and cached["up_to_message_id"] == latest_id:
             return {
@@ -2272,21 +2410,25 @@ def get_suggestions(
     # state out, which is exactly the pre-Phase 5 behavior. Threads
     # are the user's own state surfaced in their own conversation;
     # this is not cross-branch coordination, so no coordination flag
-    # gates it (the route itself is already current-user-only).
+    # gates it (the route itself is already current-user-only). The
+    # steward_derivation consumption check above does gate it
+    # (Slice 1, B-S2): when derivation is off the summaries are not
+    # built at all, and minting takes its existing no-threads path.
     thread_summaries = None
-    try:
-        from api.routes.steward_routes import get_narrative_store
-        from local_ai.narrative.read_model import active_thread_summaries
-
-        _narrative_store = get_narrative_store()
+    if steward_ok:
         try:
-            thread_summaries = active_thread_summaries(
-                _narrative_store.snapshot_for_read(user_id)
-            )
-        finally:
-            _narrative_store.close()
-    except Exception:
-        thread_summaries = None
+            from api.routes.steward_routes import get_narrative_store
+            from local_ai.narrative.read_model import active_thread_summaries
+
+            _narrative_store = get_narrative_store()
+            try:
+                thread_summaries = active_thread_summaries(
+                    _narrative_store.snapshot_for_read(user_id)
+                )
+            finally:
+                _narrative_store.close()
+        except Exception:
+            thread_summaries = None
 
     payload = sugg.generate_suggestions(
         turns, live_context, generate_fn=None, seat_names=seat_names,

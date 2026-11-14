@@ -42,7 +42,7 @@ import pytest
 
 from local_ai.agent_intake.store import AgentStore
 from local_ai.conversation import encounter as ENC
-from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP
+from local_ai.conversation.reply import _EXTRA_INSTRUCTIONS_CAP, build_voice_prompt
 from local_ai.conversation.meeting import (
     MeetingError,
     MeetingService,
@@ -101,11 +101,12 @@ def _definition():
 
 def _composed_engage(definition):
     """The engage frame as the live path actually sends it: the
-    definition's engage frame + the runtime's Zenaf note, naming note,
-    and capability context (encounter.handle_turn, substantive path)."""
+    definition's engage frame + the runtime's naming note and
+    capability context (encounter.handle_turn, substantive path).
+    The standing Zenaf question note no longer rides the frame
+    (Level 1, 2026-11-10): it rides the canonical tier."""
     return (
         definition.engage_frame
-        + "\n\n" + ENC._ZENAF_QUESTION_NOTE
         + "\n\n" + ENC._naming_note(definition)
         + "\n\n" + definition.capability_context
     )
@@ -162,7 +163,7 @@ def test_reveal_follows_existing_ceremony():
 def test_orientation_material_honors_weaver_trace():
     script = MT.AMBASSADOR_FIRST_MEETING
     # The Weaver's ambassador allusion, settled from the Crane's side:
-    # the rephrasing is her craft, done in the open.
+    # the rephrasing is his craft, done in the open.
     assert any("done in the open" in p for p in script.orientation)
     assert "two hands" in script.orientation_facts
     assert "You translate, you do not summon" in script.orientation_facts
@@ -276,9 +277,9 @@ def test_integrity_invariants_verbatim():
     assert "a blanket hedge naming nothing says nothing" in script.readback_frame
     assert "Three to five sentences." in script.readback_frame
     assert "The revised impression is three to five sentences." in script.correction_frame
-    # No invented training.
-    assert "Claim no knowledge of this visitor from training" in script.readback_frame
-    assert "nothing from this meeting trains anything until it goes through review" in script.readback_frame
+    # No invented training (Crane correction §9: Gardener's prohibition,
+    # verbatim — replaces the training claim).
+    assert "Never claim anything here trains you or is kept as training — an impression is a proposal, never a filed claim." in script.readback_frame
     # Strands bookkeeping line, exactly the Weaver form, both read frames.
     strands_form = (
         "'Strands: <names>' listing the one or two of the seven strands "
@@ -324,15 +325,21 @@ def test_parser_contract_delimiter_and_strands():
 
 def test_frame_budget_fits_live_cap_with_guard_intact():
     """Binding cap: reply.py truncates extra_instructions at _EXTRA_INSTRUCTIONS_CAP, and
-    the meeting path sends the composed engage frame through it. The
-    honesty guard rides at the END of the composed frame (capability
-    context tail), so it survives only if the composed frame fits.
-    Measured here, not asserted from the proposal's arithmetic."""
+    the meeting path sends the composed engage frame through it.
+    Level 1 (2026-11-10): the honesty guard no longer rides the
+    frame at all — it rides the canonical tier, an uncapped section
+    immediately before the frame, so frame-cap truncation can never
+    touch it (asserted in the tier by T-L1-1,
+    tests/test_canonical_tier.py). Measured here, not asserted from
+    the proposal's arithmetic."""
     definition = _definition()
     composed = _composed_engage(definition)
     assert len(composed) <= _EXTRA_INSTRUCTIONS_CAP
-    # The guard is the last content of the composed frame.
-    assert composed.rstrip().endswith("immediately usable.")
+    # The guard rides the tier, not the frame. Maverick S1 (C1)
+    # extended the guard with a fourth clause; the guard-endswith
+    # pin now lives in the tier test (T-L1-1 asserts the tier ends
+    # with HONESTY_GUARD), so the frame-endswith pin is superseded.
+    assert "immediately usable." not in composed
     # Worst-case naming note: every other seat already met.
     all_met = dataclasses.replace(
         definition,
@@ -354,17 +361,87 @@ def test_frame_budget_fits_live_cap_with_guard_intact():
     assert len(post_recognition) <= _EXTRA_INSTRUCTIONS_CAP
 
 
+# Deterministic fallback-cap fixture (2026-11-12, founder ruling,
+# test-only): the live composed frame + reference + cue no longer
+# overflows the 12,500 fallback cap incidentally (12,192 post-Level-1),
+# so the overflow is constructed deterministically below. The filler is
+# clearly-marked fixture text, never production content; the combined
+# total is exactly 13,000 (500 over the cap) regardless of incidental
+# frame sizes. The cue length (371) is the test's original constant.
+_FALLBACK_CAP = 12500
+_FALLBACK_FIXTURE_TOTAL = 13000
+_CUE_LEN = 371
+_FIXTURE_FILLER_SENTENCE = (
+    "Fixture overflow segment — deterministic filler standing in for "
+    "frame growth. "
+)
+
+
 def test_fallback_cap_combined_fit_reported_honestly():
     """The 12,500 fallback cap (proposal §2, not in code on origin/main):
-    the authored engage frame + the full shared reference (~3,739) +
-    a cue (371) fits — but the composed engage frame + reference + cue
-    is reported alongside it in the PR description, and the slice
-    migrates to the uncapped section after PR #255 merges rather than
-    stacking the reference on top of this frame. Neither number is a
-    claim of a fit that was not measured."""
+    the authored engage frame + the full shared reference (measured
+    live below) + a cue (371) fits — but the composed engage frame +
+    reference + cue is reported alongside it in the PR description,
+    and the slice rides the uncapped section rather than stacking the
+    reference on top of this frame. Neither number is a claim of a fit
+    that was not measured.
+
+    Crane correction (2026-11-07, design §18.1): the approved design
+    grows the composed engage frame (8,015 -> 8,748 post-rebase; 8,893
+    pre-rebase while the §12 shadow sentence still stands), so the
+    composed frame + reference + cue no longer fits the 12,500
+    fallback cap — and it does not need to: the reference rides the
+    uncapped section, and the binding cap is 9,000, which the composed
+    frame fits (sibling test). The overflow is measured here, not hidden.
+
+    Rework (2026-11-12, founder ruling, test-only): the live combined
+    total fell to 12,192 post-Level-1, so the overflow no longer occurs
+    incidentally. The overflow is now constructed deterministically (a
+    fixed filler extends the composed frame to an exact combined total
+    of 13,000), and the test verifies the reference rides the
+    designated uncapped path intact through the real assembly: the
+    reference text appears exactly once, in full, after the frame —
+    no duplication, no truncation, no ordering regression. The
+    reference length is measured live (4,268 on the rebased head),
+    not the frozen 3,739 from 2026-11-07.
+    """
     definition = _definition()
-    assert len(definition.engage_frame) + 3739 + 371 <= 12500
-    assert len(_composed_engage(definition)) + 3739 + 371 <= 12500
+    reference = (definition.fellowship_reference or "").strip()
+    assert reference, "ambassador definition carries no fellowship reference"
+    # 1. The authored frame + reference + cue still fits the cap.
+    assert len(definition.engage_frame) + len(reference) + _CUE_LEN <= _FALLBACK_CAP
+    # 2. Deterministic overflow fixture: extend the composed frame so
+    # the combined total is exactly 13,000 (500 over the cap).
+    composed = _composed_engage(definition)
+    natural = len(composed) + len(reference) + _CUE_LEN
+    filler_len = max(0, _FALLBACK_FIXTURE_TOTAL - natural - 2)
+    fixture_frame = composed
+    if filler_len:
+        filler = (
+            _FIXTURE_FILLER_SENTENCE
+            * (filler_len // len(_FIXTURE_FILLER_SENTENCE) + 1)
+        )[:filler_len]
+        fixture_frame = composed + "\n\n" + filler
+    combined = len(fixture_frame) + len(reference) + _CUE_LEN
+    assert combined > _FALLBACK_CAP, combined
+    assert combined == _FALLBACK_FIXTURE_TOTAL or filler_len == 0, combined
+    # The fixture frame still fits the binding 9,000 cap: the only
+    # overflow is the 12,500 combined overflow, not frame truncation.
+    assert len(fixture_frame) <= _EXTRA_INSTRUCTIONS_CAP
+    # 3. The reference rides the designated uncapped path intact
+    # through the real assembly (meeting path: canonical_tier=True).
+    lines, _ = build_voice_prompt(
+        "crane-s1", definition.archetype_id,
+        "What are the cues and clues to understanding which crossing one is on?",
+        [], mode="base", canonical=False,
+        extra_instructions=fixture_frame,
+        fellowship_reference=reference, canonical_tier=True)
+    prompt = "\n".join(lines)
+    assert prompt.count(reference) == 1, "reference duplicated or truncated"
+    # Ordering: tier, then frame, then the reference section.
+    assert prompt.find("These four lines are shared Fellowship doctrine") >= 0
+    assert prompt.find("Other seats: roles until met. None met yet.") < prompt.find(reference[:80])
+    assert prompt.find("These four lines are shared Fellowship doctrine") < prompt.find(reference[:80])
 
 
 # ---------------------------------------------------------------------------

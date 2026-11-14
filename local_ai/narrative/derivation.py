@@ -87,7 +87,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
 
-from local_ai.council.archetypes import get_archetype, stock_archetype_ids
+from local_ai.council.archetypes import PLAIN_TO_KEY, get_archetype, stock_archetype_ids
 from local_ai.council.jurisdictions import get_jurisdiction
 from local_ai.fellowship.events import FellowshipEvent
 
@@ -145,6 +145,31 @@ class EvidenceItem:
         return f"{self.ref.kind}:{self.ref.ref_id}"
 
 
+def _entity_strand_weights(event: FellowshipEvent) -> dict[str, float] | None:
+    """The event entity's strand weightings, if it has any.
+
+    Honest unknown: entities never weighed return None and the strand
+    signal simply doesn't contribute (entity_strands' own rule).
+    Reads all sources (user_stated, inferred, mined) — no source
+    filter, per the founder's Q2 ruling. Same shape as the
+    fellowship derivation's precedent
+    (local_ai/fellowship/derivation.py::_entity_strand_weights).
+    """
+    entity_type = (event.entity_type or "").strip().lower()
+    if entity_type not in ("person", "project", "task", "asset", "job"):
+        return None
+    if not event.entity_id or not event.user_id:
+        return None
+    try:
+        from local_ai.entity_strands import get_entity_strands
+
+        weighting = get_entity_strands(event.user_id, entity_type, event.entity_id)
+        return weighting.strand_weights
+    except Exception:
+        logger.exception("narrative: strand lookup failed for %s", event.id)
+        return None
+
+
 def event_to_item(event: FellowshipEvent) -> EvidenceItem:
     """FellowshipEvent → EvidenceItem (audit Part III S1 input)."""
     if (event.evidence_text or "").strip():
@@ -156,7 +181,12 @@ def event_to_item(event: FellowshipEvent) -> EvidenceItem:
     entity_ref = None
     if (event.entity_type or "").strip() and (event.entity_id or "").strip():
         entity_ref = f"{event.entity_type}:{event.entity_id}"
-    return EvidenceItem(ref=ref, text=text, entity_ref=entity_ref)
+    return EvidenceItem(
+        ref=ref,
+        text=text,
+        entity_ref=entity_ref,
+        strand_weights=_entity_strand_weights(event),
+    )
 
 
 def claim_to_item(claim: Any) -> EvidenceItem:
@@ -165,6 +195,11 @@ def claim_to_item(claim: Any) -> EvidenceItem:
     Duck-typed on purpose: the claim store's row shape is owned
     elsewhere; derivation needs only the verbatim quote (or the
     title when a claim carries no quote) and the claim id.
+
+    NOTE (strand weights): dead converter — zero callers at 1589a04.
+    If a caller ever appears, apply the event_to_item treatment
+    here (entity lookup when the claim row carries an entity)
+    instead of leaving strand_weights None.
     """
     evidence = (getattr(claim, "evidence", "") or "").strip()
     if evidence:
@@ -181,7 +216,13 @@ def claim_to_item(claim: Any) -> EvidenceItem:
 
 
 def entry_to_item(entry_id: str, text: str) -> EvidenceItem:
-    """A pipeline journal entry (id, full text) → EvidenceItem."""
+    """A pipeline journal entry (id, full text) → EvidenceItem.
+
+    NOTE (strand weights): dead converter — zero callers at 1589a04.
+    If a caller ever appears, entries carry no entity, so there is
+    no stored weighting to read; leave strand_weights None unless
+    a stored source exists. No text scoring (founder ruling Q1).
+    """
     return EvidenceItem(
         ref=SourceRef(
             kind="journal_entry", ref_id=str(entry_id), evidence_kind="quote"
@@ -243,15 +284,35 @@ def _tokens(text: str) -> set[str]:
     return out
 
 
+def _normalize_strand_keys(weights: dict[str, float] | None) -> dict[str, float]:
+    """Map a strand vector's keys to canonical lowercase strand keys.
+
+    Vectors arrive under two vocabularies: thread/item weights use
+    lowercase strand keys (``word``/``people``/...) while archetype
+    weights use plain-spoken names (``Voice``/``Heart``/...).
+    PLAIN_TO_KEY (``local_ai/council/archetypes.py``) is the single
+    source of truth for the mapping. Keys already in key form pass
+    through unchanged; unknown keys pass through lowercased. Without
+    this mapping the key sets are disjoint and every cross-vocabulary
+    cosine is 0.0.
+    """
+    by_lower = {k.lower(): v for k, v in PLAIN_TO_KEY.items()}
+    return {
+        by_lower.get(str(k).strip().lower(), str(k).strip().lower()): v
+        for k, v in (weights or {}).items()
+    }
+
+
 def _cosine(a: dict[str, float], b: dict[str, float]) -> float:
-    """Cosine similarity with case-insensitive strand keys.
+    """Cosine similarity over canonical strand keys.
 
     Strand vectors arrive from different stores under different key
-    casings (archetype weights use display names); the comparison
-    must not depend on that accident.
+    vocabularies (archetype weights use display names); both sides
+    are mapped through PLAIN_TO_KEY first, so the comparison must
+    not depend on that accident.
     """
-    norm_a = {str(k).lower(): float(v) for k, v in a.items()}
-    norm_b = {str(k).lower(): float(v) for k, v in b.items()}
+    norm_a = {k: float(v) for k, v in _normalize_strand_keys(a).items()}
+    norm_b = {k: float(v) for k, v in _normalize_strand_keys(b).items()}
     dot = sum(norm_a.get(k, 0.0) * v for k, v in norm_b.items())
     mag_a = math.sqrt(sum(v * v for v in norm_a.values()))
     mag_b = math.sqrt(sum(v * v for v in norm_b.values()))
@@ -790,6 +851,111 @@ def _has_jurisdiction_candidacy(cluster: Cluster) -> bool:
     return False
 
 
+def _cluster_strand_weights(items: list[EvidenceItem]) -> dict[str, float]:
+    """Mean of member items' strand vectors, mapped to strand keys.
+
+    Only items that carry weights contribute; a cluster with no weighed
+    item yields {} (unchanged behavior — the thread is born weightless,
+    never with an invented vector). The mean is renormalized to sum
+    1.0 when any weight is present; strands with zero weight are
+    omitted (a key present means the thread has weight on that
+    strand). The mapping is PLAIN_TO_KEY (item vectors are
+    plain-name-keyed, thread weights are strand-key-keyed by the
+    store's contract).
+    """
+    present = [i.strand_weights for i in items if i.strand_weights]
+    if not present:
+        return {}
+    mean = {
+        name: sum(w.get(name, 0.0) for w in present) / len(present)
+        for name in PLAIN_TO_KEY
+    }
+    total = sum(mean.values())
+    if total <= 0:
+        return {}
+    keyed = {PLAIN_TO_KEY[name]: v / total for name, v in mean.items()}
+    return {key: value for key, value in keyed.items() if value > 0}
+
+
+def _recompute_thread_weights(
+    thread: NarrativeThread,
+    new_items: list[EvidenceItem],
+    prior_attached_count: int,
+) -> dict[str, float]:
+    """Recomputed thread weights after an extension (founder ruling Q3).
+
+    The mean over all attached evidence, maintained incrementally:
+    the thread's current weights are the mean of the strand vectors
+    of all previously attached weighed items, so they re-enter the
+    mean weighted by the number of evidence rows attached before
+    this extension. Each new weighed item enters once. Exact when
+    every previously attached item carried weights; otherwise the
+    old aggregate is weighted by the attached-row count, which
+    imputes the aggregate to unweighed old rows — a bounded
+    approximation, never a synthetic vector. A thread with no
+    weighed evidence on either side stays {}.
+    """
+    old = thread.strand_weights or {}
+    new_weighed = [i.strand_weights for i in new_items if i.strand_weights]
+    if not old and not new_weighed:
+        return {}
+    acc: dict[str, float] = {}
+    total_weight = 0.0
+    if old:
+        old_weight = float(prior_attached_count) if prior_attached_count > 0 else 1.0
+        total_weight += old_weight
+        for key, value in old.items():
+            acc[key] = acc.get(key, 0.0) + old_weight * value
+    for weights in new_weighed:
+        total_weight += 1.0
+        for name, value in weights.items():
+            key = PLAIN_TO_KEY.get(name)
+            if key is None:
+                continue  # unmappable plain name: the store would refuse it
+            acc[key] = acc.get(key, 0.0) + value
+    if total_weight <= 0:
+        return {}
+    mean = {key: value / total_weight for key, value in acc.items()}
+    total = sum(mean.values())
+    if total <= 0:
+        return {}
+    # Strands with zero weight are omitted, matching the birth
+    # aggregate (a key present means the thread has weight there).
+    return {
+        key: value / total for key, value in mean.items() if value > 0
+    }
+
+
+def _refresh_thread_weights_after_extension(
+    store: NarrativeStore,
+    user_id: str,
+    thread: NarrativeThread,
+    new_items: list[EvidenceItem],
+) -> None:
+    """Recompute + write a thread's weights after an extension lands.
+
+    The prior attached-row count is the current row count minus this
+    extension's new items — each new item added exactly one row,
+    because derive_batch filters the extension to not-yet-attached
+    evidence and attach is idempotent. Best-effort: the weights are
+    a derived summary, and a failure here must never fail the
+    extension itself (the evidence already landed; the next
+    extension recomputes again). No-op when nothing is weighed.
+    """
+    try:
+        fresh = store.get_thread(user_id, thread.id) or thread
+        attached = store.evidence_for(user_id, thread.id)
+        prior_attached = max(len(attached) - len(new_items), 0)
+        weights = _recompute_thread_weights(fresh, new_items, prior_attached)
+        if weights == (fresh.strand_weights or {}):
+            return
+        store.set_thread_strand_weights(user_id, thread.id, weights)
+    except Exception:
+        logger.exception(
+            "narrative: thread weight refresh failed for %s", thread.id
+        )
+
+
 # ---------------------------------------------------------------------------
 # Generation — one call per candidate, structured state or decline
 # ---------------------------------------------------------------------------
@@ -1037,6 +1203,7 @@ def _birth_records_first(
             deferred_kind="birth",
             evidence_signature=birth_signature(cluster.items),
             evidence_texts=_deferred_texts(cluster.items),
+            strand_weights=_cluster_strand_weights(cluster.items),
         )
     except Exception:
         logger.exception("narrative: records-first birth failed")
@@ -1076,6 +1243,7 @@ def _extension_records_first(
         result.declines += 1
         return
     _annotate_entities(store, user_id, thread.id, new_items)
+    _refresh_thread_weights_after_extension(store, user_id, thread, new_items)
     result.deferred.append(thread.id)
 
 
@@ -1122,6 +1290,7 @@ def _propose_birth(
             origin="steward_proposal",
             title=proposal["title"],
             evidence_refs=[item.ref for item in cluster.items],
+            strand_weights=_cluster_strand_weights(cluster.items),
         )
         # Annotate what the founding evidence is about, so later
         # batches can recognize this thread by entity, not only by
@@ -1221,12 +1390,14 @@ def _propose_extension(
         return
     refs = [item.ref for item in new_items]
     change_kind = proposal["change_kind"]
+    change_recorded = False
     if change_kind:
         try:
             change = store.record_change(
                 user_id, thread.id, kind=change_kind, evidence_refs=refs
             )
             result.changes.append(change.id)
+            change_recorded = True
         except ValueError:
             logger.exception(
                 "narrative: extension change refused by store "
@@ -1251,11 +1422,18 @@ def _propose_extension(
     except ValueError:
         logger.exception("narrative: extension reading refused by store")
         result.declines += 1
+        if change_recorded:
+            # The change already attached the evidence, so the
+            # weights still refresh even though the reading declined.
+            _refresh_thread_weights_after_extension(
+                store, user_id, thread, new_items
+            )
         return
     # The reading's attach is the final attach on this path (the
     # change's attach, when one was recorded, covered the same
     # rows) — annotate once, idempotently.
     _annotate_entities(store, user_id, thread.id, new_items)
+    _refresh_thread_weights_after_extension(store, user_id, thread, new_items)
     result.readings.append(reading.id)
 
 

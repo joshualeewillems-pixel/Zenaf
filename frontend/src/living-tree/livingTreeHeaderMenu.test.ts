@@ -19,7 +19,7 @@ const TALK_B = 'talk-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
 describe('buildSeatHeaderMenu', () => {
   it('lists Today, Review, Upload and never Talk, Full character, or a meeting door', () => {
     const items = buildSeatHeaderMenu({
-      seatKey: 'mentor',
+      seatKey: 'champion',
       invitationCount: 0,
       currentChatId: null,
     })
@@ -31,18 +31,24 @@ describe('buildSeatHeaderMenu', () => {
   })
 
   it('adds seat-owned destinations where they exist', () => {
-    const champion = buildSeatHeaderMenu({
-      seatKey: 'champion',
+    const mentor = buildSeatHeaderMenu({
+      seatKey: 'mentor',
       invitationCount: 0,
       currentChatId: null,
     })
-    expect(champion.map((i) => i.title)).toEqual([
+    expect(mentor.map((i) => i.title)).toEqual([
       'Today',
       'Review',
       'Upload',
       'Vision map',
       'Vision (tables)',
     ])
+    const champion = buildSeatHeaderMenu({
+      seatKey: 'champion',
+      invitationCount: 0,
+      currentChatId: null,
+    })
+    expect(champion.map((i) => i.title)).toEqual(['Today', 'Review', 'Upload'])
     const guardian = buildSeatHeaderMenu({
       seatKey: 'guardian',
       invitationCount: 0,
@@ -53,6 +59,28 @@ describe('buildSeatHeaderMenu', () => {
       'Review',
       'Upload',
       'Provenance',
+    ])
+    const skeptic = buildSeatHeaderMenu({
+      seatKey: 'skeptic',
+      invitationCount: 0,
+      currentChatId: null,
+    })
+    expect(skeptic.map((i) => i.title)).toEqual([
+      'Today',
+      'Review',
+      'Upload',
+      'Signal review',
+    ])
+    const conductor = buildSeatHeaderMenu({
+      seatKey: 'conductor',
+      invitationCount: 0,
+      currentChatId: null,
+    })
+    expect(conductor.map((i) => i.title)).toEqual([
+      'Today',
+      'Review',
+      'Upload',
+      'Workspace Organizer',
     ])
   })
 

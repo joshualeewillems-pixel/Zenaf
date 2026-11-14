@@ -13,13 +13,22 @@
  * The App-side key remount on nonce bump is covered by
  * TreeTalkSheet.test.ts (fresh mount consumes the new override).
  *
+ * Sheet header (2026-11-12): the seat talk sheet's chrome header
+ * carries the seat's identity row (Other actions, emblem, name/tag)
+ * where the fellowship title used to sit, with Viability at the top
+ * right (label + value only — the "training comes first" caption is
+ * gone); the identity row's display name and emblem are the
+ * full-character openers, its tag the personal name once the seat is
+ * opened (role name until then); the body head keeps the quote and
+ * the meeting door.
+ *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react-dom/test-utils'
-import { LivingTreeView } from './LivingTree'
+import { buildSeatHeaderMenu, LivingTreeView, seatHeadTag } from './LivingTree'
 
 ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -187,7 +196,10 @@ describe('direct seat tap (T2)', () => {
     clickNode('ME')
     await flush()
     expect(dialog()).not.toBeNull()
-    expect(dialog()?.textContent).toContain('The Gardener')
+    // The fellowship chrome title is gone from the seat talk sheet
+    // (founder, 2026-11-12 header cleanup) — the seat is identified
+    // by its identity row in the header instead.
+    expect(dialog()?.textContent).not.toContain('The Gardener')
     // The compact head's Other actions button is always visible.
     expect(buttonByLabel('Other actions')).toBeDefined()
     // Direct navigation: the provider was called for 'talk' (the menu
@@ -245,16 +257,38 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     ).toBe(false)
   })
 
-  it('the champion head menu carries its seat-owned destinations', async () => {
+  it('the mentor head menu carries its seat-owned destinations', async () => {
     renderTree()
     await flush()
-    clickNode('CH')
+    clickNode('ME')
     await flush()
     await click(buttonByLabel('Other actions'))
     expect(rowByTitle('Vision map')).toBeDefined()
     expect(rowByTitle('Vision (tables)')).toBeDefined()
     await click(rowByTitle('Vision map'))
     expect(navigations).toContain('vision_map')
+  })
+
+  it('the skeptic head menu carries its seat-owned destination', async () => {
+    renderTree()
+    await flush()
+    clickNode('SK')
+    await flush()
+    await click(buttonByLabel('Other actions'))
+    expect(rowByTitle('Signal review')).toBeDefined()
+    await click(rowByTitle('Signal review'))
+    expect(navigations).toContain('signal_review')
+  })
+
+  it('the conductor head menu carries the Workspace Organizer', async () => {
+    renderTree()
+    await flush()
+    clickNode('CO')
+    await flush()
+    await click(buttonByLabel('Other actions'))
+    expect(rowByTitle('Workspace Organizer')).toBeDefined()
+    await click(rowByTitle('Workspace Organizer'))
+    expect(navigations).toContain('workspace')
   })
 
   it('the invitation shortcut fires an override + nonce bump (C1) from an open conversation', async () => {
@@ -314,5 +348,176 @@ describe('you-node menu preserved', () => {
     expect(back).toBeDefined()
     await click(back as Element)
     expect(container.textContent).toContain('Think something through with your whole council.')
+  })
+})
+
+describe('sheet header actions (2026-11-12)', () => {
+  it('the seat header carries Viability at the top right and no Full character link', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    const dlg = dialog()
+    expect(dlg).not.toBeNull()
+    const head = dlg?.querySelector('.nsh-head')
+    const kids = Array.from(head?.children ?? []).map((c) => (c as Element).className)
+    const actionsIdx = kids.indexOf('nsh-actions')
+    const closeIdx = kids.indexOf('nsh-close')
+    expect(actionsIdx).toBeGreaterThan(-1)
+    expect(closeIdx).toBeGreaterThan(-1)
+    // Actions sit between the titles and the close control.
+    expect(actionsIdx).toBeGreaterThan(kids.indexOf('nsh-titles'))
+    expect(actionsIdx).toBeLessThan(closeIdx)
+    const actions = dlg?.querySelector('.nsh-actions')
+    expect(actions?.textContent).toContain('Viability')
+    // Seed fallback: 0%, same value as before. The "training comes
+    // first" caption was removed (founder, 2026-11-12 header cleanup).
+    expect(actions?.textContent).toContain('0%')
+    expect(actions?.textContent).not.toContain('training comes first')
+    // Exactly one Viability, and no Full character control anywhere in
+    // the sheet — the display name is the opener now.
+    expect((dlg?.textContent?.match(/Viability/g) ?? []).length).toBe(1)
+    expect(
+      Array.from(dlg?.querySelectorAll('button') ?? []).some((b) =>
+        ['Full character →', 'Hide full character ↑'].includes((b.textContent ?? '').trim()),
+      ),
+    ).toBe(false)
+  })
+
+  it('the display name opens the full character sheet', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    const btn = Array.from(dialog()?.querySelectorAll('button') ?? []).find(
+      (b) => (b.textContent ?? '').trim() === 'Mentor',
+    )
+    if (!btn) throw new Error('display-name button not found')
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    await click(btn)
+    expect(btn.getAttribute('aria-expanded')).toBe('true')
+    // The expanded character body renders (Marketplace section).
+    expect(dialog()?.textContent).toContain('Marketplace')
+    // Tapping the name again collapses it.
+    await click(btn)
+    expect(btn.getAttribute('aria-expanded')).toBe('false')
+    expect(dialog()?.textContent).not.toContain('Marketplace')
+  })
+
+  it('the tag shows the role name until the seat is opened', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    // Seed fallback: unopened (face_revealed false, avatar_unlocked
+    // false) — the tag is the role name, not SEED and not a name.
+    const tag = dialog()?.querySelector('.lavatar-head .ltag')
+    expect(tag?.textContent).toBe('MENTOR')
+  })
+
+  it('Other actions sits left of the avatar in the compact head', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    const head = dialog()?.querySelector('.lavatar-head')
+    expect(head).not.toBeNull()
+    const first = head?.firstElementChild as Element | null
+    expect(first?.getAttribute('aria-label')).toBe('Other actions')
+    expect(first?.textContent).toContain('···')
+    // The moved button still opens the menu.
+    await click(buttonByLabel('Other actions'))
+    expect(rowByTitle('Today')).toBeDefined()
+  })
+})
+
+describe('maverick mint (2026-11-12)', () => {
+  it('buildSeatHeaderMenu gives Mint to the Maverick only, after Upload', () => {
+    const maverick = buildSeatHeaderMenu({
+      seatKey: 'maverick',
+      invitationCount: 0,
+      currentChatId: null,
+    })
+    expect(maverick.map((m) => m.title)).toEqual(['Today', 'Review', 'Upload', 'Mint'])
+    const mint = maverick.find((m) => m.title === 'Mint')
+    expect(mint?.kind).toBe('sheet')
+    if (mint?.kind === 'sheet') expect(mint.id).toBe('mint')
+    for (const seat of ['mentor', 'champion', 'guardian', 'ambassador', 'conductor', 'skeptic']) {
+      const items = buildSeatHeaderMenu({
+        seatKey: seat,
+        invitationCount: 0,
+        currentChatId: null,
+      })
+      expect(items.some((m) => m.title === 'Mint')).toBe(false)
+    }
+  })
+
+  it('the Maverick head menu shows Mint and routes the mint sheet item', async () => {
+    renderTree()
+    await flush()
+    clickNode('MA')
+    await flush()
+    await click(buttonByLabel('Other actions'))
+    expect(rowByTitle('Mint')).toBeDefined()
+    await click(rowByTitle('Mint'))
+    expect(providerCalls.some((c) => c.item === 'mint' && c.seatKey === 'maverick')).toBe(true)
+  })
+
+  it('other seats show no Mint row', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    await click(buttonByLabel('Other actions'))
+    expect(
+      Array.from(container.querySelectorAll('button.lrow')).some(
+        (b) => b.querySelector('.lrow-t')?.textContent === 'Mint',
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('seat head tag (personal name once opened, 2026-11-12)', () => {
+  it('unopened seats show the role name; opened seats show the personal name', () => {
+    const unopened = { avatar_url: null, avatar_unlocked: false, face_revealed: false }
+    expect(seatHeadTag({ ...unopened, id: 'mentor' })).toBe('MENTOR')
+    expect(seatHeadTag({ ...unopened, id: 'ambassador' })).toBe('AMBASSADOR')
+    expect(seatHeadTag({ ...unopened, id: 'skeptic' })).toBe('SKEPTIC')
+    expect(seatHeadTag({ ...unopened, id: 'maverick' })).toBe('MAVERICK')
+    const opened = { avatar_url: null, avatar_unlocked: false, face_revealed: true }
+    expect(seatHeadTag({ ...opened, id: 'mentor' })).toBe('Rumi')
+    expect(seatHeadTag({ ...opened, id: 'champion' })).toBe('Valen')
+    expect(seatHeadTag({ ...opened, id: 'guardian' })).toBe('Maeve')
+    expect(seatHeadTag({ ...opened, id: 'ambassador' })).toBe('Lucian')
+    expect(seatHeadTag({ ...opened, id: 'conductor' })).toBe('Aria')
+    expect(seatHeadTag({ ...opened, id: 'skeptic' })).toBe('Severine')
+    expect(seatHeadTag({ ...opened, id: 'maverick' })).toBe('Jynx')
+    // Older payloads without face_revealed fall back to the depth door.
+    expect(
+      seatHeadTag({ id: 'maverick', avatar_url: null, avatar_unlocked: true }),
+    ).toBe('Jynx')
+  })
+})
+
+describe('seat-aimed upload from the full profile (2026-11-12)', () => {
+  it('the profile Upload link opens the sheet upload item for that seat', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    // Open the full character via the display name (seed fallback:
+    // depth 0, so the profile's Upload link renders).
+    const nameBtn = Array.from(dialog()?.querySelectorAll('button') ?? []).find(
+      (b) => (b.textContent ?? '').trim() === 'Mentor',
+    )
+    if (!nameBtn) throw new Error('display-name button not found')
+    await click(nameBtn)
+    const uploadBtn = Array.from(dialog()?.querySelectorAll('button') ?? []).find(
+      (b) => (b.textContent ?? '').trim() === 'Upload source materials to begin training ›',
+    )
+    if (!uploadBtn) throw new Error('profile Upload button not found')
+    await click(uploadBtn)
+    expect(providerCalls.some((c) => c.item === 'upload' && c.seatKey === 'mentor')).toBe(true)
+    expect(navigations).not.toContain('agent_intake')
   })
 })

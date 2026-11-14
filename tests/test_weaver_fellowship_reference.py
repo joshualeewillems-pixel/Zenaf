@@ -99,8 +99,13 @@ def test_new_material_not_in_capped_frames():
         assert "You cannot arrange meetings" not in text
         assert "First-meeting openness right now" not in text
     # Capped frames byte-stable: the budget test's headroom stands.
+    # Q-R7 lecture edit (2026-11-09): turn_frame measured 5615 post-edit.
+    # (The pre-edit expectation 5641 was already stale — measured 5613 at
+    # 93e6033; the lecture change accounts for +2: 5613 -> 5615.)
+    # The engage_frame expectation below is a pre-existing failure (6760 vs
+    # measured 7140 at 93e6033); this edit does not touch the engage frame.
     assert len(definition.engage_frame) == 6760
-    assert len(definition.turn_frame) == 5641
+    assert len(definition.turn_frame) == 5615
 
 
 def test_all_seats_carry_a_reference():

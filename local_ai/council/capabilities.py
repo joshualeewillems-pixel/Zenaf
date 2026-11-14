@@ -95,7 +95,8 @@ INTENTION_LINE = (
 #: constraint; it is not an instruction to offer anything.
 HONESTY_GUARD = (
     "Never present a planned capability as available, a hypothetical "
-    "as an action, or a gated capability as immediately usable."
+    "as an action, a gated capability as immediately usable, or a "
+    "limited, unverified workflow as something you can do or offer."
 )
 
 
@@ -132,6 +133,13 @@ class Capability:
     #: Human-readable prerequisite/eligibility note. Always present:
     #: it is the third field, and it is what a gated rendering quotes.
     prerequisite_note: str = ""
+    #: Action-honesty note (Firebrand FC4 companion, 2026-11-07):
+    #: one sentence appended to the capability's own status line
+    #: when set and the capability is currently usable — so the
+    #: note rides ONLY where the workflow is actually available,
+    #: never on a planned or gated line. The field is optional and
+    #: defaults to ""; the rendering rule is part of _render_lines.
+    prompt_note: str = ""
 
 
 @dataclass(frozen=True)
@@ -361,6 +369,10 @@ CAPABILITIES: tuple[Capability, ...] = (
             "Signed-in account; the visitor chooses — naming one "
             "does not create it."
         ),
+        # FC4 companion (2026-11-07): the note rides the commitments
+        # line when — and only when — the workflow is usable, so a
+        # signed-out or gated rendering never carries it.
+        prompt_note="Naming one does not create it.",
     ),
     Capability(
         id="followthrough_nudges",
@@ -606,22 +618,6 @@ CAPABILITIES: tuple[Capability, ...] = (
             "No export-all endpoint — do not claim full export exists."
         ),
     ),
-    Capability(
-        id="rename_reshape",
-        name="Rename and reshape seats",
-        primary_seat="maverick",
-        implementation="limited-experimental",
-        verification="unverified",
-        evidence=(
-            "Twigs approve/delete exist; user-renamed seats supported "
-            "in prompt lines; seat rename/reshape UI not verified."
-        ),
-        prerequisites=("signed_in",),
-        prerequisite_note=(
-            "Signed-in account; review approval where applicable; "
-            "seat rename/reshape UI not verified."
-        ),
-    ),
     # -- Unassigned: suggestions belong to no seat's slice until a
     # jurisdiction claims them. Never defaulted to the Weaver. --
     Capability(
@@ -762,24 +758,40 @@ def _render_lines(seat: str | None, state: VisitorState) -> list[str]:
         head = f"- {cap.name}"
         if cap.detail:
             head += f" ({cap.detail})"
-        lines.append(f"{head} — {_status_text(cap, state)}")
+        line = f"{head} — {_status_text(cap, state)}"
+        # FC4 companion: the prompt_note rides ONLY a usable line —
+        # never a planned, gated, or limited-experimental one. The
+        # "available" wording in _status_text is what a signed-in
+        # visitor sees; the note corrects the reading that naming
+        # creates the thing.
+        if cap.prompt_note and currently_usable(cap, state):
+            line += f". {cap.prompt_note}"
+        lines.append(line)
     return lines
 
 
+#: Lead-in for the first-meeting block (Level 1, founder review
+#: item 1, 2026-11-10): a short structural lead-in, not doctrine.
+#: It heads the seat-specific capability bullets inside the frame
+#: after the scope line moved to the canonical tier. The canonical
+#: scope doctrine stays in the tier; the lead-in carries no doctrine
+#: of its own.
+_CAPABILITY_LEADIN = "From your scope:"
+
+
 def first_meeting_block(seat: str | None, state: VisitorState) -> str:
-    """The first-meeting frame's capability context: the seat's own
-    slice as knowledge, plus the ONE shared intention line and the
-    standing honesty guard. Empty for unknown seats (no slice, no
-    intention line). This is the only place the intention line is
-    defined for frames; continuations never receive it."""
+    """The first-meeting frame's capability context: the adopted
+    lead-in plus the seat's own capability bullets only. The shared
+    lines that used to ride this block — the scope line, the ONE
+    shared intention line, and the standing honesty guard — now ride
+    the canonical tier (``local_ai/conversation/canonical_tier.py``),
+    carried once as an uncapped section immediately before the frame
+    on the meeting path. Empty for unknown seats (no slice, no
+    lead-in). Continuations never receive this block."""
     lines = _render_lines(seat, state)
     if not lines:
         return ""
-    header = (
-        "What you can introduce, explain, or offer from your scope "
-        "(knowledge, not a list to work through):"
-    )
-    return "\n".join([header, *lines, INTENTION_LINE, HONESTY_GUARD])
+    return "\n".join([_CAPABILITY_LEADIN, *lines])
 
 
 def continuation_block(seat: str | None, state: VisitorState) -> str:

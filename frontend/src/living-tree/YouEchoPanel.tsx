@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiBase } from '../apiBase'
+import { TREE_DEFAULT_RGB } from '../council/colors'
 
 /**
  * The per-seat QC surface — "what's being fashioned" about you.
@@ -14,7 +15,7 @@ import { apiBase } from '../apiBase'
  *  - The You identity card (name/face presentation) stays unrevealed until
  *    keystone 4 ("The echo") is complete. The QC data is visible from day
  *    one, because checking what's being fashioned is the day-to-day point
- *    of the switch — but the echo's NAME cannot be set before then: you
+ *    of this panel — but the echo's NAME cannot be set before then: you
  *    have to get to know it before you can name it, and the naming happens
  *    in the recognition conversation itself.
  *  - Signal anchors are shown read-only, exactly as recorded (they were
@@ -78,7 +79,7 @@ type YouProfile = {
   }
 }
 
-export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; character: string }) {
+export function YouEchoPanel({ archetypeId }: { archetypeId: string }) {
   const [profile, setProfile] = useState<YouProfile | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [nameDraft, setNameDraft] = useState('')
@@ -141,9 +142,6 @@ export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; 
 
       {you.revealed ? (
         <div>
-          <p className="lnote">
-            You’ve met your echo of the {character} — its card is revealed. What it goes by, between you:
-          </p>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               value={nameDraft}
@@ -152,7 +150,7 @@ export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; 
               aria-label="Your echo's personal name"
               style={{
                 minHeight: 44, padding: '8px 12px', borderRadius: 10, flex: '1 1 160px',
-                background: 'rgba(245,240,232,.06)', border: '1px solid rgba(201,168,106,.35)',
+                background: 'rgba(245,240,232,.06)', border: `1px solid rgba(${TREE_DEFAULT_RGB},.35)`,
                 color: '#f5f0e8', fontFamily: 'inherit', fontSize: 14,
               }}
             />
@@ -161,26 +159,8 @@ export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; 
             </button>
           </div>
           {saveNote ? <p className="lnote">{saveNote}</p> : null}
-          <p className="lnote">
-            This seat’s echo is rentable-ready by your own standard — the meeting happened,
-            and the record above is what a renter would be trusting.
-          </p>
         </div>
-      ) : (
-        <div>
-          <p className="lsub">
-            Your echo of the {character} is being fashioned, but its card stays unrevealed
-            until the recognition conversation (keystone 4, “The echo”) — the name, face,
-            and full presentation arrive then. The switch above and everything below stay
-            open in the meantime: this is yours to inspect from day one.
-          </p>
-          <p className="lnote">
-            It doesn’t have a name yet — you have to get to know it before you can
-            name it. The name comes from the recognition conversation, when the two
-            of you land on one together.
-          </p>
-        </div>
-      )}
+      ) : null}
 
       {recognition.seeded ? (
         <p className="lnote">
@@ -194,15 +174,6 @@ export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; 
       <div className="lstat">
         <span className="lname">Familiarity</span>
         <span className="lpct">{fashioning.depth_points} pts</span>
-        <span className="lnote">
-          {fashioning.depth_points <= 0
-            ? ' — nothing approved has shaped this seat yet'
-            : fashioning.milestones.rename_unlocked
-              ? ' — deep enough to rename the seat'
-              : fashioning.milestones.avatar_unlocked
-                ? ' — deep enough to set the seat’s face'
-                : ' — early shaping'}
-        </span>
       </div>
       <div className="lstat">
         <span className="lname">Persona</span>
@@ -223,12 +194,7 @@ export function YouEchoPanel({ archetypeId, character }: { archetypeId: string; 
       ) : null}
 
       <div className="lsect">Approved training shaping this seat</div>
-      {fashioning.approved_signals.length === 0 ? (
-        <p className="lsub">
-          Nothing yet — when you approve training that touches this seat, it shows up here
-          with the exact words it rests on.
-        </p>
-      ) : (
+      {fashioning.approved_signals.length === 0 ? null : (
         <div>
           {parallels.map((s) => (
             <div key={s.signal_id} style={{ margin: '10px 0' }}>

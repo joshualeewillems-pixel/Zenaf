@@ -19,6 +19,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   applyNodeChanges,
+  getViewportForBounds,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -34,14 +35,15 @@ import './mapAesthetics.css'
 
 import { EntityMapNode } from './EntityMapNode'
 import { CairnNode } from './CairnNode'
-import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX, NEST_NODE_LAYOUT_WIDTH_PX } from './NestGroupNode'
+import { NestGroupNode, NEST_NODE_LAYOUT_HEIGHT_PX } from './NestGroupNode'
 import {
   CAIRN_NARROW_THRESHOLD,
   CAIRN_WIDE_THRESHOLD,
+  MAP_DOUBLE_TAP_MS,
   applyDragPositions,
   applyGardenStack,
   branchAnchorForCairn,
-  collapseCairn,
+  doubleTapTargetFor,
   dropDragPositions,
   expandCairn,
   isGardenStackData,
@@ -61,23 +63,14 @@ import { applyFocusToVisionMap } from './visionMapFocus'
 import { MapSandRakeControls } from './MapSandRakeControls'
 import { ZenSandCanvas, type ZenSandCanvasHandle } from './ZenSandCanvas'
 import type { VisionMapCouncilInteraction } from './visionMapCouncilInteraction'
-import {
-  clearVisionMapLayout,
-  loadVisionMapLayout,
-  saveVisionMapLayout,
-  visionMapLayoutStorageKey,
-  type VisionMapPersistedViewport,
-} from './visionMapLayoutPersistence'
+import { populatedBounds } from './mapFitView'
+import { touchGestureGate, useActiveTouchPointerCount } from './touchGestureGate'
 import {
   EMPTY_NEST_STATE,
   applyNestTransform,
-  canNestNode,
   computeNestGrowthTriad,
-  createNestGroup,
-  dissolveNestsMergedIntoAncestor,
   getNestGroupForRoot,
   updateNestAnchor,
-  withAddedNestGroup,
   withRemovedNestGroup,
   type NestGroupNodeData,
   type NestState,
@@ -88,18 +81,25 @@ import { detectMissingDimensions } from './guidanceScripts'
 import { assessNodeFlowAndChannels } from '../flow/assessNodeFlowAndChannels'
 import { useVisionExecutionFocusOptional } from '../vision-execution/focus/VisionExecutionFocusContext'
 import { mapPayloadToConversationFocusDescriptor } from './mapFocusDescriptor'
-import { VeRadarAwarenessStrip } from './VeRadarAwarenessStrip'
-import type { VeRadarBucketId } from '../vision-execution/veRadarAwareness'
 
 const nodeTypes = { entityMap: EntityMapNode, nestGroup: NestGroupNode, cairn: CairnNode }
 const edgeTypes = { mapFlow: MapFlowEdge }
 const TRACKPAD_ZOOM_GAIN = 2.2
 const SCENE_BASE_HEIGHT_PX = 560
 const SCENE_CONTENT_PADDING_PX = 260
-/** Fallback node size before React Flow measures — matches painted stone box (see mapEntityNodeLayout). */
-const DEFAULT_ENTITY_W = MAP_ENTITY_FALLBACK_LAYOUT_PX.width
-const DEFAULT_ENTITY_H = MAP_ENTITY_FALLBACK_LAYOUT_PX.height
-const INITIAL_MAP_ZOOM = 1
+/**
+ * Open view (2026-11-12): the map opens fitted on the whole garden — every
+ * cairn visible, consolidated — instead of centered on a random node at
+ * zoom 1. The fit never blows a small garden up past FIT_VIEW_MAX_ZOOM.
+ * The open is ALWAYS the computed garden: no saved layout is restored
+ * (an earlier build saved dragged positions + viewport to localStorage
+ * and restored them verbatim, which scattered the garden on load — the
+ * founder's own session drags came back as someone else's map). Dragging
+ * still works within a session; nothing persists across loads.
+ */
+const FIT_VIEW_PADDING = 0.15
+const FIT_VIEW_MAX_ZOOM = 0.9
+const MAP_MIN_ZOOM = 0.15
 const ORIENT_RETRY_MS = 600
 
 const MAP_SAND_LAYER_CLASS = 'map-sand-layer'
@@ -126,9 +126,10 @@ type VisionMapMapWorldProps = {
   onNodeClick: (_: MouseEvent, node: Node<MapNodePayload | NestGroupNodeData>) => void
   onPaneClick: () => void
   onViewportChange: (viewport: { zoom: number }) => void
-  onMoveEnd: () => void
   zoomLevel: number
   onOpenOperatorMode: () => void
+  /** True while a hold-armed node drag is tracking a touch pointer — the rake must not stamp. */
+  rakeSuspended: boolean
 }
 
 /** Sand + rake controls + React Flow — isolated from `councilQuestionDraft` so typing in chat does not re-render the zen canvas. */
@@ -154,12 +155,49 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
   onNodeClick,
   onPaneClick,
   onViewportChange,
-  onMoveEnd,
   zoomLevel,
   onOpenOperatorMode,
+  rakeSuspended,
 }: VisionMapMapWorldProps) {
+  const rf = useReactFlow()
+  const wrapRef = useRef<HTMLDivElement>(null)
+  /* Founder touch gesture contract (2026-11-12, revised 2026-11-13):
+     count live touch pointers on the pane and gate React Flow from it —
+     with exactly one finger down the finger only rakes (no pan, no
+     native node drag); with two or more, the fingers pan + pinch and
+     the rake suspends itself. A held finger arms drag for its stone —
+     the view tracks that drag itself (see the hold ladder in
+     VisionMapFlow), so React Flow's native drag stays off under touch. */
+  const touchCount = useActiveTouchPointerCount(wrapRef)
+  const gate = touchGestureGate(touchCount)
+
+  /* Object-aware fit: frame what is actually populated — the rendered
+     entities only, never nest-group scaffolding — capped at the same
+     max zoom as the programmatic fits. Replaces the stock Controls
+     fitView, which enclosed every node (containers included) with no
+     zoom cap and could zoom out to no man's land. */
+  const onFitPopulated = useCallback(() => {
+    const bounds = populatedBounds(nodes)
+    const el = wrapRef.current
+    if (!bounds || !el) return
+    const rect = el.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return
+    const viewport = getViewportForBounds(
+      bounds,
+      rect.width,
+      rect.height,
+      MAP_MIN_ZOOM,
+      FIT_VIEW_MAX_ZOOM,
+      FIT_VIEW_PADDING,
+    )
+    void rf.setViewport(viewport, { duration: 0 }).then(() => {
+      onViewportChange({ zoom: viewport.zoom })
+    })
+  }, [nodes, rf, onViewportChange])
+
   return (
     <div
+      ref={wrapRef}
       className={`map-world-wrap flex flex-col flex-1 min-w-0 min-h-[480px] relative overflow-hidden ${selectedNodeId ? 'map-focus-active' : ''}`}
       style={{ height: `${sceneHeightPx}px` }}
     >
@@ -168,6 +206,7 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
         reducedMotion={reduceMotion}
         className={MAP_SAND_LAYER_CLASS}
         rakeEnabled={rakeEnabled}
+        rakeSuspended={rakeSuspended}
         rakeFadeAfterMs={rakeFadeSec * 1000}
       />
       <MapSandRakeControls
@@ -239,22 +278,23 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
         edgeTypes={edgeTypes}
         onNodeClick={onNodeClick}
         onPaneClick={onPaneClick}
-        nodesDraggable={true}
+        nodesDraggable={gate.nodesDraggable}
         nodesConnectable={false}
         nodeDragThreshold={10}
         selectNodesOnDrag={false}
-        panOnDrag={[0, 2]}
+        panOnDrag={gate.panOnDrag}
         panOnScroll={true}
         panActivationKeyCode="Space"
         zoomActivationKeyCode="Control"
         selectionKeyCode="Shift"
         elementsSelectable
         fitView={false}
-        fitViewOptions={{ padding: 0.2 }}
-        minZoom={0.2}
+        fitViewOptions={{ padding: FIT_VIEW_PADDING }}
+        minZoom={MAP_MIN_ZOOM}
         maxZoom={1.6}
         zoomOnScroll={true}
         zoomOnPinch={true}
+        zoomOnDoubleClick={false}
         proOptions={{ hideAttribution: true }}
         debug={false}
         colorMode="dark"
@@ -263,9 +303,20 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
         }`}
         style={{ background: 'transparent' }}
         onMove={(_, viewport) => onViewportChange(viewport)}
-        onMoveEnd={() => onMoveEnd()}
       >
-        <Controls showInteractive={false} position="top-left" />
+        <Controls showInteractive={false} showFitView={false} position="top-left">
+          <button
+            type="button"
+            className="react-flow__controls-button react-flow__controls-fitview"
+            onClick={onFitPopulated}
+            title="Fit the populated garden"
+            aria-label="Fit the populated garden"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 30" aria-hidden>
+              <path d="M3.692 4.63c0-.53.4-.938.939-.938h5.215V0H4.708C2.13 0 0 2.054 0 4.63v5.216h3.692V4.631zM27.354 0h-5.2v3.692h5.17c.53 0 .984.4.984.939v5.215H32V4.631A4.624 4.624 0 0027.354 0zm.954 24.83c0 .532-.4.94-.939.94h-5.215v3.768h5.215c2.577 0 4.631-2.13 4.631-4.707v-5.139h-3.692v5.139zm-23.677.94c-.531 0-.939-.4-.939-.94v-5.138H0v5.139c0 2.577 2.13 4.707 4.708 4.707h5.138V25.77H4.631z" />
+            </svg>
+          </button>
+        </Controls>
         <Panel position="top-left" className="ml-12 mt-1 pointer-events-none">
           <div className="rounded-md border border-stone-700/70 bg-stone-900/78 px-2 py-1 text-[11px] font-medium text-stone-200">
             {Math.round(zoomLevel * 100)}%
@@ -278,44 +329,28 @@ const VisionMapMapWorld = memo(function VisionMapMapWorld({
 
 export type VisionMapViewProps = {
   onOpenOperatorMode: () => void
-  /** Jump to Vision & Execution Radar tab; optional bucket for scroll target. */
-  onOpenVeRadar?: (bucket?: VeRadarBucketId) => void
   councilQuestionDraft: string
   onVisionMapCouncilInteraction: (action: VisionMapCouncilInteraction) => void
   /** Growth triad snapshot for developmental guidance (council preflight); cleared when selection clears. */
   onDevelopmentalSignalsChange?: (payload: MapTriadDevelopmentalSnapshot | null) => void
   /** Latest VE entity lists (for council triad when not on this tab); optional. */
   onCouncilEntityBundleSnapshot?: (bundle: VisionMapEntityBundle | null) => void
-  /**
-   * Scopes saved stone positions + viewport (localStorage). Use a stable account/workspace id.
-   * @default 'default'
-   */
-  layoutPersistenceContext?: string
   /** Sync map node selection to App `veSelection` + global focus (Pass 1). */
   onMapEntitySelectionChange?: (payload: MapNodePayload | null) => void
 }
 
 function VisionMapFlow({
   onOpenOperatorMode,
-  onOpenVeRadar,
   councilQuestionDraft,
   onVisionMapCouncilInteraction,
   onDevelopmentalSignalsChange,
   onCouncilEntityBundleSnapshot,
   onMapEntitySelectionChange,
-  layoutPersistenceContext = 'default',
 }: VisionMapViewProps) {
   const sandRef = useRef<ZenSandCanvasHandle>(null)
   const loadGenerationRef = useRef(0)
-  const viewportRestoreRef = useRef<VisionMapPersistedViewport | null>(null)
-  const positionOverridesRef = useRef<Record<string, XYPosition>>({})
   const baseGraphRef = useRef<{ nodes: Node<MapNodePayload>[]; edges: Edge[] } | null>(null)
   const loadStateRef = useRef<'idle' | 'loading' | 'ok' | 'error'>('idle')
-  const layoutStorageKey = useMemo(
-    () => visionMapLayoutStorageKey(layoutPersistenceContext),
-    [layoutPersistenceContext],
-  )
-  const persistDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [reduceMotion, setReduceMotion] = useState(false)
   const [rakeEnabled, setRakeEnabled] = useState(true)
   const [rakeFadeSec, setRakeFadeSec] = useState<12 | 16 | 20>(16)
@@ -330,6 +365,79 @@ function VisionMapFlow({
   const [stackedInitiatives, setStackedInitiatives] = useState<ReadonlySet<string>>(new Set())
   const cairnIndexRef = useRef<CairnIndex>({})
   const cairnAnchorRef = useRef<Record<string, XYPosition>>({})
+
+  /**
+   * Hold ladder, tier 1 (founder gesture revision, 2026-11-13): when a
+   * still touch hold arms drag for a node, the view — not React Flow —
+   * tracks the drag. React Flow's native drag can't be used: it binds
+   * at pointerdown, when the touch gate (correctly) has drag off, and
+   * flipping it on mid-press starts nothing. So the node reports the
+   * arm through the cairn context, and window listeners below translate
+   * the pointer's movement into the very same position changes a native
+   * drag emits — session position recording, member-drag bookkeeping
+   * and all — via `onNodesChange`.
+   */
+  const armedDragRef = useRef<{
+    nodeId: string
+    pointerId: number
+    startClient: XYPosition
+    startFlow: XYPosition
+    nodeStart: XYPosition
+    lastPos: XYPosition
+    moved: boolean
+  } | null>(null)
+  /** True while an armed drag is tracking — suspends the rake (state, not just a ref, because the sand canvas is a child). */
+  const [dragArmedActive, setDragArmedActive] = useState(false)
+  /**
+   * A spent press's release still produces a click: tier 2 fired, or an
+   * armed drag just ended. That click is swallowed once so the gesture
+   * doesn't end by selecting whatever it lands on. The next pointerdown
+   * expires the flag — the guarded click has either happened or won't.
+   */
+  const swallowNextClickRef = useRef(false)
+  /** Last node tap, for double-tap detection over the ordinary click stream (no click delay is introduced). */
+  const lastNodeTapRef = useRef<{ nodeId: string; at: number } | null>(null)
+  const nodesRef = useRef<Node<MapNodePayload | NestGroupNodeData>[]>([])
+  const onNodesChangeRef = useRef<(changes: NodeChange[]) => void>(() => {})
+
+  /** End the armed drag, if any. `commit` records the final position (and swallows the release click) — the stone stays where it was dragged. */
+  const endArmedDrag = useCallback((commit: boolean) => {
+    const drag = armedDragRef.current
+    if (!drag) return
+    armedDragRef.current = null
+    setDragArmedActive(false)
+    if (!drag.moved) return
+    if (commit) {
+      onNodesChangeRef.current([
+        { type: 'position', id: drag.nodeId, position: drag.lastPos, dragging: false },
+      ])
+      swallowNextClickRef.current = true
+    }
+  }, [])
+
+  /** Hold ladder tier 1: a node reports its drag is armed — start tracking its pointer. */
+  const onDragArm = useCallback(
+    (nodeId: string, pointerId: number, clientX: number, clientY: number) => {
+      const node = nodesRef.current.find((n) => n.id === nodeId)
+      if (!node) return
+      armedDragRef.current = {
+        nodeId,
+        pointerId,
+        startClient: { x: clientX, y: clientY },
+        startFlow: rf.screenToFlowPosition({ x: clientX, y: clientY }),
+        nodeStart: { ...node.position },
+        lastPos: { ...node.position },
+        moved: false,
+      }
+      setDragArmedActive(true)
+    },
+    [rf],
+  )
+
+  /** Hold ladder tier 2 fired on a node: that press is spent. */
+  const onPressSpent = useCallback(() => {
+    swallowNextClickRef.current = true
+  }, [])
 
   useEffect(() => {
     onCouncilEntityBundleSnapshot?.(entityBundle)
@@ -347,14 +455,13 @@ function VisionMapFlow({
   const [memberDragPositions, setMemberDragPositions] = useState<Record<string, XYPosition>>({})
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
   const [loadErr, setLoadErr] = useState<string | null>(null)
-  /** Bumps VeRadarAwarenessStrip refresh when map reloads VE entities. */
-  const [radarStripRefreshNonce, setRadarStripRefreshNonce] = useState(0)
   /** False until first viewport is centered on a node (avoid fit-to-full-canvas zoom-out flash). */
   const [mapViewportReady, setMapViewportReady] = useState(false)
   /** Overflow menu for the slim chrome header (Refresh data / Reset layout / tables). */
   const [chromeMenuOpen, setChromeMenuOpen] = useState(false)
 
   const [nodes, setNodes] = useNodesState<Node<MapNodePayload | NestGroupNodeData>>([])
+  nodesRef.current = nodes
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [zoomLevel, setZoomLevel] = useState(1)
   const [guidancePulseNodeId, setGuidancePulseNodeId] = useState<string | null>(null)
@@ -393,36 +500,6 @@ function VisionMapFlow({
     setZoomLevel(zoom)
   }, [])
 
-  const flushPersistLayout = useCallback(() => {
-    const bg = baseGraphRef.current
-    const ls = loadStateRef.current
-    if (!bg || ls !== 'ok') return
-    let vp: { x: number; y: number; zoom: number }
-    try {
-      vp = rf.getViewport()
-    } catch {
-      return
-    }
-    const entityIds = new Set(bg.nodes.map((node) => node.id))
-    const positions: Record<string, { x: number; y: number }> = {}
-    for (const [id, pos] of Object.entries(positionOverridesRef.current)) {
-      if (entityIds.has(id)) positions[id] = { x: pos.x, y: pos.y }
-    }
-    saveVisionMapLayout(layoutStorageKey, { positions, viewport: { x: vp.x, y: vp.y, zoom: vp.zoom } })
-  }, [layoutStorageKey, rf])
-
-  const schedulePersistLayout = useCallback(() => {
-    if (persistDebounceRef.current) window.clearTimeout(persistDebounceRef.current)
-    persistDebounceRef.current = window.setTimeout(() => {
-      persistDebounceRef.current = null
-      flushPersistLayout()
-    }, 400)
-  }, [flushPersistLayout])
-
-  useEffect(() => {
-    positionOverridesRef.current = positionOverrides
-  }, [positionOverrides])
-
   useEffect(() => {
     baseGraphRef.current = baseGraph
   }, [baseGraph])
@@ -430,13 +507,6 @@ function VisionMapFlow({
   useEffect(() => {
     loadStateRef.current = loadState
   }, [loadState])
-
-  useEffect(
-    () => () => {
-      if (persistDebounceRef.current) window.clearTimeout(persistDebounceRef.current)
-    },
-    [],
-  )
 
   const load = useCallback(async () => {
     setLoadState('loading')
@@ -453,15 +523,10 @@ function VisionMapFlow({
       const g = buildLiveVisionMapGraph(entities, runs, serverVitality, {
         cairnThreshold: narrow ? CAIRN_NARROW_THRESHOLD : CAIRN_WIDE_THRESHOLD,
       })
-      const persisted = loadVisionMapLayout(layoutStorageKey)
-      const ids = new Set(g.nodes.map((node) => node.id))
-      const restoredPos: Record<string, XYPosition> = {}
-      if (persisted?.positions) {
-        for (const [id, pos] of Object.entries(persisted.positions)) {
-          if (ids.has(id)) restoredPos[id] = { x: pos.x, y: pos.y }
-        }
-      }
-      viewportRestoreRef.current = persisted?.viewport ?? null
+      /* No saved layout is restored: the map always opens on the computed
+         garden. (The old localStorage restore applied a previous session's
+         dragged positions verbatim and scattered the open — founder,
+         2026-11-12.) Position overrides live only within the session. */
       setEntityBundle(entities)
       cairnIndexRef.current = g.cairnIndex
       cairnAnchorRef.current = {}
@@ -470,12 +535,11 @@ function VisionMapFlow({
       setStackedInitiatives(new Set())
       setBaseGraph({ nodes: g.nodes, edges: g.edges })
       setNestState(EMPTY_NEST_STATE)
-      setPositionOverrides(restoredPos)
+      setPositionOverrides({})
       setMemberDragPositions({})
       setSelectedNodeId(null)
       setSelectedPayload(null)
       setLoadState('ok')
-      setRadarStripRefreshNonce((n) => n + 1)
     } catch (err) {
       setLoadState('error')
       setLoadErr(err instanceof Error ? err.message : String(err))
@@ -485,9 +549,8 @@ function VisionMapFlow({
       setCairnMeta({ totalStones: 0, cairnCount: 0, cairned: false })
       setExpandedCairns(new Set())
       setStackedInitiatives(new Set())
-      viewportRestoreRef.current = null
     }
-  }, [layoutStorageKey])
+  }, [])
 
   useEffect(() => {
     void load()
@@ -497,7 +560,9 @@ function VisionMapFlow({
    * Cairn expansion layer. Expanded cairns swap for their member stones,
    * fanned out around the cairn's current position (relative offsets from
    * the original layout are preserved). Members carry `expandedFromCairn`
-   * so a long-press on any of them collapses back.
+   * so the view can tell a fanned member from a free stone: a double-tap
+   * on a member opens that stone's data, a longer hold stacks the cairn
+   * back, and the stone sheet offers the same collapse.
    *
    * Per-initiative stacking runs first: each stacked tree's node becomes
    * its garden stack — the pile sitting on the parent stone as one object
@@ -530,8 +595,12 @@ function VisionMapFlow({
 
   const toggleCairn = useCallback(
     (cairnId: string) => {
-      // A garden stack's long-press unstacks its initiative — consistent
-      // with the cairn grammar (long-press fans a cairn out; the stack's
+      // A tier-2 hold can reach here with the press's drag barely armed
+      // (a few px of jitter inside the ladder's slop): commit the drag
+      // where it stands first — the toggle spends the press either way.
+      endArmedDrag(true)
+      // A garden stack toggles through this same path — consistent with
+      // the cairn grammar (the toggle fans a cairn out; the stack's
       // "members" are that initiative's cairns). The stack IS the parent
       // stone (same id), so the id that arrives here is the tree's own.
       const toggledNode = nodes.find((n) => n.id === cairnId)
@@ -569,27 +638,54 @@ function VisionMapFlow({
         setExpandedCairns((prev) => new Set(prev).add(cairnId))
       }
     },
-    [nodes, expandedCairns],
+    [nodes, expandedCairns, endArmedDrag],
   )
 
   /**
-   * Per-initiative stack toggle. Long-press a tree: that initiative's
-   * descendant cairns hide under the pile on its own stone (positions
-   * preserved in state); long-press the stone again to restore. Other
-   * initiatives render fully normally.
+   * Per-initiative stack toggle. The longer hold (or a double-tap on the
+   * pile) toggles: that initiative's descendant cairns hide under the
+   * pile on its own stone (positions preserved in state); toggle again
+   * to restore. Other initiatives render fully normally.
    */
-  const toggleGardenStack = useCallback((treeId: string) => {
-    setStackedInitiatives((prev) => {
-      const next = new Set(prev)
-      if (next.has(treeId)) next.delete(treeId)
-      else next.add(treeId)
-      return next
-    })
-  }, [])
+  const toggleGardenStack = useCallback(
+    (treeId: string) => {
+      endArmedDrag(true)
+      setStackedInitiatives((prev) => {
+        const next = new Set(prev)
+        if (next.has(treeId)) next.delete(treeId)
+        else next.add(treeId)
+        return next
+      })
+    },
+    [endArmedDrag],
+  )
+
+  /**
+   * Open a stone's data — the exact selection a tap produces
+   * (MapChatShell payload included). The double-tap routes here: a hold
+   * no longer opens data (it arms drag, then toggles), and collapsing a
+   * fanned cairn is the sheet's "Stack back into cairn" action or the
+   * longer hold on one of its members.
+   */
+  const onOpenStoneData = useCallback(
+    (nodeId: string) => {
+      const node = nodes.find((n) => n.id === nodeId)
+      if (!node || node.type === 'nestGroup') return
+      setSelectedNodeId(node.id)
+      setSelectedPayload((node.data as MapNodePayload) ?? null)
+    },
+    [nodes],
+  )
 
   const cairnInteractionValue = useMemo(
-    () => ({ onToggleCairn: toggleCairn, onToggleGardenStack: toggleGardenStack }),
-    [toggleCairn, toggleGardenStack],
+    () => ({
+      onToggleCairn: toggleCairn,
+      onToggleGardenStack: toggleGardenStack,
+      onOpenStoneData,
+      onDragArm,
+      onPressSpent,
+    }),
+    [toggleCairn, toggleGardenStack, onOpenStoneData, onDragArm, onPressSpent],
   )
 
   /** After a failed load the graph is empty; reset pan/zoom so a prior 20% zoom doesn’t hide the next success. */
@@ -689,7 +785,6 @@ function VisionMapFlow({
           )
           setPositionOverrides((prev) => ({ ...prev, ...restored, ...repulsed }))
           setNestState((prev) => withRemovedNestGroup(prev, rootNodeId))
-          schedulePersistLayout()
         })
       },
       focusByNodeId,
@@ -711,7 +806,6 @@ function VisionMapFlow({
     positionOverrides,
     memberDragPositions,
     guidancePulseNodeId,
-    schedulePersistLayout,
   ])
 
   useEffect(() => {
@@ -721,8 +815,10 @@ function VisionMapFlow({
   }, [guidancePulseNodeId])
 
   /**
-   * On each new `baseGraph` (load / refresh): restore saved viewport, or else center on a random node at a fixed zoom.
-   * Nesting does not change `baseGraph`, so this does not run again.
+   * On each new `baseGraph` (load / refresh): open fitted on the whole
+   * garden — every cairn visible, consolidated — instead of centered on
+   * a random node at zoom 1. Nothing saved is ever restored over this
+   * fit. Nesting does not change `baseGraph`, so this does not run again.
    */
   useEffect(() => {
     if (!baseGraph || baseGraph.nodes.length === 0) {
@@ -732,39 +828,6 @@ function VisionMapFlow({
     setMapViewportReady(false)
     let cancelled = false
     const started = performance.now()
-    const savedVp = viewportRestoreRef.current
-    viewportRestoreRef.current = null
-
-    if (
-      savedVp &&
-      Number.isFinite(savedVp.x) &&
-      Number.isFinite(savedVp.y) &&
-      Number.isFinite(savedVp.zoom) &&
-      savedVp.zoom > 0
-    ) {
-      const outerVp = window.setTimeout(() => {
-        requestAnimationFrame(() => {
-          void rf
-            .setViewport(
-              { x: savedVp.x, y: savedVp.y, zoom: savedVp.zoom },
-              { duration: 0 },
-            )
-            .then(() => {
-              if (!cancelled) {
-                setZoomLevel(savedVp.zoom)
-                setMapViewportReady(true)
-              }
-            })
-            .catch(() => {
-              if (!cancelled) setMapViewportReady(true)
-            })
-        })
-      }, 0)
-      return () => {
-        cancelled = true
-        clearTimeout(outerVp)
-      }
-    }
 
     const orient = () => {
       if (cancelled) return
@@ -777,17 +840,12 @@ function VisionMapFlow({
         }
         return
       }
-      const pick = live[Math.floor(Math.random() * live.length)]!
-      const defaultH = pick.type === 'nestGroup' ? NEST_NODE_LAYOUT_HEIGHT_PX : DEFAULT_ENTITY_H
-      const defaultW = pick.type === 'nestGroup' ? NEST_NODE_LAYOUT_WIDTH_PX : DEFAULT_ENTITY_W
-      const w = pick.measured?.width ?? pick.width ?? defaultW
-      const h = pick.measured?.height ?? pick.height ?? defaultH
-      const cx = pick.position.x + w / 2
-      const cy = pick.position.y + h / 2
       void rf
-        .setCenter(cx, cy, { zoom: INITIAL_MAP_ZOOM, duration: 0 })
+        .fitView({ padding: FIT_VIEW_PADDING, maxZoom: FIT_VIEW_MAX_ZOOM, duration: 0 })
         .then(() => {
-          if (!cancelled) setMapViewportReady(true)
+          if (cancelled) return
+          setZoomLevel(rf.getViewport().zoom)
+          setMapViewportReady(true)
         })
         .catch(() => {
           if (!cancelled) setMapViewportReady(true)
@@ -805,20 +863,60 @@ function VisionMapFlow({
     }
   }, [baseGraph, rf])
 
-  const onNodeClick = useCallback((_: MouseEvent, node: Node<MapNodePayload | NestGroupNodeData>) => {
-    if (node.type === 'nestGroup') {
-      const nestData = node.data as unknown as NestGroupNodeData
-      const rootId = nestData.rootNodeId
-      const rootNode = baseGraph?.nodes.find((n) => n.id === rootId)
-      setSelectedNodeId(rootId)
-      setSelectedPayload(rootNode?.data ?? null)
-      return
-    }
-    setSelectedNodeId(node.id)
-    setSelectedPayload((node.data as MapNodePayload) ?? null)
-  }, [baseGraph])
+  const onNodeClick = useCallback(
+    (_: MouseEvent, node: Node<MapNodePayload | NestGroupNodeData>) => {
+      // A spent press (tier-2 hold, or an armed drag) ends in a click
+      // that means nothing — swallow it and reset the tap tracker.
+      if (swallowNextClickRef.current) {
+        swallowNextClickRef.current = false
+        lastNodeTapRef.current = null
+        return
+      }
+      // Double-tap = open (founder revision, 2026-11-13). Detection
+      // rides the ordinary click stream — no tap is ever delayed: the
+      // first tap selects as always, the second upgrades to the open
+      // action for that node kind.
+      const now = performance.now()
+      const last = lastNodeTapRef.current
+      if (last && last.nodeId === node.id && now - last.at <= MAP_DOUBLE_TAP_MS) {
+        lastNodeTapRef.current = null
+        const target = doubleTapTargetFor(node.id, node.type, node.data)
+        if (target.action === 'fanOutCairn' || target.action === 'unstackGardenStack') {
+          toggleCairn(target.action === 'fanOutCairn' ? target.cairnId : target.treeId)
+          // The first tap selected the pile and opened its sheet; the
+          // fan-out/unstack wins — close the sheet so it doesn't fight.
+          setSelectedNodeId(null)
+          setSelectedPayload(null)
+          return
+        }
+        if (target.action === 'openStoneData') {
+          onOpenStoneData(target.nodeId)
+          return
+        }
+        // 'none' (nest groups): fall through to the ordinary click.
+      } else {
+        lastNodeTapRef.current = { nodeId: node.id, at: now }
+      }
+      if (node.type === 'nestGroup') {
+        const nestData = node.data as unknown as NestGroupNodeData
+        const rootId = nestData.rootNodeId
+        const rootNode = baseGraph?.nodes.find((n) => n.id === rootId)
+        setSelectedNodeId(rootId)
+        setSelectedPayload(rootNode?.data ?? null)
+        return
+      }
+      setSelectedNodeId(node.id)
+      setSelectedPayload((node.data as MapNodePayload) ?? null)
+    },
+    [baseGraph, toggleCairn, onOpenStoneData],
+  )
 
   const onPaneClick = useCallback(() => {
+    if (swallowNextClickRef.current) {
+      swallowNextClickRef.current = false
+      return
+    }
+    lastNodeTapRef.current = null
     setSelectedNodeId(null)
     setSelectedPayload(null)
   }, [])
@@ -842,7 +940,7 @@ function VisionMapFlow({
       if (moveChanges.length === 0) return
       // Expanded cairn members record session-only drag spots (kept across
       // rebuilds so they don't snap back); everything else records into
-      // the persisted position overrides.
+      // the session position overrides. Nothing is persisted across loads.
       const memberMoves: Array<{ id: string; position: XYPosition }> = []
       const otherMoves: Array<{ id: string; position: XYPosition }> = []
       for (const c of moveChanges) {
@@ -869,34 +967,61 @@ function VisionMapFlow({
           return next
         })
       }
-      schedulePersistLayout()
     },
-    [nodes, setNodes, schedulePersistLayout],
+    [nodes, setNodes],
   )
+  onNodesChangeRef.current = onNodesChange
 
-  const nestSelectedGroup = useCallback(() => {
-    if (!baseGraph || !selectedNodeId) return
-    const rootNode = baseGraph.nodes.find((n) => n.id === selectedNodeId)
-    if (!rootNode || !canNestNode(rootNode)) return
-    if (getNestGroupForRoot(rootNode.id, nestState)) return
-    const nodesWithPos = baseGraph.nodes.map((n) => ({
-      ...n,
-      position: positionOverrides[n.id] ? { ...positionOverrides[n.id]! } : n.position,
-    }))
-    const group = createNestGroup(
-      rootNode.id,
-      nodesWithPos as Node<MapNodePayload>[],
-      baseGraph.edges,
-      entityBundle,
-    )
-    if (!group) return
-    setNestState((prev) => withAddedNestGroup(dissolveNestsMergedIntoAncestor(prev, group), group))
-    if (selectedNodeId && group.memberNodeIds.includes(selectedNodeId)) {
-      setSelectedNodeId(group.rootNodeId)
-      setSelectedPayload(rootNode.data)
+  /**
+   * Armed-drag pointer tracking (hold ladder tier 1). Capture-phase
+   * window listeners, pointer-id matched: moves translate the pointer's
+   * flow-space delta into position changes on the armed node; release
+   * or cancel commits the drag where it stands. A second pointer
+   * landing mid-drag ends it the same way — the gesture hands over to
+   * two-finger navigation. Any fresh pointerdown also expires the
+   * spent-press click swallow (see swallowNextClickRef).
+   */
+  useEffect(() => {
+    const onPointerMove = (e: PointerEvent) => {
+      const drag = armedDragRef.current
+      if (!drag || e.pointerId !== drag.pointerId) return
+      if (
+        !drag.moved &&
+        Math.hypot(e.clientX - drag.startClient.x, e.clientY - drag.startClient.y) < 2
+      ) {
+        return
+      }
+      drag.moved = true
+      const flow = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY })
+      const pos = {
+        x: drag.nodeStart.x + (flow.x - drag.startFlow.x),
+        y: drag.nodeStart.y + (flow.y - drag.startFlow.y),
+      }
+      drag.lastPos = pos
+      onNodesChangeRef.current([
+        { type: 'position', id: drag.nodeId, position: pos, dragging: true },
+      ])
     }
-    schedulePersistLayout()
-  }, [baseGraph, selectedNodeId, nestState, positionOverrides, entityBundle, schedulePersistLayout])
+    const onPointerUpOrCancel = (e: PointerEvent) => {
+      if (armedDragRef.current?.pointerId === e.pointerId) endArmedDrag(true)
+    }
+    const onPointerDown = (e: PointerEvent) => {
+      swallowNextClickRef.current = false
+      if (armedDragRef.current && e.pointerId !== armedDragRef.current.pointerId) {
+        endArmedDrag(true)
+      }
+    }
+    window.addEventListener('pointermove', onPointerMove, true)
+    window.addEventListener('pointerup', onPointerUpOrCancel, true)
+    window.addEventListener('pointercancel', onPointerUpOrCancel, true)
+    window.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove, true)
+      window.removeEventListener('pointerup', onPointerUpOrCancel, true)
+      window.removeEventListener('pointercancel', onPointerUpOrCancel, true)
+      window.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [rf, endArmedDrag])
 
   const expandSelectedGroup = useCallback(() => {
     if (!baseGraph || !selectedNodeId) return
@@ -932,15 +1057,7 @@ function VisionMapFlow({
     )
     setPositionOverrides((prev) => ({ ...prev, ...restored, ...repulsed }))
     setNestState((prev) => withRemovedNestGroup(prev, selectedNodeId))
-    schedulePersistLayout()
-  }, [baseGraph, selectedNodeId, nestState, positionOverrides, schedulePersistLayout])
-
-  const canNestSelected = (() => {
-    if (!selectedNodeId || !baseGraph) return false
-    const root = baseGraph.nodes.find((n) => n.id === selectedNodeId)
-    if (!root || !canNestNode(root)) return false
-    return !getNestGroupForRoot(root.id, nestState)
-  })()
+  }, [baseGraph, selectedNodeId, nestState, positionOverrides])
 
   const canExpandSelected = (() => {
     if (!selectedNodeId) return false
@@ -991,6 +1108,12 @@ function VisionMapFlow({
 
   const nodeCount = displayGraph.nodes.length
   const hasContextSelection = Boolean(selectedPayload)
+  /** When the selected stone is a member of a fanned-out cairn, the sheet
+      offers the collapse path ("Stack back into cairn") — the same
+      action as the longer hold on a member; opening the member's data
+      is a tap / double-tap, and neither stacks the cairn. */
+  const selectedCairnId =
+    (selectedPayload as { expandedFromCairn?: string } | null)?.expandedFromCairn ?? null
   const sceneHeightPx = useMemo(() => {
     if (nodes.length === 0) return SCENE_BASE_HEIGHT_PX
     let minY = Number.POSITIVE_INFINITY
@@ -1012,12 +1135,6 @@ function VisionMapFlow({
   }, [nodes])
 
   const handleResetStoneLayout = useCallback(() => {
-    clearVisionMapLayout(layoutStorageKey)
-    viewportRestoreRef.current = null
-    if (persistDebounceRef.current) {
-      window.clearTimeout(persistDebounceRef.current)
-      persistDebounceRef.current = null
-    }
     setPositionOverrides({})
     setNestState(EMPTY_NEST_STATE)
     const bg = baseGraphRef.current
@@ -1033,30 +1150,22 @@ function VisionMapFlow({
     }
     setMapViewportReady(false)
     window.setTimeout(() => {
-      const pick = bg.nodes[Math.floor(Math.random() * bg.nodes.length)]!
-      const lw =
-        pick.type === 'entityMap'
-          ? mapEntityNodeLayoutPx(pick.data.kind).width
-          : pick.type === 'nestGroup'
-            ? NEST_NODE_LAYOUT_WIDTH_PX
-            : DEFAULT_ENTITY_W
-      const lh =
-        pick.type === 'entityMap'
-          ? mapEntityNodeLayoutPx(pick.data.kind).height
-          : pick.type === 'nestGroup'
-            ? NEST_NODE_LAYOUT_HEIGHT_PX
-            : DEFAULT_ENTITY_H
-      const cx = pick.position.x + lw / 2
-      const cy = pick.position.y + lh / 2
-      void rf.setCenter(cx, cy, { zoom: INITIAL_MAP_ZOOM, duration: 0 }).then(() => {
-        setMapViewportReady(true)
-        setZoomLevel(INITIAL_MAP_ZOOM)
-      })
+      // Reset opens fitted on the whole garden, like a fresh open —
+      // not centered on a random stone.
+      void rf
+        .fitView({ padding: FIT_VIEW_PADDING, maxZoom: FIT_VIEW_MAX_ZOOM, duration: 0 })
+        .then(() => {
+          setMapViewportReady(true)
+          setZoomLevel(rf.getViewport().zoom)
+        })
+        .catch(() => {
+          setMapViewportReady(true)
+        })
     }, 0)
-  }, [layoutStorageKey, rf])
+  }, [rf])
 
   const mapHelpTitle =
-    'Live VE projection · stone wash = project hue · glyph = growth (seed/sprout/sapling/bloom/fruit) · amber ring = needs attention · green ring = recent update · cairns stack a project\u2019s stones \u2014 long-press to fan out · drag stones · pan: empty map / Space / right-drag / two-finger trackpad'
+    'Live VE projection · stone wash = project hue · glyph = growth (seed/sprout/sapling/bloom/fruit) · amber ring = needs attention · green ring = recent update · cairns stack a project’s stones · touch: one finger rakes the sand · hold a stone to drag it · hold longer to fan out / stack back · double-tap a cairn to fan out, a stone to open it · two fingers pan & pinch · mouse: drag stones, hold to toggle · pan: empty map / Space / right-drag / two-finger trackpad'
 
   /**
    * Honest notice counts for per-initiative stacking: how many piles are
@@ -1092,7 +1201,7 @@ function VisionMapFlow({
             <span className="ml-2 text-[10px] font-normal text-stone-400">
               {loadState === 'ok'
                 ? stackSummary
-                  ? `${stackSummary.piles} stacked · ${cairnMeta.cairnCount - stackSummary.hiddenCairns} cairns · ${cairnMeta.totalStones} stones — long-press a pile to unstack`
+                  ? `${stackSummary.piles} stacked · ${cairnMeta.cairnCount - stackSummary.hiddenCairns} cairns · ${cairnMeta.totalStones} stones — double-tap a pile to unstack`
                   : cairnMeta.cairned
                     ? `${cairnMeta.cairnCount} cairns · ${cairnMeta.totalStones} stones`
                     : `${nodeCount} nodes`
@@ -1145,7 +1254,7 @@ function VisionMapFlow({
                       handleResetStoneLayout()
                     }}
                     disabled={loadState !== 'ok' || nodeCount === 0}
-                    title="Clear saved stone positions and viewport; use auto-layout positions again"
+                    title="Recompute the automatic layout and fit the whole garden"
                     className="block min-h-[44px] w-full px-4 py-2 text-left text-sm text-stone-200 hover:bg-stone-800 disabled:opacity-40"
                   >
                     Reset layout
@@ -1167,14 +1276,6 @@ function VisionMapFlow({
             ) : null}
           </div>
         </div>
-        {onOpenVeRadar ? (
-          <div className="max-w-full px-3 pb-1.5">
-            <VeRadarAwarenessStrip
-              onOpenVeRadar={onOpenVeRadar}
-              refreshNonce={radarStripRefreshNonce}
-            />
-          </div>
-        ) : null}
       </header>
 
       <div className="flex flex-1 min-h-0">
@@ -1200,19 +1301,21 @@ function VisionMapFlow({
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onViewportChange={onViewportChange}
-          onMoveEnd={schedulePersistLayout}
           zoomLevel={zoomLevel}
           onOpenOperatorMode={onOpenOperatorMode}
+          rakeSuspended={dragArmedActive}
         />
         {hasContextSelection ? (
           <MapChatShell
             selected={selectedPayload}
             entityBundle={entityBundle}
             onClearSelection={clearSelection}
-            canNestSelected={canNestSelected}
             canExpandSelected={canExpandSelected}
-            onNestSelected={nestSelectedGroup}
             onExpandSelected={expandSelectedGroup}
+            canCollapseCairnSelected={!!selectedCairnId}
+            onCollapseCairnSelected={
+              selectedCairnId ? () => toggleCairn(selectedCairnId) : undefined
+            }
           />
         ) : null}
       </div>

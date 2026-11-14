@@ -66,6 +66,31 @@ def _svc(tmp_path, tasks=(), projects=()):
     return FollowthroughService(store=store, ve=FakeVE(tasks, projects)), store
 
 
+@pytest.fixture(autouse=True)
+def _r6_opted_in(tmp_path, monkeypatch):
+    """Permissions Slice 1: compute_nudges now consults the R6 stance
+    at entry (B-R6; the default is Don't do it). These tests predate
+    the gate and assert watcher math with nudges permitted — opt the
+    fixture user in through the real stance store on an isolated
+    connection. The gate itself is covered in
+    tests/test_permissions_slice1_consumption.py."""
+    import sqlite3
+
+    import local_ai.vision_execution.storage as ve_storage
+    from local_ai.permissions.store import set_stance
+
+    conn = sqlite3.connect(tmp_path / "perm.db", check_same_thread=False)
+    conn.execute(
+        "CREATE TABLE user_permissions_settings ("
+        "user_id TEXT, permissions_json TEXT, updated_at TEXT)"
+    )
+    conn.commit()
+    monkeypatch.setattr(ve_storage, "get_connection", lambda: conn)
+    set_stance("u1", "R6", "all", "just_do_it", surface="test", connection=conn)
+    yield conn
+    conn.close()
+
+
 # -- date watcher ------------------------------------------------------------
 
 

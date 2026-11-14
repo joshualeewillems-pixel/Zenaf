@@ -73,23 +73,32 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     assert "First-meeting openness right now" in reference
     assert reference.splitlines()[-1].startswith("First-meeting openness right now")
     # Capped frames: byte-identical budget to before the pilot.
-    # Engage frame 8,347 chars, 653 headroom vs the 9,000 cap
+    # Engage frame 7,943 chars, 1,057 headroom vs the 9,000 cap
     # (MIN_HEADROOM 30, test_conductor_agency_refinement.py).
     # Re-measured 2026-11-06: the read-back frames lengthened the
     # engage frame (was 7,967) and the cap rose 8000 -> 9000.
     # Re-measured 2026-11-07 (Gardener S1, G4/D1): the engage frame
     # is 28 chars shorter — the "Shadow: forcing resolution." slice
     # line was removed (27 chars + newline); the four pronoun swaps
-    # in the frame net to zero. Not a pilot change: the pilot text
+    # in the frame net to zero. Maverick S1 (C1): HONESTY_GUARD grew
+    # 65 chars, 8347 -> 8412. Not a pilot change: the pilot text
     # still rides only the uncapped reference.
+    # Re-measured 2026-11-10 (Level 1): the engage frame is 646 chars
+    # shorter (8,347 -> 7,701) — the four standing lines moved to the
+    # canonical tier. The pilot text still rides only the uncapped
+    # reference.
+    # Crane correction §2 (2026-11-07): the contrast guard added 242
+    # chars to the Weaver readback via the steward record. Combined
+    # on the post-L1 base: 7,701 -> 7,943.
+    # Maverick S1's +65 guard extension rides the tier, not this
+    # frame — no +65 here.
     runtime = ENC.EncounterRuntime(definition)
     turn_frame, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
     engage_frame = definition.engage_frame
-    engage_frame += "\n\n" + ENC._ZENAF_QUESTION_NOTE
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) == 8347
+    assert len(engage_frame) == 7943
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage_frame) >= 30
     assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) >= 30
     assert _WEAVER_NATURAL_INTENTION not in turn_frame

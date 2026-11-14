@@ -2427,6 +2427,11 @@ class MeetingService:
             mode="base", generate_fn=self._generate_fn,
             extra_instructions=frame,
             fellowship_reference=fellowship_reference or None,
+            # Canonical instruction tier (Level 1, 2026-11-10): the
+            # meeting path is the ONLY opt-in — the tier rides the
+            # assembled prompt immediately before the frame. Talk
+            # and demo leave the flag off and are byte-identical.
+            canonical_tier=True,
             # Meetings run under the evidence/expression separation
             # (Joshua's ruling, 2026-10-23): the character synthesizes
             # in her own words; exact quotes live in the evidence.

@@ -217,7 +217,23 @@ def attention_for_user(
 
         keystone_state = keystone_seeding.keystone_attention(user_id)
     store = observation_store or ObservationStore()
-    by_seat = _active_observations(store, user_id)
+    # Fellowship observations are steward-derived material; consuming
+    # them in this read model requires fellowship_derivation
+    # (Permissions Slice 1, B-F1). Checked on every call — never
+    # cached from observation time — so a revocation takes effect at
+    # the next read; observations already served into an in-flight
+    # context are not recalled. Denied: the keystone markers are
+    # served unchanged and the observation fields keep their existing
+    # empty shape (observation_ids [], observation_count 0,
+    # observation_reason None); the rows themselves are retained and
+    # are neither read nor deleted here (retention is Slice 5's
+    # concern, status transitions are B-F2's own callers).
+    from local_ai.permissions.consumption import consumption_allowed
+
+    if consumption_allowed(user_id, "fellowship_derivation"):
+        by_seat = _active_observations(store, user_id)
+    else:
+        by_seat = {}
 
     keystone_markers = keystone_state.get("markers") or {}
     markers: dict[str, dict[str, Any]] = {}

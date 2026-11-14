@@ -12,7 +12,7 @@ import { mapEntityNodeLayoutPx } from './mapEntityNodeLayout'
 import { effectiveConditionSeverity } from './resolveConditionSeverity'
 import { SymbolicStone, washColorFor, washKeyForPayload } from './symbolicStone'
 import { longPressTargetFor } from './cairn'
-import { useLongPress } from './useLongPress'
+import { useNodeHoldGestures } from './useLongPress'
 import { useCairnInteraction } from './cairnContext'
 
 type EntityRfNode = Node<MapNodePayload, 'entityMap'>
@@ -34,10 +34,12 @@ const handleClass =
 /**
  * One symbolic stone per node: a single SVG (river-stone silhouette +
  * growth glyph + urgency ring + project color wash) with the label block
- * beneath. Long-press collapses an expanded cairn member back into its
- * cairn; long-press on the initiative (tree) stone toggles the whole-garden
- * stack — the pile on its own stone vs the full garden; tap keeps the existing
- * select/focus behavior.
+ * beneath. Holds run the ladder: hold still to arm drag for the stone;
+ * keep holding (tier 2) and a member of an already-fanned cairn stacks
+ * its cairn back, while the initiative (tree) stone toggles the
+ * whole-garden stack — the pile on its own stone vs the full garden.
+ * Double-tap opens: a stone's data sheet, a cairn's fan. Tap keeps the
+ * existing select/focus behavior.
  */
 export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const labelTone = stoneTextTone(data.kind)
@@ -50,17 +52,20 @@ export function EntityMapNode({ id, data, selected }: NodeProps<EntityRfNode>) {
   const layoutPx = mapEntityNodeLayoutPx(data.kind)
   const wash = washColorFor(washKeyForPayload(data))
 
-  const { onToggleCairn, onToggleGardenStack } = useCairnInteraction()
+  const { onToggleCairn, onToggleGardenStack, onDragArm, onPressSpent } = useCairnInteraction()
   const expandedFromCairn = (data as { expandedFromCairn?: string }).expandedFromCairn ?? null
   const target = longPressTargetFor(data.kind, expandedFromCairn, id)
 
-  const lp = useLongPress(
-    target.action === 'collapseCairn'
-      ? () => onToggleCairn(target.cairnId)
-      : target.action === 'toggleGardenStack'
-        ? () => onToggleGardenStack(target.treeId)
-        : null,
-  )
+  const lp = useNodeHoldGestures({
+    onDragArm: (info) => onDragArm(id, info.pointerId, info.clientX, info.clientY),
+    onToggle:
+      target.action === 'collapseCairn'
+        ? () => onToggleCairn(target.cairnId)
+        : target.action === 'toggleGardenStack'
+          ? () => onToggleGardenStack(target.treeId)
+          : undefined,
+    onPressSpent,
+  })
 
   return (
     <div

@@ -2,12 +2,12 @@
 relational references, 2026-10-29 — Crane PR, mirroring the Weaver
 fellowship-reference suite). What this pins:
 
-- The Crane's reference names all six other seats from her own side
-  of her pairs (comparison DRAFT §5, adapted — not the compressed
+- The Crane's reference names all six other seats from his own side
+  of his pairs (comparison DRAFT §5, adapted — not the compressed
   one-liners, which stay capped in the orientation slice).
 - Dwell-on-one-person is a TENDENCY of attention, never a quota (C2).
 - The Weaver–Ambassador disagreement is carried on the Crane's side
-  ONLY here (C3): her line is that a place isn't the same as
+  ONLY here (C3): his line is that a place isn't the same as
   belonging, neither side concedes — and the line does NOT leak
   into the Weaver's shipped reference (the Weaver-side addition is
   explicitly not part of this PR).
@@ -79,7 +79,9 @@ def test_c3_disagreement_carried_on_crane_side_only():
     # Crane-side C3 line, and her Crane sketch is unchanged.
     weaver_ref = ENC.get_definition(MT.get_script("conductor", 1)).fellowship_reference
     assert "a place isn't the same as belonging" not in weaver_ref
-    assert "I understand her as the unifier of people by translation" in weaver_ref
+    # (2026-11-09 pronoun build: "her" -> "him" — Crane is male; the
+    # sketch is otherwise unchanged.)
+    assert "I understand him as the unifier of people by translation" in weaver_ref
 
 
 def test_shared_doctrine_naming_and_no_arrangement():
@@ -157,7 +159,7 @@ def test_availability_note_computed_from_gates_minus_self():
     assert "Gardener — open now" in note
     assert "Weaver — open now" in note
     assert "Raven — open now" in note
-    # The note covers the other seats, not the Crane herself.
+    # The note covers the other seats, not the Crane himself.
     assert "Crane —" not in note
 
 

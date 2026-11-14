@@ -192,7 +192,7 @@ function chip(seat: string): HTMLButtonElement {
 
 function councilButton(): HTMLButtonElement {
   const btn = Array.from(container.querySelectorAll('button')).find(
-    (b) => b.textContent === 'Ask the council',
+    (b) => b.textContent?.includes('choose multiple'),
   )
   if (!btn) throw new Error('council button not found')
   return btn as HTMLButtonElement

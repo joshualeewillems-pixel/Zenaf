@@ -418,14 +418,16 @@ def test_t5_other_seats_unmoved_by_section12_scope():
     (§11.2) — neither is this branch. Re-pinned again for the Raven
     S1 build (2026-11-12): the skeptic's move (engage 7,968, turn
     5,615) is Raven's own S1 correction (RC3/RC4/RC6) — not this
-    branch."""
+    branch. Re-pinned again for the Bear S1 build (2026-11-13):
+    the guardian's move (engage 8,041, turn 4,863) is Bear's own
+    S1 correction — not this branch."""
     expected_engage = {
         "conductor": 7943, "mentor": 8277, "champion": 8168,
-        "guardian": 7198, "maverick": 7670, "skeptic": 7968,
+        "guardian": 8041, "maverick": 7670, "skeptic": 7968,
     }
     expected_turn = {
         "conductor": 6176, "mentor": 5486, "champion": 5064,
-        "guardian": 4049, "maverick": 4494, "skeptic": 5615,
+        "guardian": 4863, "maverick": 4494, "skeptic": 5615,
     }
     for arch, want_eng in expected_engage.items():
         defn = _definition(arch)

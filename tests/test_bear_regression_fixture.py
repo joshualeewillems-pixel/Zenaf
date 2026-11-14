@@ -88,7 +88,6 @@ def _composed_engage(definition, capability_block):
     (test_guardian_first_meeting.py pattern)."""
     frame = (
         definition.engage_frame
-        + "\n\n" + ENC._ZENAF_QUESTION_NOTE
         + "\n\n" + ENC._naming_note(definition)
     )
     if capability_block:

@@ -20,12 +20,20 @@ export const CairnInteractionContext = createContext<{
   onDragArm: (nodeId: string, pointerId: number, clientX: number, clientY: number) => void
   /** Hold ladder tier 2 fired: the press is spent — swallow the click its release produces. */
   onPressSpent: () => void
+  /**
+   * True while the user is actively working the garden rake (pointer
+   * activity with the rake live). Decorative cairn garden rings yield
+   * (fade) while this is true — the rake belongs to the garden layer,
+   * and the rings must not fight the user's own rake marks.
+   */
+  rakeActive: boolean
 }>({
   onToggleCairn: () => {},
   onToggleGardenStack: (_treeId: string) => {},
   onOpenStoneData: (_nodeId: string) => {},
   onDragArm: (_nodeId: string, _pointerId: number, _clientX: number, _clientY: number) => {},
   onPressSpent: () => {},
+  rakeActive: false,
 })
 
 export function useCairnInteraction() {

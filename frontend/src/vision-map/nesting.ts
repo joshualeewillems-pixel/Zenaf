@@ -272,7 +272,7 @@ const CONDITION_ACTIVITY_WEIGHT: Record<ConditionSeverity, number> = {
   3: 0.28,
 }
 
-function activityScore(d: MapNodePayload): number {
+export function activityScore(d: MapNodePayload): number {
   const g =
     d.growth === 'fruiting'
       ? 1

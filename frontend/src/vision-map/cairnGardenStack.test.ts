@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, Node } from 'reactflow'
 import { applyGardenStack, buildGardenStackNode, isGardenStackData } from './cairn'
-import { towerDebugForMembers, type CairnMemberInput } from './cairnTower'
+import { towerDebugForMembers, towerLayoutForMembers, type CairnMemberInput } from './cairnTower'
 import type { MapNodePayload } from './ontology'
 
 /**
@@ -140,5 +140,61 @@ describe('garden stack — the tree nests as a member (founder ruling, 2026-11-1
     const dbg = towerDebugForMembers(stack.id, members)
     expect(dbg.col[0]!.role).toBe('slab')
     expect(dbg.col[1]!.memberId).toBe('init-1')
+  })
+})
+
+describe('garden stack — Blend threading (reconciliation union, 2026-11-14)', () => {
+  it('stack members carry strand weights: the tree member takes the tree payload’s vector, subtree weights survive the parent-flag strip, and the weights stain the pile', () => {
+    const { nodes } = fixture()
+    const treeWeights = { word: 0.5, people: 0.5 }
+    const tree = {
+      ...nodes[0]!,
+      data: payload({ kind: 'tree', entity_strand_weights: treeWeights }),
+    }
+    const branchWeights = { image: 0.75, word: 0.25 }
+    const cairnWithMembers: Node<MapNodePayload> = {
+      id: 'cairn-proj-9',
+      type: 'cairn',
+      position: { x: 320, y: 420 },
+      data: payload({
+        kind: 'cairn',
+        label: 'Project Nine',
+        cairnProjectId: 'proj-9',
+        cairnCount: 1,
+        cairnPreview: [],
+        cairnMembers: [
+          {
+            id: 'branch-proj-9',
+            kind: 'branch',
+            activity: 0.9,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            growth: 'growing',
+            parent: true,
+            weights: branchWeights,
+          },
+        ] as CairnMemberInput[],
+      }),
+    }
+    const stack = buildGardenStackNode(tree, [cairnWithMembers])
+    const members = (stack.data as { cairnMembers?: CairnMemberInput[] }).cairnMembers!
+    expect(members[0]!.id).toBe('init-1')
+    expect(members[0]!.weights).toEqual(treeWeights)
+    const branch = members.find((m) => m.id === 'branch-proj-9')!
+    expect(branch.parent).toBeUndefined()
+    expect(branch.weights).toEqual(branchWeights)
+
+    // The weights actually stain the pile: the same members without
+    // vectors lay out with identical sprites but neutral tints.
+    const stained = towerLayoutForMembers(stack.id, members)
+    const bare = towerLayoutForMembers(
+      stack.id,
+      members.map((m) => ({ ...m, weights: null })),
+    )
+    for (const id of ['init-1', 'branch-proj-9']) {
+      const sStone = stained.stones.find((s) => s.memberId === id)!
+      const bStone = bare.stones.find((s) => s.memberId === id)!
+      expect(sStone.sprite).toBe(bStone.sprite)
+      expect(sStone.tint).not.toBe(bStone.tint)
+    }
   })
 })

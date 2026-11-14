@@ -571,6 +571,7 @@ export function buildGardenStackNode(
       activity: activityScore(treeData),
       createdAt: typeof treeCreated === 'string' && treeCreated ? treeCreated : null,
       growth: treeData.growth,
+      weights: strandWeightsOf(treeData),
       parent: true,
     },
   ]

@@ -1294,8 +1294,13 @@ _WHOLE_EXCHAUST_NOTE = (
 #: both meeting frames (_engage_frame and _turn_frame) —
 #: mechanism, not character, so it rides every seat's meeting
 #: prompts identically from one constant and two append sites.
-#: The block is the filing trigger: without it the model offers
-#: lock-ins in prose and the hook files nothing. The text carries
+#: SCOPED (founder ruling, 2026-11-13): the append is conditional
+#: — the instruction rides a frame only when the encounter
+#: already carries a commitment context (_commitment_context_
+#: present); a first meeting without one assembles byte-
+#: identically to before FC5. The block is the filing trigger:
+#: without it the model offers lock-ins in prose and the hook
+#: files nothing. The text carries
 #: no enforcement prose: the deny-first gate, the block parser,
 #: and the write itself are software (the filing hook below), so
 #: what remains is the offer block, the exact label format, and
@@ -1311,6 +1316,23 @@ _COMMITMENT_OFFER_INSTRUCTION = (
     "`label: <the thing in the visitor's words, short>`. "
     "Never say it is filed."
 )
+
+
+def _commitment_context_present(state: EncounterState | None) -> bool:
+    """Whether this encounter already carries a commitment context:
+    at least one confirmed write on the encounter state. This is
+    the boundary the confirmation seam (_with_confirmations)
+    already draws — empty state renders no commitment material —
+    and the scoped FC5 ruling (founder, 2026-11-13) extends it to
+    the offer instruction: the framing rides a frame only where a
+    commitment context is present in the encounter, never as
+    unconditional first-meeting boilerplate. The gate is the
+    encounter's records, not the seat: every seat receives the
+    instruction under the same condition, and no seat is excluded.
+    ``None`` (frame builders called without state) is no context."""
+    if state is None:
+        return False
+    return bool(getattr(state, "confirmed_writes", None))
 
 #: FC5 (design §2.4.3 + founder correction 1): the deterministic
 #: affirmation lists. The forms are words and phrases — matching is
@@ -2072,7 +2094,7 @@ class EncounterRuntime:
         state.pending_impression_discarded = reason
         return True
 
-    def _engage_frame(self) -> str:
+    def _engage_frame(self, state: EncounterState | None = None) -> str:
         """The substantive (engage) frame, composed in guarded
         order (Fellowship shared foundation, 2026-10-28): the
         capability block sits BEFORE the naming note, so if the
@@ -2084,15 +2106,23 @@ class EncounterRuntime:
         meeting path, so frame-cap truncation can never touch it.
         The standing Zenaf question note likewise rides the tier
         now. The frame itself is unchanged in content, only in
-        order and in the lines that moved to the tier."""
+        order and in the lines that moved to the tier.
+
+        ``state`` is the encounter's, read only for the FC5
+        scoping decision (the offer instruction below); callers
+        without state (tests, legacy paths) get the no-context
+        assembly — byte-identical to before FC5."""
         d = self.definition
         parts = [d.engage_frame]
         if d.capability_context:
             parts.append(d.capability_context)
         parts.append(_naming_note(d))
-        # FC5 (§2.5): the shared block-emission instruction, appended
-        # in both frames from one constant.
-        parts.append(_COMMITMENT_OFFER_INSTRUCTION)
+        # FC5 (§2.5), scoped by the founder's 2026-11-13 ruling:
+        # the shared block-emission instruction, from one constant
+        # — appended only when the encounter already carries a
+        # commitment context, never as unconditional boilerplate.
+        if _commitment_context_present(state):
+            parts.append(_COMMITMENT_OFFER_INSTRUCTION)
         return "\n\n".join(parts)
 
     # -- frames ----------------------------------------------------------------
@@ -2141,9 +2171,13 @@ class EncounterRuntime:
                 "force it, and never explain it; it is simply true "
                 "of this place."
             )
-        # FC5 (§2.5): the shared block-emission instruction, appended
-        # in both frames from one constant — last, after the cue.
-        parts.append(_COMMITMENT_OFFER_INSTRUCTION)
+        # FC5 (§2.5), scoped by the founder's 2026-11-13 ruling:
+        # the shared block-emission instruction, from one constant
+        # — last, after the cue — appended only when the encounter
+        # already carries a commitment context, never as
+        # unconditional boilerplate.
+        if _commitment_context_present(state):
+            parts.append(_COMMITMENT_OFFER_INSTRUCTION)
         return "\n\n".join(parts), cue
 
     def _nearby_allusion(self, state: EncounterState,
@@ -2294,7 +2328,7 @@ class EncounterRuntime:
         # (2026-10-24 sequencing rule).
         state.engagements += 1
         self._file_accepted_offer(host, state, message)
-        frame = self._engage_frame()
+        frame = self._engage_frame(state)
         raw = host.generate(self._with_confirmations(state, frame, message))
         reply_part, impression_part, had_delim = self._split_reply_and_impression(raw)
         claim, strands = split_strands_trailer(impression_part)

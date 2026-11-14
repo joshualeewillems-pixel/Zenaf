@@ -460,9 +460,17 @@ def test_frame_sizes_and_headroom_measured():
     # prompt; the gate, parser, and write are software), so the
     # composed turn frame shrank 5,734 -> 5,645; headroom
     # 3,266 -> 3,355.
-    assert len(turn_frame) == 5645
+    # FC5 scoped (founder ruling, 2026-11-13): the filing
+    # instruction no longer rides frames unconditionally — it is
+    # appended only when the encounter already carries a
+    # commitment context (confirmed writes on state). This test
+    # builds the turn frame on a fresh state (no context), so the
+    # composed frame is again the pre-FC5 assembly: 5,486 chars,
+    # headroom 3,514. The FC5-era pins above stand in the ledger
+    # as the record of the unconditional period.
+    assert len(turn_frame) == 5486
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3355
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3514
     # Read-back correction (2026-11-06): the founder-approved §F.1
     # readback frames lengthened the engage frame (Mentor 6128 -> 6563
     # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->

@@ -895,28 +895,76 @@ _ONE_SUFFIX_LINE = (
 )
 
 
-def _frames():
+def _context_state():
+    """An encounter state carrying a commitment context: one
+    confirmed write on the encounter — the FC5 scoped ruling's
+    condition (founder, 2026-11-13). The entry's content does not
+    affect frame assembly; only its presence gates the offer
+    instruction (and, at the seam, the confirmation suffix)."""
+    return EncounterState(confirmed_writes=[{
+        "kind": "commitment",
+        "id": "abc123def456",
+        "label": "non-complicity at home",
+        "status": "recorded",
+        "turn": 1,
+        "source_message_id": "msg-ctx",
+    }])
+
+
+def _frames(with_context=False):
     """(seat, variant, kind, frame) for every seat, fresh and
-    all-met, engage and turn — the implemented assembly."""
+    all-met, engage and turn — the implemented assembly. By
+    default the frames are built on a fresh encounter (no
+    commitment context); with_context=True builds them on a
+    state carrying a confirmed write."""
     out = []
     for arch, script, builder in _SEAT_BUILDERS:
         for variant, met in (("fresh", ()), ("all-met", _ALL_MET)):
             d = dataclasses.replace(builder(script), met_seats=met)
             rt = EncounterRuntime(d)
-            out.append((arch, variant, "engage", rt._engage_frame()))
+            st = _context_state() if with_context else None
+            out.append((arch, variant, "engage", rt._engage_frame(st)))
             tf, _cue = rt._turn_frame(
-                EncounterState(), "What is worth fighting for?"
+                st if st is not None else EncounterState(),
+                "What is worth fighting for?"
             )
             out.append((arch, variant, "turn", tf))
     return out
 
 
-def test_f5_11_instruction_in_all_seven_seats_prompts():
+def test_f5_11_instruction_scoped_to_commitment_context():
+    """FC5 scoped (founder ruling, 2026-11-13; this test replaces
+    the unconditional-presence pin of the pre-scoping build): the
+    offer instruction is not first-meeting boilerplate. On a
+    fresh encounter — no commitment context — it appears in NO
+    seat's frames, engage or turn, fresh or all-met: every
+    no-context assembly is the pre-FC5 assembly. When the
+    encounter carries a commitment context (a confirmed write on
+    state), the instruction rides EVERY seat's frames under the
+    same condition: the gate is the encounter's records, never
+    the seat, and no seat is excluded."""
     for arch, variant, kind, frame in _frames():
+        assert "```commitment-offer" not in frame, (arch, variant, kind)
+        assert "Never say it is filed." not in frame, (arch, variant, kind)
+    for arch, variant, kind, frame in _frames(with_context=True):
         assert "```commitment-offer" in frame, (arch, variant, kind)
         assert "label: <the thing in the visitor's words, short>" in frame, (
             arch, variant, kind,
         )
+
+
+def test_f5_11b_context_adds_exactly_the_instruction():
+    """The commitment-context assembly differs from the
+    no-context assembly by exactly the instruction and its
+    separator (157 + 2 = 159 chars), appended last — the scoping
+    changes the instruction's presence, never its content,
+    position, or anything else in the frame."""
+    plain = {(a, v, k): f for a, v, k, f in _frames()}
+    ctx = {(a, v, k): f for a, v, k, f in _frames(with_context=True)}
+    assert plain.keys() == ctx.keys()
+    for key, frame in plain.items():
+        assert len(ctx[key]) - len(frame) == 159, key
+        assert ctx[key].endswith(ENC._COMMITMENT_OFFER_INSTRUCTION), key
 
 
 def test_f5_12_frame_budget_tightest_with_instruction_and_suffix():
@@ -928,10 +976,17 @@ def test_f5_12_frame_budget_tightest_with_instruction_and_suffix():
     and the ~127-char full line — composed to 8,776 on the
     rebased branch, headroom 224: the failure that commissioned
     the hybrid correction.) If this ever fails, the instruction
-    is shortened, never the block format."""
+    is shortened, never the block format.
+
+    FC5 scoped (2026-11-13): the frames measured here are the
+    commitment-context assembly (_frames(with_context=True)) —
+    since the scoping, a frame carries the confirmation suffix
+    in production only when the encounter carries records, which
+    is exactly the state in which it also carries the
+    instruction; the composed worst case is unchanged."""
     worst = 0
     worst_label = ""
-    for arch, variant, kind, frame in _frames():
+    for arch, variant, kind, frame in _frames(with_context=True):
         total = len(frame) + 2 + len(_ONE_SUFFIX_LINE)
         if total > worst:
             worst = total
@@ -1021,7 +1076,17 @@ def _conf(i, label, turn, status="recorded", kind="commitment"):
 
 
 def _tightest_frame(kind):
-    return max((f for _, _, k, f in _frames() if k == kind), key=len)
+    """The longest frame of a kind in the commitment-context
+    assembly: the hybrid budget tests compose the confirmation
+    suffix onto a base frame, and since the FC5 scoping
+    (2026-11-13) the suffix renders only on frames whose
+    encounter carries records — the same frames that carry the
+    offer instruction — so the composed worst case is measured
+    on the context assembly, exactly as production composes it."""
+    return max(
+        (f for _, _, k, f in _frames(with_context=True) if k == kind),
+        key=len,
+    )
 
 
 def _block(state, frame, message):

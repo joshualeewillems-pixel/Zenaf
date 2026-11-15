@@ -122,9 +122,16 @@ def log_activity_simple(
     actor: str | None = "system",
     source: str,
     detail: str | None = None,
+    created_at: str | None = None,
 ) -> str:
-    """Convenience wrapper to create and log an ActivityEvent. Prefer ActivityType/ActivityEntityType .value for type/entity_type. Returns event id."""
-    event_id, _ = log_activity_simple_dated(
+    """Convenience wrapper to create and log an ActivityEvent. Prefer ActivityType/ActivityEntityType .value for type/entity_type. Returns event id.
+
+    ``created_at`` may be supplied by a caller that must know the
+    record's timestamp (see log_activity_simple_dated); the log
+    record carries exactly the supplied value.
+    """
+    ev = ActivityEvent(
+        id=_new_id(),
         type=type,
         entity_type=entity_type,
         entity_id=entity_id,
@@ -132,8 +139,10 @@ def log_activity_simple(
         actor=actor,
         source=source,
         detail=detail,
+        created_at=created_at or _now_iso(),
     )
-    return event_id
+    log_activity(ev)
+    return ev.id
 
 
 def log_activity_simple_dated(
@@ -153,9 +162,13 @@ def log_activity_simple_dated(
     from its timestamp — the emitter's in-memory event must carry
     the same timestamp the log record was written with, so the
     live path never has to re-read the log to learn it.
+
+    Implemented over log_activity_simple (resolved through the
+    module namespace at call time) so the established call seam —
+    including test doubles patched onto this module — is honored.
     """
-    ev = ActivityEvent(
-        id=_new_id(),
+    created_at = _now_iso()
+    event_id = log_activity_simple(
         type=type,
         entity_type=entity_type,
         entity_id=entity_id,
@@ -163,10 +176,9 @@ def log_activity_simple_dated(
         actor=actor,
         source=source,
         detail=detail,
-        created_at=_now_iso(),
+        created_at=created_at,
     )
-    log_activity(ev)
-    return ev.id, ev.created_at
+    return event_id, created_at
 
 
 def get_recent_activity(limit: int = 100) -> list[ActivityEvent]:

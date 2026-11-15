@@ -15,8 +15,17 @@ delete-surface pins below were updated to pin the post-build
 statement (Gate C review, finding F1), preserving the
 anti-overclaim substance: no "everything" claim, the explicit
 not-erased list, and a receipt composed from verified counts.
-The consent-toggle pin is unchanged from the interim correction —
-D2 does not touch those carriers.
+
+The consent-toggle pin was revised again by Steward D1 (packet
+§§8.1/15.5, founder ruling Q3): retaining people's names as
+candidate records required an explicit candidate-retention
+disclosure in the toggle text, and the same revision retired the
+interim erasure clause — false since D2's verified erasure
+landed — for the clear-and-erase statement D1's coverage
+expansion makes true. The pin below carries the D1 wording;
+every carrier must hold it identically, and capture is gated on
+consents recorded under it (consent version "permissions-v2",
+no grandfathering).
 
 These tests pin the served wording (the OpenAPI document is what
 the API presents) and every carrier of the consent sentence, so
@@ -32,11 +41,16 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 NEW_TOGGLE_WORDING = (
     "Can Zenaf connect our talks into ongoing threads and note what "
     "they might mean? The notes are kept in your narrative record. "
-    "You can turn this off at any time — that stops new notes; "
-    "erasing existing notes is not yet available and will be offered "
-    "here when it is verified."
+    "You can turn this off at any time — that stops new notes. "
+    "If you mention someone who isn't in your records yet, Zenaf may "
+    "keep a provisional note of their name and where they came up. "
+    "The note isn't a person record, and it doesn't claim anything "
+    "about who they are. Its only use is to ask — when coordination "
+    "is also on — whether you'd like them tracked properly. These "
+    "notes clear and erase with the rest of your narrative record."
 )
 OLD_TOGGLE_PROMISE = "review/delete them"
+SUPERSEDED_INTERIM_CLAUSE = "erasing existing notes is not yet available"
 
 
 def _norm(text: str) -> str:
@@ -116,11 +130,13 @@ def test_steward_toggle_wording_carriers_all_corrected():
     assert _norm(r2.covers) == NEW_TOGGLE_WORDING
 
     # The recorded approved wording in the consent gate module. (The
-    # module docstring's revision note quotes the old fragment while
-    # explaining the change; the full old promise sentence must be gone.)
+    # module docstring's revision note quotes old fragments while
+    # explaining the changes; the full superseded sentences must be
+    # gone.)
     consent_doc = _norm(consent.__doc__ or "")
     assert NEW_TOGGLE_WORDING in consent_doc
     assert "keep those notes where you can review/delete them" not in consent_doc
+    assert SUPERSEDED_INTERIM_CLAUSE not in consent_doc
 
     # Both frontend carriers of the toggle hint (settings + onboarding).
     for rel in (
@@ -130,3 +146,22 @@ def test_steward_toggle_wording_carriers_all_corrected():
         text = (REPO_ROOT / rel).read_text(encoding="utf-8")
         assert NEW_TOGGLE_WORDING in text, rel
         assert OLD_TOGGLE_PROMISE not in text, rel
+        assert SUPERSEDED_INTERIM_CLAUSE not in text, rel
+
+
+def test_candidate_disclosure_consent_version_aligned():
+    """The D1 no-grandfathering gate (packet §§8.1/15.5): the
+    backend's disclosure consent version and both frontend
+    CONSENT_VERSION constants are the same string, so a consent
+    recorded by the shipped frontend is one the capture gate can
+    recognize — and a pre-disclosure consent ("permissions-v1")
+    is not."""
+    from local_ai.narrative.consent import DISCLOSURE_CONSENT_VERSION
+
+    assert DISCLOSURE_CONSENT_VERSION != "permissions-v1"
+    for rel in (
+        "frontend/src/settings/sections/PermissionsSection.tsx",
+        "frontend/src/auth/ConsentOnboardingGate.tsx",
+    ):
+        text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+        assert f"const CONSENT_VERSION = '{DISCLOSURE_CONSENT_VERSION}'" in text, rel

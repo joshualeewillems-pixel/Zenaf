@@ -843,7 +843,9 @@ def audit_narrative_store(
     reinterpreted changes; each deferred row through its refs; each
     observable through its cited ids (evidence rows, thread
     dependencies, meeting dependencies — a claim citation can
-    never resolve, so claim-citing survivors fail mechanically).
+    never resolve, so claim-citing survivors fail mechanically);
+    each candidate-mention sighting through its event ref, and
+    each candidate through its linked sightings (Steward D1).
 
     The audit derives eligibility HERE, from the origin records —
     never from the erasure operation's own filter. Returns counts
@@ -991,6 +993,38 @@ def audit_narrative_store(
             change_ids=bad_changes,
             deferred_ids=bad_deferred,
             observable_ids=bad_observables,
+        )
+        removed += sum(outcome.values())
+
+    # Steward D1 (packet §8.2 point 3): the audit reaches the
+    # candidate-mention family with the same standard — every
+    # surviving sighting's event ref is resolved to its origin
+    # and must be eligible there; a candidate survives only on
+    # at least one currently-linked eligible sighting (a
+    # candidate all of whose sightings fail is removed, with its
+    # links and the acts that name it).
+    bad_sightings: list[str] = []
+    for sighting in store.sightings_for(user_id):
+        checked += 1
+        if (
+            resolver.origin_time_for_ref(sighting.ref_kind, sighting.ref_id)
+            is None
+        ):
+            bad_sightings.append(sighting.id)
+            failures.append(("candidate_sighting", sighting.id))
+    bad_sighting_set = set(bad_sightings)
+    bad_candidates: list[str] = []
+    for candidate in store.candidates_for(user_id):
+        checked += 1
+        linked = store.sightings_for_candidate(user_id, candidate.id)
+        if not any(s.id not in bad_sighting_set for s in linked):
+            bad_candidates.append(candidate.id)
+            failures.append(("candidate_mention", candidate.id))
+    if bad_sightings or bad_candidates:
+        outcome = store.delete_candidates_for_audit(
+            user_id,
+            sighting_ids=bad_sightings,
+            candidate_ids=bad_candidates,
         )
         removed += sum(outcome.values())
     return {"checked": checked, "removed": removed, "failures": failures}

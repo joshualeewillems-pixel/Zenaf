@@ -223,7 +223,8 @@ def default_operation_reader(user_id: str) -> OperationRecords:
     ever been recorded — an empty result, not a conflict.
 
     The read-only connection is cached per resolved path (opened
-    once, reused): each SELECT is its own transaction, so newly
+    once, reused) and rolled back before each SELECT, releasing
+    any read snapshot a previous fetch left pinned, so newly
     committed records are visible immediately; the cache exists so
     the hot path pays one SELECT per event, not a file open.
     """
@@ -241,6 +242,11 @@ def default_operation_reader(user_id: str) -> OperationRecords:
             # Serialized: one cached connection serves every
             # derivation thread; the SELECT itself is sub-ms.
             with _READER_CONNECTIONS_LOCK:
+                # Release any read snapshot a previous fetch left
+                # pinned on the cached connection, so this SELECT
+                # sees the latest committed records. The connection
+                # is read-only — there is never a write to lose.
+                conn.rollback()
                 rows = conn.execute(
                     "SELECT * FROM deletion_receipts ORDER BY rowid DESC"
                 ).fetchall()
@@ -270,9 +276,15 @@ def _reader_connection(db_path: str):
     """The cached read-only connection for one identity database.
 
     Keyed by the resolved path so a ZENAF_DATA_DIR change opens a
-    fresh connection for the new location. A connection that has
-    gone stale (database file replaced) is dropped and reopened
-    once by the caller's retry through this function.
+    fresh connection for the new location. A path's connection is
+    opened once and kept for the life of the process — it is never
+    dropped and reopened, so if the database file at a path is
+    replaced, the cached connection keeps reading the file it
+    originally opened (whole-directory restore is the packet's
+    documented residual risk, not something this reader can
+    detect). Staleness within the file is the caller's side of
+    the bargain: default_operation_reader rolls the connection
+    back before each SELECT, releasing any pinned read snapshot.
     """
     import sqlite3 as _sqlite3
 

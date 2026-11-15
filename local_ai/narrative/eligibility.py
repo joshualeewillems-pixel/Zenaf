@@ -530,20 +530,14 @@ class ProvenanceResolver:
         return self._log_index.get(event_id)
 
     def _meetings(self) -> list[dict]:
+        # Meeting rows come only from injection (the sweep's
+        # meeting_provider, friction's resolved rows, the delete
+        # flow). The narrative package does not import the
+        # conversation package (S0 separation pin); uninjected,
+        # meeting origins are unresolvable and fail closed (§9.3).
         if self._meeting_rows is not None:
             return self._meeting_rows
-        if self._meetings_cache is None:
-            try:
-                from local_ai.conversation.meeting import MeetingStore
-
-                self._meetings_cache = MeetingStore().meetings_for(self.user_id)
-            except Exception:
-                logger.exception(
-                    "erasure: meeting lookup failed for user %r",
-                    self.user_id,
-                )
-                self._meetings_cache = []
-        return self._meetings_cache
+        return []
 
     def _meeting_by_key(self, meeting_key: str) -> dict | None:
         for row in self._meetings():
@@ -556,19 +550,18 @@ class ProvenanceResolver:
         return None
 
     def _meeting_for_event(self, entity_id: str) -> dict | None:
-        try:
-            from local_ai.conversation.meeting import conversation_id_for
-        except Exception:
-            conversation_id_for = None  # type: ignore[assignment]
         for row in self._meetings():
             conversation_id = row.get("conversation_id")
-            if not conversation_id and conversation_id_for is not None:
-                try:
-                    conversation_id = conversation_id_for(
-                        row.get("archetype_id"), row.get("keystone_index")
-                    )
-                except Exception:
-                    conversation_id = None
+            if not conversation_id:
+                # The stored column is authoritative; the fallback
+                # is the deterministic id format (the same format
+                # friction's _meeting_key replicates — the narrative
+                # package does not import the conversation package,
+                # S0 separation pin).
+                conversation_id = (
+                    f"meeting-{row.get('archetype_id')}-"
+                    f"{row.get('keystone_index')}"
+                )
             if conversation_id and conversation_id == entity_id:
                 return row
         return None

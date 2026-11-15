@@ -401,12 +401,32 @@ def run_erasure_flow(
     # a full-set provenance audit of the survivors, with the
     # bounded mop-up loop. Receipts are composed from these
     # numbers, never from the steps' own reports alone.
+    # Meeting rows for culmination provenance (§9.3): the flow is
+    # outside the narrative package, so it may read the meeting
+    # store; any failure leaves meeting origins unresolvable,
+    # which fails closed in the audit.
+    meeting_rows = None
+    try:
+        from local_ai.conversation.meeting import MeetingStore
+
+        meeting_store = MeetingStore()
+        try:
+            meeting_rows = meeting_store.meetings_for(user)
+        finally:
+            meeting_store.close()
+    except Exception:  # noqa: BLE001 — fail closed, recorded below
+        logger.warning(
+            "erasure %s: meeting rows unavailable for the provenance "
+            "audit; meeting origins will fail closed",
+            operation_id,
+        )
     resolver = ProvenanceResolver(
         user,
         boundary,
         narrative_store=narrative_store,
         observation_store=observation_store,
         log_path=log_path,
+        meeting_rows=meeting_rows,
     )
     if stores_status["presence"] == "deleted":
         pdata = _presence_data_dir()

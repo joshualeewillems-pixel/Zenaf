@@ -2188,6 +2188,7 @@ class StewardPipeline:
         scheduler: Callable[[Callable[[], None]], None] | None = None,
         consent_reader: Callable[[str], bool] | None = None,
         operation_reader: Callable[[str], Any] | None = None,
+        meeting_provider: Callable[[str], Any] | None = None,
     ) -> None:
         self._store = store
         self._generate_fn = generate_fn
@@ -2197,6 +2198,12 @@ class StewardPipeline:
         # -record reader — injectable like the consent reader; the
         # production default reads the identity store.
         self._operation_reader = operation_reader
+        # Steward D2 (§9.3): meeting rows for provenance resolution
+        # of meeting_completed culminations — the same seam the
+        # sweep takes (the narrative package does not import the
+        # conversation package). Without it, meeting origins are
+        # unresolvable on this path and fail closed.
+        self._meeting_provider = meeting_provider
 
     @staticmethod
     def _thread_scheduler(fn: Callable[[], None]) -> None:
@@ -2261,7 +2268,14 @@ class StewardPipeline:
             )
             return verdict, None
         resolver = resolver_from_verdict(
-            user_id, verdict, narrative_store=self.store
+            user_id,
+            verdict,
+            narrative_store=self.store,
+            meeting_rows=(
+                self._meeting_provider(user_id)
+                if self._meeting_provider is not None
+                else None
+            ),
         )
         return verdict, resolver
 
@@ -2371,6 +2385,7 @@ def install_default_pipeline(
     scheduler: Callable[[Callable[[], None]], None] | None = None,
     consent_reader: Callable[[str], bool] | None = None,
     operation_reader: Callable[[str], Any] | None = None,
+    meeting_provider: Callable[[str], Any] | None = None,
 ) -> StewardPipeline:
     """Install the process-wide steward pipeline (app assembly).
 
@@ -2393,6 +2408,7 @@ def install_default_pipeline(
             scheduler=scheduler,
             consent_reader=consent_reader,
             operation_reader=operation_reader,
+            meeting_provider=meeting_provider,
         )
         return _PIPELINE
 

@@ -794,6 +794,20 @@ def test_22_signed_owner_binding_substitution(env):
         assert verdict.conflict, element
         assert case.nstore.get_erasure_tombstone(USER) is None
 
+    # Scope discipline: a signature-VALID record binding USER is
+    # simply not evidence when read for a different user (the
+    # reader is scoped to one consumer's user; multi-user installs
+    # must not hold each other's derivation).
+    env_v = Env(env.dir / "valid-other")
+    _save_operation_row(
+        env_v.istore, license_id=env_v.license_id,
+        operation_id="op-valid", status="opened", covered_user=USER,
+        erased_at=T, stores={}, counts={},
+    )
+    other_records = read_operation_records(env_v.istore, OTHER)
+    assert other_records.conflict is None
+    assert other_records.standing is None
+
 
 def test_23_crash_recovery_and_state_machine_interpretation(env):
     """Rev 4 test 23 + the founder's state-machine interpretation:

@@ -126,12 +126,13 @@ def read_operation_records(identity_store: Any, user_id: str) -> OperationRecord
     when its summary carries the bound field set. Verification is
     the one procedure used at retry and at autonomous recovery:
     recompute the HMAC over the row's payload and compare each
-    bound element against ground truth. Any signature failure, any
-    missing bound element, any bound element that disagrees with
-    the consumer's ground truth (including a covered_user other
-    than the resolved owner — a substituted record), or any
-    disagreement between rows of one operation fails closed
-    (``conflict`` set, nothing trusted).
+    bound element against ground truth. Any signature failure on
+    any operation row fails closed (``conflict`` set, nothing
+    trusted) — the bound set is inside the signed payload, so
+    substituting a bound element (covered_user included) is a
+    signature failure. Signature-valid rows binding a different
+    user are that user's records and are skipped: this reader is
+    always scoped to one consumer's user.
     """
     from local_ai.identity.service import _receipt_payload
     from local_ai.identity.signing import verify_mapping
@@ -151,18 +152,13 @@ def read_operation_records(identity_store: Any, user_id: str) -> OperationRecord
                 f"{operation_id} failed signature verification"
             )
             return out
-        # Correction B: every bound element is compared against the
-        # consumer's own ground truth; ANY mismatch fails closed.
-        # A record binding a different covered user is not skipped —
-        # in a single-owner installation it is an anomaly (a
-        # substituted record), never evidence to proceed on.
+        # A signature-valid record binding a DIFFERENT user is that
+        # user's record, not this consumer's evidence — skip it.
+        # (Substitution of the binding itself breaks the signature,
+        # handled above: the bound set is inside the signed payload,
+        # so a forged covered_user never reaches this line.)
         if summary.get("covered_user") != user_id:
-            out.conflict = (
-                f"operation record {row.receipt_id} binds covered "
-                f"user {summary.get('covered_user')!r}, not the "
-                f"resolved owner {user_id!r}"
-            )
-            return out
+            continue
         erased_at = summary.get("erased_at")
         scope = summary.get("scope")
         if not isinstance(erased_at, str) or not erased_at.strip():
@@ -215,15 +211,45 @@ def default_operation_reader(user_id: str) -> OperationRecords:
     explicit reader (the sweep's ``consent_reader`` precedent:
     injection for tests, this default for production). A read
     failure is a conflict — fail closed, never "no record".
-    """
-    try:
-        from local_ai.identity.store import IdentityStore
 
-        store = IdentityStore()
+    Deliberately a read-only SELECT, not an IdentityStore
+    construction: this runs at the head of derivation entry points,
+    and constructing the store per call would run its schema DDL
+    (writes) against the identity database on every event. The
+    default path is resolved at call time, exactly as the store
+    resolves it, so ZENAF_DATA_DIR redirection stays effective.
+    A missing database or receipts table means no operation has
+    ever been recorded — an empty result, not a conflict.
+    """
+    import sqlite3 as _sqlite3
+
+    try:
+        from local_ai.identity import identity_data_dir
+        from local_ai.identity.store import _receipt_from_row
+
+        db_path = identity_data_dir() / "identity.db"
+        if not db_path.exists():
+            return OperationRecords()
+        conn = _sqlite3.connect(
+            f"file:{db_path}?mode=ro", uri=True, check_same_thread=False
+        )
         try:
-            return read_operation_records(store, user_id)
+            conn.row_factory = _sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT * FROM deletion_receipts ORDER BY rowid DESC"
+                ).fetchall()
+            except _sqlite3.OperationalError:
+                return OperationRecords()  # table not created yet
+            receipts = [_receipt_from_row(r) for r in rows]
         finally:
-            store.close()
+            conn.close()
+
+        class _ReadOnlyReceipts:
+            def list_receipts(self):
+                return receipts
+
+        return read_operation_records(_ReadOnlyReceipts(), user_id)
     except Exception:
         logger.exception(
             "erasure: operation-record read failed for user %r", user_id

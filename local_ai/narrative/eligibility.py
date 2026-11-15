@@ -127,10 +127,11 @@ def read_operation_records(identity_store: Any, user_id: str) -> OperationRecord
     the one procedure used at retry and at autonomous recovery:
     recompute the HMAC over the row's payload and compare each
     bound element against ground truth. Any signature failure, any
-    missing bound element, or any disagreement between rows of one
-    operation fails closed (``conflict`` set, nothing trusted).
-    Rows bound to other users are ignored — a record is only ever
-    evidence about its own covered user.
+    missing bound element, any bound element that disagrees with
+    the consumer's ground truth (including a covered_user other
+    than the resolved owner — a substituted record), or any
+    disagreement between rows of one operation fails closed
+    (``conflict`` set, nothing trusted).
     """
     from local_ai.identity.service import _receipt_payload
     from local_ai.identity.signing import verify_mapping
@@ -144,12 +145,22 @@ def read_operation_records(identity_store: Any, user_id: str) -> OperationRecord
         status = summary.get("op_status")
         if not operation_id or not status:
             continue  # a plain receipt, not an operation row
-        if summary.get("covered_user") != user_id:
-            continue  # another user's operation: not evidence here
         if not verify_mapping(_receipt_payload(row), row.signature):
             out.conflict = (
                 f"operation record {row.receipt_id} for operation "
                 f"{operation_id} failed signature verification"
+            )
+            return out
+        # Correction B: every bound element is compared against the
+        # consumer's own ground truth; ANY mismatch fails closed.
+        # A record binding a different covered user is not skipped —
+        # in a single-owner installation it is an anomaly (a
+        # substituted record), never evidence to proceed on.
+        if summary.get("covered_user") != user_id:
+            out.conflict = (
+                f"operation record {row.receipt_id} binds covered "
+                f"user {summary.get('covered_user')!r}, not the "
+                f"resolved owner {user_id!r}"
             )
             return out
         erased_at = summary.get("erased_at")

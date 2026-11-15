@@ -374,7 +374,9 @@ def run_erasure_flow(
             log_path=log_path,
         )
         counts["narrative_threads"] = erase_report["threads_deleted"]
-        counts["narrative_rows"] = erase_report["rows_deleted"]
+        counts["narrative_rows"] = (
+            erase_report["rows_deleted"] - erase_report["threads_deleted"]
+        )
         stores_status["narrative"] = "deleted"
     except Exception as exc:  # noqa: BLE001
         failures["narrative"] = str(exc)

@@ -75,11 +75,65 @@ CREATE INDEX IF NOT EXISTS idx_observations_user_status
   ON observations (user_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_observations_user_seat
   ON observations (user_id, seat, created_at);
+
+-- Steward D2 erasure (packet §§8.4/9.2): the mirror barrier. The
+-- mirror tombstone carries the same content-free fields as the
+-- narrative tombstone; the manifest is the same transaction-local
+-- attestation (rows written inside add()'s transaction, deleted
+-- before its commit — never persisted, never borrowable). While
+-- the mirror stands, an observation insert lands only when the
+-- event it derives from was attested in this transaction with a
+-- provenance time strictly after the boundary.
+CREATE TABLE IF NOT EXISTS steward_erasure_tombstones (
+  user_id TEXT PRIMARY KEY,
+  erased_at TEXT NOT NULL,
+  operation_id TEXT NOT NULL DEFAULT '',
+  counts_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS steward_erasure_manifest (
+  run_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  erased_at_seen TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  source_time TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_erasure_manifest_lookup
+  ON steward_erasure_manifest (user_id, erased_at_seen, source_kind, source_id);
+CREATE TRIGGER IF NOT EXISTS trg_erasure_observation_insert
+BEFORE INSERT ON observations
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM steward_erasure_manifest m
+    JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+    WHERE m.user_id = NEW.user_id
+      AND m.erased_at_seen = tb.erased_at
+      AND m.source_kind = 'event'
+      AND m.source_id = NEW.event_ref
+      AND m.source_time > tb.erased_at
+  );
+END;
 """
 
 
 def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+class ErasureBarrierRefusal(ValueError):
+    """A derivation write refused under the erasure barrier.
+
+    Mirror of the narrative store's refusal (packet §9.2): raised
+    by ObservationStore.add when the mirror tombstone stands and
+    the write carries no eligibility manifest attesting its event.
+    The trigger backstop raises sqlite3.IntegrityError instead.
+    """
 
 
 @dataclass(frozen=True)
@@ -154,6 +208,104 @@ class ObservationStore:
         with self._lock:
             self._conn.close()
 
+    # -- erasure barrier (Steward D2, packet §9.2) --------------------------
+
+    def _erasure_tombstone_locked(self, user_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT user_id, erased_at, operation_id, counts_json, "
+            "created_at FROM steward_erasure_tombstones WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def get_erasure_tombstone(self, user_id: str) -> dict | None:
+        """The mirror erasure tombstone for the user, or None."""
+        with self._lock:
+            return self._erasure_tombstone_locked(user_id)
+
+    def write_erasure_tombstone(
+        self, user_id: str, erased_at: str, operation_id: str = ""
+    ) -> dict:
+        """Write the mirror tombstone if none stands (first writer
+        wins — the boundary is the operation record's T)."""
+        with self._lock:
+            existing = self._erasure_tombstone_locked(user_id)
+            if existing is None:
+                self._conn.execute(
+                    "INSERT INTO steward_erasure_tombstones (user_id, "
+                    "erased_at, operation_id, counts_json, created_at) "
+                    "VALUES (?, ?, ?, '{}', ?)",
+                    (user_id, erased_at, operation_id, _utcnow()),
+                )
+                self._conn.commit()
+                existing = self._erasure_tombstone_locked(user_id)
+        return existing
+
+    def rewrite_erasure_tombstone(
+        self, user_id: str, erased_at: str, operation_id: str = ""
+    ) -> dict:
+        """Reconcile the mirror tombstone to the operation record's
+        T (only under a signature-verified record's authority)."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO steward_erasure_tombstones (user_id, "
+                "erased_at, operation_id, counts_json, created_at) "
+                "VALUES (?, ?, ?, '{}', ?) ON CONFLICT(user_id) DO "
+                "UPDATE SET erased_at = excluded.erased_at, "
+                "operation_id = excluded.operation_id",
+                (user_id, erased_at, operation_id, _utcnow()),
+            )
+            self._conn.commit()
+            row = self._erasure_tombstone_locked(user_id)
+        return row
+
+    def set_erasure_tombstone_counts(
+        self, user_id: str, counts: dict[str, int]
+    ) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE steward_erasure_tombstones SET counts_json = ? "
+                "WHERE user_id = ?",
+                (json.dumps(counts, ensure_ascii=False), user_id),
+            )
+            self._conn.commit()
+
+    def vacuum(self) -> None:
+        """VACUUM the database (packet §8.2 step 5, file hygiene)."""
+        with self._lock:
+            self._conn.commit()
+            self._conn.execute("VACUUM")
+
+    def delete_for_user(self, user_id: str) -> int:
+        """Hard-delete every observation row for the user (packet
+        §6.2.2). The wired flow writes the mirror tombstone before
+        calling this; the tombstone itself is residue and stays."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM observations WHERE user_id = ?",
+                (user_id,),
+            )
+            self._conn.commit()
+        return cursor.rowcount
+
+    def delete_observation(self, user_id: str, observation_id: str) -> bool:
+        """Delete one observation (the §9.5 audit's mop-up)."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM observations WHERE id = ? AND user_id = ?",
+                (observation_id, user_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def count_for_user(self, user_id: str) -> int:
+        """The user's surviving observation count (recount)."""
+        with self._lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM observations WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()[0]
+
     # -- writes ---------------------------------------------------------------
 
     def add(
@@ -167,8 +319,18 @@ class ObservationStore:
         evidence_kind: str,
         interpretation: str,
         derivation: dict[str, Any] | None = None,
+        admitted_sources: Any = None,
     ) -> Observation:
-        """Persist one derived observation at status ``pending``."""
+        """Persist one derived observation at status ``pending``.
+
+        ``admitted_sources`` is the Steward D2 eligibility manifest
+        (packet §9.2): (source_kind, source_id, source_time) triples
+        from the caller's eligibility evaluation. Consulted only
+        when the mirror erasure tombstone stands for the user; then
+        the event this observation derives from must be attested
+        with a provenance time after the boundary, or the write is
+        refused (the trigger is the backstop).
+        """
         if evidence_kind not in EVIDENCE_KINDS:
             raise ValueError(f"unknown evidence_kind: {evidence_kind!r}")
         now = _utcnow()
@@ -187,20 +349,63 @@ class ObservationStore:
             updated_at=now,
         )
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO observations (id, user_id, seat, event_ref, "
-                "event_kind, evidence, evidence_kind, interpretation, "
-                "status, derivation_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    obs.id, obs.user_id, obs.seat, obs.event_ref,
-                    obs.event_kind, obs.evidence, obs.evidence_kind,
-                    obs.interpretation, obs.status,
-                    json.dumps(obs.derivation or {}, ensure_ascii=False),
-                    obs.created_at, obs.updated_at,
-                ),
-            )
-            self._conn.commit()
+            try:
+                tombstone = self._erasure_tombstone_locked(user_id)
+                run_id: str | None = None
+                if tombstone is not None:
+                    if admitted_sources is None:
+                        raise ErasureBarrierRefusal(
+                            "steward erasure barrier: observation "
+                            f"write for user {user_id!r} refused — "
+                            "the mirror erasure tombstone stands "
+                            f"(erased_at {tombstone['erased_at']}) and "
+                            "the write carries no eligibility manifest"
+                        )
+                    admitted = [tuple(e) for e in admitted_sources]
+                    if ("event", event_ref) not in {
+                        (str(k), str(r)) for k, r, _ in admitted
+                    }:
+                        raise ErasureBarrierRefusal(
+                            "steward erasure barrier: observation "
+                            f"write for user {user_id!r} refused — "
+                            f"event {event_ref!r} is not attested by "
+                            "this run's eligibility evaluation"
+                        )
+                    run_id = f"mrun-{uuid.uuid4().hex[:24]}"
+                    for kind, ref_id, source_time in admitted:
+                        self._conn.execute(
+                            "INSERT INTO steward_erasure_manifest "
+                            "(run_id, user_id, erased_at_seen, "
+                            "source_kind, source_id, source_time) "
+                            "VALUES (?, ?, ?, ?, ?, ?)",
+                            (
+                                run_id, user_id, tombstone["erased_at"],
+                                str(kind), str(ref_id), str(source_time),
+                            ),
+                        )
+                self._conn.execute(
+                    "INSERT INTO observations (id, user_id, seat, event_ref, "
+                    "event_kind, evidence, evidence_kind, interpretation, "
+                    "status, derivation_json, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        obs.id, obs.user_id, obs.seat, obs.event_ref,
+                        obs.event_kind, obs.evidence, obs.evidence_kind,
+                        obs.interpretation, obs.status,
+                        json.dumps(obs.derivation or {}, ensure_ascii=False),
+                        obs.created_at, obs.updated_at,
+                    ),
+                )
+                if run_id is not None:
+                    self._conn.execute(
+                        "DELETE FROM steward_erasure_manifest "
+                        "WHERE run_id = ?",
+                        (run_id,),
+                    )
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
         return obs
 
     def set_status(self, user_id: str, observation_id: str, status: str) -> Observation:

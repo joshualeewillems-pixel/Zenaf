@@ -362,6 +362,82 @@ def _derive_thread_rows(
     return desired
 
 
+def _friction_admitted(
+    store: NarrativeStore,
+    user_id: str,
+    thread: Any,
+    desired: list[dict],
+    resolver: Any,
+) -> tuple[list[dict], list]:
+    """Filter one thread's desired observables to the admittable
+    set under the erasure barrier (packet §9.2/§9.3), building the
+    sync call's manifest entries.
+
+    O3 cites the thread itself → a thread dependency entry at the
+    thread's own provenance. O4 cites evidence rows → each resolves
+    through its thread_evidence row to the source's provenance.
+    O2 cites claim evidence — claims are never manifested (Option
+    B), so an O2 row is unadmittable by construction and drops
+    (with claims excluded upstream it is never derived at all).
+    A row whose refs cannot ALL be admitted drops whole: a partial
+    observable would assert a fact its evidence does not support.
+    """
+    kept: list[dict] = []
+    admitted: list = []
+    evidence_rows: dict[str, Any] | None = None
+    for row in desired:
+        kind = row["kind"]
+        entries: list | None = None
+        if kind == "thread_quiet":
+            entry = resolver.admitted_entry("thread", thread.id)
+            entries = [entry] if entry is not None else None
+        elif kind == "divergent_reading_positions":
+            if evidence_rows is None:
+                evidence_rows = {
+                    e.id: e for e in store.evidence_for(user_id, thread.id)
+                }
+            entries = []
+            for cited in row["evidence_refs"]:
+                evidence = evidence_rows.get(cited)
+                if evidence is None:
+                    entries = None
+                    break
+                entry = resolver.admitted_entry(
+                    evidence.ref_kind, evidence.ref_id
+                )
+                if entry is None:
+                    entries = None
+                    break
+                entries.append(entry)
+        else:
+            entries = None
+        if entries is None:
+            continue
+        kept.append(row)
+        admitted.extend(entries)
+    return kept, admitted
+
+
+def _o1_admitted(
+    desired: list[dict], meeting_rows: list[dict], resolver: Any
+) -> tuple[list[dict], list]:
+    """Filter O1 rows to admittable ones (the meeting dependency
+    entry, at the meeting row's own provenance — §9.2 Rev 3)."""
+    by_key = {_meeting_key(m): m for m in meeting_rows}
+    kept: list[dict] = []
+    admitted: list = []
+    for row in desired:
+        key = (row.get("detail") or {}).get("meeting_key")
+        if not key or key not in by_key:
+            continue
+        entry = resolver.admitted_entry("meeting", key)
+        if entry is None:
+            continue
+        kept.append(row)
+        admitted.append(entry)
+    return kept, admitted
+
+
 def run_friction_pass(
     store: NarrativeStore,
     user_id: str,
@@ -370,6 +446,7 @@ def run_friction_pass(
     claims: Any = None,
     gate_open: Callable[[], bool] | None = None,
     now: datetime | None = None,
+    erasure_resolver: Any = None,
 ) -> FrictionResult:
     """One recompute pass over the user's live threads + meetings.
 
@@ -380,11 +457,39 @@ def run_friction_pass(
     ``meetings`` / ``claims`` are row dicts, or callables taking
     user_id returning row dicts. No generation function exists
     here by design: this pass cannot spend generation.
+
+    Steward D2: when an erasure tombstone stands for the user, the
+    pass's sources are eligibility-filtered before derivation
+    (§9.3): meeting rows resolve on their own provenance (strictly
+    after the boundary), claims are excluded entirely (Option B —
+    O2 never fires, O1 derives meeting-only), and each sync carries
+    the admitted manifest set for its rows, dropping any row whose
+    refs cannot all be admitted.
     """
     gate = gate_open or (lambda: True)
     now_dt = now or datetime.now(timezone.utc)
     meeting_rows = _resolve_provider(meetings, user_id)
     claim_rows = _resolve_provider(claims, user_id)
+    resolver = erasure_resolver
+    tombstone = store.get_erasure_tombstone(user_id)
+    if tombstone is not None:
+        if resolver is None:
+            from .eligibility import ProvenanceResolver
+
+            resolver = ProvenanceResolver(
+                user_id,
+                tombstone["erased_at"],
+                narrative_store=store,
+                meeting_rows=meeting_rows,
+            )
+        meeting_rows = [
+            m
+            for m in meeting_rows
+            if resolver.eligible_time(m.get("created_at")) is not None
+        ]
+        # Option B: claims are excluded as post-erasure friction
+        # sources — no exception for assimilation timestamps.
+        claim_rows = []
     # Claim rows arrive as "id" (tests, plain dicts) or "claim_id"
     # (the intake store's claims_for_user rows) — accept both.
     claims_by_id = {}
@@ -406,8 +511,14 @@ def run_friction_pass(
         desired = _derive_thread_rows(
             store, user_id, thread, claims_by_id, now_dt
         )
+        admitted_sources = None
+        if resolver is not None:
+            desired, admitted_sources = _friction_admitted(
+                store, user_id, thread, desired, resolver
+            )
         written, refreshed, removed = store.sync_thread_observables(
-            user_id, thread.id, desired
+            user_id, thread.id, desired,
+            admitted_sources=admitted_sources,
         )
         result.written += written
         result.refreshed += refreshed
@@ -418,8 +529,13 @@ def run_friction_pass(
         result.gate_skipped_meetings = True
     else:
         desired_o1 = _derive_o1(meeting_rows, claim_rows)
+        admitted_sources = None
+        if resolver is not None:
+            desired_o1, admitted_sources = _o1_admitted(
+                desired_o1, meeting_rows, resolver
+            )
         written, refreshed, removed = store.sync_meeting_observables(
-            user_id, desired_o1
+            user_id, desired_o1, admitted_sources=admitted_sources
         )
         result.written += written
         result.refreshed += refreshed

@@ -346,12 +346,16 @@ def derive_observations(
     event: FellowshipEvent,
     store: ObservationStore,
     generate_fn: GenerateFn | None = None,
+    *,
+    admitted_sources: Any = None,
 ) -> list[Observation]:
     """Derive and persist observations for one event. Never raises.
 
     No candidate seats → no LLM call at all. Each candidate seat's
     generation is independently guarded: one seat's failure costs its
     own observation, never the event's other seats or the caller.
+    ``admitted_sources`` is the Steward D2 eligibility manifest
+    (§9.2), forwarded to the store on every add.
     """
     try:
         matches = candidate_seats(event)
@@ -388,6 +392,7 @@ def derive_observations(
                     "prefilter": match.reasons(),
                     "operation": "fellowship-observation",
                 },
+                admitted_sources=admitted_sources,
             )
             derived.append(obs)
         except Exception:
@@ -432,11 +437,15 @@ class DerivationPipeline:
         generate_fn: GenerateFn | None = None,
         scheduler: Callable[[Callable[[], None]], None] | None = None,
         consent_reader: Callable[[str], bool] | None = None,
+        operation_reader: Callable[[str], Any] | None = None,
     ) -> None:
         self._store = store
         self._generate_fn = generate_fn
         self._scheduler = scheduler or self._thread_scheduler
         self._consent_reader = consent_reader
+        # Steward D2 (§9.4): the barrier-integrity check's operation
+        # -record reader — injectable like the consent reader.
+        self._operation_reader = operation_reader
 
     @staticmethod
     def _thread_scheduler(fn: Callable[[], None]) -> None:
@@ -469,6 +478,30 @@ class DerivationPipeline:
 
     def _run(self, event: FellowshipEvent) -> None:
         try:
+            # Steward D2 (§9.4 Rev 4): the barrier-integrity check
+            # runs at the head of fellowship intake — the operation
+            # record first, before the mirror tombstone is trusted.
+            # On hold, this event derives nothing. On proceed, the
+            # event itself must pass provenance eligibility (§9.3)
+            # before any candidate seat is considered.
+            from local_ai.narrative.eligibility import (
+                check_barrier_integrity,
+                resolver_from_verdict,
+            )
+
+            verdict = check_barrier_integrity(
+                event.user_id,
+                observation_store=self.store,
+                operation_reader=self._operation_reader,
+            )
+            if verdict.state == "hold":
+                logger.info(
+                    "fellowship: erasure barrier holds derivation "
+                    "for user %r: %s",
+                    event.user_id,
+                    verdict.reason,
+                )
+                return
             if not self._gate_open(event.user_id):
                 logger.info(
                     "fellowship: consent closed for user %r; "
@@ -477,7 +510,30 @@ class DerivationPipeline:
                     event.id,
                 )
                 return
-            derive_observations(event, self.store, generate_fn=self._generate_fn)
+            admitted = None
+            if verdict.state == "proceed":
+                resolver = resolver_from_verdict(
+                    event.user_id,
+                    verdict,
+                    observation_store=self.store,
+                )
+                entry = (
+                    resolver.admitted_for_event(event)
+                    if resolver is not None
+                    else None
+                )
+                if entry is None:
+                    logger.info(
+                        "fellowship: event %s fails erasure "
+                        "eligibility; skipped",
+                        event.id,
+                    )
+                    return
+                admitted = [entry]
+            derive_observations(
+                event, self.store, generate_fn=self._generate_fn,
+                admitted_sources=admitted,
+            )
         except Exception:
             logger.exception("fellowship: derivation run failed for %s", event.id)
 

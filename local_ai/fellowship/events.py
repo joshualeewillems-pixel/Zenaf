@@ -136,7 +136,7 @@ def emit_event(
         },
         ensure_ascii=False,
     )
-    event_id = _activity.log_activity_simple(
+    event_id, created_at = _activity.log_activity_simple_dated(
         type=kind,
         entity_type=entity_type,
         entity_id=entity_id,
@@ -153,6 +153,10 @@ def emit_event(
         evidence_text=evidence_text,
         summary=summary,
         payload=payload,
+        # D2 (§9.3): the event carries the timestamp its log record
+        # was written with — the live path's eligibility evaluation
+        # uses it directly instead of re-reading the log.
+        created_at=created_at,
     )
     if schedule:
         _schedule_derivation(event)

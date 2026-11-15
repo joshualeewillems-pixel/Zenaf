@@ -124,6 +124,36 @@ def log_activity_simple(
     detail: str | None = None,
 ) -> str:
     """Convenience wrapper to create and log an ActivityEvent. Prefer ActivityType/ActivityEntityType .value for type/entity_type. Returns event id."""
+    event_id, _ = log_activity_simple_dated(
+        type=type,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        related_entity_id=related_entity_id,
+        actor=actor,
+        source=source,
+        detail=detail,
+    )
+    return event_id
+
+
+def log_activity_simple_dated(
+    *,
+    type: str,
+    entity_type: str,
+    entity_id: str,
+    related_entity_id: str | None = None,
+    actor: str | None = "system",
+    source: str,
+    detail: str | None = None,
+) -> tuple[str, str]:
+    """log_activity_simple, also returning the record's created_at.
+
+    Steward D2 (packet §9.3): the log line is the origin record for
+    an ordinary event, and derivation eligibility is established
+    from its timestamp — the emitter's in-memory event must carry
+    the same timestamp the log record was written with, so the
+    live path never has to re-read the log to learn it.
+    """
     ev = ActivityEvent(
         id=_new_id(),
         type=type,
@@ -136,7 +166,7 @@ def log_activity_simple(
         created_at=_now_iso(),
     )
     log_activity(ev)
-    return ev.id
+    return ev.id, ev.created_at
 
 
 def get_recent_activity(limit: int = 100) -> list[ActivityEvent]:

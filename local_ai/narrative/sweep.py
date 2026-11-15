@@ -50,7 +50,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -70,6 +70,7 @@ from .derivation import (
     event_to_item,
     work_deferred_prose,
 )
+from .eligibility import check_barrier_integrity, resolver_from_verdict
 from .friction import run_friction_pass
 from .store import NarrativeStore
 
@@ -157,6 +158,16 @@ class SweepResult:
     batches: int = 0
     events_derived: int = 0
     events_gate_skipped: int = 0
+    #: Steward D2 (§§8.1/9.3): events consumed-skipped because their
+    #: provenance resolves to at-or-before the erasure boundary (or
+    #: cannot be established). Counted separately from gate skips:
+    #: the gate is consent; this is the erasure boundary.
+    events_erasure_skipped: int = 0
+    #: Steward D2 (§9.4): the barrier-integrity verdict for this
+    #: pass (BarrierVerdict.to_dict()), and how many holds it has
+    #: produced (0 or 1 per pass — a hold ends the pass).
+    barrier: dict | None = None
+    barrier_holds: int = 0
     lines_consumed: int = 0
     has_partial_trailing_line: bool = False
     log_missing: bool = False
@@ -174,6 +185,9 @@ class SweepResult:
             "batches": self.batches,
             "events_derived": self.events_derived,
             "events_gate_skipped": self.events_gate_skipped,
+            "events_erasure_skipped": self.events_erasure_skipped,
+            "barrier": self.barrier,
+            "barrier_holds": self.barrier_holds,
             "lines_consumed": self.lines_consumed,
             "has_partial_trailing_line": self.has_partial_trailing_line,
             "log_missing": self.log_missing,
@@ -245,6 +259,8 @@ def run_sweep_for_user(
     batch_max: int = STEWARD_SWEEP_BATCH_MAX,
     meeting_provider: Callable[[str], Any] | None = None,
     claims_provider: Callable[[str], Any] | None = None,
+    operation_reader: Callable[[str], Any] | None = None,
+    observation_store: Any = None,
 ) -> SweepResult:
     """Sweep the activity log for one user (increment A §3.2/§4).
 
@@ -303,6 +319,44 @@ def run_sweep_for_user(
     result.has_partial_trailing_line = has_partial
     try:
         with _user_lock(user_id):
+            # Steward D2 (§9.4 Rev 4): the barrier-integrity check
+            # runs inside the per-user lock, before any batch is
+            # processed and before the processing position can
+            # advance. On hold, nothing is consumed — no batch, no
+            # worker, no friction, no prune, no cursor movement —
+            # and derivation resumes on a later pass. On proceed,
+            # the pass derives only from eligible post-erasure
+            # sources (the founder's state-machine interpretation:
+            # barrier integrity is not deletion completion).
+            verdict = check_barrier_integrity(
+                user_id,
+                narrative_store=store,
+                observation_store=observation_store,
+                operation_reader=operation_reader,
+            )
+            result.barrier = verdict.to_dict()
+            if verdict.state == "hold":
+                result.barrier_holds += 1
+                result.offset_after = start_offset
+                logger.info(
+                    "steward sweep: erasure barrier holds derivation "
+                    "for user %r: %s",
+                    user_id,
+                    verdict.reason,
+                )
+                return result
+            resolver = resolver_from_verdict(
+                user_id,
+                verdict,
+                narrative_store=store,
+                observation_store=observation_store,
+                log_path=path,
+                meeting_rows=(
+                    meeting_provider(user_id)
+                    if meeting_provider is not None
+                    else None
+                ),
+            )
             committed = start_offset
             batch: list[FellowshipEvent] = []
             failed = False
@@ -317,7 +371,7 @@ def run_sweep_for_user(
                 if len(batch) >= batch_max:
                     ok = _process_batch(
                         store, user_id, batch, generate_fn,
-                        consent_reader, result,
+                        consent_reader, result, resolver,
                     )
                     if not ok:
                         failed = True
@@ -328,7 +382,7 @@ def run_sweep_for_user(
                 if batch:
                     ok = _process_batch(
                         store, user_id, batch, generate_fn,
-                        consent_reader, result,
+                        consent_reader, result, resolver,
                     )
                     if ok:
                         committed = lines[-1][0] if lines else start_offset
@@ -350,7 +404,8 @@ def run_sweep_for_user(
                 # too — a rendered reading is future derivation).
                 try:
                     worked = work_deferred_prose(
-                        store, user_id, generate_fn=generate_fn
+                        store, user_id, generate_fn=generate_fn,
+                        erasure_resolver=resolver,
                     )
                     result.deferred = worked.to_dict()
                 except Exception:
@@ -384,6 +439,7 @@ def run_sweep_for_user(
                     gate_open=lambda: _gate_open(
                         user_id, consent_reader
                     ),
+                    erasure_resolver=resolver,
                 ).to_dict()
             except Exception:
                 logger.exception(
@@ -414,12 +470,20 @@ def _process_batch(
     generate_fn: Callable | None,
     consent_reader: Callable[[str], bool] | None,
     result: SweepResult,
+    resolver: Any = None,
 ) -> bool:
     """Derive one batch, or consume-skip it when the gate is closed.
 
     Returns True when the batch was consumed (derived or
     gate-skipped — the offset may advance past it) and False on
     derive failure (the offset must NOT advance past it).
+
+    With a D2 ``resolver`` (an erasure boundary stands), eligibility
+    is evaluated per event BEFORE change detection and clustering
+    (§§8.1/9.3): an ineligible event is consumed-skipped (counted
+    in ``events_erasure_skipped``) and reaches neither the
+    detectors nor derivation; an eligible event's detectors and
+    funnel writes carry its admitted manifest entry.
     """
     result.batches += 1
     if not _gate_open(user_id, consent_reader):
@@ -439,18 +503,34 @@ def _process_batch(
         # never fails the batch (derivation still runs).
         from local_ai.narrative.changes import detect_changes_for_event
 
+        items: list = []
         for event in batch:
+            admitted: list | None = None
+            source_time: str | None = None
+            if resolver is not None:
+                entry = resolver.admitted_for_event(event)
+                if entry is None:
+                    result.events_erasure_skipped += 1
+                    continue
+                admitted = [entry]
+                source_time = entry[2]
             try:
-                detect_changes_for_event(store, user_id, event)
+                detect_changes_for_event(
+                    store, user_id, event, admitted_sources=admitted
+                )
             except Exception:
                 logger.exception(
                     "steward sweep: change detection failed for "
                     "event %s",
                     event.id,
                 )
+            item = event_to_item(event)
+            if source_time:
+                item = replace(item, source_time=source_time)
+            items.append(item)
         derive_batch(
             user_id,
-            [event_to_item(event) for event in batch],
+            items,
             store,
             generate_fn=generate_fn,
         )
@@ -460,7 +540,7 @@ def _process_batch(
             user_id,
         )
         return False
-    result.events_derived += len(batch)
+    result.events_derived += len(items)
     return True
 
 
@@ -544,6 +624,8 @@ def run_sweep(
     batch_max: int = STEWARD_SWEEP_BATCH_MAX,
     meeting_provider: Callable[[str], Any] | None = None,
     claims_provider: Callable[[str], Any] | None = None,
+    operation_reader: Callable[[str], Any] | None = None,
+    observation_store: Any = None,
 ) -> dict[str, SweepResult]:
     """One sweep pass over users (shared store instance, §3.3)."""
     if user_ids is None:
@@ -559,6 +641,8 @@ def run_sweep(
             batch_max=batch_max,
             meeting_provider=meeting_provider,
             claims_provider=claims_provider,
+            operation_reader=operation_reader,
+            observation_store=observation_store,
         )
     return results
 
@@ -573,6 +657,8 @@ def start_sweep_loop(
     batch_max: int = STEWARD_SWEEP_BATCH_MAX,
     meeting_provider: Callable[[str], Any] | None = None,
     claims_provider: Callable[[str], Any] | None = None,
+    operation_reader: Callable[[str], Any] | None = None,
+    observation_store: Any = None,
 ) -> tuple[threading.Thread, threading.Event]:
     """Start the daemon sweep loop (app assembly, guarded).
 
@@ -594,6 +680,8 @@ def start_sweep_loop(
                     batch_max=batch_max,
                     meeting_provider=meeting_provider,
                     claims_provider=claims_provider,
+                    operation_reader=operation_reader,
+                    observation_store=observation_store,
                 )
             except Exception:
                 logger.exception("steward sweep: pass failed")

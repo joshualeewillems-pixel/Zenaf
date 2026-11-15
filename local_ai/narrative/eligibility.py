@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -220,6 +221,11 @@ def default_operation_reader(user_id: str) -> OperationRecords:
     resolves it, so ZENAF_DATA_DIR redirection stays effective.
     A missing database or receipts table means no operation has
     ever been recorded — an empty result, not a conflict.
+
+    The read-only connection is cached per resolved path (opened
+    once, reused): each SELECT is its own transaction, so newly
+    committed records are visible immediately; the cache exists so
+    the hot path pays one SELECT per event, not a file open.
     """
     import sqlite3 as _sqlite3
 
@@ -230,20 +236,17 @@ def default_operation_reader(user_id: str) -> OperationRecords:
         db_path = identity_data_dir() / "identity.db"
         if not db_path.exists():
             return OperationRecords()
-        conn = _sqlite3.connect(
-            f"file:{db_path}?mode=ro", uri=True, check_same_thread=False
-        )
+        conn = _reader_connection(str(db_path))
         try:
-            conn.row_factory = _sqlite3.Row
-            try:
+            # Serialized: one cached connection serves every
+            # derivation thread; the SELECT itself is sub-ms.
+            with _READER_CONNECTIONS_LOCK:
                 rows = conn.execute(
                     "SELECT * FROM deletion_receipts ORDER BY rowid DESC"
                 ).fetchall()
-            except _sqlite3.OperationalError:
-                return OperationRecords()  # table not created yet
-            receipts = [_receipt_from_row(r) for r in rows]
-        finally:
-            conn.close()
+        except _sqlite3.OperationalError:
+            return OperationRecords()  # table not created yet
+        receipts = [_receipt_from_row(r) for r in rows]
 
         class _ReadOnlyReceipts:
             def list_receipts(self):
@@ -257,6 +260,31 @@ def default_operation_reader(user_id: str) -> OperationRecords:
         return OperationRecords(
             conflict="operation records could not be read"
         )
+
+
+_READER_CONNECTIONS: dict[str, Any] = {}
+_READER_CONNECTIONS_LOCK = threading.Lock()
+
+
+def _reader_connection(db_path: str):
+    """The cached read-only connection for one identity database.
+
+    Keyed by the resolved path so a ZENAF_DATA_DIR change opens a
+    fresh connection for the new location. A connection that has
+    gone stale (database file replaced) is dropped and reopened
+    once by the caller's retry through this function.
+    """
+    import sqlite3 as _sqlite3
+
+    with _READER_CONNECTIONS_LOCK:
+        conn = _READER_CONNECTIONS.get(db_path)
+        if conn is None:
+            conn = _sqlite3.connect(
+                f"file:{db_path}?mode=ro", uri=True, check_same_thread=False
+            )
+            conn.row_factory = _sqlite3.Row
+            _READER_CONNECTIONS[db_path] = conn
+        return conn
 
 
 # ---------------------------------------------------------------------------

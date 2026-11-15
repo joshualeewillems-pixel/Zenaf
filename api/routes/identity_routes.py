@@ -1,19 +1,22 @@
 """Identity license + consent scopes + takeout API.
 
 The ownership layer: issue the signed license, manage the granular consent
-ledger, export everything (takeout), or delete everything (signed receipt).
-Default-deny: every use of identity-derived data requires an explicit grant.
+ledger, export everything (takeout), or delete the owner's deletable
+footprint (signed receipt). Default-deny: every use of identity-derived
+data requires an explicit grant.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from api.routes.auth_routes import get_current_user
 from local_ai.identity import LicenseRequired, ScopeDenied
 from local_ai.identity import service as identity_service
+from local_ai.identity.erasure import COVERAGE_STATEMENT, ErasureRefused
 from local_ai.identity.models import DeletionReceipt, IdentityLicense
 from local_ai.identity.scopes import KNOWN_SCOPES, check_scope
 
@@ -111,14 +114,35 @@ def takeout():
     )
 
 
-@router.post("/delete", response_model=DeletionReceipt)
-def delete_everything(body: DeleteBody):
-    """Delete everything derived from the owner. Returns a signed receipt.
+@router.post(
+    "/delete",
+    response_model=DeletionReceipt,
+    summary=(
+        "Delete presence data, your narrative steward record, and "
+        "fellowship observations (signed receipt)"
+    ),
+    description=COVERAGE_STATEMENT,
+)
+def delete_everything(
+    body: DeleteBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """Run the Scope S erasure for the authenticated owner.
 
-    Requires confirmation == "DELETE" (exactly) and the delete:execute scope.
+    Requires confirmation == "DELETE" (exactly) and the
+    delete:execute scope. The session user must resolve to the
+    installation's owner (§9.1); anything else is refused before
+    anything is deleted. Returns the signed receipt — complete,
+    incomplete, or the standing-completion report on a repeat
+    invocation.
     """
     try:
-        receipt = identity_service.delete_all(body.confirmation)
+        receipt = identity_service.delete_all(
+            body.confirmation,
+            requesting_user_id=current_user.get("id"),
+        )
+    except ErasureRefused as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ScopeDenied as exc:

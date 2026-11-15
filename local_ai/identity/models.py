@@ -41,7 +41,15 @@ class ScopeEvent(BaseModel):
 
 
 class DeletionReceipt(BaseModel):
-    """Signed proof of a full deletion: what was removed, when."""
+    """Signed proof of a deletion: what was removed, when.
+
+    Also the carrier for the Steward D2 operation rows (internal
+    audit residue in the same table): an operation row's summary
+    binds covered_user, operation_id, erased_at, and scope inside
+    the signed payload. User-facing receipts carry counts, per-store
+    status, and the coverage statement only — never a user id and
+    never erased-content identifiers.
+    """
 
     receipt_id: str
     ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

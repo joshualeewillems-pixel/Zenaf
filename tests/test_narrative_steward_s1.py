@@ -585,7 +585,11 @@ def test_derivation_walks_no_links_and_touches_no_turn_path():
     """Part XI boundary 1, pinned mechanically: derivation.py never
     names the containment-link reads, never imports a conversation
     path or a training-signal writer; and no turn-path module
-    imports the narrative package at all."""
+    imports the narrative package — with one founder-ruled
+    exception (Slice A, Q4, 2026-11-15): the turn path may read the
+    narrative CONSENT LEAF at event emission to gate subject
+    carriage. The leaf imports nothing back, so the separation
+    stands; every other narrative import still fails this pin."""
     package_dir = Path(__file__).resolve().parent.parent / "local_ai" / "narrative"
     source = (package_dir / "derivation.py").read_text(encoding="utf-8")
     for forbidden in ("links_for", "links_as_parent", "links_as_child", "thread_links"):
@@ -612,9 +616,20 @@ def test_derivation_walks_no_links_and_touches_no_turn_path():
         "local_ai/conversation/encounter.py",
         "local_ai/conversation/meeting.py",
     ):
-        assert "local_ai.narrative" not in (repo / turn_path).read_text(
-            encoding="utf-8"
-        )
+        turn_tree = ast.parse((repo / turn_path).read_text(encoding="utf-8"))
+        turn_imports: list[str] = []
+        for node in ast.walk(turn_tree):
+            if isinstance(node, ast.Import):
+                turn_imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                turn_imports.append(node.module or "")
+        offenders = [
+            name
+            for name in turn_imports
+            if name.startswith("local_ai.narrative")
+            and name != "local_ai.narrative.consent"
+        ]
+        assert offenders == [], (turn_path, offenders)
 
 
 def test_chat_turn_counts_unchanged_with_derivation_loaded(

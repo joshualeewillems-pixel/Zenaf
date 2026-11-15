@@ -81,6 +81,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import re
 import threading
 from collections import Counter
@@ -134,15 +135,73 @@ class EvidenceItem:
     same thing in the world. ``strand_weights`` is the owning
     record's strand vector when one exists, else None (honest
     unknown — the signal simply doesn't contribute).
+
+    ``anchor_ref`` (Slice A, Packet C1 revised — §4.6-R) is a
+    different kind of field from ``entity_ref`` and must never be
+    read as one: it is the "<type>:<id>" of the *conversation
+    anchor* the source event carried (the conversation's working
+    subject — contextual aboutness), populated only from a
+    high-confidence carried subject. It is derivation-internal and
+    in-memory only — never persisted in narrative.db, never an
+    annotation, never a subject key. Its sole consumption is the
+    clustering rule in ``_linked``, where it groups records whose
+    conversations share an anchor; it asserts nothing about what
+    the records concern.
     """
 
     ref: SourceRef
     text: str = ""
     entity_ref: str | None = None
     strand_weights: dict[str, float] | None = None
+    anchor_ref: str | None = None
 
     def evidence_key(self) -> str:
         return f"{self.ref.kind}:{self.ref.ref_id}"
+
+
+def anchor_channel_enabled() -> bool:
+    """Rollback switch for the Slice A anchor channel (§5).
+
+    An explicit ``ZENAF_STEWARD_ANCHOR_CHANNEL`` value wins
+    ("1"/"true"/"yes"/"on" = on; anything else = off); otherwise
+    the channel is ON. Off is the §4.9 comparison's Arm B position:
+    carried subjects are present in event payloads but populate no
+    ``anchor_ref`` and form no anchor links, so items and clusters
+    return to exactly their pre-Slice-A behavior. Read per call so
+    tests can flip it with ``monkeypatch.setenv``.
+    """
+    raw = os.environ.get("ZENAF_STEWARD_ANCHOR_CHANNEL")
+    if raw is not None:
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+    return True
+
+
+def _payload_anchor_ref(event: FellowshipEvent) -> str | None:
+    """The event's carried conversation anchor, gated (§4.6-R rule 1).
+
+    Reads ``event.payload["subject"]`` — the anchor the Talk path
+    carried under consent — and returns ``"<type>:<id>"`` only when
+    the anchor channel is on, the subject names an entity, its
+    ``confidence`` is ``"high"`` (anchoring strength from the user's
+    own session behavior — never identity evidence, §4.7), and its
+    type is ``project`` or ``task`` (the only types Slice A anchors;
+    any other type in a payload is inert here, not consumed).
+    Medium/low subjects stay visible in the record but populate no
+    anchor. Anything malformed reads as no anchor.
+    """
+    if not anchor_channel_enabled():
+        return None
+    payload = event.payload or {}
+    subject = payload.get("subject")
+    if not isinstance(subject, dict):
+        return None
+    if subject.get("confidence") != "high":
+        return None
+    entity_type = str(subject.get("entity_type") or "").strip()
+    entity_id = str(subject.get("entity_id") or "").strip()
+    if entity_type not in ("project", "task") or not entity_id:
+        return None
+    return f"{entity_type}:{entity_id}"
 
 
 def _entity_strand_weights(event: FellowshipEvent) -> dict[str, float] | None:
@@ -186,6 +245,7 @@ def event_to_item(event: FellowshipEvent) -> EvidenceItem:
         text=text,
         entity_ref=entity_ref,
         strand_weights=_entity_strand_weights(event),
+        anchor_ref=_payload_anchor_ref(event),
     )
 
 
@@ -399,13 +459,22 @@ def _linked(a: EvidenceItem, b: EvidenceItem) -> str | None:
     """One cohesion reason between two items, or None.
 
     Links are deliberately narrow: a shared entity (the same thing
-    in the world), at least two shared distinctive tokens (the same
-    ground in words), or genuinely similar strand vectors. Any one
-    link is enough to join; no link means no cluster, however many
-    items the batch holds.
+    in the world), a shared conversation anchor (Slice A — the
+    items' conversations were anchored to the same entity; a
+    grouping hint, NOT same-thing attribution, §4.6-R), at least
+    two shared distinctive tokens (the same ground in words), or
+    genuinely similar strand vectors. Any one link is enough to
+    join; no link means no cluster, however many items the batch
+    holds.
     """
     if a.entity_ref and a.entity_ref == b.entity_ref:
         return f"shared entity {a.entity_ref}"
+    if (
+        anchor_channel_enabled()
+        and a.anchor_ref
+        and a.anchor_ref == b.anchor_ref
+    ):
+        return f"shared conversation anchor {a.anchor_ref}"
     shared = _tokens(a.text) & _tokens(b.text)
     if len(shared) >= _TOKEN_COHESION_MIN:
         return f"shared tokens {sorted(shared)[:4]}"

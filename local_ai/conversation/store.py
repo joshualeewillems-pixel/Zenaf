@@ -12,6 +12,12 @@ Tables:
                      used, and a live-context snapshot (JSON).
   thread_state     — per-seat rolling summary + activity: the quiet
                      background continuity each persona carries.
+  conversation_subjects
+                   — Slice A (Packet C1, revised): one resolved-subject
+                     snapshot per (user, conversation) — the conversation's
+                     working anchor, in the trunk serializer's JSON shape.
+                     Conversation-layer working state only; it is not VE
+                     storage and asserts nothing about any record.
   suggestion_runs  — cached suggestion-engine output, watermarked by the
                      latest message id so GET /conversation/suggestions
                      doesn't re-run the LLM on every call.
@@ -90,6 +96,13 @@ CREATE TABLE IF NOT EXISTS suggestion_runs (
   up_to_message_id TEXT NOT NULL,
   suggestions_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, conversation_id)
+);
+CREATE TABLE IF NOT EXISTS conversation_subjects (
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  subject_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, conversation_id)
 );
 CREATE TABLE IF NOT EXISTS invitations (
@@ -1244,7 +1257,8 @@ class ConversationStore:
         references"): remove the conversations row and every
         conversation-keyed row in THIS store, in one transaction.
 
-        Cascade: messages, thread_state, suggestion_runs, invitations
+        Cascade: messages, thread_state, suggestion_runs,
+        conversation_subjects, invitations
         (deleted outright — unlike clear_conversation, which expires
         pending invitations to preserve the meeting-restart audit;
         a user-directed delete keeps nothing), round_parked_ids,
@@ -1272,6 +1286,7 @@ class ConversationStore:
                 "messages",
                 "thread_state",
                 "suggestion_runs",
+                "conversation_subjects",
                 "invitations",
                 "round_parked_ids",
                 "upload_rounds",
@@ -1366,6 +1381,140 @@ class ConversationStore:
             )
             self._conn.commit()
         return self.get_thread_state(user_id, conversation_id, archetype_id)
+
+    # -- conversation subjects (Slice A: Talk-path subject carriage) --------------
+
+    def get_conversation_subject(
+        self, user_id: str, conversation_id: str
+    ) -> dict[str, Any] | None:
+        """The conversation's stored subject snapshot, or None.
+
+        The snapshot is the trunk ``ConversationSubject`` record in
+        the shared serializer's JSON shape, parsed back through the
+        shared parser — one record shape on both conversation paths.
+        A malformed stored row reads as no subject (fail-closed: a
+        corrupt snapshot must never manufacture an anchor).
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT subject_json FROM conversation_subjects "
+                "WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+        if row is None:
+            return None
+        try:
+            parsed = json.loads(row["subject_json"] or "")
+        except Exception:
+            return None
+        if not isinstance(parsed, dict):
+            return None
+        from local_ai.conversation_trunk import parse_conversation_subject
+
+        return parse_conversation_subject(parsed)
+
+    def update_conversation_subject(
+        self,
+        user_id: str,
+        conversation_id: str,
+        *,
+        anchor: dict[str, Any] | None,
+        question: str,
+        question_kind: str,
+        output_contract: str,
+    ) -> dict[str, Any] | None:
+        """Advance the conversation's subject by one turn, atomically.
+
+        Slice A (Packet C1, revised contract §4.2 + Revision 2
+        amendment): the read → anchor → merge → write is a SINGLE
+        operation under this store's lock, so concurrent turns on one
+        conversation serialize in lock order, no torn or interleaved
+        snapshot is possible, and each caller gets back the subject
+        its own merge produced — which is what that turn's event
+        carries.
+
+        ``anchor`` is the turn's validated re-anchor candidate (the
+        service validates the LiveContext hint against owner-scoped
+        VE getters before calling; §4.3) or None. When it names a
+        different entity than the stored subject, the merge starts
+        from the anchor — mirroring the shared merge's own VE-focus
+        switch rule — otherwise it starts from the stored subject.
+
+        The merge itself is the trunk's shared
+        ``merge_conversation_subject``, called with the Talk path's
+        honest input set: ``capture_target``, ``council_preflight``
+        and ``packet`` are None (absent, never synthesized — the Talk
+        pipeline has no capture machinery, no council preflight, and
+        no integration packet). A merge returning None clears the
+        snapshot (the merge's own "nothing to persist" semantics).
+        """
+        from local_ai.conversation_trunk import (
+            conversation_subject_to_json,
+            merge_conversation_subject,
+            parse_conversation_subject,
+        )
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT subject_json FROM conversation_subjects "
+                "WHERE user_id = ? AND conversation_id = ?",
+                (user_id, conversation_id),
+            ).fetchone()
+            previous = None
+            if row is not None:
+                try:
+                    parsed = json.loads(row["subject_json"] or "")
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    previous = parse_conversation_subject(parsed)
+            base = previous
+            if anchor is not None:
+                anchor_key = (
+                    str(anchor.get("entity_type") or ""),
+                    str(anchor.get("entity_id") or ""),
+                )
+                previous_key = (
+                    str((previous or {}).get("entity_type") or ""),
+                    str((previous or {}).get("entity_id") or ""),
+                )
+                if previous is None or anchor_key != previous_key:
+                    base = anchor
+            merged = merge_conversation_subject(
+                previous=base,
+                question=question,
+                question_kind=question_kind,
+                output_contract=output_contract,
+                capture_target=None,
+                council_preflight_dict=None,
+                packet=None,
+            )
+            if merged is None:
+                self._conn.execute(
+                    "DELETE FROM conversation_subjects "
+                    "WHERE user_id = ? AND conversation_id = ?",
+                    (user_id, conversation_id),
+                )
+            else:
+                self._conn.execute(
+                    "INSERT INTO conversation_subjects "
+                    "(user_id, conversation_id, subject_json, updated_at) "
+                    "VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(user_id, conversation_id) DO UPDATE SET "
+                    "subject_json = excluded.subject_json, "
+                    "updated_at = excluded.updated_at",
+                    (
+                        user_id,
+                        conversation_id,
+                        json.dumps(
+                            conversation_subject_to_json(merged),
+                            ensure_ascii=True,
+                        ),
+                        _utcnow(),
+                    ),
+                )
+            self._conn.commit()
+        return merged
 
     # -- suggestion runs (cache) --------------------------------------------------
 

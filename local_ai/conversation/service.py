@@ -14,6 +14,7 @@ No new summarizer service is built here.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -47,6 +48,27 @@ EventSink = Callable[..., None]
 
 SUMMARY_EVERY_N_TURNS = 20
 _HISTORY_FOR_REPLY = 10
+
+
+def talk_subject_carriage_enabled() -> bool:
+    """Rollback switch for Slice A subject carriage (Packet C1,
+    revised contract §5).
+
+    An explicit ``ZENAF_TALK_SUBJECT_CARRIAGE`` value wins
+    ("1"/"true"/"yes"/"on" = on; anything else = off); otherwise
+    carriage is ON. Default-on is deliberate: the operative gate on
+    carriage is the visitor's ``steward_derivation`` consent, checked
+    at emission — this switch exists purely as the rollback position
+    (off ⇒ turn-event payloads return to exactly their pre-Slice-A
+    shape, regardless of consent state). Snapshot maintenance in the
+    conversation store is working state and is NOT governed by this
+    switch. Read per call so tests can flip it with
+    ``monkeypatch.setenv``.
+    """
+    raw = os.environ.get("ZENAF_TALK_SUBJECT_CARRIAGE")
+    if raw is not None:
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+    return True
 
 
 def context_hint_for(context: dict[str, Any] | None) -> str | None:
@@ -707,12 +729,28 @@ class ConversationService:
             ),
             round_state=upload_round_state or weaver_round_state,
         )
+        # Slice A (Packet C1, revised): advance the conversation's
+        # subject snapshot with this turn, beside the event emission
+        # and under the same discipline — fully guarded (a subject
+        # failure never breaks a turn) and skipped for empty user
+        # messages, inheriting _emit_turn_event's condition. The
+        # snapshot is conversation working state, maintained whether
+        # or not the event ends up carrying it (consent gates the
+        # carriage, not the state — contract §4.8-R).
+        turn_subject = None
+        if (message or "").strip():
+            turn_subject = self._update_turn_subject(
+                user_id, conversation_id, message, context
+            )
         # Fellowship Runtime P1: the turn is a shared-reality event.
         # Emitted only now — reply computed and persisted — and the
         # sink itself only *schedules* the slow path (two-speed law),
         # so nothing here can delay or break the reply. Derivation
         # failures are the sink's problem, never the turn's.
-        self._emit_turn_event(user_id, conversation_id, arch_id, message, user_msg)
+        self._emit_turn_event(
+            user_id, conversation_id, arch_id, message, user_msg,
+            subject=turn_subject,
+        )
         return result
 
     def _validated_strand_key(
@@ -771,6 +809,126 @@ class ConversationService:
         )
         return block or None
 
+    # -- Slice A: Talk-path subject maintenance + carriage ---------------------
+
+    def _validated_turn_anchor(
+        self, user_id: str, context: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Validate this turn's LiveContext entity hint into an anchor.
+
+        Slice A contract §4.3, fail-closed, per-type. Only ``project``
+        and ``task`` hints can anchor (founder rulings Q3/Q5): a hint
+        naming any other type — person, asset, job, or anything
+        unrecognized — never anchors and keeps its existing prompt-line
+        and guardian-evidence behavior, unchanged. The entity must
+        validate through the type's existing getter WITH the carrying
+        user's id, so the ownership check is the storage layer's own
+        query-boundary filter (``WHERE id = ? AND user_id = ?``); the
+        getters' unscoped ``user_id=None`` form is never used here. A
+        getter returning None — nonexistent entity, another user's
+        entity, or a legacy NULL-owned row — means no anchor. The
+        anchor enters at ``"medium"`` (anchoring strength from the
+        user's own navigation, mirroring the shared merge's VE-focus
+        switch rule); it is a conversation anchor, never an identity
+        confirmation of anything mentioned in text (§4.7).
+        """
+        entity_type = str((context or {}).get("entity_type") or "").strip().lower()
+        entity_id = str((context or {}).get("entity_id") or "").strip()
+        if entity_type not in ("project", "task") or not entity_id:
+            return None
+        from local_ai.vision_execution import storage as ve_storage
+
+        if entity_type == "project":
+            row = ve_storage.get_project(entity_id, user_id)
+        else:
+            row = ve_storage.get_task(entity_id, user_id)
+        if not row:
+            return None
+        return {
+            "entity_id": entity_id,
+            "entity_type": entity_type,
+            "entity_display_name": str(row.get("title") or ""),
+            "active_field": "unknown",
+            "last_user_contribution": "",
+            "confidence": "medium",
+        }
+
+    def _update_turn_subject(
+        self,
+        user_id: str,
+        conversation_id: str,
+        message: str,
+        context: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """Advance the conversation's subject snapshot for this turn.
+
+        Fully guarded: any failure (validation, classification,
+        store) degrades to no carriage and never breaks the turn.
+        The classification pair is the trunk's shared standalone
+        heuristic, called for merge input only — it does not drive
+        Talk reply behavior in any way. The store performs the
+        read → anchor → merge → write as one locked operation and
+        returns the subject this turn's own update produced.
+        """
+        try:
+            anchor = self._validated_turn_anchor(user_id, context)
+            from local_ai.conversation_trunk import (
+                classify_question_kind,
+                select_output_contract,
+            )
+
+            question_kind = classify_question_kind(message)
+            return self.store.update_conversation_subject(
+                user_id,
+                conversation_id,
+                anchor=anchor,
+                question=message,
+                question_kind=question_kind,
+                output_contract=select_output_contract(question_kind),
+            )
+        except Exception:
+            logger.exception("conversation subject: turn update failed")
+            return None
+
+    def _subject_payload_block(
+        self, user_id: str, subject: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """The consent-gated payload block for a post-turn subject.
+
+        Slice A contract §4.4 + §4.8-R (founder ruling Q4). Returns
+        None — and the event payload stays exactly today's shape —
+        unless ALL of these hold: the carriage rollback switch is on,
+        the subject names an entity, and the user's
+        ``steward_derivation`` consent is active at emission time
+        (the existing leaf reader, read-only and fail-closed; a
+        consent-read failure resolves to the subjectless payload).
+        ``last_user_contribution`` is never carried: the event already
+        holds the user's verbatim message as evidence text, and the
+        contribution would only duplicate user words into the
+        append-only log. No retrospective carriage exists anywhere in
+        this design — events already logged never gain a block.
+        """
+        if subject is None or not talk_subject_carriage_enabled():
+            return None
+        if not (subject.get("entity_id") and subject.get("entity_type")):
+            return None
+        try:
+            from local_ai.narrative.consent import steward_consent_allowed
+
+            if not steward_consent_allowed(user_id):
+                return None
+            from local_ai.conversation_trunk import conversation_subject_to_json
+
+            block = conversation_subject_to_json(subject)
+        except Exception:
+            logger.exception(
+                "conversation subject: carriage block failed; "
+                "emitting the subjectless payload"
+            )
+            return None
+        block.pop("last_user_contribution", None)
+        return block or None
+
     def _emit_turn_event(
         self,
         user_id: str,
@@ -778,15 +936,29 @@ class ConversationService:
         arch_id: str,
         message: str,
         user_msg: dict[str, Any],
+        subject: dict[str, Any] | None = None,
     ) -> None:
         """Record this turn as a fellowship event via the wired sink.
 
         Fully guarded (a turn must succeed even if the event layer is
         down) and skipped for empty user messages (question-mode
         turns, where the seat speaks first — no user words, no event).
+
+        Slice A: when ``subject`` is the post-turn subject and the
+        consent gate passes (``_subject_payload_block``), the payload
+        gains a ``subject`` block — the conversation's anchor as of
+        this turn. In every other case the payload is byte-identical
+        to the pre-Slice-A shape: no ``subject`` key, no placeholder.
         """
         if self._event_sink is None or not (message or "").strip():
             return
+        payload: dict[str, Any] = {
+            "archetype_id": arch_id,
+            "message_id": user_msg.get("id"),
+        }
+        subject_block = self._subject_payload_block(user_id, subject)
+        if subject_block is not None:
+            payload["subject"] = subject_block
         try:
             self._event_sink(
                 kind=fellowship_events.CONVERSATION_TURN,
@@ -795,10 +967,7 @@ class ConversationService:
                 entity_id=conversation_id,
                 evidence_text=message,
                 summary=f"Conversation turn with the {arch_id} voice.",
-                payload={
-                    "archetype_id": arch_id,
-                    "message_id": user_msg.get("id"),
-                },
+                payload=payload,
             )
         except Exception:
             logger.exception("fellowship: conversation-turn event failed")

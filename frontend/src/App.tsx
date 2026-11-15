@@ -5241,6 +5241,7 @@ function App() {
               renderSheetContent={renderTreeSheetContent}
               currentUserId={currentUser?.id ?? null}
               userAvatarUrl={currentUser?.avatar_data_url ?? null}
+              isAdmin={currentUser?.is_admin ?? false}
             />
           </div>
         ) : mainView === 'perspectives' ? (

@@ -326,7 +326,31 @@ describe('compact-head menu (T6 + C1/C2)', () => {
   })
 })
 
-describe('you-node menu preserved', () => {
+describe('you-node directory (Section A)', () => {
+  function groupHead(verb: string): HTMLButtonElement {
+    const btn = Array.from(container.querySelectorAll('button.ldir-head')).find((b) =>
+      (b.textContent ?? '').includes(verb),
+    )
+    if (!btn) throw new Error(`directory group header "${verb}" not found`)
+    return btn as HTMLButtonElement
+  }
+
+  function chip(label: string): HTMLButtonElement {
+    const btn = Array.from(container.querySelectorAll('button.ldir-chip')).find(
+      (b) => b.textContent === label,
+    )
+    if (!btn) throw new Error(`scoped chip "${label}" not found`)
+    return btn as HTMLButtonElement
+  }
+
+  function backButton(): Element {
+    const back = Array.from(container.querySelectorAll('button')).find(
+      (b) => b.getAttribute('aria-label') === 'Back to menu',
+    )
+    if (!back) throw new Error('Back to menu button not found')
+    return back
+  }
+
   it('the you-node keeps its Talk entry and its menu-back', async () => {
     renderTree()
     await flush()
@@ -342,12 +366,109 @@ describe('you-node menu preserved', () => {
     if (!talkRow) throw new Error('you-node Talk row not found')
     await click(talkRow)
     expect(providerCalls.some((c) => c.item === 'talk' && c.nodeKind === 'you')).toBe(true)
-    const back = Array.from(container.querySelectorAll('button')).find(
-      (b) => b.getAttribute('aria-label') === 'Back to menu',
-    )
-    expect(back).toBeDefined()
-    await click(back as Element)
+    await click(backButton())
     expect(container.textContent).toContain('Think something through with your whole council.')
+  })
+
+  it('the seven groups start collapsed under their seat headers', async () => {
+    renderTree()
+    await flush()
+    clickNode('YOU')
+    await flush()
+    for (const verb of ['Cultivate', 'Act', 'Protect', 'Create', 'Connect', 'Organize', 'Examine']) {
+      expect(groupHead(verb)).toBeDefined()
+    }
+    // Collapsed: no group rows and no scoped chips are rendered yet.
+    expect(container.querySelectorAll('button.ldir-chip')).toHaveLength(0)
+    expect(
+      Array.from(container.querySelectorAll('button.lrow')).some(
+        (b) => b.querySelector('.lrow-t')?.textContent === 'Vision map',
+      ),
+    ).toBe(false)
+    // Expanding one group shows its strip and rows; the accordion is
+    // single-open, so expanding another closes the first.
+    await click(groupHead('Cultivate'))
+    expect(container.querySelectorAll('button.ldir-chip')).toHaveLength(3)
+    expect(
+      Array.from(container.querySelectorAll('button.lrow')).some(
+        (b) => b.querySelector('.lrow-t')?.textContent === 'Vision map',
+      ),
+    ).toBe(true)
+    await click(groupHead('Examine'))
+    expect(
+      Array.from(container.querySelectorAll('button.lrow')).some(
+        (b) => b.querySelector('.lrow-t')?.textContent === 'Vision map',
+      ),
+    ).toBe(false)
+    expect(
+      Array.from(container.querySelectorAll('button.lrow')).some(
+        (b) => b.querySelector('.lrow-t')?.textContent === 'Signal review',
+      ),
+    ).toBe(true)
+  })
+
+  it('a scoped chip mounts the seat’s Today inside the YOU sheet; menu-back returns to the same group with the scope cleared', async () => {
+    renderTree()
+    await flush()
+    clickNode('YOU')
+    await flush()
+    await click(groupHead('Cultivate'))
+    await click(chip('Today'))
+    // The provider received a seat node for the mentor — the scoped
+    // mount — while the sheet itself stayed open on the you-node.
+    expect(
+      providerCalls.some(
+        (c) => c.item === 'today' && c.nodeKind === 'seat' && c.seatKey === 'mentor',
+      ),
+    ).toBe(true)
+    expect(dialog()).not.toBeNull()
+    await click(backButton())
+    // Back lands on the directory with the group still expanded…
+    expect(
+      Array.from(container.querySelectorAll('button.lrow')).some(
+        (b) => b.querySelector('.lrow-t')?.textContent === 'Vision map',
+      ),
+    ).toBe(true)
+    // …and the scope is cleared: the universal Today row now mounts
+    // the unscoped (you-node) Today.
+    providerCalls = []
+    await click(rowByTitle('Today'))
+    expect(providerCalls.some((c) => c.item === 'today' && c.nodeKind === 'you')).toBe(true)
+  })
+
+  it('a group nav row navigates the shell and closes the sheet', async () => {
+    renderTree()
+    await flush()
+    clickNode('YOU')
+    await flush()
+    await click(groupHead('Cultivate'))
+    await click(rowByTitle('Vision map'))
+    expect(navigations).toContain('vision_map')
+    expect(dialog()).toBeNull()
+  })
+
+  it('the Mint row mounts through the provider’s maverick branch', async () => {
+    renderTree()
+    await flush()
+    clickNode('YOU')
+    await flush()
+    await click(groupHead('Create'))
+    await click(rowByTitle('Mint'))
+    expect(
+      providerCalls.some(
+        (c) => c.item === 'mint' && c.nodeKind === 'seat' && c.seatKey === 'maverick',
+      ),
+    ).toBe(true)
+  })
+
+  it('Projects mounts in-sheet on the you-node (unscoped)', async () => {
+    renderTree()
+    await flush()
+    clickNode('YOU')
+    await flush()
+    await click(groupHead('Act'))
+    await click(rowByTitle('Projects'))
+    expect(providerCalls.some((c) => c.item === 'projects' && c.nodeKind === 'you')).toBe(true)
   })
 })
 

@@ -313,16 +313,6 @@ const YOU: TreeDatum = {
   kids: [],
 }
 
-/** The one grammar: the you-node's menu. Later phases extend, never replace. */
-const YOU_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
-  { id: 'today', title: 'Today', desc: "The council's briefing — three cards at a time, no more." },
-  { id: 'talk', title: 'Talk', desc: 'Think something through with your whole council.' },
-  { id: 'review', title: 'Review', desc: 'Moments awaiting your verdict before anything trains.' },
-  { id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
-  { id: 'content', title: 'Content', desc: 'Narrative packages and transcript tools — briefs, scripts, and sorted transcripts.' },
-  { id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
-]
-
 /** The one grammar: a seat node's secondary menu (the compact-head
     "Other actions" menu). Talk is NOT listed: tapping the node IS
     talk — the conversation opens directly, no menu interstitial.
@@ -423,30 +413,182 @@ export function buildSeatHeaderMenu(args: {
 }
 
 /**
- * Pre-sheet tree options — kept reachable in the you-sheet's second section
- * so nothing that existed is lost in the restructure.
+ * The YOU directory (YOU menu Section A, founder-authorized
+ * 2026-11-14): the you-sheet's menu is a compact capability
+ * directory — a universal section, then seven seat groups in the
+ * accepted map's order. Navigation only: every row opens a
+ * destination that already exists, by its existing mechanism.
+ * Doorways link to the canonical surfaces; nothing is re-implemented
+ * here, and no planned doorway (Commitments, mirror, takeout,
+ * verdicts, disputes, twigs, convened sessions) appears.
+ *
+ * A group's scoped strip (Today / Review / Upload through that seat)
+ * is structural — implied by the group's seatKey, rendered as one
+ * chip row — never three full rows. Row copy is lifted verbatim from
+ * the constants this builder subsumes (the old you-menu and legacy
+ * tree-options rows) and from SEAT_NAV_ITEMS / SEAT_SHEET_ITEMS,
+ * which the seat sheets still use; the only new prose is the factual
+ * landing clauses ("In Settings", the Provenance tab landings).
  */
-const LEGACY_YOU_ITEMS: Array<{ id: string; title: string; desc: string; cta?: SheetNavView }> = [
-  {
-    id: 'upload',
-    title: 'Upload source materials',
-    desc: 'Connect a ChatGPT or Claude conversation — paste a share link or send one from your browser. Uploading from YOU distributes across the whole council; uploading from a seat’s profile aims it there. Redaction happens at capture — nothing trains until you review and approve it.',
-    cta: 'agent_intake',
-  },
-  {
-    id: 'foundation',
-    title: 'Foundation (actors)',
-    desc: 'The original actors and core-profile surface. Its pieces are moving to their seats and to you; kept reachable here until the move completes.',
-    cta: 'perspectives',
-  },
-  { id: 'stats', title: 'Stats', desc: '' },
-  {
-    id: 'snapshot',
-    title: 'Snapshot era',
-    desc: 'Snapshots freeze your profile as a rentable era — automatic each year, plus after big training leaps. Eras begin once training does.',
-  },
-  { id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
-]
+export type YouDirectoryRow =
+  | { kind: 'sheet'; id: NodeMenuItemId; title: string; desc: string; scopeSeat?: string }
+  | { kind: 'nav'; nav: SheetNavView; title: string; desc: string }
+  | { kind: 'inline'; id: 'stats'; title: string; desc: string }
+  | { kind: 'info'; id: 'snapshot' | 'login'; title: string; desc: string }
+
+export type YouSeatGroup = {
+  seatKey: string
+  /** The group's verb — Cultivate, Act, Protect, Create, Connect, Organize, Examine. */
+  verb: string
+  /** Distinctive rows only — the scoped strip is structural. */
+  rows: YouDirectoryRow[]
+}
+
+function directoryNavRow(entry: { title: string; desc: string; nav: SheetNavView }): YouDirectoryRow {
+  return { kind: 'nav', nav: entry.nav, title: entry.title, desc: entry.desc }
+}
+
+export function buildYouDirectory(args: { isAdmin: boolean }): {
+  universal: YouDirectoryRow[]
+  groups: YouSeatGroup[]
+} {
+  const universal: YouDirectoryRow[] = [
+    { kind: 'sheet', id: 'today', title: 'Today', desc: "The council's briefing — three cards at a time, no more." },
+    { kind: 'sheet', id: 'talk', title: 'Talk', desc: 'Think something through with your whole council.' },
+    { kind: 'sheet', id: 'review', title: 'Review', desc: 'Moments awaiting your verdict before anything trains.' },
+    {
+      kind: 'nav',
+      nav: 'agent_intake',
+      title: 'Upload source materials',
+      desc: 'Connect a ChatGPT or Claude conversation — paste a share link or send one from your browser. Uploading from YOU distributes across the whole council; uploading from a seat’s profile aims it there. Redaction happens at capture — nothing trains until you review and approve it.',
+    },
+    { kind: 'sheet', id: 'settings', title: 'Settings', desc: 'Account, model connections, consent.' },
+    {
+      kind: 'info',
+      id: 'snapshot',
+      title: 'Snapshot era',
+      desc: 'Snapshots freeze your profile as a rentable era — automatic each year, plus after big training leaps. Eras begin once training does.',
+    },
+    { kind: 'info', id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
+  ]
+
+  const ambassadorRows: YouDirectoryRow[] = [
+    {
+      kind: 'sheet',
+      id: 'talk',
+      title: 'Council fan-out',
+      desc: 'Opens Talk — check several seats there and one message reaches them all.',
+    },
+  ]
+  if (args.isAdmin) {
+    // The same admin rule SettingsView itself applies to the section.
+    ambassadorRows.push({
+      kind: 'sheet',
+      id: 'settings',
+      title: 'Invites',
+      desc: 'Invite people to your council. In Settings.',
+    })
+  }
+
+  const groups: YouSeatGroup[] = [
+    {
+      seatKey: 'mentor',
+      verb: 'Cultivate',
+      rows: [
+        ...SEAT_NAV_ITEMS.mentor.map(directoryNavRow),
+        { kind: 'inline', id: 'stats', title: 'Stats', desc: '' },
+      ],
+    },
+    {
+      seatKey: 'champion',
+      verb: 'Act',
+      rows: [
+        { kind: 'sheet', id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
+        {
+          kind: 'nav',
+          nav: 'vision_execution',
+          title: 'Signals — the execution read',
+          desc: 'The same execution surface as Projects, opened on its signals tab.',
+        },
+      ],
+    },
+    {
+      seatKey: 'guardian',
+      verb: 'Protect',
+      rows: [
+        ...SEAT_NAV_ITEMS.guardian.map(directoryNavRow),
+        {
+          kind: 'sheet',
+          id: 'settings',
+          title: 'Permissions',
+          desc: 'Data permissions for the fellowship. In Settings.',
+        },
+        {
+          kind: 'sheet',
+          id: 'settings',
+          title: 'Council integrity review',
+          desc: 'The council synthesis integrity review. In Settings.',
+        },
+      ],
+    },
+    {
+      seatKey: 'maverick',
+      verb: 'Create',
+      rows: [
+        ...SEAT_SHEET_ITEMS.maverick.map(
+          (m): YouDirectoryRow => ({ kind: 'sheet', id: m.id, title: m.title, desc: m.desc, scopeSeat: 'maverick' }),
+        ),
+        {
+          kind: 'nav',
+          nav: 'provenance',
+          title: 'Expressive mint — Journal',
+          desc: 'Opens Provenance — the expressive mint lives in its Journal tab (the third tab; there is no direct tab link).',
+        },
+      ],
+    },
+    { seatKey: 'ambassador', verb: 'Connect', rows: ambassadorRows },
+    {
+      seatKey: 'conductor',
+      verb: 'Organize',
+      rows: [
+        {
+          kind: 'sheet',
+          id: 'content',
+          title: 'Content',
+          desc: 'Narrative packages and transcript tools — briefs, scripts, and sorted transcripts.',
+        },
+        ...SEAT_NAV_ITEMS.conductor.map(directoryNavRow),
+        {
+          kind: 'nav',
+          nav: 'perspectives',
+          title: 'Foundation (actors)',
+          desc: 'The original actors and core-profile surface. Its pieces are moving to their seats and to you; kept reachable here until the move completes.',
+        },
+        {
+          kind: 'nav',
+          nav: 'provenance',
+          title: 'Journal',
+          desc: 'Opens Provenance — the Journal is its third tab; there is no direct tab link.',
+        },
+      ],
+    },
+    {
+      seatKey: 'skeptic',
+      verb: 'Examine',
+      rows: [
+        ...SEAT_NAV_ITEMS.skeptic.map(directoryNavRow),
+        {
+          kind: 'nav',
+          nav: 'vision_execution',
+          title: 'Signals + Radar',
+          desc: 'The execution surface — its signals tab and radar reads.',
+        },
+      ],
+    },
+  ]
+
+  return { universal, groups }
+}
 
 /* ------------------------------------------------------------------ */
 /* Layout math (ported from the prototype)                             */
@@ -928,6 +1070,7 @@ export function LivingTreeView({
   renderSheetContent,
   currentUserId,
   userAvatarUrl,
+  isAdmin,
 }: {
   /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
   onNavigate: (view: SheetNavView) => void
@@ -942,6 +1085,10 @@ export function LivingTreeView({
       the same source the header avatar uses. The you-node wears it instead
       of the "YOU" letters; null/undefined keeps the letters. */
   userAvatarUrl?: string | null
+  /** Admin (the owner account): the YOU directory's Invites row renders
+      only for admins — the same rule SettingsView applies to the
+      Invites section itself. Defaults false (row hidden). */
+  isAdmin?: boolean
 }) {
   const [sel, setSel] = useState<string | null>(null)
   /** The you-node photo failed to load — fall back to the "YOU" letters
@@ -997,6 +1144,16 @@ export function LivingTreeView({
   }, [sheetNode])
   /** Legacy tree-options row expanded inline in the you-sheet. */
   const [legacyOpen, setLegacyOpen] = useState<string | null>(null)
+  /** YOU directory: the one open seat group (single-open accordion,
+      mirroring the legacyOpen one-at-a-time pattern). */
+  const [directoryGroup, setDirectoryGroup] = useState<string | null>(null)
+  /** YOU directory: the seat a scoped mount is aimed at (a group's
+      scoped strip, or the Mint row). While set on the you-sheet, the
+      sheet body hands the provider a synthetic seat node so the
+      provider's existing seat branches mount — the sheet's chrome
+      stays the YOU sheet's. Cleared on sheet close and on menu-back,
+      alongside sheetItem. */
+  const [sheetScopeSeat, setSheetScopeSeat] = useState<string | null>(null)
 
   // Archetype branches: live status from the backend, honest seed fallback
   // while loading or when unreachable. The tree renders on first paint;
@@ -1144,12 +1301,16 @@ export function LivingTreeView({
   const openSheet = (node: TreeNodeRef) => {
     setSheetItem(null)
     setLegacyOpen(null)
+    setSheetScopeSeat(null)
+    setDirectoryGroup(null)
     setSheetNode(node)
   }
   const closeSheet = () => {
     setSheetNode(null)
     setSheetItem(null)
     setLegacyOpen(null)
+    setSheetScopeSeat(null)
+    setDirectoryGroup(null)
     // An invitation navigation episode ends with the sheet: a stale
     // override must never resurrect on the next open.
     setTalkOverride(null)
@@ -1636,17 +1797,157 @@ export function LivingTreeView({
 
   /* ---------------- node sheet: menus + mounted views ---------------- */
 
+  /** One directory row (YOU directory): sheet rows mount in-sheet
+      (scoped when the row carries a scopeSeat), nav rows navigate the
+      shell, inline/info rows expand in place — the old tree-options
+      behavior, kept for Stats and the two info rows. */
+  const renderDirectoryRow = (row: YouDirectoryRow) => {
+    if (row.kind === 'sheet') {
+      return (
+        <button
+          key={`sheet-${row.id}-${row.title}`}
+          type="button"
+          className="lrow"
+          onClick={() => {
+            // Any non-invitation row ends an invitation navigation
+            // episode: a stale override must never resurrect.
+            setTalkOverride(null)
+            setSheetScopeSeat(row.scopeSeat ?? null)
+            setSheetItem(row.id)
+          }}
+        >
+          <span>
+            <span className="lrow-t">{row.title}</span>
+            <span className="lrow-d">{row.desc}</span>
+          </span>
+          <span className="lchev">›</span>
+        </button>
+      )
+    }
+    if (row.kind === 'nav') {
+      return (
+        <button
+          key={`nav-${row.nav}-${row.title}`}
+          type="button"
+          className="lrow"
+          onClick={() => {
+            closeSheet()
+            onNavigate(row.nav)
+          }}
+        >
+          <span>
+            <span className="lrow-t">{row.title}</span>
+            <span className="lrow-d">{row.desc}</span>
+          </span>
+          <span className="lchev">›</span>
+        </button>
+      )
+    }
+    const open = legacyOpen === row.id
+    return (
+      <div key={`expand-${row.id}`}>
+        <button
+          type="button"
+          className="lrow"
+          aria-expanded={open}
+          onClick={() => setLegacyOpen(open ? null : row.id)}
+        >
+          <span>{row.title}</span>
+          <span className="lchev">{open ? '‹' : '›'}</span>
+        </button>
+        {open && row.kind === 'inline' && renderStatsBlock()}
+        {open && row.kind === 'info' && row.desc && <p className="lsub">{row.desc}</p>}
+      </div>
+    )
+  }
+
+  /** The YOU directory: the universal section, then the seven seat
+      groups as a single-open accordion. Each expanded group opens
+      with its scoped strip — one compact chip row mounting that
+      seat's Today / Review / Upload inside this sheet — above the
+      group's distinctive rows. Group headers carry the seat's logo
+      (or the resolver's unrevealed placeholder) and its head tag,
+      the same reveal discipline as the seat sheets. */
+  const renderYouDirectory = () => {
+    const directory = buildYouDirectory({ isAdmin: !!isAdmin })
+    return (
+      <div>
+        {directory.universal.map(renderDirectoryRow)}
+        {directory.groups.map((group) => {
+          const arch = archetypes.find((a) => a.id === group.seatKey)
+          const open = directoryGroup === group.seatKey
+          return (
+            <div key={group.seatKey} className="ldir-group">
+              <button
+                type="button"
+                className="ldir-head"
+                aria-expanded={open}
+                onClick={() => setDirectoryGroup(open ? null : group.seatKey)}
+              >
+                {arch && (
+                  <SeatAvatar
+                    avatarUrl={resolveSeatLogo(arch)}
+                    displayName={arch.display_name}
+                    size={30}
+                  />
+                )}
+                <span className="ldir-head-t">
+                  <span className="lrow-t">
+                    {group.verb} — {arch?.display_name ?? group.seatKey}
+                  </span>
+                  {arch && <span className="lrow-d">{seatHeadTag(arch)}</span>}
+                </span>
+                <span className="lchev">{open ? '‹' : '›'}</span>
+              </button>
+              {open && (
+                <div className="ldir-body">
+                  <div className="ldir-strip">
+                    <span className="ldir-strip-l">
+                      Through {arch?.display_name ?? group.seatKey}:
+                    </span>
+                    {(
+                      [
+                        ['today', 'Today'],
+                        ['review', 'Review'],
+                        ['upload', 'Upload'],
+                      ] as Array<[NodeMenuItemId, string]>
+                    ).map(([chipId, chipLabel]) => (
+                      <button
+                        key={chipId}
+                        type="button"
+                        className="ldir-chip"
+                        onClick={() => {
+                          setTalkOverride(null)
+                          setSheetScopeSeat(group.seatKey)
+                          setSheetItem(chipId)
+                        }}
+                      >
+                        {chipLabel}
+                      </button>
+                    ))}
+                  </div>
+                  {group.rows.map(renderDirectoryRow)}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
   /** The node's menu — the one grammar. Tapping a row mounts its view. */
   const renderNodeMenu = (node: TreeNodeRef) => {
+    // The you-node's menu is the YOU directory (Section A).
+    if (node.kind === 'you') return renderYouDirectory()
     // Navigation correction: seat nodes open their conversation
     // directly, so the seat menu is unreachable in practice; the
     // seat's secondary menu now lives in the compact head (M3). The
     // old seat-menu invitation row is deleted (its shortcut lives in
-    // the head menu). The you-node menu is unchanged, Talk included.
-    const items = node.kind === 'you' ? YOU_MENU : SEAT_MENU
-    const extraItems =
-      node.kind === 'seat' ? (SEAT_SHEET_ITEMS[node.seatKey] ?? []) : []
-    const navItems = node.kind === 'seat' ? (SEAT_NAV_ITEMS[node.seatKey] ?? []) : []
+    // the head menu).
+    const items = SEAT_MENU
+    const extraItems = SEAT_SHEET_ITEMS[node.seatKey] ?? []
+    const navItems = SEAT_NAV_ITEMS[node.seatKey] ?? []
     return (
       <div>
         {items.map((m) => (
@@ -1704,35 +2005,6 @@ export function LivingTreeView({
             <span className="lchev">›</span>
           </button>
         ))}
-        {node.kind === 'you' && (
-          <div className="llegacy">
-            <div className="lsect">Tree options</div>
-            {LEGACY_YOU_ITEMS.map((m) => {
-              const open = legacyOpen === m.id
-              return (
-                <div key={m.id}>
-                  <button
-                    type="button"
-                    className="lrow"
-                    onClick={() => {
-                      if (m.cta) {
-                        closeSheet()
-                        onNavigate(m.cta)
-                        return
-                      }
-                      setLegacyOpen(open ? null : m.id)
-                    }}
-                  >
-                    <span>{m.title}</span>
-                    <span className="lchev">{m.cta || !open ? '›' : '‹'}</span>
-                  </button>
-                  {open && m.id === 'stats' && renderStatsBlock()}
-                  {open && m.id !== 'stats' && m.desc && <p className="lsub">{m.desc}</p>}
-                </div>
-              )
-            })}
-          </div>
-        )}
       </div>
     )
   }
@@ -1768,7 +2040,28 @@ export function LivingTreeView({
         </div>
       )
     }
-    const content = renderSheetContent?.(sheetNode, sheetItem, {
+    // YOU directory hand-off: on the you-sheet, a scoped mount (a
+    // group's scoped strip, the Mint row) hands the provider a
+    // synthetic seat node built from the same archetypes record the
+    // real seat nodes are built from, so the provider's existing seat
+    // branches mount (Today mode, scoped Review, aimed Upload, the
+    // maverick Mint guard) with zero provider changes. The sheet's
+    // chrome stays the YOU sheet's; the mounted views carry the
+    // seat's identity themselves, as they do in seat sheets.
+    let effectiveNode = sheetNode
+    if (sheetNode.kind === 'you' && sheetScopeSeat) {
+      const arch = archetypes.find((a) => a.id === sheetScopeSeat)
+      if (arch) {
+        effectiveNode = {
+          kind: 'seat',
+          seatKey: arch.id,
+          fellowshipName: FELLOWSHIP_NAMES[arch.id] ?? arch.display_name,
+          archetypeName: arch.display_name,
+          avatarUrl: arch.avatar_url,
+        }
+      }
+    }
+    const content = renderSheetContent?.(effectiveNode, sheetItem, {
       onOpenMeeting: openMeeting,
     })
     if (content) return <div className="lsheet-view">{content}</div>
@@ -1868,6 +2161,13 @@ export function LivingTreeView({
 .lrow-t{display:block;font-size:13.5px;font-weight:700;color:#f5f0e8}
 .lrow-d{display:block;font-size:11.5px;font-weight:400;color:rgba(245,240,232,.55);margin-top:2px;line-height:1.45}
 .llegacy{margin-top:6px}
+.ldir-group{margin:0 0 6px}
+.ldir-head{display:flex;align-items:center;gap:10px;width:100%;background:rgba(245,240,232,.05);border:1px solid rgba(${TREE_DEFAULT_RGB},.25);border-radius:10px;color:#f5f0e8;padding:8px 12px;min-height:44px;margin:0;cursor:pointer;font-family:inherit;text-align:left}
+.ldir-head-t{flex:1;min-width:0}
+.ldir-body{margin:6px 0 2px}
+.ldir-strip{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.ldir-strip-l{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(${TREE_DEFAULT_RGB},.85)}
+.ldir-chip{background:rgba(245,240,232,.08);border:1px solid rgba(${TREE_DEFAULT_RGB},.35);border-radius:999px;color:#f5f0e8;font-size:11.5px;font-weight:600;padding:5px 11px;min-height:30px;cursor:pointer;font-family:inherit}
 .lgrow{padding:18px 6px;text-align:center}
 .lgrow .lgrow-t{font-size:15px;font-weight:700;font-style:normal;color:#f5f0e8;margin-bottom:8px}
 .lgrow p{font-style:normal;color:rgba(245,240,232,.6);font-size:13px;line-height:1.65;max-width:300px;margin-left:auto;margin-right:auto}
@@ -2138,7 +2438,14 @@ export function LivingTreeView({
         // Seat sheets have no menu to return to (direct navigation):
         // the back control is gone and X closes to the Tree. The
         // you-node keeps its menu-back.
-        onBack={sheetNode?.kind === 'you' && sheetItem ? () => setSheetItem(null) : null}
+        onBack={
+          sheetNode?.kind === 'you' && sheetItem
+            ? () => {
+                setSheetItem(null)
+                setSheetScopeSeat(null)
+              }
+            : null
+        }
         backLabel="Back to menu"
         title={sheetTitle}
         subtitle={sheetSubtitle}

@@ -954,7 +954,11 @@ def test_worker_extension_renders_reading_only(tmp_path):
 def test_turn_path_imports_no_narrative():
     """No local_ai.narrative import on any turn path: events.py
     imports it function-locally only, and turn-path modules never
-    name it (mirrors the S1 separation pin)."""
+    name it (mirrors the S1 separation pin) — with one founder-ruled
+    exception (Slice A, Q4, 2026-11-15): the turn path may read the
+    narrative CONSENT LEAF at event emission to gate subject
+    carriage. The leaf imports nothing back, so the separation
+    stands; every other narrative import still fails this pin."""
     repo = Path(__file__).resolve().parent.parent
     events_src = (repo / "local_ai" / "fellowship" / "events.py").read_text(
         encoding="utf-8"
@@ -973,9 +977,20 @@ def test_turn_path_imports_no_narrative():
         "local_ai/conversation/encounter.py",
         "local_ai/conversation/meeting.py",
     ):
-        assert "local_ai.narrative" not in (repo / turn_path).read_text(
-            encoding="utf-8"
-        )
+        turn_tree = ast.parse((repo / turn_path).read_text(encoding="utf-8"))
+        turn_imports: list[str] = []
+        for node in ast.walk(turn_tree):
+            if isinstance(node, ast.Import):
+                turn_imports.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                turn_imports.append(node.module or "")
+        offenders = [
+            name
+            for name in turn_imports
+            if name.startswith("local_ai.narrative")
+            and name != "local_ai.narrative.consent"
+        ]
+        assert offenders == [], (turn_path, offenders)
     proc = subprocess.run(
         [
             sys.executable,

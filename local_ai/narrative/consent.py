@@ -19,8 +19,16 @@ exist yet.)
 
 This module is deliberately a leaf: it imports nothing from
 narrative derivation or the narrative store, so derivation can
-import it without a cycle and the turn path never touches it. The
-read mirrors the capability registry's ``resolve_visitor_state``:
+import it without a cycle. Since the founder's Q4 ruling
+(2026-11-15, Packet C1 Slice A Revision 2), the conversation turn
+path also reads it — at turn-event emission only, where it gates
+subject carriage into the fellowship activity log: conversation
+working state is maintained independently of consent, but no
+subject metadata enters the persistent log for a visitor whose
+derivation flag is off, and never retrospectively. The read
+remains read-only and fail-closed, and this module still imports
+nothing from the conversation layer. The read mirrors the
+capability registry's ``resolve_visitor_state``:
 a direct read-only SELECT on the permissions row. It must NEVER
 use the settings helper (``get_user_permissions_settings``) — that
 helper INSERTs a row for unknown users, a write that does not

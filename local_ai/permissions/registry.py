@@ -177,9 +177,11 @@ _CAPABILITIES: dict[str, CapabilityEntry] = {
     "R2": CapabilityEntry(
         id="R2",
         covers=(
-            "Can Zenaf connect our talks into ongoing threads, note "
-            "what they might mean, and keep those notes where you can "
-            "review/delete them?"
+            "Can Zenaf connect our talks into ongoing threads and note "
+            "what they might mean? The notes are kept in your narrative "
+            "record. You can turn this off at any time — that stops new "
+            "notes; erasing existing notes is not yet available and will "
+            "be offered here when it is verified."
         ),
         does_not_allow=(
             "This never trains anything, never publishes or shares "

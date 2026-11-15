@@ -41,7 +41,7 @@ class ScopeEvent(BaseModel):
 
 
 class DeletionReceipt(BaseModel):
-    """Signed proof of a full deletion: what was removed, when."""
+    """Signed proof of a deletion: what was removed, when."""
 
     receipt_id: str
     ts: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

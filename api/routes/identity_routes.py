@@ -1,7 +1,8 @@
 """Identity license + consent scopes + takeout API.
 
 The ownership layer: issue the signed license, manage the granular consent
-ledger, export everything (takeout), or delete everything (signed receipt).
+ledger, export everything (takeout), or delete the imported presence
+footprint (signed receipt).
 Default-deny: every use of identity-derived data requires an explicit grant.
 """
 from __future__ import annotations
@@ -111,9 +112,23 @@ def takeout():
     )
 
 
-@router.post("/delete", response_model=DeletionReceipt)
+@router.post(
+    "/delete",
+    response_model=DeletionReceipt,
+    summary="Delete imported presence data and the consent ledger (signed receipt)",
+)
 def delete_everything(body: DeleteBody):
-    """Delete everything derived from the owner. Returns a signed receipt.
+    """**What this deletes:** your imported presence data — uploaded files,
+    presence signals, and import sessions — and your consent scope ledger.
+    Your license is ended and kept as a tombstone record, and you receive a
+    signed receipt listing counts of what was removed.
+
+    **What this does not delete yet:** your narrative threads and steward
+    notes, the seats' observations, your conversations and meetings, your
+    projects, tasks and other Vision Execution records, review claims, and
+    profile data. A deletion that covers those is being built; until it is
+    verified, this action does not remove them, and turning off steward
+    consent stops new notes without erasing existing ones.
 
     Requires confirmation == "DELETE" (exactly) and the delete:execute scope.
     """

@@ -9,8 +9,13 @@ The flag is a permissions-v1 flag, not a scope (proposal §1.8):
 added to the frontend defaults and the backend key list so existing
 rows read ``False`` for it until the visitor turns it on. The
 approved wording for the toggle is: "Can Zenaf connect our talks
-into ongoing threads, note what they might mean, and keep those
-notes where you can review/delete them?"
+into ongoing threads and note what they might mean? The notes are
+kept in your narrative record. You can turn this off at any time —
+that stops new notes; erasing existing notes is not yet available
+and will be offered here when it is verified." (Wording revised
+2026-11-15 by the D2 interim disclosure correction: the earlier
+"review/delete them" promise described a capability that does not
+exist yet.)
 
 This module is deliberately a leaf: it imports nothing from
 narrative derivation or the narrative store, so derivation can

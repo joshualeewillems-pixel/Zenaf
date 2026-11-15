@@ -1,20 +1,22 @@
 """Identity license + consent scopes + takeout API.
 
 The ownership layer: issue the signed license, manage the granular consent
-ledger, export everything (takeout), or delete the imported presence
-footprint (signed receipt).
-Default-deny: every use of identity-derived data requires an explicit grant.
+ledger, export everything (takeout), or delete the owner's deletable
+footprint (signed receipt). Default-deny: every use of identity-derived
+data requires an explicit grant.
 """
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
+from api.routes.auth_routes import get_current_user
 from local_ai.identity import LicenseRequired, ScopeDenied
 from local_ai.identity import service as identity_service
+from local_ai.identity.erasure import COVERAGE_STATEMENT, ErasureRefused
 from local_ai.identity.models import DeletionReceipt, IdentityLicense
 from local_ai.identity.scopes import KNOWN_SCOPES, check_scope
 
@@ -115,25 +117,32 @@ def takeout():
 @router.post(
     "/delete",
     response_model=DeletionReceipt,
-    summary="Delete imported presence data and the consent ledger (signed receipt)",
+    summary=(
+        "Delete presence data, your narrative steward record, and "
+        "fellowship observations (signed receipt)"
+    ),
+    description=COVERAGE_STATEMENT,
 )
-def delete_everything(body: DeleteBody):
-    """**What this deletes:** your imported presence data — uploaded files,
-    presence signals, and import sessions — and your consent scope ledger.
-    Your license is ended and kept as a tombstone record, and you receive a
-    signed receipt listing counts of what was removed.
+def delete_everything(
+    body: DeleteBody,
+    current_user: dict = Depends(get_current_user),
+):
+    """Run the Scope S erasure for the authenticated owner.
 
-    **What this does not delete yet:** your narrative threads and steward
-    notes, the seats' observations, your conversations and meetings, your
-    projects, tasks and other Vision Execution records, review claims, and
-    profile data. A deletion that covers those is being built; until it is
-    verified, this action does not remove them, and turning off steward
-    consent stops new notes without erasing existing ones.
-
-    Requires confirmation == "DELETE" (exactly) and the delete:execute scope.
+    Requires confirmation == "DELETE" (exactly) and the
+    delete:execute scope. The session user must resolve to the
+    installation's owner (§9.1); anything else is refused before
+    anything is deleted. Returns the signed receipt — complete,
+    incomplete, or the standing-completion report on a repeat
+    invocation.
     """
     try:
-        receipt = identity_service.delete_all(body.confirmation)
+        receipt = identity_service.delete_all(
+            body.confirmation,
+            requesting_user_id=current_user.get("id"),
+        )
+    except ErasureRefused as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except ScopeDenied as exc:

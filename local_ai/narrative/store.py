@@ -42,9 +42,10 @@ import json
 import sqlite3
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from local_ai.council.jurisdictions import SEAT_JURISDICTIONS
 from local_ai.strands import strand_keys
@@ -130,6 +131,34 @@ _ARTIFACT_VERSION_TRANSITIONS: dict[str, frozenset[str]] = {
     "rejected": frozenset(),
     "superseded": frozenset(),
 }
+
+#: Steward D2 (§2.3): the tables erase_user_material covers and
+#: erasure_recount counts. Thread-keyed tables have no user_id
+#: column; they are counted (and orphan-swept) through
+#: narrative_threads.
+_ERASURE_THREAD_KEYED_TABLES: tuple[str, ...] = (
+    "thread_evidence",
+    "thread_readings",
+    "thread_changes",
+    "lens_fittings",
+)
+_ERASURE_USER_TABLES: tuple[str, ...] = (
+    "thread_links",
+    "involvement_measures",
+    "steward_dismissals",
+    "steward_deferred_prose",
+    "steward_observables",
+    "steward_signal_states",
+    "steward_relevance_assessments",
+    "steward_discrepancy_flags",
+    "steward_review_verdicts",
+    "steward_correspondences",
+    "steward_correspondence_responses",
+    "steward_oversight_proposals",
+    "steward_reading_reconsiderations",
+    "steward_artifacts",
+    "steward_artifact_versions",
+)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS narrative_threads (
@@ -484,6 +513,340 @@ CREATE TABLE IF NOT EXISTS steward_reading_reconsiderations (
 );
 CREATE INDEX IF NOT EXISTS idx_reconsiderations_reading
   ON steward_reading_reconsiderations (user_id, reading_id, created_at);
+
+-- Steward D2 erasure (packet §§8.4/9.2, as reconciled through Rev 4):
+-- the persistent rollback barrier. The tombstone is the operation's
+-- content-free residue in this store: user id, the boundary T, the
+-- operation id, and (filled in at completion) the same counts the
+-- receipt carries — never content, never content identifiers.
+-- The manifest is transaction-local eligibility attestation: rows
+-- are written by a derivation funnel method inside its own write
+-- transaction, from the admitted set that run's eligibility
+-- evaluation produced, and deleted again before that transaction
+-- commits — a manifest row never persists, is never visible to
+-- another connection, and can never be borrowed by a later write.
+-- The triggers below are the enforcement: while a tombstone stands
+-- for a user, a derivation write to a covered table lands only
+-- when its named dependencies were attested, in this same
+-- transaction, by a manifest entry whose source_time is strictly
+-- after the tombstone's erased_at. Rejection is RAISE(ABORT),
+-- which surfaces as sqlite3.IntegrityError with
+-- sqlite_errorname == 'SQLITE_CONSTRAINT_TRIGGER' and the message
+-- 'steward erasure barrier'.
+CREATE TABLE IF NOT EXISTS steward_erasure_tombstones (
+  user_id TEXT PRIMARY KEY,
+  erased_at TEXT NOT NULL,
+  operation_id TEXT NOT NULL DEFAULT '',
+  counts_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS steward_erasure_manifest (
+  run_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  erased_at_seen TEXT NOT NULL,
+  source_kind TEXT NOT NULL,
+  source_id TEXT NOT NULL,
+  source_time TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_erasure_manifest_lookup
+  ON steward_erasure_manifest (user_id, erased_at_seen, source_kind, source_id);
+
+-- Evidence rows bind per record: the (ref_kind, ref_id) being
+-- attached must itself be manifested with source_time > T. The
+-- user is resolved through the owning thread (this table has no
+-- user_id column).
+CREATE TRIGGER IF NOT EXISTS trg_erasure_evidence_insert
+BEFORE INSERT ON thread_evidence
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = (
+      SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+    )
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM steward_erasure_manifest m
+    JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+    WHERE m.user_id = (
+      SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+    )
+      AND m.erased_at_seen = tb.erased_at
+      AND m.source_kind = NEW.ref_kind
+      AND m.source_id = NEW.ref_id
+      AND m.source_time > tb.erased_at
+  );
+END;
+
+-- Thread births bind compositionally: the outer gate is at least
+-- one manifest entry for (user, T) in this transaction; the
+-- founding evidence rows are bound per record by the evidence
+-- trigger above, inside the same birth transaction.
+CREATE TRIGGER IF NOT EXISTS trg_erasure_thread_insert
+BEFORE INSERT ON narrative_threads
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM steward_erasure_manifest m
+    JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+    WHERE m.user_id = NEW.user_id
+      AND m.erased_at_seen = tb.erased_at
+  );
+END;
+
+-- Readings bind through their cited evidence: every cited
+-- thread_evidence row id must join to a manifested (ref_kind,
+-- ref_id); a dangling id fails closed (the join finds nothing).
+CREATE TRIGGER IF NOT EXISTS trg_erasure_reading_insert
+BEFORE INSERT ON thread_readings
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = (
+      SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+    )
+  )
+  AND EXISTS (
+    SELECT 1 FROM json_each(NEW.evidence_refs_json) je
+    WHERE NOT EXISTS (
+      SELECT 1 FROM thread_evidence te
+      JOIN steward_erasure_manifest m
+        ON m.source_kind = te.ref_kind AND m.source_id = te.ref_id
+      JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+      WHERE te.id = je.value
+        AND m.user_id = (
+          SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+        )
+        AND m.erased_at_seen = tb.erased_at
+        AND m.source_time > tb.erased_at
+    )
+  );
+END;
+
+-- Changes bind per family. (a) Evidence-citing changes: every
+-- cited row id joins through thread_evidence to a manifested
+-- source, exactly as readings. (b) Outgrown (absence) changes:
+-- every thread_evidence row whose created_at equals the change's
+-- absence_last_evidence_at must be manifested. (c) Reinterpreted
+-- changes: a manifested successor-thread dependency entry, and
+-- the successor must be a standing thread of the same user.
+CREATE TRIGGER IF NOT EXISTS trg_erasure_change_insert
+BEFORE INSERT ON thread_changes
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = (
+      SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+    )
+  )
+  AND EXISTS (
+    SELECT 1 FROM json_each(NEW.evidence_refs_json) je
+    WHERE NOT EXISTS (
+      SELECT 1 FROM thread_evidence te
+      JOIN steward_erasure_manifest m
+        ON m.source_kind = te.ref_kind AND m.source_id = te.ref_id
+      JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+      WHERE te.id = je.value
+        AND m.user_id = (
+          SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+        )
+        AND m.erased_at_seen = tb.erased_at
+        AND m.source_time > tb.erased_at
+    )
+  );
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = (
+      SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+    )
+  )
+  AND NEW.reason = 'outgrown'
+  AND EXISTS (
+    SELECT 1 FROM thread_evidence te
+    WHERE te.thread_id = NEW.thread_id
+      AND te.created_at = NEW.absence_last_evidence_at
+      AND NOT EXISTS (
+        SELECT 1 FROM steward_erasure_manifest m
+        JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+        WHERE m.user_id = (
+          SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+        )
+          AND m.erased_at_seen = tb.erased_at
+          AND m.source_kind = te.ref_kind
+          AND m.source_id = te.ref_id
+          AND m.source_time > tb.erased_at
+      )
+  );
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = (
+      SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+    )
+  )
+  AND NEW.reason = 'reinterpreted'
+  AND (
+    NOT EXISTS (
+      SELECT 1 FROM steward_erasure_manifest m
+      JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+      WHERE m.user_id = (
+        SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+      )
+        AND m.erased_at_seen = tb.erased_at
+        AND m.source_kind = 'thread'
+        AND m.source_id = NEW.successor_thread_id
+        AND m.source_time > tb.erased_at
+    )
+    OR NOT EXISTS (
+      SELECT 1 FROM narrative_threads succ
+      WHERE succ.id = NEW.successor_thread_id
+        AND succ.user_id = (
+          SELECT user_id FROM narrative_threads WHERE id = NEW.thread_id
+        )
+    )
+  );
+END;
+
+-- Deferred-prose rows bind every ref they owe prose for: each
+-- "kind:ref_id" element of evidence_refs_json must be manifested.
+CREATE TRIGGER IF NOT EXISTS trg_erasure_deferred_insert
+BEFORE INSERT ON steward_deferred_prose
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND EXISTS (
+    SELECT 1 FROM json_each(NEW.evidence_refs_json) je
+    WHERE NOT EXISTS (
+      SELECT 1 FROM steward_erasure_manifest m
+      JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+      WHERE m.user_id = NEW.user_id
+        AND m.erased_at_seen = tb.erased_at
+        AND m.source_kind = substr(je.value, 1, instr(je.value, ':') - 1)
+        AND m.source_id = substr(je.value, instr(je.value, ':') + 1)
+        AND m.source_time > tb.erased_at
+    )
+  );
+END;
+
+-- Observables bind their cited ids: each must resolve through a
+-- manifested thread_evidence row of this user's threads, or to a
+-- manifested thread dependency entry. Meeting-scoped rows
+-- (thread_id IS NULL) additionally require the manifested meeting
+-- dependency named by detail_json.meeting_key. Claims are never
+-- manifested, so a claim-citing observable aborts mechanically.
+CREATE TRIGGER IF NOT EXISTS trg_erasure_observable_insert
+BEFORE INSERT ON steward_observables
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND (
+    EXISTS (
+      SELECT 1 FROM json_each(NEW.evidence_refs_json) je
+      WHERE NOT (
+        NEW.thread_id IS NULL
+        AND je.value = json_extract(NEW.detail_json, '$.meeting_key')
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM steward_erasure_manifest m
+        JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+        WHERE m.user_id = NEW.user_id
+          AND m.erased_at_seen = tb.erased_at
+          AND m.source_time > tb.erased_at
+          AND (
+            (m.source_kind = 'thread' AND m.source_id = je.value)
+            OR EXISTS (
+              SELECT 1 FROM thread_evidence te
+              WHERE te.id = je.value
+                AND te.ref_kind = m.source_kind
+                AND te.ref_id = m.source_id
+                AND te.thread_id IN (
+                  SELECT id FROM narrative_threads
+                  WHERE user_id = NEW.user_id
+                )
+            )
+          )
+      )
+    )
+    OR (
+      NEW.thread_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM steward_erasure_manifest m
+        JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+        WHERE m.user_id = NEW.user_id
+          AND m.erased_at_seen = tb.erased_at
+          AND m.source_kind = 'meeting'
+          AND m.source_id = json_extract(NEW.detail_json, '$.meeting_key')
+          AND m.source_time > tb.erased_at
+      )
+    )
+  );
+END;
+
+-- The recompute sync refreshes surviving rows in place; the same
+-- binding applies to the refreshed row (BEFORE UPDATE).
+CREATE TRIGGER IF NOT EXISTS trg_erasure_observable_update
+BEFORE UPDATE ON steward_observables
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND (
+    EXISTS (
+      SELECT 1 FROM json_each(NEW.evidence_refs_json) je
+      WHERE NOT (
+        NEW.thread_id IS NULL
+        AND je.value = json_extract(NEW.detail_json, '$.meeting_key')
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM steward_erasure_manifest m
+        JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+        WHERE m.user_id = NEW.user_id
+          AND m.erased_at_seen = tb.erased_at
+          AND m.source_time > tb.erased_at
+          AND (
+            (m.source_kind = 'thread' AND m.source_id = je.value)
+            OR EXISTS (
+              SELECT 1 FROM thread_evidence te
+              WHERE te.id = je.value
+                AND te.ref_kind = m.source_kind
+                AND te.ref_id = m.source_id
+                AND te.thread_id IN (
+                  SELECT id FROM narrative_threads
+                  WHERE user_id = NEW.user_id
+                )
+            )
+          )
+      )
+    )
+    OR (
+      NEW.thread_id IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM steward_erasure_manifest m
+        JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+        WHERE m.user_id = NEW.user_id
+          AND m.erased_at_seen = tb.erased_at
+          AND m.source_kind = 'meeting'
+          AND m.source_id = json_extract(NEW.detail_json, '$.meeting_key')
+          AND m.source_time > tb.erased_at
+      )
+    )
+  );
+END;
 """
 
 
@@ -493,6 +856,39 @@ def _utcnow() -> str:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:24]}"
+
+
+class ErasureBarrierRefusal(ValueError):
+    """A derivation funnel refused a write under the erasure barrier.
+
+    Raised when an erasure tombstone stands for the user and the
+    write carries no eligibility manifest, or a manifest missing a
+    dependency the write names (packet §9.2). A ValueError subclass
+    so the derivation paths' existing store-refusal handling treats
+    it as a decline; the SQLite trigger backstop raises
+    sqlite3.IntegrityError ('steward erasure barrier') instead —
+    the two signals are distinct by design (test 21).
+    """
+
+
+@contextmanager
+def _atomic(conn: sqlite3.Connection) -> Iterator[None]:
+    """Commit on clean exit, roll back on any failure.
+
+    Used by the D2-plumbed funnel methods: an aborted write (in
+    particular a trigger RAISE(ABORT)) must leave nothing behind —
+    no partial rows and no manifest rows (packet §9.2: a manifest
+    never commits). The store's documented atomicity for combined
+    writes ("records + deferred row land together, or neither
+    does") is what this implements.
+    """
+    try:
+        yield
+    except Exception:
+        conn.rollback()
+        raise
+    else:
+        conn.commit()
 
 
 def _loads(text: str | None, default: Any) -> Any:
@@ -847,6 +1243,24 @@ class NarrativeStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # Steward D2: the erasure triggers parse JSON ref lists
+            # with json_each/json_extract (packet §9.2). JSON1 is
+            # part of this runtime's SQLite build (3.45.1); its
+            # absence is build-blocking, never a silent degradation
+            # of the barrier.
+            try:
+                self._conn.execute(
+                    "SELECT json_extract('{\"a\": 1}', '$.a')"
+                ).fetchone()
+                self._conn.execute(
+                    "SELECT value FROM json_each('[1]')"
+                ).fetchall()
+            except sqlite3.Error as exc:
+                raise RuntimeError(
+                    "SQLite JSON1 functions (json_each/json_extract) "
+                    "are required by the steward erasure barrier and "
+                    "are unavailable in this build"
+                ) from exc
             # Part X migration: databases created by the original
             # S0 commit have no progression_json column (CREATE TABLE
             # IF NOT EXISTS does not add one). Additive only; a NULL
@@ -1015,6 +1429,112 @@ class NarrativeStore:
                 resolved.append(row_id)
         return resolved, newly
 
+    # -- erasure barrier plumbing (Steward D2, packet §9.2) ----------------
+    #
+    # A derivation funnel method that writes covered tables calls
+    # _manifest_begin_locked at the top of its transaction and
+    # _manifest_end_locked just before its commit. When no tombstone
+    # stands for the user both are no-ops and the method behaves
+    # exactly as it did before D2. When a tombstone stands, the
+    # caller must pass the admitted set its eligibility evaluation
+    # produced for THIS call's writes; the rows are written into
+    # steward_erasure_manifest inside the transaction (where the
+    # §9.2 triggers can see them), and deleted again before commit —
+    # a manifest never persists and cannot be borrowed by another
+    # transaction (test 21). Any failure rolls the whole transaction
+    # back, manifest included.
+
+    def _erasure_tombstone_locked(self, user_id: str) -> dict | None:
+        """The user's erasure tombstone row, or None. Lock held."""
+        row = self._conn.execute(
+            "SELECT user_id, erased_at, operation_id, counts_json, "
+            "created_at FROM steward_erasure_tombstones WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return dict(row) if row is not None else None
+
+    def _manifest_begin_locked(
+        self,
+        user_id: str,
+        admitted_sources: Iterable[tuple[str, str, str]] | None,
+    ) -> str | None:
+        """Open this transaction's eligibility manifest.
+
+        Returns the manifest run id, or None when no tombstone
+        stands (barrier inert). Raises ErasureBarrierRefusal when a
+        tombstone stands and no admitted set was supplied — a
+        derivation write for an erased user without a contemporane-
+        ous eligibility evaluation is refused at the funnel, before
+        any row is written (the triggers are the backstop, not the
+        first line).
+        """
+        tombstone = self._erasure_tombstone_locked(user_id)
+        if tombstone is None:
+            return None
+        if admitted_sources is None:
+            raise ErasureBarrierRefusal(
+                "steward erasure barrier: derivation write for user "
+                f"{user_id!r} refused — an erasure tombstone stands "
+                f"(erased_at {tombstone['erased_at']}) and the write "
+                "carries no eligibility manifest"
+            )
+        run_id = _new_id("mrun")
+        for kind, ref_id, source_time in admitted_sources:
+            self._conn.execute(
+                "INSERT INTO steward_erasure_manifest (run_id, "
+                "user_id, erased_at_seen, source_kind, source_id, "
+                "source_time) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    run_id, user_id, tombstone["erased_at"],
+                    str(kind), str(ref_id), str(source_time),
+                ),
+            )
+        return run_id
+
+    def _manifest_end_locked(self, run_id: str | None) -> None:
+        """Delete this transaction's manifest rows (pre-commit)."""
+        if run_id is not None:
+            self._conn.execute(
+                "DELETE FROM steward_erasure_manifest WHERE run_id = ?",
+                (run_id,),
+            )
+
+    def _manifest_require_locked(
+        self,
+        run_id: str | None,
+        user_id: str,
+        required: Iterable[tuple[str, str]],
+    ) -> None:
+        """Funnel-level binding check (packet §9.2): every required
+        (source_kind, source_id) must be present in this
+        transaction's manifest. No-op when the barrier is inert.
+        The triggers re-verify at insert time; this check exists so
+        the refusal names the missing dependency, and so bindings
+        the triggers cannot express (e.g. the deferred-prose row's
+        own manifest entry at completion) are enforced here."""
+        if run_id is None:
+            return
+        present = {
+            (row["source_kind"], row["source_id"])
+            for row in self._conn.execute(
+                "SELECT source_kind, source_id FROM "
+                "steward_erasure_manifest WHERE run_id = ?",
+                (run_id,),
+            ).fetchall()
+        }
+        missing = [
+            f"{kind}:{ref_id}"
+            for kind, ref_id in required
+            if (kind, ref_id) not in present
+        ]
+        if missing:
+            raise ErasureBarrierRefusal(
+                "steward erasure barrier: derivation write for user "
+                f"{user_id!r} refused — dependencies not attested by "
+                "this run's eligibility evaluation: "
+                + ", ".join(sorted(missing))
+            )
+
     # -- threads ------------------------------------------------------------------
 
     def create_thread(
@@ -1029,6 +1549,7 @@ class NarrativeStore:
         cast: list | None = None,
         aspiration_refs: list | None = None,
         evidence_refs: Iterable[SourceRef | str] = (),
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> NarrativeThread:
         """Create a thread and attach its founding evidence.
 
@@ -1039,6 +1560,14 @@ class NarrativeStore:
         position passes the same lens-binding validation readings
         use. Founding evidence passes the same tier gate as all
         evidence.
+
+        ``admitted_sources`` is the Steward D2 eligibility manifest
+        for this write (packet §9.2): (source_kind, source_id,
+        source_time) triples attested by the caller's eligibility
+        evaluation. It is consulted only when an erasure tombstone
+        stands for the user; then every founding SourceRef must be
+        attested, and a birth with no attested founding evidence is
+        refused (see _manifest_begin_locked).
         """
         if origin not in THREAD_ORIGINS:
             raise ValueError(f"unknown thread origin: {origin!r}")
@@ -1046,6 +1575,9 @@ class NarrativeStore:
         cast_rows = _validate_cast(cast)
         local_pos = (
             None if progression is None else _validate_progression(progression)
+        )
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
         )
         now = _utcnow()
         thread = NarrativeThread(
@@ -1062,10 +1594,27 @@ class NarrativeStore:
             created_at=now,
             updated_at=now,
         )
-        with self._lock:
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            if run_id is not None:
+                if not admitted:
+                    raise ErasureBarrierRefusal(
+                        "steward erasure barrier: thread birth for "
+                        f"user {user_id!r} refused — no attested "
+                        "founding evidence under the erasure barrier"
+                    )
+                self._manifest_require_locked(
+                    run_id,
+                    user_id,
+                    [
+                        (ref.kind, ref.ref_id)
+                        for ref in evidence_refs
+                        if isinstance(ref, SourceRef)
+                    ],
+                )
             self._write_thread_rows(thread, local_pos, weights, cast_rows,
                                     evidence_refs, None, now)
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
             row = self._conn.execute(
                 "SELECT * FROM narrative_threads WHERE id = ?",
                 (thread.id,),
@@ -1133,6 +1682,7 @@ class NarrativeStore:
         evidence_signature: str,
         evidence_texts: list[dict] | None = None,
         strand_weights: dict | None = None,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> NarrativeThread:
         """Records-first birth (increment A §6): create a nascent
         thread, attach its founding evidence, and record the owed
@@ -1178,10 +1728,30 @@ class NarrativeStore:
             "evidence_refs": evidence_keys,
             "evidence_texts": evidence_texts or [],
         }
-        with self._lock:
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            if run_id is not None:
+                if not admitted:
+                    raise ErasureBarrierRefusal(
+                        "steward erasure barrier: thread birth for "
+                        f"user {user_id!r} refused — no attested "
+                        "founding evidence under the erasure barrier"
+                    )
+                self._manifest_require_locked(
+                    run_id,
+                    user_id,
+                    [
+                        (ref.kind, ref.ref_id)
+                        for ref in evidence_refs
+                        if isinstance(ref, SourceRef)
+                    ],
+                )
             self._write_thread_rows(thread, None, weights, cast_rows,
                                     evidence_refs, deferred, now)
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
             row = self._conn.execute(
                 "SELECT * FROM narrative_threads WHERE id = ?",
                 (thread.id,),
@@ -1197,6 +1767,7 @@ class NarrativeStore:
         deferred_kind: str = "extension",
         evidence_signature: str,
         evidence_texts: list[dict] | None = None,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> tuple[list[str], str]:
         """Records-first extension (increment A §6): attach new
         evidence to a live thread and record the owed prose — one
@@ -1210,7 +1781,17 @@ class NarrativeStore:
             raise ValueError(f"unknown deferred kind: {deferred_kind!r}")
         evidence_refs = list(evidence_refs)
         evidence_keys = [f"{ref.kind}:{ref.ref_id}" for ref in evidence_refs]
-        with self._lock:
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            if run_id is not None:
+                self._manifest_require_locked(
+                    run_id,
+                    user_id,
+                    [(ref.kind, ref.ref_id) for ref in evidence_refs],
+                )
             self._require_thread(user_id, thread_id)
             resolved, _ = self._attach_evidence(thread_id, evidence_refs)
             deferred_id = self._insert_deferred_prose_locked(
@@ -1222,7 +1803,7 @@ class NarrativeStore:
                 evidence_texts or [],
             )
             self._touch_thread(thread_id)
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
         return resolved, deferred_id
 
     def get_thread(self, user_id: str, thread_id: str) -> NarrativeThread | None:
@@ -1550,17 +2131,28 @@ class NarrativeStore:
         ref: SourceRef,
         *,
         note: str = "",
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> ThreadEvidence:
         """Attach one evidence-tier record to a thread (deduped).
 
         The tier gate lives in _attach_evidence: offering a
         dramatization or interpretation ref here raises
         InadmissibleEvidenceError, whatever the caller intended.
+        ``admitted_sources`` is the D2 eligibility manifest (§9.2),
+        consulted only when an erasure tombstone stands.
         """
-        with self._lock:
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            if run_id is not None:
+                self._manifest_require_locked(
+                    run_id, user_id, [(ref.kind, ref.ref_id)]
+                )
             self._require_thread(user_id, thread_id)
             resolved, _ = self._attach_evidence(thread_id, [ref], note=note)
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
             row = self._conn.execute(
                 "SELECT * FROM thread_evidence WHERE id = ?",
                 (resolved[0],),
@@ -1627,6 +2219,7 @@ class NarrativeStore:
         primary_scale: str | None = None,
         progression: ProgressionPosition | dict | None = None,
         touch: bool = True,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> ThreadReading:
         """Store a proposed reading of a thread.
 
@@ -1646,7 +2239,22 @@ class NarrativeStore:
         reading_data = _validate_reading(reading)
         scale_list, primary = _validate_scales(scales, primary_scale)
         pos = _validate_progression(progression)
-        with self._lock:
+        evidence_refs = list(evidence_refs)
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            if run_id is not None:
+                self._manifest_require_locked(
+                    run_id,
+                    user_id,
+                    [
+                        (ref.kind, ref.ref_id)
+                        for ref in evidence_refs
+                        if isinstance(ref, SourceRef)
+                    ],
+                )
             self._require_thread(user_id, thread_id)
             resolved, _ = self._attach_evidence(thread_id, evidence_refs)
             if not resolved:
@@ -1684,7 +2292,7 @@ class NarrativeStore:
             )
             if touch:
                 self._touch_thread(thread_id)
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
         return record
 
     def accept_reading(
@@ -1801,6 +2409,7 @@ class NarrativeStore:
         reason: str | None = None,
         successor_thread_id: str | None = None,
         absence_basis: dict | None = None,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> ThreadChange:
         """Record that a thread's story moved.
 
@@ -1887,7 +2496,21 @@ class NarrativeStore:
                     "retirements"
                 )
             structural_basis = reason in ("outgrown", "reinterpreted")
-        with self._lock:
+        evidence_refs = list(evidence_refs)
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            if run_id is not None:
+                required: list[tuple[str, str]] = [
+                    (ref.kind, ref.ref_id)
+                    for ref in evidence_refs
+                    if isinstance(ref, SourceRef)
+                ]
+                if reason == "reinterpreted" and successor_thread_id:
+                    required.append(("thread", successor_thread_id))
+                self._manifest_require_locked(run_id, user_id, required)
             thread = self._require_thread(user_id, thread_id)
             if successor_thread_id is not None:
                 self._require_thread(user_id, successor_thread_id)
@@ -1989,7 +2612,7 @@ class NarrativeStore:
                 ),
             )
             self._touch_thread(thread_id, change=True)
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
         return record
 
     def set_change_status(
@@ -3140,25 +3763,56 @@ class NarrativeStore:
         user_id: str,
         thread_id: str,
         desired: list[dict],
+        *,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> tuple[int, int, int]:
-        """Recompute-sync one thread's observables (one transaction)."""
-        with self._lock:
+        """Recompute-sync one thread's observables (one transaction).
+
+        ``admitted_sources`` is the D2 eligibility manifest (§9.2),
+        consulted only when an erasure tombstone stands and the
+        sync would write rows; a deletion-only sync (empty desired)
+        needs no manifest — no covered insert or update occurs.
+        """
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        with self._lock, _atomic(self._conn):
+            run_id = (
+                self._manifest_begin_locked(user_id, admitted)
+                if desired
+                else None
+            )
             self._require_thread(user_id, thread_id)
             out = self._sync_observables_locked(
                 user_id, desired, thread_id=thread_id, meeting_scoped=False
             )
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
         return out
 
     def sync_meeting_observables(
-        self, user_id: str, desired: list[dict]
+        self,
+        user_id: str,
+        desired: list[dict],
+        *,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> tuple[int, int, int]:
-        """Recompute-sync the user's meeting-scoped observables (O1)."""
-        with self._lock:
+        """Recompute-sync the user's meeting-scoped observables (O1).
+
+        ``admitted_sources``: see sync_thread_observables.
+        """
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        with self._lock, _atomic(self._conn):
+            run_id = (
+                self._manifest_begin_locked(user_id, admitted)
+                if desired
+                else None
+            )
             out = self._sync_observables_locked(
                 user_id, desired, thread_id=None, meeting_scoped=True
             )
-            self._conn.commit()
+            self._manifest_end_locked(run_id)
         return out
 
     def delete_observables_for_user(self, user_id: str) -> int:
@@ -3397,6 +4051,7 @@ class NarrativeStore:
         scales: Iterable[str] | None = None,
         primary_scale: str | None = None,
         progression: ProgressionPosition | dict | None = None,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
     ) -> ThreadReading | None:
         """Worker completion (increment A §6.2): propose a reading
         AND mark the deferred row done — in ONE transaction.
@@ -3414,7 +4069,29 @@ class NarrativeStore:
         reading_data = _validate_reading(reading)
         scale_list, primary = _validate_scales(scales, primary_scale)
         pos = _validate_progression(progression)
-        with self._lock:
+        evidence_refs = list(evidence_refs)
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        outcome: ThreadReading | None = None
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            if run_id is not None:
+                # Completion binding (packet §9.2): the completion
+                # manifests every ref it cites AND the deferred row
+                # itself, at the row's resolved provenance time —
+                # the funnel refuses a completion whose manifest
+                # lacks the deferred entry.
+                self._manifest_require_locked(
+                    run_id,
+                    user_id,
+                    [
+                        (ref.kind, ref.ref_id)
+                        for ref in evidence_refs
+                        if isinstance(ref, SourceRef)
+                    ]
+                    + [("deferred_prose", deferred_id)],
+                )
             self._require_thread(user_id, thread_id)
             deferred = self._conn.execute(
                 "SELECT * FROM steward_deferred_prose WHERE id = ? "
@@ -3422,6 +4099,7 @@ class NarrativeStore:
                 (deferred_id, user_id, thread_id),
             ).fetchone()
             if deferred is None or deferred["status"] != "rendering":
+                self._manifest_end_locked(run_id)
                 return None
             resolved, _ = self._attach_evidence(thread_id, evidence_refs)
             if not resolved:
@@ -3431,6 +4109,7 @@ class NarrativeStore:
                     "evidence-tier reference)"
                 )
             resolved_set = set(resolved)
+            already_covered = False
             for existing in self._conn.execute(
                 "SELECT evidence_refs_json FROM thread_readings "
                 "WHERE thread_id = ?",
@@ -3441,13 +4120,16 @@ class NarrativeStore:
                 except (json.JSONDecodeError, TypeError):
                     continue
                 if resolved_set <= covered:
-                    self._conn.execute(
-                        "UPDATE steward_deferred_prose SET status = 'done' "
-                        "WHERE id = ?",
-                        (deferred_id,),
-                    )
-                    self._conn.commit()
-                    return None
+                    already_covered = True
+                    break
+            if already_covered:
+                self._conn.execute(
+                    "UPDATE steward_deferred_prose SET status = 'done' "
+                    "WHERE id = ?",
+                    (deferred_id,),
+                )
+                self._manifest_end_locked(run_id)
+                return None
             record = ThreadReading(
                 id=_new_id("rdg"),
                 thread_id=thread_id,
@@ -3481,8 +4163,9 @@ class NarrativeStore:
                 (deferred_id,),
             )
             self._touch_thread(thread_id)
-            self._conn.commit()
-        return record
+            self._manifest_end_locked(run_id)
+            outcome = record
+        return outcome
 
     # -- sweep cursor (increment A) ------------------------------------------
 
@@ -3743,7 +4426,7 @@ class NarrativeStore:
         if operation not in ("routine_clear", "full_delete"):
             raise ValueError(f"unknown deletion operation: {operation!r}")
         threads = [
-            t for t in self.threads_for(user_id)
+            t for t in self.threads_for(user_id, limit=None)
             if t.origin == "steward_proposal"
         ]
         wholesale_ids = {t.id for t in threads}
@@ -3772,7 +4455,7 @@ class NarrativeStore:
         preserved_verdict_ids: list[str] = []
         judgment_proposed = 0
         judgment_verdict = 0
-        for thread in self.threads_for(user_id):
+        for thread in self.threads_for(user_id, limit=None):
             if thread.id in wholesale_ids:
                 continue
             for reading in self.readings_for(user_id, thread.id):
@@ -3975,6 +4658,305 @@ class NarrativeStore:
             "deleted_verdict_reading_count": deleted_verdict,
             "deleted_decline_count": deleted_declines,
         }
+
+    def erase_user_material(
+        self,
+        user_id: str,
+        *,
+        erased_at: str | None = None,
+        operation_id: str = "",
+        log_path: str | Path | None = None,
+    ) -> dict:
+        """Full-record erasure of the user's narrative material
+        (Steward D2, packet §6.2.1) — a THIRD operation beside
+        routine clear and full delete, which keep their current
+        semantics byte-for-byte.
+
+        Deletes ALL of the user's threads regardless of origin
+        (including user-declared and discovery threads, and
+        verdict-state readings routine clear would preserve) via
+        the delete_thread cascade, then user-wide deletes of every
+        remaining §2.3 row family: involvement measures, dismissals
+        (both regimes), all deferred prose, all observables
+        (including meeting-scoped), all signal states, relevance
+        assessments INCLUDING NULL-thread rows and their flags,
+        verdict rows, correspondences + responses, oversight
+        proposals, reconsiderations, links, artifacts + versions.
+        Writes the §4 erasure tombstone (first writer wins: the
+        wired flow writes it first, at the operation record's T)
+        and advances the processing position to end-of-log, so a
+        surviving log cannot silently resurrect the record on the
+        next pass (the eligibility filter is the second line, not
+        a substitute for the watermark). Consent flags are neither
+        read nor written here — gate and watermark are independent
+        conditions.
+
+        The inventory is computed fresh with no thread cap (the
+        preview path's limit=None fix, §6.2.1) and is counts-only:
+        no thread ids or titles leave this method, and no preview
+        is persisted anywhere (§4). Returns the executed counts
+        (recount difference), the standing tombstone, and whether
+        the position advanced.
+        """
+        before = self.erasure_recount(user_id)
+        threads = self.threads_for(user_id, limit=None)
+        deleted_threads = 0
+        for thread in threads:
+            if self.delete_thread(user_id, thread.id):
+                deleted_threads += 1
+        with self._lock, _atomic(self._conn):
+            # User-wide sweep of everything the cascade cannot
+            # reach (NULL-thread rows, user-keyed families) plus an
+            # orphan sweep of thread-keyed tables whose thread is
+            # gone (any user's cascade leaves none, but an
+            # interrupted earlier erase might).
+            for table in _ERASURE_USER_TABLES:
+                self._conn.execute(
+                    f"DELETE FROM {table} WHERE user_id = ?",
+                    (user_id,),
+                )
+            for table in _ERASURE_THREAD_KEYED_TABLES:
+                self._conn.execute(
+                    f"DELETE FROM {table} WHERE thread_id NOT IN "
+                    "(SELECT id FROM narrative_threads)",
+                )
+            self._conn.execute(
+                "DELETE FROM steward_artifact_versions WHERE "
+                "artifact_id NOT IN (SELECT id FROM steward_artifacts)",
+            )
+            tombstone = self._erasure_tombstone_locked(user_id)
+            if tombstone is None:
+                self._conn.execute(
+                    "INSERT INTO steward_erasure_tombstones (user_id, "
+                    "erased_at, operation_id, counts_json, created_at) "
+                    "VALUES (?, ?, ?, '{}', ?)",
+                    (
+                        user_id,
+                        erased_at or _utcnow(),
+                        operation_id,
+                        _utcnow(),
+                    ),
+                )
+                tombstone = self._erasure_tombstone_locked(user_id)
+        after = self.erasure_recount(user_id)
+        per_table = {
+            table: before.get(table, 0) - after.get(table, 0)
+            for table in before
+            if table != "total"
+        }
+        # Watermark: advance the read position to end-of-log
+        # (cursor discipline preserved — this is its own commit,
+        # after the deletion commits, via set_processing_position).
+        position_advanced = False
+        try:
+            if log_path is None:
+                from local_ai.activity import _activity_log_path
+
+                log_file = Path(_activity_log_path())
+            else:
+                log_file = Path(log_path)
+            stat = log_file.stat()
+            self.set_processing_position(
+                user_id,
+                stat.st_size,
+                f"{stat.st_dev}:{stat.st_ino}",
+            )
+            position_advanced = True
+        except OSError:
+            # No log to watermark against; the eligibility filter
+            # still guards any later rescan. Reported, not hidden.
+            position_advanced = False
+        return {
+            "threads_deleted": deleted_threads,
+            "rows_deleted": before["total"] - after["total"],
+            "per_table": per_table,
+            "recount_after": after,
+            "tombstone": tombstone,
+            "position_advanced": position_advanced,
+        }
+
+    # -- erasure (Steward D2, packet §§6.2/8.2/9.4/9.5) --------------------
+
+    def get_erasure_tombstone(self, user_id: str) -> dict | None:
+        """The user's erasure tombstone (content-free residue), or
+        None when no erasure stands for them in this store."""
+        with self._lock:
+            return self._erasure_tombstone_locked(user_id)
+
+    def write_erasure_tombstone(
+        self, user_id: str, erased_at: str, operation_id: str = ""
+    ) -> dict:
+        """Write the tombstone if none stands (first writer wins).
+
+        The boundary is fixed by the first write — the signed
+        operation record's T, written by the wired flow before any
+        content step (§8.2 step 2) or recovered by the barrier-
+        integrity check (§9.4). A standing tombstone is returned
+        unchanged; reconciliation to a different T is a separate,
+        explicit act (rewrite_erasure_tombstone) taken only under
+        the operation record's authority.
+        """
+        with self._lock, _atomic(self._conn):
+            existing = self._erasure_tombstone_locked(user_id)
+            if existing is None:
+                self._conn.execute(
+                    "INSERT INTO steward_erasure_tombstones (user_id, "
+                    "erased_at, operation_id, counts_json, created_at) "
+                    "VALUES (?, ?, ?, '{}', ?)",
+                    (user_id, erased_at, operation_id, _utcnow()),
+                )
+                existing = self._erasure_tombstone_locked(user_id)
+        return existing
+
+    def rewrite_erasure_tombstone(
+        self, user_id: str, erased_at: str, operation_id: str = ""
+    ) -> dict:
+        """Reconcile the tombstone to the operation record's T.
+
+        Only the wired flow's pre-step and the barrier-integrity
+        recovery call this, and only against a signature-verified
+        operation record (§9.4): a timestamp is never chosen here,
+        only copied from the authoritative record.
+        """
+        with self._lock, _atomic(self._conn):
+            self._conn.execute(
+                "INSERT INTO steward_erasure_tombstones (user_id, "
+                "erased_at, operation_id, counts_json, created_at) "
+                "VALUES (?, ?, ?, '{}', ?) ON CONFLICT(user_id) DO "
+                "UPDATE SET erased_at = excluded.erased_at, "
+                "operation_id = excluded.operation_id",
+                (user_id, erased_at, operation_id, _utcnow()),
+            )
+            row = self._erasure_tombstone_locked(user_id)
+        return row
+
+    def set_erasure_tombstone_counts(
+        self, user_id: str, counts: dict[str, int]
+    ) -> None:
+        """Record the executed counts on the tombstone (§4 residue:
+        the tombstone carries the same counts the receipt carries)."""
+        with self._lock, _atomic(self._conn):
+            self._conn.execute(
+                "UPDATE steward_erasure_tombstones SET counts_json = ? "
+                "WHERE user_id = ?",
+                (json.dumps(counts, ensure_ascii=False), user_id),
+            )
+
+    def vacuum(self) -> None:
+        """VACUUM the database (packet §8.2 step 5: file hygiene —
+        reclaimed pages stop carrying deleted bytes in THIS file;
+        never evidence about backups or other media)."""
+        with self._lock:
+            self._conn.commit()
+            self._conn.execute("VACUUM")
+
+    def erasure_recount(self, user_id: str) -> dict[str, int]:
+        """Independent recount of everything the erase covers.
+
+        Counts the user's rows in every table §2.3 names, thread-
+        keyed tables counted through the user's threads. Used by
+        the wired flow's verification step (§§8.2/9.5): a store is
+        verified when this recount is zero outside the permitted
+        residue (the tombstone and the processing-position row are
+        not counted here at all).
+        """
+        counts: dict[str, int] = {}
+        with self._lock:
+            counts["narrative_threads"] = self._conn.execute(
+                "SELECT COUNT(*) FROM narrative_threads WHERE user_id = ?",
+                (user_id,),
+            ).fetchone()[0]
+            for table in _ERASURE_THREAD_KEYED_TABLES:
+                counts[table] = self._conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE thread_id IN "
+                    "(SELECT id FROM narrative_threads WHERE user_id = ?)",
+                    (user_id,),
+                ).fetchone()[0]
+            for table in _ERASURE_USER_TABLES:
+                counts[table] = self._conn.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()[0]
+        counts["total"] = sum(counts.values())
+        return counts
+
+    def delete_rows_for_audit(
+        self,
+        user_id: str,
+        *,
+        reading_ids: Iterable[str] = (),
+        change_ids: Iterable[str] = (),
+        deferred_ids: Iterable[str] = (),
+        observable_ids: Iterable[str] = (),
+    ) -> dict[str, int]:
+        """Delete individually named derived rows (the §9.5 audit's
+        mop-up). Scoped to the user's own rows; delivery-state rows
+        for deleted readings/observables go with them, mirroring
+        the clear operations' hygiene. Returns per-family counts.
+        """
+        out = {"readings": 0, "changes": 0, "deferred": 0, "observables": 0}
+        reading_ids = list(reading_ids)
+        change_ids = list(change_ids)
+        deferred_ids = list(deferred_ids)
+        observable_ids = list(observable_ids)
+        with self._lock, _atomic(self._conn):
+            if reading_ids:
+                ph = ", ".join("?" for _ in reading_ids)
+                cur = self._conn.execute(
+                    f"DELETE FROM thread_readings WHERE id IN ({ph}) "
+                    "AND thread_id IN (SELECT id FROM narrative_threads "
+                    "WHERE user_id = ?)",
+                    (*reading_ids, user_id),
+                )
+                out["readings"] = cur.rowcount
+                self._conn.execute(
+                    "DELETE FROM steward_signal_states WHERE user_id = ? "
+                    "AND signal_kind = 'reading' AND signal_id IN "
+                    f"({ph})",
+                    (user_id, *reading_ids),
+                )
+            if change_ids:
+                ph = ", ".join("?" for _ in change_ids)
+                cur = self._conn.execute(
+                    f"DELETE FROM thread_changes WHERE id IN ({ph}) "
+                    "AND thread_id IN (SELECT id FROM narrative_threads "
+                    "WHERE user_id = ?)",
+                    (*change_ids, user_id),
+                )
+                out["changes"] = cur.rowcount
+            if deferred_ids:
+                ph = ", ".join("?" for _ in deferred_ids)
+                cur = self._conn.execute(
+                    f"DELETE FROM steward_deferred_prose WHERE id IN "
+                    f"({ph}) AND user_id = ?",
+                    (*deferred_ids, user_id),
+                )
+                out["deferred"] = cur.rowcount
+            if observable_ids:
+                ph = ", ".join("?" for _ in observable_ids)
+                doomed_keys = [
+                    row["signal_key"]
+                    for row in self._conn.execute(
+                        f"SELECT signal_key FROM steward_observables "
+                        f"WHERE id IN ({ph}) AND user_id = ?",
+                        (*observable_ids, user_id),
+                    ).fetchall()
+                ]
+                cur = self._conn.execute(
+                    f"DELETE FROM steward_observables WHERE id IN "
+                    f"({ph}) AND user_id = ?",
+                    (*observable_ids, user_id),
+                )
+                out["observables"] = cur.rowcount
+                if doomed_keys:
+                    kph = ", ".join("?" for _ in doomed_keys)
+                    self._conn.execute(
+                        "DELETE FROM steward_signal_states WHERE "
+                        "user_id = ? AND signal_kind = 'observable' "
+                        f"AND signal_id IN ({kph})",
+                        (user_id, *doomed_keys),
+                    )
+        return out
 
     # -- increment D: snapshot read + delivery state ------------------------
 

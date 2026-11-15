@@ -52,6 +52,7 @@ Discovery lives in :mod:`discovery`; link traversal in
 from __future__ import annotations
 
 import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
 
 from local_ai.fellowship.events import (
@@ -151,12 +152,14 @@ def _record(
     reason: str | None = None,
     successor_thread_id: str | None = None,
     absence_basis: dict | None = None,
+    admitted_sources: list | None = None,
 ) -> ThreadChange | None:
     """Record one change proposal, or None when it is a duplicate.
 
     Store refusals (anti-manufacture: no new evidence) are
     duplicates by construction — the movement was already
-    recorded — not errors.
+    recorded — not errors. ``admitted_sources`` is the Steward D2
+    eligibility manifest (§9.2), forwarded to the funnel.
     """
     try:
         return store.record_change(
@@ -168,8 +171,13 @@ def _record(
             reason=reason,
             successor_thread_id=successor_thread_id,
             absence_basis=absence_basis,
+            admitted_sources=admitted_sources,
         )
-    except ValueError:
+    except (ValueError, sqlite3.IntegrityError):
+        # ValueError: the store's anti-manufacture refusal (or the
+        # D2 funnel's barrier refusal). IntegrityError: the D2
+        # trigger backstop aborting the write. Both mean "not
+        # recorded" in the detector's idiom.
         logger.debug(
             "narrative: change %s for thread %s refused (duplicate "
             "or already recorded)",
@@ -180,13 +188,19 @@ def _record(
 
 
 def detect_changes_for_event(
-    store: NarrativeStore, user_id: str, event: FellowshipEvent
+    store: NarrativeStore,
+    user_id: str,
+    event: FellowshipEvent,
+    *,
+    admitted_sources: list | None = None,
 ) -> list[ThreadChange]:
     """Run the Phase 3 detectors over one fellowship event.
 
     Pure detection + proposal recording. Never raises for a
     single thread's refusal; threads that do not match yield
     nothing. Returns the proposals recorded (possibly empty).
+    ``admitted_sources`` is the Steward D2 eligibility manifest
+    for the event (§9.2), forwarded to every funnel write.
     """
     proposals: list[ThreadChange] = []
     event_ref = _event_ref(event)
@@ -224,6 +238,7 @@ def detect_changes_for_event(
                 prior_reading_id=(
                     standing.id if contradicted and standing else None
                 ),
+                admitted_sources=admitted_sources,
             )
             if change is not None:
                 proposals.append(change)
@@ -244,7 +259,8 @@ def detect_changes_for_event(
         if _has_proposed_change(store, user_id, thread.id, kind):
             continue
         change = _record(
-            store, user_id, thread, kind=kind, refs=[event_ref]
+            store, user_id, thread, kind=kind, refs=[event_ref],
+            admitted_sources=admitted_sources,
         )
         if change is not None:
             proposals.append(change)

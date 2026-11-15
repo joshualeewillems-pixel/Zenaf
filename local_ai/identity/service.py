@@ -4,20 +4,26 @@ Ownership model:
 - issue_license() is idempotent and must precede any import of the user's
   presence — the license is what makes imported data *theirs*.
 - Every use is gated by scopes (default-deny, revocable).
-- build_takeout() exports everything; delete_all() removes the imported
-  presence footprint and returns a signed receipt.
+- build_takeout() exports everything; delete_all() deletes the owner's
+  deletable footprint and returns a signed receipt. The wired
+  (route) path runs the Steward D2 Scope S erasure — presence data,
+  the narrative steward record, and fellowship observations, each
+  verified by recount and provenance check. Scope S is a
+  partial-footprint erasure: it does not reach the activity log's
+  contents, conversations, meetings, projects, claims, backups, or
+  snapshots, and no surface may describe it as deleting everything
+  Zenaf retains (packet §8.5).
 
 What persists after delete_all, and why:
 - The tombstoned license row (status='terminated'): proof a license existed
   and was ended — prevents silent re-issuance confusion and keeps the audit
   trail coherent.
 - The signed deletion receipt: the user's proof of exactly what was removed.
-Everything else in the identity/presence footprint — uploads, events,
-signals, consent ledger — is gone. Stores outside that footprint (the
-narrative record, fellowship observations, conversations, Vision Execution
-records, review claims, profile data) are not touched by delete_all; the
-/identity/delete disclosure states that coverage until steward erasure is
-wired and verified.
+- On the wired path: the signed operation rows (internal audit
+  residue) and the content-free erasure tombstones in the narrative
+  and observations stores.
+Everything else in scope — uploads, events, signals, consent ledger,
+the narrative record, fellowship observations — is gone.
 """
 from __future__ import annotations
 
@@ -223,31 +229,20 @@ def build_takeout(
 # -- deletion ----------------------------------------------------------
 
 
-def delete_all(
-    confirmation: str,
+def _wipe_presence(
     *,
-    store: IdentityStore | None = None,
     presence_store: Any = None,
     presence_upload_root: Path | None = None,
     presence_db_path: Path | None = None,
-) -> DeletionReceipt:
-    """Delete the owner's imported presence footprint. Returns a signed receipt.
+) -> dict[str, int]:
+    """Count, then remove, the presence-ingest footprint.
 
-    Requires confirmation == "DELETE" (exactly) and the delete:execute scope.
-    Removes: presence-ingest uploads, the presence-ingest database, and the
-    consent ledger. Keeps: the tombstoned license row and the signed receipt
-    (see module docstring for why).
-    Does not remove: the narrative record (threads and steward notes),
-    fellowship observations, conversations or meetings, Vision Execution
-    records, review claims, or profile data — the /identity/delete
-    disclosure states this coverage until steward erasure is wired and
-    verified.
+    Shared by the legacy delete_all path and the Steward D2 wired
+    flow (§8.2 step 3, presence first). Counts are taken BEFORE
+    removal; the uploads tree and the signals database are then
+    deleted. The identity ledger and license are NOT touched here —
+    each caller orders those itself.
     """
-    if confirmation != "DELETE":
-        raise ValueError('Deletion requires confirmation == "DELETE".')
-    store = store or IdentityStore()
-    require_scope("delete:execute", store=store)
-
     pdata = _presence_data_dir()
     db_path = Path(presence_db_path) if presence_db_path else pdata / "signals.db"
     upload_root = (
@@ -272,15 +267,93 @@ def delete_all(
         if _close_pstore:
             pstore.close()
 
-    n_scope_events = len(store.list_scope_events())
-    lic = store.get_license()
-    license_id = lic.license_id if lic else "none"
-
     shutil.rmtree(upload_root, ignore_errors=True)
     try:
         db_path.unlink(missing_ok=True)
     except OSError:
         pass
+    return {
+        "import_sessions": len(sessions),
+        "presence_events": n_events,
+        "training_signals": n_signals,
+    }
+
+
+def delete_all(
+    confirmation: str,
+    *,
+    store: IdentityStore | None = None,
+    presence_store: Any = None,
+    presence_upload_root: Path | None = None,
+    presence_db_path: Path | None = None,
+    requesting_user_id: str | None = None,
+    narrative_store: Any = None,
+    observation_store: Any = None,
+    log_path: Path | str | None = None,
+    owner_resolver: Any = None,
+) -> DeletionReceipt:
+    """Delete the owner's deletable footprint. Returns a signed receipt.
+
+    Requires confirmation == "DELETE" (exactly) and the delete:execute scope.
+
+    Two paths:
+
+    - The WIRED path (``requesting_user_id`` given — the
+      ``POST /identity/delete`` route always passes the
+      authenticated session user): the Steward D2 erasure flow
+      (packet §§8.2/9.1/9.4/9.5). The session user must resolve to
+      the bootstrapped owner; a signed operation record fixes the
+      boundary before anything is deleted; presence data, the
+      narrative steward record, and fellowship observations are
+      erased in that order, then the consent ledger is cleared and
+      the license tombstoned; each store is verified by independent
+      recount and by a provenance check of what remains, and the
+      receipt is composed from those verifications. Partial failure
+      produces a signed incomplete receipt, and a later invocation
+      resumes the same operation under its original boundary.
+    - The legacy path (no requesting user; direct service calls):
+      presence-ingest uploads, the presence-ingest database, and
+      the consent ledger only — the behavior this function has
+      always had, preserved for its existing callers.
+
+    What persists after deletion, and why:
+    - The tombstoned license row (status='terminated'): proof a license existed
+      and was ended — prevents silent re-issuance confusion and keeps the audit
+      trail coherent.
+    - The signed deletion receipt: the user's proof of exactly what was removed.
+    - On the wired path, the signed operation rows (internal audit
+      residue binding the operation to its covered user) and the
+      content-free erasure tombstones in the narrative and
+      observations stores, so erased material cannot be silently
+      re-derived from older records.
+    """
+    if confirmation != "DELETE":
+        raise ValueError('Deletion requires confirmation == "DELETE".')
+    store = store or IdentityStore()
+    if requesting_user_id is not None:
+        from .erasure import run_erasure_flow
+
+        return run_erasure_flow(
+            requesting_user_id=requesting_user_id,
+            identity_store=store,
+            narrative_store=narrative_store,
+            observation_store=observation_store,
+            presence_store=presence_store,
+            presence_upload_root=presence_upload_root,
+            presence_db_path=presence_db_path,
+            log_path=log_path,
+            owner_resolver=owner_resolver,
+        )
+    require_scope("delete:execute", store=store)
+
+    counts = _wipe_presence(
+        presence_store=presence_store,
+        presence_upload_root=presence_upload_root,
+        presence_db_path=presence_db_path,
+    )
+    n_scope_events = len(store.list_scope_events())
+    lic = store.get_license()
+    license_id = lic.license_id if lic else "none"
 
     store.clear_scope_events()
     if lic is not None:
@@ -291,9 +364,7 @@ def delete_all(
         ts=datetime.now(timezone.utc),
         license_id=license_id,
         summary={
-            "import_sessions": len(sessions),
-            "presence_events": n_events,
-            "training_signals": n_signals,
+            **counts,
             "scope_events": n_scope_events,
         },
     )

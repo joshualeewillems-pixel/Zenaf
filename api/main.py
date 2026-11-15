@@ -127,7 +127,9 @@ try:
     from local_ai.narrative.derivation import install_default_pipeline as _install_steward
     from local_ai.narrative.sweep import start_sweep_loop as _start_steward_sweep
 
-    _steward_pipeline = _install_steward()
+    _steward_pipeline = _install_steward(
+        meeting_provider=_steward_meeting_provider,
+    )
     _start_steward_sweep(
         store=_steward_pipeline.store,
         meeting_provider=_steward_meeting_provider,

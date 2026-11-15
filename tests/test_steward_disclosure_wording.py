@@ -1,18 +1,26 @@
-"""D2 interim disclosure correction — wording pins (2026-11-15).
+"""Steward disclosure wording pins (2026-11-15; Gate C F1 succession).
 
-Until steward erasure is wired and verified, two surfaces must not
-overclaim (D2 erasure packet §5, founder-approved as a narrow wording
-correction):
+Originally the D2 interim disclosure correction (PR #381): until
+steward erasure was wired and verified, two surfaces must not
+overclaim (D2 erasure packet §5):
 
-- POST /identity/delete removes only the imported presence footprint
-  and the consent ledger; its served wording must disclose that the
-  narrative record and the other stores survive.
+- POST /identity/delete must disclose what it does not delete.
 - The steward-derivation consent wording must not promise review or
   deletion of notes that no surface can yet perform.
 
-These tests pin the served wording (the OpenAPI document is what the
-API presents) and every carrier of the consent sentence, so the
-promise and the deployed behavior cannot drift apart silently.
+The D2 build wired the Scope S erasure, and the packet's §8.5
+post-build statement (COVERAGE_STATEMENT) supersedes the interim
+delete wording by the packet's own prescription. The three
+delete-surface pins below were updated to pin the post-build
+statement (Gate C review, finding F1), preserving the
+anti-overclaim substance: no "everything" claim, the explicit
+not-erased list, and a receipt composed from verified counts.
+The consent-toggle pin is unchanged from the interim correction —
+D2 does not touch those carriers.
+
+These tests pin the served wording (the OpenAPI document is what
+the API presents) and every carrier of the consent sentence, so
+the promise and the deployed behavior cannot drift apart silently.
 """
 from __future__ import annotations
 
@@ -50,29 +58,38 @@ def _delete_operation() -> dict:
 def test_delete_endpoint_summary_no_longer_claims_everything():
     op = _delete_operation()
     assert op["summary"] == (
-        "Delete imported presence data and the consent ledger (signed receipt)"
+        "Delete presence data, your narrative steward record, and "
+        "fellowship observations (signed receipt)"
     )
     assert "everything" not in op["summary"].lower()
 
 
 def test_delete_endpoint_description_discloses_coverage():
+    from local_ai.identity.erasure import COVERAGE_STATEMENT
+
     description = _norm(_delete_operation()["description"])
-    # What it does delete (packet §5, verbatim substance).
-    assert "What this deletes:" in description
-    assert "your imported presence data" in description
-    assert "consent scope ledger" in description
-    assert "signed receipt listing counts of what was removed" in description
-    # What it does not delete yet — the disclosure that was missing.
-    assert "What this does not delete yet:" in description
-    assert "narrative threads and steward notes" in description
-    assert "conversations and meetings" in description
-    assert "Vision Execution records" in description
+    # The served description IS the §8.5 post-build statement — the
+    # same words the receipt carries as its coverage.
+    assert description == _norm(COVERAGE_STATEMENT)
+    # What it erases (post-build statement, verbatim substance).
+    assert "Erased: your narrative record" in description
+    assert "your fellowship observations" in description
     assert (
-        "turning off steward consent stops new notes without erasing "
-        "existing ones" in description
+        "verified by recount and by a provenance check of the "
+        "records that remain" in description
+    )
+    assert "A content-free marker remains" in description
+    # What it does not erase — the disclosure that must not go missing.
+    assert "Not erased by this action:" in description
+    assert "the activity log's contents (under separate review)" in description
+    assert "your conversations, meetings, projects, and claims" in description
+    assert (
+        "anything held in backups or snapshots, which this action "
+        "cannot reach" in description
     )
     # The old overclaim is gone from the served description.
     assert "Delete everything derived from the owner" not in description
+    assert "everything" not in description.lower()
 
 
 def test_delete_all_service_docstring_is_scoped():
@@ -80,8 +97,13 @@ def test_delete_all_service_docstring_is_scoped():
 
     doc = _norm(service.delete_all.__doc__ or "")
     assert "Delete everything derived from the owner" not in doc
-    assert "Does not remove:" in doc
-    assert "narrative record" in doc
+    assert "Delete the owner's deletable footprint" in doc
+    assert (
+        "presence data, the narrative steward record, and "
+        "fellowship observations are erased" in doc
+    )
+    assert "the receipt is composed from those verifications" in doc
+    assert "What persists after deletion" in doc
 
 
 def test_steward_toggle_wording_carriers_all_corrected():

@@ -85,7 +85,7 @@ import os
 import re
 import threading
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable
 
 from local_ai.council.archetypes import PLAIN_TO_KEY, get_archetype, stock_archetype_ids
@@ -94,7 +94,7 @@ from local_ai.fellowship.events import FellowshipEvent
 
 from .models import NarrativeThread
 from .refs import RefTier, SourceRef
-from .store import NarrativeStore
+from .store import ErasureBarrierRefusal, NarrativeStore
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +154,13 @@ class EvidenceItem:
     entity_ref: str | None = None
     strand_weights: dict[str, float] | None = None
     anchor_ref: str | None = None
+    #: Steward D2 (§9.3): the item's provenance time, stamped by the
+    #: entry point's eligibility evaluation when an erasure boundary
+    #: stands (canonical UTC ISO, strictly after the boundary). It
+    #: is the admitted set the funnel calls manifest from. None on
+    #: every pre-D2 path — the funnels consult it only when a
+    #: tombstone stands. In-memory only; never persisted.
+    source_time: str | None = None
 
     def evidence_key(self) -> str:
         return f"{self.ref.kind}:{self.ref.ref_id}"
@@ -1248,6 +1255,28 @@ def _deferred_texts(items: list[EvidenceItem]) -> list[dict]:
     return [{"key": item.evidence_key(), "text": item.text or ""} for item in items]
 
 
+def _admitted_from_items(
+    items: list[EvidenceItem],
+) -> list[tuple[str, str, str]] | None:
+    """The D2 admitted set for a funnel call, from stamped items.
+
+    Returns None when NO item carries a provenance stamp — the
+    pre-D2 path, where the funnels never consult the set. When any
+    item is stamped (an eligibility evaluation ran), the set holds
+    exactly the stamped items: an unstamped item in a stamped run
+    is simply absent, so a write naming it is refused at the
+    funnel and aborted at the trigger (§9.2 layering).
+    """
+    stamped = [
+        (item.ref.kind, item.ref.ref_id, item.source_time)
+        for item in items
+        if item.source_time
+    ]
+    if not stamped:
+        return None
+    return stamped  # type: ignore[return-value]
+
+
 def _birth_records_first(
     user_id: str,
     cluster: Cluster,
@@ -1273,6 +1302,7 @@ def _birth_records_first(
             evidence_signature=birth_signature(cluster.items),
             evidence_texts=_deferred_texts(cluster.items),
             strand_weights=_cluster_strand_weights(cluster.items),
+            admitted_sources=_admitted_from_items(cluster.items),
         )
     except Exception:
         logger.exception("narrative: records-first birth failed")
@@ -1306,6 +1336,7 @@ def _extension_records_first(
             deferred_kind="extension",
             evidence_signature=extension_signature(thread.id, new_items),
             evidence_texts=_deferred_texts(new_items),
+            admitted_sources=_admitted_from_items(new_items),
         )
     except Exception:
         logger.exception("narrative: records-first extension failed")
@@ -1360,6 +1391,7 @@ def _propose_birth(
             title=proposal["title"],
             evidence_refs=[item.ref for item in cluster.items],
             strand_weights=_cluster_strand_weights(cluster.items),
+            admitted_sources=_admitted_from_items(cluster.items),
         )
         # Annotate what the founding evidence is about, so later
         # batches can recognize this thread by entity, not only by
@@ -1378,6 +1410,7 @@ def _propose_birth(
             evidence_refs=[item.ref for item in cluster.items],
             scales=proposal["scales"],
             primary_scale=proposal["primary_scale"],
+            admitted_sources=_admitted_from_items(cluster.items),
         )
     except ValueError:
         # Store validation refused the proposal (e.g. a primary scale
@@ -1463,7 +1496,8 @@ def _propose_extension(
     if change_kind:
         try:
             change = store.record_change(
-                user_id, thread.id, kind=change_kind, evidence_refs=refs
+                user_id, thread.id, kind=change_kind, evidence_refs=refs,
+                admitted_sources=_admitted_from_items(new_items),
             )
             result.changes.append(change.id)
             change_recorded = True
@@ -1487,6 +1521,7 @@ def _propose_extension(
             evidence_refs=refs,
             scales=proposal["scales"],
             primary_scale=proposal["primary_scale"],
+            admitted_sources=_admitted_from_items(new_items),
         )
     except ValueError:
         logger.exception("narrative: extension reading refused by store")
@@ -1704,6 +1739,8 @@ def analyze_for_threads(
     event: FellowshipEvent,
     store: NarrativeStore,
     generate_fn: GenerateFn | None = None,
+    *,
+    source_time: str | None = None,
 ) -> DerivationResult:
     """Audit Part II §3 entry point: one event → thread proposals.
 
@@ -1712,8 +1749,14 @@ def analyze_for_threads(
     event on nobody's ground, or overlapping nothing, spends zero
     generations and proposes nothing — the single-event call is
     where the pre-filter's thrift is most visible.
+
+    ``source_time`` is the D2 eligibility stamp (§9.3) the live
+    pipeline's evaluation produced for this event; it rides the
+    item into the funnel calls' manifests.
     """
     item = event_to_item(event)
+    if source_time:
+        item = replace(item, source_time=source_time)
     return derive_batch(event.user_id, [item], store, generate_fn=generate_fn)
 
 
@@ -1749,6 +1792,12 @@ class DeferredWorkResult:
     settled_without_prose: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
     suppressed: list[dict] = field(default_factory=list)
+    #: Steward D2 (§§8.3/9.3): rows skipped because the completion's
+    #: eligibility re-evaluation found their provenance at or
+    #: before the erasure boundary. The row is released back to
+    #: pending — never settled, never rendered — and the erasure
+    #: operation's provenance audit owns its eventual removal.
+    erasure_skipped: list[str] = field(default_factory=list)
     skipped_no_backend: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -1758,6 +1807,7 @@ class DeferredWorkResult:
             "settled_without_prose": list(self.settled_without_prose),
             "failed": list(self.failed),
             "suppressed": [dict(s) for s in self.suppressed],
+            "erasure_skipped": list(self.erasure_skipped),
             "skipped_no_backend": self.skipped_no_backend,
         }
 
@@ -1810,10 +1860,18 @@ def _render_deferred_row(
     row: dict,
     gen: GenerateFn,
     result: DeferredWorkResult,
+    erasure_resolver: Any = None,
 ) -> None:
     """Render one claimed deferred row. Never raises for a settled
     outcome; generation/store-transient failures leave the row in
-    rendering for lease-expiry retry (recorded in failed)."""
+    rendering for lease-expiry retry (recorded in failed).
+
+    ``erasure_resolver`` (Steward D2) is the pass's provenance
+    resolver when an erasure boundary stands: the completion's own
+    eligibility re-evaluation runs before any generation is spent,
+    and an ineligible row is released back to pending — it is
+    never settled and never rendered (§§8.3/9.3).
+    """
     thread = store.get_thread(user_id, row["thread_id"])
     if thread is None:
         # Orphaned row (thread gone by another path): settle it.
@@ -1839,6 +1897,35 @@ def _render_deferred_row(
     for key in evidence_refs:
         kind, _, ref_id = str(key).partition(":")
         refs.append(SourceRef(kind=kind, ref_id=ref_id))
+    completion_admitted: list[tuple[str, str, str]] | None = None
+    if erasure_resolver is not None:
+        # D2 completion discipline (§§8.3/9.3): re-evaluate the
+        # row's provenance NOW — resolve every cited ref through
+        # its family's rule; the row's own created_at is only a
+        # sanity bound inside that resolution. Ineligible → the
+        # completion refuses regardless of anything else: release
+        # the claim, spend no generation, settle nothing.
+        row_time = erasure_resolver.origin_time_for_ref(
+            "deferred_prose", row["id"]
+        )
+        admitted_refs = (
+            erasure_resolver.admitted_for_refs(refs)
+            if row_time is not None
+            else None
+        )
+        if row_time is None or admitted_refs is None:
+            logger.info(
+                "narrative: deferred row %s fails erasure "
+                "eligibility re-evaluation; released to pending "
+                "without rendering",
+                row["id"],
+            )
+            store.release_deferred_prose(user_id, row["id"])
+            result.erasure_skipped.append(row["id"])
+            return
+        completion_admitted = admitted_refs + [
+            ("deferred_prose", row["id"], row_time)
+        ]
     if _already_covered(store, user_id, thread.id, refs):
         # Completion guard, checked BEFORE rendering (§6.2): a
         # reading already covers this evidence, so the row is done
@@ -2031,7 +2118,20 @@ def _render_deferred_row(
             evidence_refs=refs,
             scales=proposal["scales"],
             primary_scale=proposal["primary_scale"],
+            admitted_sources=completion_admitted,
         )
+    except ErasureBarrierRefusal:
+        # The barrier moved between the re-evaluation and the
+        # completion (backstop fired): the row is NOT settled —
+        # release it to pending for a later pass's re-evaluation.
+        logger.warning(
+            "narrative: deferred row %s refused at completion by "
+            "the erasure barrier; released to pending",
+            row["id"],
+        )
+        store.release_deferred_prose(user_id, row["id"])
+        result.erasure_skipped.append(row["id"])
+        return
     except ValueError:
         # Deterministic validation failure (not transient): settle
         # rather than retrying the same failure after every lease.
@@ -2057,6 +2157,7 @@ def work_deferred_prose(
     generate_fn: GenerateFn | None = None,
     lease_seconds: int = STEWARD_DEFERRED_LEASE_SECONDS,
     limit: int = 50,
+    erasure_resolver: Any = None,
 ) -> DeferredWorkResult:
     """Render owed prose for a user's pending deferred rows.
 
@@ -2095,7 +2196,10 @@ def work_deferred_prose(
         if claimed is None:
             continue
         try:
-            _render_deferred_row(store, user_id, claimed, gen, result)
+            _render_deferred_row(
+                store, user_id, claimed, gen, result,
+                erasure_resolver=erasure_resolver,
+            )
         except Exception:
             logger.exception(
                 "narrative: deferred render failed for row %s; "
@@ -2152,11 +2256,23 @@ class StewardPipeline:
         generate_fn: GenerateFn | None = None,
         scheduler: Callable[[Callable[[], None]], None] | None = None,
         consent_reader: Callable[[str], bool] | None = None,
+        operation_reader: Callable[[str], Any] | None = None,
+        meeting_provider: Callable[[str], Any] | None = None,
     ) -> None:
         self._store = store
         self._generate_fn = generate_fn
         self._scheduler = scheduler or self._thread_scheduler
         self._consent_reader = consent_reader
+        # Steward D2 (§9.4): the barrier-integrity check's operation
+        # -record reader — injectable like the consent reader; the
+        # production default reads the identity store.
+        self._operation_reader = operation_reader
+        # Steward D2 (§9.3): meeting rows for provenance resolution
+        # of meeting_completed culminations — the same seam the
+        # sweep takes (the narrative package does not import the
+        # conversation package). Without it, meeting origins are
+        # unresolvable on this path and fail closed.
+        self._meeting_provider = meeting_provider
 
     @staticmethod
     def _thread_scheduler(fn: Callable[[], None]) -> None:
@@ -2197,8 +2313,46 @@ class StewardPipeline:
         except Exception:
             logger.exception("narrative: could not schedule derivation")
 
+    def _barrier_resolver(self, user_id: str):
+        """The D2 barrier check for one run (§9.4 Rev 4).
+
+        Returns (verdict, resolver-or-None). A "hold" verdict means
+        this run derives nothing; a "proceed" verdict carries the
+        pass's provenance resolver; "clear" means no erasure stands
+        and the run behaves exactly as it did before D2.
+        """
+        from .eligibility import check_barrier_integrity, resolver_from_verdict
+
+        verdict = check_barrier_integrity(
+            user_id,
+            narrative_store=self.store,
+            operation_reader=self._operation_reader,
+        )
+        if verdict.state == "hold":
+            logger.info(
+                "narrative: erasure barrier holds derivation for "
+                "user %r: %s",
+                user_id,
+                verdict.reason,
+            )
+            return verdict, None
+        resolver = resolver_from_verdict(
+            user_id,
+            verdict,
+            narrative_store=self.store,
+            meeting_rows=(
+                self._meeting_provider(user_id)
+                if self._meeting_provider is not None
+                else None
+            ),
+        )
+        return verdict, resolver
+
     def _run_batch(self, user_id: str, items: list[EvidenceItem]) -> None:
         try:
+            verdict, resolver = self._barrier_resolver(user_id)
+            if verdict.state == "hold":
+                return
             if not self._gate_open(user_id):
                 logger.info(
                     "narrative: steward consent closed for user %r; "
@@ -2206,12 +2360,38 @@ class StewardPipeline:
                     user_id,
                 )
                 return
+            if resolver is not None:
+                # Eligibility (§9.3): stamp the admissible items,
+                # drop the rest — an ineligible item never reaches
+                # clustering.
+                admitted_items: list[EvidenceItem] = []
+                for item in items:
+                    entry = resolver.admitted_entry(
+                        item.ref.kind, item.ref.ref_id
+                    )
+                    if entry is None:
+                        logger.info(
+                            "narrative: item %s fails erasure "
+                            "eligibility; skipped",
+                            item.evidence_key(),
+                        )
+                        continue
+                    admitted_items.append(
+                        replace(item, source_time=entry[2])
+                    )
+                items = admitted_items
             derive_batch(user_id, items, self.store, generate_fn=self._generate_fn)
         except Exception:
             logger.exception("narrative: derivation run failed")
 
     def _run_event(self, event: FellowshipEvent) -> None:
         try:
+            # Steward D2 (§9.4): the barrier-integrity check runs at
+            # the head of the entry point, before the consent gate
+            # and before any detector or derivation write.
+            verdict, resolver = self._barrier_resolver(event.user_id)
+            if verdict.state == "hold":
+                return
             # Phase 3: the live path derives ALL event kinds, not
             # just meeting completions (increment A rollout lifted
             # once the Phase 3 fixture criteria pass). The consent
@@ -2229,20 +2409,37 @@ class StewardPipeline:
                     event.id,
                 )
                 return
+            source_time: str | None = None
+            admitted: list[tuple[str, str, str]] | None = None
+            if resolver is not None:
+                entry = resolver.admitted_for_event(event)
+                if entry is None:
+                    logger.info(
+                        "narrative: event %s fails erasure "
+                        "eligibility; consumed-skipped",
+                        event.id,
+                    )
+                    return
+                source_time = entry[2]
+                admitted = [entry]
             from local_ai.narrative.changes import (
                 detect_changes_for_event,
             )
 
             try:
                 detect_changes_for_event(
-                    self.store, event.user_id, event
+                    self.store, event.user_id, event,
+                    admitted_sources=admitted,
                 )
             except Exception:
                 logger.exception(
                     "narrative: change detection failed for event %s",
                     event.id,
                 )
-            analyze_for_threads(event, self.store, generate_fn=self._generate_fn)
+            analyze_for_threads(
+                event, self.store, generate_fn=self._generate_fn,
+                source_time=source_time,
+            )
         except Exception:
             logger.exception("narrative: derivation run failed")
 
@@ -2256,6 +2453,8 @@ def install_default_pipeline(
     generate_fn: GenerateFn | None = None,
     scheduler: Callable[[Callable[[], None]], None] | None = None,
     consent_reader: Callable[[str], bool] | None = None,
+    operation_reader: Callable[[str], Any] | None = None,
+    meeting_provider: Callable[[str], Any] | None = None,
 ) -> StewardPipeline:
     """Install the process-wide steward pipeline (app assembly).
 
@@ -2277,6 +2476,8 @@ def install_default_pipeline(
             generate_fn=generate_fn,
             scheduler=scheduler,
             consent_reader=consent_reader,
+            operation_reader=operation_reader,
+            meeting_provider=meeting_provider,
         )
         return _PIPELINE
 

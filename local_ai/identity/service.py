@@ -4,15 +4,20 @@ Ownership model:
 - issue_license() is idempotent and must precede any import of the user's
   presence — the license is what makes imported data *theirs*.
 - Every use is gated by scopes (default-deny, revocable).
-- build_takeout() exports everything; delete_all() removes everything and
-  returns a signed receipt.
+- build_takeout() exports everything; delete_all() removes the imported
+  presence footprint and returns a signed receipt.
 
 What persists after delete_all, and why:
 - The tombstoned license row (status='terminated'): proof a license existed
   and was ended — prevents silent re-issuance confusion and keeps the audit
   trail coherent.
 - The signed deletion receipt: the user's proof of exactly what was removed.
-Everything else — uploads, events, signals, consent ledger — is gone.
+Everything else in the identity/presence footprint — uploads, events,
+signals, consent ledger — is gone. Stores outside that footprint (the
+narrative record, fellowship observations, conversations, Vision Execution
+records, review claims, profile data) are not touched by delete_all; the
+/identity/delete disclosure states that coverage until steward erasure is
+wired and verified.
 """
 from __future__ import annotations
 
@@ -226,12 +231,17 @@ def delete_all(
     presence_upload_root: Path | None = None,
     presence_db_path: Path | None = None,
 ) -> DeletionReceipt:
-    """Delete everything derived from the owner. Returns a signed receipt.
+    """Delete the owner's imported presence footprint. Returns a signed receipt.
 
     Requires confirmation == "DELETE" (exactly) and the delete:execute scope.
     Removes: presence-ingest uploads, the presence-ingest database, and the
     consent ledger. Keeps: the tombstoned license row and the signed receipt
     (see module docstring for why).
+    Does not remove: the narrative record (threads and steward notes),
+    fellowship observations, conversations or meetings, Vision Execution
+    records, review claims, or profile data — the /identity/delete
+    disclosure states this coverage until steward erasure is wired and
+    verified.
     """
     if confirmation != "DELETE":
         raise ValueError('Deletion requires confirmation == "DELETE".')

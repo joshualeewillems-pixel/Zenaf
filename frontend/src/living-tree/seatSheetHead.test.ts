@@ -123,9 +123,32 @@ function renderTree() {
   })
 }
 
+/**
+ * Living Sky (Increment 1): the painted hit groups carry no initials
+ * text and no logo images, so the finders resolve the initials / logo
+ * marks the call sites use to the medallion's production datum id —
+ * the same data-node-id switch livingTreeNavigation.test.ts already
+ * carries. LOCATORS ONLY: every assertion in this file is textually
+ * unmodified.
+ */
+const NODE_ID_BY_INITIALS: Record<string, string> = {
+  ME: 'arch-mentor',
+  CH: 'arch-champion',
+  GU: 'arch-guardian',
+  MA: 'arch-maverick',
+  AM: 'arch-ambassador',
+  CO: 'arch-conductor',
+  SK: 'arch-skeptic',
+  YOU: 'you',
+}
+
+const NODE_ID_BY_LOGO_MARK: Record<string, string> = {
+  'champion-logo': 'arch-champion',
+}
+
 function nodeByInitials(initials: string): Element {
-  const nodes = Array.from(container.querySelectorAll('g.lnode'))
-  const found = nodes.find((g) => g.querySelector('text.nm')?.textContent === initials)
+  const id = NODE_ID_BY_INITIALS[initials]
+  const found = id ? container.querySelector(`g.lnode[data-node-id="${id}"]`) : null
   if (!found) throw new Error(`tree node "${initials}" not found`)
   return found
 }
@@ -138,14 +161,11 @@ function clickNode(initials: string) {
   })
 }
 
-/** A revealed seat's tree node carries its logo image, not initials. */
+/** A revealed seat's hit group, resolved by datum id (the painted
+ *  emblem replaces the logo <image> the computational nodes carried). */
 function clickNodeByLogo(mark: string) {
-  const nodes = Array.from(container.querySelectorAll('g.lnode'))
-  const found = nodes.find((g) =>
-    Array.from(g.querySelectorAll('image')).some((img) =>
-      (img.getAttribute('href') ?? '').includes(mark),
-    ),
-  )
+  const id = NODE_ID_BY_LOGO_MARK[mark]
+  const found = id ? container.querySelector(`g.lnode[data-node-id="${id}"]`) : null
   if (!found) throw new Error(`tree node with logo "${mark}" not found`)
   const el = found as unknown as { click?: () => void }
   act(() => {

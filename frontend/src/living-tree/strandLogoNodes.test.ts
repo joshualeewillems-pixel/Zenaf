@@ -8,6 +8,19 @@
  * (the photo node itself stays the tap target and still opens the YOU
  * menu), and the "Training first, rent later" footer text is removed.
  *
+ * RE-SCOPED for the Living Sky (2026-11-16, port plan §9; founder
+ * ruling 2026-11-16 08:53 PT): the strand logos are PAINTED into the
+ * scene now, and the name pills are retired from this surface
+ * (plan §10 D3 — names live in the sheets; the discs carry logos).
+ * The two "strand logos on the tree" tests asserted exactly that
+ * retired presentation and are retired with it. What survives:
+ * - the pure strand-logo resolution contract (strands.ts is
+ *   untouched — sheets and panels still resolve logos through it);
+ * - the founder text removals (no YOU pill, no footer text, no
+ *   `.lfoot`) — absence assertions that hold on any surface;
+ * - the you-node tap opening the YOU menu, with its locator moved
+ *   to the overlay contract (`g.lnode[data-node-id="you"]`).
+ *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -99,20 +112,6 @@ function renderTree() {
   })
 }
 
-/** The hrefs of every <image> inside a tree node. */
-function nodeImageHrefs(): string[] {
-  return Array.from(container.querySelectorAll('g.lnode image')).map(
-    (el) => el.getAttribute('href') ?? '',
-  )
-}
-
-/** The initials text of every tree node that shows letters. */
-function nodeInitials(): string[] {
-  return Array.from(container.querySelectorAll('g.lnode text.nm')).map(
-    (el) => el.textContent ?? '',
-  )
-}
-
 beforeEach(() => {
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
@@ -143,28 +142,10 @@ describe('strand logo resolution', () => {
   })
 })
 
-describe('strand logos on the tree', () => {
-  it('all seven strand roots show their logos instead of monograms', async () => {
-    renderTree()
-    await flush()
-    const hrefs = nodeImageHrefs()
-    for (const name of ['heart', 'hands', 'logic', 'voice', 'ear', 'compass', 'eye']) {
-      expect(hrefs.some((h) => h.includes(`${name}-logo`))).toBe(true)
-    }
-    const initials = nodeInitials()
-    for (const mono of ['HE', 'HA', 'LO', 'VO', 'EA', 'CO', 'EY']) {
-      expect(initials).not.toContain(mono)
-    }
-  })
-
-  it('the strand name pills stay beside the logo nodes', async () => {
-    renderTree()
-    await flush()
-    for (const name of ['Heart', 'Hands', 'Logic', 'Voice', 'Ear', 'Compass', 'Eye']) {
-      expect(container.textContent).toContain(name)
-    }
-  })
-})
+/* RETIRED (Living Sky re-scope, above): "all seven strand roots show
+ * their logos instead of monograms" and "the strand name pills stay
+ * beside the logo nodes" — both asserted the computational surface's
+ * presentation, which the painting replaces. */
 
 describe('founder text removals', () => {
   it('the YOU pill and the footer text are absent', async () => {
@@ -183,13 +164,10 @@ describe('founder text removals', () => {
     await flush()
     // The menu is closed before the tap.
     expect(container.textContent).not.toContain("The council's briefing")
-    const youText = Array.from(container.querySelectorAll('g.lnode text.nm')).find(
-      (el) => el.textContent === 'YOU',
-    )
-    expect(youText).toBeTruthy()
-    const youNode = youText!.closest('g.lnode')!
+    const youNode = container.querySelector('g.lnode[data-node-id="you"]')
+    expect(youNode).toBeTruthy()
     act(() => {
-      youNode.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+      youNode!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
     })
     await flush()
     expect(container.textContent).toContain("The council's briefing")

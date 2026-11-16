@@ -50,6 +50,7 @@ import { TREE_DEFAULT_COLOR, TREE_DEFAULT_RGB, USER_WEAVE_COLOR, voiceColor } fr
 import { NodeSheet } from '../tree/NodeSheet'
 import { YouEchoPanel } from './YouEchoPanel'
 import { MeetingView } from './MeetingView'
+import { LivingSkyScene, type SkyBadge } from './LivingSkyScene'
 
 /* ------------------------------------------------------------------ */
 /* Tree-as-organism: node sheets (phase 1)                             */
@@ -2098,6 +2099,33 @@ export function LivingTreeView({
     </div>
   ) : null
 
+  // Living Sky (Increment 1, founder ruling 2026-11-16): the painted
+  // scene is the tree's visual renderer — LivingSkyScene below — and
+  // this view stays the controller. The badges the scene carries are
+  // computed here, from the same live data and the same helpers the
+  // computational nodes used: the attention "!" (markerTitle) and
+  // invitation presence (invitationIndicatorLabel, driven ONLY by
+  // invitation_count > 0 — absent fields mean "unknown", count 0
+  // means authoritatively none; both render no indicator).
+  const skyBadges: Record<string, SkyBadge> = {}
+  for (const a of archetypes) {
+    const m = attention?.markers[a.id]
+    const showMarker = !!m?.attention
+    const inviteLabel = invitationIndicatorLabel(
+      FELLOWSHIP_NAMES[a.id] ?? a.display_name,
+      m,
+    )
+    if (showMarker || inviteLabel) {
+      skyBadges[a.id] = {
+        attentionTitle: showMarker
+          ? markerTitle(a.id, m!.reason, a.face_revealed === true)
+          : undefined,
+        inviteLabel,
+        inviteCount: m?.invitation_count ?? 0,
+      }
+    }
+  }
+
   return (
     <div
       className="ltree"
@@ -2185,228 +2213,18 @@ export function LivingTreeView({
 .lavatar-head h3{margin:0}
 .nsh-panel{user-select:text;-webkit-user-select:text}
       `}</style>
-      <svg
-        className="lsvg"
-        viewBox={viewBox}
-        role="img"
-        aria-label="Braided living tree"
-        style={{ display: 'block', width: '100%', height: 'auto', minHeight: 200 }}
-      >
-        {/* braided trunk */}
-        <g>
-          {braid.map((s, i) => (
-            <g key={i}>
-              <path d={s.d} fill="none" stroke="#241d12" strokeWidth={7} strokeLinecap="round" />
-              <path d={s.d} fill="none" stroke={s.color} strokeWidth={4} strokeLinecap="round" opacity={0.9} />
-            </g>
-          ))}
-        </g>
-        {/* branches */}
-        <g>
-          {nodes.flatMap((p) => {
-            if (!p.par) return []
-            const par = nodeById.get(p.par)
-            if (!par) return []
-            const col = strandCol(p)
-            const isSkeptic = p.datum.archetype?.is_skeptic
-            let sx = par.x
-            let sy = par.y
-            if (p.depth === 1) {
-              sx = braidX(p.sidx, p.side === 'up' ? TRUNK_TOP : TRUNK_BOTTOM)
-              sy = p.side === 'up' ? TRUNK_TOP : TRUNK_BOTTOM
-            }
-            const d = pathD(p.x, p.y, sx, sy)
-            const key = `${p.par}>${p.datum.id}`
-            return [
-              <path key={`${key}-u`} d={d} fill="none" stroke="#241d12" strokeWidth={p.w + 4} strokeLinecap="round" opacity={p.op * 0.9} />,
-              <path
-                key={`${key}-m`}
-                d={d}
-                fill="none"
-                stroke={col}
-                strokeWidth={p.w}
-                strokeLinecap="round"
-                strokeDasharray={isSkeptic ? '7 5' : undefined}
-                opacity={p.op * (isSkeptic ? 0.75 : 1)}
-              />,
-            ]
-          })}
-        </g>
-        {/* nodes */}
-        <g>
-          {nodes.map((p) => {
-            const col = strandCol(p)
-            const selected = sel === p.datum.id
-            const isYou = p.side === 'c'
-            const isSkeptic = p.datum.archetype?.is_skeptic
-            const collapsed = p.kids.length > 0 && !exp[p.datum.id]
-            const faceR = nodeR(p)
-            const initialsText = isYou ? initials ?? 'YOU' : p.datum.name.split(' ')[0].slice(0, 2).toUpperCase()
-            // Met seats wear their logo instead of their letters (the
-            // founder's 2026-11-12 logo sheet); unmet seats keep letters.
-            // Strand roots wear their strand logo the same way (the
-            // founder's 2026-11-12 strand logo sheet) — always, with no
-            // reveal gate: strands have no undiscovered state.
-            // The you-node wears the user's profile photo when one is set
-            // — falling back to the letters if the photo fails to load.
-            // Either image is circular-cropped to the node below.
-            const seatLogo = p.datum.archetype ? resolveSeatLogo(p.datum.archetype) : null
-            const strandLogo =
-              p.side === 'dn' && p.datum.strand ? resolveStrandLogo(p.datum.strand) : null
-            const youPhoto = isYou && userAvatarUrl && !youImgBroken ? userAvatarUrl : null
-            const nodeImage = seatLogo ?? strandLogo ?? youPhoto
-            // Keystone attention: a seat that wants the user carries a small
-            // "!" badge at its top-right, in the app's amber attention
-            // accent. Decorative — it lives inside the node's own <g>, so
-            // the full node stays the tap target (44px rule untouched).
-            const attnMarker = p.datum.archetype ? attention?.markers[p.datum.archetype.id] : undefined
-            const showMarker = !!attnMarker?.attention
-            // Capability C visible-UX slice: invitation presence —
-            // driven ONLY by invitation_count > 0, never by attention
-            // or reason. Absent fields mean "unknown" (no indicator),
-            // count 0 means authoritatively none (no indicator).
-            const inviteLabel = p.datum.archetype
-              ? invitationIndicatorLabel(
-                  FELLOWSHIP_NAMES[p.datum.archetype.id] ?? p.datum.archetype.display_name,
-                  attnMarker,
-                )
-              : null
-            const inviteCount = attnMarker?.invitation_count ?? 0
-            return (
-              <g
-                key={p.datum.id}
-                className="lnode"
-                transform={`translate(${p.x},${p.y})`}
-                opacity={p.op}
-                onClick={() => onTap(p.datum.id)}
-              >
-                <circle
-                  className="face"
-                  r={faceR}
-                  stroke={col}
-                  strokeWidth={selected ? 3 : 1.8}
-                  strokeDasharray={isSkeptic ? '5 4' : undefined}
-                  fill={isSkeptic ? '#0b0a09' : undefined}
-                  style={selected && !nodeImage ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
-                />
-                {nodeImage ? (
-                  <>
-                    <defs>
-                      <clipPath id={`node-img-${p.datum.id}`}>
-                        <circle r={faceR} />
-                      </clipPath>
-                    </defs>
-                    <image
-                      href={nodeImage}
-                      x={-faceR}
-                      y={-faceR}
-                      width={faceR * 2}
-                      height={faceR * 2}
-                      clipPath={`url(#node-img-${p.datum.id})`}
-                      preserveAspectRatio="xMidYMid slice"
-                      onError={youPhoto ? () => setYouImgBroken(true) : undefined}
-                    />
-                    {/* Re-draw the ring on top: the image covers the base
-                        circle's stroke, and the selected glow lives here
-                        (one glow, not two). */}
-                    <circle
-                      r={faceR}
-                      fill="none"
-                      stroke={col}
-                      strokeWidth={selected ? 3 : 1.8}
-                      strokeDasharray={isSkeptic ? '5 4' : undefined}
-                      style={selected ? { filter: `drop-shadow(0 0 8px ${col})` } : undefined}
-                    />
-                  </>
-                ) : (
-                  <text className="nm" y={isYou ? 7 : 4} style={{ fontSize: isYou ? '15px' : '9px' }}>
-                    {initialsText}
-                  </text>
-                )}
-                {showMarker && (
-                  <g
-                    className="attn"
-                    transform={`translate(${faceR * 0.78}, ${-faceR * 0.78})`}
-                    role="img"
-                    aria-label={markerTitle(p.datum.archetype!.id, attnMarker.reason, p.datum.archetype!.face_revealed === true)}
-                  >
-                    <title>{markerTitle(p.datum.archetype!.id, attnMarker.reason, p.datum.archetype!.face_revealed === true)}</title>
-                    <circle className="attndot" r={7.5} fill={USER_WEAVE_COLOR} stroke="#0b0a09" strokeWidth={1.5} />
-                    <text className="attnt" y={3.8} style={{ fontSize: '10.5px', fontWeight: 800, fill: '#0b0a09' }}>!</text>
-                  </g>
-                )}
-                {inviteLabel && (
-                  <g
-                    className="inv"
-                    transform={`translate(${-faceR * 0.78}, ${-faceR * 0.78})`}
-                    role="img"
-                    aria-label={inviteLabel}
-                  >
-                    <title>{inviteLabel}</title>
-                    <circle className="invdot" r={7.5} fill="#5aa897" stroke="#0b0a09" strokeWidth={1.5} />
-                    <text className="invt" y={3.8} style={{ fontSize: '10.5px', fontWeight: 800, fill: '#0b0a09' }}>{inviteCount > 9 ? '9+' : String(inviteCount)}</text>
-                  </g>
-                )}
-                {collapsed && (
-                  <>
-                    <circle
-                      className="bud"
-                      r={7}
-                      cx={Math.cos(p.ang) * 26}
-                      cy={Math.sin(p.ang) * 26}
-                      stroke={col}
-                    />
-                    <text
-                      className="budt"
-                      x={Math.cos(p.ang) * 26}
-                      y={Math.sin(p.ang) * 26 + 3}
-                    >{`+${p.kids.length}`}</text>
-                  </>
-                )}
-              </g>
-            )
-          })}
-        </g>
-        {/* label pills — top layer so branch lines never cross text */}
-        <g>
-          {nodes.map((p) => {
-            const col = strandCol(p)
-            const isYou = p.side === 'c'
-            // The you-node carries no label pill (founder, 2026-11-12):
-            // the photo node alone marks the center, and its tap target
-            // is the node itself (the pills never took clicks).
-            if (isYou) return null
-            const label = p.datum.name
-            const fs = p.depth >= 3 ? 6.5 : 7.5
-            const rlx = Math.cos(p.ang) * 36
-            const rly = Math.sin(p.ang) * 36
-            const tw = label.length * fs * 0.56 + 14
-            return (
-              <g key={`lbl-${p.datum.id}`} opacity={p.op} style={{ pointerEvents: 'none' }}>
-                <rect
-                  x={p.x + rlx - tw / 2}
-                  y={p.y + rly - 8}
-                  width={tw}
-                  height={16}
-                  rx={8}
-                  fill="#0b0a09"
-                  stroke={col}
-                  strokeWidth={0.8}
-                />
-                <text
-                  x={p.x + rlx}
-                  y={p.y + rly + 2.5}
-                  textAnchor="middle"
-                  fill="#f5f0e8"
-                  style={{ fontSize: `${fs}px`, pointerEvents: 'none' }}
-                >
-                  {label}
-                </text>
-              </g>
-            )
-          })}
-        </g>
-      </svg>
+      {/* Living Sky (Increment 1): the painted scene replaces the
+          computational SVG as the tree's renderer. The layout/braid
+          machinery above stays in place — it still feeds the panels
+          (nodeById) and is retired only in Increment 4, after a fresh
+          no-other-consumer check. */}
+      <LivingSkyScene
+        badges={skyBadges}
+        userAvatarUrl={userAvatarUrl}
+        youImgBroken={youImgBroken}
+        onYouImgError={() => setYouImgBroken(true)}
+        onTap={onTap}
+      />
       {/* The draft store provider wraps the narrative panel AND the
           sheet (not the sheet body): NodeSheet renders nothing when
           closed, so a provider inside it would die on every close and

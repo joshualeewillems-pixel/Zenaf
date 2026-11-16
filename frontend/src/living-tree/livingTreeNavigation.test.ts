@@ -123,9 +123,29 @@ function renderTree() {
   })
 }
 
+/**
+ * Living Sky (Increment 1, port plan §9): the painted hit groups
+ * carry no initials text, so the finder resolves the initials the
+ * call sites use to the medallion's production datum id. This switch
+ * is the only edit in this file — every behavioural assertion below
+ * is unmodified.
+ */
+const NODE_ID_BY_INITIALS: Record<string, string> = {
+  ME: 'arch-mentor',
+  CH: 'arch-champion',
+  GU: 'arch-guardian',
+  MA: 'arch-maverick',
+  AM: 'arch-ambassador',
+  CO: 'arch-conductor',
+  SK: 'arch-skeptic',
+  YOU: 'you',
+}
+
 function nodeByInitials(initials: string): Element {
-  const nodes = Array.from(container.querySelectorAll('g.lnode'))
-  const found = nodes.find((g) => g.querySelector('text.nm')?.textContent === initials)
+  const id = NODE_ID_BY_INITIALS[initials]
+  const found = id
+    ? container.querySelector(`g.lnode[data-node-id="${id}"]`)
+    : null
   if (!found) throw new Error(`tree node "${initials}" not found`)
   return found
 }

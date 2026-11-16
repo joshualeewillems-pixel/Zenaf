@@ -9,6 +9,20 @@
  * were removed by the founder later the same day — strandLogoNodes.test.ts
  * covers those removals and the strand logos that landed with them.)
  *
+ * RE-SCOPED for the Living Sky (2026-11-16, port plan §9; founder
+ * ruling 2026-11-16 08:53 PT): the painted scene replaces the
+ * computational nodes. The painted emblems are the seats' symbolic
+ * identities — always visible in the painting — so the
+ * logo-vs-initials rule LEAVES the tree surface (it still governs
+ * faces and panels inside the sheets, untouched). What survives on
+ * this surface, and what this file now asserts, is the YOU-photo
+ * overlay contract: the photo renders over the painted YOU disc when
+ * `userAvatarUrl` is set, and is absent otherwise (the painting's own
+ * YOU is the fallback — there are no DOM letters anymore). The
+ * retired assertions (met-seat logo hrefs, unmet-seat initials, the
+ * YOU-letters fallback) tested presentation the founder's ruling
+ * replaced; they are retired here, not re-expressed.
+ *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -101,18 +115,18 @@ function renderTree(userAvatarUrl?: string) {
   })
 }
 
-/** The hrefs of every <image> inside a tree node. */
+/** The hrefs of every <image> inside a hit group (the overlay's only
+ *  image is the YOU photo — emblems and logos are painted, not DOM). */
 function nodeImageHrefs(): string[] {
   return Array.from(container.querySelectorAll('g.lnode image')).map(
     (el) => el.getAttribute('href') ?? '',
   )
 }
 
-/** The initials text of every tree node that shows letters. */
-function nodeInitials(): string[] {
-  return Array.from(container.querySelectorAll('g.lnode text.nm')).map(
-    (el) => el.textContent ?? '',
-  )
+function youGroup(): Element {
+  const g = container.querySelector('g.lnode[data-node-id="you"]')
+  if (!g) throw new Error('you hit group not found')
+  return g
 }
 
 beforeEach(() => {
@@ -130,34 +144,24 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('seat logos on the tree', () => {
-  it('a met seat shows its logo, an unmet seat keeps its letters', async () => {
+describe('the YOU-photo overlay on the painted scene', () => {
+  it('the you hit group wears the profile photo when one is set', async () => {
     renderTree(YOU_PHOTO)
     await flush()
-    const hrefs = nodeImageHrefs()
-    expect(hrefs.some((h) => h.includes('mentor-logo'))).toBe(true)
-    const initials = nodeInitials()
-    expect(initials).toContain('CH')
-    expect(initials).not.toContain('ME')
-  })
-
-  it('the you-node wears the profile photo instead of the YOU text', async () => {
-    renderTree(YOU_PHOTO)
-    await flush()
-    expect(nodeImageHrefs()).toContain(YOU_PHOTO)
-    expect(nodeInitials()).not.toContain('YOU')
+    const img = youGroup().querySelector('image')
+    expect(img?.getAttribute('href')).toBe(YOU_PHOTO)
+    // The overlay carries no initials text anywhere — the emblems and
+    // letters are the painting's now.
+    expect(container.querySelectorAll('g.lnode text.nm')).toHaveLength(0)
     // The pill below the node is gone (founder, 2026-11-12).
     expect(container.textContent).not.toContain('TAP FOR OPTIONS')
   })
 
-  it('without a photo the you-node falls back to the YOU letters', async () => {
+  it('without a photo the overlay carries no image — the painted YOU disc is the fallback', async () => {
     renderTree()
     await flush()
-    const hrefs = nodeImageHrefs()
-    // The met seat's logo plus the seven always-on strand logos.
-    expect(hrefs).toHaveLength(8)
-    expect(hrefs.some((h) => h.includes('mentor-logo'))).toBe(true)
-    expect(nodeInitials()).toContain('YOU')
+    expect(youGroup().querySelector('image')).toBeNull()
+    expect(nodeImageHrefs()).toEqual([])
     expect(container.textContent).not.toContain('TAP FOR OPTIONS')
   })
 })

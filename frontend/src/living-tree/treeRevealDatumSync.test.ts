@@ -15,6 +15,22 @@
  * depths (0), same twigs (none) — so not one node moves, and only a
  * datum sync can put the logos on the tree.
  *
+ * RE-SCOPED for the Living Sky (2026-11-16, port plan §9 pattern;
+ * founder ruling 2026-11-16 08:53 PT): the painted scene replaces the
+ * computational nodes, so the original observable — seat/strand logo
+ * <image>s and initials text inside g.lnode — no longer exists on this
+ * surface (emblems are painted; reveal semantics live in the sheets
+ * and panels). The BEHAVIOUR under guard is unchanged: a data-only
+ * status update must propagate the reveal to every surface that shows
+ * it, even though nothing moves. Its surviving observable is the
+ * revealed seat's sheet identity: open each seat's sheet after the
+ * same data-only update and the identity circle must carry that
+ * seat's logo — not the ??? placeholder the fallback datum would
+ * show. (The sheet resolves its archetype from the view's
+ * fetch-applied archetypes state; if that datum flow breaks, every
+ * sheet below keeps ??? and this test fails — see the mutation check
+ * recorded in the Increment 1 verification report.)
+ *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -30,17 +46,16 @@ function ok(payload: unknown) {
   return { ok: true, status: 200, json: async () => payload } as Response
 }
 
-const SEAT_LOGO_MARKS = [
-  'mentor-logo',
-  'champion-logo',
-  'guardian-logo',
-  'maverick-logo',
-  'ambassador-logo',
-  'conductor-logo',
-  'skeptic-logo',
-]
-
-const SEAT_INITIALS = ['ME', 'CH', 'GU', 'MA', 'AM', 'CO', 'SK']
+/** The seven seats: archetype id, hit-group datum id, sheet logo mark. */
+const SEATS = [
+  { id: 'mentor', nodeId: 'arch-mentor', logoMark: 'mentor-logo' },
+  { id: 'champion', nodeId: 'arch-champion', logoMark: 'champion-logo' },
+  { id: 'guardian', nodeId: 'arch-guardian', logoMark: 'guardian-logo' },
+  { id: 'maverick', nodeId: 'arch-maverick', logoMark: 'maverick-logo' },
+  { id: 'ambassador', nodeId: 'arch-ambassador', logoMark: 'ambassador-logo' },
+  { id: 'conductor', nodeId: 'arch-conductor', logoMark: 'conductor-logo' },
+  { id: 'skeptic', nodeId: 'arch-skeptic', logoMark: 'skeptic-logo' },
+] as const
 
 let container: HTMLDivElement
 let root: Root
@@ -91,18 +106,34 @@ function renderTree() {
   })
 }
 
-/** The hrefs of every <image> inside a tree node. */
-function nodeImageHrefs(): string[] {
-  return Array.from(container.querySelectorAll('g.lnode image')).map(
-    (el) => el.getAttribute('href') ?? '',
-  )
+/** A painted medallion's hit group, by its production datum id. */
+function hitGroup(nodeId: string): Element {
+  const g = container.querySelector(`g.lnode[data-node-id="${nodeId}"]`)
+  if (!g) throw new Error(`hit group "${nodeId}" not found`)
+  return g
 }
 
-/** The initials text of every tree node that shows letters. */
-function nodeInitials(): string[] {
-  return Array.from(container.querySelectorAll('g.lnode text.nm')).map(
-    (el) => el.textContent ?? '',
-  )
+function clickHitGroup(nodeId: string) {
+  const el = hitGroup(nodeId) as unknown as { click?: () => void }
+  act(() => {
+    if (typeof el.click === 'function') el.click()
+    else hitGroup(nodeId).dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+  })
+}
+
+async function clickEl(el: Element) {
+  await act(async () => {
+    ;(el as HTMLElement).click()
+  })
+  await flush()
+}
+
+function dialog(): Element | null {
+  return container.querySelector('[role="dialog"]')
+}
+
+function head(): Element | null {
+  return dialog()?.querySelector('.nsh-head') ?? null
 }
 
 beforeEach(() => {
@@ -121,20 +152,27 @@ afterEach(() => {
 })
 
 describe('tree datum sync on a data-only status update', () => {
-  it('met seats show their logos even though no node moved', async () => {
+  it('met seats show their logos in their sheets even though no node moved', async () => {
     renderTree()
     await flush()
-    const hrefs = nodeImageHrefs()
-    for (const mark of SEAT_LOGO_MARKS) {
-      expect(hrefs.some((h) => h.includes(mark))).toBe(true)
+    // Every seat's sheet identity carries its logo — the reveal in the
+    // data-only payload reached the sheets. Under the fallback datum
+    // each identity circle would keep the ??? placeholder instead.
+    for (const seat of SEATS) {
+      clickHitGroup(seat.nodeId)
+      await flush()
+      const row = head()?.querySelector('.lavatar-head')
+      expect(row, `identity row for ${seat.id}`).not.toBeNull()
+      const img = row?.querySelector('img.lavatar-img')
+      expect(img?.getAttribute('src') ?? '').toContain(seat.logoMark)
+      expect(row?.querySelector('.lavatar-qqq')).toBeNull()
+      const close = head()?.querySelector('.nsh-close') as HTMLElement | null
+      if (!close) throw new Error('close control not found')
+      await clickEl(close)
     }
-    // 7 seat logos + the 7 always-on strand logos; nothing else.
-    expect(hrefs).toHaveLength(14)
-    const initials = nodeInitials()
-    for (const letters of SEAT_INITIALS) {
-      expect(initials).not.toContain(letters)
-    }
-    // The render itself is alive: the photo-less you-node keeps YOU.
-    expect(initials).toContain('YOU')
-  })
+    // Control: the render itself is alive — the photo-less you-node's
+    // hit group is present and carries no photo image (the painting's
+    // own YOU is the fallback now; there are no DOM letters anymore).
+    expect(hitGroup('you').querySelector('image')).toBeNull()
+  }, 30_000)
 })

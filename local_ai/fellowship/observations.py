@@ -40,6 +40,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from local_ai.identity.boundary import (
+    BoundaryState,
+    register_boundary_state,
+    unregister_boundary_state,
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = REPO_ROOT / "data" / "fellowship"
 DEFAULT_DB_PATH = DATA_DIR / "observations.db"
@@ -200,12 +206,18 @@ class ObservationStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # Gate B Increment 1: the boundary participation state
+        # (four-gap §1(c)). The flow-invoked commit sites route
+        # through it; with no boundary standing it passes through.
+        self.boundary_state = BoundaryState("observations")
+        register_boundary_state(self._conn, self.boundary_state)
         with self._lock:
             self._conn.executescript(_SCHEMA)
             self._conn.commit()
 
     def close(self) -> None:
         with self._lock:
+            unregister_boundary_state(self._conn)
             self._conn.close()
 
     # -- erasure barrier (Steward D2, packet §9.2) --------------------------
@@ -237,7 +249,7 @@ class ObservationStore:
                     "VALUES (?, ?, ?, '{}', ?)",
                     (user_id, erased_at, operation_id, _utcnow()),
                 )
-                self._conn.commit()
+                self.boundary_state.commit(self._conn)
                 existing = self._erasure_tombstone_locked(user_id)
         return existing
 
@@ -255,7 +267,7 @@ class ObservationStore:
                 "operation_id = excluded.operation_id",
                 (user_id, erased_at, operation_id, _utcnow()),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
             row = self._erasure_tombstone_locked(user_id)
         return row
 
@@ -268,12 +280,14 @@ class ObservationStore:
                 "WHERE user_id = ?",
                 (json.dumps(counts, ensure_ascii=False), user_id),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
 
     def vacuum(self) -> None:
         """VACUUM the database (packet §8.2 step 5, file hygiene)."""
         with self._lock:
-            self._conn.commit()
+            # Routed (Gate B Inc 1 §3.4), never suppressed in
+            # practice: VACUUM runs outside any boundary, as today.
+            self.boundary_state.commit(self._conn)
             self._conn.execute("VACUUM")
 
     def delete_for_user(self, user_id: str) -> int:
@@ -285,7 +299,7 @@ class ObservationStore:
                 "DELETE FROM observations WHERE user_id = ?",
                 (user_id,),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
         return cursor.rowcount
 
     def delete_observation(self, user_id: str, observation_id: str) -> bool:

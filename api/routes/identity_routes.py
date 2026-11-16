@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from api.routes.auth_routes import get_current_user
 from local_ai.identity import LicenseRequired, ScopeDenied
 from local_ai.identity import service as identity_service
-from local_ai.identity.erasure import COVERAGE_STATEMENT, ErasureRefused
+from local_ai.identity.erasure import COVERAGE_STATEMENTS, ErasureRefused
 from local_ai.identity.models import DeletionReceipt, IdentityLicense
 from local_ai.identity.scopes import KNOWN_SCOPES, check_scope
 
@@ -121,7 +121,11 @@ def takeout():
         "Delete presence data, your narrative steward record, and "
         "fellowship observations (signed receipt)"
     ),
-    description=COVERAGE_STATEMENT,
+    # The coverage statement renders BY ID from the registry
+    # (amendment §4; Gate B Increment 1 §3.3): the binding is
+    # mechanical, not editorial — these are the same words the
+    # receipt carries, drawn from the single registered text.
+    description=COVERAGE_STATEMENTS["coverage/1"],
 )
 def delete_everything(
     body: DeleteBody,

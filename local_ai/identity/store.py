@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import identity_data_dir
+from .boundary import BoundaryState, register_boundary_state, unregister_boundary_state
 from .models import DeletionReceipt, IdentityLicense, ScopeEvent
 
 _SCHEMA = """
@@ -45,6 +46,14 @@ CREATE TABLE IF NOT EXISTS deletion_receipts (
     license_id TEXT NOT NULL,
     summary_json TEXT NOT NULL DEFAULT '{}',
     signature TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS erasure_operation_work (
+    operation_id TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    classification_sha256 TEXT NOT NULL DEFAULT '',
+    signature TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT '',
+    sealed_at TEXT
 );
 """
 
@@ -121,15 +130,21 @@ class IdentityStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # Gate B Increment 1: the boundary participation state
+        # (four-gap §1(c)). Every commit site in this store routes
+        # through it; with no boundary standing it passes through.
+        self.boundary_state = BoundaryState("identity")
+        register_boundary_state(self._conn, self.boundary_state)
         with self._lock:
             cols = [r["name"] for r in self._conn.execute("PRAGMA table_info(scope_events)").fetchall()]
             self._conn.executescript(_SCHEMA)
             if cols and "user_id" not in cols:
                 self._conn.execute("ALTER TABLE scope_events ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
 
     def close(self) -> None:
         with self._lock:
+            unregister_boundary_state(self._conn)
             self._conn.close()
 
     # -- license -------------------------------------------------------
@@ -153,7 +168,7 @@ class IdentityStore:
                     _iso(lic.terminated_at),
                 ),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
         return lic
 
     def get_license(self) -> IdentityLicense | None:
@@ -171,7 +186,7 @@ class IdentityStore:
                 "UPDATE license SET status = 'terminated', terminated_at = ?",
                 (_iso(datetime.now(timezone.utc)),),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
 
     # -- consent ledger ------------------------------------------------
 
@@ -189,7 +204,7 @@ class IdentityStore:
                     event.user_id or "",
                 ),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
         return event
 
     def list_scope_events(self) -> list[ScopeEvent]:
@@ -221,7 +236,7 @@ class IdentityStore:
         """Remove the consent ledger (used only by full deletion)."""
         with self._lock:
             cur = self._conn.execute("DELETE FROM scope_events")
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
             return cur.rowcount
 
     # -- deletion receipts ---------------------------------------------
@@ -240,7 +255,7 @@ class IdentityStore:
                     receipt.signature,
                 ),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
         return receipt
 
     def list_receipts(self) -> list[DeletionReceipt]:
@@ -249,3 +264,85 @@ class IdentityStore:
                 "SELECT * FROM deletion_receipts ORDER BY rowid DESC"
             ).fetchall()
         return [_receipt_from_row(r) for r in rows]
+
+    # -- erasure operation work (Gate B Increment 1) ----------------
+    #
+    # The temporary classification persistence of the joint erasure
+    # protocol (amendment §1.2; FPC §§1–2): one signed row per open
+    # operation, holding the captured classification while the
+    # operation is open and destroyed in the sealing transaction.
+    # Sensitive temporary material: readable only by the erasure
+    # flow, never exposed by any route, never written to a receipt.
+
+    def save_operation_work(
+        self, operation_id: str, payload: dict[str, Any], signature: str
+    ) -> None:
+        """Persist (or replace) the operation's signed work row."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO erasure_operation_work "
+                "(operation_id, payload_json, classification_sha256, "
+                " signature, created_at, sealed_at) "
+                "VALUES (?, ?, ?, ?, ?, NULL)",
+                (
+                    operation_id,
+                    json.dumps(payload, sort_keys=True),
+                    str(payload.get("classification_sha256", "")),
+                    signature,
+                    str(payload.get("created_at", "")),
+                ),
+            )
+            self.boundary_state.commit(self._conn)
+
+    def load_operation_work(
+        self, operation_id: str
+    ) -> tuple[dict[str, Any] | None, bool]:
+        """Load a work row and verify it.
+
+        Returns ``(payload, verified)``: ``(None, False)`` when no
+        row stands; ``(payload, False)`` when the row exists but
+        its HMAC signature fails, its stored classification hash
+        disagrees with the payload's, or it binds a different
+        operation — every one of those is a conflict to the caller,
+        never a recompute invitation (FPC §1).
+        """
+        from .signing import verify_mapping
+
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM erasure_operation_work "
+                "WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchone()
+        if row is None:
+            return None, False
+        payload = _json_loads(row["payload_json"], {})
+        if not isinstance(payload, dict):
+            return None, False
+        verified = (
+            payload.get("operation_id") == operation_id
+            and payload.get("classification_sha256")
+            == row["classification_sha256"]
+            and verify_mapping(payload, row["signature"])
+        )
+        return payload, verified
+
+    def has_operation_work(self, operation_id: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM erasure_operation_work "
+                "WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchone()
+        return row is not None
+
+    def delete_operation_work(self, operation_id: str) -> bool:
+        """Destroy the work row (sealing / abandonment cleanup)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM erasure_operation_work "
+                "WHERE operation_id = ?",
+                (operation_id,),
+            )
+            self.boundary_state.commit(self._conn)
+            return cur.rowcount == 1

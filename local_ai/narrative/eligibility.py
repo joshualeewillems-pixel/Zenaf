@@ -49,6 +49,7 @@ imports, the codebase's cycle-avoidance pattern.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import threading
@@ -66,6 +67,59 @@ AdmittedSource = tuple[str, str, str]
 
 #: The authorized scope the operation record binds (§9.4 Rev 4).
 OPERATION_SCOPE = "delete:execute"
+
+#: Protocol generations the record reader binds (Gate B
+#: Increment 1, footprint §3.5): token ↔ scope_version ↔ signed
+#: store set, cross-checked, fail-closed as ``conflict``. The
+#: legacy token is preserved for historical records only; new
+#: four-store operations open under ``delete:execute/1.1`` — the
+#: same four-store manifest, a new protocol generation, so a
+#: legacy binary REFUSES a new operation as an unbound token
+#: instead of resuming it while ignoring its classification, work
+#: record, and transaction requirements. The /2 (five stores) and
+#: /3 (six stores) tokens fail closed here: this increment cannot
+#: open them and binds no record under them.
+_SCOPE_S_STORE_NAMES = frozenset(
+    ("presence", "narrative", "observations", "identity")
+)
+_GENERATION_TOKENS: dict[str, dict[str, Any]] = {
+    "delete:execute": {"scope_version": None, "stores": _SCOPE_S_STORE_NAMES},
+    "delete:execute/1.1": {
+        "scope_version": "1.1",
+        "stores": _SCOPE_S_STORE_NAMES,
+    },
+}
+
+#: Latest-row statuses under which an operation is still open
+#: (its standing record governs resumes and barrier integrity).
+_STANDING_STATUSES = ("opened", "incomplete", "classified", "executing")
+
+
+def render_bound_coverage(
+    coverage_id: Any, coverage_sha256: Any
+) -> str | None:
+    """Render a coverage statement BY ID, with hash verification
+    (amendment §4; footprint §3.6).
+
+    Returns the registry text only when the registry holds the id
+    AND the text's SHA-256 equals the hash the operation record
+    binds. Unknown id or hash mismatch → ``None``: fail closed —
+    no coverage language is issued for that operation at all, and
+    no binary paraphrases a statement it does not hold.
+    """
+    if not isinstance(coverage_id, str) or not isinstance(coverage_sha256, str):
+        return None
+    try:
+        from local_ai.identity.erasure import COVERAGE_STATEMENTS
+    except Exception:  # noqa: BLE001 — fail closed, never paraphrase
+        return None
+    text = COVERAGE_STATEMENTS.get(coverage_id)
+    if text is None:
+        return None
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if digest != coverage_sha256:
+        return None
+    return text
 
 
 def parse_time(value: Any) -> datetime | None:
@@ -106,8 +160,57 @@ class OperationRecord:
     erased_at: str
     scope: str
     status: str  # latest transition: opened | incomplete | completed
+    # (Gate B Increment 1 adds: classified | executing | abandoned)
     license_id: str = ""
     counts: dict[str, Any] = field(default_factory=dict)
+    # Gate B Increment 1 bound fields (absent — None / empty — on
+    # legacy records, which are grandfathered per FPC §7: no
+    # binding is invented for them).
+    scope_version: str | None = None
+    coverage_id: str | None = None
+    coverage_sha256: str | None = None
+    source_fingerprint: dict[str, Any] = field(default_factory=dict)
+    classification_sha256: str | None = None
+    stores: dict[str, Any] = field(default_factory=dict)
+    statuses: list[str] = field(default_factory=list)  # chronological
+
+    def derive_lifecycle(self, work_present: bool | None = None) -> str:
+        """The FPC §1 lifecycle state, derived from the verified
+        record chain plus work-row presence — never a stored flag.
+
+        ``work_present`` is the caller's knowledge of the
+        operation's work row (True / False); None means unknown
+        (a read-only consumer), in which case a completed chain
+        derives ``completed`` rather than claiming ``sealed``.
+        """
+        statuses = self.statuses or [self.status]
+        latest = statuses[-1]
+        if latest == "abandoned":
+            return "abandoned"
+        if latest == "completed":
+            return "sealed" if work_present is False else "completed"
+        if "executing" in statuses:
+            return "executing"
+        if "classified" in statuses:
+            return "classified"
+        return "opened-unclassified"
+
+    def derive_coverage_standing(
+        self, work_present: bool | None = None
+    ) -> str | None:
+        """The closure note §2 coverage standing, where the landed
+        record chain can carry it. Incomplete-by-hold is NOT
+        derivable from a landed chain (no hold classes are ever
+        counted there) and is therefore never claimed here."""
+        statuses = self.statuses or [self.status]
+        latest = statuses[-1]
+        if latest == "abandoned" and "executing" not in statuses:
+            return "abandoned-in-preparation"
+        if latest == "completed":
+            return "complete-sealed"
+        if "executing" in statuses:
+            return "interrupted-resumable"
+        return None
 
 
 @dataclass
@@ -116,7 +219,28 @@ class OperationRecords:
 
     standing: OperationRecord | None = None  # opened / incomplete
     completed: OperationRecord | None = None
+    abandoned: OperationRecord | None = None
     conflict: str | None = None
+
+    def _primary_record(self) -> OperationRecord | None:
+        return self.standing or self.completed or self.abandoned
+
+    def lifecycle_state(self, work_present: bool | None = None) -> str | None:
+        """FPC §1 lifecycle state of the user's primary operation
+        (standing first, then completed, then abandoned)."""
+        record = self._primary_record()
+        if record is None:
+            return None
+        return record.derive_lifecycle(work_present)
+
+    def coverage_standing(
+        self, work_present: bool | None = None
+    ) -> str | None:
+        """Closure note §2 standing pair, second element."""
+        record = self._primary_record()
+        if record is None:
+            return None
+        return record.derive_coverage_standing(work_present)
 
 
 def read_operation_records(identity_store: Any, user_id: str) -> OperationRecords:
@@ -168,14 +292,56 @@ def read_operation_records(identity_store: Any, user_id: str) -> OperationRecord
                 "erased_at in its signed binding"
             )
             return out
-        if scope != OPERATION_SCOPE:
+        # Generation map (Gate B Increment 1, footprint §3.5):
+        # token ↔ scope_version ↔ signed store set, cross-checked,
+        # fail-closed as conflict. An unbound token — a later
+        # generation's (/2, /3), a foreign scope, or a token this
+        # binary does not bind — is refused here, so a legacy
+        # binary refuses a delete:execute/1.1 operation outright
+        # rather than resuming it under landed semantics.
+        generation = _GENERATION_TOKENS.get(scope) if isinstance(scope, str) else None
+        if generation is None:
             out.conflict = (
                 f"operation record {row.receipt_id} binds scope "
-                f"{scope!r}, not the authorized {OPERATION_SCOPE!r}"
+                f"{scope!r}, which this reader does not bind (the "
+                f"authorized generations are "
+                f"{sorted(_GENERATION_TOKENS)!r})"
+            )
+            return out
+        scope_version = summary.get("scope_version")
+        if scope_version != generation["scope_version"]:
+            out.conflict = (
+                f"operation record {row.receipt_id} binds scope "
+                f"{scope!r} with scope_version {scope_version!r}; "
+                "the token and the version disagree"
+            )
+            return out
+        stores_field = summary.get("stores")
+        if isinstance(stores_field, dict) and stores_field:
+            if set(stores_field) != generation["stores"]:
+                out.conflict = (
+                    f"operation record {row.receipt_id} binds a "
+                    f"store set {sorted(stores_field)!r} wider or "
+                    f"other than its generation's manifest "
+                    f"{sorted(generation['stores'])!r}"
+                )
+                return out
+        # Coverage binding (amendment §4): a record carrying a
+        # coverage id must render by id against the registry —
+        # unknown id or hash mismatch fails closed.
+        coverage_id = summary.get("coverage_id")
+        if coverage_id is not None and render_bound_coverage(
+            coverage_id, summary.get("coverage_sha256")
+        ) is None:
+            out.conflict = (
+                f"operation record {row.receipt_id} binds coverage "
+                f"{coverage_id!r}, which does not verify against "
+                "the coverage registry"
             )
             return out
         if operation_id not in by_operation:
             counts = summary.get("counts")
+            fingerprint = summary.get("source_fingerprint")
             by_operation[operation_id] = OperationRecord(
                 operation_id=str(operation_id),
                 covered_user=user_id,
@@ -184,6 +350,29 @@ def read_operation_records(identity_store: Any, user_id: str) -> OperationRecord
                 status=str(status),
                 license_id=row.license_id,
                 counts=dict(counts) if isinstance(counts, dict) else {},
+                scope_version=(
+                    scope_version if isinstance(scope_version, str) else None
+                ),
+                coverage_id=(
+                    coverage_id if isinstance(coverage_id, str) else None
+                ),
+                coverage_sha256=(
+                    summary.get("coverage_sha256")
+                    if isinstance(summary.get("coverage_sha256"), str)
+                    else None
+                ),
+                source_fingerprint=(
+                    dict(fingerprint) if isinstance(fingerprint, dict) else {}
+                ),
+                classification_sha256=(
+                    summary.get("classification_sha256")
+                    if isinstance(summary.get("classification_sha256"), str)
+                    else None
+                ),
+                stores=(
+                    dict(stores_field) if isinstance(stores_field, dict) else {}
+                ),
+                statuses=[str(status)],
             )
             order.append(operation_id)
         else:
@@ -194,14 +383,31 @@ def read_operation_records(identity_store: Any, user_id: str) -> OperationRecord
                     "boundary they bind"
                 )
                 return out
+            if standing_row.scope != scope:
+                out.conflict = (
+                    f"operation {operation_id} rows disagree on the "
+                    "scope token they bind"
+                )
+                return out
+            standing_row.statuses.append(str(status))
+            if standing_row.classification_sha256 is None and isinstance(
+                summary.get("classification_sha256"), str
+            ):
+                standing_row.classification_sha256 = summary[
+                    "classification_sha256"
+                ]
     for operation_id in order:
         record = by_operation[operation_id]
-        if record.status in ("opened", "incomplete"):
+        record.statuses.reverse()  # rows arrived latest-first
+        if record.status in _STANDING_STATUSES:
             if out.standing is None:
                 out.standing = record
         elif record.status == "completed":
             if out.completed is None:
                 out.completed = record
+        elif record.status == "abandoned":
+            if out.abandoned is None:
+                out.abandoned = record
     return out
 
 

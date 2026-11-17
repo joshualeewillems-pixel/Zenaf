@@ -91,7 +91,7 @@ from .encounter import (
     _is_acknowledgment,
     _is_pass,
 )
-from .reply import generate_voice_reply
+from .reply import generate_voice_reply, meeting_canonical_enabled
 from .store import (
     ConversationIntegrityError,
     ConversationStore,
@@ -2463,11 +2463,19 @@ class MeetingService:
             # Meetings run under the evidence/expression separation
             # (Joshua's ruling, 2026-10-23): the character synthesizes
             # in her own words; exact quotes live in the evidence.
-            # canonical=False keeps the legacy assembly (ordinary
-            # turns use the canonical renderer); no quote-weaving
-            # instruction exists on any path anymore (removed
-            # 2026-11-02, Step 2).
-            canonical=False,
+            # No quote-weaving instruction exists on any path anymore
+            # (removed 2026-11-02, Step 2).
+            # Lens Foundation WI-2 (2026-11-17): the character layer
+            # converges on the canonical foundation per seat, gated
+            # by the meeting MIGRATION CONTROLS in reply.py
+            # (reply.meeting_canonical_enabled). A migrated seat's
+            # meeting character block is rendered from its canonical
+            # record by its per-seat renderer — the same block its
+            # ordinary Talk turns carry; an unmigrated seat keeps the
+            # exact legacy assembly (canonical=False). The encounter
+            # frame, the canonical tier, and every other meeting
+            # parameter are unchanged either way.
+            canonical=meeting_canonical_enabled(arch_id),
             timing_label="meeting",
         )
         return reply.reply

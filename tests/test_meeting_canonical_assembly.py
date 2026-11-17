@@ -823,3 +823,18 @@ def test_t_a1_guardian_meeting_converged():
 
 def test_t_a1_ambassador_meeting_converged():
     _assert_seat_meeting_converged("ambassador")
+
+
+def test_t_a1_maverick_meeting_converged():
+    _assert_seat_meeting_converged("maverick")
+
+
+def test_all_seven_meeting_migration_controls_stand_true():
+    # The WI-2 convergence-completion pin: with every seat
+    # migrated, the meeting path assembles the canonical character
+    # block for all seven seats. (The controls remain in place as
+    # labelled migration controls — rollback and, later, removal
+    # are separate decisions; this pin fails if one is flipped
+    # back without the others being accounted for.)
+    for seat in SEATS:
+        assert meeting_canonical_enabled(seat), seat

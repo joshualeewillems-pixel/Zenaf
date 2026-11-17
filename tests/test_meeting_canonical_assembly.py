@@ -803,3 +803,7 @@ def _assert_seat_meeting_converged(seat: str):
 
 def test_t_a1_conductor_meeting_converged():
     _assert_seat_meeting_converged("conductor")
+
+
+def test_t_a1_skeptic_meeting_converged():
+    _assert_seat_meeting_converged("skeptic")

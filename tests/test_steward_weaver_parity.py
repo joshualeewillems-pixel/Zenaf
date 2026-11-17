@@ -359,7 +359,14 @@ def test_network_boundary_meeting_framed(monkeypatch, tmp_path):
         assert old == new
         # The framed prompt carries both the weave lines and the frame.
         assert "FRAME: encounter instructions here." in old
-        assert "Synthesizes after the others speak." in old
+        # WI-2 (2026-11-17): the meeting path now assembles the
+        # canonical Weaver block. The legacy prompt-frame sentence
+        # ("Synthesizes after the others speak. ...") is rendered,
+        # not carried verbatim — its content rides the canonical
+        # identity and worldview units — while the defining
+        # question is carried verbatim inside the worldview unit.
+        assert "You are the Weaver, who occupies the Conductor seat" in old
+        assert "Synthesizes after the others speak." not in old
         assert "How can these parts become a whole?" in old
     finally:
         conv.close()

@@ -807,3 +807,7 @@ def test_t_a1_conductor_meeting_converged():
 
 def test_t_a1_skeptic_meeting_converged():
     _assert_seat_meeting_converged("skeptic")
+
+
+def test_t_a1_mentor_meeting_converged():
+    _assert_seat_meeting_converged("mentor")

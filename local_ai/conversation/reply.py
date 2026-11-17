@@ -218,7 +218,7 @@ FOX_CANONICAL_CUTOVER = True
 # demo surface has no per-seat controls: its character-source swap
 # (api/routes/demo_routes.py) landed with the meeting convergence.
 # No environment-variable override.
-_MEETING_CANONICAL_WEAVER = False
+_MEETING_CANONICAL_WEAVER = True
 _MEETING_CANONICAL_RAVEN = False
 _MEETING_CANONICAL_GARDENER = False
 _MEETING_CANONICAL_FIREBRAND = False

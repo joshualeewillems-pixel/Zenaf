@@ -799,3 +799,7 @@ def _assert_seat_meeting_converged(seat: str):
     joined = "\n".join(lines)
     assert "Foundational ideal:" not in joined, seat
     assert not any(line.startswith("Archetype: ") for line in lines), seat
+
+
+def test_t_a1_conductor_meeting_converged():
+    _assert_seat_meeting_converged("conductor")

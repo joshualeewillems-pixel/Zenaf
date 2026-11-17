@@ -641,3 +641,25 @@ def test_resolver_contract_already_resolved_and_clean():
         assert "planned, not available yet" in line, line
     # Available capabilities render available.
     assert "First meetings" in block
+
+
+
+def test_meeting_path_uses_canonical_block_after_wi2_migration():
+    # Lens Foundation WI-2 (2026-11-17): the Weaver's meeting
+    # migration control stands True, so the meeting path assembles
+    # the canonical character block — the flag the meeting service
+    # passes is reply.meeting_canonical_enabled. canonical=False
+    # still yields the exact legacy assembly (the rollback source,
+    # pinned by test_branch_meeting_path_keeps_exact_legacy_prompt
+    # above). Full meeting fixtures: tests/
+    # test_meeting_canonical_assembly.py (T-A1).
+    assert R.meeting_canonical_enabled("conductor")
+    lines, _ = build_voice_prompt(
+        "u1", "conductor", "hello", [], mode="base",
+        canonical=R.meeting_canonical_enabled("conductor"),
+        canonical_tier=True, extra_instructions="FRAME",
+    )
+    joined = _joined(lines)
+    assert CANONICAL_MARKER in joined
+    assert "Foundational ideal:" not in joined
+    assert "Shadow — your characteristic failure mode" not in joined

@@ -48,6 +48,12 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from local_ai.council.jurisdictions import SEAT_JURISDICTIONS
+from local_ai.identity.boundary import (
+    BoundaryState,
+    boundary_state_for,
+    register_boundary_state,
+    unregister_boundary_state,
+)
 from local_ai.strands import strand_keys
 
 from .lenses import get_lens
@@ -881,14 +887,28 @@ def _atomic(conn: sqlite3.Connection) -> Iterator[None]:
     never commits). The store's documented atomicity for combined
     writes ("records + deferred row land together, or neither
     does") is what this implements.
+
+    Gate B Increment 1: the commit/rollback resolve through the
+    connection's boundary participation state (four-gap §1(c)).
+    With no boundary standing they reach SQLite exactly as before;
+    under a standing boundary the commit is suppressed (the
+    boundary owner commits at its exit) and a rollback marks the
+    boundary rollback-only instead of rolling back mid-step.
     """
+    state = boundary_state_for(conn)
     try:
         yield
     except Exception:
-        conn.rollback()
+        if state is not None:
+            state.rollback(conn)
+        else:
+            conn.rollback()
         raise
     else:
-        conn.commit()
+        if state is not None:
+            state.commit(conn)
+        else:
+            conn.commit()
 
 
 def _loads(text: str | None, default: Any) -> Any:
@@ -1241,6 +1261,12 @@ class NarrativeStore:
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # Gate B Increment 1: the boundary participation state
+        # (four-gap §1(c)). The flow-invoked commit/rollback sites
+        # route through it; with no boundary standing it passes
+        # through, so non-flow behavior is untouched.
+        self.boundary_state = BoundaryState("narrative")
+        register_boundary_state(self._conn, self.boundary_state)
         with self._lock:
             self._conn.executescript(_SCHEMA)
             # Steward D2: the erasure triggers parse JSON ref lists
@@ -1341,6 +1367,7 @@ class NarrativeStore:
 
     def close(self) -> None:
         with self._lock:
+            unregister_boundary_state(self._conn)
             self._conn.close()
 
     # -- internal helpers -------------------------------------------------------
@@ -4201,7 +4228,7 @@ class NarrativeStore:
                 "updated_at = excluded.updated_at",
                 (user_id, int(byte_offset), file_identity, _utcnow()),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
 
     def processing_position_users(self) -> list[str]:
         """User ids with a stored read position (sweep enumeration)."""
@@ -4373,7 +4400,7 @@ class NarrativeStore:
                 "DELETE FROM narrative_threads WHERE id = ? AND user_id = ?",
                 (thread_id, user_id),
             )
-            self._conn.commit()
+            self.boundary_state.commit(self._conn)
         return True
 
     # -- deletion preview + user-material clearing (increment B §9) -----
@@ -4847,7 +4874,11 @@ class NarrativeStore:
         reclaimed pages stop carrying deleted bytes in THIS file;
         never evidence about backups or other media)."""
         with self._lock:
-            self._conn.commit()
+            # Routed like every flow-invoked site (Gate B Inc 1
+            # §3.4) — and never suppressed in practice: VACUUM runs
+            # outside any boundary, as today, so the routing passes
+            # through.
+            self.boundary_state.commit(self._conn)
             self._conn.execute("VACUUM")
 
     def erasure_recount(self, user_id: str) -> dict[str, int]:

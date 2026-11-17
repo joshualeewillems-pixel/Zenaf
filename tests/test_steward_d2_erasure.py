@@ -501,12 +501,17 @@ def test_08_partial_failure_yields_one_signed_incomplete_receipt(env, monkeypatc
     # The partial state is real: narrative gone, observations remain.
     assert env.nstore.erasure_recount(USER)["total"] == 0
     assert env.ostore.count_for_user(USER) == 1
-    # Exactly one opened + one incomplete operation row; one
-    # user-facing receipt from this invocation.
+    # The operation chain under the Gate B lifecycle (listed
+    # most-recent-first): opened, classified, executing, the
+    # boundary-refusal recorder's incomplete row, and the
+    # operation's incomplete row; one user-facing receipt from
+    # this invocation.
     op_rows = [
         r for r in env.istore.list_receipts() if r.summary.get("op_status")
     ]
-    assert [r.summary["op_status"] for r in op_rows] == ["incomplete", "opened"]
+    assert [r.summary["op_status"] for r in op_rows] == [
+        "incomplete", "incomplete", "executing", "classified", "opened",
+    ]
     user_receipts = [
         r for r in env.istore.list_receipts() if not r.summary.get("op_status")
     ]
@@ -542,7 +547,7 @@ def test_09_retry_resumes_same_operation(env, monkeypatch):
     ]
     assert len({r.summary["operation_id"] for r in op_rows}) == 1
     assert {r.summary["op_status"] for r in op_rows} == {
-        "opened", "incomplete", "completed",
+        "opened", "classified", "executing", "incomplete", "completed",
     }
     assert env.istore.get_license().status == "terminated"
     assert env.ostore.count_for_user(USER) == 0

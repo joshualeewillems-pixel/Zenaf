@@ -279,6 +279,50 @@ def _wipe_presence(
     }
 
 
+def _presence_census(
+    *,
+    presence_store: Any = None,
+    presence_upload_root: Path | None = None,
+    presence_db_path: Path | None = None,
+) -> dict[str, int]:
+    """Read-only twin of :func:`_wipe_presence`'s counting phase.
+
+    Performs exactly the counts the wipe takes before removal —
+    sessions, events, signals — and removes nothing (Gate B
+    Increment 1): the erasure flow's classification phase captures
+    presence's read set from this census, since presence's
+    disposition is a total wipe and the counts are its classifier's
+    read set. The uploads tree and the signals database are left
+    exactly as found.
+    """
+    pdata = _presence_data_dir()
+    db_path = Path(presence_db_path) if presence_db_path else pdata / "signals.db"
+
+    pstore = presence_store
+    _close_pstore = False
+    if pstore is None:
+        from local_ai.presence_ingest.store import PresenceStore
+
+        # Tolerate a missing DB (nothing imported yet).
+        pstore = PresenceStore(db_path=db_path)
+        _close_pstore = True
+    try:
+        sessions = pstore.list_sessions()
+        n_events = sum(pstore.count_events(s.session_id) for s in sessions)
+        n_signals = sum(
+            pstore.count_signals(s.session_id) for s in sessions
+        )
+    finally:
+        if _close_pstore:
+            pstore.close()
+
+    return {
+        "import_sessions": len(sessions),
+        "presence_events": n_events,
+        "training_signals": n_signals,
+    }
+
+
 def delete_all(
     confirmation: str,
     *,

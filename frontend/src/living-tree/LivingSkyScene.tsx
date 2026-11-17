@@ -101,6 +101,25 @@ function moonPathD(k: number, r: number): string {
 }
 const MOON_DARK_D = moonPathD(1, 20)
 
+/* CSS ease-in-out = cubic-bezier(0.42, 0, 0.58, 1), solved for the
+ * given x (Newton iterations on the bezier parameter). Used to drive
+ * the glow pulse from the rAF loop with the exact easing the retired
+ * CSS keyframes carried. */
+function easeInOutCubic(x: number): number {
+  const X1 = 0.42
+  const X2 = 0.58
+  let t = x
+  for (let i = 0; i < 5; i++) {
+    const u = 1 - t
+    const cx = 3 * u * u * t * X1 + 3 * u * t * t * X2 + t * t * t
+    const dx = 3 * u * u * X1 + 6 * u * t * (X2 - X1) + 3 * t * t * (1 - X2)
+    if (dx < 1e-6) break
+    t -= (cx - x) / dx
+  }
+  const u = 1 - t
+  return 3 * u * t * t + t * t * t
+}
+
 /* Clock stations: a tick segment starts ON the body's path at an
  * hour point and runs along the path normal; a station is the
  * crossbar centred on that point (study clock redesign). */
@@ -157,6 +176,7 @@ export function LivingSkyScene({
   const moonRingRef = useRef<SVGImageElement | null>(null)
   const sunGRef = useRef<SVGGElement | null>(null)
   const sunDiscRef = useRef<SVGImageElement | null>(null)
+  const glowWhiteRef = useRef<HTMLImageElement | null>(null)
 
   useEffect(() => {
     let clockKey = ''
@@ -348,6 +368,20 @@ export function LivingSkyScene({
       )
     }
 
+    /* The medallion glow pulse — the same law the retired CSS
+     * keyframes carried (1.65 s period, ease-in-out, opacity
+     * .10 ↔ 1), driven from this loop instead: iOS drops CSS
+     * animations on large raster layers when the page is
+     * pinch-zoomed and never restarts them, which killed the glow
+     * permanently (founder report, 2026-11-17). */
+    const paintGlowPulse = (now: Date) => {
+      const el = glowWhiteRef.current
+      if (!el) return
+      const p = (now.getTime() % 1650) / 1650
+      const e = easeInOutCubic(p < 0.5 ? p * 2 : p * 2 - 1)
+      el.style.opacity = (p < 0.5 ? 0.1 + 0.9 * e : 1 - 0.9 * e).toFixed(3)
+    }
+
     const loop = () => {
       raf = requestAnimationFrame(loop)
       if (typeof document !== 'undefined' && document.hidden) {
@@ -356,6 +390,7 @@ export function LivingSkyScene({
       }
       const now = new Date()
       paintRotations(now)
+      paintGlowPulse(now)
       if (now.getSeconds() !== lastSec) {
         lastSec = now.getSeconds()
         update(now)
@@ -364,6 +399,7 @@ export function LivingSkyScene({
     const t0 = new Date()
     update(t0)
     paintRotations(t0)
+    paintGlowPulse(t0)
     raf = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(raf)
   }, [])
@@ -377,8 +413,6 @@ export function LivingSkyScene({
 .lsky svg.lsky-sky{position:absolute;inset:0;width:100%;height:100%;display:block}
 .lsky-paint{position:absolute;inset:0;pointer-events:none;transform-origin:0 0}
 .lsky-paint img{position:absolute;inset:0;width:100%;height:100%}
-.lsky-paint .glowwhite{animation:lsky-glowpulse 1.65s ease-in-out infinite}
-@keyframes lsky-glowpulse{0%,100%{opacity:.10}50%{opacity:1}}
 .lsky svg.lsky-hit{position:absolute;inset:0;width:100%;height:100%;display:block}
 .lsky .lnode{cursor:pointer}
 .lsky .lnode text{fill:#f5f0e8;text-anchor:middle;pointer-events:none}
@@ -578,7 +612,7 @@ export function LivingSkyScene({
       <div className="lsky-paint" style={{ transform: PAINTSTACK_TRANSFORM }}>
         <img src={canopyBackUrl} alt="" />
         <img src={glowColourUrl} alt="" />
-        <img className="glowwhite" src={glowWhiteUrl} alt="" />
+        <img ref={glowWhiteRef} src={glowWhiteUrl} alt="" />
         <img src={treePaintedUrl} alt="" />
         <img src={canopyForeUrl} alt="" />
       </div>

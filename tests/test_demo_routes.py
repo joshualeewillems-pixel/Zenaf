@@ -392,14 +392,138 @@ def test_anti_presumption_leaves_card_content_untouched():
     assert "What are we assuming?" in "\n".join(arch.build_archetype_prompt_lines("skeptic"))
 
 
-def test_demo_prompt_matches_two_layer_framing():
+def test_demo_prompt_uses_canonical_character_source():
     from api.routes import demo_routes as dr
 
+    # WI-2 (2026-11-17): the demo's character block is assembled
+    # from the canonical records, as Talk and meetings now are.
+    # The anti-presumption style rule is carried verbatim; the
+    # legacy warmth-register line is NOT — it is superseded
+    # character material (the canonical voice passage carries the
+    # adopted warmth, the same doctrine as every Talk cutover).
     prompt = dr._build_demo_prompt("guardian", [], speak=False, question_mode=False)
-    assert "ground, never presume" in prompt  # the grounding rule rides via archetype lines
-    assert "warmth register" in prompt
-    # The per-seat register flows into the demo prompt via the archetype lines.
-    assert "warm-protective" in prompt
+    assert "ground, never presume" in prompt  # the grounding rule rides verbatim
+    assert "You are the Bear, who occupies the Guardian seat" in prompt
+    assert "Your warmth register:" not in prompt
+    assert "warm-protective" not in prompt
+
+
+# --- WI-2: demo canonical-source fixtures (T-A1 demo part + T-A5) -------------
+
+_DEMO_IDENTITY = {
+    "conductor": "You are the Weaver, who occupies the Conductor seat",
+    "skeptic": "You are the Raven, who occupies the Skeptic seat",
+    "mentor": "You are the Gardener, who occupies the Mentor seat",
+    "champion": "You are the Firebrand, who occupies the Champion seat",
+    "guardian": "You are the Bear, who occupies the Guardian seat",
+    "ambassador": "You are the Crane, who occupies the Ambassador seat",
+    "maverick": "You are the Fox, who occupies the Maverick seat",
+}
+
+
+def test_demo_character_block_is_canonical_for_all_seats():
+    from api.routes import demo_routes as dr
+    from local_ai.council import archetypes as arch
+
+    for vid in arch.stock_archetype_ids():
+        prompt = dr._build_demo_prompt(vid, [], speak=False, question_mode=False)
+        assert _DEMO_IDENTITY[vid] in prompt, vid
+        for legacy_marker in (
+            "Archetype: ",
+            "Foundational ideal:",
+            "Defining question:",
+            "Shadow — your characteristic failure mode",
+            "Live tension",
+        ):
+            assert legacy_marker not in prompt, (vid, legacy_marker)
+        if vid != "conductor":
+            # The per-seat warmth-register line is superseded
+            # character material and does not ride the canonical
+            # block. The conductor is the exception: its warmth
+            # line is one of the seven jurisdiction lines, which
+            # the assembly carries verbatim on both paths.
+            assert "Your warmth register:" not in prompt, vid
+            assert "warmth register: none" not in prompt, vid
+        # The character segment in the prompt byte-equals the
+        # canonical helper's output for this seat.
+        seat_arch = arch.get_archetype(vid)
+        if seat_arch is not None and seat_arch.strand_weights is not None:
+            weights = seat_arch.strand_weights
+        elif seat_arch is not None:
+            weights = arch.compute_skeptic_weights(None)
+        else:
+            weights = None
+        block = "\n".join(dr._canonical_demo_character_lines(vid, seat_arch, weights))
+        assert block in prompt, vid
+
+
+def test_demo_unknown_voice_has_no_character_block():
+    from api.routes import demo_routes as dr
+
+    prompt = dr._build_demo_prompt("nosuchseat", [], speak=False, question_mode=False)
+    for identity in _DEMO_IDENTITY.values():
+        assert identity not in prompt
+
+
+def _demo_protected_texts() -> set:
+    # Mirrors the T-A5 corpus construction in tests/
+    # test_meeting_canonical_assembly.py: per-seat protected-category
+    # record texts (>= 40 chars), each seat's philosophy shadow, and
+    # the steward-sourced conductor shadow.
+    from local_ai.council.archetypes import ARCHETYPE_PHILOSOPHY
+    from local_ai.council.canonical.bear import BEAR_RECORD
+    from local_ai.council.canonical.crane import CRANE_RECORD
+    from local_ai.council.canonical.firebrand import FIREBRAND_RECORD
+    from local_ai.council.canonical.fox import FOX_RECORD
+    from local_ai.council.canonical.gardener import GARDENER_RECORD
+    from local_ai.council.canonical.raven import RAVEN_RECORD
+    from local_ai.council.canonical.weaver import WEAVER_RECORD
+
+    records = {
+        "conductor": WEAVER_RECORD,
+        "skeptic": RAVEN_RECORD,
+        "mentor": GARDENER_RECORD,
+        "champion": FIREBRAND_RECORD,
+        "guardian": BEAR_RECORD,
+        "ambassador": CRANE_RECORD,
+        "maverick": FOX_RECORD,
+    }
+    texts = set()
+    for seat, record in records.items():
+        for fields in record.values():
+            if not isinstance(fields, dict):
+                continue
+            for field in fields.values():
+                if not isinstance(field, dict):
+                    continue
+                if field.get("category") != "protected":
+                    continue
+                text = field.get("text")
+                if isinstance(text, str) and len(text) >= 40:
+                    texts.add(text)
+        phil = ARCHETYPE_PHILOSOPHY.get(seat) or {}
+        if phil.get("shadow"):
+            texts.add(phil["shadow"])
+    from local_ai.council import steward_records as SR
+
+    texts.add(SR.PHILOSOPHY_SHADOW)
+    return texts
+
+
+def test_demo_prompts_carry_no_protected_content():
+    # T-A5 (demo part): the full demo prompt, like the Talk and
+    # meeting assemblies, carries no protected-category field text
+    # and no shadow text.
+    from api.routes import demo_routes as dr
+    from local_ai.council import archetypes as arch
+
+    protected = _demo_protected_texts()
+    assert protected  # the scan is meaningless on an empty set
+    for vid in arch.stock_archetype_ids():
+        prompt = dr._build_demo_prompt(vid, [], speak=False, question_mode=False)
+        for text in protected:
+            assert text not in prompt, vid
+        assert "Shadow — your characteristic failure mode" not in prompt, vid
 
 
 # --- Conductor orchestration v1: dissent-preserving synthesis ----------------

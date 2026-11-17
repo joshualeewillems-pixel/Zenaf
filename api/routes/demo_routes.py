@@ -58,14 +58,32 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.routes.auth_routes import get_current_user
+from local_ai.conversation.reply import _strand_blend_lines
 from local_ai.conversation.weave import sanitize_weave as _sanitize_weave
 from local_ai.council.archetypes import (
+    ANTI_PRESUMPTION_STYLE,
     STOCK_ARCHETYPES,
-    build_archetype_prompt_lines,
     compute_skeptic_weights,
     get_archetype,
     stock_archetype_ids,
     voice_color,
+)
+from local_ai.council.canonical.bear import BEAR_RECORD
+from local_ai.council.canonical.crane import CRANE_RECORD
+from local_ai.council.canonical.firebrand import FIREBRAND_RECORD
+from local_ai.council.canonical.fox import FOX_RECORD
+from local_ai.council.canonical.gardener import GARDENER_RECORD
+from local_ai.council.canonical.raven import RAVEN_RECORD
+from local_ai.council.canonical.weaver import WEAVER_RECORD
+from local_ai.council.jurisdictions import jurisdiction_prompt_lines
+from local_ai.council.render import (
+    render_bear_ordinary,
+    render_crane_ordinary,
+    render_firebrand_ordinary,
+    render_fox_ordinary,
+    render_gardener_ordinary,
+    render_raven_ordinary,
+    render_weaver_ordinary,
 )
 
 router = APIRouter(prefix="/demo", tags=["demo"])
@@ -497,6 +515,53 @@ def _split_stream_safe(buffer: str) -> tuple[str, str]:
     return buffer, ""
 
 
+#: Per-seat (renderer, canonical record) for the demo's character
+#: block (the conductor's renderer takes a visitor_state instead
+#: of an authorized name and is dispatched separately below).
+_DEMO_RENDERERS = {
+    "mentor": (render_gardener_ordinary, GARDENER_RECORD),
+    "champion": (render_firebrand_ordinary, FIREBRAND_RECORD),
+    "guardian": (render_bear_ordinary, BEAR_RECORD),
+    "ambassador": (render_crane_ordinary, CRANE_RECORD),
+    "skeptic": (render_raven_ordinary, RAVEN_RECORD),
+    "maverick": (render_fox_ordinary, FOX_RECORD),
+}
+
+
+def _canonical_demo_character_lines(voice_id, arch, weights) -> list[str]:
+    """The demo's character block, from the canonical records.
+
+    Lens Foundation WI-2 (2026-11-17): the demo's character SOURCE
+    is the same canonical foundation as Talk and meetings — the
+    seat's renderer units — followed by the lines the assembly
+    carries verbatim (the anti-presumption style rule, the
+    conductor's jurisdiction lines, the strand blend). The demo
+    remains its own surface: it keeps its framing line, speak/
+    question modes, recusal, and echo machinery, and it carries
+    no capability unit (``resolved_capability=None`` — the demo
+    has never carried capability text; adding the Talk assembly's
+    anonymously-resolved capability block would change the
+    surface beyond character-source parity).
+    """
+    if arch is None:
+        return []
+    if voice_id == "conductor":
+        units = render_weaver_ordinary(
+            WEAVER_RECORD, visitor_state={}, resolved_capability=None
+        )
+    else:
+        renderer, record = _DEMO_RENDERERS[voice_id]
+        units = renderer(
+            record, authorized_name=None, resolved_capability=None
+        )
+    preserved: list[str] = [ANTI_PRESUMPTION_STYLE]
+    if voice_id == "conductor":
+        preserved.extend(jurisdiction_prompt_lines(voice_id))
+    if weights:
+        preserved.extend(_strand_blend_lines(weights))
+    return [*units, *preserved]
+
+
 def _build_demo_prompt(
     voice_id: str,
     transcript: list[dict],
@@ -516,11 +581,17 @@ def _build_demo_prompt(
     the message is not answered, it is questioned.
     """
     arch = get_archetype(voice_id)
-    weights_override = None
-    if arch is not None and arch.strand_weights is None:
+    if arch is not None and arch.strand_weights is not None:
+        weights = arch.strand_weights
+    elif arch is not None:
         # Skeptic: no user data exists anonymously — uniform fallback weights.
-        weights_override = compute_skeptic_weights(None)
-    lines = build_archetype_prompt_lines(voice_id, weights_override=weights_override)
+        weights = compute_skeptic_weights(None)
+    else:
+        weights = None
+    # WI-2 (2026-11-17): the character block comes from the
+    # canonical records — the same foundation Talk and meetings
+    # assemble — not the legacy archetype builder.
+    lines = _canonical_demo_character_lines(voice_id, arch, weights)
     prompt = [
         "You are a voice in Zenaf's council, talking to a first-time visitor "
         "on the landing page. They have no account and no training data — you "

@@ -66,6 +66,22 @@ verbatim; redaction covers stored events and signals only).
 Entries 8, 20, 27, and 34 describe that enforcement as it exists
 at this revision; correcting the enforcement itself is the
 security-correction proposal's scope, not this alignment's.
+
+Post-merge update 2026-11-17: the security correction has since
+merged (PR #388, main 8beae48) and was verified live on staging,
+so the five affected entries — import_uploads (8), redaction
+(18), scope_toggles (20), review_intake (27), and export_all
+(34) — now describe the corrected enforcement: ingest and
+review routes behind a session-auth + installation-owner
+dependency resolved before any presence-store access (D-1);
+license and scopes routes owner-gated, scope writes recorded
+under the owner's identity, and historical global grants
+preserved only in the owner's fold and reported distinctly as
+unverified provenance (D-6); the takeout route owner-gated at
+route and service layer with bundle contents unchanged (D-14);
+and imports parsed in place from the request's temporary file
+with no persistent raw copy retained (D-4). The findings above
+stand as the record of the state this alignment first described.
 """
 
 from __future__ import annotations
@@ -304,20 +320,25 @@ CAPABILITIES: tuple[Capability, ...] = (
             "presence-review/SignalReviewView.tsx (the agent-intake "
             "UI does not call these endpoints). Proven on the "
             "staging TEST account only; own-account run still "
-            "awaiting call. Route enforcement today: an active "
-            "identity license for upload and the train:self scope "
-            "for distill — the ingest routes have no session-auth "
-            "dependency and do not check consent_acknowledged; the "
-            "recorded prerequisites gate prompt rendering only "
-            "(security finding D-1; enforcement correction is "
-            "scoped in the security-correction proposal)."
+            "awaiting call. Route enforcement (security "
+            "correction D-1, merged PR #388, verified live on "
+            "staging 2026-11-17): every ingest route carries a "
+            "router-level session-auth + installation-owner "
+            "dependency — 401 unauthenticated, 403 non-owner, "
+            "resolved before any access to the singleton "
+            "presence store. An active identity license for "
+            "upload and the train:self scope for distill remain "
+            "as the operation-specific second layer; the routes "
+            "do not check consent_acknowledged, and the recorded "
+            "prerequisites gate prompt rendering only."
         ),
         prerequisites=("signed_in", "consent_acknowledged"),
         prerequisite_note=(
-            "Import requires an active identity license; "
-            "distilling requires the train:self scope. Distilled "
-            "material becomes pending candidates — nothing trains "
-            "without per-claim review approval."
+            "Import requires a signed-in installation-owner "
+            "session and an active identity license; distilling "
+            "requires the train:self scope. Distilled material "
+            "becomes pending candidates — nothing trains without "
+            "per-claim review approval."
         ),
     ),
     Capability(
@@ -481,16 +502,21 @@ CAPABILITIES: tuple[Capability, ...] = (
             "presence_ingest.redact (regex tokenisation) is "
             "applied at capture to stored intake text ('only "
             "redacted text is stored or sorted'). The module "
-            "describes itself as a backstop, not a guarantee. The "
-            "raw uploaded export file is copied verbatim before "
-            "parsing and retained unredacted — redaction covers "
-            "stored events and signals, not the retained raw file "
-            "(finding D-4; retention reconciliation is scoped in "
-            "the security-correction proposal)."
+            "describes itself as a backstop, not a guarantee. "
+            "Since the security correction (finding D-4, merged "
+            "PR #388), imports are parsed in place from the "
+            "request's temporary upload — no raw copy of the "
+            "export is written or retained (the uploads location "
+            "holds no files after an import), so redaction at "
+            "capture covers everything an import persists; "
+            "session deletion and Scope S erasure still remove "
+            "legacy retained trees from pre-correction imports."
         ),
         prerequisite_note=(
             "Automatic at intake for stored text; a backstop, "
-            "not a guarantee."
+            "not a guarantee. No raw upload copy is retained — "
+            "imports are parsed from the request's temporary "
+            "file."
         ),
     ),
     Capability(
@@ -524,21 +550,32 @@ CAPABILITIES: tuple[Capability, ...] = (
             "Re-audit 2026-10-25 (correcting the 96e416f audit): "
             "backend GET/POST /identity/scopes plus Settings → "
             "Identity grant/revoke UI, reachable via SettingsView, "
-            "present since 96e416f. Enforcement correction (WI-4, "
-            "2026-11-17): the backend routes currently declare no "
-            "session-auth dependency and grant/revoke write to "
-            "the global (user_id='') scope ledger — the signed-in "
-            "prerequisite is recorded here but is NOT enforced by "
-            "the backend (security finding D-6; correction scoped "
-            "in the security-correction proposal). Workflow not "
-            "playtest-verified."
+            "present since 96e416f. Enforcement correction "
+            "(WI-4 finding D-6) is merged (security correction, "
+            "PR #388, verified live on staging 2026-11-17): the "
+            "license and scopes routes require a signed-in "
+            "session resolved to the installation owner — 401 "
+            "unauthenticated, 403 non-owner, before any store "
+            "access — and grants/revokes are written under the "
+            "owner's user_id, never the global empty identity. "
+            "Historical global (user_id='') events are preserved "
+            "only in the owner's fold, are reported distinctly "
+            "as unverified-provenance legacy grants "
+            "(legacy_scope_inventory), and confer nothing on any "
+            "other account; the staging ledger holds 4 such "
+            "grant events (2026-10-14; net fold delete:execute, "
+            "export, rent:zone:*, train:self) and no per-user "
+            "events. Workflow not playtest-verified."
         ),
         prerequisites=("signed_in",),
         prerequisite_note=(
-            "Settings → Identity. Recorded as signed-in-gated; "
-            "the backend does not currently enforce "
-            "authentication on these endpoints — not a per-user "
-            "control today."
+            "Settings → Identity. Enforced: a signed-in session "
+            "resolved to the installation owner is required "
+            "(401 unauthenticated, 403 non-owner); grants and "
+            "revokes are recorded under the owner's identity. "
+            "Pre-correction global grants apply only to the "
+            "owner's fold and are shown distinctly as unverified "
+            "provenance."
         ),
     ),
     Capability(
@@ -644,17 +681,23 @@ CAPABILITIES: tuple[Capability, ...] = (
             "2026-10-23 produced 18 pending candidates; the "
             "approve path was not exercised in that run, so the "
             "workflow is not promoted to verified. Route "
-            "enforcement today is upstream only (identity "
-            "license; train:self for distill) — the review routes "
-            "carry no session-auth dependency (security finding "
-            "D-1; see entry import_uploads)."
+            "enforcement (security correction D-1, merged "
+            "PR #388): the review routes sit behind the ingest "
+            "router's session-auth + installation-owner "
+            "dependency — owner resolution precedes any access "
+            "to the presence store (401 unauthenticated, 403 "
+            "non-owner); the identity license and train:self "
+            "gates remain as the operation-specific layer (see "
+            "entry import_uploads)."
         ),
         prerequisites=("signed_in", "consent_acknowledged"),
         prerequisite_note=(
             "Review of import-derived candidates; verdicts are "
             "the user's explicit acts. Consent gates what is "
             "said about this queue in conversation; route-level "
-            "enforcement is upstream (license + train:self)."
+            "enforcement is the installation-owner session, "
+            "with license + train:self as the operation-specific "
+            "layer."
         ),
     ),
     Capability(
@@ -808,16 +851,21 @@ CAPABILITIES: tuple[Capability, ...] = (
             "sessions, and counts. It does NOT include "
             "conversations, meetings, projects/vision-execution "
             "records, claims, provenance artifacts, or settings. "
-            "The route currently requires no signed-in session "
-            "and no consent scope — only an existing identity "
-            "license (security finding D-14; correction scoped "
-            "in the security-correction proposal). No frontend "
-            "surface exists."
+            "The route requires a signed-in session resolved to "
+            "the installation owner, enforced at the route and "
+            "again in the service layer before any bundle is "
+            "composed (security correction D-14, merged "
+            "PR #388, verified live on staging 2026-11-17: "
+            "unauthenticated requests receive 401). No consent "
+            "scope is required — the export right is "
+            "ownership-gated — and bundle contents are "
+            "unchanged. No frontend surface exists."
         ),
         prerequisite_note=(
-            "Backend route only; no UI. Covers identity and "
-            "presence data only — never describe it as exporting "
-            "everything."
+            "Backend route only; no UI. Requires the "
+            "installation owner's signed-in session. Covers "
+            "identity and presence data only — never describe it "
+            "as exporting everything."
         ),
     ),
     # -- Unassigned: suggestions belong to no seat's slice until a

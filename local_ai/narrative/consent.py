@@ -11,11 +11,36 @@ rows read ``False`` for it until the visitor turns it on. The
 approved wording for the toggle is: "Can Zenaf connect our talks
 into ongoing threads and note what they might mean? The notes are
 kept in your narrative record. You can turn this off at any time —
-that stops new notes; erasing existing notes is not yet available
-and will be offered here when it is verified." (Wording revised
-2026-11-15 by the D2 interim disclosure correction: the earlier
-"review/delete them" promise described a capability that does not
-exist yet.)
+that stops new notes. If you mention someone who isn't in your
+records yet, Zenaf may keep a provisional note of their name and
+where they came up. The note isn't a person record, and it doesn't
+claim anything about who they are. Its only use is to ask — when
+coordination is also on — whether you'd like them tracked properly.
+These notes clear and erase with the rest of your narrative record."
+(Wording revised 2026-11-15 twice: first by the D2 interim
+disclosure correction, which removed an erasure promise no surface
+could yet perform; then by the Steward D1 candidate-retention
+disclosure — founder ruling Q3: retaining people's names as
+candidate records is NOT covered by implication and required this
+explicit revision. The same revision retired the interim erasure
+clause, which D2's verified Scope S erasure had made false, and
+replaced it with the clear-and-erase statement D1's own coverage
+expansion makes true of the whole narrative record. Consent text
+changes by explicit revision, never by reinterpretation: every
+carrier of this text — the capability registry's R2 entry, the
+onboarding gate, and the settings Permissions section — carries
+the identical sentence, pinned by
+tests/test_steward_disclosure_wording.py.)
+
+Candidate capture is gated on this disclosure standing FOR THE
+CONSENTING USER (D1 packet §§8.1/15.5): a consent recorded under
+an earlier consent version was given under wording that did not
+disclose name retention, and is not read as covering it — no
+grandfathering. ``candidate_capture_disclosed`` below is that
+gate: the derivation flag AND a stored ``consent_version`` equal
+to ``DISCLOSURE_CONSENT_VERSION``. It is read-only and fail-closed
+exactly like the flag reads, and never touches the settings
+helper.
 
 This module is deliberately a leaf: it imports nothing from
 narrative derivation or the narrative store, so derivation can
@@ -46,6 +71,19 @@ logger = logging.getLogger(__name__)
 
 #: permissions-v1 flag key for Narrative Steward derivation.
 STEWARD_PERMISSION_KEY = "steward_derivation"
+
+#: The consent-text version that carries the D1 candidate-
+#: retention disclosure (Steward D1, packet §§8.1/15.5). The
+#: frontend records this string in ``consent_version`` when a
+#: visitor consents (or re-saves permissions) under the revised
+#: toggle wording; both frontend carriers of the constant
+#: (ConsentOnboardingGate, PermissionsSection) hold the same
+#: value. A stored version from before the disclosure —
+#: "permissions-v1" — means the consent on record was given
+#: under wording that never mentioned name retention, and
+#: candidate capture must not run for that visitor until they
+#: consent under the revised text.
+DISCLOSURE_CONSENT_VERSION = "permissions-v2"
 
 #: permissions-v1 flag key for Narrative Steward cross-branch
 #: coordination (Phase 1, addendum §4.5 / §7(c)). Distinct from
@@ -141,6 +179,61 @@ def _flag_allowed(
         logger.exception(
             "narrative: steward consent check failed for user %r; "
             "failing closed",
+            user_id,
+        )
+        return False
+
+
+def candidate_capture_disclosed(
+    user_id: str | None,
+    *,
+    connection=None,
+) -> bool:
+    """May candidate-mention capture run for this visitor?
+
+    The D1 disclosure gate (packet §§8.1/15.5, founder ruling
+    Q3): capture is lawful only under a derivation consent whose
+    standing text discloses name retention, and a consent given
+    under the pre-disclosure wording is not read as covering it.
+    True exactly when the derivation flag is on AND the stored
+    ``consent_version`` equals ``DISCLOSURE_CONSENT_VERSION`` —
+    the version the frontend records when consent is given or
+    re-saved under the revised wording.
+
+    Read-only and fail-closed, the leaf's standing discipline: a
+    single SELECT, never the settings helper, and any failure —
+    missing row, missing column (a minimal permissions table),
+    malformed JSON, a non-boolean flag, an unreadable database —
+    resolves to False. This gate governs CAPTURE only; derivation
+    itself continues under the flag alone, exactly as before D1.
+    """
+    if not user_id:
+        return False
+    try:
+        if connection is None:
+            from local_ai.vision_execution.storage import get_connection
+
+            connection = get_connection()
+        row = connection.execute(
+            "SELECT permissions_json, consent_version FROM "
+            "user_permissions_settings WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            return False
+        try:
+            parsed = json.loads(row[0] or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return False
+        if not isinstance(parsed, dict):
+            return False
+        if parsed.get(STEWARD_PERMISSION_KEY) is not True:
+            return False
+        return row[1] == DISCLOSURE_CONSENT_VERSION
+    except Exception:
+        logger.exception(
+            "narrative: candidate disclosure check failed for user "
+            "%r; failing closed",
             user_id,
         )
         return False

@@ -87,6 +87,10 @@ from .models import (
     StewardArtifact,
     StewardDismissal,
     StewardObservable,
+    CandidateAct,
+    CandidateMembership,
+    CandidateMention,
+    CandidateSighting,
     ThreadChange,
     ThreadEvidence,
     ThreadLink,
@@ -164,6 +168,15 @@ _ERASURE_USER_TABLES: tuple[str, ...] = (
     "steward_reading_reconsiderations",
     "steward_artifacts",
     "steward_artifact_versions",
+    # Steward D1 (packet §8.2 point 1, Q10 as ruled): the
+    # candidate-mention family joins Scope S coverage WITH the
+    # D1 landing — deletion here, the recount below (same tuple),
+    # the §9.5 audit in eligibility.py, and the barrier triggers
+    # in the schema block.
+    "steward_candidate_mentions",
+    "steward_candidate_sightings",
+    "steward_candidate_membership",
+    "steward_candidate_acts",
 )
 
 _SCHEMA = """
@@ -853,6 +866,140 @@ BEGIN
     )
   );
 END;
+
+-- Steward D1 candidate mentions (packet Rev 1 §§3/4): the
+-- registry's table family, inside this store under its existing
+-- schema discipline. A candidate is an attributed recurrence of
+-- the visitor's own words — never a person, identity hypothesis,
+-- relationship assertion, or automatically promotable record.
+-- The never-contain list (packet §3.3) is structural here: there
+-- is no column for a resolved identity (except the post-act
+-- citation promoted_person_ref), no relationship field, no
+-- inferred attribute, no sameness link, and no confidence score.
+-- user_id is NOT NULL on every table — the sighting's is
+-- denormalized deliberately (D2 §9.2's correction).
+CREATE TABLE IF NOT EXISTS steward_candidate_mentions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  surface_form TEXT NOT NULL,
+  normalized_form TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'candidate',
+  ask_state TEXT NOT NULL DEFAULT 'not_asked',
+  mention_count INTEGER NOT NULL DEFAULT 0,
+  first_seen_at TEXT NOT NULL DEFAULT '',
+  last_seen_at TEXT NOT NULL DEFAULT '',
+  promoted_person_ref TEXT,
+  promotion_intent_json TEXT NOT NULL DEFAULT '{}',
+  user_label TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_mentions_user_form
+  ON steward_candidate_mentions (user_id, normalized_form);
+CREATE TABLE IF NOT EXISTS steward_candidate_sightings (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  ref_kind TEXT NOT NULL,
+  ref_id TEXT NOT NULL,
+  normalized_form TEXT NOT NULL,
+  surface_form TEXT NOT NULL,
+  conversation_id TEXT NOT NULL DEFAULT '',
+  seen_at TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  UNIQUE (user_id, ref_kind, ref_id, normalized_form)
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_sightings_user_form
+  ON steward_candidate_sightings (user_id, normalized_form);
+CREATE TABLE IF NOT EXISTS steward_candidate_membership (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  sighting_id TEXT NOT NULL,
+  candidate_id TEXT NOT NULL,
+  assigned_by TEXT NOT NULL DEFAULT 'capture',
+  act_id TEXT,
+  created_at TEXT NOT NULL,
+  superseded_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_membership_sighting
+  ON steward_candidate_membership (sighting_id, superseded_at);
+CREATE INDEX IF NOT EXISTS idx_candidate_membership_candidate
+  ON steward_candidate_membership (candidate_id, superseded_at);
+CREATE TABLE IF NOT EXISTS steward_candidate_acts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  detail_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_candidate_acts_user
+  ON steward_candidate_acts (user_id, created_at);
+
+-- D1 joins the D2 barrier (packet §8.2 point 2): while a
+-- tombstone stands, candidate-family derivation writes bind per
+-- record exactly as thread_evidence does — the sighting cites
+-- its source event on its face, so its insert requires a
+-- manifest entry for that (ref_kind, ref_id) with source_time
+-- strictly after the boundary; a membership link binds through
+-- its sighting's cited source the same way; a candidate birth
+-- binds compositionally, like a thread birth (at least one
+-- manifest entry for (user, T) in this transaction — the
+-- founding sighting's per-record binding does the real work).
+-- Candidate UPDATEs (counts, timestamps) carry no source-derived
+-- content and are not trigger-bound, as with observables'
+-- non-content updates. Acts rows are user-act records, not
+-- derivation writes, and have no trigger.
+CREATE TRIGGER IF NOT EXISTS trg_erasure_sighting_insert
+BEFORE INSERT ON steward_candidate_sightings
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM steward_erasure_manifest m
+    JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+    WHERE m.user_id = NEW.user_id
+      AND m.erased_at_seen = tb.erased_at
+      AND m.source_kind = NEW.ref_kind
+      AND m.source_id = NEW.ref_id
+      AND m.source_time > tb.erased_at
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS trg_erasure_membership_insert
+BEFORE INSERT ON steward_candidate_membership
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM steward_candidate_sightings s
+    JOIN steward_erasure_manifest m
+      ON m.source_kind = s.ref_kind AND m.source_id = s.ref_id
+    JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+    WHERE s.id = NEW.sighting_id
+      AND m.user_id = NEW.user_id
+      AND m.erased_at_seen = tb.erased_at
+      AND m.source_time > tb.erased_at
+  );
+END;
+CREATE TRIGGER IF NOT EXISTS trg_erasure_candidate_insert
+BEFORE INSERT ON steward_candidate_mentions
+BEGIN
+  SELECT RAISE(ABORT, 'steward erasure barrier')
+  WHERE EXISTS (
+    SELECT 1 FROM steward_erasure_tombstones tb
+    WHERE tb.user_id = NEW.user_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM steward_erasure_manifest m
+    JOIN steward_erasure_tombstones tb ON tb.user_id = m.user_id
+    WHERE m.user_id = NEW.user_id
+      AND m.erased_at_seen = tb.erased_at
+  );
+END;
 """
 
 
@@ -1196,6 +1343,62 @@ def _row_to_dismissal(row: sqlite3.Row) -> StewardDismissal:
         user_id=row["user_id"],
         kind=row["kind"],
         signature=row["signature"],
+        created_at=row["created_at"],
+    )
+
+
+def _row_to_candidate(row: sqlite3.Row) -> CandidateMention:
+    return CandidateMention(
+        id=row["id"],
+        user_id=row["user_id"],
+        surface_form=row["surface_form"],
+        normalized_form=row["normalized_form"],
+        status=row["status"],
+        ask_state=row["ask_state"],
+        mention_count=row["mention_count"],
+        first_seen_at=row["first_seen_at"],
+        last_seen_at=row["last_seen_at"],
+        promoted_person_ref=row["promoted_person_ref"],
+        promotion_intent=_loads(row["promotion_intent_json"], {}),
+        user_label=row["user_label"],
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+    )
+
+
+def _row_to_sighting(row: sqlite3.Row) -> CandidateSighting:
+    return CandidateSighting(
+        id=row["id"],
+        user_id=row["user_id"],
+        ref_kind=row["ref_kind"],
+        ref_id=row["ref_id"],
+        normalized_form=row["normalized_form"],
+        surface_form=row["surface_form"],
+        conversation_id=row["conversation_id"],
+        seen_at=row["seen_at"],
+        created_at=row["created_at"],
+    )
+
+
+def _row_to_membership(row: sqlite3.Row) -> CandidateMembership:
+    return CandidateMembership(
+        id=row["id"],
+        user_id=row["user_id"],
+        sighting_id=row["sighting_id"],
+        candidate_id=row["candidate_id"],
+        assigned_by=row["assigned_by"],
+        act_id=row["act_id"],
+        created_at=row["created_at"],
+        superseded_at=row["superseded_at"],
+    )
+
+
+def _row_to_candidate_act(row: sqlite3.Row) -> CandidateAct:
+    return CandidateAct(
+        id=row["id"],
+        user_id=row["user_id"],
+        kind=row["kind"],
+        detail=_loads(row["detail_json"], {}),
         created_at=row["created_at"],
     )
 
@@ -4504,6 +4707,11 @@ class NarrativeStore:
         observable_meeting_scoped = sum(
             1 for o in observables if o.thread_id is None
         )
+        # Steward D1 (packet §8.2 point 4): candidate mentions are
+        # steward material — BOTH operations remove the whole
+        # family, named here so the warning shows them.
+        candidate_count = len(self.candidates_for(user_id))
+        candidate_sighting_count = len(self.sightings_for(user_id))
         declines = self.dismissals_for(user_id)
         by_kind: dict[str, int] = {}
         for row in declines:
@@ -4519,6 +4727,8 @@ class NarrativeStore:
             "observable_count": len(observables),
             "observable_thread_scoped_count": observable_thread_scoped,
             "observable_meeting_scoped_count": observable_meeting_scoped,
+            "candidate_mention_count": candidate_count,
+            "candidate_sighting_count": candidate_sighting_count,
             "observable_ids": [o.id for o in observables],
             "proposed_readings_on_preserved_count": len(
                 preserved_proposed_ids
@@ -4580,6 +4790,14 @@ class NarrativeStore:
             if self.delete_thread(user_id, thread_id):
                 deleted_threads.append(thread_id)
         deleted_observables = self.delete_observables_for_user(user_id)
+        # Steward D1 (packet §8.2 point 4): candidates are steward
+        # material and delete with it under BOTH operations —
+        # routine clear included (the Q3 disclosure says so, in
+        # the consent text itself). Dismissals — visitor acts,
+        # including candidate declines — are preserved by routine
+        # clear exactly as other dismissals are, and removed by
+        # full delete with the rest of the rail below.
+        deleted_candidates = self._delete_candidate_family(user_id)
         # Increment D: readings deleted directly here (not via
         # delete_thread) and observables deleted wholesale above
         # leave orphan delivery rows unless cleaned with them.
@@ -4681,10 +4899,35 @@ class NarrativeStore:
             "preview": preview,
             "deleted_thread_ids": deleted_threads,
             "deleted_observable_count": deleted_observables,
+            "deleted_candidate_count": deleted_candidates["candidates"],
+            "deleted_candidate_sighting_count": deleted_candidates[
+                "sightings"
+            ],
             "deleted_proposed_reading_count": deleted_proposed,
             "deleted_verdict_reading_count": deleted_verdict,
             "deleted_decline_count": deleted_declines,
         }
+
+    def _delete_candidate_family(self, user_id: str) -> dict[str, int]:
+        """Delete the user's whole candidate-mention family
+        (mentions, sightings, membership links, acts) in one
+        transaction. The clear operations' candidate step
+        (Steward D1, packet §8.2 point 4); Scope S erasure
+        reaches the same tables through _ERASURE_USER_TABLES."""
+        out = {"candidates": 0, "sightings": 0, "membership": 0, "acts": 0}
+        with self._lock, _atomic(self._conn):
+            for table, key in (
+                ("steward_candidate_membership", "membership"),
+                ("steward_candidate_acts", "acts"),
+                ("steward_candidate_sightings", "sightings"),
+                ("steward_candidate_mentions", "candidates"),
+            ):
+                cursor = self._conn.execute(
+                    f"DELETE FROM {table} WHERE user_id = ?",
+                    (user_id,),
+                )
+                out[key] = cursor.rowcount
+        return out
 
     def erase_user_material(
         self,
@@ -4987,6 +5230,388 @@ class NarrativeStore:
                         f"AND signal_id IN ({kph})",
                         (user_id, *doomed_keys),
                     )
+        return out
+
+    # -- candidate mentions (Steward D1, packet Rev 1 §§3/5) ---------------
+    #
+    # Recognition is not identification: these methods keep an
+    # attributed recurrence of the visitor's own words and nothing
+    # more. Capture is the only writer in the first scope, and it
+    # confers exactly one standing — ``candidate``. No method here
+    # reads or writes VE, resolves an identity, or transitions a
+    # standing; ``retired`` is reachable only through
+    # retire_candidate, a user-act surface the delivery scope owns.
+
+    def capture_sightings(
+        self,
+        user_id: str,
+        sightings: Iterable[dict[str, Any]],
+        *,
+        admitted_sources: Iterable[tuple[str, str, str]] | None = None,
+    ) -> dict[str, int]:
+        """Accumulate one batch of mention sightings (packet §5).
+
+        The derivation funnel for candidate capture: one call per
+        batch, inside the store lock, in one transaction. Each
+        input dict carries ``ref_kind`` / ``ref_id`` (the source
+        event citation), ``normalized_form`` / ``surface_form``,
+        ``conversation_id``, and ``seen_at`` (the event's own
+        timestamp). Per form, in order:
+
+        - a standing candidate dismissal over the form (§6.3's
+          rail, signature = the normalized form) writes NOTHING —
+          no sighting, no candidate;
+        - a form whose sole claimant is ``confirmed`` or
+          ``promoted`` is spoken for and writes nothing (§5.3
+          rule 1; fulfilled, not dismissed);
+        - the sighting insert is insert-or-ignore on
+          ``UNIQUE (user_id, ref_kind, ref_id, normalized_form)``
+          — the sighting row is capture's coverage record, so a
+          reprocessed event (live-after-sweep, crash rescan)
+          writes nothing and its assignment is never re-evaluated
+          (§5.2 as revised; assignment lives in the membership
+          link, outside the key);
+        - a newly written sighting is routed fresh (§5.3): zero
+          claimants → a new candidate is created and linked;
+          exactly one → linked to it; two or more → written
+          UNLINKED (the holding pool: counted nowhere, eligible
+          for nothing, until a user act links it).
+
+        ``mention_count`` / ``first_seen_at`` / ``last_seen_at``
+        are refreshed by recount over current links in the same
+        transaction — the count is defined over links (§3.4),
+        never trusted as an increment.
+
+        ``admitted_sources`` is the D2 eligibility manifest for
+        this call (packet §8.2 point 2): consulted only when an
+        erasure tombstone stands; then every sighting's source
+        event must be attested, and the §9.2 triggers re-verify
+        at insert time.
+        """
+        admitted = (
+            list(admitted_sources) if admitted_sources is not None else None
+        )
+        report = {
+            "sightings_written": 0,
+            "sightings_duplicate": 0,
+            "sightings_unlinked": 0,
+            "forms_dismissed": 0,
+            "forms_spoken_for": 0,
+            "candidates_created": 0,
+        }
+        now = _utcnow()
+        with self._lock, _atomic(self._conn):
+            run_id = self._manifest_begin_locked(user_id, admitted)
+            for sighting in sightings:
+                ref_kind = str(sighting["ref_kind"])
+                ref_id = str(sighting["ref_id"])
+                form = str(sighting["normalized_form"])
+                if run_id is not None:
+                    self._manifest_require_locked(
+                        run_id, user_id, [(ref_kind, ref_id)]
+                    )
+                dismissed = self._conn.execute(
+                    "SELECT 1 FROM steward_dismissals WHERE user_id = ? "
+                    "AND kind = 'candidate_mention' AND signature = ?",
+                    (user_id, form),
+                ).fetchone()
+                if dismissed is not None:
+                    report["forms_dismissed"] += 1
+                    continue
+                claimants = self._candidate_claimants_locked(user_id, form)
+                if len(claimants) == 1 and claimants[0].status in (
+                    "confirmed",
+                    "promoted",
+                ):
+                    report["forms_spoken_for"] += 1
+                    continue
+                sighting_id = _new_id("sgt")
+                cursor = self._conn.execute(
+                    "INSERT OR IGNORE INTO steward_candidate_sightings "
+                    "(id, user_id, ref_kind, ref_id, normalized_form, "
+                    "surface_form, conversation_id, seen_at, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        sighting_id,
+                        user_id,
+                        ref_kind,
+                        ref_id,
+                        form,
+                        str(sighting["surface_form"]),
+                        str(sighting.get("conversation_id") or ""),
+                        str(sighting.get("seen_at") or ""),
+                        now,
+                    ),
+                )
+                if cursor.rowcount == 0:
+                    report["sightings_duplicate"] += 1
+                    continue
+                report["sightings_written"] += 1
+                if len(claimants) >= 2:
+                    report["sightings_unlinked"] += 1
+                    continue
+                if not claimants:
+                    candidate = CandidateMention(
+                        id=_new_id("cand"),
+                        user_id=user_id,
+                        surface_form=str(sighting["surface_form"]),
+                        normalized_form=form,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    self._conn.execute(
+                        "INSERT INTO steward_candidate_mentions (id, "
+                        "user_id, surface_form, normalized_form, status, "
+                        "ask_state, mention_count, first_seen_at, "
+                        "last_seen_at, promoted_person_ref, "
+                        "promotion_intent_json, user_label, created_at, "
+                        "updated_at) VALUES (?, ?, ?, ?, 'candidate', "
+                        "'not_asked', 0, '', '', NULL, '{}', NULL, ?, ?)",
+                        (
+                            candidate.id,
+                            user_id,
+                            candidate.surface_form,
+                            form,
+                            now,
+                            now,
+                        ),
+                    )
+                    report["candidates_created"] += 1
+                else:
+                    candidate = claimants[0]
+                self._conn.execute(
+                    "INSERT INTO steward_candidate_membership (id, "
+                    "user_id, sighting_id, candidate_id, assigned_by, "
+                    "act_id, created_at, superseded_at) VALUES "
+                    "(?, ?, ?, ?, 'capture', NULL, ?, NULL)",
+                    (_new_id("mbr"), user_id, sighting_id, candidate.id, now),
+                )
+                self._refresh_candidate_locked(user_id, candidate.id, now)
+            self._manifest_end_locked(run_id)
+        return report
+
+    def _candidate_claimants_locked(
+        self, user_id: str, normalized_form: str
+    ) -> list[CandidateMention]:
+        """The form's claimants, evaluated fresh (packet §5.3):
+        the non-retired candidates whose normalized form equals
+        the form, plus non-retired candidates holding a
+        user-authored alias for it (an ``alias`` acts row naming
+        the form and the candidate). An alias routes only while
+        it is the form's sole claimant — that is this evaluation's
+        output, not a stored flag. Lock held."""
+        by_id: dict[str, CandidateMention] = {}
+        rows = self._conn.execute(
+            "SELECT * FROM steward_candidate_mentions WHERE user_id = ? "
+            "AND normalized_form = ? AND status != 'retired' "
+            "ORDER BY created_at, id",
+            (user_id, normalized_form),
+        ).fetchall()
+        for row in rows:
+            candidate = _row_to_candidate(row)
+            by_id[candidate.id] = candidate
+        alias_rows = self._conn.execute(
+            "SELECT c.* FROM steward_candidate_acts a "
+            "JOIN steward_candidate_mentions c "
+            "ON c.id = json_extract(a.detail_json, '$.candidate_id') "
+            "WHERE a.user_id = ? AND a.kind = 'alias' "
+            "AND json_extract(a.detail_json, '$.form') = ? "
+            "AND c.user_id = ? AND c.status != 'retired' "
+            "ORDER BY c.created_at, c.id",
+            (user_id, normalized_form, user_id),
+        ).fetchall()
+        for row in alias_rows:
+            candidate = _row_to_candidate(row)
+            by_id.setdefault(candidate.id, candidate)
+        return list(by_id.values())
+
+    def _refresh_candidate_locked(
+        self, user_id: str, candidate_id: str, now: str
+    ) -> None:
+        """Recompute a candidate's count and seen-span by recount
+        over its CURRENT links (packet §3.4: the count is defined
+        over links, asserted by recount, never incremented).
+        Lock held, inside the caller's transaction."""
+        self._conn.execute(
+            "UPDATE steward_candidate_mentions SET "
+            "mention_count = (SELECT COUNT(*) FROM "
+            "steward_candidate_membership m WHERE m.candidate_id = ? "
+            "AND m.superseded_at IS NULL), "
+            "first_seen_at = COALESCE((SELECT MIN(s.seen_at) FROM "
+            "steward_candidate_membership m JOIN "
+            "steward_candidate_sightings s ON s.id = m.sighting_id "
+            "WHERE m.candidate_id = ? AND m.superseded_at IS NULL), ''), "
+            "last_seen_at = COALESCE((SELECT MAX(s.seen_at) FROM "
+            "steward_candidate_membership m JOIN "
+            "steward_candidate_sightings s ON s.id = m.sighting_id "
+            "WHERE m.candidate_id = ? AND m.superseded_at IS NULL), ''), "
+            "updated_at = ? "
+            "WHERE id = ? AND user_id = ?",
+            (candidate_id, candidate_id, candidate_id, now, candidate_id,
+             user_id),
+        )
+
+    def candidates_for(self, user_id: str) -> list[CandidateMention]:
+        """All of the user's candidates, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_candidate_mentions "
+                "WHERE user_id = ? ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+        return [_row_to_candidate(r) for r in rows]
+
+    def get_candidate(
+        self, user_id: str, candidate_id: str
+    ) -> CandidateMention | None:
+        """One candidate, or None — a candidate owned by another
+        user reads as absent (the store's ownership discipline)."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM steward_candidate_mentions "
+                "WHERE id = ? AND user_id = ?",
+                (candidate_id, user_id),
+            ).fetchone()
+        return _row_to_candidate(row) if row is not None else None
+
+    def sightings_for(self, user_id: str) -> list[CandidateSighting]:
+        """All of the user's sightings, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_candidate_sightings "
+                "WHERE user_id = ? ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+        return [_row_to_sighting(r) for r in rows]
+
+    def sightings_for_candidate(
+        self, user_id: str, candidate_id: str
+    ) -> list[CandidateSighting]:
+        """The candidate's CURRENTLY LINKED sightings (superseded
+        assignments are history, not membership), by event time."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT s.* FROM steward_candidate_sightings s "
+                "JOIN steward_candidate_membership m "
+                "ON m.sighting_id = s.id AND m.superseded_at IS NULL "
+                "WHERE s.user_id = ? AND m.candidate_id = ? "
+                "ORDER BY s.seen_at, s.id",
+                (user_id, candidate_id),
+            ).fetchall()
+        return [_row_to_sighting(r) for r in rows]
+
+    def unlinked_sightings_for(
+        self, user_id: str
+    ) -> list[CandidateSighting]:
+        """The holding pool (packet §5.3 rule 4): sightings with
+        no current membership link. They count toward no
+        candidate and feed no eligibility computation."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT s.* FROM steward_candidate_sightings s "
+                "WHERE s.user_id = ? AND NOT EXISTS ("
+                "SELECT 1 FROM steward_candidate_membership m "
+                "WHERE m.sighting_id = s.id "
+                "AND m.superseded_at IS NULL) "
+                "ORDER BY s.created_at, s.id",
+                (user_id,),
+            ).fetchall()
+        return [_row_to_sighting(r) for r in rows]
+
+    def membership_for_sighting(
+        self, user_id: str, sighting_id: str
+    ) -> list[CandidateMembership]:
+        """A sighting's full assignment history — current and
+        superseded links, oldest first (packet §3.4: provenance
+        is reconstructible from links + acts, never rewritten)."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_candidate_membership "
+                "WHERE user_id = ? AND sighting_id = ? "
+                "ORDER BY created_at, id",
+                (user_id, sighting_id),
+            ).fetchall()
+        return [_row_to_membership(r) for r in rows]
+
+    def candidate_acts_for(self, user_id: str) -> list[CandidateAct]:
+        """All of the user's candidate acts-log rows."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_candidate_acts "
+                "WHERE user_id = ? ORDER BY created_at, id",
+                (user_id,),
+            ).fetchall()
+        return [_row_to_candidate_act(r) for r in rows]
+
+    def retire_candidate(self, user_id: str, candidate_id: str) -> bool:
+        """Retire a candidate (a user act's store primitive —
+        packet §6.3; the delivery scope owns the surfaces that
+        call this; capture never does). Sightings and links are
+        untouched: retirement changes standing, not provenance.
+        True when a standing candidate was retired."""
+        now = _utcnow()
+        with self._lock, _atomic(self._conn):
+            cursor = self._conn.execute(
+                "UPDATE steward_candidate_mentions SET status = "
+                "'retired', updated_at = ? WHERE id = ? AND user_id = ? "
+                "AND status != 'retired'",
+                (now, candidate_id, user_id),
+            )
+        return cursor.rowcount == 1
+
+    def delete_candidates_for_audit(
+        self,
+        user_id: str,
+        *,
+        sighting_ids: Iterable[str] = (),
+        candidate_ids: Iterable[str] = (),
+    ) -> dict[str, int]:
+        """Delete individually named candidate-family rows (the
+        §9.5 provenance audit's mop-up, packet §8.2 point 3).
+        Scoped to the user's own rows. Deleting a sighting
+        deletes its membership links; deleting a candidate
+        deletes its links and the acts rows that name it (the
+        acts log is provenance OF the registry — under erasure
+        verification it follows the records it governed)."""
+        out = {"sightings": 0, "candidates": 0, "membership": 0, "acts": 0}
+        sighting_ids = list(sighting_ids)
+        candidate_ids = list(candidate_ids)
+        with self._lock, _atomic(self._conn):
+            if sighting_ids:
+                ph = ", ".join("?" for _ in sighting_ids)
+                cur = self._conn.execute(
+                    "DELETE FROM steward_candidate_membership "
+                    f"WHERE user_id = ? AND sighting_id IN ({ph})",
+                    (user_id, *sighting_ids),
+                )
+                out["membership"] += cur.rowcount
+                cur = self._conn.execute(
+                    "DELETE FROM steward_candidate_sightings "
+                    f"WHERE user_id = ? AND id IN ({ph})",
+                    (user_id, *sighting_ids),
+                )
+                out["sightings"] = cur.rowcount
+            if candidate_ids:
+                ph = ", ".join("?" for _ in candidate_ids)
+                cur = self._conn.execute(
+                    "DELETE FROM steward_candidate_membership "
+                    f"WHERE user_id = ? AND candidate_id IN ({ph})",
+                    (user_id, *candidate_ids),
+                )
+                out["membership"] += cur.rowcount
+                for candidate_id in candidate_ids:
+                    cur = self._conn.execute(
+                        "DELETE FROM steward_candidate_acts WHERE "
+                        "user_id = ? AND detail_json LIKE ?",
+                        (user_id, f"%{candidate_id}%"),
+                    )
+                    out["acts"] += cur.rowcount
+                cur = self._conn.execute(
+                    "DELETE FROM steward_candidate_mentions "
+                    f"WHERE user_id = ? AND id IN ({ph})",
+                    (user_id, *candidate_ids),
+                )
+                out["candidates"] = cur.rowcount
         return out
 
     # -- increment D: snapshot read + delivery state ------------------------

@@ -62,6 +62,7 @@ from local_ai.fellowship.events import (
     FellowshipEvent,
 )
 
+from .candidates import capture_event_mentions
 from .consent import steward_consent_allowed
 from .derivation import (
     STEWARD_DEFERRED_LEASE_SECONDS,
@@ -514,6 +515,26 @@ def _process_batch(
                     continue
                 admitted = [entry]
                 source_time = entry[2]
+            # Steward D1 (packet §5.2 as revised): candidate-
+            # mention capture, once per eligible event, over the
+            # same event list the batch's items are built from —
+            # independent of thread admission (the derive_batch
+            # outcome below is never consulted) and idempotent
+            # against the live path via the sighting row's
+            # uniqueness key. Capture failure never fails the
+            # batch (the detectors' discipline); the sighting
+            # row is capture's coverage record, so an event the
+            # live path already captured is a no-op here.
+            try:
+                capture_event_mentions(
+                    store, event, admitted_sources=admitted
+                )
+            except Exception:
+                logger.exception(
+                    "steward sweep: candidate capture failed for "
+                    "event %s",
+                    event.id,
+                )
             try:
                 detect_changes_for_event(
                     store, user_id, event, admitted_sources=admitted

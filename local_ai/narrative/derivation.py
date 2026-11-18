@@ -2422,6 +2422,28 @@ class StewardPipeline:
                     return
                 source_time = entry[2]
                 admitted = [entry]
+            # Steward D1 (packet §5.2 as revised): candidate-
+            # mention capture runs once per eligible user-authored
+            # event, INDEPENDENTLY of thread admission — it does
+            # not consult what the detectors or derivation below
+            # decide, and its failure never fails derivation (the
+            # detectors' own discipline). It sits after the consent
+            # gate and the eligibility evaluation: a gate-closed or
+            # erasure-ineligible event is never captured, and a
+            # barrier hold has already returned above.
+            try:
+                from local_ai.narrative.candidates import (
+                    capture_event_mentions,
+                )
+
+                capture_event_mentions(
+                    self.store, event, admitted_sources=admitted
+                )
+            except Exception:
+                logger.exception(
+                    "narrative: candidate capture failed for event %s",
+                    event.id,
+                )
             from local_ai.narrative.changes import (
                 detect_changes_for_event,
             )

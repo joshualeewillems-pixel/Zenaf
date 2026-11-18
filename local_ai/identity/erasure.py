@@ -1020,6 +1020,23 @@ def run_erasure_flow(
         counts["narrative_rows"] = (
             erase_report["rows_deleted"] - erase_report["threads_deleted"]
         )
+        # Steward D1 (packet §8.2 point 1(e)): the receipt's
+        # counts extend to the candidate-mention families in the
+        # same counts-only form — numbers from the erase report's
+        # per-table recount difference, never names or forms.
+        per_table = erase_report.get("per_table", {})
+        counts["narrative_candidate_mentions"] = per_table.get(
+            "steward_candidate_mentions", 0
+        )
+        counts["narrative_candidate_sightings"] = per_table.get(
+            "steward_candidate_sightings", 0
+        )
+        counts["narrative_candidate_memberships"] = per_table.get(
+            "steward_candidate_membership", 0
+        )
+        counts["narrative_candidate_acts"] = per_table.get(
+            "steward_candidate_acts", 0
+        )
         stores_status["narrative"] = "deleted"
     except Exception as exc:  # noqa: BLE001
         failures["narrative"] = str(exc)

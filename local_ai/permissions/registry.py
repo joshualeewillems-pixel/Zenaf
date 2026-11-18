@@ -180,8 +180,13 @@ _CAPABILITIES: dict[str, CapabilityEntry] = {
             "Can Zenaf connect our talks into ongoing threads and note "
             "what they might mean? The notes are kept in your narrative "
             "record. You can turn this off at any time — that stops new "
-            "notes; erasing existing notes is not yet available and will "
-            "be offered here when it is verified."
+            "notes. If you mention someone who isn't in your records "
+            "yet, Zenaf may keep a provisional note of their name and "
+            "where they came up. The note isn't a person record, and it "
+            "doesn't claim anything about who they are. Its only use is "
+            "to ask — when coordination is also on — whether you'd like "
+            "them tracked properly. These notes clear and erase with "
+            "the rest of your narrative record."
         ),
         does_not_allow=(
             "This never trains anything, never publishes or shares "

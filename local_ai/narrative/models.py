@@ -522,6 +522,12 @@ DISMISSAL_KINDS: tuple[str, ...] = (
     "offer_invitation",
     "offer_subject",
     "offer_class",
+    # Steward D1 (candidate mentions, packet §6.3): a declined
+    # candidate leaves a dismissal over its normalized form — the
+    # signature IS the normalized form — so the form cannot
+    # silently re-accumulate. Written only by a user decline act
+    # (the delivery scope); capture consults it (§5.3 rule 1).
+    "candidate_mention",
 )
 
 
@@ -1032,4 +1038,214 @@ class ReadingReconsideration:
             "status": self.status,
             "created_at": self.created_at,
             "decided_at": self.decided_at,
+        }
+
+
+# ---------------------------------------------------------------------------
+# Candidate mentions (Steward D1, packet Rev 1 §§3/3.4)
+#
+# A candidate is an attributed recurrence of the visitor's own
+# words — never a person, identity hypothesis, relationship
+# assertion, or automatically promotable record (founder ruling,
+# 2026-11-15). The record family is provisional by construction:
+# it carries no resolved identity, no relationship claims, no
+# inferred attributes, no sameness links, and no confidence score
+# (packet §3.3's never-contain list is law for these shapes).
+# ---------------------------------------------------------------------------
+
+#: The standings a candidate can hold. ``candidate`` is the only
+#: standing the system can confer; ``confirmed`` / ``promoted`` /
+#: ``retired`` are reachable only by user acts (packet §3.1) —
+#: in the capture-only first scope no code path writes them.
+CANDIDATE_STATUSES: tuple[str, ...] = (
+    "candidate",
+    "confirmed",
+    "promoted",
+    "retired",
+)
+
+#: The ask lifecycle states stored on the candidate (packet §3.1
+#: as revised): eligibility is computed, never stored; preparation
+#: consumes nothing; only verified delivery moves ``not_asked``.
+#: The delivery scope owns the transitions; capture never writes
+#: anything but the ``not_asked`` default.
+CANDIDATE_ASK_STATES: tuple[str, ...] = (
+    "not_asked",
+    "delivered",
+    "responded",
+)
+
+#: User acts over candidates, recorded in the acts log (packet
+#: §3.4). Capture writes no acts; the kinds are the delivery
+#: scope's vocabulary, settled here so the log's shape is fixed
+#: before any writer exists.
+CANDIDATE_ACT_KINDS: tuple[str, ...] = (
+    "unify",
+    "partition",
+    "alias",
+    "confirm_intent",
+)
+
+#: Who assigned a sighting's membership link (packet §3.4).
+CANDIDATE_LINK_ASSIGNERS: tuple[str, ...] = ("capture", "user_act")
+
+
+@dataclass(frozen=True)
+class CandidateMention:
+    """One candidate mention: a cluster of sightings grouped under
+    a surface form the user themselves used (packet §3.1).
+
+    ``surface_form`` is the name as the user first wrote it —
+    verbatim, never corrected, completed, or re-cased by the
+    system. ``normalized_form`` is the accumulation key (casefold
+    + whitespace collapse only; no stemming, no honorific
+    stripping, no initial expansion — each is an interpretation).
+    ``mention_count`` is a count of currently-linked sightings,
+    maintained by recount in the sighting transaction — a count
+    of mentions, never a probability. ``first_seen_at`` /
+    ``last_seen_at`` are the sightings' EVENT times (origin
+    chronology, packet §3.2 / D2 §9.3), not processing times.
+    ``promotion_intent`` holds a confirmation's recorded intent
+    (``{"state": "none"|"recorded"|"executed", ...}``) as the
+    record of a user act — never candidate attributes (packet
+    §3.1 as revised for the Q8 hold).
+    """
+
+    id: str
+    user_id: str
+    surface_form: str
+    normalized_form: str
+    status: str = "candidate"  # one of CANDIDATE_STATUSES
+    ask_state: str = "not_asked"  # one of CANDIDATE_ASK_STATES
+    mention_count: int = 0
+    first_seen_at: str = ""
+    last_seen_at: str = ""
+    promoted_person_ref: str | None = None
+    promotion_intent: dict[str, Any] = field(default_factory=dict)
+    user_label: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "surface_form": self.surface_form,
+            "normalized_form": self.normalized_form,
+            "status": self.status,
+            "ask_state": self.ask_state,
+            "mention_count": self.mention_count,
+            "first_seen_at": self.first_seen_at,
+            "last_seen_at": self.last_seen_at,
+            "promoted_person_ref": self.promoted_person_ref,
+            "promotion_intent": dict(self.promotion_intent),
+            "user_label": self.user_label,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass(frozen=True)
+class CandidateSighting:
+    """One sighting: one user-authored turn event in which the
+    form occurred (packet §3.2). Immutable once written — its
+    ref, forms, conversation, and timestamps are its provenance
+    and are never edited by any act, including corrections.
+
+    A sighting carries NO candidate pointer: which candidate it
+    currently belongs to is a membership link (CandidateMembership),
+    so assignment can be superseded without rewriting provenance,
+    and the sighting row itself is capture's coverage record —
+    ``UNIQUE (user_id, ref_kind, ref_id, normalized_form)`` is
+    the live/sweep idempotency key (packet §5.2 as revised).
+    ``user_id`` is denormalized onto the row deliberately (D2
+    §9.2's correction: child tables without a user_id complicate
+    every barrier condition).
+    """
+
+    id: str
+    user_id: str
+    ref_kind: str  # v1: "event" only
+    ref_id: str
+    normalized_form: str
+    surface_form: str
+    conversation_id: str = ""
+    seen_at: str = ""  # the source event's own timestamp
+    created_at: str = ""  # capture (processing) time
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "ref_kind": self.ref_kind,
+            "ref_id": self.ref_id,
+            "normalized_form": self.normalized_form,
+            "surface_form": self.surface_form,
+            "conversation_id": self.conversation_id,
+            "seen_at": self.seen_at,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
+class CandidateMembership:
+    """One (sighting, candidate) assignment (packet §3.4).
+
+    Append-only in spirit: a correction supersedes the current
+    link (``superseded_at`` set) and writes a new one citing its
+    acts-log row; history is superseded, never rewritten. A
+    sighting with no un-superseded link is unassigned — the
+    holding pool, a query over sightings, not a fifth table.
+    ``act_id`` is NULL for capture assignments.
+    """
+
+    id: str
+    user_id: str
+    sighting_id: str
+    candidate_id: str
+    assigned_by: str = "capture"  # one of CANDIDATE_LINK_ASSIGNERS
+    act_id: str | None = None
+    created_at: str = ""
+    superseded_at: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "sighting_id": self.sighting_id,
+            "candidate_id": self.candidate_id,
+            "assigned_by": self.assigned_by,
+            "act_id": self.act_id,
+            "created_at": self.created_at,
+            "superseded_at": self.superseded_at,
+        }
+
+
+@dataclass(frozen=True)
+class CandidateAct:
+    """One user act over candidates (packet §3.4): the acts log.
+
+    ``detail`` names the sighting ids and the from/to candidate
+    ids (and, for ``confirm_intent``, the recorded details
+    payload's location on the candidate). Every membership change
+    a user act causes cites its act row; capture-caused links
+    cite none. Declines are NOT duplicated here — they live on
+    the dismissal rail (packet §6.3). No writer exists in the
+    capture-only scope; the table and its vocabulary land now so
+    the record family's shape is complete and erasable as one.
+    """
+
+    id: str
+    user_id: str
+    kind: str  # one of CANDIDATE_ACT_KINDS
+    detail: dict[str, Any] = field(default_factory=dict)
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "kind": self.kind,
+            "detail": dict(self.detail),
+            "created_at": self.created_at,
         }

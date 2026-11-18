@@ -342,10 +342,11 @@ def test_gated_rendering_never_implies_usability():
     gated = CAP.first_meeting_block("mentor", NOT_CONSENTED)
     assert (
         "Conversation-export import — not available to you yet — "
-        "Import requires an active identity license; distilling "
-        "requires the train:self scope. Distilled material becomes "
-        "pending candidates — nothing trains without per-claim "
-        "review approval."
+        "Import requires a signed-in installation-owner session "
+        "and an active identity license; distilling requires the "
+        "train:self scope. Distilled material becomes pending "
+        "candidates — nothing trains without per-claim review "
+        "approval."
         in gated
     )
     unknown = CAP.first_meeting_block("mentor", UNKNOWN_CONSENT)

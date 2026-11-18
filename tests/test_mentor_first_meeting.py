@@ -452,9 +452,12 @@ def test_frame_sizes_and_headroom_measured():
     # Registry alignment (2026-11-17, WI-4): the mentor slice's
     # gated notes (import, training) lengthened, so the composed
     # turn frame grew 5,486 -> 5,761 (+275); headroom 3,514 -> 3,239.
-    assert len(turn_frame) == 5761
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session (+43), so
+    # the turn frame is 5,804 and headroom 3,196.
+    assert len(turn_frame) == 5804
     assert len(turn_frame) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3239
+    assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) == 3196
     # Read-back correction (2026-11-06): the founder-approved §F.1
     # readback frames lengthened the engage frame (Mentor 6128 -> 6563
     # definition, 7404 -> 7839 composed); the reply cap rose 8000 ->
@@ -473,9 +476,12 @@ def test_frame_sizes_and_headroom_measured():
     # headroom-254 figure is superseded (the NOT READY finding in
     # the five-PR re-verification); the +65 lands in the tier.
     assert len(definition.engage_frame) == 7647
-    assert len(engage) == 8552
+    # Post-security-merge update (2026-11-17): engage 8,552 ->
+    # 8,595 on the import gated note (+43, as above); headroom
+    # 448 -> 405.
+    assert len(engage) == 8595
     assert len(engage) < _EXTRA_INSTRUCTIONS_CAP
-    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 448
+    assert _EXTRA_INSTRUCTIONS_CAP - len(engage) == 405
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage) >= 300
     # Proposal fallback cap, for the record: reference + slice together
     # exceed 12,500 (PR #254 warning) — this branch carries the slice

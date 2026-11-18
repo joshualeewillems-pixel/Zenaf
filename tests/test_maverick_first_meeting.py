@@ -244,11 +244,14 @@ def test_dedicated_turn_frame_fox_voice():
     # capability block grew +245 (import gated note; the takeout's
     # corrected display name and limited rendering), so turn 4,494
     # -> 4,739 and engage 7,670 -> 7,915.
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session (+43), so
+    # turn 4,782 and engage 7,958.
     runtime = ENC.EncounterRuntime(definition)
     turn, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
-    assert len(turn) == 4739
+    assert len(turn) == 4782
     assert len(turn) < 9000
-    assert len(runtime._engage_frame()) == 7915
+    assert len(runtime._engage_frame()) == 7958
     # No other seat carries the Fox text; Crane now opens on his own
     # dedicated frame (#345), not the generic frame.
     crane = ENC.get_definition(MT.get_script("ambassador", 1))

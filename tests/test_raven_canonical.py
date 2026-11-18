@@ -572,7 +572,8 @@ def test_renderer_budget_degrades_then_fails_validation():
     degraded_max = render_raven_ordinary(
         RAVEN_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(degraded_max)) == 1316 + 1 + len(unsigned) == 2206
+    # 2,206 -> 2,264 post-security-merge (review-intake note +58).
+    assert len(_joined(degraded_max)) == 1316 + 1 + len(unsigned) == 2264
     assert unsigned in _joined(degraded_max)
     assert CANONICAL_MARKER in _joined(degraded_max)
     assert QUESTION_VERBATIM in _joined(degraded_max)

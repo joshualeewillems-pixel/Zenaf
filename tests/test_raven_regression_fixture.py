@@ -267,11 +267,15 @@ def test_t8_budgets_hold(caplog):
     # capability block grew +176 (review-intake gated note;
     # personality-claims review now available), so engage 7,968
     # -> 8,144 and turn 5,615 -> 5,791.
-    assert len(engage) == 8144
-    # Measured 5,791 — see the module docstring on the brief's 5,469
+    # Post-security-merge update (2026-11-17): the review-intake
+    # gated note now states the installation-owner enforcement
+    # merged in PR #388, +58 — engage 8,144 -> 8,202 and turn
+    # 5,791 -> 5,849.
+    assert len(engage) == 8202
+    # Measured 5,849 — see the module docstring on the brief's 5,469
     # projection (it counted the turn-frame block but not the
     # guidance append, which also rides the turn frame).
-    assert len(turn) == 5791
+    assert len(turn) == 5849
     others_by_seat = {}
     for seat, arch, script, builder in SEATS:
         d, e, t = _frames(script, builder)
@@ -304,17 +308,24 @@ def test_t8_budgets_hold(caplog):
     # Mentor's fully-met variants (untouched by this build) and
     # Raven's own tightest projected variant.
     # KNOWN CONSEQUENCE of the 2026-11-17 WI-4 registry alignment:
-    # the Mentor fully-met+worst variant now measures 8,752, which
-    # leaves 248 chars of headroom — below the 300 floor the loop
+    # the Mentor fully-met+worst variant measured 8,752, which
+    # left 248 chars of headroom — below the 300 floor the loop
     # above enforces. The pin below records the measured length;
     # the headroom assertion is deliberately NOT weakened. The
     # alignment's longer gated notes (import, training) caused
     # this; resolving it (accept the reduced margin for this
     # state, or shorten the notes) is a founder decision, recorded
     # in the alignment implementation report.
-    assert len(others_by_seat["mentor"]["fully-met+default"]) == 8655
-    assert len(others_by_seat["mentor"]["fully-met+worst"]) == 8752
-    assert len(others_by_seat["skeptic"]["fully-met+worst"]) == 8398
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session (+43), so
+    # the variant measures 8,795 and the headroom is 205; the
+    # founder decision is still pending and the assertion is
+    # still NOT weakened. (Skeptic fully-met+worst: 8,398 ->
+    # 8,456 on the review-intake note, +58; Mentor
+    # fully-met+default: 8,655 -> 8,698, +43.)
+    assert len(others_by_seat["mentor"]["fully-met+default"]) == 8698
+    assert len(others_by_seat["mentor"]["fully-met+worst"]) == 8795
+    assert len(others_by_seat["skeptic"]["fully-met+worst"]) == 8456
     trunc = [r for r in caplog.records if "truncated" in r.getMessage().lower()]
     assert trunc == [], f"truncation warnings: {[r.getMessage() for r in trunc]}"
 
@@ -352,10 +363,14 @@ def test_t9_lengths():
     # guardian +110 never-observed narrowing; mentor +275 gated
     # notes; maverick +245 import note + takeout rename); the
     # champion's block is unchanged in this state.
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session — mentor
+    # +43/+43 and maverick +43/+43; no other seat's block moves
+    # in this state.
     expected_frames = {
         "weaver": (7971, 6204), "ambassador": (8167, 4875),
-        "guardian": (8151, 4973), "mentor": (8552, 5761),
-        "maverick": (7915, 4739), "champion": (8168, 5064),
+        "guardian": (8151, 4973), "mentor": (8595, 5804),
+        "maverick": (7958, 4782), "champion": (8168, 5064),
     }
     for seat, arch, script, builder in SEATS:
         if seat == "skeptic":

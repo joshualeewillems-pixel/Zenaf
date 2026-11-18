@@ -217,10 +217,13 @@ def test_t1_fox_engage_post_guard():
     # maverick capability block grew +245 (import gated note;
     # takeout's corrected display name and limited rendering), so
     # engage 7,915, turn 4,739, me 14,893, mt 11,717.
-    assert len(ef) == 7915
-    assert len(tf) == 4739
-    assert len(me) == 14893
-    assert len(mt) == 11717
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session (+43), so
+    # engage 7,958, turn 4,782, me 14,936, mt 11,760.
+    assert len(ef) == 7958
+    assert len(tf) == 4782
+    assert len(me) == 14936
+    assert len(mt) == 11760
 
 
 # ---------------------------------------------------------------------------
@@ -435,13 +438,17 @@ def test_t5_other_seats_unmoved_by_section12_scope():
     its capability-block delta (conductor +28, mentor +275,
     guardian +110, maverick +245, skeptic +176; champion unmoved
     in this state) — the alignment, not this branch."""
+    # Post-security-merge update (2026-11-17): mentor +43/+43 and
+    # maverick +43/+43 (import gated note), skeptic +58/+58
+    # (review-intake gated note) — the notes now state the
+    # installation-owner enforcement merged in PR #388.
     expected_engage = {
-        "conductor": 7971, "mentor": 8552, "champion": 8168,
-        "guardian": 8151, "maverick": 7915, "skeptic": 8144,
+        "conductor": 7971, "mentor": 8595, "champion": 8168,
+        "guardian": 8151, "maverick": 7958, "skeptic": 8202,
     }
     expected_turn = {
-        "conductor": 6204, "mentor": 5761, "champion": 5064,
-        "guardian": 4973, "maverick": 4739, "skeptic": 5791,
+        "conductor": 6204, "mentor": 5804, "champion": 5064,
+        "guardian": 4973, "maverick": 4782, "skeptic": 5849,
     }
     for arch, want_eng in expected_engage.items():
         defn = _definition(arch)
@@ -503,7 +510,8 @@ def test_t7_fox_turn_frame_is_dedicated():
     _, tf, _, _ = _meeting_prompts(defn, FOX_MSG)
     assert tf.startswith(ENC._MAVERICK_TURN_FRAME)
     assert len(ENC._MAVERICK_TURN_FRAME) == 1257
-    assert len(tf) == 4739
+    # 4,739 -> 4,782 on the post-security-merge import note (+43).
+    assert len(tf) == 4782
     assert "Respond to what the user actually just communicated" not in tf
     # The default stays as the fallback for seats without their own frame.
     assert ENC._GENERIC_TURN_FRAME.startswith(

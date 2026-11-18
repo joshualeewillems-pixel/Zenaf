@@ -668,7 +668,8 @@ def test_renderer_budget_degrades_then_fails_validation():
         GARDENER_RECORD, detail="fuller", resolved_capability=unsigned
     )
     joined = _joined(degraded)
-    assert len(joined) == 1381 + 1 + len(unsigned) == 2425
+    # 2,425 -> 2,468 post-security-merge (import gated note +43).
+    assert len(joined) == 1381 + 1 + len(unsigned) == 2468
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker in joined, marker  # middle survives (character-only)
     assert TEMPO_CLOSE in joined  # tempo survives
@@ -683,7 +684,8 @@ def test_renderer_budget_degrades_then_fails_validation():
     compact_max = render_gardener_ordinary(
         GARDENER_RECORD, detail="compact", resolved_capability=unsigned
     )
-    assert len(_joined(compact_max)) == 1472 + 1 + len(unsigned) == 2516
+    # 2,516 -> 2,559 post-security-merge (import gated note +43).
+    assert len(_joined(compact_max)) == 1472 + 1 + len(unsigned) == 2559
     assert unsigned in _joined(compact_max)
     assert WARMTH_ADOPTED in _joined(compact_max)
 

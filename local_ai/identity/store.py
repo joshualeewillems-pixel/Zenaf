@@ -109,6 +109,23 @@ def _event_from_row(row: sqlite3.Row) -> ScopeEvent:
     )
 
 
+def _resolve_installation_owner_id() -> str | None:
+    """The bootstrapped installation owner's user id, or None.
+
+    Resolved through the vision-execution users table — the same
+    §9.1 source the erasure flow uses (erasure._default_owner_resolver).
+    Called through this module attribute so tests can monkeypatch it.
+    Any failure resolves to None (fail closed: the legacy global tier
+    then folds for no specific account).
+    """
+    try:
+        from local_ai.vision_execution import storage as ve_storage
+
+        return ve_storage.get_owner_user_id()
+    except Exception:
+        return None
+
+
 def _receipt_from_row(row: sqlite3.Row) -> DeletionReceipt:
     return DeletionReceipt(
         receipt_id=row["receipt_id"],
@@ -214,23 +231,81 @@ class IdentityStore:
             ).fetchall()
         return [_event_from_row(r) for r in rows]
 
-    def active_scopes(self, user_id: str | None = None) -> set[str]:
-        """Fold the append-only ledger: grant adds, revoke removes.
+    @staticmethod
+    def _fold_scope_events(
+        events: list[ScopeEvent], uid: str | None, *, include_global: bool
+    ) -> set[str]:
+        """Fold an event sequence: grant adds, revoke removes, in order.
 
-        Per-user when user_id is given: that user's grants plus global
-        (user_id="") grants apply. A user's revoke only revokes their own
-        and global grants — never another user's.
+        With a user id, events belonging to another user are skipped
+        and global (user_id="") events fold only when include_global
+        is set. With uid=None (the installation read), every event
+        folds — the pre-correction union semantics the service-level
+        gates consult.
         """
-        uid = (user_id or "").strip()
         active: set[str] = set()
-        for e in self.list_scope_events():
-            if uid and e.user_id and e.user_id != uid:
-                continue
+        for e in events:
+            if uid is not None:
+                if e.user_id:
+                    if e.user_id != uid:
+                        continue
+                elif not include_global:
+                    continue
             if e.action == "grant":
                 active.add(e.scope)
             elif e.action == "revoke":
                 active.discard(e.scope)
         return active
+
+    def active_scopes(self, user_id: str | None = None) -> set[str]:
+        """Fold the append-only ledger: grant adds, revoke removes.
+
+        Three reads, by caller:
+
+        - No user_id (the installation read): every event folds —
+          the union the service-level gates behind owner-gated routes
+          have always consulted.
+        - The installation owner: their own events plus the legacy
+          global (user_id="") tier. Historical global grants were
+          written by the previously unauthenticated scopes route, so
+          their provenance is unattributable; they are preserved as
+          the owner's effective permissions (never silently dropped)
+          but are NOT verified owner consent — see
+          legacy_global_scopes() for the distinct representation.
+        - Any other account: only its own events. The legacy global
+          tier must never confer installation-owner grants on another
+          account (security correction D-6, founder amendment §2).
+        """
+        uid = (user_id or "").strip()
+        if not uid:
+            return self._fold_scope_events(
+                self.list_scope_events(), None, include_global=True
+            )
+        owner_id = _resolve_installation_owner_id()
+        include_global = owner_id is not None and uid == owner_id
+        return self._fold_scope_events(
+            self.list_scope_events(), uid, include_global=include_global
+        )
+
+    def legacy_global_scopes(self, user_id: str) -> set[str]:
+        """Scopes effective for `user_id` ONLY via the legacy global tier.
+
+        The difference between the user's fold with the global tier
+        and without it: permissions whose entire provenance is the
+        historical (user_id="") events written before the scopes
+        route required the installation owner. Empty for non-owners
+        (the global tier no longer folds for them at all).
+        """
+        uid = (user_id or "").strip()
+        if not uid:
+            return set()
+        events = self.list_scope_events()
+        with_global = self._fold_scope_events(events, uid, include_global=True)
+        own_only = self._fold_scope_events(events, uid, include_global=False)
+        owner_id = _resolve_installation_owner_id()
+        if owner_id is None or uid != owner_id:
+            return set()
+        return with_global - own_only
 
     def clear_scope_events(self) -> int:
         """Remove the consent ledger (used only by full deletion)."""

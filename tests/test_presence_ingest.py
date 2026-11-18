@@ -461,7 +461,10 @@ def test_service_full_flow(tmp_path, monkeypatch):
         assert session.counts["events"] == 3
         assert session.counts["skipped"] == 1
         upload_dir = uploads / session.session_id
-        assert (upload_dir / "conversations.json").exists()
+        # D-4 (security correction): the raw export is NOT retained —
+        # parsed from the source in place, only redacted events persist.
+        assert not upload_dir.exists()
+        assert not list(uploads.rglob("conversations.json"))
 
         n = run_distill(
             session.session_id,

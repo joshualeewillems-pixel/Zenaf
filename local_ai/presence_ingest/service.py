@@ -5,12 +5,18 @@ Pipeline stages (mirrored in ImportSession.status):
   deleted  (terminal: raw upload + events removed)
 
 Privacy notes:
-- The raw export is stored under data/presence_ingest/uploads/<session_id>/
-  and can be deleted at any time via delete_session().
-- delete_session() removes the raw upload AND the (redacted) events, but
-  approved signals REMAIN: once the user has approved them, they are the
-  user's training data, part of the doppelganger profile, and deleting the
-  source export must not silently erase training history.
+- The raw export is NOT retained (security correction D-4):
+  start_import parses the caller's file in place and persists only
+  the redacted events. Nothing downstream ever re-read the stored
+  copy, so no persistent raw copy is left behind. (Sessions imported
+  before the correction may still have a raw copy under
+  data/presence_ingest/uploads/<session_id>/; delete_session() and
+  the Scope S erasure remove those trees as before.)
+- delete_session() removes any legacy raw upload AND the (redacted)
+  events, but approved signals REMAIN: once the user has approved
+  them, they are the user's training data, part of the doppelganger
+  profile, and deleting the source export must not silently erase
+  training history.
 """
 from __future__ import annotations
 
@@ -37,11 +43,6 @@ class PresenceIngestError(RuntimeError):
     """A pipeline step failed in a way the caller should report to the user."""
 
 
-def _safe_filename(name: str) -> str:
-    keep = "".join(c if (c.isalnum() or c in "._-") else "_" for c in name)
-    return (keep.strip("._") or "upload")[:120]
-
-
 def start_import(
     file_path: Path,
     original_name: str,
@@ -55,6 +56,12 @@ def start_import(
     owner's license at capture, and the license_id is stamped into the
     session's and every event's provenance. Raises LicenseRequired if none
     exists, PresenceIngestError if the file is not a recognized export.
+
+    The export is parsed from the caller's file in place (the API
+    layer's temporary upload, under the existing size cap) and is
+    NOT copied into the data dir (security correction D-4): only the
+    redacted events persist. ``upload_root`` is accepted for
+    signature compatibility with delete_session and is unused here.
     """
     lic = identity_service.get_license()
     if lic is None or lic.status != "active":
@@ -76,13 +83,7 @@ def start_import(
         )
 
     store = store or PresenceStore()
-    upload_root = upload_root or UPLOAD_ROOT
     session_id = f"imp-{uuid4().hex[:12]}"
-    session_dir = upload_root / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    stored_name = _safe_filename(original_name)
-    stored_path = session_dir / stored_name
-    shutil.copyfile(path, stored_path)
 
     session = ImportSession(
         session_id=session_id,
@@ -95,7 +96,7 @@ def start_import(
     )
     store.create_session(session)
 
-    events = list(adapter.iter_events(stored_path))
+    events = list(adapter.iter_events(path))
     for e in events:
         e.provenance["license_id"] = license_id
     store.save_events(session_id, events)
@@ -198,7 +199,7 @@ def delete_session(
     store: PresenceStore | None = None,
     upload_root: Path | None = None,
 ) -> None:
-    """Delete the raw upload and the session's (redacted) events.
+    """Delete any legacy raw upload and the session's (redacted) events.
 
     Approved signals are deliberately KEPT: they are the user's training data
     now, and removing the source export must not rewrite training history.

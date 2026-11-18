@@ -177,18 +177,91 @@ def revoke_scope(
 # -- takeout -----------------------------------------------------------
 
 
+def legacy_scope_inventory(
+    *, store: IdentityStore | None = None
+) -> dict[str, Any]:
+    """Inventory the legacy global (user_id="") tier of the ledger.
+
+    Provenance and effective state of the historical global events —
+    written before the scopes route required the installation owner
+    (security correction D-6), so their provenance is unattributable:
+    they may record the owner's own grants through the old UI, but
+    nothing distinguishes those from grants written by an
+    unauthenticated caller. They are therefore preserved as the
+    owner's effective permissions WITHOUT being legitimized as
+    verified owner consent, and they never fold for another account.
+
+    Returns counts by action, the global tier's own effective fold,
+    the scopes effective for the owner solely via this tier, the
+    event time range, and how many events carry a note.
+    """
+    store = store or IdentityStore()
+    events = store.list_scope_events()
+    global_events = [e for e in events if not e.user_id]
+    from .store import _resolve_installation_owner_id
+
+    owner_id = _resolve_installation_owner_id()
+    return {
+        "total_events": len(events),
+        "global_events": len(global_events),
+        "global_grants": sum(1 for e in global_events if e.action == "grant"),
+        "global_revokes": sum(1 for e in global_events if e.action == "revoke"),
+        "global_events_with_note": sum(1 for e in global_events if e.note),
+        "global_first_ts": (
+            global_events[0].ts.isoformat() if global_events else None
+        ),
+        "global_last_ts": (
+            global_events[-1].ts.isoformat() if global_events else None
+        ),
+        "global_effective_scopes": sorted(
+            IdentityStore._fold_scope_events(
+                global_events, "", include_global=True
+            )
+        ),
+        "owner_id": owner_id,
+        "owner_scopes_effective_only_via_global": (
+            sorted(store.legacy_global_scopes(owner_id)) if owner_id else []
+        ),
+        "per_user_event_counts": {
+            uid: sum(1 for e in events if e.user_id == uid)
+            for uid in sorted({e.user_id for e in events if e.user_id})
+        },
+    }
+
+
 def build_takeout(
     *,
     store: IdentityStore | None = None,
     presence_store: Any = None,
+    requesting_user_id: str | None = None,
+    owner_resolver: Any = None,
 ) -> dict[str, Any]:
     """Export everything Zenaf holds about the owner.
 
     Takeout is a right, not a privilege: no scope is required, but a license
     must exist. The bundle includes the signed license, the full consent
     ledger, all approved training signals, and import-session summaries.
+
+    When ``requesting_user_id`` is given (the wired route path), it
+    must resolve to the installation owner (§9.1, security
+    correction D-14): the bundle is by construction the owner's, so
+    any other requester is refused with ErasureRefused before any
+    bundle is composed. No scope requirement is introduced — the
+    check is ownership, not permission. Bundle contents are
+    unchanged by the check.
     """
     store = store or IdentityStore()
+    if requesting_user_id is not None:
+        from .erasure import ErasureRefused, _default_owner_resolver
+
+        resolver_fn = owner_resolver or _default_owner_resolver
+        owner_id = resolver_fn()
+        if not owner_id or requesting_user_id != owner_id:
+            raise ErasureRefused(
+                "Takeout refused: the authenticated session does not "
+                "resolve to this installation's owner record. No "
+                "export was produced."
+            )
     lic = store.get_license()
     if lic is None:
         raise LicenseRequired()

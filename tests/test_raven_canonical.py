@@ -531,15 +531,17 @@ def test_renderer_budget_degrades_then_fails_validation():
     # Compact + typical (signed-in) guidance: under budget separation
     # (renderer-budget separation design 2026-11-04), the ceiling
     # measures character content ALONE, so the 1,240-char compact
-    # block keeps its voice-close unit with the 543-char signed
-    # guidance attached: total 1,784, voice renders.
+    # block keeps its voice-close unit with the 554-char signed
+    # guidance attached: total 1,795, voice renders.
+    # (Guidance was 543 chars / total 1,784 before the 2026-11-17
+    # WI-4 registry alignment made the claims review UI available.)
     # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
     # block previously asserted the voice-drop (voice absent, total
     # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_raven_ordinary(
         RAVEN_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) == 1240 + 1 + len(signed) == 1784
+    assert len(_joined(compact_typical)) == 1240 + 1 + len(signed) == 1795
     assert signed in _joined(compact_typical)  # capability never truncated
     assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
     # Capability sits at index 3 (after worldview), voice-close last.
@@ -549,14 +551,14 @@ def test_renderer_budget_degrades_then_fails_validation():
     # Fuller + typical guidance: fuller personality degrades to
     # compact — a CHARACTER-only overrun, unchanged by separation —
     # but the voice-close now SURVIVES in the fallback (compact
-    # 1,316 + guidance appended whole: total 1,860). (Reversal of
+    # 1,316 + guidance appended whole: total 1,871). (Reversal of
     # the old voice-drop expectation; the development drop itself
     # is unchanged.)
     degraded = render_raven_ordinary(
         RAVEN_RECORD, detail="fuller", resolved_capability=signed
     )
     joined = _joined(degraded)
-    assert len(joined) == 1316 + 1 + len(signed) == 1860
+    assert len(joined) == 1316 + 1 + len(signed) == 1871
     for marker in FULLER_DEVELOPMENT_MARKERS:
         assert marker not in joined, marker  # development dropped whole (character-only)
     assert WARMTH_ADOPTED in joined  # voice survives in the fallback
@@ -570,7 +572,8 @@ def test_renderer_budget_degrades_then_fails_validation():
     degraded_max = render_raven_ordinary(
         RAVEN_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(degraded_max)) == 1316 + 1 + len(unsigned) == 1954
+    # 2,206 -> 2,264 post-security-merge (review-intake note +58).
+    assert len(_joined(degraded_max)) == 1316 + 1 + len(unsigned) == 2264
     assert unsigned in _joined(degraded_max)
     assert CANONICAL_MARKER in _joined(degraded_max)
     assert QUESTION_VERBATIM in _joined(degraded_max)
@@ -927,11 +930,16 @@ def test_resolver_contract_already_resolved_and_clean():
         "Blend view",
     ):
         assert name in block, name
-    # Planned capabilities are explicitly unavailable, never promised.
+    # Registry alignment (2026-11-17, WI-4 D-11): the personality-
+    # claims review UI was a false negative at "planned" — the UI
+    # and its verdict API are live, so the entry is available and
+    # usable, rendering available-but-unverified.
     cap = CAP.get_capability("review_insights_ui")
-    assert cap is not None and not CAP.currently_usable(cap, state)
+    assert cap is not None and cap.implementation == "available"
+    assert CAP.currently_usable(cap, state)
     line = next(l for l in block.splitlines() if "personality claims" in l)
-    assert "planned, not available yet" in line, line
+    assert "available (workflow not yet verified)" in line, line
+    assert "planned, not available yet" not in line, line
     # Available capabilities render available.
     assert "Review queue — intake candidates — available" in block
 

@@ -133,6 +133,13 @@ def test_capabilities_registry_line_no_longer_stale():
     assert "Only the Conductor's first meeting is scripted" not in (
         first_meetings.prerequisite_note or ""
     )
-    assert "only the Conductor's is open to begin right now" in (
+    # Registry alignment (2026-11-17, WI-4): the note's earlier
+    # correction ("only the Conductor's is open to begin right now")
+    # was itself stale — all seven first meetings were released
+    # 2026-10-29. The aligned note states that release plainly.
+    assert "only the Conductor's is open to begin right now" not in (
+        first_meetings.prerequisite_note or ""
+    )
+    assert "All seven first meetings are written and released" in (
         first_meetings.prerequisite_note or ""
     )

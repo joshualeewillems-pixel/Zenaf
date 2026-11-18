@@ -596,7 +596,7 @@ RAVEN_RECORD: dict = {
         },
         "review_insights_ui": {
             "name": "Review queue — personality claims",
-            "registry_state": "planned",
+            "registry_state": "available",
             "verification": "unverified",
             "prerequisite_note": (
                 "Intake review covers import candidates only — do not "

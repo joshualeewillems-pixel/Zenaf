@@ -20,7 +20,23 @@ regenerated from this branch to reflect ONLY the intended Firebrand
 S1 behavior — the Q9 sentence, the C1 companion note on the
 Commitments line, and the Q6/nature-rule line (delta +354 chars each,
 verified identical across all four captures). The other six seats'
-goldens are still the 5d99063 pre-L1 capture, byte-identical.
+goldens were, until the regeneration recorded below, the 5d99063
+pre-L1 capture, byte-identical.
+
+REGISTRY ALIGNMENT REGENERATION (2026-11-17, WI-4): the 24
+non-champion goldens were regenerated through the same T-L1-3a/3b
+capture paths to reflect ONLY the founder-authorized registry
+alignment — 40 changed lines, every one a capability line:
+voice-chat text clarifier (ambassador), fellowship-attention
+unverified suffix (conductor), never-observed narrowed to the
+training-signal decision context + limited (guardian), import and
+training gated notes + signal-decay planned (mentor), review
+intake gated note + personality-claims review available
+(skeptic), import gated note + export_all renamed in display to
+Identity & Presence Takeout, limited (maverick). Champion's four
+goldens are byte-identical to the 2026-11-11 regeneration — no
+champion-slice line changed. No character content changed in any
+golden.
 """
 import dataclasses
 import json

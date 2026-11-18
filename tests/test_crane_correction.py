@@ -186,15 +186,19 @@ def _crane_prompts():
 def test_t1_crane_post_edit_figures():
     """§18.1 corrected, re-pinned post-Level-1 (2026-11-12): engage
     8,082/8,184, turn 4,790/4,892, meeting prompts 15,224/11,932.
-    (Pre-L1 figures were 8,748/8,850, 5,456/5,558, 16,051/12,759.)"""
+    (Pre-L1 figures were 8,748/8,850, 5,456/5,558, 16,051/12,759.)
+    Re-pinned 2026-11-17 for the WI-4 registry alignment: the
+    voice-chat text clarifier grew the ambassador capability block
+    +85, moving every figure by exactly +85 (engage 8,167/8,269,
+    turn 4,875/4,977, meeting prompts 15,309/12,017)."""
     defn, (ef, tf, me, mt) = _crane_prompts()
     ef_all, tf_all = _all_met(defn, MSG)
-    assert len(ef) == 8082
-    assert len(ef_all) == 8184
-    assert len(tf) == 4790
-    assert len(tf_all) == 4892
-    assert len(me) == 15224
-    assert len(mt) == 11932
+    assert len(ef) == 8167
+    assert len(ef_all) == 8269
+    assert len(tf) == 4875
+    assert len(tf_all) == 4977
+    assert len(me) == 15309
+    assert len(mt) == 12017
 
 
 def test_t1_fox_engage_post_guard():
@@ -209,10 +213,17 @@ def test_t1_fox_engage_post_guard():
     14,648; mt 11,468 -> 11,472); engage and turn frames unmoved."""
     defn = _definition("maverick")
     ef, tf, me, mt = _meeting_prompts(defn, FOX_MSG)
-    assert len(ef) == 7670
-    assert len(tf) == 4494
-    assert len(me) == 14648
-    assert len(mt) == 11472
+    # Re-pinned 2026-11-17 for the WI-4 registry alignment: the
+    # maverick capability block grew +245 (import gated note;
+    # takeout's corrected display name and limited rendering), so
+    # engage 7,915, turn 4,739, me 14,893, mt 11,717.
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session (+43), so
+    # engage 7,958, turn 4,782, me 14,936, mt 11,760.
+    assert len(ef) == 7958
+    assert len(tf) == 4782
+    assert len(me) == 14936
+    assert len(mt) == 11760
 
 
 # ---------------------------------------------------------------------------
@@ -321,16 +332,18 @@ def test_t2_dispute_first_precedes_question_all_seven():
 def test_t3_crane_engage_budget_corrected():
     """Corrected figures, re-pinned post-Level-1 (2026-11-12): engage
     8,082 fresh / 8,184 all-met, headroom 918 / 816. (Pre-L1:
-    8,748 / 8,850, headroom 252 / 150.) The §5 approval
+    8,748 / 8,850, headroom 252 / 150.) Re-pinned 2026-11-17 for
+    the WI-4 registry alignment: engage 8,167 / 8,269, headroom
+    833 / 731 (the +85 voice-chat clarifier). The §5 approval
     (accept 169) was of a figure measured with the wrong met-seat id;
     the true pre-L1 headroom was 150 — flagged for the founder, not
     silently substituted."""
     defn, (ef, tf, me, mt) = _crane_prompts()
     ef_all, _ = _all_met(defn, MSG)
-    assert len(ef) == 8082
-    assert len(ef_all) == 8184
-    assert CAP - len(ef) == 918
-    assert CAP - len(ef_all) == 816
+    assert len(ef) == 8167
+    assert len(ef_all) == 8269
+    assert CAP - len(ef) == 833
+    assert CAP - len(ef_all) == 731
     assert len(ef) <= CAP
     assert len(ef_all) <= CAP
 
@@ -338,9 +351,9 @@ def test_t3_crane_engage_budget_corrected():
 def test_t3_crane_turn_budget():
     defn, (ef, tf, me, mt) = _crane_prompts()
     _, tf_all = _all_met(defn, MSG)
-    assert len(tf) == 4790
-    assert len(tf_all) == 4892
-    assert CAP - len(tf_all) == 4108
+    assert len(tf) == 4875
+    assert len(tf_all) == 4977
+    assert CAP - len(tf_all) == 4023
     assert len(tf) <= CAP
     assert len(tf_all) <= CAP
 
@@ -420,14 +433,22 @@ def test_t5_other_seats_unmoved_by_section12_scope():
     5,615) is Raven's own S1 correction (RC3/RC4/RC6) — not this
     branch. Re-pinned again for the Bear S1 build (2026-11-13):
     the guardian's move (engage 8,041, turn 4,863) is Bear's own
-    S1 correction — not this branch."""
+    S1 correction — not this branch. Re-pinned 2026-11-17 for the
+    WI-4 registry alignment: every seat's frames moved by exactly
+    its capability-block delta (conductor +28, mentor +275,
+    guardian +110, maverick +245, skeptic +176; champion unmoved
+    in this state) — the alignment, not this branch."""
+    # Post-security-merge update (2026-11-17): mentor +43/+43 and
+    # maverick +43/+43 (import gated note), skeptic +58/+58
+    # (review-intake gated note) — the notes now state the
+    # installation-owner enforcement merged in PR #388.
     expected_engage = {
-        "conductor": 7943, "mentor": 8277, "champion": 8168,
-        "guardian": 8041, "maverick": 7670, "skeptic": 7968,
+        "conductor": 7971, "mentor": 8595, "champion": 8168,
+        "guardian": 8151, "maverick": 7958, "skeptic": 8202,
     }
     expected_turn = {
-        "conductor": 6176, "mentor": 5486, "champion": 5064,
-        "guardian": 4863, "maverick": 4494, "skeptic": 5615,
+        "conductor": 6204, "mentor": 5804, "champion": 5064,
+        "guardian": 4973, "maverick": 4782, "skeptic": 5849,
     }
     for arch, want_eng in expected_engage.items():
         defn = _definition(arch)
@@ -470,7 +491,7 @@ def test_t7_crane_turn_frame_is_dedicated():
     defn, (ef, tf, me, mt) = _crane_prompts()
     assert tf.startswith(ENC._AMBASSADOR_TURN_FRAME)
     assert len(ENC._AMBASSADOR_TURN_FRAME) == 1404
-    assert len(tf) == 4790
+    assert len(tf) == 4875
     assert "Respond to what the user actually just communicated" not in tf
     # The default stays as the fallback for seats without their own frame.
     assert ENC._GENERIC_TURN_FRAME.startswith(
@@ -489,7 +510,8 @@ def test_t7_fox_turn_frame_is_dedicated():
     _, tf, _, _ = _meeting_prompts(defn, FOX_MSG)
     assert tf.startswith(ENC._MAVERICK_TURN_FRAME)
     assert len(ENC._MAVERICK_TURN_FRAME) == 1257
-    assert len(tf) == 4494
+    # 4,739 -> 4,782 on the post-security-merge import note (+43).
+    assert len(tf) == 4782
     assert "Respond to what the user actually just communicated" not in tf
     # The default stays as the fallback for seats without their own frame.
     assert ENC._GENERIC_TURN_FRAME.startswith(
@@ -511,12 +533,16 @@ def test_t8_weaver_steward_parity():
     assert cf.index(DISPUTE_FIRST) < cf.index("If they ask a question, answer it")
     # Weaver engage frame: 7,943 fresh, headroom 1,057 (§2.1, re-pinned
     # post-Level-1 2026-11-12; pre-L1 8,617 fresh, headroom 383).
+    # Re-pinned 2026-11-17 for the WI-4 registry alignment: the
+    # fellowship-attention line's unverified suffix grew the
+    # conductor block +28 (engage 7,971, headroom 1,029, all-met
+    # 8,073).
     defn = _definition("conductor")
     ef, _ = _meeting_prompts(defn, MSG)[:2]
     ef_all, _ = _all_met(defn, MSG)
-    assert len(ef) == 7943
-    assert CAP - len(ef) == 1057
-    assert len(ef_all) == 8045
+    assert len(ef) == 7971
+    assert CAP - len(ef) == 1029
+    assert len(ef_all) == 8073
 
 
 # ---------------------------------------------------------------------------

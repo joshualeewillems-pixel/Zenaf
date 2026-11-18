@@ -621,15 +621,17 @@ def test_renderer_budget_degrades_then_fails_validation():
     # Compact + typical (signed-in) guidance: under budget separation
     # (renderer-budget separation design 2026-11-04), the ceiling
     # measures character content ALONE, so the 1,472-char compact
-    # block keeps its voice unit with the 576-char signed guidance
-    # attached: total 2,049, voice renders.
+    # block keeps its voice unit with the 549-char signed guidance
+    # attached: total 2,022, voice renders.
+    # (Guidance was 576 chars / total 2,049 before the 2026-11-17
+    # WI-4 registry alignment made signal decay planned.)
     # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
     # block previously asserted the voice-drop (voice absent, total
     # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_gardener_ordinary(
         GARDENER_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) == 1472 + 1 + len(signed) == 2049
+    assert len(_joined(compact_typical)) == 1472 + 1 + len(signed) == 2022
     assert signed in _joined(compact_typical)  # capability never truncated
     assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
     # Capability sits at index 3 (after worldview), cultivation at
@@ -640,7 +642,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     )
     assert WARMTH_ADOPTED in compact_typical[5]
 
-    # Fuller + typical guidance: fits ENTIRELY (1,958 chars) — middle
+    # Fuller + typical guidance: fits ENTIRELY (1,931 chars) — middle
     # and tempo both kept. Fuller reachability with typical guidance
     # is a real, measured property here, not an assumption. (Under
     # separation the total is unchanged: character 1,381 + guidance
@@ -649,7 +651,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         GARDENER_RECORD, detail="fuller", resolved_capability=signed
     )
     joined_full = _joined(full_typical)
-    assert len(joined_full) == 1958, len(joined_full)
+    assert len(joined_full) == 1931, len(joined_full)
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker in joined_full, marker
     assert TEMPO_CLOSE in joined_full
@@ -658,7 +660,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     # Fuller + maximal (unsigned) guidance: under budget separation
     # the fuller character block (1,381) fits on its own, so it NO
     # LONGER degrades to compact — middle and tempo survive,
-    # unsigned guidance appended whole: total 2,149. (Reversal of
+    # unsigned guidance appended whole: total 2,425. (Reversal of
     # the old degradation expectation: guidance length no longer
     # affects the ladder.) The fuller has NO voice unit by design
     # (it swaps voice out), so warmth's absence here is not a drop.
@@ -666,7 +668,8 @@ def test_renderer_budget_degrades_then_fails_validation():
         GARDENER_RECORD, detail="fuller", resolved_capability=unsigned
     )
     joined = _joined(degraded)
-    assert len(joined) == 1381 + 1 + len(unsigned) == 2149
+    # 2,425 -> 2,468 post-security-merge (import gated note +43).
+    assert len(joined) == 1381 + 1 + len(unsigned) == 2468
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker in joined, marker  # middle survives (character-only)
     assert TEMPO_CLOSE in joined  # tempo survives
@@ -681,7 +684,8 @@ def test_renderer_budget_degrades_then_fails_validation():
     compact_max = render_gardener_ordinary(
         GARDENER_RECORD, detail="compact", resolved_capability=unsigned
     )
-    assert len(_joined(compact_max)) == 1472 + 1 + len(unsigned) == 2240
+    # 2,516 -> 2,559 post-security-merge (import gated note +43).
+    assert len(_joined(compact_max)) == 1472 + 1 + len(unsigned) == 2559
     assert unsigned in _joined(compact_max)
     assert WARMTH_ADOPTED in _joined(compact_max)
 
@@ -993,7 +997,11 @@ def test_resolver_contract_already_resolved_and_clean():
     ):
         assert name in block, name
     # Limited-experimental capabilities render qualified, never promised.
-    assert block.count("available in limited form (workflow not yet verified)") == 6
+    # Registry alignment (2026-11-17, WI-4 D-3): signal decay is
+    # inactive (zero production callers) and now renders planned,
+    # so the limited count is 5, not 6.
+    assert block.count("available in limited form (workflow not yet verified)") == 5
+    assert "Signal decay — planned, not available yet" in block
     cap = CAP.get_capability("import_uploads")
     assert cap is not None
     assert cap.implementation == "limited-experimental"
@@ -1003,7 +1011,7 @@ def test_resolver_contract_already_resolved_and_clean():
         "mentor", CAP.VisitorState(signed_in=False, consent_acknowledged=False)
     )
     assert unsigned.count("not available to you yet") == 5
-    assert "Signal decay — available in limited form" in unsigned
+    assert "Signal decay — planned, not available yet" in unsigned
 
 
 def test_weights_untouched_and_no_vector_in_record():

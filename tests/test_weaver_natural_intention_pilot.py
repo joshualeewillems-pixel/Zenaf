@@ -73,7 +73,9 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     assert "First-meeting openness right now" in reference
     assert reference.splitlines()[-1].startswith("First-meeting openness right now")
     # Capped frames: byte-identical budget to before the pilot.
-    # Engage frame 7,943 chars, 1,057 headroom vs the 9,000 cap
+    # Engage frame 7,943 chars, 1,057 headroom vs the 9,000 cap;
+    # re-pinned 2026-11-17 for the WI-4 registry alignment
+    # (conductor block +28: 7,971 chars, 1,029 headroom).
     # (MIN_HEADROOM 30, test_conductor_agency_refinement.py).
     # Re-measured 2026-11-06: the read-back frames lengthened the
     # engage frame (was 7,967) and the cap rose 8000 -> 9000.
@@ -98,7 +100,7 @@ def test_meeting_path_pilot_rides_the_uncapped_reference():
     engage_frame += "\n\n" + ENC._naming_note(definition)
     if definition.capability_context:
         engage_frame += "\n\n" + definition.capability_context
-    assert len(engage_frame) == 7943
+    assert len(engage_frame) == 7971
     assert _EXTRA_INSTRUCTIONS_CAP - len(engage_frame) >= 30
     assert _EXTRA_INSTRUCTIONS_CAP - len(turn_frame) >= 30
     assert _WEAVER_NATURAL_INTENTION not in turn_frame

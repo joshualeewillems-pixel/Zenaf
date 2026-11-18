@@ -415,7 +415,7 @@ WEAVER_RECORD: dict = {
         "fellowship_attention": {
             "name": "Fellowship attention (!)",
             "registry_state": "available",
-            "verification": "verified",
+            "verification": "unverified",
             "prerequisite": "signed_in",
             "standing": "adopted",
             "category": "capability",

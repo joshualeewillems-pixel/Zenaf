@@ -263,11 +263,19 @@ def test_t7_rc6_turn_frame_and_guidance():
 def test_t8_budgets_hold(caplog):
     caplog.set_level(logging.WARNING, logger="local_ai.conversation.reply")
     _d, engage, turn = _skeptic()
-    assert len(engage) == 7968
-    # Measured 5,615 — see the module docstring on the brief's 5,469
+    # Registry alignment (2026-11-17, WI-4): the skeptic slice's
+    # capability block grew +176 (review-intake gated note;
+    # personality-claims review now available), so engage 7,968
+    # -> 8,144 and turn 5,615 -> 5,791.
+    # Post-security-merge update (2026-11-17): the review-intake
+    # gated note now states the installation-owner enforcement
+    # merged in PR #388, +58 — engage 8,144 -> 8,202 and turn
+    # 5,791 -> 5,849.
+    assert len(engage) == 8202
+    # Measured 5,849 — see the module docstring on the brief's 5,469
     # projection (it counted the turn-frame block but not the
     # guidance append, which also rides the turn frame).
-    assert len(turn) == 5615
+    assert len(turn) == 5849
     others_by_seat = {}
     for seat, arch, script, builder in SEATS:
         d, e, t = _frames(script, builder)
@@ -299,9 +307,25 @@ def test_t8_budgets_hold(caplog):
     # The system's tightest reachable/bound states, pinned: the
     # Mentor's fully-met variants (untouched by this build) and
     # Raven's own tightest projected variant.
-    assert len(others_by_seat["mentor"]["fully-met+default"]) == 8380
-    assert len(others_by_seat["mentor"]["fully-met+worst"]) == 8476
-    assert len(others_by_seat["skeptic"]["fully-met+worst"]) == 8146
+    # KNOWN CONSEQUENCE of the 2026-11-17 WI-4 registry alignment:
+    # the Mentor fully-met+worst variant measured 8,752, which
+    # left 248 chars of headroom — below the 300 floor the loop
+    # above enforces. The pin below records the measured length;
+    # the headroom assertion is deliberately NOT weakened. The
+    # alignment's longer gated notes (import, training) caused
+    # this; resolving it (accept the reduced margin for this
+    # state, or shorten the notes) is a founder decision, recorded
+    # in the alignment implementation report.
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session (+43), so
+    # the variant measures 8,795 and the headroom is 205; the
+    # founder decision is still pending and the assertion is
+    # still NOT weakened. (Skeptic fully-met+worst: 8,398 ->
+    # 8,456 on the review-intake note, +58; Mentor
+    # fully-met+default: 8,655 -> 8,698, +43.)
+    assert len(others_by_seat["mentor"]["fully-met+default"]) == 8698
+    assert len(others_by_seat["mentor"]["fully-met+worst"]) == 8795
+    assert len(others_by_seat["skeptic"]["fully-met+worst"]) == 8456
     trunc = [r for r in caplog.records if "truncated" in r.getMessage().lower()]
     assert trunc == [], f"truncation warnings: {[r.getMessage() for r in trunc]}"
 
@@ -333,10 +357,20 @@ def test_t9_lengths():
         assert len(script.readback_reply_frame) in range(500, 540), seat
     # Every other seat's capped frames are byte-length identical to
     # the pre-S1 baseline (RC1 is in the tier, not their frames).
+    # Registry alignment (2026-11-17, WI-4): every seat's frames
+    # grew by exactly its capability-block delta (weaver +28
+    # fellowship suffix; ambassador +85 voice-chat clarifier;
+    # guardian +110 never-observed narrowing; mentor +275 gated
+    # notes; maverick +245 import note + takeout rename); the
+    # champion's block is unchanged in this state.
+    # Post-security-merge update (2026-11-17): the import gated
+    # note now states the installation-owner session — mentor
+    # +43/+43 and maverick +43/+43; no other seat's block moves
+    # in this state.
     expected_frames = {
-        "weaver": (7943, 6176), "ambassador": (8082, 4790),
-        "guardian": (8041, 4863), "mentor": (8277, 5486),
-        "maverick": (7670, 4494), "champion": (8168, 5064),
+        "weaver": (7971, 6204), "ambassador": (8167, 4875),
+        "guardian": (8151, 4973), "mentor": (8595, 5804),
+        "maverick": (7958, 4782), "champion": (8168, 5064),
     }
     for seat, arch, script, builder in SEATS:
         if seat == "skeptic":

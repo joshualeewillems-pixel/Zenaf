@@ -667,15 +667,17 @@ def test_renderer_budget_degrades_then_fails_validation():
     # Compact + typical (signed-in) guidance: under budget separation
     # (renderer-budget separation design 2026-11-04), the ceiling
     # measures character content ALONE, so the 1,283-char compact
-    # block keeps its voice unit with the 382-char signed guidance
-    # attached: total 1,666, voice renders.
+    # block keeps its voice unit with the 467-char signed guidance
+    # attached: total 1,751, voice renders.
+    # (Guidance was 382 chars / total 1,666 before the 2026-11-17
+    # WI-4 registry alignment added the voice-chat text clarifier.)
     # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
     # block previously asserted the voice-drop (voice absent, total
     # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_crane_ordinary(
         CRANE_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) == 1283 + 1 + len(signed) == 1666
+    assert len(_joined(compact_typical)) == 1283 + 1 + len(signed) == 1751
     assert signed in _joined(compact_typical)  # capability never truncated
     assert VOICE_COMPACT in _joined(compact_typical)  # voice survives whole
     # Capability sits at index 3 (after worldview), voice last.
@@ -685,7 +687,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     # Fuller + typical guidance: under budget separation the fuller
     # character block (1,481) fits on its own, so it NO LONGER
     # degrades to compact — middle and conviction survive, guidance
-    # appended whole: total 1,864. (Reversal of the old degradation
+    # appended whole: total 1,949. (Reversal of the old degradation
     # expectation: guidance length no longer affects the ladder.)
     # The fuller has NO voice unit by design (compact-only voice),
     # so its absence here is not a drop.
@@ -693,7 +695,7 @@ def test_renderer_budget_degrades_then_fails_validation():
         CRANE_RECORD, detail="fuller", resolved_capability=signed
     )
     joined = _joined(degraded)
-    assert len(joined) == 1481 + 1 + len(signed) == 1864
+    assert len(joined) == 1481 + 1 + len(signed) == 1949
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker in joined, marker  # middle survives (character-only)
     assert CONVICTION_CONDUCT in joined  # conviction survives
@@ -708,7 +710,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     degraded_max = render_crane_ordinary(
         CRANE_RECORD, detail="fuller", resolved_capability=unsigned
     )
-    assert len(_joined(degraded_max)) == 1481 + 1 + len(unsigned) == 1872
+    assert len(_joined(degraded_max)) == 1481 + 1 + len(unsigned) == 1957
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker in _joined(degraded_max), marker
     assert CONVICTION_CONDUCT in _joined(degraded_max)
@@ -1040,7 +1042,13 @@ def test_resolver_contract_already_resolved_and_clean():
         assert name in block, name
     # Available-but-unverified rendering for voice chat; planned
     # capabilities explicitly unavailable, never promised.
-    assert "Voice chat — available (workflow not yet verified)" in block
+    # Registry alignment (2026-11-17, WI-4 D-8): the voice-chat
+    # line carries its text-only clarifier — no audio exists.
+    assert (
+        "Voice chat (a text exchange in the seat's voice — no "
+        "audio: there is no speech input or output) — available "
+        "(workflow not yet verified)" in block
+    )
     assert block.count("planned, not available yet") == 4
     cap = CAP.get_capability("echo_rentals")
     assert cap is not None
@@ -1051,7 +1059,11 @@ def test_resolver_contract_already_resolved_and_clean():
     unsigned = CAP.continuation_block(
         "ambassador", CAP.VisitorState(signed_in=False, consent_acknowledged=False)
     )
-    assert "Voice chat — not available to you yet" in unsigned
+    assert (
+        "Voice chat (a text exchange in the seat's voice — no "
+        "audio: there is no speech input or output) — not "
+        "available to you yet" in unsigned
+    )
     assert unsigned.count("planned, not available yet") == 4
 
 

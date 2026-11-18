@@ -490,7 +490,7 @@ GARDENER_RECORD = {
         "signal_decay": {
             "standing": "adopted",
             "category": "capability",
-            "registry_state": "limited-experimental",
+            "registry_state": "planned",
             "verification": "unverified",
             "description": (
                 "Signal decay; no prerequisites stated in registry; "

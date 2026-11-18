@@ -576,7 +576,7 @@ FOX_RECORD = {
         "export_all": {
             "standing": "adopted",
             "category": "capability",
-            "registry_state": "planned",
+            "registry_state": "limited-experimental",
             "verification": "unverified",
             "description": (
                 "Export everything; PLANNED — no export-all endpoint "

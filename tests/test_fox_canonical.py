@@ -569,6 +569,7 @@ def test_renderer_exclusions():
         # No capability promises when nothing is invoked.
         assert "Bring-your-own key" not in joined
         assert "Export everything" not in joined
+        assert "Identity & Presence Takeout" not in joined
         # P-005: no accent instruction, no "Irish", no dinner line.
         assert "Irish" not in joined
         assert "late for dinner" not in joined
@@ -1034,9 +1035,12 @@ def test_resolver_contract_already_resolved_and_clean():
     render planned (never available, never offered), and the block
     carries no protected formulations. The renderer trusts this
     output because the resolver — not the model, not the
-    renderer — determined availability and authorization. Export
-    everything renders planned because NO endpoint exists —
-    explain, never offer."""
+    renderer — determined availability and authorization.
+    Registry alignment (2026-11-17, WI-4 D-14): the takeout
+    formerly registered as "Export everything / planned" is live
+    in code — it renders under its corrected display name,
+    Identity & Presence Takeout, as limited-experimental, with
+    its coverage narrowed to identity and presence data."""
     state = CAP.VisitorState(signed_in=True, consent_acknowledged=True)
     block = CAP.continuation_block("maverick", state)
     assert block.strip()
@@ -1047,25 +1051,38 @@ def test_resolver_contract_already_resolved_and_clean():
     for name in (
         "Conversation-export import",
         "Bring-your-own key",
-        "Export everything",
+        "Identity & Presence Takeout",
     ):
         assert name in block, name
     # Limited-experimental caps render qualified, never promised.
-    assert block.count("available in limited form (workflow not yet verified)") == 2
-    # Export everything is planned, never offered.
-    assert "Export everything — planned, not available yet" in block
+    assert block.count("available in limited form (workflow not yet verified)") == 3
+    # The takeout renders qualified-limited under its corrected
+    # display name and narrowed coverage — never as "export
+    # everything", and no longer as planned (the route is live).
+    assert (
+        "Identity & Presence Takeout (identity takeout — identity "
+        "and presence data only; not conversations, projects, or "
+        "artifacts) — available in limited form (workflow not yet "
+        "verified)" in block
+    )
+    assert "Export everything" not in block
     cap = CAP.get_capability("export_all")
     assert cap is not None
-    assert cap.implementation == "planned"
+    assert cap.implementation == "limited-experimental"
     assert cap.verification == "unverified"
-    assert not CAP.currently_usable(cap, state)
+    assert CAP.currently_usable(cap, state)
     # Unsigned state renders the same slice with gated wording.
     # (2, not 3: rename_reshape removed by Maverick S1, C1.)
     unsigned = CAP.continuation_block(
         "maverick", CAP.VisitorState(signed_in=False, consent_acknowledged=False)
     )
     assert unsigned.count("not available to you yet") == 2
-    assert "Export everything — planned, not available yet" in unsigned
+    assert (
+        "Identity & Presence Takeout (identity takeout — identity "
+        "and presence data only; not conversations, projects, or "
+        "artifacts) — available in limited form (workflow not yet "
+        "verified)" in unsigned
+    )
 
 
 def test_weights_untouched_and_no_vector_in_record():

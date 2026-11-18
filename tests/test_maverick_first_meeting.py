@@ -240,11 +240,15 @@ def test_dedicated_turn_frame_fox_voice():
     # rebased head (7,428 post-L1 + 242 from #345's contrast guard,
     # which rides the shared tier into the engage frame). Both fit
     # the 9,000 cap.
+    # Registry alignment (2026-11-17, WI-4): the maverick slice's
+    # capability block grew +245 (import gated note; the takeout's
+    # corrected display name and limited rendering), so turn 4,494
+    # -> 4,739 and engage 7,670 -> 7,915.
     runtime = ENC.EncounterRuntime(definition)
     turn, _cue = runtime._turn_frame(ENC.EncounterState(), "Hello.")
-    assert len(turn) == 4494
+    assert len(turn) == 4739
     assert len(turn) < 9000
-    assert len(runtime._engage_frame()) == 7670
+    assert len(runtime._engage_frame()) == 7915
     # No other seat carries the Fox text; Crane now opens on his own
     # dedicated frame (#345), not the generic frame.
     crane = ENC.get_definition(MT.get_script("ambassador", 1))
@@ -308,7 +312,21 @@ def test_honesty_guard_honesty_floor_and_no_invented_training():
     assert "nothing trains until review" in script.encounter_frame
     assert "Nothing here trains anything until review" in definition.turn_frame
     # Planned stays planned in the capability rendering itself.
-    assert "planned, not available yet" in definition.capability_context
+    # Registry alignment (2026-11-17, WI-4 D-14): the maverick
+    # slice's only planned entry (export_all) was a false negative
+    # — the takeout route is live — so this slice no longer
+    # contains a planned line. What the honesty floor requires
+    # here now: the takeout renders qualified-limited under its
+    # corrected display name, never as plainly available, and
+    # never under the old "Export everything" name.
+    assert "planned, not available yet" not in definition.capability_context
+    assert (
+        "Identity & Presence Takeout (identity takeout — identity "
+        "and presence data only; not conversations, projects, or "
+        "artifacts) — available in limited form (workflow not yet "
+        "verified)" in definition.capability_context
+    )
+    assert "Export everything" not in definition.capability_context
 
 
 def test_grounding_and_reveal_timing():

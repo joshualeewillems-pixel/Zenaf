@@ -534,7 +534,7 @@ BEAR_RECORD = {
         "never_observed": {
             "standing": "adopted",
             "category": "capability",
-            "registry_state": "available",
+            "registry_state": "limited-experimental",
             "verification": "unverified",
             "description": (
                 "Never observed: a data-handling policy guarantee, "

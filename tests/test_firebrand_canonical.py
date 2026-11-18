@@ -1368,7 +1368,7 @@ def test_characterization_revision_2026_11_04_assembled_prompts():
     assert "You notice floors first" in with_cap
     assert "Southern hospitality" in with_cap
     assert "welcome warmly and unhurriedly" in with_cap
-    assert len(with_cap) == 1443 + 1 + len(signed_br) == 1935
+    assert len(with_cap) == 1443 + 1 + len(signed_br) == 2045
 
 
 def test_renderer_budget_separation_2026_11_04():

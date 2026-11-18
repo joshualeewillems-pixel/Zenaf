@@ -608,15 +608,17 @@ def test_renderer_budget_degrades_then_fails_validation():
     # Compact + typical (signed-in) guidance: under budget separation
     # (renderer-budget separation design 2026-11-04), the ceiling
     # measures character content ALONE, so the 1,443-char compact
-    # block keeps its voice unit with the 491-char signed guidance
-    # attached: total 1,935, voice and range lines render.
+    # block keeps its voice unit with the 601-char signed guidance
+    # attached: total 2,045, voice and range lines render.
+    # (Guidance was 491 chars / total 1,935 before the 2026-11-17
+    # WI-4 registry alignment lengthened the never-observed line.)
     # INTENTIONAL EXPECTATION REVERSAL, citing the design doc: this
     # block previously asserted the voice-drop (voice absent, total
     # <= ceiling); the separation design reverses that expectation.
     compact_typical = render_bear_ordinary(
         BEAR_RECORD, detail="compact", resolved_capability=signed
     )
-    assert len(_joined(compact_typical)) == 1443 + 1 + len(signed) == 1935
+    assert len(_joined(compact_typical)) == 1443 + 1 + len(signed) == 2045
     assert signed in _joined(compact_typical)  # capability never truncated
     assert WARMTH_ADOPTED in _joined(compact_typical)  # voice survives whole
     assert VOICE_COMPACT_MARKER in _joined(compact_typical)
@@ -626,14 +628,14 @@ def test_renderer_budget_degrades_then_fails_validation():
 
     # Fuller + typical guidance: fuller degradation is a CHARACTER-only
     # overrun, unchanged by separation — detail="fuller" still falls
-    # back to compact, now WITH guidance appended whole: total 1,935.
+    # back to compact, now WITH guidance appended whole: total 2,045.
     # (The old block asserted the same fallback but capped at the
     # ceiling; the total now exceeds it by exactly the guidance.)
     degraded = render_bear_ordinary(
         BEAR_RECORD, detail="fuller", resolved_capability=signed
     )
     joined = _joined(degraded)
-    assert len(joined) == 1443 + 1 + len(signed) == 1935
+    assert len(joined) == 1443 + 1 + len(signed) == 2045
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker not in joined, marker  # middle dropped whole (character-only)
     for marker in FULLER_VOICE_MARKERS:
@@ -964,9 +966,12 @@ def test_resolver_contract_already_resolved_and_clean():
     and the block carries no protected formulations. The renderer
     trusts this output because the resolver — not the model, not
     the renderer — determined availability and authorization. The
-    never_observed entry renders with its policy-guarantee
-    parenthetical — it is never presented as a user-facing
-    control."""
+    never_observed entry renders with its policy parenthetical —
+    it is never presented as a user-facing control. Registry
+    alignment (2026-11-17, WI-4 D-7): the entry no longer claims
+    a general guarantee — its displayed scope is narrowed to the
+    training-signal decision context where structural enforcement
+    exists, and it renders limited-experimental."""
     state = CAP.VisitorState(signed_in=True, consent_acknowledged=True)
     block = CAP.continuation_block("guardian", state)
     assert block.strip()
@@ -982,12 +987,17 @@ def test_resolver_contract_already_resolved_and_clean():
     ):
         assert name in block, name
     # Available-but-unverified rendering, never a finished-product promise.
-    assert block.count("available (workflow not yet verified)") == 5
-    # Never observed is labeled a policy guarantee, not a toggle.
+    assert block.count("available (workflow not yet verified)") == 4
+    assert block.count("available in limited form (workflow not yet verified)") == 1
+    # Never observed is labeled a policy, not a toggle — and its
+    # displayed scope is the training-signal decision context,
+    # not a general conversation guarantee (WI-4 D-7).
     assert "not a configurable setting or toggle" in block
+    assert "structurally enforced only for training-signal decision context" in block
+    assert "not a general conversation guarantee" in block
     cap = CAP.get_capability("never_observed")
     assert cap is not None
-    assert cap.implementation == "available"
+    assert cap.implementation == "limited-experimental"
     assert cap.verification == "unverified"
     # Unsigned state renders the same slice with one gated line.
     unsigned = CAP.continuation_block(
@@ -1022,14 +1032,15 @@ def test_renderer_budget_separation_2026_11_04():
     signed = CAP.continuation_block(
         "guardian", CAP.VisitorState(signed_in=True, consent_acknowledged=True)
     ).strip()
-    assert len(signed) == 491, len(signed)
+    assert len(signed) == 601, len(signed)
 
-    # §(e)2: compact + guidance, total exactly 1,935.
+    # §(e)2: compact + guidance, total exactly 2,045.
+    # (1,935 before the 2026-11-17 WI-4 registry alignment.)
     compact = render_bear_ordinary(
         BEAR_RECORD, detail="compact", resolved_capability=signed
     )
     joined = _joined(compact)
-    assert len(joined) == 1935
+    assert len(joined) == 2045
     for sentence in (
         "what must survive, who holds a key, what is quietly draining",  # judgment
         "reconsider where that floor belongs when the facts change",  # judgment (refinement 3)
@@ -1044,7 +1055,7 @@ def test_renderer_budget_separation_2026_11_04():
     fuller = render_bear_ordinary(
         BEAR_RECORD, detail="fuller", resolved_capability=signed
     )
-    assert len(_joined(fuller)) == 1935  # §(e)7: compact + guidance
+    assert len(_joined(fuller)) == 2045  # §(e)7: compact + guidance
     assert fuller[3] == signed
     for marker in FULLER_MIDDLE_MARKERS:
         assert marker not in _joined(fuller), marker

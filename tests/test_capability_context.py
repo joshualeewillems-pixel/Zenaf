@@ -56,14 +56,18 @@ def test_registry_ids_unique_and_fields_present():
 
 def test_verified_entries_carry_playtest_evidence():
     verified = [c for c in CAP.CAPABILITIES if c.verification == "verified"]
-    assert {c.id for c in verified} == {"first_meetings", "fellowship_attention"}
+    # Registry alignment (2026-11-17, WI-4): fellowship_attention
+    # returns to unverified — its "clears on meeting" claim holds
+    # only for keystone-sourced markers; observation-sourced
+    # markers have no production clearing path (D-5).
+    assert {c.id for c in verified} == {"first_meetings"}
     for cap in verified:
         assert "playtest" in cap.evidence.lower(), cap.id
     # Nothing else is promoted: the audit's "available" meant code
     # availability, and this registry keeps that distinction in the
     # verification field.
     for cap in CAP.CAPABILITIES:
-        if cap.id not in {"first_meetings", "fellowship_attention"}:
+        if cap.id not in {"first_meetings"}:
             assert cap.verification == "unverified", cap.id
 
 
@@ -80,7 +84,11 @@ def test_planned_entries_are_planned():
     planned = {
         "convened_council", "marketplace_info", "echo_rentals", "zones",
         "listing_disclosures", "represented_in_councils",
-        "review_insights_ui", "export_all",
+        # Registry alignment (2026-11-17, WI-4): review_insights_ui
+        # and export_all were false negatives — both are live in
+        # code (D-11, D-14); signal_decay is inactive with zero
+        # production callers and joins the planned set (D-3).
+        "signal_decay",
     }
     for cap_id in planned:
         cap = CAP.get_capability(cap_id)
@@ -281,7 +289,9 @@ def test_no_hardcoded_promises_in_frame_path_modules():
     distinctive = (
         "Convened multi-seat council",
         "Echo rentals",
-        "Export everything",
+        # Display name since the 2026-11-17 WI-4 registry
+        # alignment (formerly "Export everything").
+        "Identity & Presence Takeout",
         "Per-scope toggles",
         "Fellowship attention",
         "Bring-your-own key",
@@ -332,7 +342,10 @@ def test_gated_rendering_never_implies_usability():
     gated = CAP.first_meeting_block("mentor", NOT_CONSENTED)
     assert (
         "Conversation-export import — not available to you yet — "
-        "Consent acknowledged; nothing trains without per-claim review approval."
+        "Import requires an active identity license; distilling "
+        "requires the train:self scope. Distilled material becomes "
+        "pending candidates — nothing trains without per-claim "
+        "review approval."
         in gated
     )
     unknown = CAP.first_meeting_block("mentor", UNKNOWN_CONSENT)
@@ -469,7 +482,7 @@ _OTHER_SEATS_POST_L1 = {
         '- Conversation-export import — available in limited form (workflow not yet verified)\n'
         '- Training and distillation — available in limited form (workflow not yet verified)\n'
         '- Snapshots and eras — available in limited form (workflow not yet verified)\n'
-        '- Signal decay — available in limited form (workflow not yet verified)\n'
+        '- Signal decay — planned, not available yet\n'
         '- Growth records — available in limited form (workflow not yet verified)\n'
         '- Specializations (twigs) — available in limited form (workflow not yet verified)'
     ),
@@ -479,17 +492,17 @@ _OTHER_SEATS_POST_L1 = {
         '- Consent-scope enforcement — available (workflow not yet verified)\n'
         '- Consent onboarding gate — available (workflow not yet verified)\n'
         '- Per-scope toggles — available (workflow not yet verified)\n'
-        '- Never observed (a data-handling policy guarantee, not a configurable setting or toggle) — available (workflow not yet verified)'
+        '- Never observed (a data-handling policy, not a configurable setting or toggle; structurally enforced only for training-signal decision context — not a general conversation guarantee) — available in limited form (workflow not yet verified)'
     ),
     'maverick': (
         'From your scope:\n'
         '- Conversation-export import — available in limited form (workflow not yet verified)\n'
         '- Bring-your-own key — available in limited form (workflow not yet verified)\n'
-        '- Export everything — planned, not available yet'
+        '- Identity & Presence Takeout (identity takeout — identity and presence data only; not conversations, projects, or artifacts) — available in limited form (workflow not yet verified)'
     ),
     'ambassador': (
         'From your scope:\n'
-        '- Voice chat — available (workflow not yet verified)\n'
+        "- Voice chat (a text exchange in the seat's voice — no audio: there is no speech input or output) — available (workflow not yet verified)\n"
         '- Echo rentals — planned, not available yet\n'
         '- Zones (rental slicing) — planned, not available yet\n'
         '- Listing disclosures — planned, not available yet\n'
@@ -499,7 +512,7 @@ _OTHER_SEATS_POST_L1 = {
         'From your scope:\n'
         '- First meetings — available\n'
         '- One-on-one seat chat — available (workflow not yet verified)\n'
-        '- Fellowship attention (!) — available\n'
+        '- Fellowship attention (!) — available (workflow not yet verified)\n'
         '- Tree view and branch panels (the tree mapping conversations and artifacts) — available (workflow not yet verified)\n'
         '- Convened multi-seat council — planned, not available yet\n'
         '- Marketplace info via the tree — planned, not available yet\n'
@@ -508,7 +521,7 @@ _OTHER_SEATS_POST_L1 = {
     'skeptic': (
         'From your scope:\n'
         '- Review queue — intake candidates — available (workflow not yet verified)\n'
-        '- Review queue — personality claims — planned, not available yet\n'
+        '- Review queue — personality claims — available (workflow not yet verified)\n'
         '- Anchored evidence — available in limited form (workflow not yet verified)\n'
         '- Contesting a read — available in limited form (workflow not yet verified)\n'
         '- Recurrence patterns — available in limited form (workflow not yet verified)\n'
@@ -530,8 +543,14 @@ def test_c1_companion_note_renders_when_usable():
 
 def test_c2_no_other_seat_changes():
     """C2: the other six seats' first-meeting blocks are
-    byte-identical to the post-Level-1 baseline (rendered from pristine
-    main, 213a084). The companion rides exactly one line on one seat."""
+    byte-identical to the pinned baseline. Pins first rendered from
+    pristine main, 213a084 (post-Level-1); re-derived 2026-11-17 for
+    the WI-4 registry alignment, which changed exactly one rendered
+    line per affected seat (signal_decay → planned; never_observed
+    narrowed + limited; export_all renamed in display to Identity &
+    Presence Takeout + limited; voice_chat text clarifier;
+    fellowship_attention unverified; review_insights_ui available).
+    The companion rides exactly one line on one seat."""
     for seat, pinned in _OTHER_SEATS_POST_L1.items():
         assert CAP.first_meeting_block(seat, CONSENTED) == pinned, seat
 
@@ -548,5 +567,6 @@ def test_c3_no_duplication_when_gated():
     assert "Naming one does not create it." not in block
     assert (
         "- Commitments — not available to you yet — Signed-in account; "
-        "the visitor chooses — naming one does not create it." in block
+        "the visitor chooses — naming one does not create it, and a "
+        "conversation cannot file one." in block
     )

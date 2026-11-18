@@ -296,3 +296,56 @@ def test_import_distill_gated_by_scope(data_dir, tmp_path, store):
                             store=pstore)
     finally:
         pstore.close()
+
+
+# ------------------------------------------------------- security correction
+
+
+def test_global_tier_folds_only_for_resolved_owner(tmp_path, monkeypatch):
+    """D-6 fold rule: legacy global events fold for the installation
+    owner (preserved) and for the installation read — never for
+    another account; owner-keyed events fold only for that owner."""
+    from local_ai.identity import store as store_mod
+
+    store = IdentityStore(db_path=tmp_path / "identity.db")
+    try:
+        ident.grant_scope("train:self", store=store)  # legacy global
+        ident.grant_scope("export", store=store, user_id="owner-1")
+        monkeypatch.setattr(
+            store_mod, "_resolve_installation_owner_id", lambda: "owner-1"
+        )
+        assert store.active_scopes(user_id="owner-1") == {"train:self", "export"}
+        assert store.active_scopes(user_id="someone-else") == set()
+        assert store.active_scopes() == {"train:self", "export"}
+        assert store.legacy_global_scopes("owner-1") == {"train:self"}
+        assert store.legacy_global_scopes("someone-else") == set()
+        # An owner-keyed revoke of the legacy scope removes it for
+        # the owner too (fold order is preserved across tiers).
+        ident.revoke_scope("train:self", store=store, user_id="owner-1")
+        assert store.active_scopes(user_id="owner-1") == {"export"}
+        assert store.legacy_global_scopes("owner-1") == set()
+    finally:
+        store.close()
+
+
+def test_global_tier_fail_closed_without_owner(tmp_path, monkeypatch):
+    """When no installation owner resolves, the legacy global tier
+    folds for no specific account (fail closed), while the
+    installation read is unchanged."""
+    from local_ai.identity import store as store_mod
+
+    store = IdentityStore(db_path=tmp_path / "identity.db")
+    try:
+        ident.grant_scope("train:self", store=store)
+        monkeypatch.setattr(
+            store_mod, "_resolve_installation_owner_id", lambda: None
+        )
+        assert store.active_scopes(user_id="anyone") == set()
+        assert store.active_scopes() == {"train:self"}
+        inv = ident.legacy_scope_inventory(store=store)
+        assert inv["global_events"] == 1
+        assert inv["global_effective_scopes"] == ["train:self"]
+        assert inv["owner_id"] is None
+        assert inv["owner_scopes_effective_only_via_global"] == []
+    finally:
+        store.close()

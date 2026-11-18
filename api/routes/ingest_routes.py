@@ -6,6 +6,13 @@ GET /ingest/sessions/{sid}/candidates -> POST /ingest/sessions/{sid}/review.
 Privacy: no endpoint ever returns raw unredacted text. Stored events are
 already redacted at capture; candidates expose redacted summaries only.
 Uploads are capped at 200 MB.
+
+Access: every route requires the installation owner's session
+(security correction D-1). The presence store is a singleton with
+no per-user dimension, so owner resolution runs as a router-level
+dependency BEFORE any handler — and therefore before any store
+access. Service-level gates remain as the second layer: an active
+license for imports/claims, the train:self scope for distillation.
 """
 from __future__ import annotations
 
@@ -13,9 +20,10 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel, Field, field_validator
 
+from api.routes.identity_routes import require_installation_owner
 from local_ai.identity import LicenseRequired, ScopeDenied
 from local_ai.presence_ingest.schema import (
     ContributionClaim,
@@ -23,7 +31,11 @@ from local_ai.presence_ingest.schema import (
     TrainingSignal,
 )
 
-router = APIRouter(prefix="/ingest", tags=["ingest"])
+router = APIRouter(
+    prefix="/ingest",
+    tags=["ingest"],
+    dependencies=[Depends(require_installation_owner)],
+)
 
 MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 

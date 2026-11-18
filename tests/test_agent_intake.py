@@ -692,10 +692,18 @@ def test_scopes_are_per_user(tmp_path, monkeypatch):
     svc.grant_scope("train:self", store=store, user_id="u1")
     assert check_scope("train:self", store=store, user_id="u1") is True
     assert check_scope("train:self", store=store, user_id="u2") is False
-    # revoking for u1 doesn't touch a global grant
-    svc.grant_scope("train:self", store=store)  # global
+    # Security correction D-6 (founder amendment §2): the legacy
+    # global tier no longer confers grants on other accounts — a
+    # global grant must never hand installation-owner permissions
+    # to u2. The installation read (user_id=None, the union behind
+    # owner-gated routes) is unchanged: it folds every event in
+    # order, so it sees the global grant, and a later revoke event
+    # (even another user's) is the last word there, as before.
+    svc.grant_scope("train:self", store=store)  # global (legacy tier)
+    assert check_scope("train:self", store=store, user_id=None) is True
     svc.revoke_scope("train:self", store=store, user_id="u1")
-    assert check_scope("train:self", store=store, user_id="u2") is True
+    assert check_scope("train:self", store=store, user_id="u2") is False
+    assert check_scope("train:self", store=store, user_id=None) is False
 
 
 def test_intake_chat_routes_paste_to_pipeline(tmp_path, monkeypatch):

@@ -167,10 +167,14 @@ PROTECTED_SHADOW_TEXT = (
 
 def test_t5_identity_block_shadow_out_slice_line_absent():
     """BC8 scope: the identity-block shadow line is absent from both
-    meeting prompts, and present in the four seats' legacy philosophy
-    lines that still carry one (the Champion has none — FC7 removed
-    its table entry; the Ambassador has none — CC5 removed its
-    table entry). The slice line "Shadow: smothering." is absent
+    meeting prompts. WI-1 (Lens Foundation, founder verdict
+    2026-11-17) supersedes the BC8-era expectation for the other
+    seats: the shadow emission is closed at the builder for every
+    seat, so the four seats that still carried one in their legacy
+    philosophy lines (mentor, maverick, conductor, skeptic) no
+    longer emit it either (the Champion has none — FC7 removed its
+    table entry; the Ambassador has none — CC5 removed its table
+    entry). The slice line "Shadow: smothering." is absent
     from both frames (Gardener G4/D1, landed in main). The protected
     shadow field in bear.py is byte-identical."""
     from local_ai.council.canonical.bear import BEAR_RECORD
@@ -182,7 +186,7 @@ def test_t5_identity_block_shadow_out_slice_line_absent():
     assert "Shadow: smothering." not in p["turn_frame"]
     for other in ("mentor", "maverick", "conductor", "skeptic"):
         lines = ARCH.philosophy_prompt_lines(other)
-        assert any(
+        assert not any(
             "Shadow — your characteristic failure mode" in line
             for line in lines
         ), other
@@ -252,10 +256,15 @@ def test_t7_new_opening_adopted_verbatim():
 
 def test_t12_bc8_scoping_per_seat():
     """philosophy_prompt_lines emits exactly three lines for the
-    guardian (ideal, question, tension — no shadow) and four for
-    the four seats that carry a shadow line; the Champion renders
-    three (FC7 removed its table entry) and the Ambassador three
-    (CC5 removed its table entry) — neither by this correction."""
+    guardian (ideal, question, tension — no shadow). As amended by
+    WI-1 (Lens Foundation, founder verdict 2026-11-17): EVERY seat
+    now renders three lines in that shape — the shadow emission is
+    closed at the builder for all seats, so the four seats that
+    carried a shadow line under the BC8 scoping (mentor, maverick,
+    conductor, skeptic) render three too; the Champion (FC7 removed
+    its table entry) and the Ambassador (CC5 removed its table
+    entry) render three as before. The table's shadow entries stay
+    as frozen rollback data, unemitted."""
     guardian_lines = ARCH.philosophy_prompt_lines("guardian")
     assert len(guardian_lines) == 3, guardian_lines
     assert guardian_lines[0].startswith("Foundational ideal: ")
@@ -268,10 +277,11 @@ def test_t12_bc8_scoping_per_seat():
     assert not any("Shadow" in line for line in guardian_lines)
     for other in ("mentor", "maverick", "conductor", "skeptic"):
         lines = ARCH.philosophy_prompt_lines(other)
-        assert len(lines) == 4, (other, lines)
+        assert len(lines) == 3, (other, lines)
         assert lines[2].startswith(
-            "Shadow — your characteristic failure mode"
+            "Live tension with the other seats: "
         ), other
+        assert not any("Shadow" in line for line in lines), other
     assert len(ARCH.philosophy_prompt_lines("champion")) == 3
     assert len(ARCH.philosophy_prompt_lines("ambassador")) == 3
     # Unknown ids still render nothing.

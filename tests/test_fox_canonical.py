@@ -817,17 +817,21 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
     monkeypatch.setattr(R, "FOX_CANONICAL_CUTOVER", False)
     lines, _ = build_voice_prompt("u1", "maverick", "hello", [], mode="base")
     assert lines == _legacy_minimal_prompt(monkeypatch)
-    # EXPLICIT legacy assertion: the old shadow and tension lines
-    # are PRESENT exactly in the OFF branch. They are unacceptable
-    # in the canonical branch and intentional here — the rollback
-    # branch is frozen, not sanitized.
+    # EXPLICIT legacy assertion, as amended by WI-1 (Lens Foundation,
+    # founder verdict 2026-11-17): the tension line is PRESENT exactly
+    # in the OFF branch, and the old shadow line is ABSENT from every
+    # branch — WI-1 closed the shadow emission at the builder, so the
+    # rollback branch no longer carries it either (the table stays
+    # the frozen rollback source; tests/test_shadow_absence.py pins
+    # the closure). Before WI-1 this test asserted the shadow line's
+    # presence here as intentional; that disposition is superseded.
     joined = _joined(lines)
     assert (
         "Shadow — your characteristic failure mode, which the Skeptic "
         "may name: Contrarianism: breaking doors to prove it isn't "
         "captive — destruction without replacement, transgression as "
         "identity rather than liberation."
-    ) in joined
+    ) not in joined
     assert (
         "Live tension with the other seats: Accuses the Guardian of "
         "making captivity comfortable; needles the Mentor's reverence "

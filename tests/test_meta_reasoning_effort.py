@@ -131,24 +131,22 @@ def test_philosophy_covers_all_voices():
         # FC7 (2026-11-07) + CC5 (2026-11-07): the Champion and the
         # Ambassador carry no "shadow" entry — the superseded
         # "Martyrdom" / "Appeasement" lines were removed, not replaced
-        # — so their blocks are 3 lines with no Shadow line; every
-        # other seat is 4.
+        # — so their blocks are 3 lines with no Shadow line.
         # BC8 (Bear S1, 2026-11-09): the Guardian joins them — its
         # Shadow line is omitted from the identity block (the table
         # entry stays the frozen rollback source) — so its block is
-        # 3 lines with no Shadow line too; every other seat is 4.
-        if vid in ("champion", "ambassador", "guardian"):
-            assert len(lines) == 3, vid
-            assert "Foundational ideal" in lines[0]
-            assert "Defining question" in lines[1]
-            assert "tension" in lines[2]
-            assert not any("Shadow" in l for l in lines), vid
-            continue
-        assert len(lines) == 4, vid
+        # 3 lines with no Shadow line too.
+        # WI-1 (Lens Foundation, founder verdict 2026-11-17): the
+        # remaining four seats (mentor, maverick, conductor, skeptic)
+        # join them — the shadow emission is closed at the builder
+        # for every seat. EVERY block is now 3 lines (ideal, defining
+        # question, tension) with no Shadow line; the table's shadow
+        # entries stay as frozen rollback data, unemitted.
+        assert len(lines) == 3, vid
         assert "Foundational ideal" in lines[0]
         assert "Defining question" in lines[1]
-        assert "Shadow" in lines[2]
-        assert "tension" in lines[3]
+        assert "tension" in lines[2]
+        assert not any("Shadow" in l for l in lines), vid
     assert arch.philosophy_prompt_lines("nope") == []
     # No celebrity names leak into prompt text — ingredients, not casting.
     for vid in arch.stock_archetype_ids():

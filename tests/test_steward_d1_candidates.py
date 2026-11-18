@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -53,8 +54,21 @@ from local_ai.vision_execution.storage import init_db, open_sqlite_with_ve_pragm
 USER = "d1-user"
 OTHER = "d1-other"
 PRE = "2026-11-14T00:00:00+00:00"
-POST = "2026-11-16T00:00:00+00:00"
-POST2 = "2026-11-17T00:00:00+00:00"
+def _future_day(days: int) -> str:
+    """Midnight UTC `days` after today. POST/POST2 must sit strictly
+    after the erasure boundary the live delete flow stamps from the
+    real clock, so they are computed at import instead of pinned —
+    a pinned "future" date becomes a clock bomb once real time
+    passes it (the 2026-11-16 pin failed every run from that date
+    on). PRE stays pinned: it is strictly before any boundary the
+    real clock can stamp, and before test_t9's inline audit
+    boundary (2026-11-15), which POST likewise stays after."""
+    day = datetime.now(timezone.utc).date() + timedelta(days=days)
+    return f"{day.isoformat()}T00:00:00+00:00"
+
+
+POST = _future_day(2)
+POST2 = _future_day(3)
 T1_AT = "2026-11-15T10:00:00+00:00"
 T2_AT = "2026-11-15T11:00:00+00:00"
 T3_AT = "2026-11-15T12:00:00+00:00"

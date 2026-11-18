@@ -745,10 +745,15 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
     # no longer emits it for the guardian — while the tension line
     # stands. The ARCHETYPE_PHILOSOPHY table stays the frozen rollback
     # source (the shadow text remains in it); only the function's
-    # guardian output changed. Scoping proof: the four seats that
-    # still carry a shadow line keep it; the Champion (FC7) and the
-    # Ambassador (CC5) have none because their table entries were
-    # removed by those corrections, not this one.
+    # guardian output changed.
+    # WI-1 (Lens Foundation, founder verdict 2026-11-17) supersedes
+    # the BC8-era scoping proof below: the shadow emission is now
+    # closed at the builder for EVERY seat, so the four seats that
+    # still carried a shadow line (mentor, maverick, conductor,
+    # skeptic) no longer emit one either — joining the Champion (FC7)
+    # and the Ambassador (CC5), whose table entries were removed by
+    # those corrections. The closure is pinned by
+    # tests/test_shadow_absence.py.
     joined = _joined(lines)
     assert (
         "Shadow — your characteristic failure mode, which the Skeptic "
@@ -764,7 +769,7 @@ def test_branch_gate_off_equals_exact_legacy_prompt(monkeypatch):
         other_joined = "\n".join(philosophy_prompt_lines(other))
         assert (
             "Shadow — your characteristic failure mode, which the Skeptic "
-            "may name:" in other_joined
+            "may name:" not in other_joined
         ), other
     for shadowless in ("champion", "ambassador"):
         assert "Shadow — your characteristic failure mode" not in "\n".join(

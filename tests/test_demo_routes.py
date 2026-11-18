@@ -380,14 +380,18 @@ def test_warmth_register_covers_every_stock_seat():
 def test_anti_presumption_leaves_card_content_untouched():
     from local_ai.council import archetypes as arch
 
-    # Card content assertions from the existing suite still hold: philosophy
-    # block is exactly 4 lines, defining questions intact — except the
-    # Champion (FC7) and the Ambassador (CC5), whose superseded shadow
-    # lines were removed, and the Guardian (BC8, Bear S1), whose
-    # identity-block shadow line rides this correction: 3 lines, no
-    # Shadow line.
+    # Card content assertions from the existing suite still hold:
+    # defining questions intact. Line counts as amended by WI-1
+    # (Lens Foundation, founder verdict 2026-11-17): the philosophy
+    # block is exactly 3 lines for EVERY seat — the Champion (FC7)
+    # and the Ambassador (CC5) had their superseded shadow lines
+    # removed, the Guardian's was omitted (BC8, Bear S1), and WI-1
+    # closed the shadow emission at the builder for the remaining
+    # four seats (mentor, maverick, conductor, skeptic). No seat
+    # emits a Shadow line; the table stays the frozen rollback
+    # source.
     for vid in arch.stock_archetype_ids():
-        expected = 3 if vid in ("champion", "ambassador", "guardian") else 4
+        expected = 3
         assert len(arch.philosophy_prompt_lines(vid)) == expected, vid
     assert "What are we assuming?" in "\n".join(arch.build_archetype_prompt_lines("skeptic"))
 

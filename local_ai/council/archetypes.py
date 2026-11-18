@@ -196,18 +196,26 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
 
 
 def philosophy_prompt_lines(archetype_id: str) -> list[str]:
-    """Philosophy block for a council seat: ideal, defining question, shadow, tension.
+    """Philosophy block for a council seat: ideal, defining question, tension.
 
     Returns [] for unknown archetype ids. Woven into every council prompt —
     demo, base, and trained voices alike: the archetype layer underneath the persona.
 
-    A seat with no "shadow" entry renders no Shadow line (Champion, FC7
-    2026-11-07 — the superseded "Martyrdom" line was removed, not
-    replaced); the guardian renders none either (Bear S1, BC8
-    2026-11-07 — the identity-block shadow line rides this correction,
-    not the meeting frames; the ARCHETYPE_PHILOSOPHY table stays the
-    frozen rollback source, only the emitted lines change). Every other
-    seat still carries one, so their rendering is byte-identical.
+    WI-1 (Lens Foundation, founder verdict 2026-11-17): NO Shadow line
+    is emitted for any seat. A seat's shadow is protected design
+    information — the ordinary prompt carries virtue + intensity, and
+    only the final keystone controls explicit recognition — so this
+    builder no longer places shadow prose in front of a model on any
+    path (the legacy branch, meetings, demo, and zenaf_tools all
+    consume this builder). The ARCHETYPE_PHILOSOPHY table keeps its
+    "shadow" entries and the steward record keeps PHILOSOPHY_SHADOW
+    as frozen rollback DATA; only the emission closed. History: the
+    Champion's entry was removed outright (FC7, 2026-11-07 — the
+    superseded "Martyrdom" line was removed, not replaced) and the
+    guardian's emission was carved out (Bear S1, BC8, 2026-11-07);
+    WI-1 generalizes the closure to every seat, including the
+    steward-sourced conductor branch below. Pinned by
+    tests/test_shadow_absence.py (T-S1–T-S4).
 
     Weaver consolidation (mandate P2–P3): when the steward read path is
     active, the conductor's philosophy lines come from the steward record
@@ -220,7 +228,6 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
         return [
             f"Foundational ideal: {_steward_records.PHILOSOPHY_IDEAL}",
             f"Defining question (your instinctive first move on any problem): \"{_steward_records.PHILOSOPHY_QUESTION}\"",
-            f"Shadow — your characteristic failure mode, which the Skeptic may name: {_steward_records.PHILOSOPHY_SHADOW}",
             f"Live tension with the other seats: {_steward_records.PHILOSOPHY_TENSION}",
         ]
     phil = ARCHETYPE_PHILOSOPHY.get(key)
@@ -230,16 +237,10 @@ def philosophy_prompt_lines(archetype_id: str) -> list[str]:
         f"Foundational ideal: {phil['ideal']}",
         f"Defining question (your instinctive first move on any problem): \"{phil['question']}\"",
     ]
-    # FC7 (2026-11-07): no Shadow line for a seat with no "shadow"
-    # entry. BC8 (Bear S1, 2026-11-07): no Shadow line for the
-    # guardian either — the identity-block shadow line rides this
-    # correction, not the meeting frames. The ARCHETYPE_PHILOSOPHY
-    # table stays the frozen rollback source; only the emitted lines
-    # change. Every other seat still carries one.
-    if "shadow" in phil and key != "guardian":
-        lines.append(
-            f"Shadow — your characteristic failure mode, which the Skeptic may name: {phil['shadow']}"
-        )
+    # WI-1 (2026-11-17): no Shadow line is emitted for any seat —
+    # the gate and append that stood here (and the steward branch's
+    # PHILOSOPHY_SHADOW line above) are removed. The table's
+    # "shadow" entries stay as frozen rollback data, unemitted.
     lines.append(f"Live tension with the other seats: {phil['tension']}")
     return lines
 

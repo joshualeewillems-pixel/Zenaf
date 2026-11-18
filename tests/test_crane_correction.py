@@ -210,7 +210,13 @@ def test_t1_fox_engage_post_guard():
     with them (me +272 with engage, mt +927 with turn). Re-pinned
     2026-11-13: PR #349 (fellowship-reference pronoun corrections)
     moves the Fox meeting prompts by +4 net chars each (me 14,644 ->
-    14,648; mt 11,468 -> 11,472); engage and turn frames unmoved."""
+    14,648; mt 11,468 -> 11,472); engage and turn frames unmoved.
+    Re-pinned 2026-11-17: WI-1 (Lens Foundation, founder verdict)
+    closes the shadow emission at the philosophy builder, so the
+    Fox meeting prompts lose the Maverick shadow line (-212 chars
+    each; on current main, after the WI-4 registry re-pin and the
+    security-merge update: me 14,936 -> 14,724; mt 11,760 ->
+    11,548); engage and turn frames unmoved."""
     defn = _definition("maverick")
     ef, tf, me, mt = _meeting_prompts(defn, FOX_MSG)
     # Re-pinned 2026-11-17 for the WI-4 registry alignment: the
@@ -220,10 +226,14 @@ def test_t1_fox_engage_post_guard():
     # Post-security-merge update (2026-11-17): the import gated
     # note now states the installation-owner session (+43), so
     # engage 7,958, turn 4,782, me 14,936, mt 11,760.
+    # WI-1 rebase resolution (2026-11-18): WI-1 removes the
+    # Maverick shadow line from the meeting prompts only (-212
+    # each), so me 14,724, mt 11,548; engage/turn unmoved.
+    # Recomputed by direct measurement on the rebased tree.
     assert len(ef) == 7958
     assert len(tf) == 4782
-    assert len(me) == 14936
-    assert len(mt) == 11760
+    assert len(me) == 14724
+    assert len(mt) == 11548
 
 
 # ---------------------------------------------------------------------------
@@ -383,8 +393,13 @@ def test_t4_talk_byte_identical():
     # canonical Fox Talk grows +88 with the S1 middle-unit rewrite
     # (3,062 -> 3,150); the non-canonical Talk is unchanged (2,791).
     # Crane compact/fuller below are unchanged.
+    # WI-1 re-pin (2026-11-17, Lens Foundation, founder verdict):
+    # the non-canonical Fox Talk runs the legacy assembly, which
+    # loses the Maverick shadow line with the builder closure
+    # (2,791 -> 2,579); canonical Talk and the Crane renders are
+    # unchanged.
     assert len(_talk("maverick", FOX_MSG, True)) == 3150
-    assert len(_talk("maverick", FOX_MSG, False)) == 2791
+    assert len(_talk("maverick", FOX_MSG, False)) == 2579
     assert len("\n".join(R.render_crane_ordinary(CRANE_RECORD, detail="compact"))) == 1283
     assert len("\n".join(R.render_crane_ordinary(CRANE_RECORD, detail="fuller"))) == 1481
     assert len("\n".join(R.render_fox_ordinary(FOX_RECORD, detail="compact"))) == 1479

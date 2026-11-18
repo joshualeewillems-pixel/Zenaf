@@ -389,16 +389,18 @@ def test_t9_lengths():
 # ---------------------------------------------------------------------------
 
 def test_t10_scope_guards():
-    # The identity-block shadow line is byte-identical.
+    # WI-1 (Lens Foundation, founder verdict 2026-11-17): the
+    # identity-block shadow line is no longer emitted at all — the
+    # emission closed at the builder for every seat. (Before WI-1
+    # this guard pinned the skeptic's emitted line byte-identically;
+    # the shadow TEXT stays byte-identical in the frozen
+    # ARCHETYPE_PHILOSOPHY table, unemitted — pinned by
+    # tests/test_shadow_absence.py T-S3.)
     shadow_lines = [
         ln for ln in ARCH.philosophy_prompt_lines("skeptic")
         if ln.startswith("Shadow \u2014")
     ]
-    assert shadow_lines == [
-        "Shadow \u2014 your characteristic failure mode, which the "
-        "Skeptic may name: Paralysis and cynicism: mistaking "
-        "disbelief for intelligence."
-    ]
+    assert shadow_lines == []
     # The fellowship-reference pronouns are CORRECTED (the
     # fellowship build, PR #349, has landed): Bear rendered "She",
     # Crane "He" — the founder's gender law.

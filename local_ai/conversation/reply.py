@@ -125,8 +125,11 @@ BEAR_CANONICAL_CUTOVER = True
 # renderer reproduces exemplar §2 exactly — the loop is a way of
 # working, not character, so it rides here as guidance, in the
 # pattern of _WEAVER_REFINEMENT_GUIDANCE (prompt-local guidance,
-# not canonical content). Meetings run canonical=False, so the
-# meeting path never sees it; no other seat ever sees it.
+# not canonical content). The meeting path never sees it: the
+# assembly site below withholds it whenever the canonical tier
+# rides (the meeting caller's signal), including for a converged
+# Bear meeting running canonical=True under WI-2; no other seat
+# ever sees it.
 # Content fences (architecture §2.2, §2.4, §2.7): the five steps are
 # available conversational functions, never a required sequence —
 # Bear may skip or combine them, or simply acknowledge what is
@@ -188,6 +191,59 @@ CRANE_CANONICAL_CUTOVER = True
 # behavior is untouched. No environment-variable override: any future
 # trial override needs its own authorization (Weaver trial precedent).
 FOX_CANONICAL_CUTOVER = True
+
+
+# ---------------------------------------------------------------------------
+# Meeting canonical MIGRATION CONTROLS (Lens Foundation WI-2, 2026-11-17).
+#
+# These seven constants are MIGRATION CONTROLS, not a permanent
+# architectural distinction. Each one gates ONE seat's meeting-path
+# character assembly:
+#
+# - True: MeetingService passes canonical=True for that seat, so its
+#   meeting character block is rendered from its canonical record by
+#   its per-seat renderer — the same block its ordinary Talk turns
+#   carry — instead of the legacy archetype assembly.
+# - False (the pre-migration state): the seat's meetings keep the
+#   exact legacy assembly. Flipping a constant back to False is that
+#   seat's whole rollback; no legacy function is modified either way.
+#
+# A seat's constant is flipped to True only in its own migration
+# commit, gated on that seat's deterministic fixtures (coverage
+# matrix + assembled-prompt pins, tests/test_meeting_canonical_
+# assembly.py). When every seat stands True and the founder accepts
+# the completed convergence, these constants and the legacy meeting
+# branch they gate are removed together in a separately authorized
+# cleanup — they are not a lasting Talk/meeting distinction. The
+# demo surface has no per-seat controls: its character-source swap
+# (api/routes/demo_routes.py) landed with the meeting convergence.
+# No environment-variable override.
+_MEETING_CANONICAL_WEAVER = True
+_MEETING_CANONICAL_RAVEN = True
+_MEETING_CANONICAL_GARDENER = True
+_MEETING_CANONICAL_FIREBRAND = True
+_MEETING_CANONICAL_BEAR = True
+_MEETING_CANONICAL_CRANE = True
+_MEETING_CANONICAL_FOX = True
+
+_MEETING_CANONICAL_CUTOVERS = {
+    "conductor": _MEETING_CANONICAL_WEAVER,
+    "skeptic": _MEETING_CANONICAL_RAVEN,
+    "mentor": _MEETING_CANONICAL_GARDENER,
+    "champion": _MEETING_CANONICAL_FIREBRAND,
+    "guardian": _MEETING_CANONICAL_BEAR,
+    "ambassador": _MEETING_CANONICAL_CRANE,
+    "maverick": _MEETING_CANONICAL_FOX,
+}
+
+
+def meeting_canonical_enabled(archetype_id: str) -> bool:
+    """Whether the seat's meeting path assembles its character block
+    from the canonical record (Lens Foundation WI-2 migration
+    controls above). Unknown seats are not migrated: False."""
+    return _MEETING_CANONICAL_CUTOVERS.get(
+        (archetype_id or "").strip().lower(), False
+    )
 
 
 def _strand_blend_lines(weights: dict[str, float]) -> list[str]:
@@ -796,11 +852,17 @@ def build_voice_prompt(
             "",
             *prompt_lines,
         ]
-    if bear_canonical:
+    if bear_canonical and not canonical_tier:
         # S2: Bear's flow-loop guidance — ordinary Talk only.
-        # bear_canonical is True only for ordinary Bear turns
-        # (canonical=True); meetings (canonical=False) and every
-        # other seat never take this branch.
+        # bear_canonical is True only for Bear turns assembled on
+        # the canonical path; the guidance is ordinary-Talk guidance
+        # by design, so it is withheld whenever the canonical tier
+        # rides — the tier is the meeting caller's signal (meetings
+        # are its only production caller), and since the WI-2
+        # meeting convergence a Bear meeting may itself run
+        # canonical=True. Talk never passes the tier, so ordinary
+        # Bear Talk is byte-identical; every other seat never takes
+        # this branch.
         prompt += ["", _BEAR_FLOW_LOOP_GUIDANCE]
     if sections:
         prompt += [

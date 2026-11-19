@@ -1099,3 +1099,24 @@ def test_weights_untouched_and_no_vector_in_record():
     weights_field = FOX_RECORD["identity"]["strand_weights"]
     assert isinstance(weights_field["text"], str)
     assert not isinstance(weights_field.get("vector"), (dict, list))
+
+
+
+def test_meeting_path_uses_canonical_block_after_wi2_migration():
+    # Lens Foundation WI-2 (2026-11-17): the Fox's meeting
+    # migration control stands True, so the meeting path assembles
+    # the canonical character block — the flag the meeting service
+    # passes is reply.meeting_canonical_enabled. canonical=False
+    # still yields the exact legacy assembly (the rollback source,
+    # pinned above). Full meeting fixtures: tests/
+    # test_meeting_canonical_assembly.py (T-A1).
+    assert R.meeting_canonical_enabled("maverick")
+    lines, _ = build_voice_prompt(
+        "u1", "maverick", "hello", [], mode="base",
+        canonical=R.meeting_canonical_enabled("maverick"),
+        canonical_tier=True, extra_instructions="FRAME",
+    )
+    joined = _joined(lines)
+    assert CANONICAL_MARKER in joined
+    assert "Foundational ideal:" not in joined
+    assert "Shadow — your characteristic failure mode" not in joined

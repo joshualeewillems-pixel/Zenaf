@@ -1439,3 +1439,24 @@ def test_renderer_budget_separation_2026_11_04():
         render_firebrand_ordinary(
             bloated, detail="compact", resolved_capability=signed
         )
+
+
+
+def test_meeting_path_uses_canonical_block_after_wi2_migration():
+    # Lens Foundation WI-2 (2026-11-17): the Firebrand's meeting
+    # migration control stands True, so the meeting path assembles
+    # the canonical character block — the flag the meeting service
+    # passes is reply.meeting_canonical_enabled. canonical=False
+    # still yields the exact legacy assembly (the rollback source,
+    # pinned above). Full meeting fixtures: tests/
+    # test_meeting_canonical_assembly.py (T-A1).
+    assert R.meeting_canonical_enabled("champion")
+    lines, _ = build_voice_prompt(
+        "u1", "champion", "hello", [], mode="base",
+        canonical=R.meeting_canonical_enabled("champion"),
+        canonical_tier=True, extra_instructions="FRAME",
+    )
+    joined = _joined(lines)
+    assert CANONICAL_MARKER in joined
+    assert "Foundational ideal:" not in joined
+    assert "Shadow — your characteristic failure mode" not in joined

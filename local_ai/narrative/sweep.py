@@ -73,6 +73,7 @@ from .derivation import (
 )
 from .eligibility import check_barrier_integrity, resolver_from_verdict
 from .friction import run_friction_pass
+from .recognition import recognition_enabled, run_recognition_pass
 from .store import NarrativeStore
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,7 @@ class SweepResult:
     log_missing: bool = False
     deferred: dict | None = None
     friction: dict | None = None
+    recognition: dict | None = None
     pruned: list[str] = field(default_factory=list)
     error: str | None = None
 
@@ -194,6 +196,7 @@ class SweepResult:
             "log_missing": self.log_missing,
             "deferred": self.deferred,
             "friction": self.friction,
+            "recognition": self.recognition,
             "pruned": list(self.pruned),
             "error": self.error,
         }
@@ -448,6 +451,28 @@ def run_sweep_for_user(
                     user_id,
                 )
                 result.friction = {"error": "friction pass failed"}
+            # Recognition pass (Gate B): after friction (sees
+            # freshly rendered state), before prune (observes
+            # threads before they die) — friction's own placement
+            # rationale. Gated on the ZENAF_RECOGNITION master
+            # switch AND this pass's consent state; failure-isolated
+            # like the friction pass, because recognition can never
+            # break the sweep that produced its evidence.
+            if recognition_enabled() and _gate_open(
+                user_id, consent_reader
+            ):
+                try:
+                    result.recognition = run_recognition_pass(
+                        store, user_id, generate_fn=generate_fn
+                    ).to_dict()
+                except Exception:
+                    logger.exception(
+                        "steward sweep: recognition pass failed for %r",
+                        user_id,
+                    )
+                    result.recognition = {
+                        "error": "recognition pass failed"
+                    }
             # Ignored-retention prune (standing policy, ungated).
             try:
                 result.pruned = prune_ignored_threads(store, user_id)

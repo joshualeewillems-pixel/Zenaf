@@ -10,7 +10,10 @@ no per-request model analysis, and no new foreground work:
   discipline. A preparation that fails any gate returns no content
   at all, not even a thread title.
 - Rendering is facts only: thread title, status, scope, and evidence
-  count. Readings (interpretations) are never rendered into a seat's
+  count — plus, since Gate B recognition, standing-frame facts: an
+  ACCEPTED fitting's lens name and the count of ACCEPTED
+  correspondences citing the thread. Proposed frames are never
+  rendered. Readings (interpretations) are never rendered into a seat's
   prompt, and evidence text is never copied — the layer cites by
   ref, and the block carries ref counts, not ref contents. One
   thread rendered for two branches shows identical fact lines; only
@@ -53,6 +56,7 @@ from dataclasses import dataclass, field
 from .branches import get_branch
 from .consent import coordination_allowed
 from .coordination import prepare_context
+from .lenses import get_lens
 from .store import NarrativeStore
 
 #: The Weaver's branch id (archetype ``conductor``).
@@ -209,6 +213,17 @@ def _render_block(
         if fact["scope"]:
             line += f" (scope: {fact['scope']})"
         line += f" — {fact['evidence_count']} evidence ref(s)"
+        if fact.get("fitting_name"):
+            # Standing frame (Gate B recognition): an ACCEPTED
+            # fitting is a fact about the record, rendered like the
+            # other facts. Proposed frames are never rendered — an
+            # unaccepted proposal is not seat context.
+            line += f" — fitting: {fact['fitting_name']} (accepted)"
+        if fact.get("correspondence_count"):
+            line += (
+                f" — {fact['correspondence_count']} accepted "
+                "correspondence(s)"
+            )
         lines.append(line)
     if hidden_count > 0:
         lines.append(f"+{hidden_count} more relevant thread(s) not shown.")
@@ -281,6 +296,20 @@ def narrative_context_for(
     attended = set(str(r) for r in attended_entity_refs)
     attended |= attended_refs_for_text(known_refs, attended_text)
 
+    # Standing frames, read once per preparation: accepted
+    # fittings (by thread) and accepted correspondences (counted
+    # per cited thread). Only ACCEPTED frames are facts; proposed
+    # or rejected frames never reach a seat's context.
+    accepted_correspondences = store.correspondences_for(
+        user_id, status="user_accepted"
+    )
+    correspondence_counts: dict[str, int] = {}
+    for corr in accepted_correspondences:
+        for cited_thread in corr.thread_ids or []:
+            correspondence_counts[cited_thread] = (
+                correspondence_counts.get(cited_thread, 0) + 1
+            )
+
     available_facts: list[dict] = []
     assessment_ids: list[str] = []
     for thread in standing:
@@ -306,6 +335,15 @@ def narrative_context_for(
             assessment_ids.append(outcome.assessment.id)
         if not outcome.available or outcome.context is None:
             continue
+        fitting_name = None
+        accepted_fittings = store.fittings_for(
+            user_id, thread.id, status="accepted"
+        )
+        if accepted_fittings:
+            lens = get_lens(accepted_fittings[0].lens_id)
+            fitting_name = (
+                lens.name if lens is not None else accepted_fittings[0].lens_id
+            )
         available_facts.append(
             {
                 "thread_id": thread.id,
@@ -313,6 +351,10 @@ def narrative_context_for(
                 "status": thread.status,
                 "scope": (thread.scope or "")[:_MAX_SCOPE_CHARS],
                 "evidence_count": len(evidence_by_thread[thread.id]),
+                "fitting_name": fitting_name,
+                "correspondence_count": correspondence_counts.get(
+                    thread.id, 0
+                ),
             }
         )
     if not available_facts:

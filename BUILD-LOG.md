@@ -44,3 +44,7 @@ Governing spec: `~/workspace/goals/seven-seat-worlds/files/zenaf-steward-recogni
   (after friction, before prune; ZENAF_RECOGNITION + _gate_open;
   per-user lock already held; failure-isolated). SweepResult gains
   a `recognition` dict field. Import check OK.
+- context.py: standing-frame fact lines — accepted fitting renders
+  as `fitting: <lens name> (accepted)`, accepted correspondences
+  as a count, both only for ACCEPTED frames; facts dicts gain
+  fitting_name / correspondence_count. Import check OK.

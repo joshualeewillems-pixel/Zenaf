@@ -122,6 +122,15 @@ class LiveContext(BaseModel):
     # that is not the caller's mapped thread for the strand fails
     # closed with a 422).
     strand_key: str | None = Field(default=None, max_length=32)
+    # Bonsai Bench Stage 1B (Shape A §2.6): the client-derived sketch
+    # summary, set ONLY by the Bench panel for skeptic turns, never
+    # inferred. The ≤300-char bound is enforced at the service's
+    # form-validation point, where an invalid summary is IGNORED —
+    # never a turn failure — so this field deliberately carries no
+    # max_length: a schema-level rejection would 422 a turn the
+    # design says must not break. The service pops the field from the
+    # turn context before persistence; it is never stored.
+    sketch_summary: str | None = None
 
 
 class ConversationTurnBody(BaseModel):
@@ -150,6 +159,12 @@ class ConversationTurnResponse(BaseModel):
     # ("item" | "checkpoint" | "closing" | "offered" | "ended"), or
     # None when this turn recorded no round state.
     round_state: str | None = None
+    # Bonsai Bench Stage 1B (Shape A §2.4): the validated shaping
+    # instructions for this turn ({"instructions": [...],
+    # "turn_pair": {...}}), or None when this turn did not shape.
+    # The server retains no copy; the client's sketch store is the
+    # only home the instructions ever have.
+    sketch_instructions: dict | None = None
 
 
 def _check_seat(archetype_id: str) -> str:
@@ -206,6 +221,7 @@ def conversation_turn(
         has_training=result.reply.has_training,
         round_item=result.round_item,
         round_state=result.round_state,
+        sketch_instructions=result.sketch_instructions,
     )
 
 

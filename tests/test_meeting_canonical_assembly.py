@@ -258,7 +258,9 @@ COVERAGE_MATRIX: dict[str, list[tuple[str, int, str, str]]] = {
         ("question", 1, "rendered",
          "render_gardener_ordinary worldview unit — philosophy."
          "defining_question (verbatim)"),
-        ("shadow", 1, "retired", _R_SHADOW),
+        # No shadow entry: WI-1 (PR #391) closed shadow
+        # emission at the philosophy builder, so the legacy
+        # prompt no longer carries a Shadow line.
         ("tension", 1, "retired", _R_TENSION),
         ("style_rule", 1, "preserved", _R_STYLE),
         ("warmth", 1, "retired", _R_WARMTH),
@@ -335,7 +337,9 @@ COVERAGE_MATRIX: dict[str, list[tuple[str, int, str, str]]] = {
         ("question", 1, "rendered",
          "render_weaver_ordinary worldview unit — philosophy."
          "defining_question (verbatim)"),
-        ("shadow", 1, "retired", _R_SHADOW),
+        # No shadow entry: WI-1 (PR #391) closed shadow
+        # emission at the philosophy builder, so the legacy
+        # prompt no longer carries a Shadow line.
         ("tension", 1, "retired", _R_TENSION),
         ("style_rule", 1, "preserved", _R_STYLE),
         # The conductor's warmth register rides inside her
@@ -355,7 +359,9 @@ COVERAGE_MATRIX: dict[str, list[tuple[str, int, str, str]]] = {
         ("question", 1, "rendered",
          "render_raven_ordinary worldview unit — philosophy."
          "defining_question (verbatim)"),
-        ("shadow", 1, "retired", _R_SHADOW),
+        # No shadow entry: WI-1 (PR #391) closed shadow
+        # emission at the philosophy builder, so the legacy
+        # prompt no longer carries a Shadow line.
         ("tension", 1, "retired", _R_TENSION),
         ("style_rule", 1, "preserved", _R_STYLE),
         ("warmth", 1, "retired", _R_WARMTH),
@@ -372,7 +378,9 @@ COVERAGE_MATRIX: dict[str, list[tuple[str, int, str, str]]] = {
         ("question", 1, "rendered",
          "render_fox_ordinary worldview unit — philosophy."
          "defining_question (verbatim)"),
-        ("shadow", 1, "retired", _R_SHADOW),
+        # No shadow entry: WI-1 (PR #391) closed shadow
+        # emission at the philosophy builder, so the legacy
+        # prompt no longer carries a Shadow line.
         ("tension", 1, "retired", _R_TENSION),
         ("style_rule", 1, "preserved", _R_STYLE),
         ("warmth", 1, "retired", _R_WARMTH),

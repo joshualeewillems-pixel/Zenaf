@@ -54,3 +54,11 @@ Governing spec: `~/workspace/goals/seven-seat-worlds/files/zenaf-steward-recogni
   thread, and calls ConversationStore.add_strand_source
   (kind=paste, ref=steward:<kind>:<row_id>). 404 discipline mirrors
   the verdict endpoints. Import check OK.
+- tests/test_narrative_recognition.py: brief §4 suite (R1–R7,
+  T1.1–T7.3) + carried validation/shape/bridge tests + §6.2
+  seven-seat twin + import-separation test. First full run:
+  24 passed / 5 failed — all five were test-side API mismatches
+  (result.detections field name, propose_reading keyword form,
+  ThreadReading.progression attribute, Correspondence has no
+  proposer field, route closes stores so the bridge test re-opens).
+  Fixed; second full run: 29 passed, 0 failed.

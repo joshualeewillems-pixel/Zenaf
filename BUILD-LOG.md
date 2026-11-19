@@ -62,3 +62,12 @@ Governing spec: `~/workspace/goals/seven-seat-worlds/files/zenaf-steward-recogni
   ThreadReading.progression attribute, Correspondence has no
   proposer field, route closes stores so the bridge test re-opens).
   Fixed; second full run: 29 passed, 0 failed.
+
+## Final verification (2026-11-19)
+- New suite: tests/test_narrative_recognition.py — 29 passed, 0 failed.
+- Existing suites (23 files matching *narrative* / *steward*):
+  552 passed, 0 failed — no regressions.
+- Baseline spot-check: tests/test_raven_regression_fixture.py::
+  test_t8_budgets_hold fails with AssertionError, identical to its
+  main-carried baseline behavior.
+- Branch NOT pushed, no PR opened — left local for Gate C.

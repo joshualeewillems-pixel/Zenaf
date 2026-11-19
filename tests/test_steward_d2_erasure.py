@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -42,8 +43,21 @@ USER = "d2-owner"
 OTHER = "d2-other-user"
 T = "2026-11-15T00:00:00+00:00"
 PRE = "2026-11-14T00:00:00+00:00"
-POST = "2026-11-16T00:00:00+00:00"
-POST2 = "2026-11-17T00:00:00+00:00"
+def _future_day(days: int) -> str:
+    """Midnight UTC `days` after today. POST/POST2 must sit strictly
+    after the erasure boundary the live delete flow stamps from the
+    real clock, so they are computed at import instead of pinned —
+    a pinned "future" date becomes a clock bomb once real time
+    passes it (the 2026-11-16 pin failed every run from that date
+    on). PRE and T stay pinned: both are strictly before any
+    boundary the real clock can stamp, and the explicit-boundary
+    tests resolve against T itself."""
+    day = datetime.now(timezone.utc).date() + timedelta(days=days)
+    return f"{day.isoformat()}T00:00:00+00:00"
+
+
+POST = _future_day(2)
+POST2 = _future_day(3)
 
 BIRTH_JSON = json.dumps(
     {

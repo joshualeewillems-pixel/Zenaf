@@ -48,3 +48,9 @@ Governing spec: `~/workspace/goals/seven-seat-worlds/files/zenaf-steward-recogni
   as `fitting: <lens name> (accepted)`, accepted correspondences
   as a count, both only for ACCEPTED frames; facts dicts gain
   fitting_name / correspondence_count. Import check OK.
+- steward_review_routes.py: POST /{kind}/{row_id}/explore —
+  "Explore with Aria" for reading/fitting/correspondence pending
+  items; builds the proposal summary, resolves the user's strand
+  thread, and calls ConversationStore.add_strand_source
+  (kind=paste, ref=steward:<kind>:<row_id>). 404 discipline mirrors
+  the verdict endpoints. Import check OK.

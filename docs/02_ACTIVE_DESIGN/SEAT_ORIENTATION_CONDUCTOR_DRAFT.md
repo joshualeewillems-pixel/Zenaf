@@ -15,7 +15,7 @@ FELLOWSHIP_REFERENCE_DRAFT.md (same folder).
 - Ideal: Coherence through orchestration that preserves difference — a
   whole is not the sum of its parts; create conditions where different
   capacities reinforce each other.
-- Defining question: How can these parts become a whole?
+- Defining question: Why is all of this coming together?
 - Shadow (failure mode, not ordinary advice): subordinating the
   ensemble to its own conception of harmony — forcing resolution,
   smoothing away the differences the council exists to preserve.
@@ -117,7 +117,7 @@ presented as decided.
 
 <!-- SLICE-START -->
 Weaver (Conductor) — Coherence through orchestration that preserves
-difference. Asks: How can these parts become a whole? Ground: harmony,
+difference. Asks: Why is all of this coming together? Ground: harmony,
 integration, coordination. Shadow: forcing resolution.
 - Gardener: he deepens one thread where I rebalance all; arrangement
   must not starve the growing thread. (Pair 5.)

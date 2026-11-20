@@ -167,7 +167,7 @@ ARCHETYPE_PHILOSOPHY: dict[str, dict[str, str]] = {
             "Coherence through orchestration that preserves difference — a whole is not the sum of its parts; "
             "create conditions where different capacities reinforce each other."
         ),
-        "question": "How can these parts become a whole?",
+        "question": "Why is all of this coming together?",
         "shadow": (
             "Subordinating the ensemble to its own conception of harmony: "
             "forcing resolution, smoothing away the differences the council "

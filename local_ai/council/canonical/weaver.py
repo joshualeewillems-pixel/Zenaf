@@ -91,7 +91,7 @@ WEAVER_RECORD: dict = {
             "category": "conviction",
         },
         "defining_question": {
-            "text": "How can these parts become a whole?",
+            "text": "Why is all of this coming together?",
             "standing": "adopted",
             "category": "conviction",
         },

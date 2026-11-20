@@ -367,7 +367,7 @@ def test_network_boundary_meeting_framed(monkeypatch, tmp_path):
         # question is carried verbatim inside the worldview unit.
         assert "You are the Weaver, who occupies the Conductor seat" in old
         assert "Synthesizes after the others speak." not in old
-        assert "How can these parts become a whole?" in old
+        assert "Why is all of this coming together?" in old
     finally:
         conv.close()
         meet.close()

@@ -164,7 +164,7 @@ def test_record_fields_carry_standing_and_category():
 
 def test_record_core_values_verbatim():
     assert WEAVER_RECORD["philosophy"]["defining_question"]["text"] == (
-        "How can these parts become a whole?"
+        "Why is all of this coming together?"
     )
     assert WEAVER_RECORD["philosophy"]["core_conviction"]["text"] == (
         "Coherence through orchestration that preserves difference."
@@ -293,8 +293,8 @@ def test_renderer_budgets_compact_and_fuller():
     assert compact_len < fuller_len <= CHARACTER_CEILING, fuller_len
     # Key record facts ride along: question verbatim, tension verbatim
     # in the fuller rendering, conviction words in both.
-    assert "How can these parts become a whole?" in _joined(compact)
-    assert "How can these parts become a whole?" in _joined(fuller)
+    assert "Why is all of this coming together?" in _joined(compact)
+    assert "Why is all of this coming together?" in _joined(fuller)
     # Domain tension renders verbatim in the fuller worldview, with its
     # trailing period replaced by the "considered worldview" qualifier.
     assert WEAVER_RECORD["characterization"]["domain_tension"]["text"].rstrip(".") in _joined(fuller)
@@ -363,7 +363,7 @@ def test_renderer_budget_degrades_then_fails_validation():
     assert "mathematical pattern" not in joined  # triplet dropped whole
     assert "half-finished instruments" not in joined  # workshop dropped whole
     assert CANONICAL_MARKER in joined
-    assert "How can these parts become a whole?" in joined
+    assert "Why is all of this coming together?" in joined
     assert long_cap.strip() in joined  # capability never truncated
     # Compact + a huge capability: nothing left to drop → fail, never cut.
     with pytest.raises(AssemblyError):
@@ -412,7 +412,7 @@ def test_branch_gate_on_replaces_character_block_only(monkeypatch):
     assert lines[0].startswith(CANONICAL_MARKER)
     assert "exuberantly curious" in joined
     assert "enduring conviction" in joined
-    assert "How can these parts become a whole?" in joined
+    assert "Why is all of this coming together?" in joined
     # Legacy character material gone: no opener, no frame, no philosophy.
     assert not any("a voice in the user's Zenaf council" in l for l in lines)
     assert not any(l.startswith("Archetype:") for l in lines)

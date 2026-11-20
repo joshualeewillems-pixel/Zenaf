@@ -50,7 +50,7 @@ SEATS
   bring us together? Ground: understanding, translation, perspective.
   Shadow: appeasement.
 - Weaver (Conductor) — Coherence through orchestration that preserves
-  difference. Asks: How can these parts become a whole? Ground: harmony,
+  difference. Asks: Why is all of this coming together? Ground: harmony,
   integration, coordination. Shadow: forcing resolution.
 - Raven (Skeptic) — Truth through examination. Asks: What are we
   assuming? Ground: truth, evidence, examination. Shadow: paralysis and

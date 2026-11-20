@@ -71,3 +71,40 @@ Governing spec: `zenaf-aria-expression-gate-b-brief-2026-11-19.md`
   get_strand_thread/list_strand_sources/list_topic_boundaries/
   count_messages/history/list_conversations; agent store
   pending_impressions; signals.claim_strands for claim strands).
+- Files written and committed per file:
+  939bfe0 (package marker + this log), 7f65a09
+  (aria_expression.py), 55a370e (test suite).
+- `local_ai/atelier/aria_expression.py` is 529 lines vs the
+  brief's ~300–400 estimate — the overage is docstring: the
+  module carries the Revision's scope declaration and all six
+  conservative readings (OQ1–OQ6) in full, per the brief's own
+  instruction to document them prominently. Footprint unchanged:
+  three new files, zero modifications.
+- One additive test beyond §5's nine:
+  test_recorded_relations_render pins the positive path for
+  thread links + accepted correspondences (interactions) vs a
+  merely-proposed correspondence (provisional), which tests 4/5
+  cover only from the empty/tension side.
+
+## Results (2026-11-19, this worktree)
+
+- New suite: `tests/test_aria_expression.py` — **10 passed**
+  (164.7s; runtime is store-construction-bound on this VM).
+- Non-interference subset: `tests/test_narrative_steward_s0.py`
+  + `tests/test_steward_phase3.py` — **66 passed**.
+- Baseline spot-check: `tests/test_raven_regression_fixture.py
+  ::test_t8_budgets_hold` — **fails identically** (frame-length
+  budget assertion, main-carried; this branch touches no prompt
+  or frame code).
+- Combined subset run: 66 passed, 1 failed (the baseline above),
+  479.5s. Full output was captured to subset-run.log during the
+  run and removed after these results were recorded here.
+- No ENOSPC encountered; TMPDIR was pointed at
+  ~/workspace/.tmp-pytest pre-emptively for all runs.
+
+## Deviations
+
+- None from the brief's substance. The module-size overage and
+  the one additive test are noted above. BUILD-LOG.md sits at the
+  worktree root per instructions (dropped before any merge).
+- Not pushed, not merged, no PR opened.

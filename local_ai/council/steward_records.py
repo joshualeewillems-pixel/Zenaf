@@ -46,7 +46,7 @@ RECORD_BASELINE = "origin/main 8e3bbc3"
 PHILOSOPHY_IDEAL = 'Coherence through orchestration that preserves difference — a whole is not the sum of its parts; create conditions where different capacities reinforce each other.'
 
 #: Defining question.
-PHILOSOPHY_QUESTION = 'How can these parts become a whole?'
+PHILOSOPHY_QUESTION = 'Why is all of this coming together?'
 
 #: Shadow.
 PHILOSOPHY_SHADOW = 'Subordinating the ensemble to its own conception of harmony: forcing resolution, smoothing away the differences the council exists to preserve.'

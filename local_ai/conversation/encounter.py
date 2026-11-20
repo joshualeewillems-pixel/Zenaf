@@ -2509,7 +2509,7 @@ _WEAVER_FALLBACK_LINES = (
 _WEAVER_FELLOWSHIP_SLICE = (
     "Fellowship reference (DRAFT — canonical text awaits verdict):\n"
     "Weaver (Conductor) — Coherence through orchestration that preserves\n"
-    "difference. Asks: How can these parts become a whole? Ground: harmony,\n"
+    "difference. Asks: Why is all of this coming together? Ground: harmony,\n"
     "integration, coordination.\n"
     "- Gardener: he deepens one thread where I rebalance all; arrangement\n"
     "  must not starve the growing thread. (Pair 5.)\n"

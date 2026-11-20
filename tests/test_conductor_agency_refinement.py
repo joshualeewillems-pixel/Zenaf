@@ -235,7 +235,7 @@ def test_slice_on_both_frames_weaver_only():
         assert "canonical text awaits verdict" in text
         assert "Coherence through orchestration that preserves" in text
         # All three dimensions: orientation, relational, agency.
-        assert "How can these parts become a whole?" in text
+        assert "Why is all of this coming together?" in text
         assert "(Pair 5.)" in text and "(Pair 21.)" in text
         assert "never impose resolution" in text
         # System slice, PROPOSED-marked, never decided.

@@ -26,10 +26,13 @@ is safe to import first (api/main.py does so before any router imports).
 """
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
+
+logger = logging.getLogger(__name__)
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 
@@ -37,6 +40,34 @@ _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
 def is_prod() -> bool:
     """True when ZENAF_PROD=1 (or true/yes/on)."""
     return (os.environ.get("ZENAF_PROD") or "").strip().lower() in _TRUE_VALUES
+
+
+def scan_allowed_roots(repo_root: Path | None = None) -> list[Path]:
+    """Permitted workspace-identity scan roots (Track B ruling 3).
+
+    The repo root is always included; ``ZENAF_SCAN_ALLOWED_ROOTS`` adds
+    comma-separated absolute paths. Entries that do not exist are skipped
+    with a warning log. The list is never empty — an empty allowlist
+    would make even the default repo-root scan fail, which is not the
+    intent. Set the variable in the shell environment locally or in
+    ``fly.toml`` ``[env]`` on hosted; there is no ``.env`` loader.
+    """
+    root = (repo_root or _REPO_ROOT).resolve()
+    allowed: list[Path] = [root]
+    raw = (os.environ.get("ZENAF_SCAN_ALLOWED_ROOTS") or "").strip()
+    for piece in raw.split(","):
+        piece = piece.strip()
+        if not piece:
+            continue
+        p = Path(piece).expanduser().resolve()
+        if not p.exists():
+            logger.warning(
+                "ZENAF_SCAN_ALLOWED_ROOTS: skipping missing root: %s", piece
+            )
+            continue
+        if p not in allowed:
+            allowed.append(p)
+    return allowed
 
 
 def secret_key() -> str:

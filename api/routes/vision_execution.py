@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
+from local_ai import hosted_config
 from local_ai.vision_execution import models as M
 from local_ai.vision_execution import service as S
 from local_ai.vision_execution import storage as VEStorage
@@ -1495,7 +1496,7 @@ def project_suggested_work(project_id: str, current_user: dict = Depends(get_cur
     if proj is None:
         raise HTTPException(status_code=404, detail="Project not found")
     tasks = S.list_tasks(uid, project_id)
-    persons = S.list_persons()
+    persons = S.list_persons(uid)
     persons_by_id = {str(p["id"]): str(p.get("name") or p["id"]) for p in persons if p.get("id")}
     from local_ai.vision_execution.project_suggested_work import generate_project_suggested_work
 
@@ -1730,34 +1731,34 @@ def delete_task(task_id: str, current_user: dict = Depends(get_current_user)):
 
 # --- Persons ---
 @router.get("/persons")
-def list_persons():
-    return S.list_persons()
+def list_persons(current_user: dict = Depends(get_current_user)):
+    return S.list_persons(current_user["id"])
 
 
 @router.get("/persons/{person_id}")
-def get_person(person_id: str):
-    out = S.get_person(person_id)
+def get_person(person_id: str, current_user: dict = Depends(get_current_user)):
+    out = S.get_person(person_id, current_user["id"])
     if out is None:
         raise HTTPException(status_code=404, detail="Person not found")
     return out
 
 
 @router.post("/persons")
-def create_person(body: M.PersonCreate):
-    return S.create_person(body)
+def create_person(body: M.PersonCreate, current_user: dict = Depends(get_current_user)):
+    return S.create_person(body, current_user["id"])
 
 
 @router.patch("/persons/{person_id}")
-def update_person(person_id: str, body: M.PersonUpdate):
-    out = S.update_person(person_id, body)
+def update_person(person_id: str, body: M.PersonUpdate, current_user: dict = Depends(get_current_user)):
+    out = S.update_person(person_id, body, current_user["id"])
     if out is None:
         raise HTTPException(status_code=404, detail="Person not found")
     return out
 
 
 @router.delete("/persons/{person_id}")
-def delete_person(person_id: str):
-    if not S.delete_person(person_id):
+def delete_person(person_id: str, current_user: dict = Depends(get_current_user)):
+    if not S.delete_person(person_id, current_user["id"]):
         raise HTTPException(status_code=404, detail="Person not found")
     return {"ok": True}
 
@@ -1777,40 +1778,51 @@ def get_capacity_profile(person_id: str, current_user: dict = Depends(get_curren
 
 
 @router.put("/capacity-profiles")
-def upsert_capacity_profile(body: M.CapacityProfileUpsert):
-    return S.upsert_capacity_profile(body)
+def upsert_capacity_profile(body: M.CapacityProfileUpsert, current_user: dict = Depends(get_current_user)):
+    try:
+        return S.upsert_capacity_profile(body, current_user["id"])
+    except ValueError as e:
+        # The referenced person does not belong to the session user.
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 # --- Assets ---
 @router.get("/assets")
-def list_assets():
-    return S.list_assets()
+def list_assets(current_user: dict = Depends(get_current_user)):
+    return S.list_assets(current_user["id"])
 
 
 @router.get("/assets/{asset_id}")
-def get_asset(asset_id: str):
-    out = S.get_asset(asset_id)
+def get_asset(asset_id: str, current_user: dict = Depends(get_current_user)):
+    out = S.get_asset(asset_id, current_user["id"])
     if out is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return out
 
 
 @router.post("/assets")
-def create_asset(body: M.AssetCreate):
-    return S.create_asset(body)
+def create_asset(body: M.AssetCreate, current_user: dict = Depends(get_current_user)):
+    try:
+        return S.create_asset(body, current_user["id"])
+    except ValueError as e:
+        # The referenced owner person does not belong to the session user.
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.patch("/assets/{asset_id}")
-def update_asset(asset_id: str, body: M.AssetUpdate):
-    out = S.update_asset(asset_id, body)
+def update_asset(asset_id: str, body: M.AssetUpdate, current_user: dict = Depends(get_current_user)):
+    try:
+        out = S.update_asset(asset_id, body, current_user["id"])
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
     if out is None:
         raise HTTPException(status_code=404, detail="Asset not found")
     return out
 
 
 @router.delete("/assets/{asset_id}")
-def delete_asset(asset_id: str):
-    if not S.delete_asset(asset_id):
+def delete_asset(asset_id: str, current_user: dict = Depends(get_current_user)):
+    if not S.delete_asset(asset_id, current_user["id"]):
         raise HTTPException(status_code=404, detail="Asset not found")
     return {"ok": True}
 
@@ -2380,8 +2392,10 @@ def suggest_node_transform_route(body: dict = Body(...), current_user: dict = De
     return result
 
 
-@router.post("/extract-segment-summary")
-def extract_segment_summary(body: M.ExtractSegmentSummaryRequest):
+def extract_segment_summary(
+    body: M.ExtractSegmentSummaryRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Lightweight extraction for one transcript segment (topic, briefSummary, candidateTasks/Entities/Signals). For long-meeting hierarchical path. Optional priorContext for reference continuity."""
     from local_ai.vision_execution.meeting_extract import extract_segment_summary as _extract_summary
 
@@ -2432,8 +2446,10 @@ def extract_segment_summary(body: M.ExtractSegmentSummaryRequest):
     return out
 
 
-@router.post("/extract-meeting-segments")
-def extract_meeting_segments(body: M.ExtractMeetingSegmentsRequest):
+def extract_meeting_segments(
+    body: M.ExtractMeetingSegmentsRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Legacy / debug: segment summary extraction with rolling prior_context (not used by primary Vision Execution meeting-capture UI; UI uses chunked ``extract-meeting`` only)."""
     from local_ai.vision_execution.meeting_extract import extract_segments_with_rolling_prior_context
 
@@ -2494,8 +2510,10 @@ def extract_meeting_segments(body: M.ExtractMeetingSegmentsRequest):
     return out
 
 
-@router.post("/extract-meeting-synthesis")
-def extract_meeting_synthesis(body: M.ExtractMeetingSynthesisRequest):
+def extract_meeting_synthesis(
+    body: M.ExtractMeetingSynthesisRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Legacy / debug: full extraction from segment summaries (not used by primary meeting-capture UI; UI uses chunked ``extract-meeting`` + client merge)."""
     from local_ai.vision_execution.meeting_extract import extract_meeting_synthesis as _synthesize
 
@@ -2556,6 +2574,18 @@ def extract_meeting_synthesis(body: M.ExtractMeetingSynthesisRequest):
     except Exception:
         logger.warning("server_ai_trace extract-meeting-synthesis emission failed", exc_info=True)
     return out
+
+
+# Legacy / debug extraction routes: registered only outside hosted mode
+# (Track B ruling 2). On hosted deployments these routes do not exist
+# (404); in local dev they are present and authenticated (see the
+# Depends(get_current_user) on each handler above). The underlying
+# functions in meeting_extract.py are untouched; the primary
+# POST /extract-meeting path is authenticated and unaffected.
+if not hosted_config.is_prod():
+    router.post("/extract-segment-summary")(extract_segment_summary)
+    router.post("/extract-meeting-segments")(extract_meeting_segments)
+    router.post("/extract-meeting-synthesis")(extract_meeting_synthesis)
 
 
 @router.post("/prompt-signals")
@@ -2693,8 +2723,9 @@ def _workspace_identity_status_payload() -> dict[str, Any]:
     }
 
 
-@router.post("/workspace-identity/pick-directory")
-async def post_workspace_identity_pick_directory():
+async def post_workspace_identity_pick_directory(
+    current_user: dict = Depends(get_current_user),
+):
     """
     Open a native folder dialog on the machine running this API and return the absolute path.
     The browser cannot read full filesystem paths; this bridges scan roots to the server FS.
@@ -2709,8 +2740,16 @@ async def post_workspace_identity_pick_directory():
     return {"ok": True, "path": path, "cancelled": path is None}
 
 
+# Native directory picker: registered only outside hosted mode
+# (Track B ruling 4). On hosted deployments this route does not exist
+# (404); in local dev it is present and authenticated. The frontend
+# already handles the failure through its existing error banner.
+if not hosted_config.is_prod():
+    router.post("/workspace-identity/pick-directory")(post_workspace_identity_pick_directory)
+
+
 @router.get("/workspace-identity/translation-template")
-def get_workspace_identity_translation_template():
+def get_workspace_identity_translation_template(current_user: dict = Depends(get_current_user)):
     """Read optional translation-template.json (user vocabulary for packet merge)."""
     from local_ai.workspace_identity.translation_template import read_translation_template, translation_template_path
 
@@ -2721,7 +2760,7 @@ def get_workspace_identity_translation_template():
 
 
 @router.put("/workspace-identity/translation-template")
-def put_workspace_identity_translation_template(body: M.WorkspaceTranslationTemplateBody):
+def put_workspace_identity_translation_template(body: M.WorkspaceTranslationTemplateBody, current_user: dict = Depends(get_current_user)):
     """Write translation-template.json next to snapshot (gitignored)."""
     from local_ai.workspace_identity.translation_template import write_translation_template
 
@@ -2730,7 +2769,7 @@ def put_workspace_identity_translation_template(body: M.WorkspaceTranslationTemp
 
 
 @router.get("/workspace-identity")
-def get_workspace_identity():
+def get_workspace_identity(current_user: dict = Depends(get_current_user)):
     """
     Read local snapshot if present; validate branchKey. Returns extraction-sized workspacePacket
     only when usable (no silent stale mirror).
@@ -2872,13 +2911,14 @@ def dismiss_aspiration_proposal_route(proposal_id: str, current_user: dict = Dep
 
 
 @router.post("/workspace-identity/scan")
-def post_workspace_identity_scan(body: M.WorkspaceIdentityScanRequest):
+def post_workspace_identity_scan(body: M.WorkspaceIdentityScanRequest, current_user: dict = Depends(get_current_user)):
     """
     Bounded deep/light scan of provided roots (default: repo root). Writes .zenaf/workspace-identity/v1/.
     Does not run during meeting extract.
     """
     from local_ai.workspace_identity.snapshot import (
         REPO_ROOT,
+        ScanRootsRejectedError,
         build_workspace_identity_snapshot,
         build_workspace_packet_from_snapshot,
         write_workspace_identity_snapshot,
@@ -2886,11 +2926,15 @@ def post_workspace_identity_scan(body: M.WorkspaceIdentityScanRequest):
 
     roots = [str(r).strip() for r in (body.roots or []) if str(r).strip()]
     scan_kind = body.mode if body.mode in ("deep_initial", "light_refresh") else "light_refresh"
-    snapshot = build_workspace_identity_snapshot(
-        roots,
-        repo_root=REPO_ROOT,
-        scan_kind=scan_kind,
-    )
+    try:
+        snapshot = build_workspace_identity_snapshot(
+            roots,
+            repo_root=REPO_ROOT,
+            scan_kind=scan_kind,
+            allowed_roots=hosted_config.scan_allowed_roots(REPO_ROOT),
+        )
+    except ScanRootsRejectedError as e:
+        raise HTTPException(status_code=403, detail=str(e)) from e
     base = write_workspace_identity_snapshot(snapshot)[0].parent
     packet = build_workspace_packet_from_snapshot(snapshot)
     logger.info("[workspace-identity] scan complete mode=%s roots=%s", scan_kind, len(snapshot.get("sourceRoots") or []))

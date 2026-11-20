@@ -576,8 +576,8 @@ def test_t6_concurrent_subject_updates(tmp_path):
     "entity_type", ["person", "asset", "job", "initiative", "nonsense"]
 )
 def test_t7_non_project_task_hints_never_anchor(tmp_path, ve_conn, entity_type):
-    ve_storage.create_person(ve_models.PersonCreate(name="Mara Ellison"))
-    ve_storage.create_asset(ve_models.AssetCreate(name="Ladder"))
+    ve_storage.create_person(ve_models.PersonCreate(name="Mara Ellison"), USER)
+    ve_storage.create_asset(ve_models.AssetCreate(name="Ladder"), USER)
     _set_consent(ve_conn, USER, True)
     events, sink = _sink()
     svc, store = _svc(tmp_path, sink)
@@ -594,7 +594,7 @@ def test_t7_person_named_in_text_produces_no_person_machinery(tmp_path, ve_conn)
     """A turn whose text verbatim-names a VE person, inside a
     project-anchored conversation, produces no person annotation,
     no ve_entity evidence row, and no person subject key."""
-    ve_storage.create_person(ve_models.PersonCreate(name="Mara Ellison"))
+    ve_storage.create_person(ve_models.PersonCreate(name="Mara Ellison"), USER)
     project = _project(USER)
     subject = _subject("project", project, "high")
     events = [

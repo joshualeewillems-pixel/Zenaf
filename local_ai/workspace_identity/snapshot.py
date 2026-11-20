@@ -48,6 +48,18 @@ IDENTITY_LOW_QUALITY_USER_MESSAGE = (
     "Workspace identity appears low-quality (mostly generic filenames). Consider changing scan roots."
 )
 
+
+class ScanRootsRejectedError(ValueError):
+    """No requested scan root survived the allowlist (Track B ruling 3).
+
+    Raised by :func:`build_workspace_identity_snapshot` before any walk,
+    snapshot write, or packet build. The route maps it to 403. Fail
+    closed: a call that names any out-of-allowlist root is refused
+    outright — no partial scan of the permitted roots alongside a
+    rejected one is attempted in the same call.
+    """
+
+
 # Prune at directory entry: no descent, no hints, no node budget (same as legacy IGNORE_DIR_NAMES).
 PRUNE_DIR_NAMES_LOWER: frozenset[str] = frozenset(
     {
@@ -612,10 +624,19 @@ def build_workspace_identity_snapshot(
     scan_kind: str = "deep_initial",
     max_depth: int = MAX_DEPTH_DEFAULT,
     max_nodes: int = MAX_NODES_DEFAULT,
+    allowed_roots: list[Path] | None = None,
 ) -> dict[str, Any]:
     """
     Walk only ``roots`` (bounded). Folder/file basenames only; no file body reads.
     Returns snapshot dict (does not write files).
+
+    ``allowed_roots`` bounds the roots this call may walk (Track B ruling 3).
+    When ``None`` the allowed set is ``{repo_root}``. Every requested root,
+    after ``resolve()`` (symlinks followed, so containment is checked on the
+    resolved path), must be equal to or under an allowed root. Any
+    out-of-allowlist root is refused outright: the call raises
+    :class:`ScanRootsRejectedError` before any walk, with a warning log
+    naming the rejected root — no partial scan is attempted.
     """
     rr = (repo_root or REPO_ROOT).resolve()
     norm_roots: list[Path] = []
@@ -629,6 +650,15 @@ def build_workspace_identity_snapshot(
         norm_roots = [rr]
 
     norm_roots = sorted({p.resolve() for p in norm_roots}, key=lambda x: str(x).lower())
+
+    # Allowlist containment (single enforcement point — Track B ruling 3).
+    allowed = [Path(a).expanduser().resolve() for a in (allowed_roots if allowed_roots is not None else [rr])]
+    for p in norm_roots:
+        if not any(p == a or p.is_relative_to(a) for a in allowed):
+            logger.warning("[workspace-identity] rejecting out-of-allowlist root: %s", p)
+            raise ScanRootsRejectedError(
+                f"Scan root {p} is outside the permitted roots; refusing to scan."
+            )
     branch_key = compute_branch_key(cwd=rr)
     now = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 

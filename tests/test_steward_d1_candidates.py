@@ -422,7 +422,7 @@ def test_t11_registered_overlap_untouched(store, ve_conn):
     _capture(store, _turn("ev-1", "I talked with Ana Ruiz."))
     before = store.candidates_for(USER)[0]
     person = ve_storage.create_person(
-        ve_models.PersonCreate(name="Ana Ruiz")
+        ve_models.PersonCreate(name="Ana Ruiz"), USER
     )
     assert person["id"]
     after = store.candidates_for(USER)[0]

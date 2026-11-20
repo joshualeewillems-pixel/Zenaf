@@ -53,16 +53,17 @@ def format_confirmation_template(template: str, **kwargs: Any) -> str:
         return t
 
 
-def resolve_person_id_by_name_exact(name: str) -> str | None:
+def resolve_person_id_by_name_exact(name: str, user_id: str) -> str | None:
     """
     Exact case-insensitive match on ``persons.name`` only.
     Multiple matches (duplicate names) → None (caller declines).
+    Scoped to the session user's persons (Track B).
     """
     key = (name or "").strip()
     if not key:
         return None
     key_cf = key.casefold()
-    people = ve_storage.list_persons()
+    people = ve_storage.list_persons(user_id)
     matches = [p for p in people if (str(p.get("name") or "").strip()).casefold() == key_cf]
     if len(matches) == 1:
         return str(matches[0].get("id") or "").strip() or None
@@ -215,12 +216,12 @@ def handle_person_assign(
         pid = None
         display_name = "unassigned"
     else:
-        pid = resolve_person_id_by_name_exact(person_name)
+        pid = resolve_person_id_by_name_exact(person_name, uid)
         if not pid:
             return _result("declined")
         display_name = person_name
     if pid:
-        p = ve_storage.get_person(pid)
+        p = ve_storage.get_person(pid, uid)
         if p:
             display_name = str(p.get("name") or person_name).strip() or person_name
 

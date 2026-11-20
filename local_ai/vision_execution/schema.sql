@@ -209,7 +209,8 @@ CREATE TABLE IF NOT EXISTS persons (
   availability TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  user_id TEXT
 );
 
 CREATE TABLE IF NOT EXISTS capacity_profiles (
@@ -217,6 +218,7 @@ CREATE TABLE IF NOT EXISTS capacity_profiles (
   weekly_capacity_hours REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  user_id TEXT,
   FOREIGN KEY (person_id) REFERENCES persons(id)
 );
 
@@ -235,6 +237,7 @@ CREATE TABLE IF NOT EXISTS assets (
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
+  user_id TEXT,
   FOREIGN KEY (owner_id) REFERENCES persons(id)
 );
 

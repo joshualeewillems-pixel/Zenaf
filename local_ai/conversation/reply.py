@@ -22,6 +22,7 @@ from typing import Any, Callable
 
 from local_ai.agent_intake.llm_keys import generate as _default_generate
 from local_ai.conversation.canonical_tier import CANONICAL_TIER_L1
+from local_ai.conversation.rhyme_cards import rhyme_cards_block
 from local_ai.conversation.weave import sanitize_weave
 from local_ai.council.archetypes import (
     ANTI_PRESUMPTION_STYLE,
@@ -947,6 +948,15 @@ def build_voice_prompt(
         # (the default everywhere) the prompt is byte-identical to
         # before, and every other seat never takes this branch.
         prompt += ["", _FOX_RHYME_OFFER_GUIDANCE]
+        # The cards in hand: the seven curated story cards ride
+        # immediately after the discipline, under exactly the same
+        # conditions and the same flag (local_ai/conversation/
+        # rhyme_cards.py — verbatim working-draft cards, NOT canon;
+        # admission is a separate founder verdict). Like the
+        # guidance, the block rides outside the capped
+        # extra_instructions frame, so it consumes no frame budget
+        # and is never truncated by the cap.
+        prompt += ["", rhyme_cards_block()]
     if sections:
         prompt += [
             "",

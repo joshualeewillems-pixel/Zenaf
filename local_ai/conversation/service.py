@@ -352,10 +352,18 @@ class ConversationService:
         generate_fn: GenerateFn | None = None,
         event_sink: EventSink | None = None,
         steward_context_provider: Callable[..., str | None] | None = None,
+        pencil_context_provider: Callable[..., str | None] | None = None,
     ) -> None:
         self.store = store
         self._generate_fn = generate_fn
         self._event_sink = event_sink
+        # Pencil-standing steward observations (founder ruling
+        # 2026-11-21): an optional provider consulted ONLY for the
+        # Jynx (archetype "maverick"), under its own master switch
+        # and the steward's dual consent gates inside the provider.
+        # Every other seat's path is identical with or without it,
+        # and the Weaver's facts-only provider above is untouched.
+        self._pencil_context_provider = pencil_context_provider
         # Phase 2 (Narrative Steward, Weaver-first): an optional
         # provider of prepared steward context, called ONLY for the
         # Weaver (archetype "conductor"). Every other seat's path is
@@ -441,6 +449,18 @@ class ConversationService:
                     "steward: prepared context failed; continuing without it"
                 )
                 steward_block = None
+
+        pencil_block = None
+        if arch_id == "maverick" and self._pencil_context_provider is not None:
+            try:
+                pencil_block = self._pencil_context_provider(
+                    user_id, message, history_turns
+                )
+            except Exception:
+                logger.exception(
+                    "steward: pencil context failed; continuing without it"
+                )
+                pencil_block = None
 
         # Weaver strand interviews (rev2 §6): a conductor turn in a
         # validated strand thread carries the strand guidance block —
@@ -653,6 +673,7 @@ class ConversationService:
                 block
                 for block in (
                     steward_block,
+                    pencil_block,
                     strand_block,
                     _WEAVER_NATURAL_INTENTION
                     if arch_id == "conductor"

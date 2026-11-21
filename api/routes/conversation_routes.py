@@ -69,7 +69,7 @@ from local_ai.conversation.upload_round import (
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 from local_ai.council.naming import get_display_name
 from local_ai.fellowship.events import emit_event as fellowship_emit_event
-from local_ai.narrative.context import weaver_context_provider
+from local_ai.narrative.context import jynx_context_provider, weaver_context_provider
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
@@ -103,6 +103,12 @@ def _service() -> ConversationService:
         _store(),
         event_sink=fellowship_emit_event,
         steward_context_provider=weaver_context_provider(),
+        # Pencil-standing observations for the Jynx only (founder
+        # ruling 2026-11-21): the provider self-gates on its master
+        # switch (default off) before touching the narrative store,
+        # so non-Jynx turns and switch-off deployments never pay
+        # for it.
+        pencil_context_provider=jynx_context_provider(),
     )
 
 

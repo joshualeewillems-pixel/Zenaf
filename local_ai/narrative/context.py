@@ -50,6 +50,7 @@ two-letter id) never attend via text, only via the explicit
 
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -417,6 +418,244 @@ def weaver_context_provider(
                 connection=connection,
                 aspiration_reader=aspiration_reader,
                 aspiration_permission_check=aspiration_permission_check,
+            )
+            return prepared.block
+        except Exception:
+            return None
+
+    return provider
+
+
+# ---------------------------------------------------------------------------
+# Pencil-standing observations (founder ruling, 2026-11-21 — scoping
+# Addendum 23). The facts-only layer above is unchanged: readings are
+# still never rendered as FACTS, and the Weaver's path serves standing,
+# user-validated material only. This section is a separate, narrower
+# channel with its own standing:
+#
+# - A pencil observation is a PROPOSED reading's pattern language
+#   (tensions, open questions) on a standing (active/dormant) thread,
+#   served to the Jynx branch as material for its imagination. It is
+#   marked uncertain in the block itself, carries no reading id and no
+#   evidence ref — nothing in it is citable — and asserts nothing as
+#   established about the visitor.
+# - Every gate from the facts layer applies unchanged: the branch must
+#   be coordination-contracted, BOTH consent flags must be open, and
+#   relevance is re-validated per thread through ``prepare_context``
+#   at preparation time. One additional gate is this channel's own:
+#   the ``ZENAF_STEWARD_PENCIL`` master switch, default OFF.
+# - Nascent threads never contribute: a thread the user has not
+#   accepted as born stays invisible here exactly as above. Only the
+#   reading's standing changes (proposed may travel, as pencil), not
+#   the thread's.
+# ---------------------------------------------------------------------------
+
+#: The Jynx's branch id (archetype ``maverick``).
+PENCIL_BRANCH_ID = "seat:maverick"
+
+#: Bounds for one pencil block, mirroring the facts layer's discipline.
+MAX_PENCIL_THREADS = 5
+MAX_PENCIL_CHARS = 2000
+_MAX_PENCIL_ITEM_CHARS = 160
+_MAX_PENCIL_TENSIONS = 3
+_MAX_PENCIL_QUESTIONS = 2
+
+_PENCIL_HEADER = (
+    "Steward observations — pencil standing. These are the system's "
+    "uncertain readings of patterns across this person's history, "
+    "offered as material for your imagination. They are not facts "
+    "and not evidence: do not cite them, do not present them as "
+    "established, and do not announce where they came from. Let them "
+    "inform what you notice, or set them aside."
+)
+
+
+def pencil_context_enabled() -> bool:
+    """Master switch for pencil-standing serving (default OFF).
+
+    Same switch idiom as ``recognition_enabled``: unset means off, so
+    every path behaves exactly as today until the switch is
+    deliberately set.
+    """
+    raw = os.environ.get("ZENAF_STEWARD_PENCIL")
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _render_pencil_block(
+    branch_display_name: str,
+    items: list[dict],
+    hidden_count: int,
+) -> str:
+    """Bounded pencil render. Pattern language only — tensions and
+    open questions from proposed readings. No ids, no refs, no
+    evidence text, no milestones (what has happened is fact-class;
+    what is tense and unresolved is the observation)."""
+    lines = [_PENCIL_HEADER, f"Prepared for {branch_display_name}."]
+    for item in items:
+        parts = []
+        if item["tensions"]:
+            parts.append("tension: " + " / ".join(item["tensions"]))
+        if item["open_questions"]:
+            parts.append("open: " + " / ".join(item["open_questions"]))
+        lines.append(f"- {item['title']} — " + " · ".join(parts))
+    if hidden_count > 0:
+        lines.append(f"+{hidden_count} more observation(s) not shown.")
+    block = "\n".join(lines)
+    if len(block) > MAX_PENCIL_CHARS:
+        block = block[:MAX_PENCIL_CHARS].rstrip() + "\n[…truncated]"
+    return block
+
+
+def pencil_context_for(
+    store: NarrativeStore,
+    user_id: str,
+    branch_id: str = PENCIL_BRANCH_ID,
+    *,
+    attended_text: str = "",
+    attended_entity_refs: tuple[str, ...] | list[str] = (),
+    attended_thread_ids: tuple[str, ...] | list[str] = (),
+    connection=None,
+    max_threads: int = MAX_PENCIL_THREADS,
+) -> PreparedContext:
+    """Prepare pencil-standing steward observations for one branch.
+
+    Mirrors ``narrative_context_for``'s gate order and fail-closed
+    discipline, with the master switch first: when the switch is off
+    this returns before any store read or assessment write, so the
+    channel's existence costs nothing and changes nothing. Raises
+    ``ValueError`` for an unknown branch id, as the facts layer does.
+    """
+    if not pencil_context_enabled():
+        return PreparedContext(available=False, reason="pencil_flag_off")
+    contract = get_branch(branch_id)
+    if contract is None:
+        raise ValueError(f"unknown branch: {branch_id!r}")
+    if "coordination" not in contract.capabilities:
+        return PreparedContext(
+            available=False, reason="branch_not_coordination_contracted"
+        )
+    if not coordination_allowed(user_id, connection=connection):
+        return PreparedContext(available=False, reason="consent_closed")
+
+    standing = [
+        t
+        for t in store.threads_for(user_id, limit=None)
+        if t.status in CONTEXT_THREAD_STATUSES
+    ]
+    if not standing:
+        return PreparedContext(available=False, reason="no_standing_threads")
+
+    evidence_by_thread: dict[str, list] = {}
+    known_refs: set[str] = set()
+    for thread in standing:
+        rows = store.evidence_for(user_id, thread.id)
+        evidence_by_thread[thread.id] = rows
+        for row in rows:
+            if row.entity_ref:
+                known_refs.add(row.entity_ref)
+    attended = set(str(r) for r in attended_entity_refs)
+    attended |= attended_refs_for_text(known_refs, attended_text)
+
+    items: list[dict] = []
+    assessment_ids: list[str] = []
+    for thread in standing:
+        thread_refs = [
+            row.entity_ref for row in evidence_by_thread[thread.id] if row.entity_ref
+        ]
+        candidate_text = " ".join(
+            part for part in (thread.title, thread.scope) if part
+        )
+        outcome = prepare_context(
+            store,
+            user_id,
+            branch_id,
+            thread_id=thread.id,
+            candidate_text=candidate_text,
+            candidate_entity_refs=thread_refs,
+            candidate_strand_weights=thread.strand_weights,
+            attended_entity_refs=sorted(attended),
+            attended_thread_ids=attended_thread_ids,
+            connection=connection,
+        )
+        if outcome.assessment is not None:
+            assessment_ids.append(outcome.assessment.id)
+        if not outcome.available:
+            continue
+        proposed = store.readings_for(user_id, thread.id, status="proposed")
+        if not proposed:
+            continue
+        reading = (proposed[-1].reading or {})
+        tensions = [
+            str(t).strip()[:_MAX_PENCIL_ITEM_CHARS]
+            for t in (reading.get("tensions") or [])
+            if str(t).strip()
+        ][:_MAX_PENCIL_TENSIONS]
+        questions = [
+            str(q).strip()[:_MAX_PENCIL_ITEM_CHARS]
+            for q in (reading.get("open_questions") or [])
+            if str(q).strip()
+        ][:_MAX_PENCIL_QUESTIONS]
+        if not tensions and not questions:
+            continue
+        items.append(
+            {
+                "thread_id": thread.id,
+                "title": (thread.title or "")[:_MAX_TITLE_CHARS],
+                "tensions": tensions,
+                "open_questions": questions,
+            }
+        )
+    if not items:
+        return PreparedContext(
+            available=False,
+            reason="no_pencil_material",
+            assessment_ids=tuple(assessment_ids),
+        )
+
+    shown = items[:max_threads]
+    hidden = len(items) - len(shown)
+    block = _render_pencil_block(contract.display_name, shown, hidden)
+    return PreparedContext(
+        available=True,
+        reason="available",
+        block=block,
+        threads=tuple(
+            {"thread_id": item["thread_id"], "title": item["title"]}
+            for item in shown
+        ),
+        assessment_ids=tuple(assessment_ids),
+    )
+
+
+def jynx_context_provider(
+    store: NarrativeStore | None = None,
+    *,
+    connection=None,
+) -> object:
+    """A chat-path provider returning the Jynx's pencil block.
+
+    Same contract as ``weaver_context_provider``: takes
+    ``(user_id, message, history)``, returns the block string or
+    None, never raises. With the master switch off (the default) it
+    returns None before touching the store.
+    """
+
+    state: dict[str, NarrativeStore | None] = {"store": store}
+
+    def provider(user_id: str, message: str, history=None) -> str | None:
+        try:
+            if not pencil_context_enabled():
+                return None
+            if state["store"] is None:
+                state["store"] = NarrativeStore()
+            prepared = pencil_context_for(
+                state["store"],
+                user_id,
+                PENCIL_BRANCH_ID,
+                attended_text=message or "",
+                connection=connection,
             )
             return prepared.block
         except Exception:

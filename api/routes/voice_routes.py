@@ -28,7 +28,7 @@ from local_ai.conversation.reply import generate_voice_reply
 from local_ai.conversation.store import ConversationStore
 from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
-from local_ai.narrative.context import weaver_context_provider
+from local_ai.narrative.context import jynx_context_provider, weaver_context_provider
 
 router = APIRouter(prefix="/voice", tags=["voice"])
 
@@ -126,6 +126,18 @@ def voice_chat(
                 )
             except Exception:
                 steward_block = None
+        # Pencil-standing observations (Jynx only, founder ruling
+        # 2026-11-21): same provider seam, its own master switch
+        # (default off) inside the provider. Mutually exclusive
+        # with the Weaver block by archetype.
+        pencil_block = None
+        if arch_id == "maverick":
+            try:
+                pencil_block = jynx_context_provider()(
+                    user_id, message, history
+                )
+            except Exception:
+                pencil_block = None
         voice_reply = generate_voice_reply(
             user_id,
             arch_id,
@@ -134,7 +146,7 @@ def voice_chat(
             mode=body.mode,
             question=body.question,
             thread_summary=thread_summary,
-            extra_instructions=steward_block,
+            extra_instructions=steward_block or pencil_block,
             # Continuation background knowledge (demonstration spec
             # §6): this seat's slice, resolved from the visitor's
             # actual state — no intention line, no offer instruction.

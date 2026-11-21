@@ -1,16 +1,18 @@
-"""Fox story-rhyme cards carriage (rhyme-cards slice, 2026-11-20).
+"""Story-rhyme cards carriage, Fox path (rhyme-cards slice, 2026-11-20).
 
 Covers: the seven curated story cards (local_ai/conversation/
 rhyme_cards.py) riding in the Fox's ordinary-Talk prompt under the
-SAME flag and the SAME assembly conditions as the rhyme-offer
+SAME flag and the SAME assembly conditions as the shared reference
 guidance (ZENAF_FOX_RHYME_OFFER, default OFF): present exactly
 once, immediately after the guidance, with the flag on; absent and
 byte-identical with it off; withheld on the meeting path and
-whenever the canonical tier rides; never served to another seat;
-and outside the 9,000-char extra_instructions frame cap, arriving
-whole. Content pins hold load-bearing verbatim strings from every
-card so the carried texts cannot silently drift from the curated
-source document.
+whenever the canonical tier rides; never served to a seat outside
+the carriage scope (maverick + skeptic — the skeptic's carriage is
+pinned in tests/test_reference_carriage.py); and outside the
+9,000-char extra_instructions frame cap, arriving whole. Content
+pins hold load-bearing verbatim strings from every card so the
+carried texts cannot silently drift from the curated source
+document.
 
 No model calls anywhere here: deterministic prompt inspection, in
 the pattern of tests/test_fox_rhyme_offer.py.
@@ -25,7 +27,7 @@ from local_ai.conversation.reply import build_voice_prompt
 from local_ai.conversation.rhyme_cards import RHYME_CARDS, rhyme_cards_block
 
 ENV = "ZENAF_FOX_RHYME_OFFER"
-GUIDANCE = R._FOX_RHYME_OFFER_GUIDANCE
+GUIDANCE = R._SHARED_REFERENCE_GUIDANCE
 BLOCK = rhyme_cards_block()
 NO_TRAINING_PREFIX = "Note: this user has no published training data"
 
@@ -150,7 +152,7 @@ def test_cards_withheld_when_canonical_tier_rides(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "seat", ["mentor", "champion", "guardian", "ambassador", "conductor", "skeptic"]
+    "seat", ["mentor", "champion", "guardian", "ambassador", "conductor"]
 )
 def test_cards_never_served_to_other_seats(monkeypatch, seat):
     monkeypatch.setenv(ENV, "1")

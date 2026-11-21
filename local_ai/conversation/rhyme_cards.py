@@ -1,33 +1,38 @@
-"""Fox story-rhyme cards — the curated reference repertoire.
+"""Story-rhyme cards — the shared cultural reference repertoire.
 
-These are the seven story cards the Fox carries into ordinary Talk
-when the narrative-rhyme offer discipline is on (see
-``_FOX_RHYME_OFFER_GUIDANCE`` and ``fox_rhyme_offer_enabled`` in
-``local_ai/conversation/reply.py``, which gate the assembly). This
-module is inert data plus one formatter: all gating lives at the
-reply.py assembly site, so with the flag off the cards never reach
-a prompt, and the meeting path and every other seat never see them.
+These are the seven story cards of the Fellowship's shared
+reference repertoire, carried into ordinary Talk for the eligible
+seats when the reference carriage is on (see
+``_SHARED_REFERENCE_GUIDANCE``, ``_reference_carriage_lines`` and
+``fox_rhyme_offer_enabled`` in ``local_ai/conversation/reply.py``,
+which gate the assembly). This module is inert data plus one
+formatter: all gating lives at the reply.py assembly site, so with
+the flag off the cards never reach a prompt, and the meeting path
+never sees them.
 
 Source: ``~/workspace/goals/seven-seat-worlds/files/zenaf-stock-root-repertoire-draft-2026-11-20.md``
 — the card texts below (attribution line plus the four labeled
 parts: What happens / What shape it makes / What might fit / Where
 it breaks) are extracted verbatim from that document. They are the
-2026-11-20 corrected working-draft cards: fidelity-audited, with
+2026-11-20 corrected cards: fidelity-audited, with
 founder-directed primary-source corrections applied (Grimm 1812
 kept distinct from 1857, Ovid distinct from Apollodorus, Homer
-distinct from the later mythographers). The repertoire's design
-direction is founder-accepted, but canonical admission of these
-cards is a SEPARATE founder verdict that has not been taken — they
-ride here as a working draft for the rhyme test, in pencil, and
-this carriage is not canon admission. If the source document's
-cards are corrected again, re-extract; do not edit the texts here
+distinct from the later mythographers). By founder verdict
+(2026-11-20) these seven cards are ADMITTED TO CANON as the
+founding sample of the shared cultural repertoire — one
+founder-governed archive that all Fellowship seats may draw from,
+interpreted through each seat's own perspective. Admission
+establishes reference fidelity only: a card is shared reference
+material, never evidence about a user and never an accepted
+interpretation of anyone's life. If the source document's cards
+are corrected again, re-extract; do not edit the texts here
 independently of the source.
 """
 
 from __future__ import annotations
 
 # Framing for the block as it rides in the prompt, immediately after
-# the rhyme-offer guidance. The cards speak for themselves; the
+# the shared reference guidance. The cards speak for themselves; the
 # framing only fixes their standing: curated references, held in
 # pencil, offered under the discipline, breaks included.
 _FRAMING = (

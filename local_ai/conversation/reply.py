@@ -196,16 +196,23 @@ FOX_CANONICAL_CUTOVER = True
 
 
 def fox_rhyme_offer_enabled() -> bool:
-    """Rollout flag for the Fox narrative-rhyme offer discipline.
+    """Rollout flag for the shared reference carriage.
 
     Follows the ``sketch_shaping_enabled`` pattern (Bonsai Bench
     Stage 1B): an explicit ``ZENAF_FOX_RHYME_OFFER`` value wins
     ("1"/"true"/"yes"/"on" = on; anything else = off), read per
     call so tests can flip it with ``monkeypatch.setenv`` — with
     the pattern's default OFF in every environment (local, staging,
-    and production). Only an explicit env setting turns it on. The
-    flag gates only the guidance append at the assembly site below;
-    with it off, ordinary Fox prompts are byte-identical to before.
+    and production). Only an explicit env setting turns it on.
+
+    The name is historical: the flag was created for the Fox-only
+    rhyme-offer slice (PR #398), and the staging secret already
+    exists under this name, so it is kept. Since the seat-general
+    carriage (2026-11-20) it gates the SHARED reference carriage
+    for the whole eligible-seat test scope (see
+    ``_REFERENCE_CARRIAGE_SEATS``), not Fox-only behavior. The flag
+    gates only the carriage append at the assembly site below;
+    with it off, every seat's prompt is byte-identical to before.
     """
     raw = os.environ.get("ZENAF_FOX_RHYME_OFFER")
     if raw is not None:
@@ -213,55 +220,117 @@ def fox_rhyme_offer_enabled() -> bool:
     return False
 
 
-# Fox narrative-rhyme offer discipline (narrative-rhyme scoping,
-# 2026-11-20) — prompt guidance for ordinary Fox Talk turns ONLY,
-# gated on fox_canonical AND fox_rhyme_offer_enabled() at the
-# assembly site below. It is deliberately NOT part of the canonical
-# record: FOX_RECORD is character definition, and the renderer
-# reproduces it exactly — the discipline is a way of working, not
-# character, so it rides here as guidance, in the pattern of
-# _BEAR_FLOW_LOOP_GUIDANCE (prompt-local guidance, not canonical
-# content). The meeting path never sees it: the assembly site
-# withholds it whenever the canonical tier rides (the meeting
-# caller's signal), including for a converged Fox meeting running
-# canonical=True under WI-2; no other seat ever sees it.
-# Why it exists (demonstration findings, 2026-11-20): in ordinary
-# conversation the Fox improvised self-coined metaphors and never
-# offered a named story, and when asked "what story is that?" about
-# a mundane fact he coined a fake story label instead of declining.
-# Content fences (the founder's formal instruction, 2026-11-20):
-# offers are provisional and rejectable, first-person, ground-
-# never-presume; multiple competing parallels welcome, never
-# ranked; every offer names where it fits AND where it fails; no
-# invented narrative progression — a story's next chapter is never
-# the visitor's future; abstention is required when nothing
-# honestly rhymes. Surface metaphor painting early in a
-# conversation is legitimate; imagery is carried forward and
-# blended (diffusion) as the conversation deepens, not swapped
-# wholesale each turn. Level (a) only: no capture, derivation, or
-# standing rides on this text — an offer establishes nothing, and
-# only the visitor's adopting words can carry a rhyme further.
-_FOX_RHYME_OFFER_GUIDANCE = (
-    "Story rhymes — a game you are allowed to play. When what the "
-    "visitor is living genuinely rhymes with a story you carry — "
-    "Sisyphus on his hill, the miller's daughter and the straw she "
-    "never promised to spin — you may offer the parallel, in your "
-    "own voice and in pencil: \"This reminds me of...\" — and leave "
-    "it wholly theirs to refuse. An honest offer names where the "
-    "rhyme fits AND where it breaks; a rhyme that fits everywhere "
-    "is one you are forcing. More than one story may sit on the "
-    "table at once, unranked — competing shapes stay competing "
-    "until the visitor picks one up. Never invent a progression: "
-    "do not narrate what happens next in the visitor's story, and "
-    "never let a story's next chapter pose as their future. When "
-    "nothing honestly rhymes, say so or say nothing — never coin "
-    "a story-name for a plain fact just to fill the silence. Early "
-    "in a conversation, paint in surface metaphor freely; as it "
-    "deepens, carry your images forward and let them blend and "
-    "settle instead of swapping in a new one each turn — and when "
-    "a real story rises out of the settled imagery, offer it the "
-    "same way: provisionally, with its failure showing."
+# Shared reference carriage (narrative-rhyme scoping + founder
+# corrections, 2026-11-20) — prompt guidance for ordinary Talk
+# turns of the eligible seats, gated per seat on its canonical
+# assembly AND fox_rhyme_offer_enabled() at the assembly site
+# below (via _reference_carriage_lines). It is deliberately NOT
+# part of any canonical record: the seat records are character
+# definition, and the renderers reproduce them exactly — the
+# carriage is a way of working, not character, so it rides here as
+# guidance, in the pattern of _BEAR_FLOW_LOOP_GUIDANCE
+# (prompt-local guidance, not canonical content). The meeting path
+# never sees it: the carriage is withheld whenever the canonical
+# tier rides (the meeting caller's signal), including for a
+# converged meeting running canonical=True under WI-2.
+# History: PR #398 carried a Fox-only offer discipline; PR #399
+# added the seven cards under it. The founder's architectural
+# correction (2026-11-20) made the repertoire Fellowship-wide —
+# one shared archive, seven distinct interpretations,
+# user-governed meaning — so the guidance is now a single SHARED
+# text and the carriage is seat-general. Eligible seats are the
+# two-seat test scope in _REFERENCE_CARRIAGE_SEATS (maverick +
+# skeptic); the other five seats receive nothing in this build.
+# The founder's pacing refinement (2026-11-20) replaced the
+# original per-offer recitation rule (every offer names fit AND
+# failure) with progressive disclosure: the cards bind what a seat
+# may CLAIM, but expression defaults to silence or passing
+# allusion, abstention is invisible, and attribution/fit/caveats
+# surface only on probe, on a distinction that changes the
+# meaning, or to correct a misunderstanding. Standing fences,
+# unchanged: no invented narrative progression — a story's next
+# chapter is never the visitor's future; competing parallels stay
+# unranked; only the visitor adopts. Level (a) only: no capture,
+# derivation, or standing rides on this text — an offer
+# establishes nothing.
+_SHARED_REFERENCE_GUIDANCE = (
+    "Shared story references — a shelf the whole Fellowship may "
+    "draw from. The cards below are curated references, in pencil: "
+    "faithful accounts with their limits attached. They are "
+    "vocabulary, not obligation. Most turns, let them work "
+    "silently, or surface as a passing allusion — no naming, no "
+    "explaining. Offer more — a brief comparison, an explored "
+    "analogy — only when it genuinely serves what the visitor is "
+    "living, and save the full examination for when they ask, or a "
+    "distinction truly changes the meaning. What a card says binds "
+    "what you may claim: never assert what its account does not "
+    "support, never smooth its variants into one story, and "
+    "correct a misunderstanding plainly when one arises. When no "
+    "card adds anything, simply answer — do not announce that "
+    "nothing fits. Prefer developing an image already alive in the "
+    "conversation over introducing a new reference. Never invent a "
+    "progression: a story's next chapter is not the visitor's "
+    "future. Several parallels may rest on the table at once, "
+    "unranked; the visitor alone adopts one. Speak of them in your "
+    "own voice, at your own frequency — the shelf is shared; the "
+    "telling is yours."
 )
+
+# The Fox's own way with the shared shelf (founder direction,
+# 2026-11-20): Jynx rhymes in paint first — the making itself is
+# the offer — and his imagery settles by diffusion as a
+# conversation deepens. This addendum rides after the cards for
+# the Fox ONLY; no other seat receives it.
+_FOX_REFERENCE_ADDENDUM = (
+    "Your own way with them: paint first when painting serves — "
+    "surface metaphor early, and as the conversation deepens carry "
+    "your images forward, let them blend and settle toward the one "
+    "thing, instead of swapping in a new one each turn."
+)
+
+# Seats eligible for the shared reference carriage in this build:
+# the two-seat test scope (Fox + Severine) from the founder's
+# next-meaningful-test direction (2026-11-20) — two seats receiving
+# the SAME cards, demonstrating different character-faithful
+# engagements under identical source facts and limitations. The
+# ZENAF_FOX_RHYME_OFFER flag gates this scope (the flag's name is
+# historical; the staging secret already exists under it).
+_REFERENCE_CARRIAGE_SEATS = frozenset({"maverick", "skeptic"})
+
+
+def _reference_carriage_lines(
+    arch_id: str,
+    *,
+    seat_canonical: bool,
+    canonical_tier: bool,
+) -> list[str]:
+    """Prompt lines for the shared reference carriage, or [].
+
+    The carriage rides for an eligible seat (see
+    _REFERENCE_CARRIAGE_SEATS) on ordinary Talk turns only: the
+    seat's canonical assembly must be active (``seat_canonical``),
+    the canonical tier must not ride (``canonical_tier`` is the
+    meeting caller's signal, so meetings never carry references),
+    and the rollout flag must be on. With the flag off — the
+    default everywhere — this returns [] and every seat's prompt
+    is byte-identical to before the carriage existed. Order is
+    fixed: the shared guidance, then the cards block, then — for
+    the Fox only — the Fox addendum. Like the guidance patterns it
+    follows, the carriage rides outside the capped
+    extra_instructions frame, so it consumes no frame budget and
+    is never truncated by the cap.
+    """
+    if (
+        arch_id not in _REFERENCE_CARRIAGE_SEATS
+        or not seat_canonical
+        or canonical_tier
+        or not fox_rhyme_offer_enabled()
+    ):
+        return []
+    lines = ["", _SHARED_REFERENCE_GUIDANCE, "", rhyme_cards_block()]
+    if arch_id == "maverick":
+        lines += ["", _FOX_REFERENCE_ADDENDUM]
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -935,28 +1004,21 @@ def build_voice_prompt(
         # Bear Talk is byte-identical; every other seat never takes
         # this branch.
         prompt += ["", _BEAR_FLOW_LOOP_GUIDANCE]
-    if fox_canonical and not canonical_tier and fox_rhyme_offer_enabled():
-        # Narrative-rhyme offer discipline — ordinary Fox Talk only,
-        # behind the default-OFF ZENAF_FOX_RHYME_OFFER flag.
-        # fox_canonical is True only for Fox turns assembled on the
-        # canonical path; the guidance is ordinary-Talk guidance by
-        # design, so it is withheld whenever the canonical tier
-        # rides (the meeting caller's signal — since the WI-2
-        # meeting convergence a Fox meeting may itself run
-        # canonical=True). Talk never passes the tier, so with the
-        # flag on, ordinary Fox Talk carries it; with the flag off
-        # (the default everywhere) the prompt is byte-identical to
-        # before, and every other seat never takes this branch.
-        prompt += ["", _FOX_RHYME_OFFER_GUIDANCE]
-        # The cards in hand: the seven curated story cards ride
-        # immediately after the discipline, under exactly the same
-        # conditions and the same flag (local_ai/conversation/
-        # rhyme_cards.py — verbatim working-draft cards, NOT canon;
-        # admission is a separate founder verdict). Like the
-        # guidance, the block rides outside the capped
-        # extra_instructions frame, so it consumes no frame budget
-        # and is never truncated by the cap.
-        prompt += ["", rhyme_cards_block()]
+    # Shared reference carriage — ordinary Talk only, behind the
+    # default-OFF ZENAF_FOX_RHYME_OFFER flag (see
+    # _reference_carriage_lines and _REFERENCE_CARRIAGE_SEATS).
+    # fox_canonical / raven_canonical are each True only for that
+    # seat's turns assembled on the canonical path, so their OR is
+    # exactly "this seat's canonical assembly is active" for the
+    # two eligible seats; the helper applies the seat scope, the
+    # canonical-tier withholding (meetings never carry references),
+    # and the flag. With the flag off the helper returns [] and
+    # every seat's prompt is byte-identical to before.
+    prompt += _reference_carriage_lines(
+        arch_id,
+        seat_canonical=fox_canonical or raven_canonical,
+        canonical_tier=canonical_tier,
+    )
     if sections:
         prompt += [
             "",

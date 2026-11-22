@@ -105,6 +105,8 @@ class PipelineStore:
     def create_entry(
         self, user_id: str, text: str, source_hash: str, artifact_id: str | None = None
     ) -> dict[str, Any]:
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         entry_id = _new_id()
         now = _now_iso()
         with self._lock:
@@ -262,6 +264,8 @@ class PipelineStore:
         modalities: list[str] | None = None,
         observation_count: int = 0,
     ) -> dict[str, Any]:
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         now = _now_iso()
         shaped = int(bool(summary or style_anchors or tools or modalities))
         with self._lock:

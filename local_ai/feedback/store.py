@@ -75,6 +75,8 @@ class FeedbackStore:
         note: str,
     ) -> dict[str, Any]:
         """Insert exactly one record for one explicit widget submit."""
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         row_id = uuid.uuid4().hex[:16]
         now = _utcnow()
         checks_json = json.dumps(list(checks), ensure_ascii=True)

@@ -113,6 +113,8 @@ class TwigStore:
             self._conn.close()
 
     def save(self, twig: TwigRecord) -> None:
+        if not isinstance(twig.user_id, str) or not twig.user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         with self._lock:
             self._conn.execute(
                 """INSERT OR REPLACE INTO twigs

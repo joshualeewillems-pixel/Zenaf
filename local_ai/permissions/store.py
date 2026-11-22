@@ -143,6 +143,8 @@ def _ensure_user_row(conn: sqlite3.Connection, user_id: str) -> None:
     The minimal row carries consent_given=0 and an empty flag blob,
     so creating it opts nobody into anything.
     """
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise ValueError("user_id must be a non-empty string")
     tables = {
         row[0]
         for row in conn.execute(

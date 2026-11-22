@@ -643,7 +643,10 @@ def enumerate_sweep_users(store: NarrativeStore) -> list[str]:
     never visited (fail closed, nothing to do). Permissions
     enumeration failure falls back to cursor users only.
     """
-    users = set(store.processing_position_users())
+    users = {
+        u for u in store.processing_position_users()
+        if isinstance(u, str) and u.strip()
+    }
     try:
         from local_ai.vision_execution.storage import get_connection
 
@@ -651,7 +654,10 @@ def enumerate_sweep_users(store: NarrativeStore) -> list[str]:
         rows = conn.execute(
             "SELECT DISTINCT user_id FROM user_permissions_settings"
         ).fetchall()
-        users.update(row[0] for row in rows)
+        users.update(
+            row[0] for row in rows
+            if isinstance(row[0], str) and row[0].strip()
+        )
     except Exception:
         logger.exception(
             "steward sweep: permissions enumeration failed; "

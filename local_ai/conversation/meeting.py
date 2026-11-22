@@ -217,6 +217,21 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _require_user_id(user_id: Any) -> str:
+    """Validate an owner identity at the store boundary.
+
+    Meeting records belong to exactly one user. The encounter
+    writers take the owner as a dict value, so presence alone is
+    not enough: ``None`` and blank strings are rejected here,
+    never written (owner-required guarantee).
+    """
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise MeetingValidationError(
+            "user_id must be a non-empty string", "user_id_required"
+        )
+    return user_id
+
+
 def conversation_id_for(archetype_id: str, keystone_index: int) -> str:
     return f"meeting-{archetype_id}-{keystone_index}"
 
@@ -595,6 +610,7 @@ class MeetingStore:
         archiving never touches it. It is superseded only later, when
         a new run completes and files its own claim — restart and
         archiving alone supersede nothing.)"""
+        _require_user_id(user_id)
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO meeting_archives (user_id, archetype_id, "
@@ -708,6 +724,7 @@ class MeetingStore:
         same as update_encounter). A duplicate run_number /
         predecessor for the key raises IntegrityError — the caller
         re-reads the latest encounter instead of creating a second run."""
+        _require_user_id(fields.get("user_id"))
         fields = _serialize_encounter_lists(dict(fields))
         fields.setdefault("created_at", _utcnow())
         fields.setdefault("status", "creating")
@@ -760,6 +777,8 @@ class MeetingStore:
         atomic fact. A duplicate request_id (a concurrent retry that
         won) or a duplicate run_number raises IntegrityError; the
         caller re-reads the request / the latest encounter."""
+        _require_user_id(encounter_fields.get("user_id"))
+        _require_user_id(request.get("user_id"))
         fields = _serialize_encounter_lists(dict(encounter_fields))
         fields.setdefault("created_at", _utcnow())
         fields.setdefault("status", "creating")

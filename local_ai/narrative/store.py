@@ -1007,6 +1007,18 @@ def _utcnow() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _require_user_id(user_id: str) -> str:
+    """Validate an owner identity at the store boundary.
+
+    Every steward record belongs to exactly one user. A required
+    parameter is not a valid identity: ``None`` and blank strings
+    are rejected here, never written (owner-required guarantee).
+    """
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise ValueError("user_id must be a non-empty string")
+    return user_id
+
+
 def _new_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:24]}"
 
@@ -2285,6 +2297,7 @@ class NarrativeStore:
         contain ITSELF. There is no deeper cycle detection — S0
         stores structure; it does not walk it.
         """
+        _require_user_id(user_id)
         if relation not in THREAD_LINK_RELATIONS:
             raise ValueError(f"unknown thread link relation: {relation!r}")
         if parent_thread_id == child_thread_id:
@@ -3946,6 +3959,7 @@ class NarrativeStore:
         thread clock, so C observing quiet cannot break quiet.
         Returns (written, refreshed, removed). Caller holds the lock.
         """
+        _require_user_id(user_id)
         for row in desired:
             if row["kind"] not in OBSERVABLE_KINDS:
                 raise ValueError(f"unknown observable kind: {row['kind']!r}")
@@ -4457,6 +4471,7 @@ class NarrativeStore:
         commit, so a cursor commit failure cannot roll back records
         and a record commit failure cannot advance the cursor.
         """
+        _require_user_id(user_id)
         with self._lock:
             self._conn.execute(
                 "INSERT INTO steward_processing_position (user_id, "
@@ -5756,6 +5771,7 @@ class NarrativeStore:
         and any transition out of dismissed. Same-state sets are
         idempotent no-ops. Returns the stored row as a dict.
         """
+        _require_user_id(user_id)
         if delivery_status not in DELIVERY_STATUSES:
             raise ValueError(f"unknown delivery status: {delivery_status!r}")
         with self._lock:

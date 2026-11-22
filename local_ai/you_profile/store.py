@@ -113,6 +113,8 @@ class YouProfileStore:
         Only fields explicitly passed are touched; passing None clears a
         field. Returns the full record after the write.
         """
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         provided: dict[str, Any] = {}
         for name, value in (
             ("personal_name", personal_name),

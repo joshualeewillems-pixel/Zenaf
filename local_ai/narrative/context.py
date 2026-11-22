@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 from .branches import get_branch
 from .consent import coordination_allowed
 from .coordination import prepare_context
+from .currency import derive_currency
 from .lenses import get_lens
 from .store import NarrativeStore
 
@@ -586,7 +587,20 @@ def pencil_context_for(
         proposed = store.readings_for(user_id, thread.id, status="proposed")
         if not proposed:
             continue
-        reading = (proposed[-1].reading or {})
+        # Phase 1A (organic currency): a reading retired by a
+        # successor through change lineage keeps stored status
+        # "proposed" but is history, not current material — it must
+        # never be served as the thread's living observation. The
+        # latest CURRENT proposed reading carries the pencil.
+        currency = derive_currency(
+            thread, proposed, store.changes_for(user_id, thread.id)
+        )
+        current = [
+            r for r in proposed if currency[r.id].placement == "current"
+        ]
+        if not current:
+            continue
+        reading = (current[-1].reading or {})
         tensions = [
             str(t).strip()[:_MAX_PENCIL_ITEM_CHARS]
             for t in (reading.get("tensions") or [])

@@ -102,6 +102,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .currency import derive_currency
 from .store import NarrativeStore
 
 # Phase 6: schedule revisions are review items too — a version in
@@ -192,6 +193,14 @@ def pending_review_items(store: NarrativeStore, user_id: str) -> list[ReviewItem
     # All threads (not just nascent): a live thread can carry new
     # proposed readings, changes, and fittings.
     for thread in store.threads_for(user_id, limit=None):
+        # Phase 1A (organic currency): reading items carry their
+        # derived currency so a retired interpretation is labeled
+        # as history in the queue, never silently actionable as if
+        # current. Verdict behavior is unchanged.
+        thread_changes = store.changes_for(user_id, thread.id)
+        currency = derive_currency(
+            thread, store.readings_for(user_id, thread.id), thread_changes
+        )
         for reading in store.readings_for(
             user_id, thread.id, status="proposed"
         ):
@@ -209,10 +218,11 @@ def pending_review_items(store: NarrativeStore, user_id: str) -> list[ReviewItem
                         "reading": reading.reading or {},
                         "scales": reading.scales or [],
                         "evidence_refs": reading.evidence_refs or [],
+                        "currency": currency[reading.id].to_dict(),
                     },
                 )
             )
-        for change in store.changes_for(user_id, thread.id):
+        for change in thread_changes:
             if change.status != "proposed":
                 continue
             items.append(

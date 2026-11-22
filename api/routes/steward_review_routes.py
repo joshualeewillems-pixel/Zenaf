@@ -8,6 +8,10 @@ verdicts live here. Endpoints:
   items, plus the proposal-precision metric from the store.
 - ``POST /steward/review/{kind}/{row_id}/accept|reject|unresolve``
   — apply one verdict through ``local_ai/narrative/review.py``.
+- ``POST /steward/review/reading/{row_id}/endorse`` — record a
+  card endorsement ANNOTATION (Phase 1A). Not a verdict: it calls
+  ``store.record_card_endorsement`` only, never ``apply_verdict``,
+  and transitions no proposal state.
 - ``POST /steward/review/{kind}/{row_id}/explore`` — the
   Explore-with-Aria bridge (Gate B): the user carries a pending
   progression reading, fitting, or correspondence into a strand
@@ -147,6 +151,49 @@ def unresolve_review_item(
     store = get_narrative_store()
     try:
         return _apply(store, current_user["id"], kind, row_id, "unresolved")
+    finally:
+        store.close()
+
+
+# -- Card endorsement annotations (Story-First Phase 1A) ---------------------
+#
+# NOT a verdict endpoint. An endorsement annotation records the
+# visitor's stance toward ONE card reading version in the verdict
+# LOG (kind "card_endorsement") and transitions nothing: no reading
+# status, no standing pointer, no proposal state. This handler
+# calls store.record_card_endorsement ONLY — it never calls
+# review.apply_verdict, so the accept/supersede path is
+# unreachable from here by construction, not by caller care.
+
+
+class CardEndorsementBody(BaseModel):
+    stance: str  # endorsed | rejected | unresolved
+    note: str = ""
+
+
+@router.post("/reading/{row_id}/endorse", status_code=200)
+def endorse_card_reading(
+    row_id: str,
+    body: CardEndorsementBody,
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Record the visitor's endorsement stance on one card reading."""
+    store = get_narrative_store()
+    try:
+        try:
+            annotation = store.record_card_endorsement(
+                current_user["id"], row_id, body.stance, body.note
+            )
+        except ValueError as exc:
+            message = str(exc)
+            if message.startswith("unknown reading"):
+                # Unknown ids and other users' ids are
+                # indistinguishable: identical 404, no id echoed.
+                raise HTTPException(
+                    status_code=404, detail="unknown reading"
+                ) from exc
+            raise HTTPException(status_code=400, detail=message) from exc
+        return {"item_kind": "card_endorsement", "annotation": annotation}
     finally:
         store.close()
 

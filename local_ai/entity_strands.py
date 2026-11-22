@@ -193,6 +193,8 @@ def set_entity_strands(
 
     Raises ValueError on bad entity_type, source, or weights.
     """
+    if not isinstance(user_id, str) or not user_id.strip():
+        raise ValueError("user_id must be a non-empty string")
     if entity_type not in ENTITY_TYPES:
         raise ValueError(
             f"unknown entity_type {entity_type!r} — expected one of {list(ENTITY_TYPES)}"

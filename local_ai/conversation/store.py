@@ -2574,6 +2574,16 @@ class ConversationStore:
         call_id = uuid.uuid4().hex
         now = _utcnow()
         with self._lock:
+            job = self._conn.execute(
+                "SELECT job_id FROM upload_extraction_jobs WHERE job_id = ?",
+                (job_id,),
+            ).fetchone()
+            if job is None:
+                # Call rows carry no owner column; their ownership is
+                # the parent job's. Refuse to write a call row for a
+                # job that does not exist — it could never be
+                # attributed to any user (owner-required guarantee).
+                raise ValueError(f"upload job not found: {job_id!r}")
             self._conn.execute(
                 "INSERT INTO upload_extraction_job_calls (call_id, job_id, "
                 "chunk_index, call_kind, state, code, started_at, ended_at, "

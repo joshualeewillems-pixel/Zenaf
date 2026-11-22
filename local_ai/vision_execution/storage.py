@@ -3395,6 +3395,7 @@ def port_user_llm_stack_between_users(source_user_id: str, dest_user_id: str) ->
 
 
 def create_session(user_id: str, *, ttl_days: int = _SESSION_TTL_DAYS) -> str:
+    _require_owner_id(user_id)
     conn = get_connection()
     sid = M.new_id()
     token = secrets.token_urlsafe(32)
@@ -3789,6 +3790,7 @@ def normalize_user_permission_prefs(raw: Any) -> dict[str, bool]:
 
 
 def get_user_permissions_settings(user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     row = conn.execute(
         "SELECT consent_given, consent_version, consent_at, permissions_json, updated_at "
@@ -3846,6 +3848,7 @@ def upsert_user_permissions_settings(
     consent_acknowledged: bool,
     consent_version: str,
 ) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     now = _now()
     canonical = normalize_user_permission_prefs(permissions or {})
@@ -4243,6 +4246,7 @@ def _parse_llm_provider_prefs(raw: str | None) -> dict[str, Any]:
 
 
 def get_user_llm_profile(user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     row = conn.execute(
         "SELECT user_id, default_provider, default_model, ollama_base_url, ollama_model, "
@@ -4402,6 +4406,7 @@ def get_user_council_workspace(user_id: str) -> dict[str, Any] | None:
 
 
 def upsert_user_council_workspace(user_id: str, perspectives: list[Any]) -> dict[str, Any]:
+    _require_owner_id(user_id)
     blob = json.dumps(perspectives, ensure_ascii=False)
     if len(blob.encode("utf-8")) > _MAX_COUNCIL_WORKSPACE_JSON_BYTES:
         raise ValueError("council_workspace_perspectives_payload_too_large")
@@ -4458,6 +4463,7 @@ def llm_credential_row_exists(user_id: str, provider: str) -> bool:
 
 
 def upsert_llm_provider_credential(user_id: str, provider: str, api_key_plain: str) -> None:
+    _require_owner_id(user_id)
     pv = (provider or "").strip().lower()
     if pv not in _LLM_PROVIDERS_WITH_KEY:
         raise ValueError("Provider does not use stored API keys in this build.")
@@ -4553,6 +4559,7 @@ def normalize_notification_prefs(raw: Any) -> dict[str, Any]:
 
 
 def get_user_notification_settings(user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     row = conn.execute(
         "SELECT prefs_json, updated_at FROM user_notification_settings WHERE user_id = ?",
@@ -4583,6 +4590,7 @@ def get_user_notification_settings(user_id: str) -> dict[str, Any]:
 
 
 def upsert_user_notification_settings(user_id: str, prefs: dict[str, Any]) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     now = _now()
     canonical = normalize_notification_prefs(prefs or {})
@@ -5850,6 +5858,7 @@ def get_core_profile(profile_id: str, user_id: str) -> dict[str, Any] | None:
 
 
 def create_core_profile(data: M.CoreProfileCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     pid = M.new_id()
     now = _now()
@@ -5993,6 +6002,7 @@ def _insert_idea(
 
 
 def create_idea(data: M.IdeaCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     iid = M.new_id()
     with ve_write_transaction(conn, purpose="create_idea"):
@@ -6121,6 +6131,7 @@ def create_checklist_item(
     person_id: str | None = None,
     asset_id: str | None = None,
 ) -> dict[str, Any]:
+    _require_owner_id(user_id)
     if get_idea(idea_id, user_id) is None:
         raise ValueError("Idea not found")
     if status not in CHECKLIST_STATUSES:
@@ -6540,6 +6551,7 @@ def get_initiative(initiative_id: str, user_id: str | None = None) -> dict[str, 
 
 
 def create_initiative(data: M.InitiativeCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     iid = M.new_id()
     now = _now()
@@ -6746,6 +6758,7 @@ def create_execution_step(
     source: str = "user",
     source_evaluation_id: str | None = None,
 ) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     _assert_execution_scope_owned(conn, user_id, scope_type, scope_id)
     title = (title or "").strip()
@@ -7034,6 +7047,7 @@ def _insert_project(
 
 
 def create_project(data: M.ProjectCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     pid = M.new_id()
     _ensure_owned_reference(
@@ -7359,6 +7373,7 @@ def _insert_task(
 
 
 def create_task(data: M.TaskCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     with ve_write_transaction(conn, purpose="create_task"):
         _guard_legacy_write(
@@ -7746,6 +7761,7 @@ def record_task_proposal(
     a quote that is missing, empty, over-long, or not verbatim reads
     as 400.
     """
+    _require_owner_id(user_id)
     try:
         block_index = int(payload.get("block_index"))
         proposal_index = int(payload.get("proposal_index"))
@@ -8381,6 +8397,7 @@ def approve_upload_outcome(
     The activity log is a post-commit effect, exactly as
     create_task does (its failure never rolls back the creation).
     """
+    _require_owner_id(user_id)
     from local_ai.conversation.store import ConversationStore
 
     if kind not in ("project", "task", "idea"):
@@ -8744,6 +8761,7 @@ def update_task(task_id: str, data: M.TaskUpdate, user_id: str) -> dict[str, Any
 
 def record_seat_unlocks(user_id: str, seat_refs: list[str]) -> None:
     """Idempotently record begin-door availability for seats."""
+    _require_owner_id(user_id)
     refs = sorted({(r or "").strip() for r in seat_refs if (r or "").strip()})
     if not refs:
         return
@@ -9232,6 +9250,7 @@ def _row_to_content_brief(row: tuple) -> dict[str, Any]:
 
 
 def create_content_brief(data: dict[str, Any], user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     bid = M.new_id()
     now = _now()
@@ -9504,6 +9523,7 @@ def get_seat_request(seat_request_id: str, user_id: str) -> dict[str, Any] | Non
 
 
 def create_seat_request(data: M.SeatRequestCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     rid = M.new_id()
     now = _now()
@@ -9630,6 +9650,7 @@ def get_capability_offer(offer_id: str, user_id: str) -> dict[str, Any] | None:
 
 
 def create_capability_offer(data: M.CapabilityOfferCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     oid = M.new_id()
     now = _now()
@@ -9797,6 +9818,7 @@ def get_material_request(request_id: str, user_id: str) -> dict[str, Any] | None
 
 
 def create_material_request(data: M.MaterialRequestCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     rid = M.new_id()
     now = _now()
@@ -9973,6 +9995,7 @@ def get_material_offer(offer_id: str, user_id: str) -> dict[str, Any] | None:
 
 
 def create_material_offer(data: M.MaterialOfferCreate, user_id: str) -> dict[str, Any]:
+    _require_owner_id(user_id)
     conn = get_connection()
     oid = M.new_id()
     now = _now()
@@ -10193,6 +10216,7 @@ def insert_prompt_signal(
     * deferred — user asked to revisit later; not an endorsement of the prompt.
     * dismissed — suppress reinjection for the default window; not a permanent rejection.
     """
+    _require_owner_id(user_id)
     pid = (prompt_id or "").strip()
     if not pid:
         raise ValueError("prompt_id is required")
@@ -10406,8 +10430,11 @@ def list_workspace_messages(user_id: str, box: str) -> list[dict[str, Any]]:
 
 
 def create_workspace_message(from_user_id: str, to_user_id: str, title: str, body: dict[str, Any]) -> dict[str, Any]:
+    _require_owner_id(from_user_id)
     if from_user_id == to_user_id:
         raise ValueError("Cannot send a message to yourself")
+    if get_user_by_id(from_user_id) is None:
+        raise ValueError("Sender user not found")
     if get_user_by_id(to_user_id) is None:
         raise ValueError("Recipient user not found")
     mid = M.new_id()

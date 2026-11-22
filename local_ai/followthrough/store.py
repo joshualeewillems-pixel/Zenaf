@@ -116,6 +116,8 @@ class FollowthroughStore:
         entity_title: str = "",
         suggested_seat: str | None = None,
     ) -> dict[str, Any]:
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         nid = _new_id()
         now = _now_iso()
         with self._lock:
@@ -260,6 +262,8 @@ class FollowthroughStore:
     def create_commitment(
         self, user_id: str, text: str, source_quote: str | None = None
     ) -> dict[str, Any]:
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         cid = _new_id()
         now = _now_iso()
         with self._lock:
@@ -431,6 +435,8 @@ class FollowthroughStore:
     def set_growth(
         self, entity_type: str, entity_id: str, user_id: str, state: str
     ) -> dict[str, Any]:
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         now = _now_iso()
         with self._lock:
             self._conn.execute(
@@ -439,7 +445,8 @@ class FollowthroughStore:
                    VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT (entity_type, entity_id)
                    DO UPDATE SET state = excluded.state,
-                                 transitioned_at = excluded.transitioned_at""",
+                                 transitioned_at = excluded.transitioned_at
+                   WHERE entity_growth.user_id = excluded.user_id""",
                 (entity_type, entity_id, user_id, state, now),
             )
             self._conn.commit()
@@ -471,6 +478,8 @@ class FollowthroughStore:
         nudge_id: str | None = None,
         detail: str = "",
     ) -> None:
+        if not isinstance(user_id, str) or not user_id.strip():
+            raise ValueError("user_id must be a non-empty string")
         with self._lock:
             self._conn.execute(
                 """INSERT INTO engine_events

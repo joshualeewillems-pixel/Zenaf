@@ -113,6 +113,7 @@ from local_ai.conversation.round import (
 )
 from local_ai.council.archetypes import KEY_TO_PLAIN, get_archetype
 from local_ai.entity_strands import get_entity_strands
+from local_ai.narrative.currency import derive_currency
 from local_ai.strand_interviews.keys import (
     DESIGN_STRAND_KEYS,
     DESIGN_TO_TAXONOMY,
@@ -410,7 +411,8 @@ def _derive(
                     "other_thread_id": other,
                 }
             )
-        for change in narrative_store.changes_for(user_id, thread.id):
+        thread_changes = narrative_store.changes_for(user_id, thread.id)
+        for change in thread_changes:
             if change.status != "confirmed":
                 continue  # OQ3: unconfirmed proposals contribute nothing
             if change.kind == "contradicted":
@@ -433,9 +435,20 @@ def _derive(
                         "thread_id": thread.id,
                     }
                 )
-        for reading in narrative_store.readings_for(
+        proposed_readings = narrative_store.readings_for(
             user_id, thread.id, status="proposed"
-        ):
+        )
+        # Phase 1A (organic currency): a reading retired by a
+        # successor through change lineage keeps stored status
+        # "proposed" but is history — it is not a live proposal and
+        # contributes nothing here. (The thread's changes, already
+        # loaded above, drive the derivation.)
+        reading_currency = derive_currency(
+            thread, proposed_readings, thread_changes
+        )
+        for reading in proposed_readings:
+            if reading_currency[reading.id].placement != "current":
+                continue
             thread_proposals += 1
             provisional.append(
                 {

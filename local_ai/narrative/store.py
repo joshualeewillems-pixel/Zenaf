@@ -1454,6 +1454,42 @@ _DELIVERY_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "dismissed": (),
 }
 
+#: Card endorsement annotations (Story-First Phase 1A). An
+#: endorsement is an ANNOTATION in the verdict log, never a
+#: verdict: its rows carry this kind discriminator so no verdict
+#: consumer (proposal precision, rollout coverage, the review
+#: queue) can mistake one for a proposal verdict, and its stance
+#: vocabulary is its own — endorsement is the visitor's stance
+#: toward one reading version, with no state transition attached.
+CARD_ENDORSEMENT_KIND = "card_endorsement"
+CARD_ENDORSEMENT_STANCES: tuple[str, ...] = (
+    "endorsed",
+    "rejected",
+    "unresolved",
+)
+
+
+def _decode_card_endorsement(raw: str | None) -> tuple[str, str]:
+    """Decode a card-endorsement verdict-column value.
+
+    The verdict log's row shape has no note column and Phase 1A
+    adds no schema, so this kind stores a compact JSON object
+    ``{"stance": ..., "note": ...}`` in the verdict column. A
+    bare stance word is also accepted on read, for robustness.
+    """
+    text = (raw or "").strip()
+    if text.startswith("{"):
+        try:
+            data = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return text, ""
+        if isinstance(data, dict):
+            return (
+                str(data.get("stance") or ""),
+                str(data.get("note") or ""),
+            )
+    return text, ""
+
 
 class NarrativeStore:
     """SQLite-backed store for narrative threads and their records."""
@@ -6056,6 +6092,99 @@ class NarrativeStore:
             )
             for row in rows
         ]
+
+    # -- card endorsement annotations (Phase 1A) ----------------------
+    #
+    # A dedicated dispatch path, structurally isolated from the
+    # verdict path: these methods never call accept_reading /
+    # reject_reading, never write thread_readings or
+    # narrative_threads, and never move standing_reading_id. An
+    # endorsement records the visitor's stance toward ONE reading
+    # version; organic revision of that reading neither moves nor
+    # removes the annotation (design Rev 6 §1: currency and
+    # endorsement read disjoint inputs).
+
+    def record_card_endorsement(
+        self,
+        user_id: str,
+        reading_id: str,
+        stance: str,
+        note: str = "",
+    ) -> dict:
+        """Append one card endorsement annotation to the verdict log.
+
+        The row carries ``item_kind = "card_endorsement"`` (see
+        ``CARD_ENDORSEMENT_KIND``), the reading id as its item, and
+        the stance + note encoded in the verdict column (see
+        ``_decode_card_endorsement``). Raises ``ValueError`` for an
+        unknown stance or a reading the user does not own.
+        """
+        if stance not in CARD_ENDORSEMENT_STANCES:
+            raise ValueError(
+                f"unknown card endorsement stance: {stance!r}"
+            )
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT r.id FROM thread_readings r JOIN "
+                "narrative_threads t ON t.id = r.thread_id "
+                "WHERE r.id = ? AND t.user_id = ?",
+                (reading_id, user_id),
+            ).fetchone()
+            if row is None:
+                raise ValueError(f"unknown reading: {reading_id!r}")
+            now = _utcnow()
+            record_id = _new_id("vrd")
+            self._conn.execute(
+                "INSERT INTO steward_review_verdicts "
+                "(id, user_id, item_kind, item_id, verdict, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    record_id,
+                    user_id,
+                    CARD_ENDORSEMENT_KIND,
+                    reading_id,
+                    json.dumps(
+                        {"stance": stance, "note": note or ""},
+                        ensure_ascii=False,
+                    ),
+                    now,
+                ),
+            )
+            self._conn.commit()
+        return {
+            "id": record_id,
+            "user_id": user_id,
+            "reading_id": reading_id,
+            "stance": stance,
+            "note": note or "",
+            "created_at": now,
+        }
+
+    def card_endorsements_for(
+        self, user_id: str, reading_id: str
+    ) -> list[dict]:
+        """Endorsement annotations on one reading version, oldest first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM steward_review_verdicts WHERE "
+                "user_id = ? AND item_kind = ? AND item_id = ? "
+                "ORDER BY created_at, id",
+                (user_id, CARD_ENDORSEMENT_KIND, reading_id),
+            ).fetchall()
+        out: list[dict] = []
+        for row in rows:
+            stance, note = _decode_card_endorsement(row["verdict"])
+            out.append(
+                {
+                    "id": row["id"],
+                    "user_id": row["user_id"],
+                    "reading_id": row["item_id"],
+                    "stance": stance,
+                    "note": note,
+                    "created_at": row["created_at"],
+                }
+            )
+        return out
 
     def proposal_precision(self, user_id: str) -> dict:
         """Proposal-precision metric from the verdict log (Phase 1).

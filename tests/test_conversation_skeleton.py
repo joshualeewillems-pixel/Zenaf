@@ -256,8 +256,11 @@ def test_trained_sections_scopes_store_to_user(tmp_path, monkeypatch):
             pass
 
     monkeypatch.setattr(pstore_mod, "PersonalityStore", FakeStore)
-    sections, has_training = reply_mod._trained_sections("user-alice", {"Word": 0.9})
+    sections, has_training, profile_version = reply_mod._trained_sections(
+        "user-alice", {"Word": 0.9}
+    )
     assert (sections, has_training) == ([], False)
+    assert profile_version is None
     assert seen["args"] == ()
     assert seen["kwargs"].get("user_id") == "user-alice"
 

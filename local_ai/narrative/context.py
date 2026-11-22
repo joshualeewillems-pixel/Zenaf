@@ -392,6 +392,7 @@ def weaver_context_provider(
     connection=None,
     aspiration_reader=None,
     aspiration_permission_check=None,
+    with_selection: bool = False,
 ) -> object:
     """A chat-path provider returning the Weaver's prepared block.
 
@@ -403,11 +404,18 @@ def weaver_context_provider(
     tests pass an explicit store. History is accepted for call-site
     symmetry but deliberately unused — relevance is to this turn's
     message, so stale turns cannot pull stale threads into view.
+
+    With ``with_selection=True`` the callable instead returns the
+    full :class:`PreparedContext`, so a caller that records
+    provenance (the conversation service's generation manifest,
+    plan Q4.1) can name the threads the block was prepared from.
+    The block text is identical either way; the default preserves
+    the string contract every existing caller relies on.
     """
 
     state: dict[str, NarrativeStore | None] = {"store": store}
 
-    def provider(user_id: str, message: str, history=None) -> str | None:
+    def provider(user_id: str, message: str, history=None):
         try:
             if state["store"] is None:
                 state["store"] = NarrativeStore()
@@ -420,7 +428,7 @@ def weaver_context_provider(
                 aspiration_reader=aspiration_reader,
                 aspiration_permission_check=aspiration_permission_check,
             )
-            return prepared.block
+            return prepared if with_selection else prepared.block
         except Exception:
             return None
 
@@ -616,6 +624,12 @@ def pencil_context_for(
         items.append(
             {
                 "thread_id": thread.id,
+                # The selected reading's id rides the prepared
+                # context's thread facts (never the rendered block:
+                # pencil material carries no citable ids) so the
+                # generation manifest can record WHICH reading the
+                # turn's material came from (plan Q4.1 source ids).
+                "reading_id": current[-1].id,
                 "title": (thread.title or "")[:_MAX_TITLE_CHARS],
                 "tensions": tensions,
                 "open_questions": questions,
@@ -636,7 +650,11 @@ def pencil_context_for(
         reason="available",
         block=block,
         threads=tuple(
-            {"thread_id": item["thread_id"], "title": item["title"]}
+            {
+                "thread_id": item["thread_id"],
+                "reading_id": item["reading_id"],
+                "title": item["title"],
+            }
             for item in shown
         ),
         assessment_ids=tuple(assessment_ids),
@@ -647,18 +665,23 @@ def jynx_context_provider(
     store: NarrativeStore | None = None,
     *,
     connection=None,
+    with_selection: bool = False,
 ) -> object:
     """A chat-path provider returning the Jynx's pencil block.
 
     Same contract as ``weaver_context_provider``: takes
     ``(user_id, message, history)``, returns the block string or
     None, never raises. With the master switch off (the default) it
-    returns None before touching the store.
+    returns None before touching the store. ``with_selection=True``
+    returns the full :class:`PreparedContext` instead of the block
+    string, exactly as on the Weaver's provider — the selected
+    thread/reading ids ride its ``threads`` facts for the
+    generation manifest, never the rendered block.
     """
 
     state: dict[str, NarrativeStore | None] = {"store": store}
 
-    def provider(user_id: str, message: str, history=None) -> str | None:
+    def provider(user_id: str, message: str, history=None):
         try:
             if not pencil_context_enabled():
                 return None
@@ -671,7 +694,7 @@ def jynx_context_provider(
                 attended_text=message or "",
                 connection=connection,
             )
-            return prepared.block
+            return prepared if with_selection else prepared.block
         except Exception:
             return None
 

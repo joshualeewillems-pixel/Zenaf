@@ -14,6 +14,7 @@ Two additive inputs exist only here (the voice route ignores them):
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import time
@@ -423,6 +424,123 @@ class VoiceReply:
     voice_color: str
     mode_used: str  # "trained" | "base"
     has_training: bool
+    # Training-readiness generation manifest (plan Q4.1): the
+    # fingerprint record of this generation — provider, effective
+    # model, prompt sha256 + length, assembly stamp, profile
+    # version, shaping flags, summary hash. Built by
+    # generate_voice_reply for every reply it produces; the
+    # conversation service persists it on the assistant message's
+    # own record (context_json). None only when manifest building
+    # itself failed (logged) — a turn never fails over bookkeeping.
+    generation_manifest: dict[str, Any] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Generation manifest (Training-Readiness Architecture Plan Q4.1,
+# 2026-11-22; founder ruling 2026-11-22 10:31 PT: FINGERPRINT ONLY).
+#
+# Every generated reply carries a small manifest recording what
+# produced it: provider id, effective model id, the assembled
+# prompt's sha256 + char length, the prompt-assembly version stamp,
+# mode, the profile version the trained sections were rendered
+# from, the turn-shaping flags, and a hash of the thread summary
+# the turn saw. The full prompt text is NEVER stored — the hash
+# makes any future re-assembly verifiable (recompute, compare)
+# without creating a second stored copy of the visitor's context,
+# and it preserves this module's standing rule that no prompt,
+# response, or user content is ever logged or persisted beyond the
+# message record itself. The delegation subsystem's LearningRecord
+# (compiled_prompt_sha256_prefix, model_used) is the proven pattern
+# this follows; the manifest stores the full sha256 so verification
+# is exact rather than prefix-probabilistic.
+#
+# The conversation service enriches the manifest at the persistence
+# seam with the two facts only it knows (the sketch-shaping flag
+# state and the steward/pencil source selections) and writes it
+# into the assistant message's context_json under
+# GENERATION_MANIFEST_KEY. Forward-only: turns generated before
+# this landed carry no manifest, and none is ever backfilled.
+# ---------------------------------------------------------------------------
+
+#: Manifest schema version, bumped when the manifest's own shape
+#: changes (distinct from the assembly stamp below).
+GENERATION_MANIFEST_VERSION = 1
+
+#: The context_json key the manifest rides under on the assistant
+#: message's record.
+GENERATION_MANIFEST_KEY = "generation_manifest"
+
+#: Prompt-assembly version stamp. Bump this whenever
+#: build_voice_prompt's assembly changes — section order, caps,
+#: character-block selection, or any new/removed section — so a
+#: stored manifest names the assembly that produced its prompt.
+#: Turns whose manifest carries an older stamp were assembled by
+#: that era's code (recoverable from git), never silently by
+#: today's.
+PROMPT_ASSEMBLY_VERSION = 1
+
+
+def _effective_model_id(provider_id: str) -> str | None:
+    """The model a provider call with no explicit model resolves to.
+
+    Mirrors the provider module's own resolution (the Talk path
+    passes no model, so the provider default — env-overridable —
+    is the effective model). Returns None when the provider is
+    unknown here or resolution fails: the manifest records what it
+    can prove, never a guess.
+    """
+    try:
+        if provider_id == "meta":
+            from local_ai.providers.meta import _effective_model
+
+            return _effective_model(None)
+    except Exception:
+        return None
+    return None
+
+
+def _sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+def build_generation_manifest(
+    *,
+    prompt_text: str,
+    provider_id: str,
+    mode_used: str,
+    has_training: bool,
+    profile_version: int | None,
+    flags: dict[str, bool],
+    thread_summary: str | None,
+) -> dict[str, Any]:
+    """Assemble one turn's generation manifest (fingerprint only).
+
+    ``profile_version`` is the published profile version the
+    trained sections were rendered from — None when no trained
+    sections were rendered (base mode, no profile, or every
+    section render failed), so the field never claims a profile
+    the prompt did not actually carry. ``thread_summary`` is the
+    summary text exactly as the service loaded it for this turn;
+    only its hash is stored (the summary itself lives, and is
+    overwritten, in thread state — the hash proves which one this
+    turn saw). No prompt text, summary text, or user content is
+    stored in the manifest, under any key.
+    """
+    return {
+        "version": GENERATION_MANIFEST_VERSION,
+        "provider": provider_id,
+        "model": _effective_model_id(provider_id),
+        "prompt_sha256": _sha256_hex(prompt_text),
+        "prompt_chars": len(prompt_text),
+        "assembly_version": PROMPT_ASSEMBLY_VERSION,
+        "mode_used": mode_used,
+        "has_training": bool(has_training),
+        "profile_version": profile_version,
+        "flags": dict(flags),
+        "thread_summary_sha256": (
+            _sha256_hex(thread_summary) if thread_summary else None
+        ),
+    }
 
 
 def _turn_role(turn: Any) -> str:
@@ -484,11 +602,18 @@ def _voice_turn_label(user_id: str, turn: Any) -> str:
     return "Voice"
 
 
-def _trained_sections(user_id: str, weights: dict[str, float]) -> tuple[list[str], bool]:
+def _trained_sections(
+    user_id: str, weights: dict[str, float]
+) -> tuple[list[str], bool, int | None]:
     """Render the user's trained per-strand sections for this voice's blend.
 
-    Returns (sections, has_training). Never raises — empty training falls
-    back honestly to the base voice.
+    Returns (sections, has_training, profile_version).
+    ``profile_version`` is the published profile version the
+    sections were rendered from (the generation manifest's
+    provenance), and is None whenever no sections were rendered —
+    no profile, or every section render failed — so it never names
+    a profile the prompt did not actually carry. Never raises —
+    empty training falls back honestly to the base voice.
     """
     try:
         from local_ai.personality.blend import render_user_section
@@ -502,7 +627,7 @@ def _trained_sections(user_id: str, weights: dict[str, float]) -> tuple[list[str
         try:
             profile = store.get_current()
             if profile is None:
-                return [], False
+                return [], False, None
             version_count = len(store.list_versions())
             sections: list[str] = []
             for plain_name, weight in sorted(weights.items(), key=lambda kv: kv[1], reverse=True):
@@ -515,11 +640,13 @@ def _trained_sections(user_id: str, weights: dict[str, float]) -> tuple[list[str
                     sections.append(render_user_section(profile, key, weight, version_count))
                 except Exception:
                     continue
-            return sections, bool(sections)
+            if not sections:
+                return [], False, None
+            return sections, True, profile.version
         finally:
             store.close()
     except Exception:
-        return [], False
+        return [], False, None
 
 
 # ---------------------------------------------------------------------------
@@ -975,9 +1102,10 @@ def build_voice_prompt(
 
     sections: list[str] = []
     has_training = False
+    profile_version: int | None = None
     mode_used = "base"
     if mode == "trained":
-        sections, has_training = _trained_sections(user_id, weights)
+        sections, has_training, profile_version = _trained_sections(user_id, weights)
         if has_training:
             mode_used = "trained"
 
@@ -1014,11 +1142,12 @@ def build_voice_prompt(
     # canonical-tier withholding (meetings never carry references),
     # and the flag. With the flag off the helper returns [] and
     # every seat's prompt is byte-identical to before.
-    prompt += _reference_carriage_lines(
+    carriage_lines = _reference_carriage_lines(
         arch_id,
         seat_canonical=fox_canonical or raven_canonical,
         canonical_tier=canonical_tier,
     )
+    prompt += carriage_lines
     if sections:
         prompt += [
             "",
@@ -1225,6 +1354,11 @@ def build_voice_prompt(
         "voice_color": voice_color(arch_id),
         "mode_used": mode_used,
         "has_training": has_training,
+        # Generation-manifest inputs (plan Q4.1): the profile
+        # version the trained sections were rendered from, and
+        # whether the shared reference carriage rode this turn.
+        "profile_version": profile_version,
+        "rhyme_carriage": bool(carriage_lines),
     }
     return prompt, meta
 
@@ -1282,6 +1416,7 @@ def generate_voice_reply(
         canonical_tier=canonical_tier,
     )
     gen = generate_fn or _default_generate
+    prompt_text = "\n".join(prompt)
     # Provider-timing instrumentation (durations + labels only; no
     # prompt, response, or user content is ever logged): the monotonic
     # clock brackets THE provider call only — prompt assembly above
@@ -1291,7 +1426,7 @@ def generate_voice_reply(
     _start = time.perf_counter()
     try:
         raw = gen(
-            "\n".join(prompt),
+            prompt_text,
             provider_id="meta",
             user_id=user_id,
             operation="voice-chat",
@@ -1305,6 +1440,32 @@ def generate_voice_reply(
             time.perf_counter() - _start,
         )
     reply = sanitize_weave(raw.strip())
+    # Generation manifest (plan Q4.1; fingerprint only — see the
+    # manifest block above VoiceReply): built from the exact prompt
+    # text the provider call carried, after the call succeeded. A
+    # failed generation raises above and produces no reply and no
+    # manifest. Manifest building itself is bookkeeping: any
+    # failure is logged and the reply stands without one.
+    generation_manifest: dict[str, Any] | None = None
+    try:
+        generation_manifest = build_generation_manifest(
+            prompt_text=prompt_text,
+            provider_id="meta",
+            mode_used=meta["mode_used"],
+            has_training=meta["has_training"],
+            profile_version=meta["profile_version"],
+            flags={
+                "canonical": bool(canonical),
+                "canonical_tier": bool(canonical_tier),
+                "rhyme_carriage": bool(meta["rhyme_carriage"]),
+            },
+            thread_summary=thread_summary,
+        )
+    except Exception:
+        logger.exception(
+            "generation manifest: build failed; reply stands without one"
+        )
+        generation_manifest = None
     return VoiceReply(
         reply=reply,
         archetype_id=meta["archetype_id"],
@@ -1312,4 +1473,5 @@ def generate_voice_reply(
         voice_color=meta["voice_color"],
         mode_used=meta["mode_used"],
         has_training=meta["has_training"],
+        generation_manifest=generation_manifest,
     )

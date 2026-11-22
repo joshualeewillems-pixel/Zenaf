@@ -5,7 +5,7 @@ The Steward's interpretive machinery was built and never invoked:
 canon (``lenses.py``) carries observable fit signals and cautions
 and nothing proposes a fitting; ``correspondence`` accepts explicit
 evidence refs from a caller that did not exist. This module is that
-caller — one recognition pass with three outlets, all writing
+caller — one recognition pass with four outlets, all writing
 proposals through the store's existing transitions and nothing
 else:
 
@@ -37,13 +37,33 @@ else:
   one generation per pass proposes the structure, and recognition
   validates substantive limitations before the call (C2);
   ``propose_correspondence`` re-enforces its own abstentions.
+- **Outlet D — card sections (Story-First Phase 1B).** A thread's
+  structural abstraction: a reading whose payload carries the
+  personal card's sections — ``structure`` (roles, relationships,
+  conflicts, reversals, sacrifices, consequences, changes over
+  time; every entry citing its evidence refs), ``distinctions``
+  (what the narrative is not), and ``tags`` — alongside the
+  existing tensions, open questions, and milestones. A
+  deterministic pre-filter runs first (S1 multiplicity, S2
+  detectable structural material, S3 dedup against the thread's
+  own card readings): card-shaped structure is detectable in the
+  evidence without any model call, and when the pre-filter fails
+  nothing is generated. Generation has its OWN switch
+  (``ZENAF_RECOGNITION_CARD_SECTIONS_GEN``, default off) on the
+  correspondence precedent: with it off, the pre-filter runs and
+  records its result — and generates nothing, proposes nothing.
+  The reading lands through ``propose_reading`` at ``proposed``
+  standing, seat-less, like all derivation: a card's structure is
+  an interpretation, never a fact about the visitor, and no
+  verdict path is touched.
 
-Assessment is pure: :func:`assess_thread` and :func:`assess_pairs`
-write nothing and return a result object. Only
-:func:`propose_all` writes, and only through ``propose_reading``,
-``set_fitting``, and ``propose_correspondence``. Abstention is the
-default at every outlet and writes nothing: a pass that proposes
-nothing is a complete, successful pass.
+Assessment is pure: :func:`assess_thread`, :func:`assess_pairs`,
+and :func:`assess_card_sections` write nothing and return a
+result object. Only :func:`propose_all` writes, and only through
+``propose_reading``, ``set_fitting``, and
+``propose_correspondence``. Abstention is the default at every
+outlet and writes nothing: a pass that proposes nothing is a
+complete, successful pass.
 
 Boundaries, inherited and re-stated so they are checkable here:
 
@@ -76,6 +96,9 @@ Switches (read per call, so tests flip them with ``setenv``):
   Off ⇒ the sweep behaves exactly as it did before this module.
 - ``ZENAF_RECOGNITION_CORRESPONDENCE_GEN`` — Outlet C generation
   only, default OFF, independent of the progression path.
+- ``ZENAF_RECOGNITION_CARD_SECTIONS_GEN`` — Outlet D generation
+  only, default OFF, independent of every other outlet: enabling
+  it enables neither progression nor correspondence generation.
 """
 
 from __future__ import annotations
@@ -124,6 +147,7 @@ _MOVEMENT_STATUSES: tuple[str, ...] = ("proposed", "confirmed")
 #: budgeted wrappers; a single assess call generates at most once).
 MAX_PROGRESSION_GENERATIONS_PER_PASS = 2
 MAX_CORRESPONDENCE_GENERATIONS_PER_PASS = 1
+MAX_CARD_SECTION_GENERATIONS_PER_PASS = 1
 
 #: F1 — a lens needs this many fit signals, each matched to a
 #: DISTINCT evidence point.
@@ -134,6 +158,40 @@ MIN_LIMITATIONS_CHARS = 20
 
 #: The reading-payload kind marking a progression candidate.
 PROGRESSION_READING_KIND = "progression_candidate"
+
+#: The reading-payload kind marking a card-section candidate
+#: (Outlet D). The card view surfaces the payload's ``structure``
+#: / ``distinctions`` / ``tags`` keys; the kind marker is what the
+#: S3 dedup scans for.
+CARD_SECTIONS_READING_KIND = "card_sections"
+
+#: S1 — multiplicity and separation for a card abstraction (the
+#: G1 values, independently tunable: one mention is not a
+#: structure, and a structure spans more than a day).
+MIN_CARD_SECTION_POINTS = 3
+MIN_CARD_SECTION_DAYS = 2
+
+#: The structure block's fields (design Rev 2, Step 2): the shape
+#: of a narrative, each field a list of evidence-cited entries.
+STRUCTURE_FIELDS: tuple[str, ...] = (
+    "roles",
+    "relationships",
+    "conflicts",
+    "reversals",
+    "sacrifices",
+    "consequences",
+    "changes_over_time",
+)
+
+#: Change kinds that are themselves structural material for S2 —
+#: recorded movement of any shape (an extension, a contradiction,
+#: a milestone, a reopening) is a change over time in the record.
+_STRUCTURAL_CHANGE_KINDS: tuple[str, ...] = (
+    "extended",
+    "contradicted",
+    "milestone",
+    "reopened",
+)
 
 #: Opposed change shapes for C1: one thread's movement against the
 #: other's reversal or reopening.
@@ -183,6 +241,18 @@ def correspondence_generation_enabled() -> bool:
     with its own spending boundary.
     """
     return _switch_enabled("ZENAF_RECOGNITION_CORRESPONDENCE_GEN")
+
+
+def card_sections_generation_enabled() -> bool:
+    """Outlet D's OWN generation switch (default OFF).
+
+    Independent of every other outlet by design, on the
+    correspondence precedent: enabling progression or
+    correspondence generation never enables card-section
+    generation, and live enablement is a separate founder
+    decision with its own spending boundary.
+    """
+    return _switch_enabled("ZENAF_RECOGNITION_CARD_SECTIONS_GEN")
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +318,25 @@ class CorrespondenceCandidate:
     limitations: str
     candidate_metaphor: str | None = None
     mapping: dict | None = None
+
+
+@dataclass(frozen=True)
+class CardSectionCandidate:
+    """One validated card abstraction for one thread (Outlet D).
+
+    ``reading`` is the ThreadReading payload: the card sections
+    (``structure`` / ``distinctions`` / ``tags``) alongside the
+    existing tensions, open questions, and milestones, plus the
+    kind marker, the sections signature S3 dedupes on, and the
+    coverage note.
+    """
+
+    thread_id: str
+    reading: dict
+    #: Thread-evidence row ids the structure entries cite, in
+    #: window order — the reading's evidence refs.
+    evidence_refs: tuple[str, ...]
+    gate_trace: tuple[str, ...] = ()
 
 
 @dataclass
@@ -393,6 +482,20 @@ def progression_signature(thread_id: str, rows: list[ThreadEvidence]) -> str:
     """
     keys = sorted(f"{r.ref_kind}:{r.ref_id}" for r in rows)
     return f"progression:{thread_id}:" + "|".join(keys)
+
+
+def card_sections_signature(
+    thread_id: str, rows: list[ThreadEvidence]
+) -> str:
+    """Content-addressed signature of one evidence window (S3).
+
+    Same grammar as :func:`progression_signature`, namespaced by
+    its own ``card_sections:`` prefix so the two kinds' dedup
+    namespaces stay disjoint. New evidence changes the signature
+    and re-opens eligibility.
+    """
+    keys = sorted(f"{r.ref_kind}:{r.ref_id}" for r in rows)
+    return f"card_sections:{thread_id}:" + "|".join(keys)
 
 
 # ---------------------------------------------------------------------------
@@ -1118,6 +1221,332 @@ def assess_pairs(
 
 
 # ---------------------------------------------------------------------------
+# Outlet D — card sections (Story-First Phase 1B)
+# ---------------------------------------------------------------------------
+
+_CARD_SECTIONS_PROMPT = """\
+You are the Narrative Steward's slow-path analyst. You do NOT speak
+to the user and you are not any council voice. Below is one thread's
+evidence in chronological order. Abstract, in plain system language,
+the STRUCTURE of the narrative these records form — the sections of
+the personal card the Steward keeps of this story — or decline.
+
+Evidence (chronological):
+{evidence}
+
+Movements recorded on the thread: {movements}
+
+If these records do not yet form a structure worth abstracting
+(a single note, or a theme with no shape), reply with exactly:
+NONE
+
+Otherwise reply with exactly one JSON object and nothing else:
+{{"structure": {{"roles": [{{"text": "who or what fills a role in
+this story", "evidence_refs": ["<evidence row id>", ...]}}],
+"relationships": [{{"text": "...", "evidence_refs": [...]}}],
+"conflicts": [{{"text": "...", "evidence_refs": [...]}}],
+"reversals": [{{"text": "...", "evidence_refs": [...]}}],
+"sacrifices": [{{"text": "...", "evidence_refs": [...]}}],
+"consequences": [{{"text": "...", "evidence_refs": [...]}}],
+"changes_over_time": [{{"text": "...", "evidence_refs": [...]}}]}},
+"distinctions": ["what this narrative is NOT, on this evidence"],
+"tags": ["short structural tag", "..."],
+"tensions": ["..."], "open_questions": ["..."],
+"milestones": ["..."]}}
+
+Rules: every structure entry cites evidence row ids from the list
+above and nothing else; a structure field with no supported entry
+is an empty list — never invent an entry to fill a field;
+distinctions state readings the evidence does not support,
+comparisons that would mislead, or boundaries the user has
+stated — at least one, addressed honestly; tags derive from the
+structure alone; the structure is an interpretation of the story,
+never a fact about the user; never invent facts, people, or
+events. Keep every string short.
+"""
+
+
+def _string_list(value: Any) -> list[str] | None:
+    """A list of non-empty strings, normalized, or None."""
+    if not isinstance(value, list):
+        return None
+    out: list[str] = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip():
+            return None
+        out.append(item.strip())
+    return out
+
+
+def _parse_card_sections(
+    raw: str | None,
+    *,
+    window: list[ThreadEvidence],
+) -> dict | None:
+    """Parse + validate a card-section generation, or None.
+
+    Deterministic validation, mirroring the progression parser:
+    every structure entry cites at least one ref from the input
+    set; at least one structure entry exists across the block's
+    fields; distinctions are present and addressed (at least
+    one); tags derive and are present; the existing reading
+    fields are string lists when present. Any failure discards
+    the whole candidate — no partial card is ever written.
+    """
+    text = (raw or "").strip()
+    if not text or text.upper() == "NONE" or text.upper().startswith("NONE\n"):
+        return None
+    try:
+        data = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    positions = {row.id: idx for idx, row in enumerate(window)}
+
+    structure_in = data.get("structure")
+    if not isinstance(structure_in, dict):
+        return None
+    if any(key not in STRUCTURE_FIELDS for key in structure_in):
+        return None  # a field outside the block's shape
+    structure: dict[str, list[dict]] = {}
+    cited: list[str] = []
+    entries = 0
+    for field_name in STRUCTURE_FIELDS:
+        raw_entries = structure_in.get(field_name) or []
+        if not isinstance(raw_entries, list):
+            return None
+        cleaned: list[dict] = []
+        for entry in raw_entries:
+            if not isinstance(entry, dict):
+                return None
+            entry_text = entry.get("text")
+            refs = entry.get("evidence_refs")
+            if (
+                not isinstance(entry_text, str)
+                or not entry_text.strip()
+                or not isinstance(refs, list)
+                or not refs
+                or not all(isinstance(r, str) for r in refs)
+            ):
+                return None
+            if any(r not in positions for r in refs):
+                return None  # citation outside the input set
+            cleaned.append(
+                {
+                    "text": entry_text.strip(),
+                    "evidence_refs": list(refs),
+                }
+            )
+            cited.extend(refs)
+            entries += 1
+        structure[field_name] = cleaned
+    if entries == 0:
+        return None  # a structure block with no entries is no card
+
+    distinctions = _string_list(data.get("distinctions"))
+    if not distinctions:
+        return None  # the section must be addressed, honestly
+    tags = _string_list(data.get("tags"))
+    if not tags:
+        return None  # tags derive from the structure; none, no card
+
+    out: dict[str, Any] = {
+        "kind": CARD_SECTIONS_READING_KIND,
+        "structure": structure,
+        "distinctions": distinctions,
+        "tags": tags,
+    }
+    for key in ("tensions", "open_questions", "milestones"):
+        value = data.get(key)
+        if value is None:
+            out[key] = []
+            continue
+        cleaned_list = _string_list(value)
+        if cleaned_list is None:
+            return None
+        out[key] = cleaned_list
+    out["_cited_refs"] = cited
+    return out
+
+
+def assess_card_sections(
+    store: NarrativeStore,
+    user_id: str,
+    thread_id: str,
+    *,
+    generate_fn: Callable | None = None,
+) -> RecognitionResult:
+    """Assess one thread for a card abstraction (Outlet D).
+
+    The deterministic pre-filter runs first and always (S1–S3):
+    card-shaped structure is detectable in the evidence without
+    any model call, and a failed gate abstains before generation
+    is even considered. Generation happens only when the outlet's
+    own switch is on and a ``generate_fn`` is injected, and at
+    most once. Writes nothing.
+    """
+    result = RecognitionResult(threads_examined=1)
+    thread = store.get_thread(user_id, thread_id)
+    if thread is None:
+        result.notes.append(f"thread {thread_id}: not found — abstain")
+        return result
+    cutoff = _barrier_cutoff(store, user_id)
+    total_rows = len(store.evidence_for(user_id, thread_id))
+    window, changes, barrier_excluded = _thread_window(
+        store, user_id, thread_id, cutoff
+    )
+    truncated = (total_rows - barrier_excluded) > MAX_EVIDENCE_WINDOW
+    trace: list[str] = []
+
+    # S1 — multiplicity and separation (G1's shape): one mention
+    # is not a structure, and a structure spans more than a day.
+    days = {(row.created_at or "")[:10] for row in window}
+    if (
+        len(window) < MIN_CARD_SECTION_POINTS
+        or len(days) < MIN_CARD_SECTION_DAYS
+    ):
+        result.notes.append(
+            f"card sections on {thread_id}: S1 abstain "
+            f"({len(window)} points across {len(days)} day(s))"
+        )
+        return result
+    trace.append(
+        f"S1 pass ({len(window)} points across {len(days)} days)"
+    )
+
+    # S2 — detectable structural material, no model call: either
+    # more than one subject stands in the record (relationships
+    # and roles need relata) or the thread carries recorded
+    # movement (a change over time is itself structural).
+    entity_refs = {row.entity_ref for row in window if row.entity_ref}
+    structural_changes = [
+        change
+        for change in changes
+        if change.kind in _STRUCTURAL_CHANGE_KINDS
+        and change.status in _MOVEMENT_STATUSES
+    ]
+    if len(entity_refs) < 2 and not structural_changes:
+        result.notes.append(
+            f"card sections on {thread_id}: S2 abstain "
+            "(single subject, no recorded movement — no structure "
+            "detectable in the record)"
+        )
+        return result
+    trace.append(
+        "S2 pass ("
+        + (
+            f"{len(entity_refs)} subjects"
+            if len(entity_refs) >= 2
+            else "recorded movement: "
+            + ", ".join(sorted({c.kind for c in structural_changes}))
+        )
+        + ")"
+    )
+
+    # S3 — dedup against the thread's own card readings (G4's
+    # reading-based discipline; the store's dismissal vocabulary
+    # has no card kind and this outlet adds none): a card already
+    # standing on this exact evidence is not re-proposed, and a
+    # card the visitor rejected on evidence covering this window
+    # is durably refused. New evidence changes the signature and
+    # re-opens eligibility.
+    signature = card_sections_signature(thread_id, window)
+    window_ids = {row.id for row in window}
+    for reading in store.readings_for(user_id, thread_id):
+        payload = reading.reading or {}
+        if payload.get("kind") != CARD_SECTIONS_READING_KIND:
+            continue
+        if (
+            payload.get("sections_signature") == signature
+            and reading.status in ("proposed", "accepted")
+        ):
+            result.notes.append(
+                f"card sections on {thread_id}: S3 abstain "
+                f"(card already {reading.status} on this evidence)"
+            )
+            return result
+        if reading.status == "rejected" and (
+            payload.get("sections_signature") == signature
+            or window_ids.issubset(set(reading.evidence_refs or []))
+        ):
+            result.notes.append(
+                f"card sections on {thread_id}: S3 abstain "
+                "(rejected on this evidence)"
+            )
+            return result
+    trace.append("S3 pass")
+
+    if not card_sections_generation_enabled():
+        result.notes.append(
+            f"card sections on {thread_id}: pre-filter passed; "
+            "generation switch off — nothing generated, "
+            "nothing proposed"
+        )
+        return result
+    if generate_fn is None:
+        result.notes.append(
+            f"card sections on {thread_id}: pre-filter passed; "
+            "no generation injected — no candidate"
+        )
+        return result
+
+    movements_text = (
+        ", ".join(
+            f"{c.kind} (citing {', '.join(c.evidence_refs or [])})"
+            for c in structural_changes
+        )
+        or "none recorded"
+    )
+    prompt = _CARD_SECTIONS_PROMPT.format(
+        evidence=_render_evidence(window),
+        movements=movements_text,
+    )
+    try:
+        raw = generate_fn(
+            prompt,
+            provider_id="meta",
+            user_id=user_id or None,
+            operation="narrative-recognition",
+            timeout=60,
+        )
+    except Exception:
+        logger.exception(
+            "recognition: card-section generation failed for %s",
+            thread_id,
+        )
+        result.notes.append(
+            f"card sections on {thread_id}: generation failed — "
+            "no candidate"
+        )
+        return result
+    result.generation_calls += 1
+    parsed = _parse_card_sections(raw, window=window)
+    if parsed is None:
+        result.notes.append(
+            f"card sections on {thread_id}: generation declined "
+            "or failed validation — no candidate"
+        )
+        return result
+    cited = parsed.pop("_cited_refs")
+    parsed["sections_signature"] = signature
+    parsed["coverage"] = _coverage_note(
+        window, truncated=truncated, barrier_excluded=barrier_excluded
+    )
+    positions = {row.id: idx for idx, row in enumerate(window)}
+    ordered_refs = tuple(sorted(set(cited), key=positions.__getitem__))
+    result.candidates.append(
+        CardSectionCandidate(
+            thread_id=thread_id,
+            reading=parsed,
+            evidence_refs=ordered_refs,
+            gate_trace=tuple(trace),
+        )
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Proposal — the only writer, through existing transitions only
 # ---------------------------------------------------------------------------
 
@@ -1128,16 +1557,26 @@ def propose_all(
     """Write a result's candidates as proposals. Returns their ids.
 
     Each candidate goes through exactly one existing transition —
-    ``propose_reading`` for progressions, ``set_fitting`` (status
-    proposed, proposed_by steward) for fittings,
-    ``propose_correspondence`` for correspondences. A store refusal
-    (e.g. F2's durable-rejection raise) is logged and skipped: a
-    refused proposal leaves no row and never fails the pass.
+    ``propose_reading`` for progressions and card sections,
+    ``set_fitting`` (status proposed, proposed_by steward) for
+    fittings, ``propose_correspondence`` for correspondences. A
+    store refusal (e.g. F2's durable-rejection raise) is logged
+    and skipped: a refused proposal leaves no row and never fails
+    the pass.
     """
     written: list[str] = []
     for candidate in result.candidates:
         try:
             if isinstance(candidate, ProgressionCandidate):
+                reading = store.propose_reading(
+                    user_id,
+                    candidate.thread_id,
+                    author="steward",
+                    reading=candidate.reading,
+                    evidence_refs=list(candidate.evidence_refs),
+                )
+                written.append(reading.id)
+            elif isinstance(candidate, CardSectionCandidate):
                 reading = store.propose_reading(
                     user_id,
                     candidate.thread_id,
@@ -1221,8 +1660,10 @@ def run_recognition_pass(
     operation that produced the evidence (derivation's control
     invariant). Generation is budgeted per pass: progressions ≤
     ``MAX_PROGRESSION_GENERATIONS_PER_PASS``, correspondences ≤
-    ``MAX_CORRESPONDENCE_GENERATIONS_PER_PASS`` (and Outlet C
-    additionally requires its own switch, inside assess_pairs).
+    ``MAX_CORRESPONDENCE_GENERATIONS_PER_PASS``, card sections ≤
+    ``MAX_CARD_SECTION_GENERATIONS_PER_PASS`` (and Outlets C and
+    D additionally require their own switches, inside their
+    assess functions).
     """
     merged = RecognitionResult()
     if not recognition_enabled():
@@ -1233,6 +1674,9 @@ def run_recognition_pass(
     )
     correspondence_budget = _CallBudget(
         generate_fn, MAX_CORRESPONDENCE_GENERATIONS_PER_PASS
+    )
+    card_budget = _CallBudget(
+        generate_fn, MAX_CARD_SECTION_GENERATIONS_PER_PASS
     )
     threads = [
         thread
@@ -1258,6 +1702,24 @@ def run_recognition_pass(
                 "recognition: thread %s failed; pass continues",
                 thread.id,
             )
+        try:
+            card_result = assess_card_sections(
+                store,
+                user_id,
+                thread.id,
+                generate_fn=(
+                    card_budget if generate_fn is not None else None
+                ),
+            )
+            propose_all(store, user_id, card_result)
+            merged.candidates.extend(card_result.candidates)
+            merged.notes.extend(card_result.notes)
+        except Exception:
+            logger.exception(
+                "recognition: card sections for thread %s failed; "
+                "pass continues",
+                thread.id,
+            )
     try:
         pair_result = assess_pairs(
             store,
@@ -1274,6 +1736,8 @@ def run_recognition_pass(
     except Exception:
         logger.exception("recognition: pair assessment failed")
     merged.generation_calls = (
-        progression_budget.used + correspondence_budget.used
+        progression_budget.used
+        + correspondence_budget.used
+        + card_budget.used
     )
     return merged

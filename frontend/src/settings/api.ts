@@ -574,6 +574,306 @@ export async function setFrameworkPause(paused: boolean): Promise<FrameworkPause
   }
 }
 
+// --- Permission home (Permission Simplification P-2) ----------------------
+// One surface over the two engines: the aggregation read and the
+// absolute-set write-through. Intent/layer writes fan out server-side
+// and the response is the read-back truth (consistency contract), so
+// the surface renders what the backend actually holds — never the
+// requested values.
+
+export type PermissionHomeDisplayState = 'on' | 'off' | 'ask_me' | 'custom'
+export type PermissionHomeSync = 'in_sync' | 'granularity' | 'out_of_sync'
+
+export interface PermissionHomeControl {
+  id: string
+  kind: 'flag' | 'stance'
+  key: string | null
+  capability: string | null
+  row_key: string | null
+  label: string | null
+  covers: string | null
+  does_not_allow: string | null
+  state: string
+  display_state: 'on' | 'off' | 'ask_me'
+  value: boolean | null
+  stance: FrameworkStance | null
+  stance_source: 'user' | 'default' | null
+  supported_stances: FrameworkStance[]
+  critical: boolean
+  wording_pending: boolean
+}
+
+export interface PermissionHomeGroup {
+  id: string
+  state: PermissionHomeDisplayState
+  sync: PermissionHomeSync
+  writable_states: Array<'on' | 'off' | 'ask_me'>
+  has_rows: boolean
+  controls: PermissionHomeControl[]
+  diagnostics: Record<string, { state: string; detail: string }> | null
+}
+
+export interface PermissionHomeIntent {
+  id: string
+  groups: PermissionHomeGroup[]
+  granular: PermissionHomeControl[]
+}
+
+export interface PermissionHomeState {
+  enabled: boolean
+  consent: { given: boolean; version: string; at: string | null }
+  intents: PermissionHomeIntent[]
+  learn: { kind: string }
+  outside_zenaf: {
+    always_asks: string[]
+    never_coverable_classes: string[]
+    standing_consents: unknown[]
+  }
+}
+
+export interface PermissionHomeWriteReport {
+  group: string
+  declared_target: string
+  read_back_state: PermissionHomeDisplayState
+  sync: PermissionHomeSync
+  complete: boolean
+  revocation: 'complete' | 'incomplete' | null
+  still_on: string[]
+  failed_controls: string[]
+  repair: { group: string; state: string } | null
+  controls: PermissionHomeControl[]
+}
+
+function normalizeHomeControl(raw: unknown): PermissionHomeControl | null {
+  if (!isRecord(raw) || typeof raw.id !== 'string') return null
+  const stance =
+    typeof raw.stance === 'string' && isFrameworkStance(raw.stance)
+      ? raw.stance
+      : null
+  return {
+    id: raw.id,
+    kind: raw.kind === 'stance' ? 'stance' : 'flag',
+    key: typeof raw.key === 'string' ? raw.key : null,
+    capability: typeof raw.capability === 'string' ? raw.capability : null,
+    row_key: typeof raw.row_key === 'string' ? raw.row_key : null,
+    label: typeof raw.label === 'string' ? raw.label : null,
+    covers: typeof raw.covers === 'string' ? raw.covers : null,
+    does_not_allow:
+      typeof raw.does_not_allow === 'string' ? raw.does_not_allow : null,
+    state: typeof raw.state === 'string' ? raw.state : 'off',
+    display_state:
+      raw.display_state === 'on' || raw.display_state === 'ask_me'
+        ? raw.display_state
+        : 'off',
+    value: typeof raw.value === 'boolean' ? raw.value : null,
+    stance,
+    stance_source:
+      raw.stance_source === 'user' || raw.stance_source === 'default'
+        ? raw.stance_source
+        : null,
+    supported_stances: Array.isArray(raw.supported_stances)
+      ? raw.supported_stances.filter(isFrameworkStance)
+      : [],
+    critical: Boolean(raw.critical),
+    wording_pending: Boolean(raw.wording_pending),
+  }
+}
+
+function normalizeHomeGroup(raw: unknown): PermissionHomeGroup | null {
+  if (!isRecord(raw) || typeof raw.id !== 'string') return null
+  const controls = Array.isArray(raw.controls)
+    ? raw.controls
+        .map(normalizeHomeControl)
+        .filter((c): c is PermissionHomeControl => c !== null)
+    : []
+  const diagnostics: PermissionHomeGroup['diagnostics'] = {}
+  if (isRecord(raw.diagnostics)) {
+    for (const [k, v] of Object.entries(raw.diagnostics)) {
+      if (isRecord(v) && typeof v.state === 'string') {
+        diagnostics[k] = {
+          state: v.state,
+          detail: typeof v.detail === 'string' ? v.detail : '',
+        }
+      }
+    }
+  }
+  return {
+    id: raw.id,
+    state:
+      raw.state === 'on' || raw.state === 'ask_me' || raw.state === 'custom'
+        ? raw.state
+        : 'off',
+    sync:
+      raw.sync === 'granularity' || raw.sync === 'out_of_sync'
+        ? raw.sync
+        : 'in_sync',
+    writable_states: Array.isArray(raw.writable_states)
+      ? raw.writable_states.filter(
+          (s): s is 'on' | 'off' | 'ask_me' =>
+            s === 'on' || s === 'off' || s === 'ask_me',
+        )
+      : [],
+    has_rows: raw.has_rows !== false,
+    controls,
+    diagnostics: Object.keys(diagnostics).length > 0 ? diagnostics : null,
+  }
+}
+
+export function normalizePermissionHomeState(raw: unknown): PermissionHomeState {
+  const empty: PermissionHomeState = {
+    enabled: false,
+    consent: { given: false, version: '', at: null },
+    intents: [],
+    learn: { kind: 'distinction' },
+    outside_zenaf: {
+      always_asks: [],
+      never_coverable_classes: [],
+      standing_consents: [],
+    },
+  }
+  if (!isRecord(raw)) return empty
+  if (raw.enabled === false) return empty
+  const consentRaw = isRecord(raw.consent) ? raw.consent : {}
+  const outsideRaw = isRecord(raw.outside_zenaf) ? raw.outside_zenaf : {}
+  const intents: PermissionHomeIntent[] = []
+  if (Array.isArray(raw.intents)) {
+    for (const item of raw.intents) {
+      if (!isRecord(item) || typeof item.id !== 'string') continue
+      intents.push({
+        id: item.id,
+        groups: Array.isArray(item.groups)
+          ? item.groups
+              .map(normalizeHomeGroup)
+              .filter((g): g is PermissionHomeGroup => g !== null)
+          : [],
+        granular: Array.isArray(item.granular)
+          ? item.granular
+              .map(normalizeHomeControl)
+              .filter((c): c is PermissionHomeControl => c !== null)
+          : [],
+      })
+    }
+  }
+  return {
+    enabled: true,
+    consent: {
+      given: Boolean(consentRaw.given),
+      version: typeof consentRaw.version === 'string' ? consentRaw.version : '',
+      at: typeof consentRaw.at === 'string' ? consentRaw.at : null,
+    },
+    intents,
+    learn: { kind: 'distinction' },
+    outside_zenaf: {
+      always_asks: Array.isArray(outsideRaw.always_asks)
+        ? outsideRaw.always_asks.map(String)
+        : [],
+      never_coverable_classes: Array.isArray(outsideRaw.never_coverable_classes)
+        ? outsideRaw.never_coverable_classes.map(String)
+        : [],
+      standing_consents: Array.isArray(outsideRaw.standing_consents)
+        ? outsideRaw.standing_consents
+        : [],
+    },
+  }
+}
+
+function normalizeHomeWriteReport(raw: unknown): PermissionHomeWriteReport | null {
+  if (!isRecord(raw) || typeof raw.group !== 'string') return null
+  return {
+    group: raw.group,
+    declared_target: typeof raw.declared_target === 'string' ? raw.declared_target : '',
+    read_back_state:
+      raw.read_back_state === 'on' ||
+      raw.read_back_state === 'ask_me' ||
+      raw.read_back_state === 'custom'
+        ? raw.read_back_state
+        : 'off',
+    sync:
+      raw.sync === 'granularity' || raw.sync === 'out_of_sync'
+        ? raw.sync
+        : 'in_sync',
+    complete: Boolean(raw.complete),
+    revocation:
+      raw.revocation === 'complete' || raw.revocation === 'incomplete'
+        ? raw.revocation
+        : null,
+    still_on: Array.isArray(raw.still_on) ? raw.still_on.map(String) : [],
+    failed_controls: Array.isArray(raw.failed_controls)
+      ? raw.failed_controls.map(String)
+      : [],
+    repair:
+      isRecord(raw.repair) &&
+      typeof raw.repair.group === 'string' &&
+      typeof raw.repair.state === 'string'
+        ? { group: raw.repair.group, state: raw.repair.state }
+        : null,
+    controls: Array.isArray(raw.controls)
+      ? raw.controls
+          .map(normalizeHomeControl)
+          .filter((c): c is PermissionHomeControl => c !== null)
+      : [],
+  }
+}
+
+export async function fetchPermissionHome(): Promise<PermissionHomeState> {
+  const res = await fetch(`${BASE}/permissions/home`, { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to load permission home')
+  return normalizePermissionHomeState(await res.json().catch(() => ({})))
+}
+
+export type PermissionHomeGroupResponse = {
+  write: PermissionHomeWriteReport | null
+  state: PermissionHomeState
+}
+
+export async function setPermissionHomeGroup(
+  group: string,
+  state: 'on' | 'off' | 'ask_me',
+): Promise<PermissionHomeGroupResponse> {
+  const res = await fetch(`${BASE}/permissions/home/group`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ group, state }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail = (body as { detail?: unknown }).detail
+    throw new Error(typeof detail === 'string' ? detail : 'Failed to save permission')
+  }
+  return {
+    write: normalizeHomeWriteReport((body as { write?: unknown }).write),
+    state: normalizePermissionHomeState((body as { state?: unknown }).state),
+  }
+}
+
+export type PermissionHomeControlResponse = {
+  control: PermissionHomeControl | null
+  state: PermissionHomeState
+}
+
+export async function setPermissionHomeControl(
+  control: string,
+  value: boolean | FrameworkStance,
+): Promise<PermissionHomeControlResponse> {
+  const res = await fetch(`${BASE}/permissions/home/control`, {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ control, value }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const detail = (body as { detail?: unknown }).detail
+    throw new Error(typeof detail === 'string' ? detail : 'Failed to save permission')
+  }
+  const writeRaw = isRecord(body.write) ? body.write : {}
+  return {
+    control: normalizeHomeControl(writeRaw.control),
+    state: normalizePermissionHomeState(body.state),
+  }
+}
+
 export async function fetchIdentityScopes(): Promise<IdentityScopesResponse> {
   const res = await fetch('/identity/scopes', { credentials: 'include' })
   if (!res.ok) throw new Error('Failed to load identity scopes')

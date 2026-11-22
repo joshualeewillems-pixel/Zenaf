@@ -425,6 +425,62 @@ def put_framework_stance(body: M.FrameworkStanceUpdate, current_user: dict = Dep
     }
 
 
+# --- Permission home (Permission Simplification P-2) ----------------------
+# One surface over the two engines: the aggregation read and the
+# absolute-set write-through in local_ai.permissions.home. Intent
+# writes fan out to the stance store and the account flags through
+# their own separated primitives; neither path touches the consent
+# fields (Correction 2), and enforcement never consults this layer.
+
+
+@router.get("/permissions/home")
+def get_permission_home(current_user: dict = Depends(get_current_user)):
+    from local_ai.permissions import home as _home
+
+    user_id = _require_owner_id(current_user)
+    return _home.permission_home_state(user_id)
+
+
+@router.put("/permissions/home/group")
+def put_permission_home_group(
+    body: M.PermissionHomeGroupUpdate, current_user: dict = Depends(get_current_user)
+):
+    """Apply one intent/layer write and return the write report
+    (read-back truth, per the consistency contract) plus the fresh
+    home state. A partial failure is a 200 with the report naming
+    what did not take — the report is the contract's surface, not
+    an error. Unknown group / unrepresentable target → 400."""
+    from local_ai.permissions import home as _home
+
+    user_id = _require_owner_id(current_user)
+    if not _home.home_enabled():
+        raise HTTPException(status_code=404, detail="permission home is off")
+    try:
+        report = _home.apply_group_write(user_id, body.group, body.state)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"write": report, "state": _home.permission_home_state(user_id)}
+
+
+@router.put("/permissions/home/control")
+def put_permission_home_control(
+    body: M.PermissionHomeControlUpdate, current_user: dict = Depends(get_current_user)
+):
+    """Write one granular control (a flag or a single stance row)
+    through the separated write primitives, returning the read-back
+    control plus the fresh home state."""
+    from local_ai.permissions import home as _home
+
+    user_id = _require_owner_id(current_user)
+    if not _home.home_enabled():
+        raise HTTPException(status_code=404, detail="permission home is off")
+    try:
+        control = _home.apply_control_write(user_id, body.control, body.value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"write": {"control": control}, "state": _home.permission_home_state(user_id)}
+
+
 @router.put("/permissions/framework/pause")
 def put_framework_pause(body: M.FrameworkPauseUpdate, current_user: dict = Depends(get_current_user)):
     """Set or clear the global pause override (surface: settings).

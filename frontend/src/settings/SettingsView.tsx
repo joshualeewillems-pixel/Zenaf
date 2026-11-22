@@ -7,6 +7,7 @@ import { NotificationsSection } from './sections/NotificationsSection'
 import { PrivacySection } from './sections/PrivacySection'
 import { CouncilIntegrityReviewSection } from './sections/CouncilIntegrityReviewSection'
 import { PermissionsSection } from './sections/PermissionsSection'
+import { PermissionHomeSection } from './sections/PermissionHomeSection'
 import { InvitesSection } from './sections/InvitesSection'
 import { BuildCouncilSection } from './sections/BuildCouncilSection'
 
@@ -27,6 +28,11 @@ export function SettingsView({ user, onLogout, onUserUpdated, onOpenBuildCouncil
       content: <AccountSection user={user} onLogout={onLogout} onUserUpdated={onUserUpdated} />,
     },
     { id: 'identity', title: 'Identity', content: <IdentitySection /> },
+    {
+      id: 'permission-home',
+      title: 'Permission home',
+      content: <PermissionHomeSection />,
+    },
     {
       id: 'permissions',
       title: 'Data permissions',

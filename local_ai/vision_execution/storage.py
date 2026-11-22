@@ -3888,6 +3888,131 @@ def upsert_user_permissions_settings(
     return get_user_permissions_settings(user_id)
 
 
+def _read_user_permissions_row(conn, user_id: str) -> dict[str, Any] | None:
+    """Direct read of one permissions row, with NO normalization write
+    and NO row creation (the P-1 diagnostics read discipline). Returns
+    the settings dict shape with permissions normalized in memory, or
+    None when no row exists."""
+    row = conn.execute(
+        "SELECT consent_given, consent_version, consent_at, permissions_json, updated_at "
+        "FROM user_permissions_settings WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        parsed = json.loads(row[3] or "{}")
+    except Exception:
+        parsed = {}
+    return {
+        "consent_given": bool(row[0]),
+        "consent_version": str(row[1] or ""),
+        "consent_at": row[2],
+        "updated_at": row[4],
+        "permissions": normalize_user_permission_prefs(parsed),
+    }
+
+
+def update_user_permission_flags(
+    user_id: str,
+    flags: dict[str, Any],
+    *,
+    connection=None,
+) -> dict[str, Any]:
+    """Flags-only write (Permission Simplification, Correction 2).
+
+    Merges the given flag values into the stored set — normalized
+    through the same key list the legacy upsert uses — and updates
+    ONLY ``permissions_json`` (+ ``updated_at``). The consent fields
+    are never written by this path: a capability change does not
+    re-stamp the acknowledgment or the consent version. Unknown keys
+    and non-boolean values are ignored by normalization, exactly as
+    the legacy path ignores them. Inserts a minimal row (consent not
+    given, no version) when the user has none. Returns the settings
+    dict read back directly (no normalization write-back).
+    """
+    conn = connection if connection is not None else get_connection()
+    now = _now()
+    existing = _read_user_permissions_row(conn, user_id)
+    merged = dict(existing["permissions"]) if existing else dict(_USER_PERMISSION_DEFAULTS)
+    if isinstance(flags, dict):
+        for key, value in flags.items():
+            if key in _USER_PERMISSION_KEYS and isinstance(value, bool):
+                merged[key] = bool(value)
+    blob = json.dumps(merged, sort_keys=True)
+    if existing is None:
+        conn.execute(
+            """
+            INSERT INTO user_permissions_settings (user_id, consent_given, consent_version, consent_at, permissions_json, updated_at)
+            VALUES (?, 0, '', NULL, ?, ?)
+            """,
+            (user_id, blob, now),
+        )
+    else:
+        conn.execute(
+            "UPDATE user_permissions_settings SET permissions_json = ?, updated_at = ? WHERE user_id = ?",
+            (blob, now, user_id),
+        )
+    conn.commit()
+    read_back = _read_user_permissions_row(conn, user_id)
+    assert read_back is not None  # the write above created or updated the row
+    return read_back
+
+
+def record_user_consent(
+    user_id: str,
+    *,
+    consent_given: bool,
+    consent_version: str,
+    connection=None,
+) -> dict[str, Any]:
+    """Consent-only write (Permission Simplification, Correction 2).
+
+    Updates ONLY ``consent_given`` / ``consent_version`` /
+    ``consent_at``. ``permissions_json`` is left byte-identical:
+    recording the acknowledgment enables nothing by itself — not
+    memory, not derivation, not coordination, not search. Mirrors
+    the legacy upsert's consent_at semantics (stamped on first
+    acknowledgment, preserved afterwards) without its coupled flag
+    rewrite. An acknowledging write requires a version string, as
+    the legacy upsert does. Returns the settings dict read back
+    directly (no normalization write-back).
+    """
+    conn = connection if connection is not None else get_connection()
+    now = _now()
+    consent_version_s = (consent_version or "").strip()
+    if consent_given and not consent_version_s:
+        raise ValueError("consent_version is required when consent_given is true")
+    existing = _read_user_permissions_row(conn, user_id)
+    if existing is None:
+        conn.execute(
+            """
+            INSERT INTO user_permissions_settings (user_id, consent_given, consent_version, consent_at, permissions_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                1 if consent_given else 0,
+                consent_version_s,
+                now if consent_given else None,
+                json.dumps(dict(_USER_PERMISSION_DEFAULTS), sort_keys=True),
+                now,
+            ),
+        )
+    else:
+        next_consent_at = existing["consent_at"]
+        if consent_given and not next_consent_at:
+            next_consent_at = now
+        conn.execute(
+            "UPDATE user_permissions_settings SET consent_given = ?, consent_version = ?, consent_at = ?, updated_at = ? WHERE user_id = ?",
+            (1 if consent_given else 0, consent_version_s, next_consent_at, now, user_id),
+        )
+    conn.commit()
+    read_back = _read_user_permissions_row(conn, user_id)
+    assert read_back is not None
+    return read_back
+
+
 def user_permission_enabled(user_id: str, permission_key: str) -> bool:
     settings = get_user_permissions_settings(user_id)
     if not settings.get("consent_given"):

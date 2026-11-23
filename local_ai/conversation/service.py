@@ -33,7 +33,7 @@ from local_ai.vision_execution import obligations as _obligations
 
 from .encounter import _WEAVER_NATURAL_INTENTION
 from .firebrand_round import ROUND_KIND, firebrand_round_enabled, plan_round_turn
-from .reply import VoiceReply, generate_voice_reply
+from .reply import GENERATION_MANIFEST_KEY, VoiceReply, generate_voice_reply
 from .sketch_tail import ParseResult, parse_sketch_tail
 from . import round as weaver_round
 from . import upload_round
@@ -317,6 +317,36 @@ def build_invitation_context(invitation: dict[str, Any] | None) -> str | None:
     return "\n".join(lines)
 
 
+def _split_provider_result(
+    result: Any,
+) -> tuple[str | None, tuple[str, ...], tuple[str, ...]]:
+    """Normalize one context-provider result for the turn loop.
+
+    Legacy providers return the prepared block as a string (or
+    None): the block is used as-is and the selection is unknown —
+    ``(block, (), ())``. Selection-aware providers (the narrative
+    factories built with ``with_selection=True``) return the
+    PreparedContext: the block plus the thread/reading ids it was
+    prepared from, which the generation manifest records as the
+    turn's source ids (plan Q4.1). The ids ride the prepared
+    object only — never the rendered block — so nothing about the
+    prompt changes either way.
+    """
+    if result is None or isinstance(result, str):
+        return result, (), ()
+    block = getattr(result, "block", None)
+    thread_ids: list[str] = []
+    reading_ids: list[str] = []
+    for fact in getattr(result, "threads", ()) or ():
+        if not isinstance(fact, dict):
+            continue
+        if fact.get("thread_id"):
+            thread_ids.append(str(fact["thread_id"]))
+        if fact.get("reading_id"):
+            reading_ids.append(str(fact["reading_id"]))
+    return block, tuple(thread_ids), tuple(reading_ids)
+
+
 @dataclass
 class TurnResult:
     user_message: dict[str, Any]
@@ -351,8 +381,8 @@ class ConversationService:
         store: ConversationStore,
         generate_fn: GenerateFn | None = None,
         event_sink: EventSink | None = None,
-        steward_context_provider: Callable[..., str | None] | None = None,
-        pencil_context_provider: Callable[..., str | None] | None = None,
+        steward_context_provider: Callable[..., Any] | None = None,
+        pencil_context_provider: Callable[..., Any] | None = None,
     ) -> None:
         self.store = store
         self._generate_fn = generate_fn
@@ -438,29 +468,47 @@ class ConversationService:
         thread = self.store.get_thread_state(user_id, conversation_id, arch_id)
         thread_summary = thread["summary"] or None
 
+        # The providers' selections (thread/reading ids) are kept
+        # alongside the blocks for the generation manifest's source
+        # ids; string-returning providers yield an empty selection
+        # and the manifest simply omits sources for the turn.
         steward_block = None
+        steward_thread_ids: tuple[str, ...] = ()
         if arch_id == "conductor" and self._steward_context_provider is not None:
             try:
-                steward_block = self._steward_context_provider(
-                    user_id, message, history_turns
+                steward_block, steward_thread_ids, _ = _split_provider_result(
+                    self._steward_context_provider(
+                        user_id, message, history_turns
+                    )
                 )
             except Exception:
                 logger.exception(
                     "steward: prepared context failed; continuing without it"
                 )
                 steward_block = None
+                steward_thread_ids = ()
 
         pencil_block = None
+        pencil_thread_ids: tuple[str, ...] = ()
+        pencil_reading_ids: tuple[str, ...] = ()
         if arch_id == "maverick" and self._pencil_context_provider is not None:
             try:
-                pencil_block = self._pencil_context_provider(
-                    user_id, message, history_turns
+                (
+                    pencil_block,
+                    pencil_thread_ids,
+                    pencil_reading_ids,
+                ) = _split_provider_result(
+                    self._pencil_context_provider(
+                        user_id, message, history_turns
+                    )
                 )
             except Exception:
                 logger.exception(
                     "steward: pencil context failed; continuing without it"
                 )
                 pencil_block = None
+                pencil_thread_ids = ()
+                pencil_reading_ids = ()
 
         # Weaver strand interviews (rev2 §6): a conductor turn in a
         # validated strand thread carries the strand guidance block —
@@ -893,6 +941,43 @@ class ConversationService:
                     )
                 except Exception:
                     logger.exception("upload round: round record failed")
+
+        # Generation manifest (Training-Readiness Plan Q4.1;
+        # founder ruling 2026-11-22: fingerprint only — the prompt
+        # hash + length and the generation's metadata, never prompt
+        # text). The reply builder's manifest rides the assistant
+        # message's own context_json, enriched here with the two
+        # facts only this layer knows: the sketch-shaping flag
+        # state for the turn and the steward/pencil source
+        # selections made during preparation. It is set LAST —
+        # after every round marker above — so the server's record
+        # wins over any client-supplied context key of the same
+        # name. Guarded like every other bookkeeping write in this
+        # loop: a manifest failure must never break the turn, and
+        # the turn simply persists without one.
+        try:
+            manifest = getattr(voice_reply, "generation_manifest", None)
+            if manifest:
+                manifest = dict(manifest)
+                flags = dict(manifest.get("flags") or {})
+                flags["sketch_shaping"] = bool(
+                    arch_id == "skeptic" and shaping_on
+                )
+                manifest["flags"] = flags
+                sources: dict[str, list[str]] = {}
+                if steward_thread_ids:
+                    sources["steward_thread_ids"] = list(steward_thread_ids)
+                if pencil_thread_ids:
+                    sources["pencil_thread_ids"] = list(pencil_thread_ids)
+                if pencil_reading_ids:
+                    sources["pencil_reading_ids"] = list(pencil_reading_ids)
+                if sources:
+                    manifest["sources"] = sources
+                context[GENERATION_MANIFEST_KEY] = manifest
+        except Exception:
+            logger.exception(
+                "generation manifest: attach failed; turn persists without it"
+            )
 
         assistant_msg = self.store.append_message(
             user_id,

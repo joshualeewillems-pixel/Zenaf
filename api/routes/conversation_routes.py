@@ -102,13 +102,17 @@ def _service() -> ConversationService:
     return ConversationService(
         _store(),
         event_sink=fellowship_emit_event,
-        steward_context_provider=weaver_context_provider(),
+        # with_selection: the service records the prepared
+        # context's source thread/reading ids in each turn's
+        # generation manifest (plan Q4.1). The block text the
+        # Weaver receives is identical either way.
+        steward_context_provider=weaver_context_provider(with_selection=True),
         # Pencil-standing observations for the Jynx only (founder
         # ruling 2026-11-21): the provider self-gates on its master
         # switch (default off) before touching the narrative store,
         # so non-Jynx turns and switch-off deployments never pay
         # for it.
-        pencil_context_provider=jynx_context_provider(),
+        pencil_context_provider=jynx_context_provider(with_selection=True),
     )
 
 

@@ -167,6 +167,24 @@ class FrameworkPauseUpdate(BaseModel):
     paused: bool = False
 
 
+class PermissionHomeGroupUpdate(BaseModel):
+    """One intent/layer write for the permission home (P-2): an
+    absolute-set target state applied to every control the group
+    maps, per the consistency contract."""
+
+    group: str = Field(default="", max_length=32)
+    state: str = Field(default="", max_length=16)
+
+
+class PermissionHomeControlUpdate(BaseModel):
+    """One granular control write for the permission home (P-2):
+    ``value`` is a bool for flag controls, a stance string for
+    stance controls."""
+
+    control: str = Field(default="", max_length=128)
+    value: Any = None
+
+
 class CoreProfileCreate(BaseModel):
     name: str = ""
     core_definition: str = ""

@@ -1024,7 +1024,13 @@ class ConversationService:
                 flags["sketch_shaping"] = bool(
                     arch_id == "skeptic" and shaping_on
                 )
-                flags["noting_capture"] = bool(noting_on)
+                # V1: recorded only when capture actually ran, so a
+                # capture-off turn's manifest stays byte-identical to
+                # feb2c9e (the sketch flag's unconditional recording
+                # predates that discipline; the feed does not repeat
+                # it).
+                if noting_on:
+                    flags["noting_capture"] = True
                 manifest["flags"] = flags
                 sources: dict[str, list[str]] = {}
                 if steward_thread_ids:

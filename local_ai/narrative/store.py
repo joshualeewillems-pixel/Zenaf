@@ -177,6 +177,12 @@ _ERASURE_USER_TABLES: tuple[str, ...] = (
     "steward_candidate_sightings",
     "steward_candidate_membership",
     "steward_candidate_acts",
+    # V1 (noting capture feed): the encounter-scope and held-note
+    # families join Scope S coverage WITH the V1 landing — same
+    # discipline as the D1 family above (deletion here, the recount
+    # through the same tuple).
+    "encounter_scopes",
+    "held_notes",
 )
 
 _SCHEMA = """
@@ -1000,6 +1006,64 @@ BEGIN
       AND m.erased_at_seen = tb.erased_at
   );
 END;
+
+-- V1 (noting capture feed, governing direction §4/§6): encounter
+-- scope for Talk. The encounter arc is an ordinary narrative thread;
+-- this table marks it as encounter scope and carries the Talk
+-- encounter keying — the container key (user, conversation, seat)
+-- plus the message span, captured when the boundary is decided
+-- because message ids are random and non-ordering. One open
+-- encounter per (user, conversation, seat) at a time, enforced by
+-- the writer (local_ai/narrative/noting.py), not by constraint: a
+-- closed row for an earlier sitting and the open row for the
+-- current one coexist under the same container key.
+CREATE TABLE IF NOT EXISTS encounter_scopes (
+  thread_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  archetype_id TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'open',
+  span_start_message_id TEXT NOT NULL DEFAULT '',
+  span_end_message_id TEXT,
+  opened_at TEXT NOT NULL,
+  closed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_encounter_scopes_key
+  ON encounter_scopes (user_id, conversation_id, archetype_id, state);
+
+-- V1: held material — pending-note proposals in the §6 holding
+-- state (encounter scope, held pending comparison, hard-bounded).
+-- expires_at is the hard bound, in the data path from this commit:
+-- reads exclude past-bound rows and expire_held_notes flips them to
+-- status 'expired' (fail-closed; expiry is not behind a flag).
+-- Provenance rides every row (governing §13 T-1/T-2): the turn's
+-- message pair, the authoring seat, and — where the note's evidence
+-- was attached to the encounter thread — the Tier E ref it resolved
+-- to. The reply message id resolves to the turn's generation
+-- manifest (persisted on that message's context_json).
+CREATE TABLE IF NOT EXISTS held_notes (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  archetype_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  statement TEXT NOT NULL DEFAULT '',
+  cited_message_id TEXT,
+  evidence_ref_kind TEXT,
+  evidence_ref_id TEXT,
+  source_user_message_id TEXT NOT NULL DEFAULT '',
+  source_reply_message_id TEXT NOT NULL DEFAULT '',
+  author TEXT NOT NULL DEFAULT '',
+  reading_id TEXT,
+  status TEXT NOT NULL DEFAULT 'held',
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_held_notes_thread
+  ON held_notes (thread_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_held_notes_user
+  ON held_notes (user_id, status, expires_at);
 """
 
 
@@ -2935,6 +2999,243 @@ class NarrativeStore:
                 (thread_id,),
             ).fetchall()
         return [_row_to_change(r) for r in rows]
+
+    # -- V1: encounter scope + held material -----------------------------------
+    #
+    # The noting capture feed's store surface (governing direction
+    # §§4, 6). The encounter arc is an ordinary thread (created via
+    # create_thread by the writer in local_ai/narrative/noting.py);
+    # these methods carry only its scope/span bookkeeping and the
+    # held-note records. The held bound is enforced HERE, in the data
+    # path: reads exclude past-bound rows whether or not the expiry
+    # sweep has flipped their status yet.
+
+    def open_encounter_scope(
+        self,
+        user_id: str,
+        thread_id: str,
+        *,
+        conversation_id: str,
+        archetype_id: str,
+        span_start_message_id: str,
+    ) -> dict[str, Any]:
+        """Mark a thread as an open Talk encounter with its span start.
+
+        The span start is the first write's turn boundary — a message
+        id, captured now (governing §4: ids are random and
+        non-ordering, so a span cannot be re-derived later).
+        """
+        user_id = _require_user_id(user_id)
+        now = _utcnow()
+        with self._lock, _atomic(self._conn):
+            self._require_thread(user_id, thread_id)
+            self._conn.execute(
+                "INSERT INTO encounter_scopes (thread_id, user_id, "
+                "conversation_id, archetype_id, state, "
+                "span_start_message_id, span_end_message_id, "
+                "opened_at, closed_at) VALUES (?, ?, ?, ?, 'open', "
+                "?, NULL, ?, NULL)",
+                (
+                    thread_id, user_id, conversation_id, archetype_id,
+                    span_start_message_id, now,
+                ),
+            )
+        return self.encounter_scope_for(user_id, thread_id) or {}
+
+    def encounter_scope_for(
+        self, user_id: str, thread_id: str
+    ) -> dict[str, Any] | None:
+        user_id = _require_user_id(user_id)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM encounter_scopes WHERE thread_id = ? "
+                "AND user_id = ?",
+                (thread_id, user_id),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def open_encounter_for(
+        self, user_id: str, conversation_id: str, archetype_id: str
+    ) -> dict[str, Any] | None:
+        """The open encounter scope for a container key, if any."""
+        user_id = _require_user_id(user_id)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM encounter_scopes WHERE user_id = ? "
+                "AND conversation_id = ? AND archetype_id = ? "
+                "AND state = 'open' ORDER BY opened_at, thread_id "
+                "LIMIT 1",
+                (user_id, conversation_id, archetype_id),
+            ).fetchone()
+        return dict(row) if row is not None else None
+
+    def close_encounter_scope(
+        self, user_id: str, thread_id: str, *, span_end_message_id: str
+    ) -> dict[str, Any] | None:
+        """Fix an open encounter's span end and close it.
+
+        Production close-out (comparison, dispositions) is a later
+        increment; this is the store-level close the evaluation
+        harness and tests call explicitly. Closing an already-closed
+        encounter is a no-op returning the standing row.
+        """
+        user_id = _require_user_id(user_id)
+        with self._lock, _atomic(self._conn):
+            row = self._conn.execute(
+                "SELECT * FROM encounter_scopes WHERE thread_id = ? "
+                "AND user_id = ?",
+                (thread_id, user_id),
+            ).fetchone()
+            if row is None:
+                return None
+            if row["state"] == "open":
+                self._conn.execute(
+                    "UPDATE encounter_scopes SET state = 'closed', "
+                    "span_end_message_id = ?, closed_at = ? "
+                    "WHERE thread_id = ?",
+                    (span_end_message_id, _utcnow(), thread_id),
+                )
+        return self.encounter_scope_for(user_id, thread_id)
+
+    def add_held_note(
+        self,
+        user_id: str,
+        thread_id: str,
+        *,
+        conversation_id: str,
+        archetype_id: str,
+        kind: str,
+        statement: str = "",
+        cited_message_id: str | None = None,
+        evidence_ref: SourceRef | None = None,
+        source_user_message_id: str = "",
+        source_reply_message_id: str = "",
+        author: str = "",
+        reading_id: str | None = None,
+        expires_at: str,
+    ) -> dict[str, Any]:
+        """Land one pending-note proposal as encounter-scope held
+        material. ``expires_at`` is required — a held record without
+        its hard bound cannot be written."""
+        user_id = _require_user_id(user_id)
+        if kind not in ("recognition", "objection"):
+            raise ValueError(f"unknown held note kind: {kind!r}")
+        if not expires_at:
+            raise ValueError("a held note requires its expires_at bound")
+        record = {
+            "id": _new_id("hld"),
+            "user_id": user_id,
+            "thread_id": thread_id,
+            "conversation_id": conversation_id,
+            "archetype_id": archetype_id,
+            "kind": kind,
+            "statement": statement or "",
+            "cited_message_id": cited_message_id,
+            "evidence_ref_kind": evidence_ref.kind if evidence_ref else None,
+            "evidence_ref_id": evidence_ref.ref_id if evidence_ref else None,
+            "source_user_message_id": source_user_message_id or "",
+            "source_reply_message_id": source_reply_message_id or "",
+            "author": author or "",
+            "reading_id": reading_id,
+            "status": "held",
+            "created_at": _utcnow(),
+            "expires_at": expires_at,
+        }
+        with self._lock, _atomic(self._conn):
+            self._require_thread(user_id, thread_id)
+            self._conn.execute(
+                "INSERT INTO held_notes (id, user_id, thread_id, "
+                "conversation_id, archetype_id, kind, statement, "
+                "cited_message_id, evidence_ref_kind, evidence_ref_id, "
+                "source_user_message_id, source_reply_message_id, "
+                "author, reading_id, status, created_at, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?)",
+                (
+                    record["id"], record["user_id"], record["thread_id"],
+                    record["conversation_id"], record["archetype_id"],
+                    record["kind"], record["statement"],
+                    record["cited_message_id"],
+                    record["evidence_ref_kind"], record["evidence_ref_id"],
+                    record["source_user_message_id"],
+                    record["source_reply_message_id"], record["author"],
+                    record["reading_id"], record["status"],
+                    record["created_at"], record["expires_at"],
+                ),
+            )
+        return record
+
+    def set_held_note_reading(
+        self, user_id: str, held_note_id: str, reading_id: str
+    ) -> None:
+        """Record the seat-authored reading a recognition note
+        produced (the reading is written after the held record, so
+        the linkage lands as its own small update — of the held
+        note's bookkeeping field only, never of any reading)."""
+        user_id = _require_user_id(user_id)
+        with self._lock, _atomic(self._conn):
+            self._conn.execute(
+                "UPDATE held_notes SET reading_id = ? WHERE id = ? "
+                "AND user_id = ?",
+                (reading_id, held_note_id, user_id),
+            )
+
+    def held_notes_for(
+        self,
+        user_id: str,
+        thread_id: str | None = None,
+        *,
+        include_expired: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Held material for a user (optionally one encounter).
+
+        The bound is in the read path: past-bound rows are excluded
+        whether or not the expiry sweep has flipped them yet, unless
+        ``include_expired`` is set (erasure/audit reads only).
+        """
+        user_id = _require_user_id(user_id)
+        clauses = ["user_id = ?"]
+        args: list[Any] = [user_id]
+        if thread_id is not None:
+            clauses.append("thread_id = ?")
+            args.append(thread_id)
+        if not include_expired:
+            clauses.append("status = 'held'")
+            clauses.append("expires_at > ?")
+            args.append(_utcnow())
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM held_notes WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY created_at, id",
+                args,
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def expire_held_notes(self, user_id: str | None = None) -> int:
+        """Expire held material past its hard bound (fail-closed).
+
+        Material that reaches the bound unexamined expires
+        unexamined — it is never promoted, compared, or rendered by
+        expiring. Returns how many rows flipped. Not behind a flag:
+        any caller (a sweep, a test, the harness) may run it at any
+        time and it only ever closes material down.
+        """
+        now = _utcnow()
+        with self._lock, _atomic(self._conn):
+            if user_id is not None:
+                cursor = self._conn.execute(
+                    "UPDATE held_notes SET status = 'expired' WHERE "
+                    "user_id = ? AND status = 'held' AND expires_at <= ?",
+                    (_require_user_id(user_id), now),
+                )
+            else:
+                cursor = self._conn.execute(
+                    "UPDATE held_notes SET status = 'expired' WHERE "
+                    "status = 'held' AND expires_at <= ?",
+                    (now,),
+                )
+        return cursor.rowcount
 
     # -- lens fittings --------------------------------------------------------------
 

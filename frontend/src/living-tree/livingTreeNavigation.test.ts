@@ -329,15 +329,20 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     expect(navigations).toContain('vision_map')
   })
 
-  it('the skeptic head menu carries its seat-owned destination', async () => {
+  it('the skeptic tap lands on the Bench, her home surface (seat landing, founder 2026-11-24)', async () => {
     renderTree()
     await flush()
     clickNode('SK')
     await flush()
-    await click(buttonByLabel('Other actions'))
-    expect(rowByTitle('Signal review')).toBeDefined()
-    await click(rowByTitle('Signal review'))
-    expect(navigations).toContain('signal_review')
+    // Severine has a built interface, so her tap lands on it — the
+    // split view with her conversation beside the Bench — instead of
+    // opening her sheet. (Founder ruling, 2026-11-24: seats land on
+    // the interface — a pending first meeting does not preempt it.)
+    // Her head menu's composition — The Bench, Signal review — is
+    // unchanged and covered in livingTreeHeaderMenu.test.ts.
+    expect(navigations).toContain('bench')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('skeptic')).toHaveLength(0)
   })
 
   it('the conductor tap lands on the Atelier, her home surface (seat landing, founder 2026-11-24)', async () => {

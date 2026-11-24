@@ -53,6 +53,7 @@ import {
 } from './vision-execution'
 import { VisionMapView } from './vision-map'
 import { CampaignBoardView } from './campaign-board'
+import { BenchView } from './bench'
 import { JynxScrollView } from './jynx-scroll'
 import { AriaAtelierView } from './aria-atelier'
 import { veSelectionFromEntityRef, veSelectionFromMapPayload } from './vision-map/mapCouncilActions'
@@ -4536,6 +4537,7 @@ function App() {
     | 'content'
     | 'vision_map'
     | 'campaign_board'
+    | 'bench'
     | 'jynx_scroll'
     | 'aria_atelier'
     | 'vision_execution'
@@ -5518,6 +5520,8 @@ function App() {
           </div>
         ) : mainView === 'campaign_board' ? (
           <CampaignBoardView />
+        ) : mainView === 'bench' ? (
+          <BenchView />
         ) : mainView === 'jynx_scroll' ? (
           <JynxScrollView />
         ) : mainView === 'aria_atelier' ? (

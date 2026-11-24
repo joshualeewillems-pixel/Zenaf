@@ -96,6 +96,7 @@ export type SheetNavView =
   | 'signal_review'
   | 'workspace'
   | 'campaign_board'
+  | 'bench'
   | 'jynx_scroll'
   | 'aria_atelier'
 
@@ -366,6 +367,7 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
     { id: 'provenance', title: 'Provenance', desc: 'Where your material came from — and where it went.', nav: 'provenance' },
   ],
   skeptic: [
+    { id: 'bench', title: 'The Bench', desc: 'Your work as bonsai — grown from the record, examined branch by branch.', nav: 'bench' },
     { id: 'signal_review', title: 'Signal review', desc: 'Distilled signals from your imports, awaiting your verdict.', nav: 'signal_review' },
   ],
   conductor: [
@@ -389,6 +391,7 @@ export const SEAT_HOME_NAV: Record<string, SheetNavView> = {
   champion: 'campaign_board',
   maverick: 'jynx_scroll',
   conductor: 'aria_atelier',
+  skeptic: 'bench',
 }
 
 /** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —

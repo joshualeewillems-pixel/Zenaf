@@ -144,6 +144,15 @@ export interface Task {
       a task to its seat's conversation. Backend always serializes it;
       optional here because older fixtures omit it. */
   seat_ref?: string
+  /** W0B provenance (backend always serializes; null on legacy /
+   *  manual rows): the seat whose approved proposal created this
+   *  task, and the recorded conversation / message it came from.
+   *  NOT stewardship and NOT the keystone seat_ref. */
+  origin_seat?: string | null
+  origin_conversation_id?: string | null
+  origin_message_id?: string | null
+  /** The seat currently stewarding execution, user-assigned only. */
+  responsible_seat?: string | null
   completion_criteria: string
   notes: string
   /** Timeframe commitment dimension, separate from status: null =

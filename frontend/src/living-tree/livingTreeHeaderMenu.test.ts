@@ -69,6 +69,7 @@ describe('buildSeatHeaderMenu', () => {
       'Today',
       'Review',
       'Upload',
+      'The Bench',
       'Signal review',
     ])
     const conductor = buildSeatHeaderMenu({

@@ -106,6 +106,15 @@ export type SheetNavView =
 export const OPEN_SEAT_REVIEW_EVENT = 'zenaf:open-seat-review'
 
 /**
+ * Cross-component ask: open the YOU sheet (the you-node's directory —
+ * the account home where Log in / out lives). Dispatched by the app
+ * header's profile picture (through App, which first routes to the
+ * tree), so the picture reaches the same YOU sheet the trunk photo
+ * opens. Same window-CustomEvent pattern as the review event above.
+ */
+export const OPEN_YOU_SHEET_EVENT = 'zenaf:open-you-sheet'
+
+/**
  * Phase-1 composition seam: the app shell provides the mounted view for a
  * (node, menu item) pair. Return null and the sheet shows an honest
  * "still growing" state — later phases fill those in without touching the
@@ -424,7 +433,10 @@ export function buildSeatHeaderMenu(args: {
  * 2026-11-14): the you-sheet's menu is a compact capability
  * directory — a universal section, then seven seat groups in the
  * accepted map's order. Navigation only: every row opens a
- * destination that already exists, by its existing mechanism.
+ * destination that already exists, by its existing mechanism —
+ * with one exception: the Log in / out row is an action row, wired
+ * to the app shell's logout (founder bug report, 2026-11-24: as an
+ * info row it only expanded its description and never signed out).
  * Doorways link to the canonical surfaces; nothing is re-implemented
  * here, and no planned doorway (Commitments, mirror, takeout,
  * verdicts, disputes, twigs, convened sessions) appears.
@@ -441,7 +453,8 @@ export type YouDirectoryRow =
   | { kind: 'sheet'; id: NodeMenuItemId; title: string; desc: string; scopeSeat?: string }
   | { kind: 'nav'; nav: SheetNavView; title: string; desc: string }
   | { kind: 'inline'; id: 'stats'; title: string; desc: string }
-  | { kind: 'info'; id: 'snapshot' | 'login'; title: string; desc: string }
+  | { kind: 'info'; id: 'snapshot'; title: string; desc: string }
+  | { kind: 'action'; id: 'login'; title: string; desc: string }
 
 export type YouSeatGroup = {
   seatKey: string
@@ -476,7 +489,7 @@ export function buildYouDirectory(args: { isAdmin: boolean }): {
       title: 'Snapshot era',
       desc: 'Snapshots freeze your profile as a rentable era — automatic each year, plus after big training leaps. Eras begin once training does.',
     },
-    { kind: 'info', id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
+    { kind: 'action', id: 'login', title: 'Log in / out', desc: 'You are signed in on this device.' },
   ]
 
   const ambassadorRows: YouDirectoryRow[] = [
@@ -1079,6 +1092,7 @@ export function LivingTreeView({
   currentUserId,
   userAvatarUrl,
   isAdmin,
+  onLogout,
 }: {
   /** Navigate the app shell (e.g. onNavigate('agent_intake') to connect a conversation). */
   onNavigate: (view: SheetNavView) => void
@@ -1097,6 +1111,11 @@ export function LivingTreeView({
       only for admins — the same rule SettingsView applies to the
       Invites section itself. Defaults false (row hidden). */
   isAdmin?: boolean
+  /** The app shell's logout (App's handleLogout: POST /auth/logout,
+      then the signed-out state). The YOU directory's Log in / out row
+      calls it; absent, the row renders but performs nothing — App
+      always passes it. */
+  onLogout?: () => void | Promise<void>
 }) {
   const [sel, setSel] = useState<string | null>(null)
   /** The you-node photo failed to load — fall back to the "YOU" letters
@@ -1333,6 +1352,34 @@ export function LivingTreeView({
       const d = findDatum(s, up)
       return d?.archetype ? null : s
     })
+  }
+
+  // The header profile picture asks (through App) for the YOU sheet —
+  // the same sheet the trunk photo opens (see onTap's 'you' branch).
+  useEffect(() => {
+    const onOpenYouSheet = () => {
+      setSel(null)
+      setStrandPanelKey(null)
+      openSheet({ kind: 'you' })
+    }
+    window.addEventListener(OPEN_YOU_SHEET_EVENT, onOpenYouSheet)
+    return () => window.removeEventListener(OPEN_YOU_SHEET_EVENT, onOpenYouSheet)
+    // openSheet only calls state setters; safe to register once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  /** YOU directory Log in / out: a logout is in flight (the row
+      disables; on success App unmounts the tree into the sign-in
+      gate, so the busy flag usually never clears visibly). */
+  const [logoutBusy, setLogoutBusy] = useState(false)
+  const handleDirectoryLogout = async () => {
+    if (!onLogout || logoutBusy) return
+    setLogoutBusy(true)
+    try {
+      await onLogout()
+    } finally {
+      setLogoutBusy(false)
+    }
   }
 
   /** Opens a seat's first-meeting overlay: the sheet closes and
@@ -1808,8 +1855,28 @@ export function LivingTreeView({
   /** One directory row (YOU directory): sheet rows mount in-sheet
       (scoped when the row carries a scopeSeat), nav rows navigate the
       shell, inline/info rows expand in place — the old tree-options
-      behavior, kept for Stats and the two info rows. */
+      behavior, kept for Stats and the Snapshot era row — and the one
+      action row (Log in / out) performs the shell's logout. */
   const renderDirectoryRow = (row: YouDirectoryRow) => {
+    if (row.kind === 'action') {
+      return (
+        <button
+          key={`action-${row.id}`}
+          type="button"
+          className="lrow"
+          disabled={logoutBusy}
+          onClick={() => {
+            void handleDirectoryLogout()
+          }}
+        >
+          <span>
+            <span className="lrow-t">{row.title}</span>
+            <span className="lrow-d">{logoutBusy ? 'Signing out…' : row.desc}</span>
+          </span>
+          <span className="lchev">›</span>
+        </button>
+      )
+    }
     if (row.kind === 'sheet') {
       return (
         <button

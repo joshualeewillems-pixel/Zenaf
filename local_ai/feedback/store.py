@@ -58,6 +58,21 @@ class FeedbackStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            # N1 (item 5): the reach designation column — a nullable
+            # field on the existing row, added in place for stores
+            # created before it existed. Unmarked (NULL) is the
+            # visitor-side default; the mark records INTENDED
+            # developmental reach only and authorizes nothing.
+            cols = {
+                r["name"]
+                for r in self._conn.execute(
+                    "PRAGMA table_info(response_feedback)"
+                ).fetchall()
+            }
+            if "reach" not in cols:
+                self._conn.execute(
+                    "ALTER TABLE response_feedback ADD COLUMN reach TEXT"
+                )
             self._conn.commit()
 
     def close(self) -> None:
@@ -73,10 +88,25 @@ class FeedbackStore:
         slider: int,
         checks: list[str],
         note: str,
+        reach: str | None = None,
     ) -> dict[str, Any]:
-        """Insert exactly one record for one explicit widget submit."""
+        """Insert exactly one record for one explicit widget submit.
+
+        ``reach`` (N1, item 5) is the submitter's intended
+        developmental reach for this row — one of the developmental
+        store's REACHES, or None (unmarked, the visitor-side
+        default). It is a designation recorded on the row; it is
+        deliberately NOT part of ``checks`` (the closed reception
+        vocabulary), because reach and reception are different
+        dimensions and must never collapse into one another.
+        """
         if not isinstance(user_id, str) or not user_id.strip():
             raise ValueError("user_id must be a non-empty string")
+        if reach is not None:
+            from local_ai.development.store import REACHES
+
+            if reach not in REACHES:
+                raise ValueError(f"unknown reach: {reach!r}")
         row_id = uuid.uuid4().hex[:16]
         now = _utcnow()
         checks_json = json.dumps(list(checks), ensure_ascii=True)
@@ -84,7 +114,8 @@ class FeedbackStore:
             self._conn.execute(
                 "INSERT INTO response_feedback (id, user_id, response_ref, "
                 "conversation_id, seat, slider, checks_json, note, "
-                "review_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "review_status, created_at, reach) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     row_id,
                     user_id,
@@ -96,6 +127,7 @@ class FeedbackStore:
                     note or "",
                     "unreviewed",
                     now,
+                    reach,
                 ),
             )
             self._conn.commit()
@@ -110,6 +142,7 @@ class FeedbackStore:
             "note": note or "",
             "review_status": "unreviewed",
             "created_at": now,
+            "reach": reach,
         }
 
     def list_feedback(
@@ -125,7 +158,7 @@ class FeedbackStore:
             if conversation_id:
                 rows = self._conn.execute(
                     "SELECT id, user_id, response_ref, conversation_id, seat, "
-                    "slider, checks_json, note, review_status, created_at "
+                    "slider, checks_json, note, review_status, created_at, reach "
                     "FROM response_feedback "
                     "WHERE user_id = ? AND conversation_id = ? "
                     "ORDER BY created_at DESC, id DESC LIMIT ?",
@@ -134,7 +167,7 @@ class FeedbackStore:
             else:
                 rows = self._conn.execute(
                     "SELECT id, user_id, response_ref, conversation_id, seat, "
-                    "slider, checks_json, note, review_status, created_at "
+                    "slider, checks_json, note, review_status, created_at, reach "
                     "FROM response_feedback WHERE user_id = ? "
                     "ORDER BY created_at DESC, id DESC LIMIT ?",
                     (user_id, limit),
@@ -157,6 +190,7 @@ class FeedbackStore:
                     "note": r["note"],
                     "review_status": r["review_status"],
                     "created_at": r["created_at"],
+                    "reach": r["reach"],
                 }
             )
         return out

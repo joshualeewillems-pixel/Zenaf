@@ -171,14 +171,18 @@ describe('tree datum sync on a data-only status update', () => {
     // Every seat's sheet identity carries its logo — the reveal in the
     // data-only payload reached the sheets. Under the fallback datum
     // each identity circle would keep the ??? placeholder instead.
-    // The Champion and the Conductor are excluded from the sheet
-    // loop since 2026-11-24: their taps land on their home surfaces
-    // (the Campaign Board, the Atelier), so their sheets no longer
-    // open from the tree — their hit groups below still prove the
-    // datum reached their nodes.
+    // The Champion, the Conductor, and the Maverick are excluded
+    // from the sheet loop since 2026-11-24: their taps land on
+    // their home surfaces (the Campaign Board, the Atelier, the
+    // Scroll), so their sheets no longer open from the tree —
+    // their hit groups below still prove the datum reached their
+    // nodes.
     expect(hitGroup('arch-champion')).toBeTruthy()
     expect(hitGroup('arch-conductor')).toBeTruthy()
-    for (const seat of SEATS.filter((s) => s.id !== 'champion' && s.id !== 'conductor')) {
+    expect(hitGroup('arch-maverick')).toBeTruthy()
+    for (const seat of SEATS.filter(
+      (s) => s.id !== 'champion' && s.id !== 'conductor' && s.id !== 'maverick',
+    )) {
       clickHitGroup(seat.nodeId)
       await flush()
       const row = head()?.querySelector('.lavatar-head')

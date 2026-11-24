@@ -96,6 +96,7 @@ export type SheetNavView =
   | 'signal_review'
   | 'workspace'
   | 'campaign_board'
+  | 'jynx_scroll'
   | 'aria_atelier'
 
 /**
@@ -344,13 +345,18 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
     and where it went); the Raven owns signal review (distilled signals
     from imports, awaiting your verdict); the Conductor owns the Workspace
     Organizer (preview-only planning) and the Atelier (the well in the
-    rock garden). Everything else left the global menu the same way:
+    rock garden); the Fox owns the Scroll (the shelf of scrolls — the
+    whole hierarchy, and what they draw of it).
+    Everything else left the global menu the same way:
     Today lives in every seat's menu above and in YOU's, Review is already
     per-seat, Settings and Content live with YOU, and Connect is gone —
     its intake remains reachable from the you-sheet's upload entry. */
 const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: string; nav: SheetNavView }>> = {
   champion: [
     { id: 'campaign_board', title: 'Campaign Board', desc: 'Your projects as campaigns — routes, terrain, and what stands in the way.', nav: 'campaign_board' },
+  ],
+  maverick: [
+    { id: 'jynx_scroll', title: 'The Scroll', desc: 'Their shelf of scrolls — every initiative, project, and task, and what they draw of them.', nav: 'jynx_scroll' },
   ],
   mentor: [
     { id: 'vision_map', title: 'Vision map', desc: 'The execution surface — initiatives, projects, and their stones.', nav: 'vision_map' },
@@ -381,6 +387,7 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
     a pending first meeting does NOT preempt the landing. */
 export const SEAT_HOME_NAV: Record<string, SheetNavView> = {
   champion: 'campaign_board',
+  maverick: 'jynx_scroll',
   conductor: 'aria_atelier',
 }
 

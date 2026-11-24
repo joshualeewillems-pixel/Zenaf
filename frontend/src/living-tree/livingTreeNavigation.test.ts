@@ -50,6 +50,9 @@ let container: HTMLDivElement
 let root: Root
 let providerCalls: ProviderCall[]
 let stubReportId: string | null
+/** Extra keystone-attention markers merged into the fetch stub's
+    payload (e.g. a seat whose first meeting is still to begin). */
+let extraMarkers: Record<string, unknown> = {}
 let navigations: string[]
 
 function StubChat({
@@ -94,6 +97,7 @@ function installFetch() {
               invitation_count: 1,
               invitation_conversation_ids: [TALK_A],
             },
+            ...extraMarkers,
           },
         }),
       )
@@ -195,6 +199,7 @@ beforeEach(() => {
   providerCalls = []
   navigations = []
   stubReportId = TALK_B
+  extraMarkers = {}
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
     () => {}
@@ -252,6 +257,41 @@ describe('direct seat tap (T2)', () => {
   })
 })
 
+describe('seat home surfaces (founder, 2026-11-24)', () => {
+  it('tapping the Champion lands on the Campaign Board split view — no talk sheet opens', async () => {
+    renderTree()
+    await flush()
+    clickNode('CH')
+    await flush()
+    // The board IS his home surface: the tap navigates the shell to
+    // it directly, instead of opening the talk sheet with the board
+    // buried in its Other actions menu.
+    expect(navigations).toContain('campaign_board')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('champion')).toHaveLength(0)
+  })
+
+  it('tapping the Maverick lands on the Scroll — the shelf of scrolls is their home surface', async () => {
+    renderTree()
+    await flush()
+    clickNode('MA')
+    await flush()
+    expect(navigations).toContain('jynx_scroll')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('maverick')).toHaveLength(0)
+  })
+
+  it('a seat without a home surface still opens its talk sheet on tap', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    expect(navigations).not.toContain('campaign_board')
+    expect(dialog()).not.toBeNull()
+    expect(talkCalls('mentor').length).toBeGreaterThan(0)
+  })
+})
+
 describe('compact-head menu (T6 + C1/C2)', () => {
   it('the head menu lists Today/Review/Upload, no Talk, and routes a sheet item', async () => {
     renderTree()
@@ -296,24 +336,50 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     await flush()
     // Severine has a built interface, so her tap lands on it — the
     // split view with her conversation beside the Bench — instead of
-    // opening her sheet. (No first-meeting marker exists for her in
-    // this fixture, so the Begin-door exception does not apply.) Her
-    // head menu's composition — The Bench, Signal review — is
+    // opening her sheet. (Founder ruling, 2026-11-24: seats land on
+    // the interface — a pending first meeting does not preempt it.)
+    // Her head menu's composition — The Bench, Signal review — is
     // unchanged and covered in livingTreeHeaderMenu.test.ts.
     expect(navigations).toContain('bench')
     expect(dialog()).toBeNull()
     expect(talkCalls('skeptic')).toHaveLength(0)
   })
 
-  it('the conductor head menu carries the Workspace Organizer', async () => {
+  it('the conductor tap lands on the Atelier, her home surface (seat landing, founder 2026-11-24)', async () => {
     renderTree()
     await flush()
     clickNode('CO')
     await flush()
-    await click(buttonByLabel('Other actions'))
-    expect(rowByTitle('Workspace Organizer')).toBeDefined()
-    await click(rowByTitle('Workspace Organizer'))
-    expect(navigations).toContain('workspace')
+    // Aria has a built interface, so her tap lands on it — the split
+    // view with her conversation beside the Well — instead of opening
+    // her sheet. (Founder ruling, 2026-11-24: seats land on the
+    // interface — a pending first meeting does not preempt it.) Her head
+    // menu's composition — Workspace Organizer, The Atelier — is
+    // unchanged and covered in livingTreeHeaderMenu.test.ts.
+    expect(navigations).toContain('aria_atelier')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('conductor')).toHaveLength(0)
+  })
+
+  it('the conductor tap lands on the Atelier even while her first meeting is still to begin (founder ruling, 2026-11-24)', async () => {
+    // An 'intro' marker is the fresh-tree invitation — her sheet head
+    // would carry the Begin door. The ruling: seats land ON the
+    // interface; a pending first meeting does not preempt the landing.
+    extraMarkers = {
+      conductor: {
+        attention: true,
+        reason: 'intro',
+        invitation_count: 0,
+        invitation_conversation_ids: [],
+      },
+    }
+    renderTree()
+    await flush()
+    clickNode('CO')
+    await flush()
+    expect(navigations).toContain('aria_atelier')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('conductor')).toHaveLength(0)
   })
 
   it('the invitation shortcut fires an override + nonce bump (C1) from an open conversation', async () => {
@@ -578,16 +644,21 @@ describe('sheet header actions (2026-11-12)', () => {
 })
 
 describe('maverick mint (2026-11-12)', () => {
-  it('buildSeatHeaderMenu gives Mint to the Maverick only, after Upload', () => {
+  it('buildSeatHeaderMenu gives Mint to the Maverick only, after Upload — and the Scroll doorway after it', () => {
     const maverick = buildSeatHeaderMenu({
       seatKey: 'maverick',
       invitationCount: 0,
       currentChatId: null,
     })
-    expect(maverick.map((m) => m.title)).toEqual(['Today', 'Review', 'Upload', 'Mint'])
+    // 2026-11-24: the Maverick's home surface joined the menu as a
+    // nav item (the Scroll); Mint's sheet item is unchanged.
+    expect(maverick.map((m) => m.title)).toEqual(['Today', 'Review', 'Upload', 'Mint', 'The Scroll'])
     const mint = maverick.find((m) => m.title === 'Mint')
     expect(mint?.kind).toBe('sheet')
     if (mint?.kind === 'sheet') expect(mint.id).toBe('mint')
+    const scroll = maverick.find((m) => m.title === 'The Scroll')
+    expect(scroll?.kind).toBe('nav')
+    if (scroll?.kind === 'nav') expect(scroll.nav).toBe('jynx_scroll')
     for (const seat of ['mentor', 'champion', 'guardian', 'ambassador', 'conductor', 'skeptic']) {
       const items = buildSeatHeaderMenu({
         seatKey: seat,
@@ -598,15 +669,17 @@ describe('maverick mint (2026-11-12)', () => {
     }
   })
 
-  it('the Maverick head menu shows Mint and routes the mint sheet item', async () => {
+  it('tapping the Maverick lands on the Scroll — the talk sheet (and its Mint row) no longer opens on tap', async () => {
+    // Founder ruling 2026-11-24: seat taps land on the seat's
+    // interface, interface-first. The Maverick's sheet — Mint
+    // included — is no longer the tap destination; the Mint item
+    // itself is unchanged in the header-menu model (test above).
     renderTree()
     await flush()
     clickNode('MA')
     await flush()
-    await click(buttonByLabel('Other actions'))
-    expect(rowByTitle('Mint')).toBeDefined()
-    await click(rowByTitle('Mint'))
-    expect(providerCalls.some((c) => c.item === 'mint' && c.seatKey === 'maverick')).toBe(true)
+    expect(navigations).toContain('jynx_scroll')
+    expect(dialog()).toBeNull()
   })
 
   it('other seats show no Mint row', async () => {

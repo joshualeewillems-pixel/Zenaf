@@ -45,9 +45,14 @@ function resizeImageFileToJpegDataUrl(file: File, maxPx: number): Promise<string
 type Props = {
   user: CurrentUser
   onUserUpdated: (u: CurrentUser) => void
+  /** Open the YOU sheet — the account home where Log in / out lives
+      (founder, 2026-11-24: "I should be able to log out clicking on
+      my picture also"). Offered as the menu's first item; absent,
+      the menu keeps its photo-only behaviour. */
+  onOpenYou?: () => void
 }
 
-export function ProfileAvatarControl({ user, onUserUpdated }: Props) {
+export function ProfileAvatarControl({ user, onUserUpdated, onOpenYou }: Props) {
   const menuId = useId()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -142,6 +147,18 @@ export function ProfileAvatarControl({ user, onUserUpdated }: Props) {
           className="absolute left-0 top-full mt-2 z-50 w-56 rounded-lg border border-stone-600 bg-stone-800 shadow-xl py-2 px-2 text-sm"
         >
           <p className="text-stone-400 text-xs px-1 pb-2">Profile picture</p>
+          {onOpenYou ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                onOpenYou()
+              }}
+              className="w-full text-left px-2 py-1.5 rounded-md text-stone-100 hover:bg-stone-700"
+            >
+              You — account &amp; sign out
+            </button>
+          ) : null}
           <input
             ref={fileRef}
             type="file"

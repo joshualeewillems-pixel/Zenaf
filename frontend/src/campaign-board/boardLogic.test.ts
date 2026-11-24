@@ -13,6 +13,7 @@ import {
   deriveObstacles,
   deriveSignalMarkers,
   fractionForDate,
+  groupOverviewByInitiative,
   moveHold,
   projectSpan,
   removeHold,
@@ -423,6 +424,20 @@ describe('overview + scale', () => {
     expect(overview.find((o) => o.project.id === 'pt')?.routeDays).toBe(12)
   })
 
+  it('flags spanned vs unspanned: recorded dates or task windows span; nothing recorded does not', () => {
+    const dated = project({ id: 'pd', start_date: '2026-06-01', end_date: '2026-06-13' })
+    const fromTasks = project({ id: 'pt' })
+    const undated = project({ id: 'pu' })
+    const overview = buildOverview(
+      [dated, fromTasks, undated],
+      [task({ id: 'x1', project_id: 'pt', due_date: '2026-06-03' }), task({ id: 'x2', project_id: 'pt', due_date: '2026-06-10' })],
+      NOW,
+    )
+    expect(overview.find((o) => o.project.id === 'pd')?.spanned).toBe(true)
+    expect(overview.find((o) => o.project.id === 'pt')?.spanned).toBe(true)
+    expect(overview.find((o) => o.project.id === 'pu')?.spanned).toBe(false)
+  })
+
   it('caps the scale at 26px/day and shrinks it to fit the longest route', () => {
     const short = buildOverview(
       [project({ start_date: '2026-06-01', end_date: '2026-06-05' })],
@@ -439,5 +454,50 @@ describe('overview + scale', () => {
     const px = computePxPerDay(long, 610)
     expect(px).toBeLessThan(26)
     expect(px * 120).toBeLessThanOrEqual(610 + 1)
+  })
+})
+
+describe('groupOverviewByInitiative', () => {
+  const initiatives = [
+    { id: 'i1', title: 'Council fellowship' },
+    { id: 'i2', title: 'Zenaf core' },
+    { id: 'i-empty', title: 'Nothing running' },
+  ]
+
+  it('nests projects under their initiatives, in board order, unanchored last', () => {
+    const overview = buildOverview(
+      [
+        project({ id: 'free1', title: 'Loose one', initiative_id: null }),
+        project({ id: 'core1', title: 'Core dated', initiative_id: 'i2', start_date: '2026-06-01', end_date: '2026-06-13' }),
+        project({ id: 'bear', title: 'Meet the Bear', initiative_id: 'i1' }),
+        project({ id: 'crane', title: 'Meet the Crane', initiative_id: 'i1' }),
+        project({ id: 'free2', title: 'Loose two', initiative_id: null }),
+      ],
+      [],
+      NOW,
+    )
+    const groups = groupOverviewByInitiative(overview, initiatives)
+    expect(groups.map((g) => g.initiative?.id ?? null)).toEqual(['i2', 'i1', null])
+    expect(groups[0].projects.map((o) => o.project.id)).toEqual(['core1'])
+    expect(groups[1].projects.map((o) => o.project.id)).toEqual(['bear', 'crane'])
+    expect(groups[1].initiative?.title).toBe('Council fellowship')
+    expect(groups[2].projects.map((o) => o.project.id)).toEqual(['free1', 'free2'])
+  })
+
+  it('treats a project naming an unfetched initiative as unanchored, and gives empty initiatives no ground', () => {
+    const overview = buildOverview(
+      [project({ id: 'ghost', initiative_id: 'i-missing' })],
+      [],
+      NOW,
+    )
+    const groups = groupOverviewByInitiative(overview, initiatives)
+    expect(groups).toHaveLength(1)
+    expect(groups[0].initiative).toBeNull()
+    expect(groups[0].projects.map((o) => o.project.id)).toEqual(['ghost'])
+    expect(groups.some((g) => g.initiative?.id === 'i-empty')).toBe(false)
+  })
+
+  it('returns no groups for an empty board', () => {
+    expect(groupOverviewByInitiative([], initiatives)).toEqual([])
   })
 })

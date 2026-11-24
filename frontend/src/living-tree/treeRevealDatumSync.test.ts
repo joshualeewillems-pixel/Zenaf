@@ -31,6 +31,14 @@
  * sheet below keeps ??? and this test fails — see the mutation check
  * recorded in the Increment 1 verification report.)
  *
+ * RE-SCOPED for the seat landing (founder, 2026-11-24): the conductor
+ * no longer opens her sheet from her node — she lands on the Atelier,
+ * her built interface. Her sheet-identity check therefore leaves the
+ * loop below; the loop asserts her tap navigates to the Atelier
+ * instead. The datum sync itself is seat-agnostic — the same flow
+ * the other six sheets guard — and her reveal now lives on the
+ * Atelier landing and the painted scene.
+ *
  * No JSX (vitest includes *.test.ts only): createElement throughout.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
@@ -59,6 +67,7 @@ const SEATS = [
 
 let container: HTMLDivElement
 let root: Root
+let navigations: string[]
 
 function installFetch() {
   const fetchMock = vi.fn((url: string) => {
@@ -99,7 +108,9 @@ function renderTree() {
   act(() => {
     root.render(
       React.createElement(LivingTreeView, {
-        onNavigate: () => {},
+        onNavigate: (view: string) => {
+          navigations.push(view)
+        },
         currentUserId: 'user-1',
       } as never),
     )
@@ -137,6 +148,7 @@ function head(): Element | null {
 }
 
 beforeEach(() => {
+  navigations = []
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
     () => {}
@@ -159,6 +171,15 @@ describe('tree datum sync on a data-only status update', () => {
     // data-only payload reached the sheets. Under the fallback datum
     // each identity circle would keep the ??? placeholder instead.
     for (const seat of SEATS) {
+      if (seat.id === 'conductor') {
+        // Seat landing (founder, 2026-11-24): the conductor's tap
+        // lands on the Atelier — no sheet opens for her anymore.
+        clickHitGroup(seat.nodeId)
+        await flush()
+        expect(navigations).toContain('aria_atelier')
+        expect(dialog()).toBeNull()
+        continue
+      }
       clickHitGroup(seat.nodeId)
       await flush()
       const row = head()?.querySelector('.lavatar-head')

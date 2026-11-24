@@ -300,15 +300,20 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     expect(navigations).toContain('signal_review')
   })
 
-  it('the conductor head menu carries the Workspace Organizer', async () => {
+  it('the conductor tap lands on the Atelier, her home surface (seat landing, founder 2026-11-24)', async () => {
     renderTree()
     await flush()
     clickNode('CO')
     await flush()
-    await click(buttonByLabel('Other actions'))
-    expect(rowByTitle('Workspace Organizer')).toBeDefined()
-    await click(rowByTitle('Workspace Organizer'))
-    expect(navigations).toContain('workspace')
+    // Aria has a built interface, so her tap lands on it — the split
+    // view with her conversation beside the Well — instead of opening
+    // her sheet. (No first-meeting marker exists for her in this
+    // fixture, so the Begin-door exception does not apply.) Her head
+    // menu's composition — Workspace Organizer, The Atelier — is
+    // unchanged and covered in livingTreeHeaderMenu.test.ts.
+    expect(navigations).toContain('aria_atelier')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('conductor')).toHaveLength(0)
   })
 
   it('the invitation shortcut fires an override + nonce bump (C1) from an open conversation', async () => {

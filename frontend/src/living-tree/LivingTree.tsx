@@ -96,6 +96,7 @@ export type SheetNavView =
   | 'signal_review'
   | 'workspace'
   | 'campaign_board'
+  | 'aria_atelier'
 
 /**
  * Cross-component ask: jump the open seat sheet to that seat's review
@@ -333,7 +334,8 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
     provenance (where your material came from
     and where it went); the Raven owns signal review (distilled signals
     from imports, awaiting your verdict); the Conductor owns the Workspace
-    Organizer (preview-only planning). Everything else left the global menu the same way:
+    Organizer (preview-only planning) and the Atelier (the well in the
+    rock garden). Everything else left the global menu the same way:
     Today lives in every seat's menu above and in YOU's, Review is already
     per-seat, Settings and Content live with YOU, and Connect is gone —
     its intake remains reachable from the you-sheet's upload entry. */
@@ -353,7 +355,26 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
   ],
   conductor: [
     { id: 'workspace', title: 'Workspace Organizer', desc: 'Plan and preview a folder tidy-up — the moves stay yours to make.', nav: 'workspace' },
+    { id: 'aria_atelier', title: 'The Atelier', desc: 'Cast a stone into the well.', nav: 'aria_atelier' },
   ],
+}
+
+/**
+ * Seat landing views (founder, 2026-11-24; standing direction since
+ * 2026-11-19): a seat that HAS a built interface lands on it when its
+ * tree node is tapped — the interface split open with the seat's
+ * conversation beside it — not on its sheet. The sheet remains the
+ * seat's secondary surface (character, scoped Today / Review /
+ * Upload, its other doors) and keeps its own door to the interface
+ * in SEAT_NAV_ITEMS above. One exception, by the sheet head's own
+ * rule: a seat whose first meeting is still to begin
+ * (meetingDoorState 'begin') opens its sheet on tap, where the Begin
+ * door lives — the interface becomes the seat's home once the first
+ * meeting is done. Seats without a built interface are absent here
+ * and keep the sheet landing.
+ */
+const SEAT_LANDING_VIEWS: Partial<Record<string, SheetNavView>> = {
+  conductor: 'aria_atelier',
 }
 
 /** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —
@@ -1363,6 +1384,22 @@ export function LivingTreeView({
     const datum = live?.datum ?? findDatum(id, up)
     const arch = datum?.archetype
     if (arch) {
+      // Seat landing (founder, 2026-11-24): a seat with a built
+      // interface lands on it — unless its first meeting is still to
+      // begin, in which case the sheet opens so the tap finds the
+      // Begin door, exactly as the sheet head's own rule decides.
+      const landing = SEAT_LANDING_VIEWS[arch.id]
+      if (
+        landing &&
+        meetingDoorState(attention?.markers[arch.id]?.reason, arch.face_revealed === true) !==
+          'begin'
+      ) {
+        setSel(id)
+        setStrandPanelKey(null)
+        setTalkOverride(null)
+        onNavigate(landing)
+        return
+      }
       // Navigation correction: a seat tap opens the seat's ongoing
       // conversation directly — no menu interstitial. Any stale
       // invitation override is cleared so it can never resurrect.

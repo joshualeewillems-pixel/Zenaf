@@ -24,7 +24,7 @@ describe('buildSeatHeaderMenu', () => {
       currentChatId: null,
     })
     const titles = items.map((i) => i.title)
-    expect(titles).toEqual(['Today', 'Review', 'Upload'])
+    expect(titles).toEqual(['Today', 'Review', 'Upload', 'Campaign Board'])
     expect(titles).not.toContain('Talk')
     expect(titles).not.toContain('Full character')
     expect(items.some((i) => i.kind === 'shortcut')).toBe(false)
@@ -48,7 +48,7 @@ describe('buildSeatHeaderMenu', () => {
       invitationCount: 0,
       currentChatId: null,
     })
-    expect(champion.map((i) => i.title)).toEqual(['Today', 'Review', 'Upload'])
+    expect(champion.map((i) => i.title)).toEqual(['Today', 'Review', 'Upload', 'Campaign Board'])
     const guardian = buildSeatHeaderMenu({
       seatKey: 'guardian',
       invitationCount: 0,

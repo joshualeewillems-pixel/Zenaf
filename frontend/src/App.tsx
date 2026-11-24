@@ -51,6 +51,7 @@ import {
   type VEWorkspaceTabId,
 } from './vision-execution'
 import { VisionMapView } from './vision-map'
+import { CampaignBoardView } from './campaign-board'
 import { veSelectionFromEntityRef, veSelectionFromMapPayload } from './vision-map/mapCouncilActions'
 import { resolveInspectEntityRef } from './vision-map/mapTriadInspector'
 import type { MapNodePayload } from './vision-map/ontology'
@@ -4531,6 +4532,7 @@ function App() {
     | 'perspectives'
     | 'content'
     | 'vision_map'
+    | 'campaign_board'
     | 'vision_execution'
     | 'agent_intake'
     | 'review'
@@ -5492,6 +5494,8 @@ function App() {
               onMapEntitySelectionChange={onMapEntitySelectionChange}
             />
           </div>
+        ) : mainView === 'campaign_board' ? (
+          <CampaignBoardView />
         ) : mainView === 'vision_execution' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-auto">
             <VisionExecutionView

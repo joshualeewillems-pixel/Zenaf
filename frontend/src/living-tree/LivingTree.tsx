@@ -95,6 +95,7 @@ export type SheetNavView =
   | 'agent_intake'
   | 'signal_review'
   | 'workspace'
+  | 'campaign_board'
 
 /**
  * Cross-component ask: jump the open seat sheet to that seat's review
@@ -327,7 +328,9 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
 /** Seat-owned destinations (the distributed menu, 2026-10-22): a full-screen
     surface belongs to the seat whose slice of the system it is, and its
     sheet carries the door. The Mentor owns the execution surface (the
-    vision map and its tables); the Bear owns provenance (where your material came from
+    vision map and its tables); the Firebrand owns the Campaign Board
+    (projects as campaigns — routes, terrain, obstacles); the Bear owns
+    provenance (where your material came from
     and where it went); the Raven owns signal review (distilled signals
     from imports, awaiting your verdict); the Conductor owns the Workspace
     Organizer (preview-only planning). Everything else left the global menu the same way:
@@ -335,6 +338,9 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
     per-seat, Settings and Content live with YOU, and Connect is gone —
     its intake remains reachable from the you-sheet's upload entry. */
 const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: string; nav: SheetNavView }>> = {
+  champion: [
+    { id: 'campaign_board', title: 'Campaign Board', desc: 'Your projects as campaigns — routes, terrain, and what stands in the way.', nav: 'campaign_board' },
+  ],
   mentor: [
     { id: 'vision_map', title: 'Vision map', desc: 'The execution surface — initiatives, projects, and their stones.', nav: 'vision_map' },
     { id: 'vision_tables', title: 'Vision (tables)', desc: 'The same work, as tables.', nav: 'vision_execution' },
@@ -504,6 +510,7 @@ export function buildYouDirectory(args: { isAdmin: boolean }): {
       seatKey: 'champion',
       verb: 'Act',
       rows: [
+        ...SEAT_NAV_ITEMS.champion.map(directoryNavRow),
         { kind: 'sheet', id: 'projects', title: 'Projects', desc: 'Everything in flight — ideas through tasks.' },
         {
           kind: 'nav',

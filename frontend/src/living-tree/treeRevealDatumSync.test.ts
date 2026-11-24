@@ -59,6 +59,7 @@ const SEATS = [
 
 let container: HTMLDivElement
 let root: Root
+let navigations: string[]
 
 function installFetch() {
   const fetchMock = vi.fn((url: string) => {
@@ -99,7 +100,9 @@ function renderTree() {
   act(() => {
     root.render(
       React.createElement(LivingTreeView, {
-        onNavigate: () => {},
+        onNavigate: (view: string) => {
+          navigations.push(view)
+        },
         currentUserId: 'user-1',
       } as never),
     )
@@ -137,6 +140,7 @@ function head(): Element | null {
 }
 
 beforeEach(() => {
+  navigations = []
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
     () => {}
@@ -159,6 +163,15 @@ describe('tree datum sync on a data-only status update', () => {
     // data-only payload reached the sheets. Under the fallback datum
     // each identity circle would keep the ??? placeholder instead.
     for (const seat of SEATS) {
+      if (seat.id === 'skeptic') {
+        // Seat landing (founder, 2026-11-24): the skeptic's tap lands
+        // on the Bench — no sheet opens for her anymore.
+        clickHitGroup(seat.nodeId)
+        await flush()
+        expect(navigations).toContain('bench')
+        expect(dialog()).toBeNull()
+        continue
+      }
       clickHitGroup(seat.nodeId)
       await flush()
       const row = head()?.querySelector('.lavatar-head')

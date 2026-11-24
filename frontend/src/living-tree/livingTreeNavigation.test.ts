@@ -289,15 +289,20 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     expect(navigations).toContain('vision_map')
   })
 
-  it('the skeptic head menu carries its seat-owned destination', async () => {
+  it('the skeptic tap lands on the Bench, her home surface (seat landing, founder 2026-11-24)', async () => {
     renderTree()
     await flush()
     clickNode('SK')
     await flush()
-    await click(buttonByLabel('Other actions'))
-    expect(rowByTitle('Signal review')).toBeDefined()
-    await click(rowByTitle('Signal review'))
-    expect(navigations).toContain('signal_review')
+    // Severine has a built interface, so her tap lands on it — the
+    // split view with her conversation beside the Bench — instead of
+    // opening her sheet. (No first-meeting marker exists for her in
+    // this fixture, so the Begin-door exception does not apply.) Her
+    // head menu's composition — The Bench, Signal review — is
+    // unchanged and covered in livingTreeHeaderMenu.test.ts.
+    expect(navigations).toContain('bench')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('skeptic')).toHaveLength(0)
   })
 
   it('the conductor head menu carries the Workspace Organizer', async () => {

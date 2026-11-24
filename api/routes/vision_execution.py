@@ -1701,6 +1701,27 @@ def list_task_proposals(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/task-proposals/by-parent/{parent_task_id}")
+def list_task_proposals_by_parent(
+    parent_task_id: str,
+    state: str | None = "pending",
+    limit: int = 100,
+    current_user: dict = Depends(get_current_user),
+):
+    """Pending (or otherwise-stated) proposals attached under one parent
+    task, oldest first — the Bench's wire read. Read-only: it wraps the
+    existing owner-scoped storage query
+    (VEStorage.list_task_proposals_by_parent, S3) and writes nothing.
+    Exact parent match only; conversation membership establishes no
+    relevance here."""
+    try:
+        return {"proposals": VEStorage.list_task_proposals_by_parent(
+            current_user["id"], parent_task_id, state=state, limit=limit
+        )}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/task-proposals/{proposal_id}")
 def get_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
     """One task proposal, owner-scoped (Firebrand S1).

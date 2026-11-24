@@ -282,6 +282,7 @@ CREATE TABLE IF NOT EXISTS signals (
   linked_task_id TEXT,
   linked_asset_ids TEXT NOT NULL DEFAULT '[]',
   status TEXT NOT NULL DEFAULT 'new',
+  user_id TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );

@@ -931,6 +931,17 @@ def _migrate_user_ownership_columns(conn: sqlite3.Connection) -> None:
     _ensure_user_id_column(conn, "persons")
     _ensure_user_id_column(conn, "assets")
     _ensure_user_id_column(conn, "capacity_profiles")
+    # Signals (Track C, Option A): column only — NO backfill. Pre-existing
+    # rows keep user_id NULL and are quarantined: no owner predicate
+    # matches NULL, so they are invisible to every user, never
+    # re-attributed, and never deleted. The index is created here (after
+    # the column exists) rather than in schema.sql, because init_db runs
+    # the schema script before this migration and a legacy signals table
+    # has no user_id column yet. Fail-closed rollback (founder
+    # correction 2): no reverse path may drop this scoping or re-expose
+    # the pool; rollback is the ZENAF_SIGNALS_DISABLED kill switch in
+    # local_ai/signals/service.py, not a migration reversal.
+    _ensure_user_id_column(conn, "signals")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_core_profiles_user_id ON core_profiles(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_content_briefs_user_id ON content_briefs(user_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_ideas_user_id ON ideas(user_id)")
@@ -943,6 +954,7 @@ def _migrate_user_ownership_columns(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_capacity_profiles_user_id"
         " ON capacity_profiles(user_id)"
     )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_signals_user_id ON signals(user_id)")
     conn.commit()
 
 

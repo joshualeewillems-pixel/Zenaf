@@ -50,6 +50,9 @@ let container: HTMLDivElement
 let root: Root
 let providerCalls: ProviderCall[]
 let stubReportId: string | null
+/** Extra keystone-attention markers merged into the fetch stub's
+    payload (e.g. a seat whose first meeting is still to begin). */
+let extraMarkers: Record<string, unknown> = {}
 let navigations: string[]
 
 function StubChat({
@@ -94,6 +97,7 @@ function installFetch() {
               invitation_count: 1,
               invitation_conversation_ids: [TALK_A],
             },
+            ...extraMarkers,
           },
         }),
       )
@@ -195,6 +199,7 @@ beforeEach(() => {
   providerCalls = []
   navigations = []
   stubReportId = TALK_B
+  extraMarkers = {}
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
     () => {}
@@ -335,15 +340,41 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     expect(navigations).toContain('signal_review')
   })
 
-  it('the conductor head menu carries the Workspace Organizer', async () => {
+  it('the conductor tap lands on the Atelier, her home surface (seat landing, founder 2026-11-24)', async () => {
     renderTree()
     await flush()
     clickNode('CO')
     await flush()
-    await click(buttonByLabel('Other actions'))
-    expect(rowByTitle('Workspace Organizer')).toBeDefined()
-    await click(rowByTitle('Workspace Organizer'))
-    expect(navigations).toContain('workspace')
+    // Aria has a built interface, so her tap lands on it — the split
+    // view with her conversation beside the Well — instead of opening
+    // her sheet. (Founder ruling, 2026-11-24: seats land on the
+    // interface — a pending first meeting does not preempt it.) Her head
+    // menu's composition — Workspace Organizer, The Atelier — is
+    // unchanged and covered in livingTreeHeaderMenu.test.ts.
+    expect(navigations).toContain('aria_atelier')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('conductor')).toHaveLength(0)
+  })
+
+  it('the conductor tap lands on the Atelier even while her first meeting is still to begin (founder ruling, 2026-11-24)', async () => {
+    // An 'intro' marker is the fresh-tree invitation — her sheet head
+    // would carry the Begin door. The ruling: seats land ON the
+    // interface; a pending first meeting does not preempt the landing.
+    extraMarkers = {
+      conductor: {
+        attention: true,
+        reason: 'intro',
+        invitation_count: 0,
+        invitation_conversation_ids: [],
+      },
+    }
+    renderTree()
+    await flush()
+    clickNode('CO')
+    await flush()
+    expect(navigations).toContain('aria_atelier')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('conductor')).toHaveLength(0)
   })
 
   it('the invitation shortcut fires an override + nonce bump (C1) from an open conversation', async () => {

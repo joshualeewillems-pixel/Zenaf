@@ -97,6 +97,7 @@ export type SheetNavView =
   | 'workspace'
   | 'campaign_board'
   | 'jynx_scroll'
+  | 'aria_atelier'
 
 /**
  * Cross-component ask: jump the open seat sheet to that seat's review
@@ -343,8 +344,9 @@ const SEAT_MENU: Array<{ id: NodeMenuItemId; title: string; desc: string }> = [
     provenance (where your material came from
     and where it went); the Raven owns signal review (distilled signals
     from imports, awaiting your verdict); the Conductor owns the Workspace
-    Organizer (preview-only planning); the Fox owns the Scroll (the
-    shelf of scrolls — the whole hierarchy, and what they draw of it).
+    Organizer (preview-only planning) and the Atelier (the well in the
+    rock garden); the Fox owns the Scroll (the shelf of scrolls — the
+    whole hierarchy, and what they draw of it).
     Everything else left the global menu the same way:
     Today lives in every seat's menu above and in YOU's, Review is already
     per-seat, Settings and Content live with YOU, and Connect is gone —
@@ -368,21 +370,25 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
   ],
   conductor: [
     { id: 'workspace', title: 'Workspace Organizer', desc: 'Plan and preview a folder tidy-up — the moves stay yours to make.', nav: 'workspace' },
+    { id: 'aria_atelier', title: 'The Atelier', desc: 'Cast a stone into the well.', nav: 'aria_atelier' },
   ],
 }
 
-/** Seat home surfaces (founder, 2026-11-24): a seat with an interface
-    opens ON that interface — tapping the seat lands on its split view
-    (the world, with the seat's conversation beside it) as the seat's
-    home surface, not on the talk sheet with the interface buried in
-    its "Other actions" menu. Seats without an entry here keep the
-    talk-sheet opening. The seat's sheet destinations above stay in
-    the head menu for any path that still opens the sheet, and the
-    seat's Today/Review/Upload remain reachable through the YOU
-    directory's scoped strip. */
+/** Seat home surfaces (founder, 2026-11-24; standing direction since
+    2026-11-19): a seat with a built interface opens ON that interface
+    — tapping the seat lands on its split view (the world, with the
+    seat's conversation beside it) as the seat's home surface, not on
+    the talk sheet with the interface buried in its "Other actions"
+    menu. Seats without an entry here keep the talk-sheet opening.
+    The seat's sheet destinations above stay in the head menu for any
+    path that still opens the sheet, and the seat's Today/Review/
+    Upload remain reachable through the YOU directory's scoped strip.
+    Founder ruling (2026-11-24, voice): seats land ON the interface —
+    a pending first meeting does NOT preempt the landing. */
 export const SEAT_HOME_NAV: Record<string, SheetNavView> = {
   champion: 'campaign_board',
   maverick: 'jynx_scroll',
+  conductor: 'aria_atelier',
 }
 
 /** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —
@@ -1430,9 +1436,11 @@ export function LivingTreeView({
     const datum = live?.datum ?? findDatum(id, up)
     const arch = datum?.archetype
     if (arch) {
-      // Seat home surface (founder, 2026-11-24): a seat with an
-      // interface lands on that interface's split view — the world
-      // first, its conversation beside it — not on the talk sheet.
+      // Seat home surface (founder, 2026-11-24): a seat with a
+      // built interface lands on that interface's split view — the
+      // world first, its conversation beside it — not on the talk
+      // sheet. A pending first meeting does not preempt the landing
+      // (founder ruling, 2026-11-24, voice).
       const homeNav = SEAT_HOME_NAV[arch.id]
       if (homeNav) {
         setSel(id)

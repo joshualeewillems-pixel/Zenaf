@@ -81,6 +81,7 @@ describe('buildSeatHeaderMenu', () => {
       'Review',
       'Upload',
       'Workspace Organizer',
+      'The Atelier',
     ])
   })
 

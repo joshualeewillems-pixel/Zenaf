@@ -94,6 +94,9 @@ def test_turn_persists_complete_manifest(tmp_path):
         "canonical_tier": False,
         "rhyme_carriage": False,
         "sketch_shaping": False,
+        # P-1 (N1): the question assembly flag is stamped now —
+        # it was the one flag the manifest never carried.
+        "question": False,
     }
     assert "sources" not in manifest
     # The user message carries no manifest — it records generation,

@@ -30,6 +30,23 @@ KNOWN_SCOPES: dict[str, str] = {
     ),
     "export": "Export everything Zenaf holds about me (takeout).",
     "delete:execute": "Confirm full deletion of my data (requires typing DELETE).",
+    # Native character development (N1, item 6 as restated by R-6):
+    # the vocabulary for DIRECT DESIGNATION of an author's own
+    # material. Designation is the author's own act, recorded in the
+    # developmental store's ledger; neither entry confers training
+    # eligibility or training authorization — those remain separate,
+    # future, purpose-specific rulings (T-6).
+    "designate:native_development": (
+        "Designate my own material for native development of "
+        "characters I author. A designation records intent only; it "
+        "confers no training eligibility or authorization."
+    ),
+    "designate:future_model_adaptation": (
+        "Designate my own material for potential future model "
+        "adaptation of characters I author. A designation records "
+        "intent only; it confers no training eligibility or "
+        "authorization, and no training follows from it."
+    ),
 }
 
 _ZONE_GRANT_RE = re.compile(r"rent:zone:([A-Za-z0-9][A-Za-z0-9_-]*)")

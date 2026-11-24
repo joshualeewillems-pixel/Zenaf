@@ -503,6 +503,22 @@ def _sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
 
 
+def _code_ref() -> str | None:
+    """The code/deploy reference for this process (P-1, C-13).
+
+    ``assembly_version`` is one global constant and pins no actual
+    code state; the deploy's own identity does. Read from the
+    environment the deploy already carries (``ZENAF_CODE_REF``,
+    falling back to the Fly image reference); None when neither is
+    set — the manifest records what it can prove, never a guess.
+    """
+    import os
+
+    return os.environ.get("ZENAF_CODE_REF") or os.environ.get(
+        "FLY_IMAGE_REF"
+    ) or None
+
+
 def build_generation_manifest(
     *,
     prompt_text: str,
@@ -512,6 +528,7 @@ def build_generation_manifest(
     profile_version: int | None,
     flags: dict[str, bool],
     thread_summary: str | None,
+    refs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble one turn's generation manifest (fingerprint only).
 
@@ -526,13 +543,17 @@ def build_generation_manifest(
     turn saw). No prompt text, summary text, or user content is
     stored in the manifest, under any key.
     """
-    return {
+    manifest: dict[str, Any] = {
         "version": GENERATION_MANIFEST_VERSION,
         "provider": provider_id,
         "model": _effective_model_id(provider_id),
         "prompt_sha256": _sha256_hex(prompt_text),
         "prompt_chars": len(prompt_text),
         "assembly_version": PROMPT_ASSEMBLY_VERSION,
+        # P-1 component-reference completion (N1): the code/deploy
+        # reference pins the code state that assembled the prompt
+        # (C-13) — the fact assembly_version alone cannot carry.
+        "code_ref": _code_ref(),
         "mode_used": mode_used,
         "has_training": bool(has_training),
         "profile_version": profile_version,
@@ -541,6 +562,14 @@ def build_generation_manifest(
             _sha256_hex(thread_summary) if thread_summary else None
         ),
     }
+    # Component references (P-1): supplied by the caller that knows
+    # them (the conversation service's enrichment seam stamps the
+    # service-side references — character state, service blocks,
+    # capability slice, history range). References are ids and
+    # timestamps only — never component text.
+    if refs:
+        manifest["refs"] = dict(refs)
+    return manifest
 
 
 def _turn_role(turn: Any) -> str:
@@ -1458,6 +1487,9 @@ def generate_voice_reply(
                 "canonical": bool(canonical),
                 "canonical_tier": bool(canonical_tier),
                 "rhyme_carriage": bool(meta["rhyme_carriage"]),
+                # P-1 (C-3): the question flag was the one assembly
+                # flag the manifest never stamped; it is stamped now.
+                "question": bool(question),
             },
             thread_summary=thread_summary,
         )

@@ -236,4 +236,105 @@ describe('CampaignBoardView', () => {
     )
     expect(removeBtn).toBeTruthy()
   })
+
+  it('renders ONE shared map with projects nested under their initiatives, undated projects unspanned', async () => {
+    // Shaped like the founder's real board: several initiatives with
+    // nested projects, one unanchored project, most projects undated,
+    // one dated.
+    const base = {
+      brief: '', owner_id: null, supporting_owner_ids: [], priority: '',
+      start_date: null, end_date: null, estimated_weekly_hours: null,
+      next_step_ai: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
+    }
+    const tbase = {
+      parent_task_id: null, description: '', assignee_id: null, priority: '',
+      estimated_hours: null, due_date: null, dependency_ids: [],
+      completion_criteria: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
+    }
+    const projects = [
+      { ...base, id: 'pb', initiative_id: 'i1', title: 'Meet the Bear', status: 'Ready' },
+      { ...base, id: 'pc', initiative_id: 'i1', title: 'Meet the Crane', status: 'Ready' },
+      { ...base, id: 'pd', initiative_id: 'i2', title: 'Ship the thing', status: 'Active', start_date: isoDaysFromNow(-5), end_date: isoDaysFromNow(7) },
+      { ...base, id: 'pu', initiative_id: null, title: 'Fix the gate latch', status: 'Draft' },
+    ]
+    const tasks = [
+      { ...tbase, id: 'b1', project_id: 'pb', title: 'Bear step one', status: 'Blocked' },
+      { ...tbase, id: 'b2', project_id: 'pb', title: 'Bear step two', status: 'Blocked' },
+      { ...tbase, id: 'b3', project_id: 'pb', title: 'Bear step three', status: 'Todo' },
+      { ...tbase, id: 'b4', project_id: 'pb', title: 'Bear step done', status: 'Done' },
+      { ...tbase, id: 'c1', project_id: 'pc', title: 'Crane step', status: 'Todo' },
+      { ...tbase, id: 'd1', project_id: 'pd', title: 'Ship step', status: 'Todo', due_date: isoDaysFromNow(3) },
+    ]
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        '/vision-execution/initiatives': [
+          { id: 'i1', title: 'Council fellowship' },
+          { id: 'i2', title: 'Zenaf core' },
+        ],
+        '/vision-execution/projects': projects,
+        '/vision-execution/tasks': tasks,
+      }),
+    )
+    await act(async () => {
+      root.render(React.createElement(CampaignBoardView))
+    })
+    await flush()
+    await flush()
+
+    // ONE map surface — not a stack of per-project rows.
+    expect(container.querySelectorAll('svg')).toHaveLength(1)
+    const text = container.textContent ?? ''
+
+    // Both initiatives lettered on their grounds; projects nested
+    // beneath them in board order (dated Active first, then the
+    // fellowship's Ready pair, unanchored last).
+    const idx = (s: string) => text.indexOf(s)
+    expect(idx('ZENAF CORE')).toBeGreaterThanOrEqual(0)
+    expect(idx('ZENAF CORE')).toBeLessThan(idx('Ship the thing'))
+    expect(idx('Ship the thing')).toBeLessThan(idx('COUNCIL FELLOWSHIP'))
+    expect(idx('COUNCIL FELLOWSHIP')).toBeLessThan(idx('Meet the Bear'))
+    expect(idx('Meet the Bear')).toBeLessThan(idx('Meet the Crane'))
+    expect(idx('Meet the Crane')).toBeLessThan(idx('Fix the gate latch'))
+
+    // The undated fact is never printed on the surface.
+    expect(text).not.toContain('No dates recorded')
+    expect(text).not.toContain('no dates recorded')
+
+    // Exactly one dotted route is drawn — the one dated project, at
+    // the shared scale (12 days × 26px/day). Undated projects draw
+    // no line at all: unspanned at their camps.
+    const routeLines = [...container.querySelectorAll('line')].filter(
+      (l) => l.getAttribute('stroke-dasharray') === '0.5 7',
+    )
+    expect(routeLines).toHaveLength(1)
+    const len = Number(routeLines[0].getAttribute('x2')) - Number(routeLines[0].getAttribute('x1'))
+    expect(len).toBe(12 * 26)
+
+    // Obstacle ticks still counted on the map; scale key present.
+    expect(text).toContain('◆ ×2')
+    expect(text).toContain('= 1 day')
+
+    // The camp popup carries the undated fact. Camps are the r=15
+    // invisible circles, in lane order: Ship, Bear, Crane, latch.
+    const camps = [...container.querySelectorAll('circle')].filter(
+      (c) => c.getAttribute('fill-opacity') === '0' && c.getAttribute('r') === '15',
+    )
+    expect(camps).toHaveLength(4)
+    await act(async () => {
+      camps[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('No dates recorded')
+    expect(container.textContent).toContain('Ready · 3 open · 1 done')
+
+    // The popup's Focus row opens the focus board.
+    const focusRow = [...container.querySelectorAll('g')].find((g) => g.textContent === 'Focus →')
+    expect(focusRow).toBeTruthy()
+    await act(async () => {
+      focusRow!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+    expect(container.textContent).toContain('← All projects')
+    expect(container.textContent).toContain('Meet the Bear')
+  })
 })

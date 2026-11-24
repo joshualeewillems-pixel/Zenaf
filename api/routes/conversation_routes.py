@@ -70,6 +70,7 @@ from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 from local_ai.council.naming import get_display_name
 from local_ai.fellowship.events import emit_event as fellowship_emit_event
 from local_ai.narrative.context import jynx_context_provider, weaver_context_provider
+from local_ai.narrative.noting import default_noting_writer
 
 router = APIRouter(prefix="/conversation", tags=["conversation"])
 
@@ -113,6 +114,13 @@ def _service() -> ConversationService:
         # so non-Jynx turns and switch-off deployments never pay
         # for it.
         pencil_context_provider=jynx_context_provider(with_selection=True),
+        # V1 noting capture feed: the writer is handed notes only on
+        # turns where capture is enabled for the replying seat
+        # (ZENAF_NOTING_CAPTURE_SEATS, default off everywhere), and
+        # its NarrativeStore builds lazily on first capture — so a
+        # capture-off deployment never calls it and never touches
+        # the narrative DB through this path.
+        noting_writer=default_noting_writer(),
     )
 
 

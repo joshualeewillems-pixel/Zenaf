@@ -33,6 +33,12 @@ from local_ai.vision_execution import obligations as _obligations
 
 from .encounter import _WEAVER_NATURAL_INTENTION
 from .firebrand_round import ROUND_KIND, firebrand_round_enabled, plan_round_turn
+from .noting import (
+    NOTING_INSTRUCTION,
+    NotingParseResult,
+    capture_enabled as _noting_capture_enabled,
+    parse_noting_trailer,
+)
 from .reply import GENERATION_MANIFEST_KEY, VoiceReply, generate_voice_reply
 from .sketch_tail import ParseResult, parse_sketch_tail
 from . import round as weaver_round
@@ -383,10 +389,19 @@ class ConversationService:
         event_sink: EventSink | None = None,
         steward_context_provider: Callable[..., Any] | None = None,
         pencil_context_provider: Callable[..., Any] | None = None,
+        noting_writer: Any | None = None,
     ) -> None:
         self.store = store
         self._generate_fn = generate_fn
         self._event_sink = event_sink
+        # V1 noting capture feed (governing §6): an optional writer
+        # (local_ai/narrative/noting.py) handed the validated notes
+        # parsed from a capture-enabled seat's reply, at the request
+        # tail. It is consulted ONLY when capture is enabled for the
+        # replying seat (ZENAF_NOTING_CAPTURE_SEATS, default off
+        # everywhere); with capture off it is never called and no
+        # noting code runs on the turn at all.
+        self._noting_writer = noting_writer
         # Pencil-standing steward observations (founder ruling
         # 2026-11-21): an optional provider consulted ONLY for the
         # Jynx (archetype "maverick"), under its own master switch
@@ -437,6 +452,12 @@ class ConversationService:
         # the response carriage, never the seam's strip.
         sketch_summary = _validated_sketch_summary(context, arch_id)
         shaping_on = sketch_shaping_enabled()
+
+        # V1 noting capture: read the per-seat enablement once for
+        # the turn. It gates the instruction block below, the seam's
+        # strip, and the tail's store hand-off together — capture off
+        # means no instruction, no parsing, zero store writes.
+        noting_on = _noting_capture_enabled(arch_id)
 
         # Weaver strand interviews (rev2 P2): the server validates
         # strand identity on every strand request — never trusts a
@@ -734,6 +755,14 @@ class ConversationService:
                     _SKETCH_SHAPING_BLOCK
                     if arch_id == "skeptic" and shaping_on
                     else None,
+                    # V1 noting capture (governing §6): the noting
+                    # instruction is a service-layer prompt addition
+                    # in the PROPOSAL_INSTRUCTION pattern — present
+                    # exactly when capture is enabled for this seat,
+                    # seat-general in wording, and absent entirely
+                    # otherwise (the baseline arm stays byte-identical
+                    # to production).
+                    NOTING_INSTRUCTION if noting_on else None,
                 )
                 if block
             )
@@ -777,6 +806,38 @@ class ConversationService:
                     kept.append(line)
                 voice_reply.reply = "\n".join(kept).rstrip("\n")
                 sketch_parsed = None
+
+        # V1 noting capture — THE SEAM (governing §6, the sketch
+        # seam's shape): when capture is enabled for this seat, parse
+        # the noting trailer immediately after generation and replace
+        # the reply text with the stripped body, before any
+        # post-generation effect — so no trailer text can reach
+        # persistence, the route response, or later history on any
+        # path. Strip-always while capture is live: the parser runs
+        # whether or not a trailer was expected. When capture is off
+        # the parser never runs and the reply is untouched. The
+        # validated notes are handed to the store writer at the
+        # request tail (below), once this turn's fellowship event —
+        # the notes' evidence anchor — has been emitted.
+        noting_parsed: NotingParseResult | None = None
+        if noting_on:
+            try:
+                noting_parsed = parse_noting_trailer(voice_reply.reply)
+                voice_reply.reply = noting_parsed.body
+            except Exception:
+                logger.exception(
+                    "noting seam: parse failed; hygiene fallback strip"
+                )
+                kept = []
+                for line in voice_reply.reply.split("\n"):
+                    idx = line.find("[[note:")
+                    if idx != -1:
+                        line = line[:idx].rstrip()
+                        if not line:
+                            continue
+                    kept.append(line)
+                voice_reply.reply = "\n".join(kept).rstrip("\n")
+                noting_parsed = None
 
         # Firebrand lightning round (S1): record the plan's effects
         # now that generation succeeded. The marker rides the
@@ -963,6 +1024,7 @@ class ConversationService:
                 flags["sketch_shaping"] = bool(
                     arch_id == "skeptic" and shaping_on
                 )
+                flags["noting_capture"] = bool(noting_on)
                 manifest["flags"] = flags
                 sources: dict[str, list[str]] = {}
                 if steward_thread_ids:
@@ -1064,10 +1126,52 @@ class ConversationService:
         # sink itself only *schedules* the slow path (two-speed law),
         # so nothing here can delay or break the reply. Derivation
         # failures are the sink's problem, never the turn's.
-        self._emit_turn_event(
+        turn_event = self._emit_turn_event(
             user_id, conversation_id, arch_id, message, user_msg,
             subject=turn_subject,
         )
+
+        # V1 noting capture — the store hand-off, at the request tail
+        # (after the turn's fellowship event exists: that event is
+        # the Tier E anchor the notes' evidence resolves through).
+        # Objection citations are validated here against the
+        # conversation's own messages, scoped to (user, conversation)
+        # — the _parse_sketch_at_seam pattern: a foreign,
+        # cross-conversation, nonexistent, or non-visitor citation
+        # drops that note only. Fully guarded like every other
+        # bookkeeping write in this loop: a capture failure never
+        # breaks the turn, and with capture off or no writer wired
+        # nothing here runs at all.
+        if noting_on and self._noting_writer is not None:
+            try:
+                valid_notes: list[dict[str, Any]] = []
+                for note in noting_parsed.notes if noting_parsed else []:
+                    if note.kind == "objection":
+                        cited = self.store.get_message(
+                            user_id, conversation_id, note.message_id
+                        )
+                        if cited is None or cited.get("role") != "user":
+                            continue
+                        valid_notes.append(
+                            {"kind": "objection", "message_id": note.message_id}
+                        )
+                    else:
+                        valid_notes.append(
+                            {"kind": "recognition", "statement": note.statement}
+                        )
+                self._noting_writer.capture_turn(
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    archetype_id=arch_id,
+                    notes=valid_notes,
+                    user_message_id=user_msg["id"],
+                    reply_message_id=assistant_msg["id"],
+                    turn_event_id=getattr(turn_event, "id", None),
+                )
+            except Exception:
+                logger.exception(
+                    "noting capture: writer failed; turn unaffected"
+                )
         return result
 
     def _validated_strand_key(
@@ -1254,7 +1358,7 @@ class ConversationService:
         message: str,
         user_msg: dict[str, Any],
         subject: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> Any:
         """Record this turn as a fellowship event via the wired sink.
 
         Fully guarded (a turn must succeed even if the event layer is
@@ -1268,7 +1372,7 @@ class ConversationService:
         to the pre-Slice-A shape: no ``subject`` key, no placeholder.
         """
         if self._event_sink is None or not (message or "").strip():
-            return
+            return None
         payload: dict[str, Any] = {
             "archetype_id": arch_id,
             "message_id": user_msg.get("id"),
@@ -1277,7 +1381,11 @@ class ConversationService:
         if subject_block is not None:
             payload["subject"] = subject_block
         try:
-            self._event_sink(
+            # The sink's return (the emitted event, when the sink is
+            # the real emitter) is handed back so the V1 noting
+            # hand-off can anchor this turn's notes to it; sinks that
+            # return None behave exactly as before.
+            return self._event_sink(
                 kind=fellowship_events.CONVERSATION_TURN,
                 user_id=user_id,
                 entity_type="conversation",
@@ -1288,6 +1396,7 @@ class ConversationService:
             )
         except Exception:
             logger.exception("fellowship: conversation-turn event failed")
+            return None
 
     def history(
         self, user_id: str, conversation_id: str = "skeleton", limit: int = 50

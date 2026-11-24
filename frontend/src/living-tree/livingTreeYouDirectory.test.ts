@@ -7,8 +7,8 @@
  * destinations + 2 info rows), then seven seat groups in the accepted
  * map's order, each with its distinctive rows; every group's scoped
  * strip (Today / Review / Upload through the seat) is structural and
- * never appears as rows. 44 working actions in total for an admin
- * (5 universal + 18 distinctive + 7 strips × 3 chips). No planned
+ * never appears as rows. 45 working actions in total for an admin
+ * (5 universal + 19 distinctive + 7 strips × 3 chips). No planned
  * doorway (Commitments, growth, takeout/delete, mirror, steward
  * verdicts, disputes, twigs, convened sessions) appears anywhere.
  */
@@ -33,6 +33,7 @@ const SHEET_NAV_VIEWS = [
   'agent_intake',
   'signal_review',
   'workspace',
+  'campaign_board',
 ]
 
 function allRows(isAdmin: boolean): YouDirectoryRow[] {
@@ -105,13 +106,13 @@ describe('buildYouDirectory', () => {
     expect(homes('Mint')).toEqual(['maverick'])
   })
 
-  it('totals 44 working actions for an admin: 5 universal + 18 distinctive + 21 strip chips', () => {
+  it('totals 45 working actions for an admin: 5 universal + 19 distinctive + 21 strip chips', () => {
     const { universal, groups } = buildYouDirectory({ isAdmin: true })
     const universalActions = universal.filter((r) => r.kind === 'sheet' || r.kind === 'nav').length
     const distinctive = groups.reduce((n, g) => n + g.rows.length, 0)
     expect(universalActions).toBe(5)
-    expect(distinctive).toBe(18)
-    expect(universalActions + distinctive + groups.length * 3).toBe(44)
+    expect(distinctive).toBe(19)
+    expect(universalActions + distinctive + groups.length * 3).toBe(45)
   })
 
   it('the scoped strip never appears as distinctive rows', () => {

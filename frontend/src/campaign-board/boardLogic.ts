@@ -9,15 +9,26 @@
  * that produced it so the map popup can show its working.
  *
  * Governing design: zenaf-valen-campaign-board-brief-2026-11-17.md
- * (incl. the 2026-11-23 overview/focus addendum). Two prototype rules
- * have no source data in the VE store and are deliberately NOT derived:
- *  - Rivers (a recorded window in which work cannot proceed at all):
- *    VE carries no closed-window record.
- *  - Holds (recurring maintenance positions): VE tasks carry no
- *    recurrence field.
- * Both gaps are recorded in the implementation report.
+ * (incl. the 2026-11-23 overview/focus addendum).
+ *
+ * The board's material is wider than tasks alone (founder correction
+ * 2026-11-24, on the Radar tie-in): the project's linked open SIGNALS
+ * (the canonical Layer-1 circumstance entity) are reported material on
+ * the map, and the CAPACITY picture (weekly capacity vs committed
+ * estimated hours, the Radar's overcapacity computation) is real
+ * time-constraint data. See the Signals / Capacity sections below.
+ *
+ * Rivers and Holds are NOT derivations at all — per the founder's
+ * terrain doctrine (2026-11-17) terrain is derived from VE content,
+ * understood through conversation with Valen, and FIXED BY THE USER'S
+ * DECLARATION. A River (an immovable window) and a Hold (a review
+ * checkpoint) are declared by the user — from a signal, from a chosen
+ * window, or placed directly on the line. Declarations are
+ * PROVISIONAL, session-local state: the declaration-binding standard
+ * is deferred, so they are stored nowhere and can be withdrawn.
+ * See the Declarations section below.
  */
-import type { Project, Task } from '../vision-execution/types'
+import type { CapacityProfile, Person, Project, Task } from '../vision-execution/types'
 
 export const DAY_MS = 86_400_000
 /** A working day, for converting estimated_hours into the prototype's
@@ -469,4 +480,324 @@ export function computePxPerDay(overview: OverviewProject[], availablePx: number
   const maxDays = realDays.length ? Math.max(...realDays) : 0
   if (!maxDays) return MAX_PX_PER_DAY
   return Math.min(MAX_PX_PER_DAY, Math.max(4, availablePx / maxDays))
+}
+
+/* ------------------------------------------------------------------ */
+/* Signals — reported circumstance material (Layer 1)                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * A Signal row as returned by GET /signals (the canonical Layer-1
+ * circumstance entity; the Radar is a view over these). Links to
+ * initiatives/projects/tasks are owner-validated at write time.
+ */
+export interface BoardSignal {
+  id: string
+  kind: string
+  title: string
+  detail: string | null
+  source: string
+  source_excerpt: string | null
+  confidence: number | null
+  linked_initiative_id: string | null
+  linked_project_id: string | null
+  linked_task_id: string | null
+  status: string
+  created_at: string
+}
+
+export type SignalLinkVia = 'project' | 'task' | 'initiative'
+
+export interface ProjectSignal {
+  signal: BoardSignal
+  via: SignalLinkVia
+  /** The project's task the signal is linked to, when via === 'task'. */
+  taskId: string | null
+}
+
+const OPEN_SIGNAL_EXCLUDED = new Set(['resolved', 'dismissed'])
+
+/**
+ * The project's open signals: linked to the project itself, to one of
+ * its tasks, or to its initiative. The board asks the API for
+ * status_not=resolved,dismissed (the Radar's own filter); the status
+ * check is repeated here so the rule holds whatever the caller fetched.
+ */
+export function signalsForProject(
+  signals: BoardSignal[],
+  project: Project,
+  projectTasks: Task[],
+): ProjectSignal[] {
+  const taskIds = new Set(projectTasks.map((t) => t.id))
+  const out: ProjectSignal[] = []
+  for (const s of signals) {
+    if (OPEN_SIGNAL_EXCLUDED.has((s.status || '').toLowerCase())) continue
+    if (s.linked_project_id === project.id) {
+      out.push({ signal: s, via: 'project', taskId: null })
+    } else if (s.linked_task_id && taskIds.has(s.linked_task_id)) {
+      out.push({ signal: s, via: 'task', taskId: s.linked_task_id })
+    } else if (project.initiative_id && s.linked_initiative_id === project.initiative_id) {
+      out.push({ signal: s, via: 'initiative', taskId: null })
+    }
+  }
+  return out.sort((a, b) => a.signal.created_at.localeCompare(b.signal.created_at))
+}
+
+export interface SignalMarker {
+  /** `signal:${signal.id}` */
+  id: string
+  signal: BoardSignal
+  via: SignalLinkVia
+  taskId: string | null
+  fraction: number
+  /** Signals are REPORTED material — a circumstance someone recorded,
+   *  never a confirmed state of the work. The board never upgrades a
+   *  signal's standing. */
+  standing: 'reported'
+  kindLabel: string
+  rule: string
+}
+
+const SIGNAL_KIND_LABEL: Record<string, string> = {
+  blocker: 'Reported blocker',
+  risk: 'Reported risk',
+  opportunity: 'Reported opening',
+  attention: 'Reported circumstance',
+}
+
+export function signalKindLabel(kind: string): string {
+  return SIGNAL_KIND_LABEL[(kind || '').toLowerCase()] ?? 'Reported circumstance'
+}
+
+/**
+ * Place the project's signals on the line. A task-linked signal stands
+ * where its task stands (recorded due date, else rank — the obstacle
+ * rule). Any other signal stands at its recorded date within the span.
+ */
+export function deriveSignalMarkers(
+  projectSignals: ProjectSignal[],
+  projectTasks: Task[],
+  span: BoardSpan,
+): SignalMarker[] {
+  return projectSignals.map((ps, i) => {
+    let fraction: number
+    const task = ps.taskId ? projectTasks.find((t) => t.id === ps.taskId) : undefined
+    if (task) {
+      const due = parseDateMs(task.due_date)
+      fraction =
+        due != null
+          ? fractionForDate(span, due)
+          : (projectTasks.indexOf(task) + 1) / (projectTasks.length + 1)
+    } else {
+      const created = parseDateMs(ps.signal.created_at)
+      fraction = created != null ? fractionForDate(span, created) : (i + 1) / (projectSignals.length + 1)
+    }
+    const created = parseDateMs(ps.signal.created_at)
+    return {
+      id: `signal:${ps.signal.id}`,
+      signal: ps.signal,
+      via: ps.via,
+      taskId: ps.taskId,
+      fraction,
+      standing: 'reported' as const,
+      kindLabel: signalKindLabel(ps.signal.kind),
+      rule:
+        `A circumstance recorded as a signal${created != null ? ` on ${shortDate(new Date(created))}` : ''}` +
+        (ps.signal.source ? `, from ${ps.signal.source}` : '') +
+        '. Reported material — it has not been confirmed against the work itself.',
+    }
+  })
+}
+
+/* ------------------------------------------------------------------ */
+/* Capacity — the time-constraint picture (the Radar's computation)    */
+/* ------------------------------------------------------------------ */
+
+export interface PersonCapacity {
+  personId: string
+  name: string
+  /** Recorded weekly capacity, or null when no profile is recorded. */
+  weeklyCapacityHours: number | null
+  /** Committed hours: estimated_weekly_hours summed over the person's
+   *  Ready/Active projects (owned or supported) — derived.py's rule,
+   *  the same computation the Radar's overcapacity bucket reads. */
+  committedHours: number
+  /** committed − capacity, or null when no capacity is recorded. */
+  delta: number | null
+  /** The Radar's overcapacity condition: delta > 0. */
+  over: boolean
+  rule: string
+}
+
+function committedHoursFor(personId: string, projects: Project[]): number {
+  let active = 0
+  for (const p of projects) {
+    const status = (p.status || '').trim()
+    if (status !== 'Ready' && status !== 'Active') continue
+    if (p.owner_id === personId || (p.supporting_owner_ids ?? []).includes(personId)) {
+      active += p.estimated_weekly_hours ?? 0
+    }
+  }
+  return Math.round(active * 10) / 10
+}
+
+/**
+ * The capacity picture for the people on this project's work: its
+ * owner, its supporting owners, and the assignees of its tasks —
+ * each against ALL their committed work, because capacity is spent
+ * across projects, not inside one.
+ */
+export function deriveCapacityPicture(
+  project: Project,
+  allProjects: Project[],
+  persons: Person[],
+  profiles: CapacityProfile[],
+  projectTasks: Task[],
+): PersonCapacity[] {
+  const personIds: string[] = []
+  const add = (id: string | null | undefined) => {
+    if (id && !personIds.includes(id)) personIds.push(id)
+  }
+  add(project.owner_id)
+  for (const id of project.supporting_owner_ids ?? []) add(id)
+  for (const t of projectTasks) add(t.assignee_id)
+
+  const byId = new Map(persons.map((p) => [p.id, p]))
+  const profileByPerson = new Map(profiles.map((c) => [c.person_id, c]))
+  const out: PersonCapacity[] = []
+  for (const pid of personIds) {
+    const person = byId.get(pid)
+    if (!person) continue
+    const committed = committedHoursFor(pid, allProjects)
+    const cap = profileByPerson.get(pid)?.weekly_capacity_hours
+    const weeklyCapacityHours = cap != null ? Number(cap) : null
+    const delta = weeklyCapacityHours != null ? Math.round((committed - weeklyCapacityHours) * 10) / 10 : null
+    const over = delta != null && delta > 0
+    out.push({
+      personId: pid,
+      name: person.name,
+      weeklyCapacityHours,
+      committedHours: committed,
+      delta,
+      over,
+      rule: over
+        ? `Committed work totals ${committed}h a week across Ready/Active projects ${person.name} owns or supports, against a recorded capacity of ${weeklyCapacityHours}h — the overcapacity condition the Radar watches for.`
+        : weeklyCapacityHours != null
+          ? `Committed work totals ${committed}h a week across Ready/Active projects ${person.name} owns or supports, within a recorded capacity of ${weeklyCapacityHours}h.`
+          : `Committed work totals ${committed}h a week across Ready/Active projects ${person.name} owns or supports. No weekly capacity is recorded, so no overcapacity judgement is made.`,
+    })
+  }
+  return out.sort((a, b) => Number(b.over) - Number(a.over) || a.name.localeCompare(b.name))
+}
+
+/* ------------------------------------------------------------------ */
+/* Declarations — Rivers and Holds (PROVISIONAL, session-local)        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Declarations are the user's own fixings of the terrain (founder
+ * doctrine 2026-11-17: terrain is derived, conversed, and DECLARED).
+ * They are provisional interface state: held in the board session
+ * only, stored in no record, and withdrawable at any time. The
+ * declaration-binding standard that would persist them is deferred.
+ */
+
+export interface RiverDeclaration {
+  id: string
+  projectId: string
+  /** Where the declaration came from: a signal the user declared a
+   *  River, or a window the user chose directly. */
+  source:
+    | { type: 'signal'; signalId: string; signalTitle: string }
+    | { type: 'window' }
+  startMs: number
+  endMs: number
+}
+
+export interface HoldDeclaration {
+  id: string
+  projectId: string
+  fraction: number
+}
+
+/** Default length of a freshly declared river window. */
+export const RIVER_DEFAULT_DAYS = 3
+
+function startOfDayMs(ms: number): number {
+  const d = new Date(ms)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/** Declare a River from a signal: the window opens on the signal's
+ *  recorded date and runs RIVER_DEFAULT_DAYS — the user can re-window
+ *  it afterwards from the river's own popup. */
+export function createRiverFromSignal(
+  id: string,
+  projectId: string,
+  signal: BoardSignal,
+  span: BoardSpan,
+): RiverDeclaration {
+  const created = parseDateMs(signal.created_at)
+  const startMs = created != null ? startOfDayMs(created) : startOfDayMs(dateAtFraction(span, 0.5).getTime())
+  return {
+    id,
+    projectId,
+    source: { type: 'signal', signalId: signal.id, signalTitle: signal.title },
+    startMs,
+    endMs: startMs + RIVER_DEFAULT_DAYS * DAY_MS,
+  }
+}
+
+/** Declare a River by choosing a window directly: opens mid-span at
+ *  the default length, ready to be re-windowed from its popup. */
+export function createRiverWindow(id: string, projectId: string, span: BoardSpan): RiverDeclaration {
+  const startMs = startOfDayMs(dateAtFraction(span, 0.45).getTime())
+  return {
+    id,
+    projectId,
+    source: { type: 'window' },
+    startMs,
+    endMs: startMs + RIVER_DEFAULT_DAYS * DAY_MS,
+  }
+}
+
+export function setRiverWindow(
+  rivers: RiverDeclaration[],
+  id: string,
+  startMs: number,
+  endMs: number,
+): RiverDeclaration[] {
+  if (!(endMs > startMs)) return rivers
+  return rivers.map((r) => (r.id === id ? { ...r, startMs, endMs } : r))
+}
+
+export function withdrawRiver(rivers: RiverDeclaration[], id: string): RiverDeclaration[] {
+  return rivers.filter((r) => r.id !== id)
+}
+
+/** The river's band on the line: span fractions for its window,
+ *  always wide enough to see and to tap. */
+export function riverBand(
+  span: BoardSpan,
+  river: RiverDeclaration,
+): { startFraction: number; endFraction: number } {
+  const raw = (ms: number) => (ms - span.startMs) / (span.endMs - span.startMs)
+  let start = Math.min(0.97, Math.max(0.01, raw(river.startMs)))
+  let end = Math.min(0.99, Math.max(0.03, raw(river.endMs)))
+  if (end - start < 0.02) end = Math.min(0.99, start + 0.02)
+  return { startFraction: start, endFraction: end }
+}
+
+export function createHold(id: string, projectId: string, fraction = 0.5): HoldDeclaration {
+  return { id, projectId, fraction: Math.min(0.98, Math.max(0.02, fraction)) }
+}
+
+export function moveHold(holds: HoldDeclaration[], id: string, fraction: number): HoldDeclaration[] {
+  const clamped = Math.min(0.98, Math.max(0.02, fraction))
+  return holds.map((h) => (h.id === id ? { ...h, fraction: clamped } : h))
+}
+
+export function removeHold(holds: HoldDeclaration[], id: string): HoldDeclaration[] {
+  return holds.filter((h) => h.id !== id)
 }

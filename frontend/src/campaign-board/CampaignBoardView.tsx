@@ -6,9 +6,14 @@
  * time span (scale key on the map); clicking a route opens the focus
  * board — declared terrain, two speculative routes over the project's
  * recorded tasks, movable waypoints whose position IS the task's due
- * date, and obstacles classified from the record. Date writes go
- * through the existing VE PATCH endpoints only; routes themselves are
- * provisional arrangements and are stored nowhere.
+ * date, and obstacles classified from the record. The focus board also
+ * draws the project's reported circumstances (its linked open signals,
+ * standing: reported — never upgraded to confirmed) and the capacity
+ * load of the people on the work (the Radar's overcapacity rule).
+ * Rivers and Holds are the user's own terrain declarations —
+ * provisional, session-local, withdrawable, stored nowhere. Date
+ * writes go through the existing VE PATCH endpoints only; routes
+ * themselves are provisional arrangements and are stored nowhere.
  *
  * Talk is the existing council conversation, locked onto no one but
  * opened with Valen (champion), carrying the focused project/task as
@@ -25,17 +30,33 @@ import {
   buildOverview,
   buildRoutes,
   computePxPerDay,
+  createHold,
+  createRiverFromSignal,
+  createRiverWindow,
   dateAtFraction,
   declareTerrain,
+  deriveCapacityPicture,
   deriveObstacles,
+  deriveSignalMarkers,
   fullDate,
+  moveHold,
   obstacleDomainLabel,
   parseDateMs,
   projectSpan,
+  removeHold,
+  riverBand,
+  setRiverWindow,
   shortDate,
+  signalsForProject,
   toLocalDateTimeString,
+  withdrawRiver,
   type BoardObstacle,
+  type BoardSignal,
   type BoardWaypoint,
+  type HoldDeclaration,
+  type PersonCapacity,
+  type RiverDeclaration,
+  type SignalMarker,
   type TerrainFeature,
 } from './boardLogic'
 
@@ -56,6 +77,10 @@ type Selection =
   | { kind: 'waypoint'; taskId: string }
   | { kind: 'obstacle'; obstacleId: string }
   | { kind: 'terrain'; feature: TerrainFeature }
+  | { kind: 'signal'; signalId: string }
+  | { kind: 'river'; riverId: string }
+  | { kind: 'hold'; holdId: string }
+  | { kind: 'capacity'; personId: string }
   | { kind: 'finish' }
   | { kind: 'start' }
   | null
@@ -108,6 +133,14 @@ export default function CampaignBoardView() {
   const [drag, setDrag] = useState<{ taskId: string; fraction: number; moved: boolean } | null>(null)
   const [writeError, setWriteError] = useState<string | null>(null)
   const [dateInput, setDateInput] = useState<string>('')
+  // River/Hold declarations — PROVISIONAL, session-local terrain
+  // fixings (founder doctrine: terrain is also fixed by the user's
+  // declaration). Held in component state only: no record is written,
+  // nothing persists past the session, and every declaration can be
+  // withdrawn. The declaration-binding standard is deferred.
+  const [rivers, setRivers] = useState<RiverDeclaration[]>([])
+  const [holds, setHolds] = useState<HoldDeclaration[]>([])
+  const declSeq = useRef(0)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dragStart = useRef<{ x: number; taskId: string } | null>(null)
 
@@ -136,6 +169,7 @@ export default function CampaignBoardView() {
     if (!project) return null
     const projectTasks = entities.tasks.filter((t) => t.project_id === project.id)
     const span = projectSpan(project, projectTasks, nowMs)
+    const projectSignals = signalsForProject(entities.signals, project, projectTasks)
     return {
       project,
       projectTasks,
@@ -144,8 +178,49 @@ export default function CampaignBoardView() {
       terrain: declareTerrain(projectTasks),
       routes: buildRoutes(projectTasks, span),
       initiative: entities.initiatives.find((i) => i.id === project.initiative_id) ?? null,
+      signalMarkers: deriveSignalMarkers(projectSignals, projectTasks, span),
+      capacity: deriveCapacityPicture(
+        project,
+        entities.projects,
+        entities.persons,
+        entities.capacityProfiles,
+        projectTasks,
+      ),
+      rivers: rivers.filter((r) => r.projectId === project.id),
+      holds: holds.filter((h) => h.projectId === project.id),
     }
-  }, [entities, focusId, nowMs])
+  }, [entities, focusId, nowMs, rivers, holds])
+
+  /* --------------------- declarations (provisional) --------------------- */
+
+  const nextDeclId = useCallback((prefix: string) => {
+    declSeq.current += 1
+    return `${prefix}-${declSeq.current}`
+  }, [])
+
+  const declareRiverFromSignal = useCallback(
+    (signal: BoardSignal) => {
+      if (!focus) return
+      const river = createRiverFromSignal(nextDeclId('river'), focus.project.id, signal, focus.span)
+      setRivers((prev) => [...prev, river])
+      setSelection({ kind: 'river', riverId: river.id })
+    },
+    [focus, nextDeclId],
+  )
+
+  const declareRiverWindow = useCallback(() => {
+    if (!focus) return
+    const river = createRiverWindow(nextDeclId('river'), focus.project.id, focus.span)
+    setRivers((prev) => [...prev, river])
+    setSelection({ kind: 'river', riverId: river.id })
+  }, [focus, nextDeclId])
+
+  const placeHold = useCallback(() => {
+    if (!focus) return
+    const hold = createHold(nextDeclId('hold'), focus.project.id)
+    setHolds((prev) => [...prev, hold])
+    setSelection({ kind: 'hold', holdId: hold.id })
+  }, [focus, nextDeclId])
 
   const applyTask = useCallback((updated: Task) => {
     setEntities((prev) =>
@@ -231,7 +306,13 @@ export default function CampaignBoardView() {
         ? (focus?.obstacles.find((o) => o.id === selection.obstacleId)?.taskId ?? null)
         : selection?.kind === 'terrain'
           ? selection.feature.taskId
-          : null
+          : selection?.kind === 'signal'
+            ? // A signal selection grounds the conversation on the record
+              // the signal points at (its linked task), through the same
+              // entity seam — the circumstance's own wording rides the
+              // map popup; the seam carries recorded entities only.
+              (focus?.signalMarkers.find((m) => m.signal.id === selection.signalId)?.taskId ?? null)
+            : null
 
   const conversationId = focus ? `campaign-board:project:${focus.project.id}` : 'campaign-board:overview'
   const chatContext: Record<string, unknown> = focus
@@ -288,6 +369,21 @@ export default function CampaignBoardView() {
             onCommitDueDate={(taskId, v) => void commitDueDate(taskId, v)}
             onCommitProjectDate={(field, v) => void commitProjectDate(field, v)}
             writeError={writeError}
+            onDeclareRiverFromSignal={declareRiverFromSignal}
+            onDeclareRiverWindow={declareRiverWindow}
+            onPlaceHold={placeHold}
+            onSetRiverWindow={(id, startMs, endMs) =>
+              setRivers((prev) => setRiverWindow(prev, id, startMs, endMs))
+            }
+            onWithdrawRiver={(id) => {
+              setRivers((prev) => withdrawRiver(prev, id))
+              setSelection(null)
+            }}
+            onMoveHold={(id, fraction) => setHolds((prev) => moveHold(prev, id, fraction))}
+            onRemoveHold={(id) => {
+              setHolds((prev) => removeHold(prev, id))
+              setSelection(null)
+            }}
           />
         ) : (
           <OverviewBoard overview={overview} onFocus={(id) => { setFocusId(id); setSelection(null) }} />
@@ -422,6 +518,17 @@ type FocusData = {
   terrain: TerrainFeature[]
   routes: ReturnType<typeof buildRoutes>
   initiative: { id: string; title: string } | null
+  signalMarkers: SignalMarker[]
+  capacity: PersonCapacity[]
+  rivers: RiverDeclaration[]
+  holds: HoldDeclaration[]
+}
+
+const SIGNAL_COLORS: Record<string, string> = {
+  blocker: '#8c2e1e',
+  risk: '#a8741a',
+  opportunity: '#54683f',
+  attention: '#46617e',
 }
 
 function FocusBoard({
@@ -439,6 +546,13 @@ function FocusBoard({
   onCommitDueDate,
   onCommitProjectDate,
   writeError,
+  onDeclareRiverFromSignal,
+  onDeclareRiverWindow,
+  onPlaceHold,
+  onSetRiverWindow,
+  onWithdrawRiver,
+  onMoveHold,
+  onRemoveHold,
 }: {
   focus: FocusData
   selection: Selection
@@ -454,8 +568,26 @@ function FocusBoard({
   onCommitDueDate: (taskId: string, v: string) => void
   onCommitProjectDate: (field: 'start_date' | 'end_date', v: string) => void
   writeError: string | null
+  onDeclareRiverFromSignal: (signal: BoardSignal) => void
+  onDeclareRiverWindow: () => void
+  onPlaceHold: () => void
+  onSetRiverWindow: (id: string, startMs: number, endMs: number) => void
+  onWithdrawRiver: (id: string) => void
+  onMoveHold: (id: string, fraction: number) => void
+  onRemoveHold: (id: string) => void
 }) {
-  const { project, span, obstacles, terrain, routes } = focus
+  const { project, span, obstacles, terrain, routes, signalMarkers, capacity, rivers, holds } = focus
+  // Hold dragging is a local gesture over session state — the override
+  // lives here; the committed fraction goes up on release.
+  const [holdDrag, setHoldDrag] = useState<{ holdId: string; fraction: number } | null>(null)
+  const holdFraction = (h: HoldDeclaration): number =>
+    holdDrag && holdDrag.holdId === h.id ? holdDrag.fraction : h.fraction
+  const svgLocalX = (clientX: number): number => {
+    const svg = (svgRef as React.RefObject<SVGSVGElement | null>)?.current
+    if (!svg) return 0
+    const rect = svg.getBoundingClientRect()
+    return ((clientX - rect.left) / rect.width) * MAP_W
+  }
   const dragOverride = drag ? { taskId: drag.taskId, fraction: drag.fraction } : null
   const aPts = routePoints(routes.a.filter((w) => !w.done), ROUTE_A_Y, dragOverride)
   const bPts = routePoints(routes.b, ROUTE_B_Y, dragOverride)
@@ -495,6 +627,22 @@ function FocusBoard({
           {focus.initiative ? `${focus.initiative.title} · ` : ''}
           {shortDate(new Date(span.startMs))} – {shortDate(new Date(span.endMs))}
           {span.source === 'provisional' ? ' · dates not recorded yet' : ''}
+        </span>
+        <span className="flex items-center gap-2 ml-auto">
+          <button
+            type="button"
+            onClick={onDeclareRiverWindow}
+            className="min-h-[40px] px-3 rounded-full border border-stone-600 text-stone-200 text-sm hover:bg-stone-800"
+          >
+            ＋ River
+          </button>
+          <button
+            type="button"
+            onClick={onPlaceHold}
+            className="min-h-[40px] px-3 rounded-full border border-stone-600 text-stone-200 text-sm hover:bg-stone-800"
+          >
+            ＋ Hold
+          </button>
         </span>
       </div>
 
@@ -564,6 +712,40 @@ function FocusBoard({
             )
           })}
 
+          {/* declared rivers — user-fixed immovable windows crossing the line */}
+          {rivers.map((river) => {
+            const band = riverBand(span, river)
+            const bx0 = xForFraction(band.startFraction)
+            const bx1 = xForFraction(band.endFraction)
+            const top = ROUTE_A_Y - 62
+            const bottom = ROUTE_B_Y + 58
+            return (
+              <g
+                key={river.id}
+                style={{ cursor: 'pointer' }}
+                onClick={() => setSelection({ kind: 'river', riverId: river.id })}
+              >
+                <rect x={bx0} y={top} width={Math.max(10, bx1 - bx0)} height={bottom - top} fill="#7fa8b8" opacity="0.38" />
+                {[0.22, 0.5, 0.78].map((t) => {
+                  const wx = bx0 + (bx1 - bx0) * t
+                  return (
+                    <path
+                      key={t}
+                      d={`M ${wx} ${top} q 5 ${(bottom - top) / 4} 0 ${(bottom - top) / 2} q -5 ${(bottom - top) / 4} 0 ${(bottom - top) / 2}`}
+                      fill="none"
+                      stroke="#4a7d94"
+                      strokeWidth="1.8"
+                      opacity="0.8"
+                    />
+                  )
+                })}
+                <text x={(bx0 + bx1) / 2} y={top - 8} textAnchor="middle" fontSize="11" fontWeight="600" fill="#33617a">
+                  The River
+                </text>
+              </g>
+            )
+          })}
+
           {/* routes — speculative arrangements of the recorded steps */}
           <path d={smoothPath(aPts)} fill="none" stroke="#7a3b2e" strokeWidth="2.6" strokeLinecap="round" strokeDasharray="0.5 8" opacity="0.95" />
           <path d={smoothPath(bPts)} fill="none" stroke="#33655f" strokeWidth="2.6" strokeLinecap="round" strokeDasharray="0.5 8" opacity="0.95" />
@@ -614,6 +796,54 @@ function FocusBoard({
               </g>
             )
           })}
+
+          {/* signals — reported circumstances standing above the line */}
+          {signalMarkers.map((m) => {
+            const x = xForFraction(m.fraction)
+            const color = SIGNAL_COLORS[(m.signal.kind || '').toLowerCase()] ?? '#46617e'
+            const title =
+              m.signal.title.length > 24 ? `${m.signal.title.slice(0, 23)}…` : m.signal.title
+            return (
+              <g
+                key={m.id}
+                transform={`translate(${x},${MID_Y - 44})`}
+                style={{ cursor: 'pointer' }}
+                onClick={() => setSelection({ kind: 'signal', signalId: m.signal.id })}
+              >
+                <circle r="15" fill="transparent" />
+                <line x1="0" y1="10" x2="0" y2="-8" stroke={color} strokeWidth="2" />
+                <path d="M0 -8 L13 -4.5 L0 -1 Z" fill={color} />
+                <text y="-14" textAnchor="middle" fontSize="10.5" fontWeight="600" fill={color} style={{ pointerEvents: 'none' }}>
+                  {m.kindLabel}
+                </text>
+                <text y="24" textAnchor="middle" fontSize="10" fill={INK} style={{ pointerEvents: 'none' }}>
+                  {title}
+                </text>
+              </g>
+            )
+          })}
+
+          {/* capacity — the load the people on this work are carrying */}
+          {capacity
+            .filter((c) => c.weeklyCapacityHours != null)
+            .map((c, i) => {
+              const x = X0 + 6 + i * 118
+              const label = `${c.committedHours}/${c.weeklyCapacityHours}h`
+              return (
+                <g
+                  key={c.personId}
+                  transform={`translate(${x},34)`}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setSelection({ kind: 'capacity', personId: c.personId })}
+                >
+                  <rect x="-4" y="-13" width="106" height="24" rx="12" fill={c.over ? '#f3d9cf' : '#e7dfc8'} stroke={c.over ? EMBER : '#9a7b24'} strokeWidth="1.2" />
+                  <text x="6" y="4" fontSize="10.5" fontWeight="600" fill={c.over ? '#8c2e1e' : INK} style={{ pointerEvents: 'none' }}>
+                    {c.name.split(' ')[0]} · {label}
+                    {c.over ? ' · over' : ''}
+                  </text>
+                </g>
+              )
+            })}
 
           {/* start camp + finish banner */}
           <g transform={`translate(${X0},${MID_Y})`} style={{ cursor: 'pointer' }} onClick={() => openEndpoint('start')}>
@@ -669,6 +899,49 @@ function FocusBoard({
             )
           })}
 
+          {/* holds — user-placed review checkpoints, draggable on the line */}
+          {holds.map((h) => {
+            const f = holdFraction(h)
+            const x = xForFraction(f)
+            return (
+              <g
+                key={h.id}
+                transform={`translate(${x},${MID_Y})`}
+                style={{ cursor: 'grab', touchAction: 'none' }}
+                onPointerDown={(e) => {
+                  ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+                  setHoldDrag({ holdId: h.id, fraction: f })
+                }}
+                onPointerMove={(e) => {
+                  if (holdDrag && holdDrag.holdId === h.id) {
+                    setHoldDrag({ holdId: h.id, fraction: fractionForX(svgLocalX(e.clientX)) })
+                  }
+                }}
+                onPointerUp={() => {
+                  if (holdDrag && holdDrag.holdId === h.id) {
+                    onMoveHold(h.id, holdDrag.fraction)
+                    setHoldDrag(null)
+                    setSelection({ kind: 'hold', holdId: h.id })
+                  }
+                }}
+                onClick={() => setSelection({ kind: 'hold', holdId: h.id })}
+              >
+                <circle r="17" fill="transparent" />
+                <line x1="0" y1="8" x2="0" y2="-16" stroke="#6b5133" strokeWidth="2.2" />
+                <path d="M0 -16 L14 -12.5 L0 -9 Z" fill="#a8741a" />
+                <ellipse cx="-5" cy="10" rx="7" ry="3.4" fill="#8d8574" stroke="#5f594c" strokeWidth="0.8" />
+                <ellipse cx="5" cy="10" rx="7" ry="3.4" fill="#9a927f" stroke="#5f594c" strokeWidth="0.8" />
+                <ellipse cx="0" cy="6.5" rx="5.5" ry="3" fill="#a39a86" stroke="#5f594c" strokeWidth="0.8" />
+                <text y="30" textAnchor="middle" fontSize="10.5" fontWeight="600" fill="#7a5a12" style={{ pointerEvents: 'none' }}>
+                  Hold
+                </text>
+                <text y="43" textAnchor="middle" fontSize="10" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
+                  {shortDate(dateAtFraction(span, f))}
+                </text>
+              </g>
+            )
+          })}
+
           {/* drag chip — the projected delivery date while stretching a node */}
           {drag && (
             <g transform={`translate(${xForFraction(drag.fraction)},${ROUTE_A_Y - 84})`} pointerEvents="none">
@@ -697,6 +970,10 @@ function FocusBoard({
             onCommitProjectDate={onCommitProjectDate}
             onOpenWaypoint={openWaypoint}
             writeError={writeError}
+            onDeclareRiverFromSignal={onDeclareRiverFromSignal}
+            onSetRiverWindow={onSetRiverWindow}
+            onWithdrawRiver={onWithdrawRiver}
+            onRemoveHold={onRemoveHold}
           />
         )}
       </div>
@@ -740,6 +1017,10 @@ function FocusPopup({
   onCommitProjectDate,
   onOpenWaypoint,
   writeError,
+  onDeclareRiverFromSignal,
+  onSetRiverWindow,
+  onWithdrawRiver,
+  onRemoveHold,
 }: {
   focus: FocusData
   selection: Exclude<Selection, null>
@@ -750,9 +1031,24 @@ function FocusPopup({
   onCommitProjectDate: (field: 'start_date' | 'end_date', v: string) => void
   onOpenWaypoint: (taskId: string) => void
   writeError: string | null
+  onDeclareRiverFromSignal: (signal: BoardSignal) => void
+  onSetRiverWindow: (id: string, startMs: number, endMs: number) => void
+  onWithdrawRiver: (id: string) => void
+  onRemoveHold: (id: string) => void
 }) {
   const { project, span, projectTasks } = focus
   const taskById = new Map(projectTasks.map((t) => [t.id, t]))
+  // River window editing — local form state, re-seeded per river.
+  const [riverStart, setRiverStart] = useState('')
+  const [riverEnd, setRiverEnd] = useState('')
+  const riverForForm = selection.kind === 'river' ? focus.rivers.find((r) => r.id === selection.riverId) : undefined
+  useEffect(() => {
+    if (riverForForm) {
+      setRiverStart(toLocalDateTimeString(new Date(riverForForm.startMs)))
+      setRiverEnd(toLocalDateTimeString(new Date(riverForForm.endMs)))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [riverForForm?.id])
 
   let title = ''
   let body: React.ReactNode = null
@@ -831,6 +1127,134 @@ function FocusPopup({
         <p className="text-stone-400">{f.rule}</p>
       </>
     )
+  } else if (selection.kind === 'signal') {
+    const m = focus.signalMarkers.find((x) => x.signal.id === selection.signalId)
+    if (m) {
+      const s = m.signal
+      const created = parseDateMs(s.created_at)
+      title = `${m.kindLabel} — ${s.title}`
+      body = (
+        <>
+          <p className="text-stone-300">Circumstance · standing: reported</p>
+          <p className="text-stone-400">{m.rule}</p>
+          {s.detail && <p className="text-stone-400">{s.detail}</p>}
+          {s.source_excerpt && <p className="text-stone-400">“{s.source_excerpt}”</p>}
+          <p className="text-stone-500 text-xs">
+            {s.source ? `Source: ${s.source}` : 'Source not recorded'}
+            {created != null ? ` · recorded ${fullDate(new Date(created))}` : ''}
+            {s.confidence != null ? ` · confidence ${s.confidence}` : ''}
+            {m.via === 'task' ? ' · linked to a step on this line' : m.via === 'initiative' ? ' · linked to the initiative' : ' · linked to this project'}
+          </p>
+          <div className="flex items-center gap-2 pt-1 flex-wrap">
+            {m.taskId && (
+              <button
+                type="button"
+                onClick={() => onOpenWaypoint(m.taskId as string)}
+                className="min-h-[36px] px-3 rounded-full border border-stone-500 text-stone-100 text-sm"
+              >
+                Open the step
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onDeclareRiverFromSignal(s)}
+              className="min-h-[36px] px-3 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
+            >
+              Declare a River
+            </button>
+          </div>
+        </>
+      )
+    }
+  } else if (selection.kind === 'river') {
+    const river = focus.rivers.find((r) => r.id === selection.riverId)
+    if (river) {
+      title = 'The River'
+      body = (
+        <>
+          <p className="text-stone-300">
+            {river.source.type === 'signal'
+              ? `Declared from signal: “${river.source.signalTitle}”`
+              : `Declared window: ${shortDate(new Date(river.startMs))} – ${shortDate(new Date(river.endMs))}`}
+          </p>
+          {river.source.type === 'signal' && (
+            <p className="text-stone-400">
+              Window: {shortDate(new Date(river.startMs))} – {shortDate(new Date(river.endMs))}. An
+              immovable window, fixed by your declaration.
+            </p>
+          )}
+          <div className="flex items-center gap-2 pt-1 flex-wrap">
+            <input
+              type="datetime-local"
+              value={riverStart}
+              onChange={(e) => setRiverStart(e.target.value)}
+              className="bg-stone-950 border border-stone-600 rounded-lg px-2 py-1.5 text-sm text-stone-100"
+              aria-label="River window opens"
+            />
+            <input
+              type="datetime-local"
+              value={riverEnd}
+              onChange={(e) => setRiverEnd(e.target.value)}
+              className="bg-stone-950 border border-stone-600 rounded-lg px-2 py-1.5 text-sm text-stone-100"
+              aria-label="River window closes"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const sMs = parseDateMs(riverStart)
+                const eMs = parseDateMs(riverEnd)
+                if (sMs != null && eMs != null && eMs > sMs) onSetRiverWindow(river.id, sMs, eMs)
+              }}
+              className="min-h-[36px] px-3 rounded-full bg-amber-600 text-amber-50 text-sm font-semibold"
+            >
+              Set window
+            </button>
+            <button
+              type="button"
+              onClick={() => onWithdrawRiver(river.id)}
+              className="min-h-[36px] px-3 rounded-full border border-stone-500 text-stone-100 text-sm"
+            >
+              Withdraw declaration
+            </button>
+          </div>
+        </>
+      )
+    }
+  } else if (selection.kind === 'hold') {
+    const hold = focus.holds.find((h) => h.id === selection.holdId)
+    if (hold) {
+      title = 'Hold'
+      body = (
+        <>
+          <p className="text-stone-300">
+            A review checkpoint placed by you, standing at{' '}
+            {fullDate(dateAtFraction(span, hold.fraction))}. Drag it along the line to move it.
+          </p>
+          <button
+            type="button"
+            onClick={() => onRemoveHold(hold.id)}
+            className="min-h-[36px] px-3 rounded-full border border-stone-500 text-stone-100 text-sm"
+          >
+            Remove hold
+          </button>
+        </>
+      )
+    }
+  } else if (selection.kind === 'capacity') {
+    const c = focus.capacity.find((x) => x.personId === selection.personId)
+    if (c) {
+      title = `${c.name} — the load`
+      body = (
+        <>
+          <p className="text-stone-300">
+            {c.committedHours}h a week committed
+            {c.weeklyCapacityHours != null ? ` against ${c.weeklyCapacityHours}h recorded capacity` : ''}
+            {c.over ? ` — ${c.delta}h over.` : '.'}
+          </p>
+          <p className="text-stone-400">{c.rule}</p>
+        </>
+      )
+    }
   } else if (selection.kind === 'finish' || selection.kind === 'start') {
     const isFinish = selection.kind === 'finish'
     const recorded = isFinish ? project.end_date : project.start_date

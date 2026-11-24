@@ -1,14 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import type { Project, Task } from '../vision-execution/types'
+import type { CapacityProfile, Person, Project, Task } from '../vision-execution/types'
 import {
   buildOverview,
   buildRoutes,
   computePxPerDay,
+  createHold,
+  createRiverFromSignal,
+  createRiverWindow,
   dateAtFraction,
   declareTerrain,
+  deriveCapacityPicture,
   deriveObstacles,
+  deriveSignalMarkers,
   fractionForDate,
+  moveHold,
   projectSpan,
+  removeHold,
+  riverBand,
+  setRiverWindow,
+  signalsForProject,
+  withdrawRiver,
+  type BoardSignal,
 } from './boardLogic'
 
 const NOW = new Date('2026-06-15T12:00:00').getTime()
@@ -206,6 +218,191 @@ describe('buildRoutes', () => {
     expect(aOpen?.fraction).toBeGreaterThan(0)
     expect(a.find((w) => w.task.id === 'done')?.done).toBe(true)
     expect(b.map((w) => w.task.id)).toEqual(['open'])
+  })
+})
+
+function person(partial: Partial<Person>): Person {
+  return {
+    id: 'per1',
+    name: 'Pat Printer',
+    role: '',
+    relationship_type: '',
+    contact_info: '',
+    strengths: '',
+    needs: '',
+    wants: '',
+    availability: '',
+    notes: '',
+    created_at: '2026-01-01T00:00:00',
+    updated_at: '2026-01-01T00:00:00',
+    ...partial,
+  }
+}
+
+function profile(partial: Partial<CapacityProfile>): CapacityProfile {
+  return {
+    person_id: 'per1',
+    weekly_capacity_hours: 10,
+    created_at: '2026-01-01T00:00:00',
+    updated_at: '2026-01-01T00:00:00',
+    ...partial,
+  }
+}
+
+function signal(partial: Partial<BoardSignal>): BoardSignal {
+  return {
+    id: 's1',
+    kind: 'blocker',
+    title: 'Venue closed for repairs',
+    detail: 'The hall is shut until the roof is fixed.',
+    source: 'meeting extraction',
+    source_excerpt: 'venue is closed for repairs',
+    confidence: null,
+    linked_initiative_id: null,
+    linked_project_id: null,
+    linked_task_id: null,
+    status: 'new',
+    created_at: '2026-06-10T09:00:00',
+    ...partial,
+  }
+}
+
+describe('signalsForProject', () => {
+  const proj = project({ id: 'p1', initiative_id: 'i1' })
+  const tasks = [task({ id: 't1' }), task({ id: 't2' })]
+
+  it('collects signals linked to the project, its tasks, and its initiative', () => {
+    const found = signalsForProject(
+      [
+        signal({ id: 'a', linked_project_id: 'p1' }),
+        signal({ id: 'b', linked_task_id: 't2' }),
+        signal({ id: 'c', linked_initiative_id: 'i1' }),
+      ],
+      proj,
+      tasks,
+    )
+    expect(found.map((f) => [f.signal.id, f.via, f.taskId])).toEqual([
+      ['a', 'project', null],
+      ['b', 'task', 't2'],
+      ['c', 'initiative', null],
+    ])
+  })
+
+  it('excludes resolved/dismissed signals and other projects’ signals', () => {
+    const found = signalsForProject(
+      [
+        signal({ id: 'a', linked_project_id: 'p1', status: 'resolved' }),
+        signal({ id: 'b', linked_project_id: 'p1', status: 'dismissed' }),
+        signal({ id: 'c', linked_project_id: 'p2' }),
+        signal({ id: 'd', linked_task_id: 'elsewhere' }),
+        signal({ id: 'e', linked_project_id: 'p1', status: 'acknowledged' }),
+      ],
+      proj,
+      tasks,
+    )
+    expect(found.map((f) => f.signal.id)).toEqual(['e'])
+  })
+})
+
+describe('deriveSignalMarkers', () => {
+  const span = projectSpan(project({ start_date: '2026-06-01', end_date: '2026-06-30' }), [], NOW)
+
+  it('stands a task-linked signal where its task stands, at reported standing', () => {
+    const t = task({ id: 't1', due_date: '2026-06-16' })
+    const markers = deriveSignalMarkers(
+      [{ signal: signal({ linked_task_id: 't1' }), via: 'task', taskId: 't1' }],
+      [t],
+      span,
+    )
+    expect(markers).toHaveLength(1)
+    expect(markers[0].fraction).toBeCloseTo(fractionForDate(span, new Date('2026-06-16').getTime()), 5)
+    expect(markers[0].standing).toBe('reported')
+    expect(markers[0].kindLabel).toBe('Reported blocker')
+    expect(markers[0].taskId).toBe('t1')
+  })
+
+  it('stands a project-linked signal at its recorded date in the span', () => {
+    const markers = deriveSignalMarkers(
+      [{ signal: signal({ created_at: '2026-06-10T09:00:00' }), via: 'project', taskId: null }],
+      [],
+      span,
+    )
+    expect(markers[0].fraction).toBeCloseTo(
+      fractionForDate(span, new Date('2026-06-10T09:00:00').getTime()),
+      5,
+    )
+    expect(markers[0].rule).toContain('Reported material')
+  })
+})
+
+describe('deriveCapacityPicture', () => {
+  it('sums committed hours over Ready/Active work owned or supported — the Radar rule', () => {
+    const mine = project({ id: 'p1', owner_id: 'per1', estimated_weekly_hours: 14 })
+    const supported = project({ id: 'p2', supporting_owner_ids: ['per1'], estimated_weekly_hours: 3, status: 'Ready' })
+    const parked = project({ id: 'p3', owner_id: 'per1', estimated_weekly_hours: 40, status: 'Parked' })
+    const picture = deriveCapacityPicture(mine, [mine, supported, parked], [person({})], [profile({})], [])
+    expect(picture).toHaveLength(1)
+    expect(picture[0].committedHours).toBe(17)
+    expect(picture[0].weeklyCapacityHours).toBe(10)
+    expect(picture[0].delta).toBe(7)
+    expect(picture[0].over).toBe(true)
+  })
+
+  it('includes task assignees as people on the work, and stays unjudged without a profile', () => {
+    // The assignee stands on this project's work, but committed hours
+    // follow the Radar rule — projects owned or supported (here: a
+    // supported project elsewhere), never mere task assignment.
+    const proj = project({ id: 'p1', estimated_weekly_hours: 5 })
+    const elsewhere = project({ id: 'p9', supporting_owner_ids: ['per1'], estimated_weekly_hours: 5 })
+    const t = task({ assignee_id: 'per1' })
+    const picture = deriveCapacityPicture(proj, [proj, elsewhere], [person({})], [], [t])
+    expect(picture).toHaveLength(1)
+    expect(picture[0].committedHours).toBe(5)
+    expect(picture[0].weeklyCapacityHours).toBeNull()
+    expect(picture[0].delta).toBeNull()
+    expect(picture[0].over).toBe(false)
+    expect(picture[0].rule).toContain('No weekly capacity is recorded')
+  })
+
+  it('does not fire overcapacity within capacity', () => {
+    const proj = project({ id: 'p1', owner_id: 'per1', estimated_weekly_hours: 6 })
+    const picture = deriveCapacityPicture(proj, [proj], [person({})], [profile({})], [])
+    expect(picture[0].over).toBe(false)
+    expect(picture[0].delta).toBe(-4)
+  })
+})
+
+describe('river + hold declarations', () => {
+  const span = projectSpan(project({ start_date: '2026-06-01', end_date: '2026-06-30' }), [], NOW)
+
+  it('declares a river from a signal: window opens on the recorded date, default length', () => {
+    const river = createRiverFromSignal('river-1', 'p1', signal({}), span)
+    expect(river.source).toEqual({ type: 'signal', signalId: 's1', signalTitle: 'Venue closed for repairs' })
+    expect(new Date(river.startMs).getDate()).toBe(10)
+    expect((river.endMs - river.startMs) / 86_400_000).toBe(3)
+    const band = riverBand(span, river)
+    expect(band.startFraction).toBeCloseTo(9 / 29, 2)
+    expect(band.endFraction).toBeCloseTo(12 / 29, 2)
+    expect(band.endFraction).toBeGreaterThan(band.startFraction)
+  })
+
+  it('declares a river window directly, mid-span, and re-windows or withdraws it', () => {
+    const river = createRiverWindow('river-2', 'p1', span)
+    expect(river.source).toEqual({ type: 'window' })
+    const moved = setRiverWindow([river], 'river-2', river.startMs + 86_400_000, river.endMs + 86_400_000)
+    expect(moved[0].startMs).toBe(river.startMs + 86_400_000)
+    // An inverted window is refused, not stored.
+    expect(setRiverWindow([river], 'river-2', river.endMs, river.startMs)).toEqual([river])
+    expect(withdrawRiver(moved, 'river-2')).toHaveLength(0)
+  })
+
+  it('places a hold, moves it clamped to the line, and removes it', () => {
+    const hold = createHold('hold-1', 'p1')
+    expect(hold.fraction).toBe(0.5)
+    const moved = moveHold([hold], 'hold-1', 1.7)
+    expect(moved[0].fraction).toBe(0.98)
+    expect(moveHold([hold], 'hold-1', -1)[0].fraction).toBe(0.02)
+    expect(removeHold(moved, 'hold-1')).toHaveLength(0)
   })
 })
 

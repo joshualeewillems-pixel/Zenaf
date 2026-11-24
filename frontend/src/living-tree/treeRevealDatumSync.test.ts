@@ -161,9 +161,13 @@ describe('tree datum sync on a data-only status update', () => {
     // The Champion is excluded from the sheet loop since 2026-11-24:
     // his tap lands on the Campaign Board (his home surface), so his
     // sheet no longer opens from the tree — his hit group below still
-    // proves the datum reached his node.
+    // proves the datum reached his node. The Maverick joined the
+    // exclusion the same day: their tap lands on the Scroll (their
+    // home surface), so their sheet no longer opens from the tree
+    // either — their hit group proves the datum reached their node.
     expect(hitGroup('arch-champion')).toBeTruthy()
-    for (const seat of SEATS.filter((s) => s.id !== 'champion')) {
+    expect(hitGroup('arch-maverick')).toBeTruthy()
+    for (const seat of SEATS.filter((s) => s.id !== 'champion' && s.id !== 'maverick')) {
       clickHitGroup(seat.nodeId)
       await flush()
       const row = head()?.querySelector('.lavatar-head')

@@ -266,6 +266,16 @@ describe('seat home surfaces (founder, 2026-11-24)', () => {
     expect(talkCalls('champion')).toHaveLength(0)
   })
 
+  it('tapping the Maverick lands on the Scroll — the shelf of scrolls is their home surface', async () => {
+    renderTree()
+    await flush()
+    clickNode('MA')
+    await flush()
+    expect(navigations).toContain('jynx_scroll')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('maverick')).toHaveLength(0)
+  })
+
   it('a seat without a home surface still opens its talk sheet on tap', async () => {
     renderTree()
     await flush()
@@ -598,16 +608,21 @@ describe('sheet header actions (2026-11-12)', () => {
 })
 
 describe('maverick mint (2026-11-12)', () => {
-  it('buildSeatHeaderMenu gives Mint to the Maverick only, after Upload', () => {
+  it('buildSeatHeaderMenu gives Mint to the Maverick only, after Upload — and the Scroll doorway after it', () => {
     const maverick = buildSeatHeaderMenu({
       seatKey: 'maverick',
       invitationCount: 0,
       currentChatId: null,
     })
-    expect(maverick.map((m) => m.title)).toEqual(['Today', 'Review', 'Upload', 'Mint'])
+    // 2026-11-24: the Maverick's home surface joined the menu as a
+    // nav item (the Scroll); Mint's sheet item is unchanged.
+    expect(maverick.map((m) => m.title)).toEqual(['Today', 'Review', 'Upload', 'Mint', 'The Scroll'])
     const mint = maverick.find((m) => m.title === 'Mint')
     expect(mint?.kind).toBe('sheet')
     if (mint?.kind === 'sheet') expect(mint.id).toBe('mint')
+    const scroll = maverick.find((m) => m.title === 'The Scroll')
+    expect(scroll?.kind).toBe('nav')
+    if (scroll?.kind === 'nav') expect(scroll.nav).toBe('jynx_scroll')
     for (const seat of ['mentor', 'champion', 'guardian', 'ambassador', 'conductor', 'skeptic']) {
       const items = buildSeatHeaderMenu({
         seatKey: seat,
@@ -618,15 +633,17 @@ describe('maverick mint (2026-11-12)', () => {
     }
   })
 
-  it('the Maverick head menu shows Mint and routes the mint sheet item', async () => {
+  it('tapping the Maverick lands on the Scroll — the talk sheet (and its Mint row) no longer opens on tap', async () => {
+    // Founder ruling 2026-11-24: seat taps land on the seat's
+    // interface, interface-first. The Maverick's sheet — Mint
+    // included — is no longer the tap destination; the Mint item
+    // itself is unchanged in the header-menu model (test above).
     renderTree()
     await flush()
     clickNode('MA')
     await flush()
-    await click(buttonByLabel('Other actions'))
-    expect(rowByTitle('Mint')).toBeDefined()
-    await click(rowByTitle('Mint'))
-    expect(providerCalls.some((c) => c.item === 'mint' && c.seatKey === 'maverick')).toBe(true)
+    expect(navigations).toContain('jynx_scroll')
+    expect(dialog()).toBeNull()
   })
 
   it('other seats show no Mint row', async () => {

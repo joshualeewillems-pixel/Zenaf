@@ -2,8 +2,10 @@
  * Valen's Campaign Board — the production surface.
  *
  * A projection of the user's real Vision Execution work: the overview
- * shows every project as a dotted route whose length is its recorded
- * time span (scale key on the map); clicking a route opens the focus
+ * is one shared map — every project nested under its initiative's
+ * ground, dated projects running dotted routes whose length is their
+ * recorded time span (scale key on the map), undated projects standing
+ * unspanned at their camp; clicking a route opens the focus
  * board — declared terrain, two speculative routes over the project's
  * recorded tasks, movable waypoints whose position IS the task's due
  * date, and obstacles classified from the record. The focus board also
@@ -39,6 +41,7 @@ import {
   deriveObstacles,
   deriveSignalMarkers,
   fullDate,
+  groupOverviewByInitiative,
   moveHold,
   obstacleDomainLabel,
   parseDateMs,
@@ -54,6 +57,7 @@ import {
   type BoardSignal,
   type BoardWaypoint,
   type HoldDeclaration,
+  type OverviewProject,
   type PersonCapacity,
   type RiverDeclaration,
   type SignalMarker,
@@ -140,6 +144,11 @@ export default function CampaignBoardView() {
   // withdrawn. The declaration-binding standard is deferred.
   const [rivers, setRivers] = useState<RiverDeclaration[]>([])
   const [holds, setHolds] = useState<HoldDeclaration[]>([])
+  // Split-shell divider (wide screens): the conversation pane's
+  // width, draggable between the board and Valen's chat. Portrait
+  // stacks the panes and the divider is not rendered.
+  const [chatW, setChatW] = useState(380)
+  const dividerDrag = useRef<{ pointerId: number } | null>(null)
   const declSeq = useRef(0)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const dragStart = useRef<{ x: number; taskId: string } | null>(null)
@@ -386,10 +395,37 @@ export default function CampaignBoardView() {
             }}
           />
         ) : (
-          <OverviewBoard overview={overview} onFocus={(id) => { setFocusId(id); setSelection(null) }} />
+          <OverviewBoard
+            overview={overview}
+            initiatives={entities.initiatives}
+            onFocus={(id) => { setFocusId(id); setSelection(null) }}
+          />
         )}
       </div>
-      <aside className="shrink-0 lg:w-[380px] lg:overflow-y-auto border-t lg:border-t-0 lg:border-l border-stone-700/60 p-3">
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize conversation pane"
+        className="hidden lg:block w-1.5 shrink-0 cursor-col-resize bg-stone-700/40 hover:bg-amber-600/60 touch-none"
+        onPointerDown={(e) => {
+          ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
+          dividerDrag.current = { pointerId: e.pointerId }
+        }}
+        onPointerMove={(e) => {
+          if (!dividerDrag.current || dividerDrag.current.pointerId !== e.pointerId) return
+          const parent = (e.currentTarget as Element).parentElement
+          if (!parent) return
+          const rect = parent.getBoundingClientRect()
+          setChatW(Math.min(560, Math.max(300, rect.right - e.clientX)))
+        }}
+        onPointerUp={(e) => {
+          if (dividerDrag.current?.pointerId === e.pointerId) dividerDrag.current = null
+        }}
+      />
+      <aside
+        className="shrink-0 lg:w-[var(--cb-chat-w,380px)] lg:overflow-y-auto border-t lg:border-t-0 border-stone-700/60 p-3"
+        style={{ ['--cb-chat-w' as string]: `${chatW}px` }}
+      >
         <div className="rounded-2xl border border-stone-700/60 bg-stone-900/70 p-2">
           <CouncilChat
             key={conversationId}
@@ -405,101 +441,305 @@ export default function CampaignBoardView() {
 }
 
 /* ================================================================== */
-/* Overview                                                            */
+/* Overview — ONE shared map, projects nested under their initiatives  */
 /* ================================================================== */
+
+/**
+ * The overview is a single map, not a list: every project stands on
+ * shared ground, nested under its initiative (the initiative's name
+ * lettered on its ground, a camp marker at its head). Dated projects
+ * run dotted routes whose length is their recorded span on the one
+ * shared scale (key drawn on the map). Undated projects stand
+ * UNSPANNED at their camp — camp, obstacle ticks, and the finish flag
+ * planted at the camp, no invented line; "no dates recorded" is said
+ * in the camp popup, never as surface text. Tapping a route opens
+ * its focus board; tapping a camp opens its popup.
+ */
+
+const OV_W = 480
+const OV_CAMP_X = 46
+const OV_LANE_H = 58
+const OV_GROUP_HEAD_H = 28
+const OV_GROUP_PAD_TOP = 4
+const OV_GROUP_PAD_BOT = 10
+const OV_GROUP_GAP = 12
+const OV_TOP_PAD = 12
+const OV_KEY_STRIP = 44
+/** Fixed cluster width for an unspanned project's ticks + flag: a
+ *  camp grouping, never a scaled length. */
+const OV_UNSPANNED_CLUSTER = 14
 
 function OverviewBoard({
   overview,
+  initiatives,
   onFocus,
 }: {
-  overview: ReturnType<typeof buildOverview>
+  overview: OverviewProject[]
+  initiatives: { id: string; title: string }[]
   onFocus: (projectId: string) => void
 }) {
-  const ROW_H = 78
-  const TOP = 44
-  const availablePx = MAP_W - 70 - 120
-  const pxPerDay = computePxPerDay(overview, availablePx)
-  const height = TOP + overview.length * ROW_H + 52
+  const [popupId, setPopupId] = useState<string | null>(null)
+  const groups = groupOverviewByInitiative(overview, initiatives)
+  const pxPerDay = computePxPerDay(overview, OV_W - OV_CAMP_X - 108)
+
+  // Lay out the grounds top to bottom; each project's lane sits
+  // inside its initiative's ground.
+  let cursor = OV_TOP_PAD
+  let colorSeq = 0
+  const laidOut = groups.map((group, gi) => {
+    const headH = group.initiative ? OV_GROUP_HEAD_H : 6
+    const y = cursor
+    const height = headH + OV_GROUP_PAD_TOP + group.projects.length * OV_LANE_H + OV_GROUP_PAD_BOT
+    cursor += height + OV_GROUP_GAP
+    const lanes = group.projects.map((o, li) => ({
+      o,
+      laneTop: y + headH + OV_GROUP_PAD_TOP + li * OV_LANE_H,
+      color: PROJECT_COLORS[colorSeq++ % PROJECT_COLORS.length],
+    }))
+    return { group, gi, y, height, lanes }
+  })
+  const height = Math.max(cursor - OV_GROUP_GAP + OV_KEY_STRIP, 200)
+  const keyY = height - 18
+  const popupEntry = popupId
+    ? laidOut.flatMap((l) => l.lanes).find((l) => l.o.project.id === popupId)
+    : undefined
+
+  const diamond = (cx: number, cy: number, s: number) =>
+    `M ${cx} ${cy - s} L ${cx + s} ${cy} L ${cx} ${cy + s} L ${cx - s} ${cy} Z`
 
   return (
     <section aria-label="Campaign Board — all projects">
       <h1 className="text-lg font-semibold text-stone-100 px-1 pb-2">Campaign Board</h1>
       <div className="rounded-2xl overflow-hidden border border-[#9a7b24]/50 shadow-lg">
-        <svg viewBox={`0 0 ${MAP_W} ${height}`} className="w-full block" role="img" aria-label="All projects as routes on one map">
-          <rect width={MAP_W} height={height} fill={PARCHMENT} />
+        <svg
+          viewBox={`0 0 ${OV_W} ${height}`}
+          className="w-full block"
+          role="img"
+          aria-label="All projects on one map, nested under their initiatives"
+        >
+          <rect width={OV_W} height={height} fill={PARCHMENT} />
+          {/* shared ground washes — one land, many camps */}
+          <ellipse cx={120} cy={70} rx={180} ry={80} fill="#d9ca9c" opacity={0.45} />
+          <ellipse cx={OV_W - 90} cy={height - 130} rx={190} ry={90} fill="#c3d2a2" opacity={0.4} />
           {overview.length === 0 && (
-            <text x={MAP_W / 2} y={height / 2} textAnchor="middle" fontSize="15" fill={INK}>
+            <text x={OV_W / 2} y={height / 2} textAnchor="middle" fontSize="14" fill={INK}>
               No projects yet — the board is empty.
             </text>
           )}
-          {overview.map((o, i) => {
-            const yBase = TOP + i * ROW_H
-            const lineY = yBase + 36
-            const lineLen = o.routeDays * pxPerDay
-            const endX = 70 + lineLen
-            const color = PROJECT_COLORS[i % PROJECT_COLORS.length]
-            return (
-              <g key={o.project.id}>
-                <text x={24} y={yBase} fontSize="15" fontWeight="600" fill={INK} style={{ pointerEvents: 'none' }}>
-                  {o.project.title}
-                </text>
-                <text x={24} y={yBase + 17} fontSize="11" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
-                  {o.project.status} · {o.openTaskCount} open · {o.doneTaskCount} done
-                  {o.span.source !== 'provisional' ? ` · ${o.span.days} days` : ''}
-                </text>
-                <line x1={70} y1={lineY} x2={endX} y2={lineY} stroke={color} strokeWidth="3" strokeLinecap="round" strokeDasharray="0.5 7" style={{ pointerEvents: 'none' }} />
-                <circle cx={70} cy={lineY} r="4.5" fill={color} style={{ pointerEvents: 'none' }} />
-                {/* finish banner */}
+          {laidOut.map(({ group, gi, y, height: groupH, lanes }) => (
+            <g key={group.initiative?.id ?? 'unanchored'}>
+              {/* the initiative's ground */}
+              <rect
+                x={10}
+                y={y}
+                width={OV_W - 20}
+                height={groupH}
+                rx={14}
+                fill={group.initiative ? (gi % 2 === 0 ? '#e0d0a4' : '#d5dbb0') : '#eae0c6'}
+                fillOpacity={0.55}
+                stroke="#9a7b24"
+                strokeOpacity={0.35}
+              />
+              {group.initiative && (
                 <g style={{ pointerEvents: 'none' }}>
-                  <line x1={endX} y1={lineY} x2={endX} y2={lineY - 16} stroke={INK} strokeWidth="2" />
-                  <path
-                    d={`M ${endX} ${lineY - 16} L ${endX + 13} ${lineY - 12.5} L ${endX} ${lineY - 9} Z`}
-                    fill={o.span.source === 'provisional' ? 'none' : EMBER}
-                    stroke={EMBER}
-                    strokeWidth="1.2"
-                  />
+                  {/* the shared camp marker at the head of the ground */}
+                  <path d={`M 22 ${y + 22} L 30 ${y + 11} L 38 ${y + 22} Z`} fill="none" stroke={INK} strokeWidth="1.6" />
+                  <line x1={30} y1={y + 11} x2={30} y2={y + 4} stroke={INK} strokeWidth="1.4" />
+                  <path d={`M 30 ${y + 4} L 37 ${y + 6.5} L 30 ${y + 9} Z`} fill={EMBER} />
+                  <text
+                    x={48}
+                    y={y + 20}
+                    fontSize="11.5"
+                    fontWeight="700"
+                    letterSpacing="1.6"
+                    fill="#6d5c22"
+                  >
+                    {group.initiative.title.toUpperCase()}
+                  </text>
                 </g>
-                {o.obstacles.slice(0, 8).map((ob) => (
-                  <path
-                    key={ob.id}
-                    d={`M ${70 + ob.fraction * lineLen} ${lineY - 6} L ${70 + ob.fraction * lineLen + 5} ${lineY} L ${70 + ob.fraction * lineLen} ${lineY + 6} L ${70 + ob.fraction * lineLen - 5} ${lineY} Z`}
-                    fill="#8c2e1e"
-                    opacity="0.9"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                ))}
-                {o.obstacles.length > 0 && (
-                  <text x={endX + 22} y={lineY + 4} fontSize="11.5" fill="#8c2e1e" style={{ pointerEvents: 'none' }}>
-                    ◆ ×{o.obstacles.length}
-                  </text>
-                )}
-                {o.span.source === 'provisional' && (
-                  <text x={endX + 22} y={lineY - 8} fontSize="11" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
-                    no dates recorded
-                  </text>
-                )}
-                <rect
-                  x={8}
-                  y={yBase - 24}
-                  width={MAP_W - 16}
-                  height={ROW_H - 6}
-                  fill="#000"
-                  fillOpacity={0}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onFocus(o.project.id)}
-                />
-              </g>
-            )
-          })}
-          {/* scale key — on the map */}
+              )}
+              {lanes.map(({ o, laneTop, color }) => {
+                const lineY = laneTop + 34
+                const lineLen = o.span.days * pxPerDay
+                const endX = OV_CAMP_X + lineLen
+                // Where the finish flag stands: at the route's end when
+                // spanned; planted at the camp when unspanned.
+                const flagX = o.spanned
+                  ? endX
+                  : OV_CAMP_X + OV_UNSPANNED_CLUSTER + o.obstacles.slice(0, 8).length * 13 + 6
+                return (
+                  <g key={o.project.id}>
+                    <text x={OV_CAMP_X} y={laneTop + 15} fontSize="14" fontWeight="600" fill={INK} style={{ pointerEvents: 'none' }}>
+                      {o.project.title}
+                    </text>
+                    {o.spanned ? (
+                      <>
+                        <line
+                          x1={OV_CAMP_X}
+                          y1={lineY}
+                          x2={endX}
+                          y2={lineY}
+                          stroke={color}
+                          strokeWidth="5"
+                          strokeLinecap="round"
+                          strokeDasharray="0.5 7"
+                          style={{ pointerEvents: 'none' }}
+                        />
+                        <circle cx={endX} cy={lineY} r="6" fill={color} stroke="#fff" strokeWidth="1.8" style={{ pointerEvents: 'none' }} />
+                        <text x={OV_CAMP_X} y={laneTop + 52} fontSize="10.5" fill="#6b5a43" style={{ pointerEvents: 'none' }}>
+                          {o.span.days} days · {shortDate(new Date(o.span.startMs))} – {shortDate(new Date(o.span.endMs))}
+                        </text>
+                        {o.obstacles.slice(0, 8).map((ob) => (
+                          <path
+                            key={ob.id}
+                            d={diamond(OV_CAMP_X + ob.fraction * lineLen, lineY, 5.5)}
+                            fill="#8c2e1e"
+                            stroke="#fff"
+                            strokeWidth="1"
+                            opacity="0.95"
+                            style={{ pointerEvents: 'none' }}
+                          />
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        {/* Unspanned: no route is drawn. The obstacle
+                            ticks cluster at the camp as markers, not
+                            positions on a scale. */}
+                        {o.obstacles.slice(0, 8).map((ob, ti) => (
+                          <path
+                            key={ob.id}
+                            d={diamond(OV_CAMP_X + OV_UNSPANNED_CLUSTER + ti * 13, lineY, 5)}
+                            fill="#8c2e1e"
+                            stroke="#fff"
+                            strokeWidth="1"
+                            opacity="0.95"
+                            style={{ pointerEvents: 'none' }}
+                          />
+                        ))}
+                      </>
+                    )}
+                    {/* the camp — every route sets out from here */}
+                    <circle cx={OV_CAMP_X} cy={lineY} r="5" fill={color} style={{ pointerEvents: 'none' }} />
+                    {/* finish banner: filled at a recorded end; outline
+                        only while the finish is not yet dated */}
+                    <g style={{ pointerEvents: 'none' }}>
+                      <line x1={flagX} y1={lineY} x2={flagX} y2={lineY - 15} stroke={INK} strokeWidth="1.8" />
+                      <path
+                        d={`M ${flagX} ${lineY - 15} L ${flagX + 12} ${lineY - 11.5} L ${flagX} ${lineY - 8} Z`}
+                        fill={o.spanned ? EMBER : 'none'}
+                        stroke={EMBER}
+                        strokeWidth="1.2"
+                      />
+                    </g>
+                    {o.obstacles.length > 0 && (
+                      <text x={flagX + 20} y={lineY + 4} fontSize="11.5" fill="#8c2e1e" style={{ pointerEvents: 'none' }}>
+                        ◆ ×{o.obstacles.length}
+                      </text>
+                    )}
+                    {/* the lane is the route's tap target — focus */}
+                    <rect
+                      x={14}
+                      y={laneTop + 2}
+                      width={OV_W - 28}
+                      height={OV_LANE_H - 4}
+                      fill="#000"
+                      fillOpacity={0}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => onFocus(o.project.id)}
+                    />
+                    {/* the camp's own tap target — its popup */}
+                    <circle
+                      cx={OV_CAMP_X}
+                      cy={lineY}
+                      r="15"
+                      fill="#000"
+                      fillOpacity={0}
+                      style={{ cursor: 'pointer' }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setPopupId((prev) => (prev === o.project.id ? null : o.project.id))
+                      }}
+                    />
+                  </g>
+                )
+              })}
+            </g>
+          ))}
+          {/* scale key — drawn on the map, at the map's own scale */}
           <g>
-            <line x1={70} y1={height - 22} x2={70 + pxPerDay} y2={height - 22} stroke={INK} strokeWidth="2.4" strokeDasharray="5 3" />
-            <line x1={70} y1={height - 27} x2={70} y2={height - 17} stroke={INK} strokeWidth="1.6" />
-            <line x1={70 + pxPerDay} y1={height - 27} x2={70 + pxPerDay} y2={height - 17} stroke={INK} strokeWidth="1.6" />
-            <text x={70 + pxPerDay + 9} y={height - 18} fontSize="12" fill={INK}>
-              = 1 day
+            <line
+              x1={OV_CAMP_X}
+              y1={keyY}
+              x2={OV_CAMP_X + pxPerDay}
+              y2={keyY}
+              stroke={INK}
+              strokeWidth="4"
+              strokeLinecap="round"
+              strokeDasharray="0.1 8"
+            />
+            <text x={OV_CAMP_X + pxPerDay + 10} y={keyY + 4} fontSize="11.5" fontWeight="600" fill={INK}>
+              [-----] = 1 day
             </text>
           </g>
+          {/* camp popup — the project's facts, incl. the undated fact
+              that is never printed on the surface */}
+          {popupEntry && (
+            <g>
+              <rect
+                x={0}
+                y={0}
+                width={OV_W}
+                height={height}
+                fill="#000"
+                fillOpacity={0}
+                onClick={() => setPopupId(null)}
+              />
+              {(() => {
+                const o = popupEntry.o
+                const panelW = 252
+                const panelH = 98
+                const px = Math.min(Math.max(OV_CAMP_X - 6, 8), OV_W - panelW - 8)
+                const below = popupEntry.laneTop + OV_LANE_H + panelH + 6 <= height - OV_KEY_STRIP
+                const py = below
+                  ? popupEntry.laneTop + OV_LANE_H + 2
+                  : Math.max(8, popupEntry.laneTop - panelH - 6)
+                return (
+                  <g>
+                    <rect x={px} y={py} width={panelW} height={panelH} rx={10} fill="#fbf5df" stroke="#9a7b24" />
+                    <text x={px + 12} y={py + 20} fontSize="13" fontWeight="700" fill={INK}>
+                      {o.project.title}
+                    </text>
+                    <text x={px + 12} y={py + 38} fontSize="11" fill="#6b5a43">
+                      {o.project.status} · {o.openTaskCount} open · {o.doneTaskCount} done
+                    </text>
+                    <text x={px + 12} y={py + 54} fontSize="11" fill="#6b5a43">
+                      {o.spanned
+                        ? `${shortDate(new Date(o.span.startMs))} – ${shortDate(new Date(o.span.endMs))} · ${o.span.days} days`
+                        : 'No dates recorded'}
+                    </text>
+                    {o.obstacles.length > 0 && (
+                      <text x={px + 12} y={py + 70} fontSize="11" fill="#8c2e1e">
+                        ◆ ×{o.obstacles.length} — detail in focus
+                      </text>
+                    )}
+                    <g
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => {
+                        setPopupId(null)
+                        onFocus(o.project.id)
+                      }}
+                    >
+                      <rect x={px + 12} y={py + panelH - 26} width={88} height={20} rx={10} fill={EMBER} />
+                      <text x={px + 56} y={py + panelH - 12} textAnchor="middle" fontSize="11" fontWeight="600" fill="#fff">
+                        Focus →
+                      </text>
+                    </g>
+                  </g>
+                )
+              })()}
+            </g>
+          )}
         </svg>
       </div>
     </section>

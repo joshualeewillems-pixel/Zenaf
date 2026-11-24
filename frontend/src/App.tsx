@@ -31,6 +31,7 @@ import { PerspectiveWorkoutPanel } from './perspectives/PerspectiveWorkoutPanel'
 import {
   LivingTreeView,
   OPEN_SEAT_REVIEW_EVENT,
+  OPEN_YOU_SHEET_EVENT,
   type NodeMenuItemId,
   type NodeSheetContentProvider,
   type TreeNodeRef,
@@ -4543,6 +4544,22 @@ function App() {
     | 'settings'
     | 'build_council_submit'
   const [mainView, setMainView] = useState<MainView>('living_tree')
+  /** Header profile picture → the YOU sheet (founder, 2026-11-24:
+      "I should be able to log out clicking on my picture also"). The
+      picture lives in the header, the sheet inside LivingTreeView:
+      route home, then ask the tree to open the sheet. The nonce +
+      effect ordering guarantees the ask lands after the tree has
+      mounted (its listener registers in the same commit, before
+      this effect runs), whether or not the tree was already up. */
+  const [youSheetNonce, setYouSheetNonce] = useState(0)
+  const handleOpenYouSheet = useCallback(() => {
+    setMainView('living_tree')
+    setYouSheetNonce((n) => n + 1)
+  }, [])
+  useEffect(() => {
+    if (!youSheetNonce || mainView !== 'living_tree') return
+    window.dispatchEvent(new Event(OPEN_YOU_SHEET_EVENT))
+  }, [youSheetNonce, mainView])
   // Mobile: the conversation panel starts collapsed so the view's content owns
   // the screen; expand on demand. Desktop (lg+) always shows it.
   const [veSelection, setVeSelection] = useState<VESelection | null>(null)
@@ -5214,7 +5231,7 @@ function App() {
     <div className="h-dvh min-h-0 overflow-hidden bg-stone-900 text-stone-100 flex flex-col pb-[env(safe-area-inset-bottom,0px)]">
       <header className="shrink-0 border-b border-stone-700 px-3 pb-3 lg:px-6 lg:pb-4 pt-[calc(0.75rem+env(safe-area-inset-top,0px))] lg:pt-[calc(1rem+env(safe-area-inset-top,0px))] flex items-center justify-between gap-2 bg-stone-900 z-20">
         <div className="flex items-center gap-3 min-w-0">
-          <ProfileAvatarControl user={currentUser} onUserUpdated={setCurrentUser} />
+          <ProfileAvatarControl user={currentUser} onUserUpdated={setCurrentUser} onOpenYou={handleOpenYouSheet} />
           <div className="flex items-center gap-4 min-w-0">
             {/* The tree is home — there is no global menu anymore. Every
                 destination lives with the seat that owns it (the seats'
@@ -5246,6 +5263,7 @@ function App() {
               currentUserId={currentUser?.id ?? null}
               userAvatarUrl={currentUser?.avatar_data_url ?? null}
               isAdmin={currentUser?.is_admin ?? false}
+              onLogout={handleLogout}
             />
           </div>
         ) : mainView === 'perspectives' ? (

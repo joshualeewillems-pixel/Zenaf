@@ -2,7 +2,7 @@
  * Aria's Atelier — the Well, as a production surface.
  *
  * This view is Aria's landing: tapping her tree node navigates the
- * shell here (LivingTree's SEAT_LANDING_VIEWS; her sheet keeps its
+ * shell here (LivingTree's SEAT_HOME_NAV; her sheet keeps its
  * own door), and the layout is the shared SplitShell — the world on
  * the left, her conversation on the right, a draggable divider
  * between them, each pane scrolling on its own.

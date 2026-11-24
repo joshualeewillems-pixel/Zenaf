@@ -50,6 +50,9 @@ let container: HTMLDivElement
 let root: Root
 let providerCalls: ProviderCall[]
 let stubReportId: string | null
+/** Extra keystone-attention markers merged into the fetch stub's
+    payload (e.g. a seat whose first meeting is still to begin). */
+let extraMarkers: Record<string, unknown> = {}
 let navigations: string[]
 
 function StubChat({
@@ -94,6 +97,7 @@ function installFetch() {
               invitation_count: 1,
               invitation_conversation_ids: [TALK_A],
             },
+            ...extraMarkers,
           },
         }),
       )
@@ -195,6 +199,7 @@ beforeEach(() => {
   providerCalls = []
   navigations = []
   stubReportId = TALK_B
+  extraMarkers = {}
   installFetch()
   ;(window.Element.prototype as unknown as { scrollIntoView: () => void }).scrollIntoView =
     () => {}
@@ -247,6 +252,31 @@ describe('direct seat tap (T2)', () => {
     expect(talkCalls('mentor')).toHaveLength(0)
     clickNode('ME')
     await flush()
+    expect(dialog()).not.toBeNull()
+    expect(talkCalls('mentor').length).toBeGreaterThan(0)
+  })
+})
+
+describe('seat home surfaces (founder, 2026-11-24)', () => {
+  it('tapping the Champion lands on the Campaign Board split view — no talk sheet opens', async () => {
+    renderTree()
+    await flush()
+    clickNode('CH')
+    await flush()
+    // The board IS his home surface: the tap navigates the shell to
+    // it directly, instead of opening the talk sheet with the board
+    // buried in its Other actions menu.
+    expect(navigations).toContain('campaign_board')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('champion')).toHaveLength(0)
+  })
+
+  it('a seat without a home surface still opens its talk sheet on tap', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    expect(navigations).not.toContain('campaign_board')
     expect(dialog()).not.toBeNull()
     expect(talkCalls('mentor').length).toBeGreaterThan(0)
   })
@@ -307,10 +337,31 @@ describe('compact-head menu (T6 + C1/C2)', () => {
     await flush()
     // Aria has a built interface, so her tap lands on it — the split
     // view with her conversation beside the Well — instead of opening
-    // her sheet. (No first-meeting marker exists for her in this
-    // fixture, so the Begin-door exception does not apply.) Her head
+    // her sheet. (Founder ruling, 2026-11-24: seats land on the
+    // interface — a pending first meeting does not preempt it.) Her head
     // menu's composition — Workspace Organizer, The Atelier — is
     // unchanged and covered in livingTreeHeaderMenu.test.ts.
+    expect(navigations).toContain('aria_atelier')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('conductor')).toHaveLength(0)
+  })
+
+  it('the conductor tap lands on the Atelier even while her first meeting is still to begin (founder ruling, 2026-11-24)', async () => {
+    // An 'intro' marker is the fresh-tree invitation — her sheet head
+    // would carry the Begin door. The ruling: seats land ON the
+    // interface; a pending first meeting does not preempt the landing.
+    extraMarkers = {
+      conductor: {
+        attention: true,
+        reason: 'intro',
+        invitation_count: 0,
+        invitation_conversation_ids: [],
+      },
+    }
+    renderTree()
+    await flush()
+    clickNode('CO')
+    await flush()
     expect(navigations).toContain('aria_atelier')
     expect(dialog()).toBeNull()
     expect(talkCalls('conductor')).toHaveLength(0)

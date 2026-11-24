@@ -4,13 +4,18 @@
  * tests for buildYouDirectory — no rendering.
  *
  * The directory is navigation only: a universal section (5 working
- * destinations + 2 info rows), then seven seat groups in the accepted
- * map's order, each with its distinctive rows; every group's scoped
- * strip (Today / Review / Upload through the seat) is structural and
- * never appears as rows. 46 working actions in total for an admin
- * (5 universal + 20 distinctive + 7 strips × 3 chips). No planned
- * doorway (Commitments, growth, takeout/delete, mirror, steward
- * verdicts, disputes, twigs, convened sessions) appears anywhere.
+ * destinations + 1 info row + the Log in / out action row), then
+ * seven seat groups in the accepted map's order, each with its
+ * distinctive rows; every group's scoped strip (Today / Review /
+ * Upload through the seat) is structural and never appears as rows.
+ * 46 working actions in total for an admin (5 universal + 20
+ * distinctive + 7 strips × 3 chips). No planned doorway
+ * (Commitments, growth, takeout/delete, mirror, steward verdicts,
+ * disputes, twigs, convened sessions) appears anywhere.
+ *
+ * The Log in / out row became an action row on 2026-11-24 (founder
+ * bug report): as an info row it only expanded "You are signed in
+ * on this device." and never signed out.
  */
 import { describe, it, expect } from 'vitest'
 import { buildYouDirectory, type YouDirectoryRow } from './LivingTree'
@@ -47,7 +52,7 @@ function titles(rows: YouDirectoryRow[]): string[] {
 }
 
 describe('buildYouDirectory', () => {
-  it('the universal section holds the five universal destinations and two info rows — no seat-group rows leak up', () => {
+  it('the universal section holds the five universal destinations, one info row and the Log in / out action row — no seat-group rows leak up', () => {
     const { universal } = buildYouDirectory({ isAdmin: true })
     expect(titles(universal)).toEqual([
       'Today',
@@ -60,7 +65,13 @@ describe('buildYouDirectory', () => {
     ])
     const destinations = universal.filter((r) => r.kind === 'sheet' || r.kind === 'nav')
     expect(destinations).toHaveLength(5)
-    expect(universal.filter((r) => r.kind === 'info')).toHaveLength(2)
+    expect(universal.filter((r) => r.kind === 'info')).toHaveLength(1)
+    // Log in / out must ACT (call the shell's logout), not just
+    // expand a description — the 2026-11-24 founder bug.
+    expect(universal.find((r) => r.title === 'Log in / out')).toMatchObject({
+      kind: 'action',
+      id: 'login',
+    })
     // Projects, Content, Foundation and Stats live in their seat
     // groups now — never in the universal section.
     for (const absent of ['Projects', 'Content', 'Foundation (actors)', 'Stats']) {

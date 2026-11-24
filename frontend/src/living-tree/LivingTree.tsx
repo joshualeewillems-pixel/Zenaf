@@ -365,6 +365,19 @@ const SEAT_NAV_ITEMS: Record<string, Array<{ id: string; title: string; desc: st
   ],
 }
 
+/** Seat home surfaces (founder, 2026-11-24): a seat with an interface
+    opens ON that interface — tapping the seat lands on its split view
+    (the world, with the seat's conversation beside it) as the seat's
+    home surface, not on the talk sheet with the interface buried in
+    its "Other actions" menu. Seats without an entry here keep the
+    talk-sheet opening. The seat's sheet destinations above stay in
+    the head menu for any path that still opens the sheet, and the
+    seat's Today/Review/Upload remain reachable through the YOU
+    directory's scoped strip. */
+export const SEAT_HOME_NAV: Record<string, SheetNavView> = {
+  champion: 'campaign_board',
+}
+
 /** Seat-owned sheet items (Maverick only, founder 2026-11-12): Mint —
     the Fox's expressive standalone mint, mounted in the sheet like
     Today/Review/Upload. No other seat gets it. The flow is the
@@ -1410,6 +1423,17 @@ export function LivingTreeView({
     const datum = live?.datum ?? findDatum(id, up)
     const arch = datum?.archetype
     if (arch) {
+      // Seat home surface (founder, 2026-11-24): a seat with an
+      // interface lands on that interface's split view — the world
+      // first, its conversation beside it — not on the talk sheet.
+      const homeNav = SEAT_HOME_NAV[arch.id]
+      if (homeNav) {
+        setSel(id)
+        setStrandPanelKey(null)
+        setTalkOverride(null)
+        onNavigate(homeNav)
+        return
+      }
       // Navigation correction: a seat tap opens the seat's ongoing
       // conversation directly — no menu interstitial. Any stale
       // invitation override is cleared so it can never resurrect.

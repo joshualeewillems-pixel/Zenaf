@@ -252,6 +252,31 @@ describe('direct seat tap (T2)', () => {
   })
 })
 
+describe('seat home surfaces (founder, 2026-11-24)', () => {
+  it('tapping the Champion lands on the Campaign Board split view — no talk sheet opens', async () => {
+    renderTree()
+    await flush()
+    clickNode('CH')
+    await flush()
+    // The board IS his home surface: the tap navigates the shell to
+    // it directly, instead of opening the talk sheet with the board
+    // buried in its Other actions menu.
+    expect(navigations).toContain('campaign_board')
+    expect(dialog()).toBeNull()
+    expect(talkCalls('champion')).toHaveLength(0)
+  })
+
+  it('a seat without a home surface still opens its talk sheet on tap', async () => {
+    renderTree()
+    await flush()
+    clickNode('ME')
+    await flush()
+    expect(navigations).not.toContain('campaign_board')
+    expect(dialog()).not.toBeNull()
+    expect(talkCalls('mentor').length).toBeGreaterThan(0)
+  })
+})
+
 describe('compact-head menu (T6 + C1/C2)', () => {
   it('the head menu lists Today/Review/Upload, no Talk, and routes a sheet item', async () => {
     renderTree()

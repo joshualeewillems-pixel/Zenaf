@@ -442,6 +442,12 @@ export interface OverviewProject {
   /** Days of line to draw: the real span, or NOMINAL_DAYS (flagged
    *  not-to-scale) when no dates are recorded. */
   routeDays: number
+  /** True when the project carries a real recorded span (its own
+   *  dates, or a window recovered from task due dates). An unspanned
+   *  project has no dates recorded anywhere: on the overview map it
+   *  stands at its camp with its finish flag unplanted — its route is
+   *  never stretched to an invented length. */
+  spanned: boolean
 }
 
 const STATUS_ORDER: Record<string, number> = { Active: 0, Blocked: 1, Ready: 2, Draft: 3, Parked: 4 }
@@ -463,6 +469,7 @@ export function buildOverview(
         openTaskCount: projectTasks.filter(isOpenTask).length,
         doneTaskCount: projectTasks.filter(isDoneTask).length,
         routeDays: span.source === 'provisional' ? NOMINAL_DAYS : span.days,
+        spanned: span.source !== 'provisional',
       }
     })
     .sort((x, y) => {
@@ -471,6 +478,53 @@ export function buildOverview(
       if (sx !== sy) return sx - sy
       return x.project.title.localeCompare(y.project.title)
     })
+}
+
+/* ------------------------------------------------------------------ */
+/* Overview nesting — projects under their initiatives                 */
+/* ------------------------------------------------------------------ */
+
+export interface OverviewGroup {
+  /** The initiative this ground belongs to, or null for the
+   *  unanchored ground (projects with no initiative — the Radar's
+   *  "unanchored"). */
+  initiative: { id: string; title: string } | null
+  projects: OverviewProject[]
+}
+
+/**
+ * Nest the overview under initiatives: one ground per initiative,
+ * its projects' routes running within it. Groups appear in the order
+ * their first project appears on the board (the overview's own
+ * status/title order); the unanchored ground comes last. A project
+ * whose initiative_id names no fetched initiative is unanchored for
+ * the map's purposes — the board cannot letter a name it does not
+ * have. Initiatives with no projects on the board get no ground.
+ */
+export function groupOverviewByInitiative(
+  overview: OverviewProject[],
+  initiatives: { id: string; title: string }[],
+): OverviewGroup[] {
+  const byId = new Map(initiatives.map((i) => [i.id, i]))
+  const groups: OverviewGroup[] = []
+  const groupByInitiativeId = new Map<string, OverviewGroup>()
+  const unanchored: OverviewGroup = { initiative: null, projects: [] }
+  for (const o of overview) {
+    const initiative = o.project.initiative_id ? byId.get(o.project.initiative_id) : undefined
+    if (!initiative) {
+      unanchored.projects.push(o)
+      continue
+    }
+    let group = groupByInitiativeId.get(initiative.id)
+    if (!group) {
+      group = { initiative: { id: initiative.id, title: initiative.title }, projects: [] }
+      groupByInitiativeId.set(initiative.id, group)
+      groups.push(group)
+    }
+    group.projects.push(o)
+  }
+  if (unanchored.projects.length > 0) groups.push(unanchored)
+  return groups
 }
 
 /** Pixels per day so the longest real route fits the map, capped at the

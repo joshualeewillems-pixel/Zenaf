@@ -50,8 +50,11 @@ two-letter id) never attend via text, only via the explicit
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .branches import get_branch
@@ -60,6 +63,8 @@ from .coordination import prepare_context
 from .currency import derive_currency
 from .lenses import get_lens
 from .store import NarrativeStore
+
+logger = logging.getLogger(__name__)
 
 #: The Weaver's branch id (archetype ``conductor``).
 WEAVER_BRANCH_ID = "seat:conductor"
@@ -462,6 +467,18 @@ def weaver_context_provider(
 #: The Jynx's branch id (archetype ``maverick``).
 PENCIL_BRANCH_ID = "seat:maverick"
 
+#: The champion's branch id (archetype ``champion``) — V3 (Valen
+#: vertical slice, governing I3 bounded to champion): pencil carriage
+#: for the encountering seat. The champion's carriage is separately
+#: flagged (``ZENAF_PENCIL_CHAMPION``, see
+#: :func:`pencil_champion_enabled`) and independently toggled from
+#: every other slice switch; the toggle gates RENDERING only — never
+#: capture (V1), never any relevance determination.
+CHAMPION_BRANCH_ID = "seat:champion"
+
+#: The archetype id whose encounter arcs V3 prepares.
+CHAMPION_ARCHETYPE_ID = "champion"
+
 #: Bounds for one pencil block, mirroring the facts layer's discipline.
 MAX_PENCIL_THREADS = 5
 MAX_PENCIL_CHARS = 2000
@@ -492,6 +509,58 @@ def pencil_context_enabled() -> bool:
     return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
+def pencil_champion_enabled() -> bool:
+    """Carriage toggle for the encountering seat (champion) — V3.
+
+    ``ZENAF_PENCIL_CHAMPION``, read per call, default OFF, in the
+    same idiom as :func:`pencil_context_enabled`. Independent of the
+    pencil master switch (both must be on for champion carriage to
+    render) and of every other slice toggle: this flag's state
+    influences no other code path — in particular not the obligation
+    block's rendering and not any relevance determination. It gates
+    rendering only: V1 capture writes whether or not it is set.
+    """
+    raw = os.environ.get("ZENAF_PENCIL_CHAMPION")
+    if raw is None:
+        return False
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+#: Resolves one fellowship event id to its verbatim evidence text
+#: (the visitor's own words), or None when unresolvable. Injectable
+#: so tests never touch the activity log.
+EventTextResolver = Callable[[str], "str | None"]
+
+
+def _resolve_event_evidence_text(event_id: str) -> str | None:
+    """Default :data:`EventTextResolver`: the activity log scan, in
+    the shape of ``noting.resolve_turn_event_id`` — a fellowship
+    event's log detail carries its verbatim ``evidence`` text.
+    Fail-closed: any failure or non-match returns None and the
+    objection slot simply stays empty."""
+    if not event_id:
+        return None
+    try:
+        from local_ai import activity as _activity
+
+        events = _activity.get_recent_activity(limit=100_000)
+    except Exception:
+        logger.exception("pencil: activity log scan failed")
+        return None
+    for event in events:
+        if getattr(event, "id", "") != event_id:
+            continue
+        if getattr(event, "source", "") != "fellowship":
+            return None
+        try:
+            detail = json.loads(getattr(event, "detail", "") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            return None
+        text = detail.get("evidence")
+        return text if isinstance(text, str) and text.strip() else None
+    return None
+
+
 def _render_pencil_block(
     branch_display_name: str,
     items: list[dict],
@@ -500,7 +569,19 @@ def _render_pencil_block(
     """Bounded pencil render. Pattern language only — tensions and
     open questions from proposed readings. No ids, no refs, no
     evidence text, no milestones (what has happened is fact-class;
-    what is tense and unresolved is the observation)."""
+    what is tense and unresolved is the observation).
+
+    V3 adds the governing §9 rendering contract's two field classes,
+    inside the same caps and the same header: ONE verbatim objection
+    quote (the visitor's own words, attributed to the visitor — the
+    single sanctioned exception to "no evidence text", because a
+    quoted objection remains the visitor's expression where a
+    paraphrase would become the system's interpretation) and the
+    seat's own recognition in its own words, quoted to itself. Both
+    ride the same per-item character discipline; neither has an
+    action surface. Positions are never carried as labelled stances:
+    they travel only transformed, as the tensions / open questions
+    above."""
     lines = [_PENCIL_HEADER, f"Prepared for {branch_display_name}."]
     for item in items:
         parts = []
@@ -508,6 +589,10 @@ def _render_pencil_block(
             parts.append("tension: " + " / ".join(item["tensions"]))
         if item["open_questions"]:
             parts.append("open: " + " / ".join(item["open_questions"]))
+        if item.get("recognition"):
+            parts.append(f'own recognition, in its own words: "{item["recognition"]}"')
+        if item.get("objection_quote"):
+            parts.append(f'visitor objection, verbatim: "{item["objection_quote"]}"')
         lines.append(f"- {item['title']} — " + " · ".join(parts))
     if hidden_count > 0:
         lines.append(f"+{hidden_count} more observation(s) not shown.")
@@ -515,6 +600,185 @@ def _render_pencil_block(
     if len(block) > MAX_PENCIL_CHARS:
         block = block[:MAX_PENCIL_CHARS].rstrip() + "\n[…truncated]"
     return block
+
+
+def _pencil_item_for_thread(
+    store: NarrativeStore,
+    user_id: str,
+    thread,
+    *,
+    evidence_text_resolver: EventTextResolver | None = None,
+) -> dict | None:
+    """One thread's pencil item, or None when it carries nothing.
+
+    The whitelist, exactly: tensions (≤3) and open questions (≤2)
+    from the latest CURRENT proposed reading — plus V3's two §9
+    field classes:
+
+    - **the seat's own recognition in its own words**: the
+      ``recognition`` statement of the latest current proposed
+      reading AUTHORED BY A SEAT (V1's seat-authored readings; the
+      store admits only seat ids and ``steward``/``user`` as reading
+      authors, so a non-steward, non-user author is a seat). The
+      lineage retains the full sequence; only the latest current
+      recognition travels.
+    - **one verbatim objection quote**: sourced from the CURRENT
+      recognition reading's evidence ONLY — a held objection note
+      (V1) on this thread whose cited evidence ref is among that
+      reading's own evidence rows, resolved to the visitor's
+      verbatim words. An objection evidenced anywhere else on the
+      thread does NOT qualify: widening the slot's sourcing to
+      thread evidence generally is an open founder decision and is
+      deliberately not implemented here.
+
+    Nothing else in a reading's payload travels — due items,
+    decisions, next steps, milestones and every other key stay
+    retained-only, per §9."""
+    proposed = store.readings_for(user_id, thread.id, status="proposed")
+    if not proposed:
+        return None
+    # Phase 1A (organic currency): a reading retired by a
+    # successor through change lineage keeps stored status
+    # "proposed" but is history, not current material — it must
+    # never be served as the thread's living observation. The
+    # latest CURRENT proposed reading carries the pencil.
+    currency = derive_currency(
+        thread, proposed, store.changes_for(user_id, thread.id)
+    )
+    current = [r for r in proposed if currency[r.id].placement == "current"]
+    if not current:
+        return None
+    reading = (current[-1].reading or {})
+    tensions = [
+        str(t).strip()[:_MAX_PENCIL_ITEM_CHARS]
+        for t in (reading.get("tensions") or [])
+        if str(t).strip()
+    ][:_MAX_PENCIL_TENSIONS]
+    questions = [
+        str(q).strip()[:_MAX_PENCIL_ITEM_CHARS]
+        for q in (reading.get("open_questions") or [])
+        if str(q).strip()
+    ][:_MAX_PENCIL_QUESTIONS]
+
+    recognition = None
+    recognition_reading = None
+    for candidate in reversed(current):
+        if candidate.author in ("steward", "user", ""):
+            continue
+        statement = str((candidate.reading or {}).get("recognition") or "").strip()
+        if statement:
+            recognition = statement[:_MAX_PENCIL_ITEM_CHARS]
+            recognition_reading = candidate
+            break
+
+    objection_quote = None
+    if recognition_reading is not None:
+        rows_by_id = {
+            row.id: row for row in store.evidence_for(user_id, thread.id)
+        }
+        reading_refs = {
+            (rows_by_id[row_id].ref_kind, rows_by_id[row_id].ref_id)
+            for row_id in (recognition_reading.evidence_refs or [])
+            if row_id in rows_by_id
+        }
+        if reading_refs:
+            resolver = evidence_text_resolver or _resolve_event_evidence_text
+            objections = [
+                note
+                for note in store.held_notes_for(user_id, thread.id)
+                if note.get("kind") == "objection"
+                and (
+                    note.get("evidence_ref_kind"),
+                    note.get("evidence_ref_id"),
+                )
+                in reading_refs
+            ]
+            if objections:
+                note = objections[-1]
+                if note.get("evidence_ref_kind") == "event":
+                    text = resolver(str(note.get("evidence_ref_id") or ""))
+                    if text and str(text).strip():
+                        objection_quote = str(text).strip()[
+                            :_MAX_PENCIL_ITEM_CHARS
+                        ]
+
+    if not tensions and not questions and not recognition and not objection_quote:
+        return None
+    return {
+        "thread_id": thread.id,
+        # The selected reading's id rides the prepared
+        # context's thread facts (never the rendered block:
+        # pencil material carries no citable ids) so the
+        # generation manifest can record WHICH reading the
+        # turn's material came from (plan Q4.1 source ids).
+        "reading_id": current[-1].id,
+        "title": (thread.title or "")[:_MAX_TITLE_CHARS],
+        "tensions": tensions,
+        "open_questions": questions,
+        "recognition": recognition,
+        "objection_quote": objection_quote,
+    }
+
+
+def _collect_pencil_items(
+    store: NarrativeStore,
+    user_id: str,
+    branch_id: str,
+    threads: list,
+    *,
+    attended_text: str = "",
+    attended_entity_refs: tuple[str, ...] | list[str] = (),
+    attended_thread_ids: tuple[str, ...] | list[str] = (),
+    connection=None,
+    evidence_text_resolver: EventTextResolver | None = None,
+) -> tuple[list[dict], list[str]]:
+    """Per-thread preparation for the pencil channel: every thread
+    re-validated fresh through ``prepare_context`` (dual consent
+    flags re-read per thread, relevance recomputed, assessment
+    recorded), fail-closed per thread — a thread that fails any
+    gate contributes nothing, not even its title."""
+    evidence_by_thread: dict[str, list] = {}
+    known_refs: set[str] = set()
+    for thread in threads:
+        rows = store.evidence_for(user_id, thread.id)
+        evidence_by_thread[thread.id] = rows
+        for row in rows:
+            if row.entity_ref:
+                known_refs.add(row.entity_ref)
+    attended = set(str(r) for r in attended_entity_refs)
+    attended |= attended_refs_for_text(known_refs, attended_text)
+
+    items: list[dict] = []
+    assessment_ids: list[str] = []
+    for thread in threads:
+        thread_refs = [
+            row.entity_ref for row in evidence_by_thread[thread.id] if row.entity_ref
+        ]
+        candidate_text = " ".join(
+            part for part in (thread.title, thread.scope) if part
+        )
+        outcome = prepare_context(
+            store,
+            user_id,
+            branch_id,
+            thread_id=thread.id,
+            candidate_text=candidate_text,
+            candidate_entity_refs=thread_refs,
+            candidate_strand_weights=thread.strand_weights,
+            attended_entity_refs=sorted(attended),
+            attended_thread_ids=attended_thread_ids,
+            connection=connection,
+        )
+        if outcome.assessment is not None:
+            assessment_ids.append(outcome.assessment.id)
+        if not outcome.available:
+            continue
+        item = _pencil_item_for_thread(
+            store, user_id, thread, evidence_text_resolver=evidence_text_resolver
+        )
+        if item is not None:
+            items.append(item)
+    return items, assessment_ids
 
 
 def pencil_context_for(
@@ -556,85 +820,16 @@ def pencil_context_for(
     if not standing:
         return PreparedContext(available=False, reason="no_standing_threads")
 
-    evidence_by_thread: dict[str, list] = {}
-    known_refs: set[str] = set()
-    for thread in standing:
-        rows = store.evidence_for(user_id, thread.id)
-        evidence_by_thread[thread.id] = rows
-        for row in rows:
-            if row.entity_ref:
-                known_refs.add(row.entity_ref)
-    attended = set(str(r) for r in attended_entity_refs)
-    attended |= attended_refs_for_text(known_refs, attended_text)
-
-    items: list[dict] = []
-    assessment_ids: list[str] = []
-    for thread in standing:
-        thread_refs = [
-            row.entity_ref for row in evidence_by_thread[thread.id] if row.entity_ref
-        ]
-        candidate_text = " ".join(
-            part for part in (thread.title, thread.scope) if part
-        )
-        outcome = prepare_context(
-            store,
-            user_id,
-            branch_id,
-            thread_id=thread.id,
-            candidate_text=candidate_text,
-            candidate_entity_refs=thread_refs,
-            candidate_strand_weights=thread.strand_weights,
-            attended_entity_refs=sorted(attended),
-            attended_thread_ids=attended_thread_ids,
-            connection=connection,
-        )
-        if outcome.assessment is not None:
-            assessment_ids.append(outcome.assessment.id)
-        if not outcome.available:
-            continue
-        proposed = store.readings_for(user_id, thread.id, status="proposed")
-        if not proposed:
-            continue
-        # Phase 1A (organic currency): a reading retired by a
-        # successor through change lineage keeps stored status
-        # "proposed" but is history, not current material — it must
-        # never be served as the thread's living observation. The
-        # latest CURRENT proposed reading carries the pencil.
-        currency = derive_currency(
-            thread, proposed, store.changes_for(user_id, thread.id)
-        )
-        current = [
-            r for r in proposed if currency[r.id].placement == "current"
-        ]
-        if not current:
-            continue
-        reading = (current[-1].reading or {})
-        tensions = [
-            str(t).strip()[:_MAX_PENCIL_ITEM_CHARS]
-            for t in (reading.get("tensions") or [])
-            if str(t).strip()
-        ][:_MAX_PENCIL_TENSIONS]
-        questions = [
-            str(q).strip()[:_MAX_PENCIL_ITEM_CHARS]
-            for q in (reading.get("open_questions") or [])
-            if str(q).strip()
-        ][:_MAX_PENCIL_QUESTIONS]
-        if not tensions and not questions:
-            continue
-        items.append(
-            {
-                "thread_id": thread.id,
-                # The selected reading's id rides the prepared
-                # context's thread facts (never the rendered block:
-                # pencil material carries no citable ids) so the
-                # generation manifest can record WHICH reading the
-                # turn's material came from (plan Q4.1 source ids).
-                "reading_id": current[-1].id,
-                "title": (thread.title or "")[:_MAX_TITLE_CHARS],
-                "tensions": tensions,
-                "open_questions": questions,
-            }
-        )
+    items, assessment_ids = _collect_pencil_items(
+        store,
+        user_id,
+        branch_id,
+        standing,
+        attended_text=attended_text,
+        attended_entity_refs=attended_entity_refs,
+        attended_thread_ids=attended_thread_ids,
+        connection=connection,
+    )
     if not items:
         return PreparedContext(
             available=False,
@@ -659,6 +854,199 @@ def pencil_context_for(
         ),
         assessment_ids=tuple(assessment_ids),
     )
+
+
+def _encounter_pencil_items(
+    store: NarrativeStore,
+    user_id: str,
+    conversation_id: str,
+    *,
+    attended_text: str = "",
+    connection=None,
+    evidence_text_resolver: EventTextResolver | None = None,
+) -> tuple[list[dict], list[str]]:
+    """The encounter-scope preparation path (V3 build element ii).
+
+    The active encounter arc — V1's encounter scope for this
+    conversation with the champion — made preparable DURING its own
+    encounter. Encounter-born material sits in V1's holding state on
+    a thread that is not a standing (active/dormant) thread, so the
+    standing selection above can never see it; this path bridges
+    exactly that, and nothing more: the one open encounter thread
+    for (user, conversation, champion), prepared through the same
+    ``prepare_context`` discipline as every standing thread — both
+    steward consent flags re-read fresh, relevance recomputed and
+    recorded, fail-closed. Relevance for the arc is established by
+    attendance: the conversation attends its own arc by standing in
+    it, so the encounter's thread id is supplied as attended (the
+    same input the facts layer takes from its callers), alongside
+    any entity refs the current message attends. A closed encounter
+    is not prepared: carriage is an in-encounter act."""
+    scope = store.open_encounter_for(
+        user_id, conversation_id, CHAMPION_ARCHETYPE_ID
+    )
+    if scope is None:
+        return [], []
+    thread = store.get_thread(user_id, scope["thread_id"])
+    if thread is None:
+        return [], []
+    items, assessment_ids = _collect_pencil_items(
+        store,
+        user_id,
+        CHAMPION_BRANCH_ID,
+        [thread],
+        attended_text=attended_text,
+        attended_thread_ids=(thread.id,),
+        connection=connection,
+        evidence_text_resolver=evidence_text_resolver,
+    )
+    return items, assessment_ids
+
+
+def champion_pencil_context_for(
+    store: NarrativeStore,
+    user_id: str,
+    *,
+    conversation_id: str,
+    attended_text: str = "",
+    attended_entity_refs: tuple[str, ...] | list[str] = (),
+    attended_thread_ids: tuple[str, ...] | list[str] = (),
+    connection=None,
+    evidence_text_resolver: EventTextResolver | None = None,
+    max_threads: int = MAX_PENCIL_THREADS,
+) -> PreparedContext:
+    """Prepare pencil-standing carriage for the champion (V3).
+
+    Gate order mirrors :func:`pencil_context_for`, with the
+    carriage toggle second: master switch off ⇒ nothing; carriage
+    toggle off ⇒ nothing (and no store read or assessment write
+    happens on either early return — the toggle gates rendering
+    only, and a dark carriage costs nothing). What renders is the
+    active encounter arc (encounter-scope preparation, above)
+    alongside the standing-thread selection that exists today, under
+    the one existing header and caps, the encounter's own arc first.
+    """
+    if not pencil_context_enabled():
+        return PreparedContext(available=False, reason="pencil_flag_off")
+    if not pencil_champion_enabled():
+        return PreparedContext(
+            available=False, reason="pencil_champion_flag_off"
+        )
+    contract = get_branch(CHAMPION_BRANCH_ID)
+    if contract is None:
+        raise ValueError(f"unknown branch: {CHAMPION_BRANCH_ID!r}")
+    if "coordination" not in contract.capabilities:
+        return PreparedContext(
+            available=False, reason="branch_not_coordination_contracted"
+        )
+    if not coordination_allowed(user_id, connection=connection):
+        return PreparedContext(available=False, reason="consent_closed")
+
+    encounter_items, encounter_assessments = _encounter_pencil_items(
+        store,
+        user_id,
+        conversation_id,
+        attended_text=attended_text,
+        connection=connection,
+        evidence_text_resolver=evidence_text_resolver,
+    )
+
+    standing = [
+        t
+        for t in store.threads_for(user_id, limit=None)
+        if t.status in CONTEXT_THREAD_STATUSES
+    ]
+    standing_items: list[dict] = []
+    standing_assessments: list[str] = []
+    if standing:
+        standing_items, standing_assessments = _collect_pencil_items(
+            store,
+            user_id,
+            CHAMPION_BRANCH_ID,
+            standing,
+            attended_text=attended_text,
+            attended_entity_refs=attended_entity_refs,
+            attended_thread_ids=attended_thread_ids,
+            connection=connection,
+            evidence_text_resolver=evidence_text_resolver,
+        )
+
+    assessment_ids = encounter_assessments + standing_assessments
+    seen: set[str] = set()
+    items: list[dict] = []
+    for item in encounter_items + standing_items:
+        if item["thread_id"] in seen:
+            continue
+        seen.add(item["thread_id"])
+        items.append(item)
+    if not items:
+        return PreparedContext(
+            available=False,
+            reason="no_pencil_material",
+            assessment_ids=tuple(assessment_ids),
+        )
+
+    shown = items[:max_threads]
+    hidden = len(items) - len(shown)
+    block = _render_pencil_block(contract.display_name, shown, hidden)
+    return PreparedContext(
+        available=True,
+        reason="available",
+        block=block,
+        threads=tuple(
+            {
+                "thread_id": item["thread_id"],
+                "reading_id": item["reading_id"],
+                "title": item["title"],
+            }
+            for item in shown
+        ),
+        assessment_ids=tuple(assessment_ids),
+    )
+
+
+def champion_context_provider(
+    store: NarrativeStore | None = None,
+    *,
+    connection=None,
+    with_selection: bool = False,
+    evidence_text_resolver: EventTextResolver | None = None,
+) -> object:
+    """A chat-path provider returning the champion's pencil block (V3).
+
+    Same contract as :func:`jynx_context_provider`, plus the
+    conversation the turn belongs to: the service hands it as the
+    ``conversation_id`` keyword, because encounter carriage is keyed
+    to the encounter's own conversation — without it the provider
+    fails closed and returns None. Takes ``(user_id, message,
+    history)``, returns the block string or None, never raises. With
+    either switch off (the default) it returns None before touching
+    the store.
+    """
+
+    state: dict[str, NarrativeStore | None] = {"store": store}
+
+    def provider(user_id: str, message: str, history=None, *, conversation_id=None):
+        try:
+            if not pencil_context_enabled() or not pencil_champion_enabled():
+                return None
+            if not conversation_id:
+                return None
+            if state["store"] is None:
+                state["store"] = NarrativeStore()
+            prepared = champion_pencil_context_for(
+                state["store"],
+                user_id,
+                conversation_id=conversation_id,
+                attended_text=message or "",
+                connection=connection,
+                evidence_text_resolver=evidence_text_resolver,
+            )
+            return prepared if with_selection else prepared.block
+        except Exception:
+            return None
+
+    return provider
 
 
 def jynx_context_provider(

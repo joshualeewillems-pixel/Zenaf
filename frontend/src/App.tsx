@@ -53,6 +53,7 @@ import {
 } from './vision-execution'
 import { VisionMapView } from './vision-map'
 import { CampaignBoardView } from './campaign-board'
+import { AriaAtelierView } from './aria-atelier'
 import { veSelectionFromEntityRef, veSelectionFromMapPayload } from './vision-map/mapCouncilActions'
 import { resolveInspectEntityRef } from './vision-map/mapTriadInspector'
 import type { MapNodePayload } from './vision-map/ontology'
@@ -4534,6 +4535,7 @@ function App() {
     | 'content'
     | 'vision_map'
     | 'campaign_board'
+    | 'aria_atelier'
     | 'vision_execution'
     | 'agent_intake'
     | 'review'
@@ -5514,6 +5516,8 @@ function App() {
           </div>
         ) : mainView === 'campaign_board' ? (
           <CampaignBoardView />
+        ) : mainView === 'aria_atelier' ? (
+          <AriaAtelierView />
         ) : mainView === 'vision_execution' ? (
           <div className="flex-1 flex flex-col min-h-0 overflow-auto">
             <VisionExecutionView

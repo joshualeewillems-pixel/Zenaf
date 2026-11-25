@@ -11,6 +11,14 @@ import { ContentExportPane } from './ContentExportPane'
 import { TranscriptSorter } from './TranscriptSorter'
 import { contentActionIntentForRun, contentRunRoutingContext } from './contentRoutingContext'
 import {
+  allBriefParentKeys,
+  countBriefsInInitiativeGroup,
+  groupBriefs,
+  initiativeParentKey,
+  projectParentKey,
+  type BriefProjectGroup,
+} from './briefGrouping'
+import {
   buildContentBriefGenerationSnapshot,
   emitContentBriefDistillTrace,
   emitContentBriefTraceFromRun,
@@ -91,6 +99,8 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [initiatives, setInitiatives] = useState<Initiative[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  /** Parents/loose rule: brief parents (initiatives/projects) start collapsed. */
+  const [expandedBriefParents, setExpandedBriefParents] = useState<Set<string>>(new Set())
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const triggerFirstGenerateRef = useRef(false)
   /** Latest successful brief `/run` trace for outcome hooks (copy / export / regenerate). */
@@ -417,6 +427,66 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
   const linkedInitiative = brief?.linked_initiative_id ? initiatives.find((i) => i.id === brief.linked_initiative_id) : null
   const linkedProject = brief?.linked_project_id ? projects.find((p) => p.id === brief.linked_project_id) : null
 
+  // Parents/loose display rule: the briefs list defaults to top-level
+  // parents (initiatives, loose projects) + loose briefs only.
+  const briefGrouping = useMemo(
+    () => groupBriefs(briefs, initiatives, projects),
+    [briefs, initiatives, projects],
+  )
+  const briefParentKeys = useMemo(() => allBriefParentKeys(briefGrouping), [briefGrouping])
+  const hasBriefParents = briefParentKeys.length > 0
+  const allBriefParentsExpanded =
+    hasBriefParents && briefParentKeys.every((k) => expandedBriefParents.has(k))
+  const toggleBriefParent = useCallback((key: string) => {
+    setExpandedBriefParents((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const renderBriefItem = (b: ContentBrief) => (
+    <li key={b.id}>
+      <button
+        type="button"
+        onClick={() => { setSelectedBriefId(b.id); setScriptText(''); setNewsletterText('') }}
+        className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
+          selectedBriefId === b.id ? 'border-amber-500 bg-amber-900/20 text-slate-100' : 'border-slate-600 bg-slate-800/50 text-slate-300 hover:bg-slate-700/50'
+        }`}
+      >
+        <span className="font-medium truncate block">{b.title || 'Untitled brief'}</span>
+        <span className={`inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] uppercase border ${statusBadgeClass(b.status)}`}>
+          {b.status.replace('_', ' ')}
+        </span>
+      </button>
+    </li>
+  )
+
+  const renderBriefProjectGroup = (pg: BriefProjectGroup) => {
+    const key = projectParentKey(pg.project.id)
+    const expanded = expandedBriefParents.has(key)
+    return (
+      <li key={key}>
+        <button
+          type="button"
+          data-testid={`brief-parent-project-${pg.project.id}`}
+          aria-expanded={expanded}
+          onClick={() => toggleBriefParent(key)}
+          className="w-full text-left px-3 py-2 rounded-lg border border-slate-600 bg-slate-900/60 text-sm text-slate-200 hover:bg-slate-700/50 transition-colors"
+        >
+          <span className="font-medium truncate block">
+            {expanded ? '▾' : '▸'} {pg.project.title || pg.project.id}
+          </span>
+          <span className="text-[10px] text-slate-500">
+            Project · {pg.briefs.length} {pg.briefs.length === 1 ? 'brief' : 'briefs'}
+          </span>
+        </button>
+        {expanded && <ul className="mt-1 ml-3 space-y-1">{pg.briefs.map(renderBriefItem)}</ul>}
+      </li>
+    )
+  }
+
   if (isZeroState) {
     return (
       <div className="flex-1 flex flex-col min-h-0">
@@ -503,26 +573,57 @@ export function ContentView({ apiBase, config, showTranscriptSorter = true, hide
                 + New brief
               </button>
             </div>
-            <ul className="flex-1 overflow-y-auto min-h-0 p-2 space-y-1">
+            {hasBriefParents && (
+              <div className="px-3 py-1.5 border-b border-slate-700 flex items-center justify-end">
+                <button
+                  type="button"
+                  data-testid={allBriefParentsExpanded ? 'briefs-collapse-all' : 'briefs-expand-all'}
+                  onClick={() =>
+                    setExpandedBriefParents(
+                      allBriefParentsExpanded ? new Set() : new Set(briefParentKeys),
+                    )
+                  }
+                  className="text-[11px] text-amber-300 hover:text-amber-200"
+                >
+                  {allBriefParentsExpanded ? 'Collapse all' : 'Expand all'}
+                </button>
+              </div>
+            )}
+            <ul data-testid="briefs-list" className="flex-1 overflow-y-auto min-h-0 p-2 space-y-1">
               {briefs.length === 0 && (
                 <li className="text-slate-500 text-xs p-2">No packages yet. Create a brief to get started.</li>
               )}
-              {briefs.map((b) => (
-                <li key={b.id}>
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedBriefId(b.id); setScriptText(''); setNewsletterText('') }}
-                    className={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${
-                      selectedBriefId === b.id ? 'border-amber-500 bg-amber-900/20 text-slate-100' : 'border-slate-600 bg-slate-800/50 text-slate-300 hover:bg-slate-700/50'
-                    }`}
-                  >
-                    <span className="font-medium truncate block">{b.title || 'Untitled brief'}</span>
-                    <span className={`inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] uppercase border ${statusBadgeClass(b.status)}`}>
-                      {b.status.replace('_', ' ')}
-                    </span>
-                  </button>
-                </li>
-              ))}
+              {briefGrouping.initiativeGroups.map((g) => {
+                const key = initiativeParentKey(g.initiative.id)
+                const expanded = expandedBriefParents.has(key)
+                const count = countBriefsInInitiativeGroup(g)
+                return (
+                  <li key={key}>
+                    <button
+                      type="button"
+                      data-testid={`brief-parent-initiative-${g.initiative.id}`}
+                      aria-expanded={expanded}
+                      onClick={() => toggleBriefParent(key)}
+                      className="w-full text-left px-3 py-2 rounded-lg border border-slate-500 bg-slate-900/80 text-sm text-slate-100 hover:bg-slate-700/50 transition-colors"
+                    >
+                      <span className="font-medium truncate block">
+                        {expanded ? '▾' : '▸'} {g.initiative.title || g.initiative.id}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        Initiative · {count} {count === 1 ? 'brief' : 'briefs'}
+                      </span>
+                    </button>
+                    {expanded && (
+                      <ul className="mt-1 ml-3 space-y-1">
+                        {g.projects.map(renderBriefProjectGroup)}
+                        {g.directBriefs.map(renderBriefItem)}
+                      </ul>
+                    )}
+                  </li>
+                )
+              })}
+              {briefGrouping.looseProjects.map(renderBriefProjectGroup)}
+              {briefGrouping.looseBriefs.map(renderBriefItem)}
             </ul>
             {brief && (
               <div className="p-3 border-t border-slate-700">

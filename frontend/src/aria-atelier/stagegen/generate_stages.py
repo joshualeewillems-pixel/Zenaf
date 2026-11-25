@@ -29,8 +29,9 @@ verbatim — nothing is redrawn:
              unescaped points contribute zero, so the band after
              iteration N is a true prefix; stage = band at iter N.
   rumi     : the directional study's own snapshot sequence
-             (grow_fern_fan + compose4, cardinals then diagonals),
-             sampled at 12 frames; final == the study final.
+             (grow_fern_fan + compose4), CARDINALS ONLY since the
+             founder's 2026-11-25 ruling (below), sampled at 12
+             frames; final == the cardinals-only study growth.
   lucian   : the directional study's grow_channels snapshot
              sequence, same treatment (the study grammar IS the
              canonical source for his pure layer — build_pure
@@ -40,6 +41,25 @@ Every ladder's final density is gated by sha256 against
 atelier-timing/pure-composite/geometry-pure-hashes.json — the same
 hashes build_pure produced. A voice whose final does not match is a
 hard failure: this script stops rather than ship an approximation.
+The one exception is Rumi, whose canonical geometry the founder
+changed (next paragraph): his gate is the pinned in-repo hash
+RUMI_CARDINALS_ONLY_SHA256.
+
+RUMI, CARDINALS ONLY (founder ruling 2026-11-25, "Yes, get rid of
+diagonals this looks better"): Rumi's canonical formation loses its
+rim-rooted inward DIAGONAL family; the cardinals-only growth becomes
+canonical. This supersedes the Rumi half of the 2026-11-24
+directional-compositions ruling. LUCIAN IS NOT TOUCHED — his
+inverted construction, diagonals included, stands. Rumi's fill is
+regenerated with it: his region mask is recomputed from the new
+density by build_pure's own region code (shape_of, verbatim — the
+code that produced regions-pure's rumi mask from the superseded
+density), so the fill washes the regions his remaining ink actually
+encloses. The proofs that the machinery is the canonical machinery
+(cardinals + diagonals recomposed == the superseded canonical
+geometry, bit-exact; shape_of(superseded density) == regions-pure's
+stored rumi mask, bit-exact) are re-runnable:
+stagegen/verify_rumi_cardinals.py.
 
 Rendering is build_pure's stage4m ink math verbatim (ink_layer);
 Aria's final stage additionally carries her outline, composited
@@ -47,9 +67,11 @@ over the band ink exactly as build_pure's layer export does (the
 outline is a finishing treatment — intermediate stages are band
 ink alone). The fill splits are regenerated with build_pure's own
 fill_layer / aria_lighten_layer constructions (solid voice colour
-at the baked opacity over the regions-pure mask; Lucian's
-alternate-compartment mask; Aria's white lighten at 0.5), replacing
-PR #414's un-composited splits — for Rumi the shipped ink split is
+at the baked opacity over the regions-pure mask — for Rumi, over
+the region mask recomputed from his current density, above;
+Lucian's alternate-compartment mask; Aria's white lighten at 0.5),
+replacing PR #414's un-composited splits — for Rumi the shipped
+ink split is
 provably contaminated by fill bleed (his ink colour equals his
 fill colour, so the un-compositing was ill-conditioned; the bleed
 pixels lie 100% inside his region mask where true ink is ~0).
@@ -81,10 +103,14 @@ decreases up to 42/255). The drawing is transient; the standing
 final stage is full-fidelity.
 
 Run: python3 generate_stages.py            (from anywhere; ~1 min)
+     python3 generate_stages.py --voice rumi
+         (regenerate one voice only; the other voices' manifest
+         entries and assets are preserved untouched)
 """
 import hashlib, importlib.util, json, math, pathlib, sys, time
 import numpy as np
 from PIL import Image
+from scipy import ndimage
 
 T0 = time.time()
 HOME = pathlib.Path.home()
@@ -157,7 +183,46 @@ geo = np.load(PURE / 'geometry-pure.npz')
 reg = np.load(PURE / 'regions-pure.npz')
 HASHES = json.loads((PURE / 'geometry-pure-hashes.json').read_text())['geometry-pure.npz']
 
+# Rumi's canonical density since the founder's 2026-11-25 ruling:
+# compose4(grow_fern_fan(cardinal specs)) from the directional
+# study, grown by the study machinery itself. Provenance is
+# re-provable by stagegen/verify_rumi_cardinals.py, which also
+# re-proves that the superseded canonical (HASHES['rumi']) is the
+# same growth with the diagonal family recomposed, bit-exact.
+RUMI_CARDINALS_ONLY_SHA256 = '7233eafb5b5572a4c737c7608c02081b170d380772605c8f9fc9693fe12814b9'
+
+def expected_canonical_sha(voice, key):
+    if voice == 'rumi':
+        return RUMI_CARDINALS_ONLY_SHA256
+    return HASHES[key]
+
+def shape_of(dens, gam):
+    """build_pure's region code for Rumi (stage2), verbatim: the
+    dilated ink plus every enclosed hole up to the size cap."""
+    d = np.power(np.clip(dens, 0, None), gam)
+    ink = ndimage.binary_dilation(d > 0.04, iterations=2)
+    del d
+    lab, n = ndimage.label(~ink)
+    if n == 0:
+        return ink
+    sizes = np.bincount(lab.ravel(), minlength=n + 1)
+    border_ids = np.unique(np.concatenate([lab[0, :], lab[-1, :], lab[:, 0], lab[:, -1]]))
+    cap = 0.06 * H * W
+    lut = (sizes <= cap)
+    lut[0] = False
+    lut[border_ids] = False
+    fill = lut[lab]
+    del lab
+    return ink | fill
+
+# Region masks recomputed from a voice's CURRENT density instead of
+# the stored regions-pure mask. Rumi only: since the 2026-11-25
+# ruling his stored mask describes a formation he no longer has.
+REGION_OVERRIDES = {}
+
 def region_mask(voice):
+    if voice in REGION_OVERRIDES:
+        return REGION_OVERRIDES[voice]
     if voice == 'lucian':
         return np.unpackbits(reg['lucian_fill_packed'])[:H * W].reshape(H, W) > 0
     return np.unpackbits(reg['%s_packed' % KEY.get(voice, voice)])[:H * W].reshape(H, W) > 0
@@ -376,23 +441,25 @@ def _study():
     return load_mod('directional_study', STUDY / 'build_directional_study.py')
 
 def ladder_rumi():
+    # Cardinals only (founder ruling 2026-11-25 — see the module
+    # docstring). The diagonal specs survive in
+    # verify_rumi_cardinals.py, which re-proves the recomposition
+    # anchor against the superseded canonical geometry.
+    # Snapshots are taken every round (snap_every=1) so the 12
+    # sampled stage fractions track the uniform grid within the
+    # pinned 0.01 tolerance; snapshot density does not change the
+    # growth — the final snapshot is the completed formation
+    # either way (measured: snap_every=2 samples deviate 0.0119,
+    # snap_every=1 samples 0.0088).
     ds = _study()
     card_specs = [(ds.CX, ds.CY, -1.57, 58, 1.35, 0.002, 101),
                   (ds.CX, ds.CY, -1.22, 44, 1.1, 0.008, 102),
                   (ds.CX, ds.CY, -1.92, 44, 1.1, -0.008, 103)]
-    card_raw, card_snaps, _ = ds.grow_fern_fan(card_specs, snap_every=2)
+    card_raw, card_snaps, _ = ds.grow_fern_fan(card_specs, snap_every=1)
     card_final = ds.compose4(card_raw)
-    ang = math.radians(-45)
-    rx, ry = ds.CX + ds.R_CIRCLE * math.cos(ang), ds.CY + ds.R_CIRCLE * math.sin(ang)
-    axis = math.atan2(ds.CY - ry, ds.CX - rx)
-    diag_specs = [(rx, ry, axis, 32, 1.35, 0.002, 111),
-                  (rx, ry, axis + 0.35, 24, 1.1, 0.008, 112),
-                  (rx, ry, axis - 0.35, 24, 1.1, -0.008, 113)]
-    diag_raw, diag_snaps, _ = ds.grow_fern_fan(diag_specs, snap_every=2)
-    final = np.maximum(card_final, ds.compose4(diag_raw))
-    seq = [ds.compose4(s) for s in card_snaps] + [np.maximum(card_final, ds.compose4(s)) for s in diag_snaps]
-    if sha(seq[-1]) != sha(final):
-        seq[-1] = final
+    seq = [ds.compose4(s) for s in card_snaps]
+    if sha(seq[-1]) != sha(card_final):
+        seq[-1] = card_final
     idx = [int(round(j * (len(seq) - 1) / K)) for j in range(1, K + 1)]
     return [seq[i] for i in idx], [i / (len(seq) - 1) for i in idx], seq
 
@@ -437,37 +504,75 @@ def over(top, bot):
 
 # ---------- main ----------
 def main():
-    manifest = {
-        'generatedBy': 'frontend/src/aria-atelier/stagegen/generate_stages.py',
-        'stagesPerVoice': K,
-        'intermediateSize': list(MID_SIZE),
-        'finalSize': list(FINAL_SIZE),
-        'voices': {},
-        'totals': {},
-    }
+    only = None
+    if '--voice' in sys.argv:
+        only = sys.argv[sys.argv.index('--voice') + 1]
+        if only not in VOICES:
+            raise SystemExit('unknown voice: %s' % only)
+    manifest_path = ATELIER / 'stage-manifest.json'
+    if only:
+        # Single-voice regeneration: the recorded entries for the
+        # other voices (and the historical previous* totals) are
+        # preserved exactly; only this voice's entry is recomputed.
+        manifest = json.loads(manifest_path.read_text())
+        prev_ink_bytes = manifest['totals']['previousInkBytes']
+        prev_fill_bytes = manifest['totals']['previousFillBytes']
+    else:
+        manifest = {
+            'generatedBy': 'frontend/src/aria-atelier/stagegen/generate_stages.py',
+            'stagesPerVoice': K,
+            'intermediateSize': list(MID_SIZE),
+            'finalSize': list(FINAL_SIZE),
+            'voices': {},
+            'totals': {},
+        }
+        prev_ink_bytes = None  # measured from the shipped splits below
+        # The shipped fills are overwritten in place by this script,
+        # so their original sizes are the recorded constant (measured
+        # 2026-11-25: aria 11068, jynx 26107, lucian 28427, maeve
+        # 13400, rumi 17706, severine 12811, valen 9631).
+        prev_fill_bytes = 119150
     shipped_ink_bytes = 0
-    # The shipped fills are overwritten in place by this script, so
-    # their original sizes are recorded from git HEAD (measured
-    # 2026-11-25: aria 11068, jynx 26107, lucian 28427, maeve 13400,
-    # rumi 17706, severine 12811, valen 9631).
-    shipped_fill_bytes = 119150
-    stage_bytes_total = 0
-    fill_bytes_total = 0
-    for voice in VOICES:
+    for voice in ([only] if only else VOICES):
         log('== %s ==' % voice)
         key = KEY.get(voice, voice)
-        shipped_ink = Image.open(ASSETS / ('layer-%s-ink.png' % voice)).convert('RGBA')
-        shipped_ink_bytes += (ASSETS / ('layer-%s-ink.png' % voice)).stat().st_size
+        ink_split = ASSETS / ('layer-%s-ink.png' % voice)
+        if ink_split.exists():
+            shipped_ink = Image.open(ink_split).convert('RGBA')
+            shipped_ink_bytes += ink_split.stat().st_size
+            ink_ref_kind = 'shipped split (layer-%s-ink.png)' % voice
+        else:
+            # PR #434 deleted the #414 ink splits in the same commit
+            # that added this script, so on current main the Gate-4
+            # reference is the canonical ink render: build_pure's
+            # layer construction (ink_layer at full resolution, PIL
+            # Lanczos resize) of the final density — the construction
+            # that produced the canonical layer-<voice>.png exports.
+            # Rendered after the ladder, below.
+            shipped_ink = None
+            ink_ref_kind = 'canonical ink render (ink splits deleted by PR #434)'
         out = LADDERS[voice]()
         snaps, fractions = out[0], out[1]
         full_seq = out[2] if len(out) > 2 else snaps
         assert len(snaps) == K, (voice, len(snaps))
         # Gate 1: the final density IS the canonical geometry.
+        expected_sha = expected_canonical_sha(voice, key)
         final_sha = sha(snaps[-1])
-        gate = final_sha == HASHES[key]
-        log('%s final density sha %s == canonical %s : %s' % (voice, final_sha[:12], HASHES[key][:12], gate))
+        gate = final_sha == expected_sha
+        log('%s final density sha %s == canonical %s : %s' % (voice, final_sha[:12], expected_sha[:12], gate))
         if not gate:
             raise SystemExit('GATE FAIL: %s final density does not reproduce the canonical geometry' % voice)
+        if voice == 'rumi':
+            # His fill washes the regions his REMAINING ink
+            # encloses: recompute the region mask from the new
+            # density with build_pure's own region code (shape_of,
+            # verbatim). verify_rumi_cardinals.py re-proves that
+            # the same code on the superseded density reproduces
+            # regions-pure's stored rumi mask bit-exactly.
+            REGION_OVERRIDES['rumi'] = shape_of(snaps[-1], PARAMS['rumi'][1])
+            stored_rumi = np.unpackbits(reg['rumi_packed'])[:H * W].reshape(H, W) > 0
+            log('rumi region recomputed from the cardinals-only density: %d px (superseded mask: %d px)' % (
+                int(REGION_OVERRIDES['rumi'].sum()), int(stored_rumi.sum())))
         # Gate 2: prefix truth on densities — every stage a subset of
         # the next (elementwise, over the full sequence where the
         # growth machinery provides one).
@@ -512,37 +617,65 @@ def main():
         fill_img = resize_rgba_float(fill_layer(voice), FINAL_SIZE, Image.LANCZOS, fill_absent)
         fill_path = ASSETS / ('layer-%s-fill.png' % voice)
         fill_img.save(fill_path, compress_level=9)
-        fill_bytes_total += fill_path.stat().st_size
         # Gate 4: final stage vs the shipped ink split, and the
         # composed final vs the canonical layer export.
         final_img = Image.open(STAGES_DIR / ('stage-%s-%d.png' % (voice, K))).convert('RGBA')
+        if shipped_ink is None:
+            rgb_c, gam_c, stg_c = PARAMS[voice]
+            shipped_ink = ink_layer(snaps[-1], rgb_c, gam_c, stg_c).resize(FINAL_SIZE, Image.LANCZOS)
         vs_shipped = img_diff(final_img, shipped_ink)
-        canon_layer = Image.open(PURE / ('layer-%s.png' % voice)).convert('RGBA')
+        if voice == 'rumi':
+            # The layer export in atelier-timing predates the
+            # 2026-11-25 ruling; Rumi's canonical layer is now the
+            # build_pure construction over the recomputed region:
+            # the fill layer alpha-composited with the ink layer at
+            # full resolution, PIL Lanczos resize — the same
+            # construction that produced layer-rumi.png in its day.
+            canon_layer = fill_layer(voice)
+            canon_layer.alpha_composite(ink_layer(snaps[-1], rgb_c, gam_c, stg_c))
+            canon_layer = canon_layer.resize(FINAL_SIZE, Image.LANCZOS)
+        else:
+            canon_layer = Image.open(PURE / ('layer-%s.png' % voice)).convert('RGBA')
         composed = over(final_img, fill_img)
         vs_canon = float(np.abs(np.asarray(composed).astype(np.int32) - np.asarray(canon_layer).astype(np.int32)).mean())
         log('%s final vs shipped ink: %s | composed vs canonical layer mean %.3f' % (voice, vs_shipped, vs_canon))
-        stage_bytes_total += sum(stage_files)
         manifest['voices'][voice] = {
             'finalDensitySha256': final_sha,
-            'canonicalDensitySha256': HASHES[key],
+            'canonicalDensitySha256': expected_sha,
             'finalDensityMatchesCanonical': gate,
             'densityLadderMonotone': mono,
             'renderedAlphaMaxDecrease': max_dec,
             'stageFractions': [round(f, 4) for f in fractions],
             'finalVsShippedInk': vs_shipped,
+            'finalVsShippedInkReference': ink_ref_kind,
             'finalCompositeVsCanonicalLayerMeanAbsDiff': round(vs_canon, 3),
             'stageBytes': stage_files,
             'fillBytes': fill_path.stat().st_size,
         }
-        (ATELIER / 'stage-manifest.json').write_text(json.dumps(manifest, indent=1))
-    manifest['totals'] = {
-        'stageBytes': stage_bytes_total,
-        'fillBytes': fill_bytes_total,
-        'previousInkBytes': shipped_ink_bytes,
-        'previousFillBytes': shipped_fill_bytes,
-    }
+        if voice == 'rumi':
+            manifest['voices'][voice]['supersededCanonicalDensitySha256'] = HASHES['rumi']
+            manifest['voices'][voice]['canonicalNote'] = (
+                'Founder ruling 2026-11-25: cardinals only — the rim-rooted inward '
+                'diagonal family is removed from Rumi (Lucian untouched). Region '
+                'mask recomputed from the new density by build_pure shape_of; '
+                'anchors re-provable via stagegen/verify_rumi_cardinals.py.')
+        manifest_path.write_text(json.dumps(manifest, indent=1))
+    # Totals are recomputed from the per-voice records; any other
+    # keys already recorded in totals (e.g. a twinBytes entry from
+    # the dynamism build) are preserved, not clobbered.
+    totals = dict(manifest.get('totals') or {})
+    totals.update({
+        'stageBytes': sum(sum(v['stageBytes']) for v in manifest['voices'].values()),
+        'fillBytes': sum(v['fillBytes'] for v in manifest['voices'].values()),
+        'previousInkBytes': prev_ink_bytes if prev_ink_bytes is not None else shipped_ink_bytes,
+        'previousFillBytes': prev_fill_bytes,
+    })
+    manifest['totals'] = totals
     manifest['resampling'] = {'intermediate': 'float-premultiplied bilinear', 'final': 'float-premultiplied lanczos'}
-    (ATELIER / 'stage-manifest.json').write_text(json.dumps(manifest, indent=1))
+    manifest_path.write_text(json.dumps(manifest, indent=1))
+    if only:
+        log('DONE in %.1fs — single voice %s regenerated; other voices preserved' % (time.time() - T0, only))
+        return
     # stageImages.ts — explicit generated imports.
     lines = [
         '/**',
@@ -567,7 +700,8 @@ def main():
     lines.append('}')
     lines.append('')
     (ATELIER / 'stageImages.ts').write_text('\n'.join(lines))
-    log('DONE in %.1fs — stage bytes %d, previous ink bytes %d' % (time.time() - T0, stage_bytes_total, shipped_ink_bytes))
+    log('DONE in %.1fs — stage bytes %d, previous ink bytes %d' % (
+        time.time() - T0, manifest['totals']['stageBytes'], manifest['totals']['previousInkBytes']))
 
 if __name__ == '__main__':
     main()

@@ -1926,6 +1926,59 @@ def list_invitations(
 
 
 # ---------------------------------------------------------------------------
+# OPS-7 chalk drawings (Jynx's [[chalk]] carriage).
+#
+# Drawings are made in conversation: a maverick turn's [[chalk]]
+# tail is parsed at the conversation service's seam and persisted
+# owner-scoped in the chalk store. This route is the Scroll's
+# drawing feed — the caller's own drawings, in the order they were
+# made. READ-ONLY: reading never changes a drawing. Strictly
+# per-user: the store scopes every row by the caller's id, so
+# another user's drawings are simply absent.
+# ---------------------------------------------------------------------------
+
+
+def _chalk_store():
+    """The OPS-7 chalk drawings store. Monkeypatched in tests."""
+    from local_ai.conversation.chalk_store import ChalkStore
+
+    return ChalkStore()
+
+
+@router.get("/drawings")
+def list_chalk_drawings(
+    current_user: dict = Depends(get_current_user),
+) -> dict:
+    """Jynx's drawings for the caller, oldest first (OPS-7).
+
+    Each item is the ScrollDrawing shape the Scroll renders —
+    ``{id, title, space: {w, h}, marks}`` — plus its carriage
+    provenance (conversation and selected subject, where one
+    exists). An owner with no drawings gets an empty list: the
+    unrolled scroll stands honestly blank.
+    """
+    user_id = _uid(current_user)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
+    drawings = _chalk_store().list_drawings(user_id)
+    return {
+        "drawings": [
+            {
+                "id": d["id"],
+                "title": d["title"],
+                "space": d["space"],
+                "marks": d["marks"],
+                "conversation_id": d["conversation_id"],
+                "subject_type": d["subject_type"],
+                "subject_id": d["subject_id"],
+                "created_at": d["created_at"],
+            }
+            for d in drawings
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Weaver strand interviews (rev2, as accepted).
 #
 # One ordinary Weaver (conductor) Talk thread per strand, opened from

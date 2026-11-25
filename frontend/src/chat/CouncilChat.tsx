@@ -755,12 +755,6 @@ export default function CouncilChat({
               )}
             </div>
           )}
-        {!activeId && !councilMode && (
-          <p className="text-sm text-stone-400 leading-relaxed px-1 py-2">
-            Pick a voice above to begin — one conversation, tap a seat to
-            branch it whenever you like. Or ask the whole council at once.
-          </p>
-        )}
         {messages.map((m, i) =>
           m.role === 'user' ? (
             <div key={i} className="flex justify-end">

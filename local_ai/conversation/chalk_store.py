@@ -142,18 +142,42 @@ class ChalkStore:
             ).fetchone()
         return self._row_to_drawing(row) if row is not None else None
 
-    def list_drawings(self, user_id: str, limit: int = LIST_LIMIT) -> list[dict[str, Any]]:
-        """The owner's drawings in the order they were made."""
+    def list_drawings(
+        self,
+        user_id: str,
+        limit: int = LIST_LIMIT,
+        conversation_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """The owner's drawings in the order they were made.
+
+        With ``conversation_id``, only the drawings born in that
+        conversation — a scroll's sheet carries its own
+        conversation's drawings, never the whole feed (founder,
+        2026-11-25). The filter is a read key, not a second store:
+        rows still resolve owner-scoped first, so a foreign
+        conversation id yields nothing, indistinguishably.
+        """
         with self._lock:
-            rows = self._conn.execute(
-                """
-                SELECT * FROM chalk_drawings
-                WHERE user_id = ?
-                ORDER BY created_at, rowid
-                LIMIT ?
-                """,
-                (user_id, int(limit)),
-            ).fetchall()
+            if conversation_id is not None:
+                rows = self._conn.execute(
+                    """
+                    SELECT * FROM chalk_drawings
+                    WHERE user_id = ? AND conversation_id = ?
+                    ORDER BY created_at, rowid
+                    LIMIT ?
+                    """,
+                    (user_id, conversation_id, int(limit)),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    """
+                    SELECT * FROM chalk_drawings
+                    WHERE user_id = ?
+                    ORDER BY created_at, rowid
+                    LIMIT ?
+                    """,
+                    (user_id, int(limit)),
+                ).fetchall()
         return [self._row_to_drawing(r) for r in rows]
 
     # -- shape --------------------------------------------------------

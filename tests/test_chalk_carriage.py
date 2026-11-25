@@ -238,6 +238,29 @@ def test_store_owner_isolation(chalk_store):
     assert chalk_store.get_drawing(USER, "no-such-id") is None
 
 
+def test_store_list_filter_by_conversation(chalk_store):
+    # A scroll's sheet carries only its own conversation's drawings
+    # (founder, 2026-11-25): the store's read can key on the
+    # conversation a drawing was born in.
+    mine = _record(chalk_store)
+    other_convo = chalk_store.record_drawing(
+        user_id=USER,
+        conversation_id="jynx-scroll:task:t9",
+        title="Elsewhere",
+        space={"w": 600, "h": 800},
+        marks=[{"type": "stamp", "stamp": "wave", "cx": 1, "cy": 2, "w": 3, "tier": 0.6}],
+    )
+    filtered = chalk_store.list_drawings(USER, conversation_id=CONVO)
+    assert [d["id"] for d in filtered] == [mine["id"]]
+    filtered_other = chalk_store.list_drawings(USER, conversation_id="jynx-scroll:task:t9")
+    assert [d["id"] for d in filtered_other] == [other_convo["id"]]
+    # Unfiltered is the whole archive, as before; a conversation
+    # the caller does not own yields nothing.
+    assert len(chalk_store.list_drawings(USER)) == 2
+    assert chalk_store.list_drawings(OTHER_USER, conversation_id=CONVO) == []
+    assert chalk_store.list_drawings(USER, conversation_id="no-such-conversation") == []
+
+
 # ---------------------------------------------------------------------------
 # Service seam (recorded generations, zero live model calls)
 # ---------------------------------------------------------------------------
@@ -390,3 +413,25 @@ def test_route_serves_owner_drawings_and_isolates(monkeypatch, chalk_store):
     with pytest.raises(HTTPException) as exc:
         conversation_routes.list_chalk_drawings(current_user={})
     assert exc.value.status_code == 401
+
+
+def test_route_filter_by_conversation(monkeypatch, chalk_store):
+    from api.routes import conversation_routes
+
+    _record(chalk_store)
+    chalk_store.record_drawing(
+        user_id=USER,
+        conversation_id="jynx-scroll:task:t9",
+        title="Elsewhere",
+        space={"w": 600, "h": 800},
+        marks=[{"type": "stamp", "stamp": "wave", "cx": 1, "cy": 2, "w": 3, "tier": 0.6}],
+    )
+    monkeypatch.setattr(conversation_routes, "_chalk_store", lambda: chalk_store)
+
+    filtered = conversation_routes.list_chalk_drawings(
+        conversation_id=CONVO, current_user={"id": USER}
+    )
+    assert [d["title"] for d in filtered["drawings"]] == ["A drawing"]
+    # The parameter absent, the feed is the whole archive.
+    everything = conversation_routes.list_chalk_drawings(current_user={"id": USER})
+    assert len(everything["drawings"]) == 2

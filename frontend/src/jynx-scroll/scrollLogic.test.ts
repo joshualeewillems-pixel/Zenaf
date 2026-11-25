@@ -9,12 +9,16 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildScrollShelf,
+  drawingsForConversation,
   drawingDurationMs,
   flattenShelf,
   markProgressAt,
   scrollChildren,
+  sheetLayout,
   shelfTopLevel,
   JYNX_PURPLE,
+  SHEET_BAND_H,
+  SHEET_COMPACT_ZONE_MAX,
   TIER_DARK,
   TIER_LIGHT,
   TIER_MID,
@@ -215,6 +219,7 @@ describe('drawing reveal — marks arrive in order, in the study’s tiers', () 
       { type: 'stamp', stamp: 'arc', cx: 180, cy: 340, w: 320, angle: 24, tier: TIER_DARK },
       { type: 'stroke', d: 'M40 40 L50 50', width: 1.5, tier: TIER_LIGHT },
     ],
+    conversationId: 'jynx-scroll:project:p1',
   }
 
   it('a later mark never starts before the earlier one completes', () => {
@@ -254,5 +259,98 @@ describe('ideas — each its own scroll unit in the bin', () => {
     const bin = shelf[shelf.length - 1]
     expect(bin.initiative).toBeNull()
     expect(bin.ideas.map((s) => s.title)).toEqual(['The first thought'])
+  })
+})
+
+describe('a scroll’s own drawings — the sheet is keyed to its conversation', () => {
+  const mk = (id: string, conversationId: string | null): ScrollDrawing => ({
+    id,
+    title: null,
+    space: { w: 600, h: 800 },
+    marks: [],
+    conversationId,
+  })
+
+  it('keeps only the drawings born in the open conversation, in order', () => {
+    const feed = [
+      mk('d1', 'jynx-scroll:project:p1'),
+      mk('d2', 'jynx-scroll:task:t9'),
+      mk('d3', 'jynx-scroll:project:p1'),
+      mk('d4', 'jynx-scroll:drawing:d1'),
+      mk('d5', null),
+    ]
+    expect(drawingsForConversation(feed, 'jynx-scroll:project:p1').map((d) => d.id)).toEqual([
+      'd1',
+      'd3',
+    ])
+    expect(drawingsForConversation(feed, 'jynx-scroll:task:t9').map((d) => d.id)).toEqual(['d2'])
+    expect(drawingsForConversation(feed, 'jynx-scroll:shelf')).toEqual([])
+    expect(drawingsForConversation([], 'jynx-scroll:project:p1')).toEqual([])
+  })
+})
+
+describe('the sheet layout — one continuous sheet, history rolled at the top', () => {
+  const mk = (id: string): ScrollDrawing => ({
+    id,
+    title: null,
+    space: { w: 600, h: 800 },
+    marks: [],
+    conversationId: 'jynx-scroll:project:p1',
+  })
+  const three = [mk('d1'), mk('d2'), mk('d3')]
+
+  it('an empty sheet is one blank working band', () => {
+    const layout = sheetLayout([], 0)
+    expect(layout.bands).toHaveLength(1)
+    expect(layout.bands[0].drawing).toBeNull()
+    expect(layout.bands[0].height).toBe(SHEET_BAND_H)
+    expect(layout.focus).toBe(0)
+    expect(layout.focusOffset).toBe(0)
+  })
+
+  it('bands stand in birth order with the blank working band last', () => {
+    const layout = sheetLayout(three, 2)
+    expect(layout.bands.map((b) => b.drawing?.id ?? 'blank')).toEqual(['d1', 'd2', 'd3', 'blank'])
+    expect(layout.bands.map((b) => b.index)).toEqual([0, 1, 2, 3])
+    // Bands tile the sheet: each starts where the previous ended.
+    for (let i = 1; i < layout.bands.length; i++) {
+      expect(layout.bands[i].y).toBe(layout.bands[i - 1].y + layout.bands[i - 1].height)
+    }
+    expect(layout.totalHeight).toBe(layout.bands[3].y + SHEET_BAND_H)
+  })
+
+  it('bands older than the focus stand compact; the focus and newer stand full', () => {
+    const layout = sheetLayout(three, 2)
+    expect(layout.bands[0].compact).toBe(true)
+    expect(layout.bands[1].compact).toBe(true)
+    expect(layout.bands[0].height).toBeLessThan(SHEET_BAND_H)
+    expect(layout.bands[2].compact).toBe(false)
+    expect(layout.bands[2].height).toBe(SHEET_BAND_H)
+    expect(layout.bands[3].height).toBe(SHEET_BAND_H)
+    expect(layout.focusOffset).toBe(layout.bands[2].y)
+  })
+
+  it('the rolled zone is capped no matter how long the history grows', () => {
+    const many = Array.from({ length: 30 }, (_, i) => mk(`d${i}`))
+    const layout = sheetLayout(many, 29)
+    const rolled = layout.bands.slice(0, 29)
+    const rolledTotal = rolled.reduce((sum, b) => sum + b.height, 0)
+    expect(rolledTotal).toBeLessThanOrEqual(SHEET_COMPACT_ZONE_MAX + 1e-9)
+    expect(rolled.every((b) => b.compact)).toBe(true)
+    expect(layout.bands[29].height).toBe(SHEET_BAND_H)
+  })
+
+  it('the focus clamps to the sheet: oldest drawing at one end, blank band at the other', () => {
+    expect(sheetLayout(three, -4).focus).toBe(0)
+    expect(sheetLayout(three, 99).focus).toBe(3)
+    const atBlank = sheetLayout(three, 3)
+    expect(atBlank.bands.every((b) => b.drawing === null || b.compact)).toBe(true)
+    expect(atBlank.focusOffset).toBe(atBlank.bands[3].y)
+  })
+
+  it('rolling changes the offset, never the membership', () => {
+    const ids = (f: number) => sheetLayout(three, f).bands.map((b) => b.drawing?.id ?? 'blank')
+    expect(ids(0)).toEqual(ids(3))
+    expect(sheetLayout(three, 0).focusOffset).not.toBe(sheetLayout(three, 2).focusOffset)
   })
 })

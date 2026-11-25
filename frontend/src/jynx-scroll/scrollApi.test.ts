@@ -3,9 +3,11 @@
  * The Scroll's drawing feed — fetchScrollDrawings against a stubbed
  * GET /conversation/drawings (the read side of the [[chalk]]
  * carriage, OPS-7). The endpoint's items carry carriage provenance
- * beside the ScrollDrawing shape; the seam narrows them to exactly
- * what the surface renders. An empty feed is the honest blank; a
- * failed read throws rather than faking one.
+ * beside the ScrollDrawing shape; the seam narrows them to the
+ * rendered fields PLUS the conversation key the sheet is sorted
+ * by, and the read itself is keyed to one conversation (the
+ * endpoint's conversation_id filter). An empty feed is the honest
+ * blank; a failed read throws rather than faking one.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { fetchScrollDrawings } from './scrollApi'
@@ -45,6 +47,7 @@ describe('fetchScrollDrawings', () => {
     expect(fetchFn).toHaveBeenCalledTimes(1)
     const [url, init] = fetchFn.mock.calls[0]
     expect(String(url)).toContain('/conversation/drawings')
+    expect(String(url)).not.toContain('conversation_id=')
     expect(init).toMatchObject({ credentials: 'include' })
     expect(drawings).toEqual([
       {
@@ -52,8 +55,26 @@ describe('fetchScrollDrawings', () => {
         title: 'Icarus, again',
         space: { w: 600, h: 800 },
         marks: ENDPOINT_ITEM.marks,
+        conversationId: 'jynx-scroll:project:p1',
       },
     ])
+  })
+
+  it('keys the read to one conversation when given its id', async () => {
+    const fetchFn = stubFetch({ ok: true, status: 200, body: { drawings: [ENDPOINT_ITEM] } })
+    vi.stubGlobal('fetch', fetchFn)
+    await fetchScrollDrawings('jynx-scroll:project:p1')
+    const [url] = fetchFn.mock.calls[0]
+    expect(String(url)).toContain(
+      `/conversation/drawings?conversation_id=${encodeURIComponent('jynx-scroll:project:p1')}`,
+    )
+  })
+
+  it('an item without recorded provenance belongs to no conversation', async () => {
+    const bare = { id: 'd9', title: null, space: { w: 600, h: 800 }, marks: [] }
+    vi.stubGlobal('fetch', stubFetch({ ok: true, status: 200, body: { drawings: [bare] } }))
+    const drawings = await fetchScrollDrawings()
+    expect(drawings[0].conversationId).toBeNull()
   })
 
   it('an owner with no drawings gets an empty list — the honest blank', async () => {
@@ -83,10 +104,23 @@ describe('fetchScrollDrawings', () => {
     vi.stubGlobal('fetch', stubFetch({ ok: true, status: 200, body: { drawings: [served] } }))
     const drawings = await fetchScrollDrawings()
     expect(drawings).toEqual([
-      { id: served.id, title: served.title, space: { w: 600, h: 800 }, marks: served.marks },
+      {
+        id: served.id,
+        title: served.title,
+        space: { w: 600, h: 800 },
+        marks: served.marks,
+        conversationId: 'jynx-scroll:task:t1',
+      },
     ])
-    // The narrowed shape carries exactly the four rendered fields.
-    expect(Object.keys(drawings[0]).sort()).toEqual(['id', 'marks', 'space', 'title'])
+    // The narrowed shape carries exactly the rendered fields plus
+    // the conversation key.
+    expect(Object.keys(drawings[0]).sort()).toEqual([
+      'conversationId',
+      'id',
+      'marks',
+      'space',
+      'title',
+    ])
 
     // Drift: a flattened space (space_w/space_h instead of the
     // nested {w, h}) is NOT a drawing to this surface — dropped,

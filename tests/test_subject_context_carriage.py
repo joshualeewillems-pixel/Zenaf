@@ -304,7 +304,10 @@ def test_assembler_gates(ve_conn):
     # Each of the five interface sheets carries it.
     for sheet in ("campaign_board", "aria_atelier", "bench", "jynx_scroll", "living_palace"):
         assert SC.build_subject_context(ALICE, {"sheet_type": sheet, **base}) is not None, sheet
-    # Non-VE entity types never resolve (a Scroll drawing is not a record).
+    # A VE id offered as a drawing does not resolve: drawings live
+    # in the chalk store, and this id is not one of them. (A real
+    # drawing id on the Scroll sheet DOES resolve — the drawing
+    # section below pins that.)
     assert SC.build_subject_context(
         ALICE, {"sheet_type": "jynx_scroll", "entity_type": "drawing", "entity_id": task["id"]}
     ) is None
@@ -544,3 +547,170 @@ def test_palace_other_owners_room_yields_no_block(ve_conn):
         )
         is None
     )
+
+
+# ---------------------------------------------------------------------------
+# (e) a tapped drawing — the Scroll's non-VE subject (founder,
+# 2026-11-25: "when I click on the picture, it's supposed to
+# explain the metaphor"). The drawing resolves through the chalk
+# store, owner-scoped, and only on Jynx's own sheet.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def chalk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from local_ai.conversation import chalk_store as chalk_module
+    from local_ai.conversation.chalk_store import ChalkStore
+
+    store = ChalkStore(db_path=tmp_path / "chalk.db")
+    monkeypatch.setattr(chalk_module, "ChalkStore", lambda: store)
+    yield store
+    store.close()
+
+
+def _record_drawing(store, user: str, **kw):
+    defaults = dict(
+        conversation_id="jynx-scroll:project:p1",
+        title="Six flags under glass",
+        space={"w": 600, "h": 800},
+        marks=[
+            {"type": "stamp", "stamp": "ring", "cx": 300, "cy": 350, "w": 240, "tier": 0.95},
+            {"type": "stamp", "stamp": "triangle", "cx": 180, "cy": 240, "w": 60, "angle": 15, "tier": 0.6},
+            {"type": "stroke", "d": "M100 600 Q300 560 500 620", "width": 3, "tier": 0.32},
+        ],
+        subject_type="project",
+        subject_id="p1",
+    )
+    defaults.update(kw)
+    return store.record_drawing(user_id=user, **defaults)
+
+
+def _drawing_ctx(drawing_id: str, sheet: str = "jynx_scroll") -> dict:
+    return {"sheet_type": sheet, "entity_type": "drawing", "entity_id": drawing_id}
+
+
+def test_drawing_subject_block_carries_its_record(ve_conn, chalk):
+    project = _make_project(ALICE, "Meet the Bear")
+    drawing = _record_drawing(chalk, ALICE, subject_id=project["id"])
+    block = SC.build_subject_context(ALICE, _drawing_ctx(drawing["id"]))
+    assert block is not None
+    assert block.startswith(SC.BEGIN_FENCE) and block.endswith(SC.END_FENCE)
+    # The drawing's own record: title, kind, space, its marks in
+    # order — stamps named with their placement and ink, the
+    # stroke as a stroke — so the seat can explain the metaphor.
+    assert "Title: Six flags under glass" in block
+    assert "Kind: drawing" in block
+    assert "Space: 600 by 800" in block
+    assert "stamp ring" in block and "(300, 350)" in block
+    assert "stamp triangle" in block and "rotated 15 degrees" in block
+    assert "tier 0.95 (dark)" in block and "tier 0.6 (mid)" in block
+    assert "freehand stroke" in block and "tier 0.32 (light)" in block
+    assert block.index("stamp ring") < block.index("freehand stroke")
+    # Provenance: the subject it was drawn while looking at, named.
+    assert "Made while looking at: Meet the Bear (project)" in block
+
+
+def test_drawing_subject_rides_into_the_prompt(ve_conn, chalk, conv_store):
+    drawing = _record_drawing(chalk, ALICE, subject_type=None, subject_id=None)
+    prompt = _turn_prompt(conv_store, ALICE, "maverick", _drawing_ctx(drawing["id"]))
+    assert SC.BEGIN_FENCE in prompt
+    assert "Six flags under glass" in prompt
+    assert "stamp ring" in prompt
+    # No provenance was recorded, so none is claimed.
+    assert "Made while looking at" not in prompt
+
+
+def test_drawing_subject_is_scroll_sheet_only(ve_conn, chalk):
+    drawing = _record_drawing(chalk, ALICE)
+    for sheet in ("campaign_board", "aria_atelier", "bench", "living_palace", "today"):
+        assert SC.build_subject_context(ALICE, _drawing_ctx(drawing["id"], sheet)) is None, sheet
+
+
+def test_foreign_or_unknown_drawing_yields_no_block(ve_conn, chalk, conv_store):
+    bobs = _record_drawing(chalk, BOB, title="Bob's private sketch")
+    assert SC.build_subject_context(ALICE, _drawing_ctx(bobs["id"])) is None
+    assert SC.build_subject_context(ALICE, _drawing_ctx("no-such-drawing")) is None
+    prompt = _turn_prompt(conv_store, ALICE, "maverick", _drawing_ctx(bobs["id"]))
+    assert SC.BEGIN_FENCE not in prompt
+    assert "Bob's private sketch" not in prompt
+
+
+def test_drawing_block_is_capped(ve_conn, chalk):
+    marks = [
+        {"type": "stroke", "d": "M0 0 " + "Q100 100 200 200 " * 30, "width": 3, "tier": 0.95}
+        for _ in range(32)
+    ]
+    drawing = _record_drawing(
+        chalk, ALICE, title="A very large drawing", marks=marks,
+        subject_type=None, subject_id=None,
+    )
+    block = SC.build_subject_context(ALICE, _drawing_ctx(drawing["id"]))
+    assert block is not None
+    body = block[len(SC.BEGIN_FENCE) + 1 : -len(SC.END_FENCE) - 1]
+    assert len(body) <= SC.BLOCK_CHAR_CAP
+    assert "truncated" in body
+
+
+def test_staged_drawing_commits_only_on_a_sent_message(ve_conn, chalk, conv_store):
+    """The founder's tentative-staging rule (2026-11-25): a tapped
+    drawing populates the chat TENTATIVELY — it must not enter the
+    conversation's record (no message, no snapshot, nothing a
+    later context scan or summary could pick up) unless the
+    visitor actually sends a message while it is staged. The
+    commit point is the per-message context snapshot on HIS
+    message. These assertions run the real service: composition
+    is a pure read, a send without the drawing leaves no trace of
+    it, and a send with it snapshots exactly that context."""
+    project = _make_project(ALICE, "Meet the Bear")
+    drawing = _record_drawing(chalk, ALICE, subject_id=project["id"])
+    convo = "jynx-scroll:project:p1"
+    scroll_ctx = {"sheet_type": "jynx_scroll", "entity_type": "project", "entity_id": project["id"]}
+
+    def _send(context, message):
+        seen: dict[str, str] = {}
+
+        def _capture(prompt, **kw):
+            seen["prompt"] = prompt
+            return "Fake reply."
+
+        svc = ConversationService(conv_store, generate_fn=_capture)
+        svc.turn(ALICE, "maverick", message, conversation_id=convo, context=context)
+        return seen["prompt"]
+
+    def _user_contexts():
+        return [
+            m["context"]
+            for m in conv_store.history(ALICE, convo, limit=50)
+            if m["role"] == "user"
+        ]
+
+    # Composition alone — the assembler's half of a tap — writes
+    # nothing: no message appears, no drawing is touched.
+    assert conv_store.count_messages(ALICE, convo) == 0
+    assert SC.build_subject_context(ALICE, _drawing_ctx(drawing["id"])) is not None
+    assert conv_store.count_messages(ALICE, convo) == 0
+    assert len(chalk.list_drawings(ALICE)) == 1
+
+    # The visitor clicked the drawing, clicked around, and then
+    # talked about the scroll itself: his sent message snapshots
+    # the SCROLL's context, the prompt carries no drawing block,
+    # and nothing in the stored record names the drawing.
+    prompt = _send(scroll_ctx, "What are we looking at here?")
+    assert "Kind: drawing" not in prompt
+    contexts = _user_contexts()
+    assert len(contexts) == 1
+    assert contexts[0].get("entity_type") == "project"
+    assert all(c.get("entity_type") != "drawing" for c in contexts)
+
+    # Only when he sends WHILE the drawing is staged does the
+    # drawing enter the ledger: this message's snapshot names it,
+    # the prompt carries its block — and the earlier message's
+    # snapshot is untouched (the record holds what was sent, when
+    # it was sent; staging never back-fills).
+    prompt = _send(_drawing_ctx(drawing["id"]), "Explain this one.")
+    assert "Kind: drawing" in prompt
+    contexts = _user_contexts()
+    assert len(contexts) == 2
+    assert contexts[0].get("entity_type") == "project"
+    assert contexts[1].get("entity_type") == "drawing"
+    assert contexts[1].get("entity_id") == drawing["id"]

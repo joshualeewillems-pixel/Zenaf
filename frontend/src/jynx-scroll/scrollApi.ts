@@ -15,11 +15,16 @@
  * owner-scoped, keyed to the conversation and its selected
  * subject. GET /conversation/drawings serves the caller's drawings
  * in the order they were made, and fetchScrollDrawings below reads
- * them. The carriage is gated by the server-side
- * ZENAF_CHALK_CARRIAGE rollout flag (default off everywhere): with
- * it off, no drawings are made and the feed is honestly empty —
- * the unrolled scroll stands blank, with no placeholder art and
- * no invented drawings.
+ * them — keyed, since the founder's 2026-11-25 ruling, to ONE
+ * conversation: a scroll's sheet carries only the drawings born in
+ * that scroll's own conversation. The endpoint filters on its
+ * ``conversation_id`` parameter and the surface filters again on
+ * the served provenance, so a drawing from another conversation
+ * never stands on this scroll's sheet. The carriage is gated by
+ * the server-side ZENAF_CHALK_CARRIAGE rollout flag (default off
+ * everywhere): with it off, no drawings are made and the feed is
+ * honestly empty — the unrolled scroll stands blank, with no
+ * placeholder art and no invented drawings.
  *
  * Not this channel: the pencil layer (PR #402,
  * local_ai/narrative/context.py) is a server-side CONVERSATION
@@ -78,9 +83,11 @@ function asArray<T>(x: unknown): T[] {
 }
 
 /** One drawing as the endpoint serves it, narrowed to the
- *  ScrollDrawing shape the surface renders. The server validates
- *  marks at carriage time; an item without an id, a space, or a
- *  marks list is not a drawing and is dropped, never repaired. */
+ *  ScrollDrawing shape the surface renders — the rendered fields
+ *  plus the carriage provenance the sheet is keyed by. The server
+ *  validates marks at carriage time; an item without an id, a
+ *  space, or a marks list is not a drawing and is dropped, never
+ *  repaired. */
 function toScrollDrawing(x: unknown): ScrollDrawing | null {
   if (typeof x !== 'object' || x === null) return null
   const d = x as {
@@ -88,6 +95,7 @@ function toScrollDrawing(x: unknown): ScrollDrawing | null {
     title?: unknown
     space?: { w?: unknown; h?: unknown }
     marks?: unknown
+    conversation_id?: unknown
   }
   if (typeof d.id !== 'string' || !d.id) return null
   const w = typeof d.space?.w === 'number' ? d.space.w : NaN
@@ -99,19 +107,27 @@ function toScrollDrawing(x: unknown): ScrollDrawing | null {
     title: typeof d.title === 'string' ? d.title : null,
     space: { w, h },
     marks: d.marks as ScrollMark[],
+    conversationId: typeof d.conversation_id === 'string' ? d.conversation_id : null,
   }
 }
 
 /**
  * Jynx's drawings for the signed-in user, in the order they were
  * made — GET /conversation/drawings, the read side of the
- * [[chalk]] carriage (see the module header). An owner with no
- * drawings gets an empty list and the scroll stands honestly
- * blank; a failed read throws, so the surface shows its error
- * state rather than a false blank.
+ * [[chalk]] carriage (see the module header). With a conversation
+ * id, the read is that conversation's drawings only: the endpoint
+ * filters server-side, and the caller filters again on the served
+ * provenance (drawingsForConversation), so the sheet's keying
+ * does not rest on one seam alone. An owner with no drawings gets
+ * an empty list and the scroll stands honestly blank; a failed
+ * read throws, so the surface shows its error state rather than
+ * a false blank.
  */
-export async function fetchScrollDrawings(): Promise<ScrollDrawing[]> {
-  const res = await fetch(`${apiBase()}/conversation/drawings`, { credentials: 'include' })
+export async function fetchScrollDrawings(conversationId?: string): Promise<ScrollDrawing[]> {
+  const query = conversationId ? `?conversation_id=${encodeURIComponent(conversationId)}` : ''
+  const res = await fetch(`${apiBase()}/conversation/drawings${query}`, {
+    credentials: 'include',
+  })
   const data = await readJson<{ drawings?: unknown }>(res)
   return asArray<unknown>(data.drawings)
     .map(toScrollDrawing)

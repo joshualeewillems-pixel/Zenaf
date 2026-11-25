@@ -1947,6 +1947,7 @@ def _chalk_store():
 
 @router.get("/drawings")
 def list_chalk_drawings(
+    conversation_id: str | None = None,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
     """Jynx's drawings for the caller, oldest first (OPS-7).
@@ -1956,11 +1957,17 @@ def list_chalk_drawings(
     provenance (conversation and selected subject, where one
     exists). An owner with no drawings gets an empty list: the
     unrolled scroll stands honestly blank.
+
+    ``conversation_id`` narrows the feed to one conversation's
+    drawings: a scroll's sheet carries only the drawings born in
+    that scroll's own conversation (founder, 2026-11-25). Absent
+    the parameter the feed is the caller's whole archive, as
+    before.
     """
     user_id = _uid(current_user)
     if not user_id:
         raise HTTPException(status_code=401, detail="Sign in to continue the conversation.")
-    drawings = _chalk_store().list_drawings(user_id)
+    drawings = _chalk_store().list_drawings(user_id, conversation_id=conversation_id)
     return {
         "drawings": [
             {

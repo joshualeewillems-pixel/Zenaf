@@ -26,6 +26,20 @@
  * accepted supersession), and Guests-1 (a seat's object stands only
  * where the read shows that seat attending the subject, with two
  * doors: explore here with Maeve, or follow into the seat's world).
+ *
+ * Verdict Slice 1 (founder ruling 2026-11-25 10:07 PT): the Palace
+ * is the first DOOR into the one steward review mechanism. The
+ * read's pending items — the Steward's undecided proposals naming
+ * this subject — rest at its threshold and at the Kintsugi vessel,
+ * in pencil, with their evidence in front of the visitor; the acts
+ * (accept / reject / leave undecided / endorse / explore) post to
+ * the existing review routes, and from a standing accepted reading
+ * the visitor may ask for another look, his cause in his own words
+ * opening a candidacy through the reconsideration-request route.
+ * No counts, no badges, no queue: undecided material rests where
+ * it lives, and resting is a legitimate state. Conversation stays
+ * a natural entry into reconsideration — this door adds a place,
+ * it formalizes nothing said in the chat beside it.
  */
 import * as React from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -40,14 +54,32 @@ import {
   buildFloor,
   buildRoom,
   composeBoundaryPanel,
+  composeSubjectPending,
   composeSubjectThresholds,
   composeVesselHeld,
   GUEST_OBJECTS,
+  PENDING_KIND_LABELS,
+  pendingActs,
+  pendingEvidenceRefs,
+  pendingSummaryLines,
+  vesselPending,
   type AttributedRead,
   type BoundaryPanelModel,
   type PalaceData,
+  type PendingReviewItem,
 } from './palaceLogic'
-import { fetchAttributedRead, fetchBoundaryMaterial, fetchPalaceEntities } from './palaceApi'
+import {
+  acceptReviewItem,
+  endorseReviewReading,
+  exploreReviewItem,
+  fetchAttributedRead,
+  fetchBoundaryMaterial,
+  fetchPalaceEntities,
+  PALACE_STRAND_KEYS,
+  rejectReviewItem,
+  requestReconsideration,
+  unresolveReviewItem,
+} from './palaceApi'
 import { BuildingScene, CompoundScene, FloorScene, RoomScene } from './palaceCanvas'
 import './palace.css'
 
@@ -66,6 +98,216 @@ type Panel =
   | null
 
 const GUARDIAN = SEAT_COLORS.guardian
+
+const PANEL_BUTTON =
+  'rounded-full border border-[#c9b995] bg-white/60 px-2.5 py-1 text-xs text-[#4a3f30] disabled:opacity-50'
+
+type ReviewActName = 'accept' | 'reject' | 'unresolve' | 'endorse'
+
+/** The strand threads the Explore-with-Aria bridge can carry an
+ *  item into, by their recorded names. */
+const STRAND_NAMES: Record<string, string> = {
+  voice: 'Voice',
+  logic: 'Logic',
+  eye: 'Eye',
+  ear: 'Ear',
+  hands: 'Hands',
+  heart: 'Heart',
+  compass: 'Compass',
+}
+
+/** One pending review item at a Palace door: what it is, what it
+ *  says, the evidence it stands on — and the visitor's acts, which
+ *  post to the one review mechanism's routes. Pencil register
+ *  throughout: nothing here is settled until he rules. */
+function PendingList({
+  items,
+  place,
+  busyId,
+  exploreOpenFor,
+  onToggleExplore,
+  onAct,
+  onExplore,
+}: {
+  items: PendingReviewItem[]
+  place: 'threshold' | 'vessel'
+  busyId: string | null
+  exploreOpenFor: string | null
+  onToggleExplore: (itemId: string | null) => void
+  onAct: (item: PendingReviewItem, act: ReviewActName) => void
+  onExplore: (item: PendingReviewItem, strandKey: string) => void
+}) {
+  return (
+    <ul className="mt-2 space-y-3">
+      {items.map((item) => {
+        const acts = pendingActs(item)
+        const refs = pendingEvidenceRefs(item)
+        const lines = pendingSummaryLines(item)
+        const currency = item.payload?.currency
+        const busy = busyId === item.item_id
+        return (
+          <li
+            key={item.item_id}
+            data-testid={`palace-pending-item-${place}-${item.item_id}`}
+            className="border-l-2 border-[#c9b995] pl-3"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#8a7a5c]">
+              {PENDING_KIND_LABELS[item.item_kind] ?? 'A proposal from the Steward'}
+            </p>
+            {item.title && <p className="font-medium">{item.title}</p>}
+            {lines.map((line, i) => (
+              <p key={i} className="italic text-[#8a7a5c]">
+                {line}
+              </p>
+            ))}
+            {currency && (
+              <p className="text-xs text-[#6b5b45]">
+                Currency: {currency.placement}
+                {currency.labels.length > 0 ? ` — ${currency.labels.join(', ')}` : ''}
+              </p>
+            )}
+            {refs.length > 0 && <p className="text-xs text-[#6b5b45]">Grounded in: {refs.join(' · ')}</p>}
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                data-testid={`palace-review-accept-${item.item_id}`}
+                className={PANEL_BUTTON}
+                disabled={busy}
+                onClick={() => onAct(item, 'accept')}
+              >
+                Accept
+              </button>
+              <button
+                type="button"
+                data-testid={`palace-review-reject-${item.item_id}`}
+                className={PANEL_BUTTON}
+                disabled={busy}
+                onClick={() => onAct(item, 'reject')}
+              >
+                Reject
+              </button>
+              <button
+                type="button"
+                data-testid={`palace-review-unresolve-${item.item_id}`}
+                className={PANEL_BUTTON}
+                disabled={busy}
+                onClick={() => onAct(item, 'unresolve')}
+              >
+                Leave undecided
+              </button>
+              {acts.endorse && (
+                <button
+                  type="button"
+                  data-testid={`palace-review-endorse-${item.item_id}`}
+                  className={PANEL_BUTTON}
+                  disabled={busy}
+                  onClick={() => onAct(item, 'endorse')}
+                >
+                  Endorse
+                </button>
+              )}
+              {acts.explore && (
+                <button
+                  type="button"
+                  data-testid={`palace-review-explore-${item.item_id}`}
+                  className={PANEL_BUTTON}
+                  disabled={busy}
+                  onClick={() => onToggleExplore(exploreOpenFor === item.item_id ? null : item.item_id)}
+                >
+                  Explore with Aria
+                </button>
+              )}
+            </div>
+            {acts.explore && exploreOpenFor === item.item_id && (
+              <div data-testid={`palace-explore-strands-${item.item_id}`} className="mt-2">
+                <p className="text-xs text-[#6b5b45]">
+                  Carry it into a strand thread, where Aria can explore it with you. Exploring settles nothing —
+                  the proposal rests exactly as it rests here.
+                </p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {PALACE_STRAND_KEYS.map((key) => (
+                    <button
+                      key={key}
+                      type="button"
+                      data-testid={`palace-explore-strand-${item.item_id}-${key}`}
+                      className={PANEL_BUTTON}
+                      disabled={busy}
+                      onClick={() => onExplore(item, key)}
+                    >
+                      {STRAND_NAMES[key] ?? key}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** The reconsideration ask, on one standing accepted reading: the
+ *  visitor gives his cause in his own words. Sending opens a
+ *  candidacy — it does not un-accept the reading, and nothing is
+ *  sent until he writes the cause himself. */
+function ReconsiderAsk({
+  readingId,
+  onSubmit,
+}: {
+  readingId: string
+  onSubmit: (readingId: string, cause: string) => Promise<boolean>
+}) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  if (!open) {
+    return (
+      <button
+        type="button"
+        data-testid={`palace-reconsider-open-${readingId}`}
+        className={PANEL_BUTTON}
+        onClick={() => setOpen(true)}
+      >
+        Ask for another look
+      </button>
+    )
+  }
+  return (
+    <span className="mt-1 block" data-testid={`palace-reconsider-form-${readingId}`}>
+      <textarea
+        data-testid={`palace-reconsider-text-${readingId}`}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        rows={3}
+        placeholder="Your cause, in your own words — what changed, or where you disagree"
+        className="w-full rounded-lg border border-[#c9b995] bg-white/80 px-2 py-1.5 text-sm not-italic text-[#4a3f30]"
+      />
+      <span className="mt-1 flex flex-wrap gap-2">
+        <button
+          type="button"
+          data-testid={`palace-reconsider-send-${readingId}`}
+          className={PANEL_BUTTON}
+          disabled={sending || !text.trim()}
+          onClick={async () => {
+            setSending(true)
+            const ok = await onSubmit(readingId, text)
+            setSending(false)
+            if (ok) {
+              setOpen(false)
+              setText('')
+            }
+          }}
+        >
+          Set it down for another look
+        </button>
+        <button type="button" className={PANEL_BUTTON} onClick={() => setOpen(false)}>
+          Not now
+        </button>
+      </span>
+    </span>
+  )
+}
 
 export default function LivingPalaceView({
   onFollowGuest,
@@ -145,6 +387,84 @@ export default function LivingPalaceView({
    *  when the read failed: the world then stands unadorned. */
   const subjectRead = attributed && attributed.key === subjectKey ? attributed.read : null
   const subjectReadLoading = subjectKey !== null && (!attributed || attributed.key !== subjectKey)
+
+  /* ---------------- the verdict door (Slice 1) ---------------- */
+
+  const [reviewBusyId, setReviewBusyId] = useState<string | null>(null)
+  const [exploreOpenFor, setExploreOpenFor] = useState<string | null>(null)
+
+  /** After a ruling act, re-read the subject: the door shows the
+   *  mechanism's new state, never a local guess at it. */
+  const refreshSubjectRead = useCallback(async () => {
+    if (!subjectKey) return
+    const [entityType, entityId] = subjectKey.split(':') as ['project' | 'task', string]
+    const read = await fetchAttributedRead(entityType, entityId)
+    setAttributed({ key: subjectKey, read })
+  }, [subjectKey])
+
+  const runReviewAct = useCallback(
+    async (item: PendingReviewItem, act: ReviewActName) => {
+      setReviewBusyId(item.item_id)
+      const ok =
+        act === 'accept'
+          ? await acceptReviewItem(item.item_id)
+          : act === 'reject'
+            ? await rejectReviewItem(item.item_id)
+            : act === 'unresolve'
+              ? await unresolveReviewItem(item.item_id)
+              : await endorseReviewReading(item.item_id)
+      setReviewBusyId(null)
+      if (!ok) {
+        say('That did not reach the record — everything stands exactly as it was.')
+        return
+      }
+      say(
+        act === 'accept'
+          ? 'Taken into the house’s keeping — it stands as settled now.'
+          : act === 'reject'
+            ? 'Let go from her hands — the dismissal stands in the record.'
+            : act === 'unresolve'
+              ? 'Left resting in her keeping, undecided — that choice is recorded too.'
+              : 'Your endorsement rests on the reading, as it stands.',
+      )
+      void refreshSubjectRead()
+    },
+    [refreshSubjectRead, say],
+  )
+
+  const runExplore = useCallback(
+    async (item: PendingReviewItem, strandKey: string) => {
+      setReviewBusyId(item.item_id)
+      const ok = await exploreReviewItem(item.item_id, strandKey)
+      setReviewBusyId(null)
+      if (!ok) {
+        say('That did not reach the record — everything stands exactly as it was.')
+        return
+      }
+      setExploreOpenFor(null)
+      say(
+        `Carried into the ${STRAND_NAMES[strandKey] ?? strandKey} thread — Aria holds it there, for exploring together. Nothing here has settled.`,
+      )
+      void refreshSubjectRead()
+    },
+    [refreshSubjectRead, say],
+  )
+
+  const runReconsider = useCallback(
+    async (readingId: string, cause: string): Promise<boolean> => {
+      const ok = await requestReconsideration(readingId, cause)
+      if (!ok) {
+        say('That did not reach the record — the reading stands exactly as it was.')
+        return false
+      }
+      say(
+        'Set down for another look. The reading stands accepted until you rule on the asking itself — the asking rests at this threshold now.',
+      )
+      void refreshSubjectRead()
+      return true
+    },
+    [refreshSubjectRead, say],
+  )
   const subjectGuests = useMemo(() => attendingGuests(subjectRead), [subjectRead])
   const subjectGuestSeats = useMemo(() => subjectGuests.map((g) => g.seat), [subjectGuests])
   const layerNoun = current.layer === 'room' ? 'room' : 'floor'
@@ -257,7 +577,12 @@ export default function LivingPalaceView({
           'The scales stand in every room, ready to weigh what a piece of work asks of you. Their pans are empty: weighing is not a built record, so nothing placed here is recorded — an unweighed undertaking, not a claim of balance.',
         )
       } else if (kind === 'vessel') {
-        if (composeVesselHeld(subjectRead).hasMaterial) {
+        const heldNow = composeVesselHeld(subjectRead)
+        if (
+          heldNow.hasMaterial ||
+          heldNow.acceptedReadings.length > 0 ||
+          vesselPending(subjectRead).length > 0
+        ) {
           setPanel({ kind: 'vessel' })
         } else if (subjectReadLoading) {
           say('The vessel stands whole and empty — Maeve is still gathering what this room holds.')
@@ -346,6 +671,9 @@ export default function LivingPalaceView({
 
   const thresholds = composeSubjectThresholds(subjectRead)
   const vesselHeld = composeVesselHeld(subjectRead)
+  const pendingItems = composeSubjectPending(subjectRead)
+  const vesselDoorItems = vesselPending(subjectRead)
+  const openCandidacyReadingIds = new Set(vesselHeld.openReconsiderations.map((r) => r.reading_id))
   const guestPanelSeat = panel?.kind === 'guest' ? subjectGuests.find((g) => g.seat === panel.seat) : undefined
 
   const left = (
@@ -511,6 +839,16 @@ export default function LivingPalaceView({
                         {item.author_name}
                         {item.status === 'accepted' ? ' (a reading you accepted)' : ''}:{' '}
                         {[...item.tensions, ...item.open_questions].join(' · ')}
+                        {item.status === 'accepted' &&
+                          (openCandidacyReadingIds.has(item.reading_id) ? (
+                            <span className="mt-1 block text-xs not-italic text-[#6b5b45]">
+                              A request to look again already rests on this reading.
+                            </span>
+                          ) : (
+                            <span className="mt-1 block">
+                              <ReconsiderAsk readingId={item.reading_id} onSubmit={runReconsider} />
+                            </span>
+                          ))}
                       </li>
                     ))}
                   </ul>
@@ -534,6 +872,27 @@ export default function LivingPalaceView({
                   </ul>
                 </div>
               )}
+            </div>
+          )}
+          {pendingItems.length > 0 && (
+            <div
+              data-testid="palace-pending-section"
+              className="mt-2 space-y-2 border-b border-[#e3d5b8] pb-3 leading-relaxed"
+            >
+              <p className="font-medium">Undecided — resting at this {layerNoun}’s threshold</p>
+              <p className="text-xs text-[#6b5b45]">
+                These are the Steward’s proposals naming this {layerNoun}, in pencil, with what grounds them.
+                They rest here until you rule — resting is a legitimate state, and nothing here is a task.
+              </p>
+              <PendingList
+                items={pendingItems}
+                place="threshold"
+                busyId={reviewBusyId}
+                exploreOpenFor={exploreOpenFor}
+                onToggleExplore={setExploreOpenFor}
+                onAct={(item, act) => void runReviewAct(item, act)}
+                onExplore={(item, key) => void runExplore(item, key)}
+              />
             </div>
           )}
           {boundaryModel && (
@@ -670,6 +1029,51 @@ export default function LivingPalaceView({
                     <li key={i}>A reading of this room is up for reconsideration{r.reason ? ` — ${r.reason}` : ''}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {vesselDoorItems.length > 0 && (
+              <div data-testid="palace-vessel-pending">
+                <p className="font-medium">Undecided, resting at the vessel</p>
+                <p className="text-xs text-[#6b5b45]">
+                  Readings and requests to look again, naming this room. They rest in pencil until you rule —
+                  ruling is yours alone, and leaving them resting is a ruling the record honours.
+                </p>
+                <PendingList
+                  items={vesselDoorItems}
+                  place="vessel"
+                  busyId={reviewBusyId}
+                  exploreOpenFor={exploreOpenFor}
+                  onToggleExplore={setExploreOpenFor}
+                  onAct={(item, act) => void runReviewAct(item, act)}
+                  onExplore={(item, key) => void runExplore(item, key)}
+                />
+              </div>
+            )}
+            {vesselHeld.acceptedReadings.length > 0 && (
+              <div data-testid="palace-vessel-reconsider">
+                <p className="font-medium">Readings standing accepted here</p>
+                <ul className="mt-1 space-y-2">
+                  {vesselHeld.acceptedReadings.map((reading) => (
+                    <li key={reading.reading_id}>
+                      <span className="italic text-[#8a7a5c]">{reading.label}</span>
+                      {openCandidacyReadingIds.has(reading.reading_id) ? (
+                        <span className="mt-1 block text-xs text-[#6b5b45]">
+                          A request to look again already rests on this reading — it waits at this room’s
+                          threshold for your word on the asking itself.
+                        </span>
+                      ) : (
+                        <span className="mt-1 block">
+                          <ReconsiderAsk readingId={reading.reading_id} onSubmit={runReconsider} />
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-xs text-[#6b5b45]">
+                  Asking does not unsettle the reading: it stands accepted, word for word, until a correction
+                  you accept takes its place. And disagreement spoken to Maeve in conversation stays
+                  conversation — nothing said there is made formal here.
+                </p>
               </div>
             )}
           </div>

@@ -147,3 +147,81 @@ export async function fetchAttributedRead(
     return null
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Verdict Slice 1 — the review acts.                                  */
+/*                                                                     */
+/* The Palace is the FIRST frontend client of the steward review     */
+/* routes (api/routes/steward_review_routes.py): one mechanism,      */
+/* already built — verdicts transition the proposal and append to    */
+/* the verdict log; endorsement annotates and transitions nothing;   */
+/* explore carries an item into a strand thread with Aria and        */
+/* changes no state; the reconsideration request opens a candidacy   */
+/* over an accepted reading, the visitor's cause preserved verbatim. */
+/* These callers only report whether the act reached the record;     */
+/* the view re-reads the attributed read to see the new state.       */
+/* ------------------------------------------------------------------ */
+
+const REVIEW_API = '/steward/review'
+
+/** Split a review item id ("reading:rdg-…") into its route parts. */
+export function parseReviewItemId(itemId: string): { kind: string; rowId: string } | null {
+  const idx = itemId.indexOf(':')
+  if (idx <= 0 || idx === itemId.length - 1) return null
+  return { kind: itemId.slice(0, idx), rowId: itemId.slice(idx + 1) }
+}
+
+async function postReview(path: string, body?: unknown): Promise<boolean> {
+  try {
+    const res = await fetch(`${apiBase()}${REVIEW_API}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+function verdictCaller(verb: 'accept' | 'reject' | 'unresolve') {
+  return async (itemId: string): Promise<boolean> => {
+    const ref = parseReviewItemId(itemId)
+    if (!ref) return false
+    return postReview(`/${ref.kind}/${ref.rowId}/${verb}`)
+  }
+}
+
+/** Accept: the interpretation gains confirmed standing. */
+export const acceptReviewItem = verdictCaller('accept')
+/** Reject: the interpretation is dismissed, durably, and logged. */
+export const rejectReviewItem = verdictCaller('reject')
+/** Unresolve: explicit not-deciding, recorded as a verdict in its
+ *  own right; the item stays pending. */
+export const unresolveReviewItem = verdictCaller('unresolve')
+
+/** Endorse a reading as it stands — an annotation, never a verdict:
+ *  it supersedes nothing and transitions nothing. */
+export async function endorseReviewReading(itemId: string): Promise<boolean> {
+  const ref = parseReviewItemId(itemId)
+  if (!ref || ref.kind !== 'reading') return false
+  return postReview(`/reading/${ref.rowId}/endorse`, { stance: 'endorsed', note: '' })
+}
+
+/** Explore with Aria: carry the item into the chosen strand thread
+ *  as a source. No verdict, no state change on the proposal. */
+export async function exploreReviewItem(itemId: string, strandKey: string): Promise<boolean> {
+  const ref = parseReviewItemId(itemId)
+  if (!ref) return false
+  return postReview(`/${ref.kind}/${ref.rowId}/explore`, { strand_key: strandKey })
+}
+
+/** Ask for an accepted reading to be looked at again. The cause is
+ *  the visitor's own words, sent verbatim — the route preserves
+ *  them as the candidacy's reason. Opens a candidacy; it does not
+ *  un-accept the reading, and the candidacy itself awaits his
+ *  verdict like any other proposal. */
+export async function requestReconsideration(readingId: string, reason: string): Promise<boolean> {
+  return postReview(`/reading/${readingId}/reconsider`, { reason })
+}

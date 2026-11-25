@@ -15,7 +15,10 @@
  * the whole cairn (project), and the whole undertaking (initiative).
  * The cast view must carry all seven layers as transparent fill/ink
  * image pairs — no paper, no video — at the increased formation
- * scale.
+ * scale. The ink is a stage of the voice's true-prefix drawing
+ * ladder (stageImages); formations at rest stand complete; and
+ * the cast view carries NO manual imagery controls — no
+ * Discussion slider, no voice chips (founder, 2026-11-25).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as React from 'react'
@@ -115,10 +118,12 @@ function stubFetch() {
 describe('AriaAtelierView', () => {
   let container: HTMLDivElement
   let root: Root
+  let fetchMock: ReturnType<typeof stubFetch>
 
   beforeEach(() => {
     chatProps = []
-    vi.stubGlobal('fetch', stubFetch())
+    fetchMock = stubFetch()
+    vi.stubGlobal('fetch', fetchMock)
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -218,17 +223,52 @@ describe('AriaAtelierView', () => {
       entity_type: 'task',
       entity_id: 't1',
     })
-    // Seven layers, each a transparent fill/ink pair — no paper, no video.
+    // Seven layers, each a transparent fill under a stage of the
+    // voice's drawing ladder — no paper, no video. Every formation
+    // but the responder's stands complete (the final stage); Aria
+    // is mid-replay on a fresh cast, so her ink is some stage of
+    // her ladder, or not yet drawn at all.
     const layers = container.querySelectorAll('[data-layer]')
     expect(layers).toHaveLength(7)
     for (const layer of layers) {
       const voice = layer.getAttribute('data-layer')
       const fill = layer.querySelector('img.fill') as HTMLImageElement
-      const ink = layer.querySelector('img.ink') as HTMLImageElement
+      const ink = layer.querySelector('img.ink') as HTMLImageElement | null
       expect(fill?.src).toContain(`layer-${voice}-fill`)
-      expect(ink?.src).toContain(`layer-${voice}-ink`)
+      if (voice === 'aria') {
+        if (ink) expect(ink.src).toMatch(/stage-aria-\d+/)
+      } else {
+        expect(ink?.src).toContain(`stage-${voice}-12`)
+      }
     }
     expect(container.querySelector('video')).toBeNull()
+    // No manual imagery controls exist (founder, 2026-11-25):
+    // no Discussion slider, no voice chips, nothing to press that
+    // sets the imagery.
+    expect(container.querySelector('input[type="range"]')).toBeNull()
+    expect(container.querySelector('[aria-pressed]')).toBeNull()
+    expect(container.textContent).not.toContain('Discussion')
+    expect(container.textContent).not.toContain('All seven')
+    // The view's data inputs are exactly the fetches it already
+    // made — the Atelier data path and the subject conversation
+    // read. No new endpoint, no writes.
+    const paths = fetchMock.mock.calls.map((c) => {
+      const raw = String(c[0])
+      return raw.startsWith('http') ? new URL(raw).pathname : raw.split('?')[0]
+    })
+    const known = new Set([
+      '/vision-execution/ideas',
+      '/vision-execution/initiatives',
+      '/vision-execution/projects',
+      '/vision-execution/tasks',
+      '/vision-execution/persons',
+      '/vision-execution/assets',
+      '/vision-execution/strand-weightings',
+      '/vision-execution/node-vitality',
+      '/studio/council/recent-runs',
+      '/conversation',
+    ])
+    for (const p of paths) expect(known.has(p), `unexpected fetch: ${p}`).toBe(true)
   })
 
   it('casts the whole cairn, then the whole undertaking, each loading its own conversation', async () => {

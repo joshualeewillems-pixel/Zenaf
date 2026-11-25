@@ -21,12 +21,18 @@
  * under no initiative has no initiative cast) is simply absent —
  * never invented.
  *
- * THE STACK channels are the founder's rulings as implemented in the
- * accepted prototype: z-order by interaction recency; fill alpha
- * moment-to-moment on a base-e approach (τ = 0.38s, driven in the
- * view) inside the 10%–80% band, the Discussion slider setting the
- * ceiling; ink never touched; complexity = talk depth per seat about
- * the selected subject, presented as emergence replay depth.
+ * THE STACK channels are the founder's rulings: z-order by
+ * interaction recency; fill alpha graded per voice from recorded
+ * data — the voice's talk depth about the selected subject and who
+ * spoke last — on a base-e approach (τ = 0.38s, driven in the view)
+ * inside the ruled 10%–80% band, which has no ceiling control; ink
+ * never touched by opacity; complexity = talk depth per seat about
+ * the selected subject, presented as emergence replay depth — the
+ * formation genuinely drawn to that fraction of its growth (the
+ * stage ladders in ./stageImages, generated from the canonical
+ * geometry by ./stagegen). There are no manual imagery controls:
+ * nothing about the imagery is set by pressing buttons (founder,
+ * 2026-11-25).
  */
 import type { Node } from '@xyflow/react'
 import type { CairnIndex } from '../vision-map/cairn'
@@ -51,39 +57,6 @@ export const VOICE_BY_ARCHETYPE: Record<string, Voice> = {
   conductor: 'aria',
   skeptic: 'severine',
   maverick: 'jynx',
-}
-
-export const VOICE_NAMES: Record<Voice, string> = {
-  rumi: 'Rumi',
-  valen: 'Valen',
-  maeve: 'Maeve',
-  lucian: 'Lucian',
-  aria: 'Aria',
-  severine: 'Severine',
-  jynx: 'Jynx',
-}
-
-/** The seats' palette (the same colours the water's SEATS table uses). */
-export const VOICE_COLORS: Record<Voice, string> = {
-  rumi: '#92b692',
-  valen: '#e24e4e',
-  maeve: '#ac7c5b',
-  lucian: '#5c9cea',
-  aria: '#8892c3',
-  severine: '#a29ac1',
-  jynx: '#a55cce',
-}
-
-/** Each voice's home in the 1000×1320 field model (the water's SEATS
- *  table) — the point its formation re-forms from on a replay. */
-export const VOICE_HOMES: Record<Voice, [number, number]> = {
-  valen: [625, 445],
-  maeve: [445, 735],
-  aria: [500, 590],
-  rumi: [295, 400],
-  severine: [715, 715],
-  lucian: [460, 500],
-  jynx: [528, 520],
 }
 
 /* ------------------------------------------------------------------ */
@@ -413,20 +386,68 @@ function clampToField(p: PlacedBox): boolean {
   return dx !== 0 || dy !== 0
 }
 
-/** Note on the well: cairns ring the well by construction (the
- *  ring start), and a pile may kiss the well's stone rim — the
- *  cairns stand in front of it, as in the founder's reference
- *  garden. The layout's hard guarantee is the one the founder
- *  named: the shown cairns' LABELS never overlap each other. */
+/** The well is water (founder, 2026-11-25: "let's not populate
+ *  artifacts on top of the well"). NOTHING the layout places may
+ *  intersect the well disc: no cairn, no stone, no label — the
+ *  footprint box IS the pile plus its name label and count line,
+ *  so box-vs-disc disjointness covers all three, and an item whose
+ *  footprint merely touches the rim's edge from outside is fine
+ *  while one whose footprint crosses the disc is a violation.
+ *  (Before this fix the layout contained no well check at all —
+ *  the relaxation's penalty counted only item-vs-item overlap, so
+ *  the shake step could teleport the worst-overlapping cairn to
+ *  the field's emptiest spot: the middle of the well.) The layout's
+ *  other hard guarantee stands alongside: the shown cairns' LABELS
+ *  never overlap each other. */
+
+/** Does this rendered box (px, reference field) intersect the
+ *  well disc? Rect–circle test: the box's closest point to the
+ *  disc centre must lie at or beyond the radius. */
+export function boxIntersectsWell(box: { left: number; top: number; width: number; height: number }): boolean {
+  const nx = Math.max(box.left, Math.min(GARDEN_WELL.cx, box.left + box.width))
+  const ny = Math.max(box.top, Math.min(GARDEN_WELL.cy, box.top + box.height))
+  const dx = nx - GARDEN_WELL.cx
+  const dy = ny - GARDEN_WELL.cy
+  return dx * dx + dy * dy < GARDEN_WELL.r * GARDEN_WELL.r
+}
+
+/** Push a placed box radially out of the well disc until its
+ *  footprint is disjoint (then re-clamp to the field). Returns
+ *  true when the box moved. Bounded: a box that cannot clear the
+ *  disc inside the field is left where the steps end — the layout
+ *  tests pin the realistic gardens. */
+function resolveWell(p: PlacedBox): boolean {
+  if (!boxIntersectsWell(boxOf(p))) return false
+  let dx = p.cx - GARDEN_WELL.cx
+  let dy = p.cy - GARDEN_WELL.cy
+  const len = Math.hypot(dx, dy)
+  if (len < 0.001) {
+    dx = 0
+    dy = -1
+  } else {
+    dx /= len
+    dy /= len
+  }
+  for (let step = 0; step < 90; step++) {
+    p.cx += dx * 4
+    p.cy += dy * 4
+    clampToField(p)
+    if (!boxIntersectsWell(boxOf(p))) return true
+  }
+  return true
+}
 
 /** Deterministic de-overlap: push overlapping footprints apart
  *  along their smaller overlap axis, keep every box out of the
  *  well and inside the field, until nothing overlaps or the
  *  iteration budget runs out. Returns true when overlap-free. */
 /** Total pairwise overlap (area, gap-inflated) one box has with
- *  the rest — the penalty a placement pays. */
+ *  the rest — the penalty a placement pays. Standing on the well
+ *  dominates any item overlap, so the shake step never chooses
+ *  the disc as an escape. */
 function penaltyOf(placed: PlacedBox[], idx: number, gap: number): number {
   let total = 0
+  if (boxIntersectsWell(boxOf(placed[idx]))) total += 1_000_000
   for (let j = 0; j < placed.length; j++) {
     if (j === idx) continue
     const o = overlaps(placed[idx], placed[j], gap)
@@ -470,6 +491,7 @@ function shake(placed: PlacedBox[], gap: number): boolean {
 
 function relax(placed: PlacedBox[], gap: number): boolean {
   const settled = () =>
+    placed.every((p) => !boxIntersectsWell(boxOf(p))) &&
     placed.every((p, i) => placed.every((q, j) => i === j || !overlaps(p, q, gap)))
   for (let round = 0; round < 8; round++) {
     for (let iter = 0; iter < 400; iter++) {
@@ -494,6 +516,7 @@ function relax(placed: PlacedBox[], gap: number): boolean {
       }
       for (const p of placed) {
         if (clampToField(p)) moved = true
+        if (resolveWell(p)) moved = true
       }
       if (!moved) break
     }
@@ -594,14 +617,16 @@ function anchorStart(items: GardenFootprint[]): PlacedBox[] {
 
 /**
  * Lay out the ring's shown items so their footprints — pile, name
- * label, count line — NEVER overlap each other, and stay in the
- * field. Several deterministic starts (ring allocations, field
- * anchors) are relaxed in turn until the invariant holds. A
- * garden that does not fit at full size is retried at a smaller
- * uniform scale (the whole shown set shrinks together — a cairn
- * is never dropped and labels never collide); the scale ladder
- * bottoms out at 0.55, past which the tightest relaxed packing
- * is returned. Pure and deterministic.
+ * label, count line — NEVER overlap each other, NEVER intersect
+ * the well disc, and stay in the field. Several deterministic
+ * starts (ring allocations, field anchors) are relaxed in turn
+ * until both invariants hold. A garden that does not fit at full
+ * size is retried at a smaller uniform scale (the whole shown set
+ * shrinks together — a cairn is never dropped and labels never
+ * collide); the scale ladder bottoms out at 0.55, past which the
+ * tightest relaxed packing is returned — with the well guarantee
+ * still enforced on the way out, since that one is absolute.
+ * Pure and deterministic.
  */
 export function gardenLayout(items: GardenFootprint[]): GardenPlacement[] {
   if (items.length === 0) return []
@@ -629,7 +654,146 @@ export function gardenLayout(items: GardenFootprint[]): GardenPlacement[] {
       last = { placed, scale }
     }
   }
+  // The fallback packing may still touch the well; the water is
+  // water, so the disc is cleared even here (a label compromise in
+  // a pathological garden outranks nothing — the well does).
+  for (const p of last!.placed) {
+    resolveWell(p)
+    clampToField(p)
+  }
   return finish(last!.placed, last!.scale)
+}
+
+/* ------------------------------------------------------------------ */
+/* The fan — an opened cairn's stones, never on the water              */
+/* ------------------------------------------------------------------ */
+
+/** A fan's estimated box as % of the garden field, measured on the
+ *  reference field: fan stones are 76px wide with the fan's gaps
+ *  and padding (atelier.css .atelier-fan / .atelier-fan-stone),
+ *  wrapping at 94% of the field's width. On any wider field the
+ *  fan's fixed pixel size is a smaller share, so the reference
+ *  estimate is the conservative one. */
+export interface FanBox {
+  widthPct: number
+  heightPct: number
+}
+
+export function fanBoxFor(stoneCount: number): FanBox {
+  const n = Math.max(1, stoneCount)
+  const stoneW = 76
+  const gap = 5.6
+  const padX = 12.8
+  const padY = 11.2
+  const maxW = GARDEN_REF_W * 0.94
+  const perRow = Math.max(1, Math.floor((maxW - padX + gap) / (stoneW + gap)))
+  const cols = Math.min(n, perRow)
+  const rows = Math.ceil(n / perRow)
+  const widthPx = Math.min(maxW, cols * stoneW + (cols - 1) * gap + padX)
+  const heightPx = rows * 54 + (rows - 1) * gap + padY
+  return {
+    widthPct: (widthPx / GARDEN_REF_W) * 100,
+    heightPct: (heightPx / GARDEN_REF_H) * 100,
+  }
+}
+
+/** The well disc in the garden's % space, as an ellipse: centre
+ *  (50, 44); radius 23.5% of the width, and 23.5 × 10/11 % of the
+ *  height (the garden's aspect is 10/11). */
+const WELL_PCT = { cx: 50, cy: 44, rx: 23.5, ry: 23.5 * (10 / 11) }
+
+/** Distance from the disc centre to the fan box's closest point,
+ *  in the y-scaled space where the ellipse is a circle (a rect
+ *  stays a rect under the axis scaling, so this stays exact).
+ *  Below WELL_PCT.rx the box intersects the disc. */
+function fanWellClosest(left: number, top: number, box: FanBox): number {
+  const s = WELL_PCT.rx / WELL_PCT.ry
+  const nx = Math.max(left, Math.min(WELL_PCT.cx, left + box.widthPct))
+  const ny = Math.max(top * s, Math.min(WELL_PCT.cy * s, (top + box.heightPct) * s))
+  return Math.hypot(nx - WELL_PCT.cx, ny - WELL_PCT.cy * s)
+}
+
+function fanBoxIntersectsWell(left: number, top: number, box: FanBox): boolean {
+  return fanWellClosest(left, top, box) < WELL_PCT.rx
+}
+
+/**
+ * Where a fan sits: centred near its anchor, below it — or above
+ * it when the anchor stands low — the garden's standing placement.
+ * If that box would rest on the well disc, the flipped side is
+ * tried, then the fan is walked radially outward from the disc's
+ * centre in every direction (the anchor's own ray first) until
+ * its whole box is clear of the water. A fan too large to clear
+ * the disc anywhere inside the field at the reference width (a
+ * dozen-plus stones on a phone-width pane) takes the placement
+ * whose box penetrates the disc least — bottom-hugging, in
+ * practice; on any wider field the same fan is a smaller share
+ * of the field and clears outright. A fan is a resting artifact
+ * while it stands open; the water is water.
+ */
+export function fanPositionClear(
+  anchor: { x: number; y: number },
+  box: FanBox,
+): { left: number; top: number } {
+  const place = (cx: number, top: number) => ({
+    left: Math.max(box.widthPct / 2, Math.min(100 - box.widthPct / 2, cx)),
+    top: Math.max(0, Math.min(100 - box.heightPct, top)),
+  })
+  const penetration = (p: { left: number; top: number }) =>
+    Math.max(0, WELL_PCT.rx - fanWellClosest(p.left - box.widthPct / 2, p.top, box))
+  const clear = (p: { left: number; top: number }) => penetration(p) <= 0
+  const legacy = place(
+    Math.max(38, Math.min(62, anchor.x)),
+    anchor.y > 70 ? anchor.y - 7 - box.heightPct : anchor.y + 7,
+  )
+  if (clear(legacy)) return legacy
+  const flipped = place(
+    legacy.left,
+    anchor.y > 70 ? anchor.y + 7 : anchor.y - 7 - box.heightPct,
+  )
+  if (clear(flipped)) return flipped
+  let best = penetration(flipped) < penetration(legacy) ? flipped : legacy
+  let bestPen = penetration(best)
+  // Radial walks in the scaled space (where the disc is a
+  // circle): the anchor's ray first, then the cardinals and
+  // diagonals. Each walk steps the fan's centre outward and
+  // tests the field-clamped placement.
+  const s = WELL_PCT.rx / WELL_PCT.ry
+  let ax = anchor.x - WELL_PCT.cx
+  let ay = (anchor.y - WELL_PCT.cy) * s
+  const alen = Math.hypot(ax, ay)
+  if (alen < 0.001) {
+    ax = 0
+    ay = -1
+  } else {
+    ax /= alen
+    ay /= alen
+  }
+  const dirs: Array<[number, number]> = [
+    [ax, ay],
+    [0, -1],
+    [0, 1],
+    [-1, 0],
+    [1, 0],
+    [-0.7071, -0.7071],
+    [0.7071, -0.7071],
+    [-0.7071, 0.7071],
+    [0.7071, 0.7071],
+  ]
+  for (const [dx, dy] of dirs) {
+    for (let d = 0; d <= 130; d += 2) {
+      const cx = WELL_PCT.cx + dx * d
+      const cy = WELL_PCT.cy + (dy * d) / s
+      const p = place(cx, cy - box.heightPct / 2)
+      if (clear(p)) return p
+      const pen = penetration(p)
+      if (pen < bestPen) {
+        bestPen = pen
+        best = p
+      }
+    }
+  }
+  return best
 }
 
 /* ------------------------------------------------------------------ */
@@ -809,23 +973,65 @@ export const FILL_FLOOR = 0.1
 /** Base-e approach constant for fill travel (seconds). */
 export const FILL_TAU = 0.38
 
-/** Multiplier that puts a voice's effective fill alpha at the floor:
- *  baked × floorMult = 0.10 at full ceiling. */
-export function floorMult(v: Voice): number {
-  return Math.min(1, FILL_FLOOR / FILL_BAKED[v])
+/**
+ * GRADED FILL — from recorded data only (founder, 2026-11-25:
+ * "the imagery is supposed to represent system data"). A voice's
+ * fill presence is its EFFECTIVE alpha inside the ruled band —
+ * never below the 10% floor, never above its baked level:
+ *
+ *   - the voice who spoke last about this subject (the recorded
+ *     lastArchetype of the subject conversation) stands at FULL
+ *     presence: its baked level;
+ *   - any other voice with recorded talk about the subject holds
+ *     the floor plus the depth-graded share of its remaining
+ *     range: floor + (baked − floor) × depth, where depth is its
+ *     recorded talk depth (depthsForSubject);
+ *   - a voice with no recorded talk about the subject sits at
+ *     the floor.
+ *
+ * Deterministic in (depths, lastVoice) — the two recorded inputs
+ * the view already fetches. No stance or activity inference, no
+ * other data. There is no ceiling control: the band is the band.
+ */
+export function fillPresence(
+  v: Voice,
+  depths: Record<Voice, number>,
+  lastVoice: Voice | null,
+): number {
+  const baked = FILL_BAKED[v]
+  if (lastVoice === v) return baked
+  const depth = Math.max(0, Math.min(1, depths[v] ?? 0))
+  if (depth <= 0) return FILL_FLOOR
+  return FILL_FLOOR + (baked - FILL_FLOOR) * depth
 }
 
-/** The Discussion slider sets the band's ceiling: at 80 the responding
- *  seat's fill is at its full baked intensity. */
-export function ceilingScale(slider: number): number {
-  return slider / 80
+/** The multiplier written to the fill image's opacity: the fill
+ *  PNG bakes the voice's level in, so presence ÷ baked is what
+ *  the image wears. Always within (0, 1]. */
+export function fillMultiplier(
+  v: Voice,
+  depths: Record<Voice, number>,
+  lastVoice: Voice | null,
+): number {
+  return fillPresence(v, depths, lastVoice) / FILL_BAKED[v]
 }
 
-/** Fill target (the multiplier written to the fill image's opacity)
- *  for one voice given the current selection and ceiling. */
-export function fillTarget(v: Voice, selected: Voice | 'all', slider: number): number {
-  const base = selected === 'all' || selected === v ? 1 : floorMult(v)
-  return base * ceilingScale(slider)
+/* ------------------------------------------------------------------ */
+/* The drawing stages                                                  */
+/* ------------------------------------------------------------------ */
+
+/** Stages in each voice's formation ladder (stageImages.ts). Stage
+ *  j is the canonical geometry genuinely drawn to j/12 of its
+ *  growth — every stage a true prefix of the next, the last the
+ *  completed formation (see stagegen/generate_stages.py and
+ *  stage-manifest.json). Stage 0 is nothing drawn yet. */
+export const STAGE_COUNT = 12
+
+/** The stage a voice's replay holds at: its recorded depth
+ *  fraction of the ladder, so what stands at the hold is the
+ *  formation drawn to exactly that fraction (within one stage). */
+export function stageForDepth(depth: number): number {
+  return Math.max(0, Math.min(STAGE_COUNT, Math.round(depth * STAGE_COUNT)))
 }
 
 /** Z-order by interaction recency: the interacted voice comes to the
@@ -859,7 +1065,10 @@ export const REPLAY_RATES: Record<Voice, number> = {
   jynx: 0.6,
 }
 
-/** Base replay duration at rate 1 (ms) — the reveal travels to the
- *  depth fraction, holds a beat, then completes. */
+/** Base replay duration at rate 1 (ms) — the drawing travels to
+ *  the depth fraction, holds a beat, then completes. */
 export const REPLAY_BASE_MS = 1500
 export const REPLAY_HOLD_MS = 650
+/** Duration of the completion beat (ms): the drawing runs from
+ *  its held depth to the completed formation. */
+export const REPLAY_COMPLETE_MS = 400

@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+from local_ai.conversation.subject_context import build_subject_context
 from local_ai.council import capabilities as CAP
 from local_ai.council.archetypes import get_archetype
 from local_ai.council.naming import get_display_name
@@ -708,6 +709,21 @@ class ConversationService:
                 user_id, (context or {}).get("entity_type"), (context or {}).get("entity_id")
             )
 
+        # Selected-subject carriage (interface surfaces): all seven
+        # seats, ordinary Talk only. The four interfaces key their
+        # conversations to a selected VE record through the
+        # LiveContext seam; this resolves that reference server-side,
+        # from the caller's own scoped records, and carries the
+        # record's own fields into the prompt as a fenced block —
+        # before this, the seam carried the reference only and the
+        # seat never saw the subject's substance. The assembler
+        # gates on the interface sheet types itself and never
+        # raises, so no try/except is needed here — mirroring the
+        # evidence call it sits next to. No selection (or an
+        # unresolved/foreign id) yields no block, and the prompt
+        # assembles byte-identically to before.
+        subject_context = build_subject_context(user_id, context)
+
         # Capability C S5: first joining turn only. If a pending,
         # unexpired invitation exists for this (user, conversation,
         # seat) at turn start, the turn carries its evidence +
@@ -883,6 +899,7 @@ class ConversationService:
             context_hint=context_hint,
             obligation_context=obligation_context,
             evidence_context=evidence_context,
+            subject_context=subject_context,
             invitation_context=invitation_context,
             execution_context=execution_context,
             round_context=round_context,

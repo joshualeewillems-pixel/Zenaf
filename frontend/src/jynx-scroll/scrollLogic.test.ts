@@ -12,11 +12,14 @@ import {
   drawingDurationMs,
   flattenShelf,
   markProgressAt,
+  scrollChildren,
+  shelfTopLevel,
   JYNX_PURPLE,
   TIER_DARK,
   TIER_LIGHT,
   TIER_MID,
   type ScrollDrawing,
+  type ShelfScroll,
 } from './scrollLogic'
 import type { Initiative, Project, Task } from '../vision-execution/types'
 
@@ -105,6 +108,49 @@ describe('buildScrollShelf — grouping by the real hierarchy', () => {
     expect(s).toHaveLength(1)
     expect(s[0].initiative).toBeNull()
     expect(s[0].projects[0].scroll.title).toBe('Orphan')
+  })
+
+  describe('parents + loose — the shelf face and the drill-in', () => {
+    const byKey = (s: ShelfScroll) => `${s.kind}:${s.id}`
+
+    it('the shelf face holds only initiatives in the lattice and loose items in the bin', () => {
+      const { lattice, bin } = shelfTopLevel(shelf)
+      expect(lattice.map(byKey)).toEqual(['initiative:i1', 'initiative:i2'])
+      // The bin: the unanchored project and the top-level loose
+      // task — NOT the bin project's tasks, NOT any bay's children.
+      expect(bin.map(byKey)).toEqual(['project:p3', 'task:t4'])
+    })
+
+    it('opening a parent reveals exactly its children, level by level', () => {
+      const flat = flattenShelf(shelf)
+      const get = (key: string) => flat.find((s) => byKey(s) === key)!
+      expect(scrollChildren(shelf, get('initiative:i1')).map(byKey)).toEqual(['project:p1'])
+      // A project opens to its TOP-LEVEL tasks — the subtask is
+      // not among them; it hangs under its parent task.
+      expect(scrollChildren(shelf, get('project:p1')).map(byKey)).toEqual(['task:t1', 'task:t2'])
+      expect(scrollChildren(shelf, get('task:t2')).map(byKey)).toEqual(['task:t2a'])
+      expect(scrollChildren(shelf, get('task:t2a'))).toEqual([])
+      expect(scrollChildren(shelf, get('project:p3'))).toEqual([])
+    })
+
+    it('every scroll is reachable: top-level, or a child of a reachable parent', () => {
+      const { lattice, bin } = shelfTopLevel(shelf)
+      const reachable = new Set<string>()
+      const walk = (s: ShelfScroll) => {
+        if (reachable.has(byKey(s))) return
+        reachable.add(byKey(s))
+        for (const c of scrollChildren(shelf, s)) walk(c)
+      }
+      for (const s of [...lattice, ...bin]) walk(s)
+      expect([...reachable].sort()).toEqual(flattenShelf(shelf).map(byKey).sort())
+    })
+
+    it('task scrolls carry their recorded parent edge', () => {
+      const flat = flattenShelf(shelf)
+      expect(flat.find((s) => s.id === 't2a')?.parentTaskId).toBe('t2')
+      expect(flat.find((s) => s.id === 't1')?.parentTaskId).toBeNull()
+      expect(flat.find((s) => s.id === 'p1')?.parentTaskId).toBeNull()
+    })
   })
 })
 

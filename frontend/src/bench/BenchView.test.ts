@@ -243,6 +243,51 @@ describe("Severine's Bench — render verification", () => {
     expect(dialog!.textContent).toContain('The winter round.')
   })
 
+  it('the shelf holds parents + loose only — an initiative-owned project reaches the bench through its tree', async () => {
+    const OWNED = { ...PROJECT, id: 'p-owned', initiative_id: 'i1', title: 'Depot refit' }
+    const INI = {
+      id: 'i1', source_idea_id: null, title: 'Rebuild the workshop', brief: '',
+      status: 'Active', owner_id: null, evaluation_priority: null, estimated_cost_ai: '',
+      estimated_timeframe_ai: '', philosophical_alignment_ai: '', next_step_ai: '',
+      required_assets: [], dependencies: '', risks: '', recommendation: '',
+      kill_criteria: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown, init?: { method?: string }) => {
+        const url = String(input)
+        void init
+        const json = (body: unknown) =>
+          new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        if (url.includes('/vision-execution/projects')) return json([PROJECT, OWNED])
+        if (url.includes('/vision-execution/tasks')) return json(TASKS)
+        if (url.includes('/vision-execution/ideas')) return json([IDEA])
+        if (url.includes('/vision-execution/initiatives')) return json([INI])
+        if (url.includes('/vision-execution/persons')) return json([])
+        if (url.includes('/vision-execution/assets')) return json([])
+        if (url.includes('/task-proposals/by-parent/')) return json({ proposals: [] })
+        return json({})
+      }),
+    )
+    await renderBench()
+    // Shelf roots: the initiative, the loose project, the idea —
+    // NOT the initiative-owned project.
+    expect(container!.querySelector('[data-shelf-item="i1"]')).not.toBeNull()
+    expect(container!.querySelector('[data-shelf-item="p1"]')).not.toBeNull()
+    expect(container!.querySelector('[data-shelf-item="p-owned"]')).toBeNull()
+    // Open the initiative's tree: the owned project stands as a
+    // branch, and its detail carries the door to its own tree.
+    await click(findButton('', ['data-shelf-item', 'i1']))
+    const row = container!.querySelector('[data-branch-row="p-owned"]')
+    expect(row).not.toBeNull()
+    await click(row as HTMLElement)
+    const detail = container!.querySelector('[data-branch-detail="p-owned"]')
+    expect(detail).not.toBeNull()
+    await click(findButton('Bring this project to the bench'))
+    const benchChat = container!.querySelector('[data-testid="severine-chat"]')
+    expect(benchChat?.getAttribute('data-conversation-id')).toBe('bench:project:p-owned')
+  })
+
   it("the conversation beside the bench is Severine's, following the open tree", async () => {
     await renderBench()
     const shelfChat = container!.querySelector('[data-testid="severine-chat"]')

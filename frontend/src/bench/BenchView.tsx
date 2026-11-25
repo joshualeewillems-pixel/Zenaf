@@ -392,10 +392,18 @@ export default function BenchView() {
                 )
               })}
               {selectedBranch && (
-                <BranchDetail branch={selectedBranch} onOpenWire={() => {
-                  const proposal = selectedBranch.proposals[0]
-                  if (proposal) setOpenedWire({ branchId: selectedBranch.id, proposal })
-                }} />
+                <BranchDetail
+                  branch={selectedBranch}
+                  onOpenWire={() => {
+                    const proposal = selectedBranch.proposals[0]
+                    if (proposal) setOpenedWire({ branchId: selectedBranch.id, proposal })
+                  }}
+                  onBringToBench={
+                    selectedBranch.sourceKind === 'project'
+                      ? () => void openTree('project', selectedBranch.id)
+                      : undefined
+                  }
+                />
               )}
             </div>
           </div>
@@ -522,7 +530,19 @@ function Shelf({
 /* Branch inspection (§6/§8: provenance lives on inspection)           */
 /* ================================================================== */
 
-function BranchDetail({ branch, onOpenWire }: { branch: BenchBranch; onOpenWire: () => void }) {
+function BranchDetail({
+  branch,
+  onOpenWire,
+  onBringToBench,
+}: {
+  branch: BenchBranch
+  onOpenWire: () => void
+  /** When the branch IS a project (a nested record standing as a
+   *  branch of its initiative's tree), the door to its own tree:
+   *  the shelf holds parents + loose only, so this is how an
+   *  initiative's project reaches the bench. */
+  onBringToBench?: () => void
+}) {
   const lines: string[] = []
   lines.push(`“${branch.name}” — ${branch.state.toLowerCase()} in the record.`)
   if (branch.subtaskCount > 0) {
@@ -551,6 +571,15 @@ function BranchDetail({ branch, onOpenWire }: { branch: BenchBranch; onOpenWire:
           className="min-h-[36px] px-3.5 rounded-full border border-[#7c4a21] text-[#7c4a21] text-sm bg-transparent"
         >
           Open the proposal on this branch
+        </button>
+      )}
+      {onBringToBench && (
+        <button
+          type="button"
+          onClick={onBringToBench}
+          className="min-h-[36px] px-3.5 rounded-full border border-[#7c4a21] text-[#7c4a21] text-sm bg-transparent"
+        >
+          Bring this project to the bench
         </button>
       )}
     </div>

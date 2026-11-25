@@ -2,17 +2,25 @@
  * Jynx's Scroll — the production surface.
  *
  * The Fox's home is a shelf of scrolls (founder, 2026-11-24): a
- * diamond-lattice wooden case holding one rolled scroll per item
- * of the user's real Vision Execution hierarchy — initiatives,
- * projects, tasks, and each idea as its own scroll — with the
- * unanchored items lying in the open bin at the case's base, and a
- * small wooden scroll stand beside the case. Choosing a scroll
- * places it on the stand, where it unrolls into the drawing
- * surface: Jynx's drawings arrive on it mark by mark, in order
- * (rhyme in paint first), and the conversation beside the scene
- * takes the open scroll — or a tapped drawing — as its subject
- * through the same LiveContext seam the Campaign Board uses. The
- * surface writes nothing anywhere.
+ * diamond-lattice wooden case holding the user's real Vision
+ * Execution work under the standing display rule — parents and
+ * loose items only. The lattice holds one scroll per initiative;
+ * the open bin at the case's base holds one scroll per unanchored
+ * project, per top-level loose task, and per idea. Children are
+ * not on the shelf face: choosing a scroll opens its OWN SCREEN
+ * (founder, 2026-11-24, superseding the in-scene stand unroll of
+ * the first build), where the scroll unrolls full-size into the
+ * drawing surface and its children stand beneath it as scrolls of
+ * their own, each opening in turn — every record stays reachable
+ * through its parent. Jynx's drawings arrive on the sheet mark by
+ * mark, in order (rhyme in paint first), and the conversation
+ * beside the scene takes the open scroll — or a tapped drawing —
+ * as its subject through the same LiveContext seam the Campaign
+ * Board uses. The drawing scroll itself carries NO text (founder,
+ * 2026-11-24): no title lettered on the parchment, nothing on the
+ * sheet but the drawings — the subject's name lives in the
+ * screen's chrome, never on the scroll. The surface writes
+ * nothing anywhere.
  *
  * Assembled from the record's own pieces, not redrawn: the
  * unrolled scroll IS the founder's scroll ground
@@ -24,10 +32,9 @@
  * study's generator places them) plus freehand sumi strokes; the
  * unroll and the mark-by-mark arrival follow the approved scroll
  * film's rhythm (the sheet unrolls downward, the painting paints
- * once, section by section). The shelf's drawn case and stand are
- * this surface's own furniture in the app's register, after the
- * founder's two shelf references (diamond-lattice case, base bin,
- * turned-post stand).
+ * once, section by section). The shelf's drawn case is this
+ * surface's own furniture in the app's register, after the
+ * founder's two shelf references (diamond-lattice case, base bin).
  *
  * Every distinction between shelf scrolls is recorded, never
  * decorative (see scrollLogic): size from kind + recorded mass,
@@ -52,9 +59,12 @@ import {
   buildScrollShelf,
   flattenShelf,
   markProgressAt,
+  scrollChildren,
+  shelfTopLevel,
   JYNX_PURPLE,
   type ScrollDrawing,
   type ScrollMark,
+  type ShelfBay,
   type ShelfScroll,
   type StampName,
 } from './scrollLogic'
@@ -79,11 +89,10 @@ const NAME_INK = '#3a2c1c'
 
 const SCENE_W = 920
 const CASE_X = 16
-const CASE_W = 488
-const CELL_W = 122
+const CASE_W = SCENE_W - CASE_X * 2
+const COLS = 6
+const CELL_W = CASE_W / COLS
 const CELL_H = 104
-const COLS = 4
-const STAND_CX = 724
 
 /** The stencil kit, lifted: name → asset + the PNG's own pixel
  *  size (the placement math needs each stamp's true aspect). */
@@ -100,12 +109,16 @@ const STAMPS: Record<StampName, { src: string; w: number; h: number }> = {
   wave: { src: stampWave, w: 297, h: 175 },
 }
 
-/** The founder's ground as it stands on the stand: drawn at its
- *  own aspect (1086×1448), never stretched. The parchment interior
- *  — where drawings may land — is the sheet inside its rollers and
- *  torn edges, as fractions of the image. */
-const GROUND_W = 204
-const GROUND_H = 272
+/** The founder's ground on its own screen: drawn at its own
+ *  aspect (1086×1448), never stretched, large in the world pane.
+ *  The parchment interior — where drawings may land — is the
+ *  sheet inside its rollers and torn edges, as fractions of the
+ *  image. */
+const SCREEN_W = 480
+const SCREEN_CX = SCREEN_W / 2
+const SHEET_TOP = 96
+const GROUND_W = 340
+const GROUND_H = 453
 const INTERIOR = { x: 0.155, y: 0.125, w: 0.7, h: 0.75 }
 
 const UNROLL_MS = 850
@@ -129,7 +142,10 @@ export default function JynxScrollView() {
   const [entities, setEntities] = useState<ScrollEntities | null>(null)
   const [drawings, setDrawings] = useState<ScrollDrawing[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [openKey, setOpenKey] = useState<string | null>(null)
+  /** The open scroll's trail: shelf → parent → child … The last
+   *  entry is the scroll on screen; the rest are its ancestors,
+   *  so the back step always lands on the parent it came from. */
+  const [openTrail, setOpenTrail] = useState<string[]>([])
   const [section, setSection] = useState(0)
   const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
   const [elapsed, setElapsed] = useState(0)
@@ -161,9 +177,20 @@ export default function JynxScrollView() {
     [entities],
   )
   const allScrolls = useMemo(() => flattenShelf(shelf), [shelf])
+  const openKey = openTrail[openTrail.length - 1] ?? null
   const open = useMemo(
     () => allScrolls.find((s) => `${s.kind}:${s.id}` === openKey) ?? null,
     [allScrolls, openKey],
+  )
+  const openParent = useMemo(() => {
+    const parentKey = openTrail[openTrail.length - 2]
+    return parentKey
+      ? (allScrolls.find((s) => `${s.kind}:${s.id}` === parentKey) ?? null)
+      : null
+  }, [allScrolls, openTrail])
+  const openChildren = useMemo(
+    () => (open ? scrollChildren(shelf, open) : []),
+    [shelf, open],
   )
   const visibleDrawing = drawings[Math.min(section, Math.max(0, drawings.length - 1))] ?? null
   const selectedDrawing = useMemo(
@@ -187,16 +214,27 @@ export default function JynxScrollView() {
     return () => clearInterval(timer)
   }, [openKey, section, drawings, open])
 
-  const choose = useCallback(
-    (scroll: ShelfScroll) => {
-      const key = `${scroll.kind}:${scroll.id}`
-      // Tapping the scroll that is on the stand puts it back.
-      setOpenKey((cur) => (cur === key ? null : key))
-      setSection(0)
-      setSelectedDrawingId(null)
-    },
-    [],
-  )
+  /** Choosing a scroll from the shelf opens its own screen. */
+  const choose = useCallback((scroll: ShelfScroll) => {
+    setOpenTrail([`${scroll.kind}:${scroll.id}`])
+    setSection(0)
+    setSelectedDrawingId(null)
+  }, [])
+
+  /** Opening a child from the open scroll's screen: the trail
+   *  deepens, so the back step returns to this parent. */
+  const openChild = useCallback((scroll: ShelfScroll) => {
+    setOpenTrail((trail) => [...trail, `${scroll.kind}:${scroll.id}`])
+    setSection(0)
+    setSelectedDrawingId(null)
+  }, [])
+
+  /** One step back: to the parent scroll, or to the shelf. */
+  const goBack = useCallback(() => {
+    setOpenTrail((trail) => trail.slice(0, -1))
+    setSection(0)
+    setSelectedDrawingId(null)
+  }, [])
 
   /* --------------------------- chat wiring --------------------------- */
 
@@ -239,35 +277,38 @@ export default function JynxScrollView() {
     <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden">
       <div className="flex-1 min-w-0 lg:overflow-y-auto p-3 lg:p-5 space-y-3">
         <div className="flex items-center gap-3 px-1 pb-1">
-          <h1 className="text-lg font-semibold text-stone-100">The Shelf of Scrolls</h1>
           {open ? (
             <button
               type="button"
-              onClick={() => {
-                setOpenKey(null)
-                setSelectedDrawingId(null)
-              }}
-              className="text-sm text-amber-200/90 hover:text-amber-100"
+              onClick={goBack}
+              className="text-sm text-amber-200/90 hover:text-amber-100 min-h-[36px] shrink-0"
             >
-              ← The shelf
+              {openParent ? `← ${letterName(openParent.title, 30)}` : '← The shelf'}
             </button>
           ) : null}
+          <h1 className="text-lg font-semibold text-stone-100">
+            {open ? open.title : 'The Shelf of Scrolls'}
+          </h1>
         </div>
-        <ScrollScene
-          shelf={shelf}
-          open={open}
-          drawing={visibleDrawing}
-          drawingCount={drawings.length}
-          section={Math.min(section, Math.max(0, drawings.length - 1))}
-          elapsed={elapsed}
-          selectedDrawingId={selectedDrawingId}
-          onChoose={choose}
-          onSelectDrawing={(d) => setSelectedDrawingId(d.id)}
-          onSection={(next) => {
-            setSection(next)
-            setSelectedDrawingId(null)
-          }}
-        />
+        {open ? (
+          <OpenScrollScreen
+            scroll={open}
+            children={openChildren}
+            drawing={visibleDrawing}
+            drawingCount={drawings.length}
+            section={Math.min(section, Math.max(0, drawings.length - 1))}
+            elapsed={elapsed}
+            selectedDrawingId={selectedDrawingId}
+            onOpenChild={openChild}
+            onSelectDrawing={(d) => setSelectedDrawingId(d.id)}
+            onSection={(next) => {
+              setSection(next)
+              setSelectedDrawingId(null)
+            }}
+          />
+        ) : (
+          <ScrollScene shelf={shelf} onChoose={choose} />
+        )}
       </div>
       <div
         role="separator"
@@ -308,57 +349,34 @@ export default function JynxScrollView() {
 }
 
 /* ================================================================== */
-/* The scene — lattice case, base bin, and the stand                   */
+/* The shelf — lattice case and base bin, parents + loose only         */
 /* ================================================================== */
 
 function ScrollScene({
   shelf,
-  open,
-  drawing,
-  drawingCount,
-  section,
-  elapsed,
-  selectedDrawingId,
   onChoose,
-  onSelectDrawing,
-  onSection,
 }: {
-  shelf: ReturnType<typeof buildScrollShelf>
-  open: ShelfScroll | null
-  drawing: ScrollDrawing | null
-  drawingCount: number
-  section: number
-  elapsed: number
-  selectedDrawingId: string | null
+  shelf: ShelfBay[]
   onChoose: (scroll: ShelfScroll) => void
-  onSelectDrawing: (drawing: ScrollDrawing) => void
-  onSection: (next: number) => void
 }) {
-  const latticeScrolls = flattenShelf(shelf.filter((b) => b.initiative !== null))
-  const binScrolls = flattenShelf(shelf.filter((b) => b.initiative === null))
+  const { lattice, bin } = shelfTopLevel(shelf)
 
   // Lattice geometry: at least two rows of compartments stand in
   // the case, even when the shelf is empty — the case itself is
   // furniture of the room; its emptiness is the honest state.
-  const cellCount = Math.max(latticeScrolls.length, COLS * 2)
+  const cellCount = Math.max(lattice.length, COLS * 2)
   const rows = Math.ceil(cellCount / COLS)
   const latticeTop = 24
   const latticeH = rows * CELL_H + CELL_H / 2
   const latticeBottom = latticeTop + latticeH
 
-  // Bin geometry: scrolls lie in rows of five along the open base.
-  const BIN_PER_ROW = 5
-  const binRows = Math.max(1, Math.ceil(binScrolls.length / BIN_PER_ROW))
+  // Bin geometry: scrolls lie in rows along the open base.
+  const BIN_PER_ROW = 8
+  const binRows = Math.max(1, Math.ceil(bin.length / BIN_PER_ROW))
   const binTop = latticeBottom + 14
   const binH = 30 + binRows * 44
   const caseBottom = binTop + binH
-
-  // Stand geometry: the founder's ground stands at its own aspect
-  // between the posts; the base sits below it.
-  const sheetTop = 118
-  const sheetBottom = sheetTop + GROUND_H
-  const standBottom = sheetBottom + 92
-  const height = Math.max(caseBottom, standBottom) + 28
+  const height = caseBottom + 28
 
   const cellCenter = (index: number): { cx: number; cy: number } => {
     const col = index % COLS
@@ -369,9 +387,6 @@ function ScrollScene({
     }
   }
 
-  const unroll = Math.min(1, elapsed / UNROLL_MS)
-  const drawElapsed = Math.max(0, elapsed - UNROLL_MS)
-
   return (
     <section aria-label="Jynx — the shelf of scrolls">
       <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 bg-[#241a12] shadow-lg">
@@ -379,149 +394,66 @@ function ScrollScene({
           viewBox={`0 0 ${SCENE_W} ${height}`}
           className="w-full block"
           role="img"
-          aria-label="A lattice case of rolled scrolls, an open bin at its base, and a scroll stand beside it"
+          aria-label="A lattice case of rolled scrolls with an open bin at its base"
         >
-          {/* ------------------------- the case ------------------------- */}
+          {Array.from({ length: cellCount }, (_, i) => {
+            const { cx, cy } = cellCenter(i)
+            return (
+              <path
+                key={`cell-${i}`}
+                d={`M ${cx} ${cy - CELL_H / 2} L ${cx + CELL_W / 2} ${cy} L ${cx} ${cy + CELL_H / 2} L ${cx - CELL_W / 2} ${cy} Z`}
+                fill={CELL_INNER}
+                stroke={WOOD}
+                strokeWidth={5}
+              />
+            )
+          })}
+          {lattice.map((scroll, i) => {
+            const { cx, cy } = cellCenter(i)
+            return (
+              <RolledScroll
+                key={`${scroll.kind}:${scroll.id}`}
+                scroll={scroll}
+                cx={cx}
+                cy={cy}
+                onChoose={onChoose}
+              />
+            )
+          })}
+          <rect
+            x={CASE_X - 6}
+            y={latticeTop - 10}
+            width={CASE_W + 12}
+            height={latticeH + 20}
+            fill="none"
+            stroke={WOOD_DARK}
+            strokeWidth={7}
+          />
+          {/* the open bin at the base */}
           <g>
-            {Array.from({ length: cellCount }, (_, i) => {
-              const { cx, cy } = cellCenter(i)
-              return (
-                <path
-                  key={`cell-${i}`}
-                  d={`M ${cx} ${cy - CELL_H / 2} L ${cx + CELL_W / 2} ${cy} L ${cx} ${cy + CELL_H / 2} L ${cx - CELL_W / 2} ${cy} Z`}
-                  fill={CELL_INNER}
-                  stroke={WOOD}
-                  strokeWidth={5}
-                />
-              )
-            })}
-            {latticeScrolls.map((scroll, i) => {
-              const { cx, cy } = cellCenter(i)
+            <rect
+              x={CASE_X - 6}
+              y={binTop}
+              width={CASE_W + 12}
+              height={binH}
+              fill="#332416"
+              stroke={WOOD_DARK}
+              strokeWidth={6}
+            />
+            {bin.map((scroll, i) => {
+              const row = Math.floor(i / BIN_PER_ROW)
+              const col = i % BIN_PER_ROW
               return (
                 <RolledScroll
                   key={`${scroll.kind}:${scroll.id}`}
                   scroll={scroll}
-                  cx={cx}
-                  cy={cy}
-                  onStand={open?.kind === scroll.kind && open?.id === scroll.id}
+                  cx={CASE_X + 58 + col * 100}
+                  cy={binTop + 38 + row * 44}
+                  scale={0.82}
                   onChoose={onChoose}
                 />
               )
             })}
-            <rect
-              x={CASE_X - 6}
-              y={latticeTop - 10}
-              width={CASE_W + 12}
-              height={latticeH + 20}
-              fill="none"
-              stroke={WOOD_DARK}
-              strokeWidth={7}
-            />
-            {/* the open bin at the base */}
-            <g>
-              <rect
-                x={CASE_X - 6}
-                y={binTop}
-                width={CASE_W + 12}
-                height={binH}
-                fill="#332416"
-                stroke={WOOD_DARK}
-                strokeWidth={6}
-              />
-              {binScrolls.map((scroll, i) => {
-                const row = Math.floor(i / BIN_PER_ROW)
-                const col = i % BIN_PER_ROW
-                return (
-                  <RolledScroll
-                    key={`${scroll.kind}:${scroll.id}`}
-                    scroll={scroll}
-                    cx={CASE_X + 58 + col * 100}
-                    cy={binTop + 38 + row * 44}
-                    scale={0.82}
-                    onStand={open?.kind === scroll.kind && open?.id === scroll.id}
-                    onChoose={onChoose}
-                  />
-                )
-              })}
-            </g>
-          </g>
-
-          {/* ------------------------- the stand ------------------------ */}
-          <g>
-            {/* turned posts */}
-            {[STAND_CX - 122, STAND_CX + 122].map((px) => (
-              <g key={px}>
-                <rect x={px - 7} y={92} width={14} height={sheetBottom - 92 + 52} rx={7} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
-                {[130, 210, 290, 370].map((ky) => (
-                  <circle key={ky} cx={px} cy={ky} r={10.5} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
-                ))}
-              </g>
-            ))}
-            {/* rods with their discs, behind the sheet */}
-            {[sheetTop + 14, sheetBottom - 14].map((ry) => (
-              <g key={ry}>
-                <rect x={STAND_CX - 122} y={ry - 4.5} width={244} height={9} fill={WOOD_DARK} />
-                {[STAND_CX - 122, STAND_CX + 122].map((px) => (
-                  <circle key={px} cx={px} cy={ry} r={15} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
-                ))}
-              </g>
-            ))}
-            {/* round base */}
-            <ellipse cx={STAND_CX} cy={sheetBottom + 62} rx={112} ry={16} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={2} />
-            <ellipse cx={STAND_CX} cy={sheetBottom + 57} rx={112} ry={16} fill="#7a5636" stroke={WOOD_DEEP} strokeWidth={1.5} />
-
-            {open ? (
-              <OpenScroll
-                scroll={open}
-                drawing={drawing}
-                drawElapsed={drawElapsed}
-                unroll={unroll}
-                sheetTop={sheetTop}
-                selected={drawing != null && selectedDrawingId === drawing.id}
-                onSelectDrawing={onSelectDrawing}
-              />
-            ) : null}
-
-            {/* section controls: the sheet's own rollers roll
-                between drawings, as in the film — top roller back,
-                bottom roller forward; dots count the sections. */}
-            {open && drawingCount > 1 ? (
-              <g data-testid="section-controls">
-                <rect
-                  x={STAND_CX - GROUND_W / 2}
-                  y={sheetTop}
-                  width={GROUND_W}
-                  height={30}
-                  fill="#ffffff"
-                  fillOpacity={0}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onSection(Math.max(0, section - 1))}
-                >
-                  <title>Roll back</title>
-                </rect>
-                <rect
-                  x={STAND_CX - GROUND_W / 2}
-                  y={sheetBottom - 30}
-                  width={GROUND_W}
-                  height={30}
-                  fill="#ffffff"
-                  fillOpacity={0}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => onSection(Math.min(drawingCount - 1, section + 1))}
-                >
-                  <title>Roll forward</title>
-                </rect>
-                {Array.from({ length: drawingCount }, (_, i) => (
-                  <circle
-                    key={i}
-                    cx={STAND_CX + (i - (drawingCount - 1) / 2) * 15}
-                    cy={sheetBottom + 84}
-                    r={3.5}
-                    fill={i === section ? JYNX_PURPLE : '#8a7a5f'}
-                  />
-                ))}
-              </g>
-            ) : null}
           </g>
         </svg>
       </div>
@@ -530,7 +462,140 @@ function ScrollScene({
 }
 
 /* ================================================================== */
-/* The open scroll on the stand                                        */
+/* The open scroll's own screen                                        */
+/* ================================================================== */
+
+function OpenScrollScreen({
+  scroll,
+  children,
+  drawing,
+  drawingCount,
+  section,
+  elapsed,
+  selectedDrawingId,
+  onOpenChild,
+  onSelectDrawing,
+  onSection,
+}: {
+  scroll: ShelfScroll
+  children: ShelfScroll[]
+  drawing: ScrollDrawing | null
+  drawingCount: number
+  section: number
+  elapsed: number
+  selectedDrawingId: string | null
+  onOpenChild: (scroll: ShelfScroll) => void
+  onSelectDrawing: (drawing: ScrollDrawing) => void
+  onSection: (next: number) => void
+}) {
+  const sheetBottom = SHEET_TOP + GROUND_H
+  const height = sheetBottom + 96
+  const unroll = Math.min(1, elapsed / UNROLL_MS)
+  const drawElapsed = Math.max(0, elapsed - UNROLL_MS)
+  const postX = [SCREEN_CX - GROUND_W / 2 - 26, SCREEN_CX + GROUND_W / 2 + 26]
+
+  return (
+    <section aria-label={`The scroll of ${scroll.title}`}>
+      <div className="rounded-2xl overflow-hidden border border-[#4a3018]/70 bg-[#241a12] shadow-lg">
+        <svg
+          viewBox={`0 0 ${SCREEN_W} ${height}`}
+          className="w-full block"
+          role="img"
+          aria-label="An unrolled scroll, large on its stand"
+        >
+          {/* turned posts */}
+          {postX.map((px) => (
+            <g key={px}>
+              <rect x={px - 8} y={64} width={16} height={sheetBottom - 64 + 52} rx={8} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
+              {[150, 250, 350, 450].map((ky) => (
+                <circle key={ky} cx={px} cy={ky} r={12} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
+              ))}
+            </g>
+          ))}
+          {/* rods with their discs, behind the sheet */}
+          {[SHEET_TOP + 16, sheetBottom - 16].map((ry) => (
+            <g key={ry}>
+              <rect x={postX[0]} y={ry - 5} width={postX[1] - postX[0]} height={10} fill={WOOD_DARK} />
+              {postX.map((px) => (
+                <circle key={px} cx={px} cy={ry} r={17} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={1.5} />
+              ))}
+            </g>
+          ))}
+          {/* round base */}
+          <ellipse cx={SCREEN_CX} cy={sheetBottom + 64} rx={128} ry={18} fill={WOOD} stroke={WOOD_DEEP} strokeWidth={2} />
+          <ellipse cx={SCREEN_CX} cy={sheetBottom + 58} rx={128} ry={18} fill="#7a5636" stroke={WOOD_DEEP} strokeWidth={1.5} />
+
+          <OpenScroll
+            scroll={scroll}
+            drawing={drawing}
+            drawElapsed={drawElapsed}
+            unroll={unroll}
+            selected={drawing != null && selectedDrawingId === drawing.id}
+            onSelectDrawing={onSelectDrawing}
+          />
+        </svg>
+      </div>
+
+      {/* section controls — the sheet's sections roll from the
+          screen's chrome, never as marks on the scroll itself */}
+      {drawingCount > 1 ? (
+        <div data-testid="section-controls" className="mt-3 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            data-testid="section-back"
+            disabled={section === 0}
+            onClick={() => onSection(Math.max(0, section - 1))}
+            className="min-h-[40px] px-4 rounded-full border border-stone-600 text-sm text-amber-100/90 disabled:opacity-40"
+          >
+            ‹ Roll back
+          </button>
+          <span className="flex items-center gap-1.5" aria-hidden="true">
+            {Array.from({ length: drawingCount }, (_, i) => (
+              <span
+                key={i}
+                className="inline-block w-2 h-2 rounded-full"
+                style={{ background: i === section ? JYNX_PURPLE : '#8a7a5f' }}
+              />
+            ))}
+          </span>
+          <button
+            type="button"
+            data-testid="section-forward"
+            disabled={section >= drawingCount - 1}
+            onClick={() => onSection(Math.min(drawingCount - 1, section + 1))}
+            className="min-h-[40px] px-4 rounded-full border border-stone-600 text-sm text-amber-100/90 disabled:opacity-40"
+          >
+            Roll forward ›
+          </button>
+        </div>
+      ) : null}
+
+      {/* the open scroll's children — scrolls of their own, standing
+          on the screen beneath the sheet (never on the parchment) */}
+      {children.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2" data-testid="scroll-children">
+          {children.map((child) => (
+            <button
+              key={`${child.kind}:${child.id}`}
+              type="button"
+              data-child-scroll={`${child.kind}:${child.id}`}
+              onClick={() => onOpenChild(child)}
+              className="min-h-[44px] px-4 rounded-full bg-[#efe6cc] text-[#3a2c1c] border border-[#b09a6d] text-sm font-medium shadow-sm"
+            >
+              <span className="mr-2 text-[0.65rem] uppercase tracking-[0.14em] opacity-70">
+                {child.kind}
+              </span>
+              {child.title}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
+/* ================================================================== */
+/* The open scroll — the sheet itself, drawings only, no text          */
 /* ================================================================== */
 
 function OpenScroll({
@@ -538,7 +603,6 @@ function OpenScroll({
   drawing,
   drawElapsed,
   unroll,
-  sheetTop,
   selected,
   onSelectDrawing,
 }: {
@@ -546,13 +610,12 @@ function OpenScroll({
   drawing: ScrollDrawing | null
   drawElapsed: number
   unroll: number
-  sheetTop: number
   selected: boolean
   onSelectDrawing: (drawing: ScrollDrawing) => void
 }) {
-  const imgX = STAND_CX - GROUND_W / 2
+  const imgX = SCREEN_CX - GROUND_W / 2
   const interiorX = imgX + INTERIOR.x * GROUND_W
-  const interiorY = sheetTop + INTERIOR.y * GROUND_H
+  const interiorY = SHEET_TOP + INTERIOR.y * GROUND_H
   const interiorW = INTERIOR.w * GROUND_W
   const interiorH = INTERIOR.h * GROUND_H
 
@@ -571,30 +634,20 @@ function OpenScroll({
         <clipPath id="jynx-unroll-clip">
           <rect
             x={imgX - 8}
-            y={sheetTop - 6}
+            y={SHEET_TOP - 6}
             width={GROUND_W + 16}
             height={(GROUND_H + 12) * unroll}
           />
         </clipPath>
       </defs>
       <g clipPath="url(#jynx-unroll-clip)">
-        {/* the founder's ground — the scroll itself */}
-        <image href={scrollGround} x={imgX} y={sheetTop} width={GROUND_W} height={GROUND_H} />
-        {/* the open item's name, lettered on the sheet */}
-        <text
-          x={STAND_CX}
-          y={interiorY + 16}
-          textAnchor="middle"
-          fontSize={12.5}
-          fontWeight={600}
-          fill={NAME_INK}
-        >
-          {letterName(scroll.title, 30)}
-        </text>
+        {/* the founder's ground — the scroll itself. NO text is
+            rendered on the sheet: drawings only. */}
+        <image href={scrollGround} x={imgX} y={SHEET_TOP} width={GROUND_W} height={GROUND_H} />
         {drawing ? (
           <g
             data-drawing-id={drawing.id}
-            transform={`translate(${fitX} ${fitY + 10}) scale(${fit})`}
+            transform={`translate(${fitX} ${fitY + 14}) scale(${fit})`}
           >
             {drawing.marks.map((mark, i) => (
               <DrawingMark
@@ -618,16 +671,14 @@ function OpenScroll({
             strokeDasharray="5 4"
             style={{ cursor: 'pointer' }}
             onClick={() => onSelectDrawing(drawing)}
-          >
-            <title>{drawing.title ?? 'Jynx’s drawing'}</title>
-          </rect>
+          />
         ) : null}
       </g>
       {/* the travelling roller band at the unroll's edge */}
       {unroll < 1 ? (
         <rect
           x={imgX - 12}
-          y={sheetTop - 6 + (GROUND_H + 12) * unroll - 6}
+          y={SHEET_TOP - 6 + (GROUND_H + 12) * unroll - 6}
           width={GROUND_W + 24}
           height={10}
           rx={5}
@@ -684,14 +735,12 @@ function RolledScroll({
   cx,
   cy,
   scale = 1,
-  onStand,
   onChoose,
 }: {
   scroll: ShelfScroll
   cx: number
   cy: number
   scale?: number
-  onStand: boolean
   onChoose: (scroll: ShelfScroll) => void
 }) {
   const r = scroll.appearance.radius * scale
@@ -737,16 +786,6 @@ function RolledScroll({
       >
         {letterName(scroll.title, maxChars)}
       </text>
-      {/* on the stand: Jynx's violet ring in its cell */}
-      {onStand ? (
-        <path
-          d={`M ${cx} ${cy - CELL_H / 2 + 7} L ${cx + CELL_W / 2 - 7} ${cy} L ${cx} ${cy + CELL_H / 2 - 7} L ${cx - CELL_W / 2 + 7} ${cy} Z`}
-          fill="none"
-          stroke={JYNX_PURPLE}
-          strokeWidth={2}
-          strokeDasharray="6 4"
-        />
-      ) : null}
       {/* tap target */}
       <rect
         x={cx - len / 2 - 6}

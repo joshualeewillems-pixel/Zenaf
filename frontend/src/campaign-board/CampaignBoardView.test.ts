@@ -3,13 +3,16 @@
  * Campaign Board view — jsdom render verification.
  *
  * The board mounts against a stubbed Vision Execution API (the same
- * routes the product uses) and must render the overview from the data:
- * the project as a route, the scale key on the map, and the obstacle
- * count derived from the blocked task. Clicking the route must open
- * the focus board with its two speculative plans, the declared
- * mountain (largest recorded effort), and the waypoint for the step.
- * CouncilChat is stubbed — the chat seam itself is covered by its own
- * suite; here only the board's rendering is under test.
+ * routes the product uses) and must render the overview from the
+ * data under the standing display rule — parents and loose only:
+ * initiative grounds stand closed (name + project count) and loose
+ * camps stand open; a project's route, the scale key, and the
+ * obstacle count derived from the blocked task appear once its
+ * ground is opened. Clicking the route must open the focus board
+ * with its two speculative plans, the declared mountain (largest
+ * recorded effort), and the waypoint for the step. CouncilChat is
+ * stubbed — the chat seam itself is covered by its own suite; here
+ * only the board's rendering is under test.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import * as React from 'react'
@@ -123,6 +126,32 @@ describe('CampaignBoardView', () => {
     })
   }
 
+  /** Tap an initiative's ground open. */
+  async function openGround(id: string) {
+    const rect = container.querySelector(`[data-initiative-ground="${id}"]`)
+    expect(rect, `ground ${id}`).toBeTruthy()
+    await act(async () => {
+      rect!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+  }
+
+  /** The first lane tap target (route rows — not a ground). */
+  function routeHit(): Element {
+    const hit = [...container.querySelectorAll('svg rect')].find(
+      (r) => r.getAttribute('fill-opacity') === '0' && !r.hasAttribute('data-initiative-ground'),
+    )
+    expect(hit).toBeTruthy()
+    return hit!
+  }
+
+  async function clickRoute() {
+    await act(async () => {
+      routeHit().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flush()
+  }
+
   it('renders the overview from VE data, then the focus board on click', async () => {
     await act(async () => {
       root.render(React.createElement(CampaignBoardView))
@@ -130,20 +159,21 @@ describe('CampaignBoardView', () => {
     await flush()
     await flush()
 
-    // Overview: the project, its window, the scale key, the obstacle count.
-    expect(container.textContent).toContain('Spring collection launch')
+    // Parents + loose only: the initiative's ground stands closed
+    // — its name and count, but NOT its project.
+    expect(container.textContent).toContain('SPRING LINE')
+    expect(container.textContent).toContain('1 project')
+    expect(container.textContent).not.toContain('Spring collection launch')
     expect(container.textContent).toContain('= 1 day')
-    expect(container.textContent).toContain('◆ ×1')
     expect(container.querySelector('[data-testid="valen-chat"]')).not.toBeNull()
 
+    // Open the ground: the project, its window, the obstacle count.
+    await openGround('i1')
+    expect(container.textContent).toContain('Spring collection launch')
+    expect(container.textContent).toContain('◆ ×1')
+
     // Click the project's route row → focus board.
-    const rects = [...container.querySelectorAll('svg rect')]
-    const hit = rects.find((r) => r.getAttribute('fill-opacity') === '0')
-    expect(hit).toBeTruthy()
-    await act(async () => {
-      hit!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
+    await clickRoute()
 
     expect(container.textContent).toContain('Plan A · by date')
     expect(container.textContent).toContain('Plan B · dependencies first')
@@ -172,14 +202,9 @@ describe('CampaignBoardView', () => {
     await flush()
     await flush()
 
-    // Overview → focus via the route row's hit rect.
-    const rects = [...container.querySelectorAll('svg rect')]
-    const hit = rects.find((r) => r.getAttribute('fill-opacity') === '0')
-    expect(hit).toBeTruthy()
-    await act(async () => {
-      hit!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-    await flush()
+    // Overview → open the ground → focus via the route row's hit rect.
+    await openGround('i1')
+    await clickRoute()
 
     // The signal stands on the map as reported material, never confirmed.
     expect(container.textContent).toContain('Reported blocker')
@@ -284,26 +309,36 @@ describe('CampaignBoardView', () => {
 
     // ONE map surface — not a stack of per-project rows.
     expect(container.querySelectorAll('svg')).toHaveLength(1)
-    const text = container.textContent ?? ''
+    let text = container.textContent ?? ''
 
-    // Both initiatives lettered on their grounds; projects nested
-    // beneath them in board order (dated Active first, then the
-    // fellowship's Ready pair, unanchored last).
+    // Parents + loose only by default: both initiatives lettered
+    // on their grounds with their counts; the loose project's camp
+    // stands; NO initiative-owned project is on the map yet.
+    const idx0 = (s: string) => text.indexOf(s)
+    expect(idx0('ZENAF CORE')).toBeGreaterThanOrEqual(0)
+    expect(idx0('COUNCIL FELLOWSHIP')).toBeGreaterThanOrEqual(0)
+    expect(idx0('ZENAF CORE')).toBeLessThan(idx0('COUNCIL FELLOWSHIP'))
+    expect(idx0('COUNCIL FELLOWSHIP')).toBeLessThan(idx0('Fix the gate latch'))
+    expect(text).toContain('1 project')
+    expect(text).toContain('2 projects')
+    expect(text).not.toContain('Ship the thing')
+    expect(text).not.toContain('Meet the Bear')
+    expect(text).not.toContain('Meet the Crane')
+    // No routes are drawn while the grounds are closed.
+    expect(
+      [...container.querySelectorAll('line')].filter(
+        (l) => l.getAttribute('stroke-dasharray') === '0.5 7',
+      ),
+    ).toHaveLength(0)
+
+    // Open the Zenaf core ground: its dated project stands as a
+    // route at the shared scale (12 days × 26px/day).
+    await openGround('i2')
+    text = container.textContent ?? ''
     const idx = (s: string) => text.indexOf(s)
-    expect(idx('ZENAF CORE')).toBeGreaterThanOrEqual(0)
     expect(idx('ZENAF CORE')).toBeLessThan(idx('Ship the thing'))
     expect(idx('Ship the thing')).toBeLessThan(idx('COUNCIL FELLOWSHIP'))
-    expect(idx('COUNCIL FELLOWSHIP')).toBeLessThan(idx('Meet the Bear'))
-    expect(idx('Meet the Bear')).toBeLessThan(idx('Meet the Crane'))
-    expect(idx('Meet the Crane')).toBeLessThan(idx('Fix the gate latch'))
-
-    // The undated fact is never printed on the surface.
-    expect(text).not.toContain('No dates recorded')
-    expect(text).not.toContain('no dates recorded')
-
-    // Exactly one dotted route is drawn — the one dated project, at
-    // the shared scale (12 days × 26px/day). Undated projects draw
-    // no line at all: unspanned at their camps.
+    expect(text).not.toContain('Meet the Bear')
     const routeLines = [...container.querySelectorAll('line')].filter(
       (l) => l.getAttribute('stroke-dasharray') === '0.5 7',
     )
@@ -311,18 +346,38 @@ describe('CampaignBoardView', () => {
     const len = Number(routeLines[0].getAttribute('x2')) - Number(routeLines[0].getAttribute('x1'))
     expect(len).toBe(12 * 26)
 
+    // Open the fellowship's ground instead (one ground open at a
+    // time): the Ready pair stands at their camps, undated and
+    // unspanned — no route line at all — and the core's project
+    // is hidden again.
+    await openGround('i1')
+    text = container.textContent ?? ''
+    expect(idx('COUNCIL FELLOWSHIP')).toBeLessThan(idx('Meet the Bear'))
+    expect(idx('Meet the Bear')).toBeLessThan(idx('Meet the Crane'))
+    expect(idx('Meet the Crane')).toBeLessThan(idx('Fix the gate latch'))
+    expect(text).not.toContain('Ship the thing')
+    expect(
+      [...container.querySelectorAll('line')].filter(
+        (l) => l.getAttribute('stroke-dasharray') === '0.5 7',
+      ),
+    ).toHaveLength(0)
+
+    // The undated fact is never printed on the surface.
+    expect(text).not.toContain('No dates recorded')
+    expect(text).not.toContain('no dates recorded')
+
     // Obstacle ticks still counted on the map; scale key present.
     expect(text).toContain('◆ ×2')
     expect(text).toContain('= 1 day')
 
     // The camp popup carries the undated fact. Camps are the r=15
-    // invisible circles, in lane order: Ship, Bear, Crane, latch.
+    // invisible circles, in lane order: Bear, Crane, latch.
     const camps = [...container.querySelectorAll('circle')].filter(
       (c) => c.getAttribute('fill-opacity') === '0' && c.getAttribute('r') === '15',
     )
-    expect(camps).toHaveLength(4)
+    expect(camps).toHaveLength(3)
     await act(async () => {
-      camps[1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      camps[0].dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.textContent).toContain('No dates recorded')
     expect(container.textContent).toContain('Ready · 3 open · 1 done')

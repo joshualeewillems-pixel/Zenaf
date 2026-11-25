@@ -9,6 +9,7 @@ import { describe, it, expect } from 'vitest'
 import type { Idea, Initiative, Project, Task } from '../vision-execution/types'
 import { padStyleFor } from './growth'
 import {
+  buildInitiativeTree,
   buildProjectTree,
   buildShelf,
   discussionForTask,
@@ -195,6 +196,35 @@ describe('registers (§0b)', () => {
     expect(shelf.find((s) => s.id === 'idea-1')!.register).toBe('sumi')
     // a loose task is Steward terrain
     expect(shelf.find((s) => s.id === 'loose-1')!.register).toBe('sumi')
+  })
+  it('the shelf holds parents + loose only — an initiative-owned project stands as a branch, not a root', () => {
+    const ini: Initiative = {
+      id: 'ini-1', source_idea_id: null, title: 'Rebuild the workshop', brief: 'b',
+      status: 'Active', owner_id: null, evaluation_priority: null, estimated_cost_ai: '',
+      estimated_timeframe_ai: '', philosophical_alignment_ai: '', next_step_ai: '',
+      required_assets: [], dependencies: '', risks: '', recommendation: '',
+      kill_criteria: '', notes: '', created_at: '2026-05-01T00:00:00', updated_at: '2026-05-01T00:00:00',
+    }
+    const entities: BenchEntities = {
+      ideas: [],
+      initiatives: [ini],
+      projects: [
+        project({ id: 'p-owned', title: 'Depot refit', initiative_id: 'ini-1' }),
+        project({ id: 'p-loose', title: 'Gate latch' }),
+        project({ id: 'p-dangling', title: 'Orphan refit', initiative_id: 'gone' }),
+      ],
+      tasks: [],
+    }
+    const shelf = buildShelf(entities)
+    // The owned project is NOT a shelf root; the loose and the
+    // dangling-initiative projects are.
+    expect(shelf.map((s) => s.id)).toEqual(['ini-1', 'p-loose', 'p-dangling'])
+    // Reachability: the owned project stands as a branch of its
+    // initiative's tree, marked as a project branch.
+    const tree = buildInitiativeTree(ini, entities, new Map())
+    const branch = tree.branches.find((b) => b.id === 'p-owned')
+    expect(branch).toBeTruthy()
+    expect(branch!.sourceKind).toBe('project')
   })
 })
 

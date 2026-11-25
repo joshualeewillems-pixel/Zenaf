@@ -229,7 +229,9 @@ export function buildGarden(bundle: GardenBundle, cairnIndex: CairnIndex): Ateli
  * Deterministic garden layout: cairns and loose stones on a ring
  * around the well (centre 50%, 44%), starting at the top and running
  * clockwise, clamped inside the field. Pure — the same garden always
- * lays out the same way.
+ * lays out the same way. (Kept for the fan's anchor math; the ring
+ * itself is laid out by gardenLayout, which guarantees the shown
+ * items' labels never overlap.)
  */
 export function gardenPositions(count: number): Array<{ x: number; y: number }> {
   const out: Array<{ x: number; y: number }> = []
@@ -243,6 +245,391 @@ export function gardenPositions(count: number): Array<{ x: number; y: number }> 
     })
   }
   return out
+}
+
+/* ------------------------------------------------------------------ */
+/* Parents + loose — the garden's default face (founder, 2026-11-24)   */
+/* ------------------------------------------------------------------ */
+
+/** An initiative standing in the ring as one cairn: the union of
+ *  its projects' piles. Its project cairns appear only when the
+ *  initiative is opened (the fan), per the standing display rule. */
+export interface AtelierInitiativePile {
+  initiativeId: string
+  title: string
+  /** Stable pile id the tower layout keys on. */
+  pileId: string
+  /** Union of the initiative's cairns' members (member ids are
+   *  unique across projects: branch-<project>, flower-<task>).
+   *  Only the first cairn's branch keeps the parent flag — a pile
+   *  has one base stone; the other projects' branches stand in
+   *  the pile as ordinary stones. */
+  members: CairnMemberInput[]
+  /** Total stones (tasks) across the initiative's projects. */
+  stoneCount: number
+  /** The initiative's project cairns, in garden order. */
+  cairns: AtelierCairn[]
+}
+
+export function ringInitiatives(garden: AtelierGarden): AtelierInitiativePile[] {
+  const byId = new Map<string, AtelierCairn[]>()
+  for (const c of garden.cairns) {
+    if (!c.initiativeId) continue
+    const arr = byId.get(c.initiativeId) ?? []
+    arr.push(c)
+    byId.set(c.initiativeId, arr)
+  }
+  const piles: AtelierInitiativePile[] = []
+  for (const [initiativeId, cairns] of byId) {
+    const members: CairnMemberInput[] = []
+    let keptParent = false
+    for (const c of cairns) {
+      for (const m of c.members) {
+        if (m.parent && keptParent) {
+          members.push({ ...m, parent: false })
+        } else {
+          if (m.parent) keptParent = true
+          members.push(m)
+        }
+      }
+    }
+    piles.push({
+      initiativeId,
+      title: cairns[0].initiativeTitle ?? cairns[0].projectTitle,
+      pileId: `atelier-initiative-${initiativeId}`,
+      members,
+      stoneCount: cairns.reduce((n, c) => n + c.stones.length, 0),
+      cairns,
+    })
+  }
+  piles.sort((a, b) => a.title.localeCompare(b.title))
+  return piles
+}
+
+/** The garden's loose cairns: projects under no initiative. */
+export function looseCairns(garden: AtelierGarden): AtelierCairn[] {
+  return garden.cairns.filter((c) => !c.initiativeId)
+}
+
+/* ------------------------------------------------------------------ */
+/* The ring layout — shown labels NEVER overlap                        */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The garden field's reference size: the layout is computed in
+ * pixels on a 360×396 field (the garden's 10/11 aspect at the
+ * narrowest pane the surface is designed for — a phone's stacked
+ * world pane). On any wider field the same percentage positions
+ * spread further apart in pixels while the labels keep their
+ * pixel size, so a layout that is overlap-free here stays
+ * overlap-free there.
+ */
+export const GARDEN_REF_W = 360
+export const GARDEN_REF_H = 396
+/** The well's centre and radius on the reference field (the well
+ *  is 47% of the field's width, centred at 50%, 44%). */
+export const GARDEN_WELL = { cx: GARDEN_REF_W / 2, cy: GARDEN_REF_H * 0.44, r: (GARDEN_REF_W * 0.47) / 2 }
+/** Clear space kept between neighbouring footprints. */
+export const GARDEN_GAP = 8
+
+export interface GardenFootprint {
+  /** Full footprint width in px: the wider of the pile and its
+   *  name label. */
+  widthPx: number
+  /** Full footprint height in px: pile + name label + count line. */
+  heightPx: number
+}
+
+export interface GardenPlacement {
+  /** Anchor position, % of the field (the cairn's translate point:
+   *  centred horizontally, 56% down its footprint). */
+  x: number
+  y: number
+  /** Uniform scale applied to every item in this layout (the
+   *  cairn element's transform): 1 for gardens that fit at full
+   *  size, smaller when the shown set is crowded — the whole set
+   *  shrinks together rather than collapsing into overlap. */
+  scale: number
+  /** The footprint box on the reference field, px — at the
+   *  layout's scale, i.e. the box as actually rendered. */
+  box: { left: number; top: number; width: number; height: number }
+}
+
+/** Estimated width of a cairn's name pill: 0.86rem text in a pill
+ *  capped at 150px (atelier.css .atelier-cairn-name). */
+export function labelWidthPx(title: string): number {
+  return Math.min(150, 20 + (title || '').length * 7.2)
+}
+
+/** A ring item's footprint from its rendered parts: the pile's
+ *  pixel size, its title (the label), and whether a count line
+ *  stands under the label. */
+export function gardenFootprint(args: {
+  title: string
+  pileWidthPx: number
+  pileHeightPx: number
+  showCount: boolean
+}): GardenFootprint {
+  const labelW = labelWidthPx(args.title)
+  const lines = Math.max(1, Math.ceil(labelW / 132))
+  const labelH = lines * 15.2 + 7
+  return {
+    widthPx: Math.max(args.pileWidthPx, labelW),
+    heightPx: args.pileHeightPx + 5 + labelH + (args.showCount ? 17 : 0),
+  }
+}
+
+interface PlacedBox {
+  cx: number
+  cy: number
+  w: number
+  h: number
+}
+
+function boxOf(p: PlacedBox): { left: number; top: number; width: number; height: number } {
+  // The cairn element anchors at translate(-50%, -56%).
+  return { left: p.cx - p.w / 2, top: p.cy - p.h * 0.56, width: p.w, height: p.h }
+}
+
+function overlaps(a: PlacedBox, b: PlacedBox, gap: number): { ox: number; oy: number } | null {
+  const ba = boxOf(a)
+  const bb = boxOf(b)
+  const ox = Math.min(ba.left + ba.width + gap, bb.left + bb.width + gap) - Math.max(ba.left, bb.left)
+  const oy = Math.min(ba.top + ba.height + gap, bb.top + bb.height + gap) - Math.max(ba.top, bb.top)
+  return ox > 0 && oy > 0 ? { ox, oy } : null
+}
+
+function clampToField(p: PlacedBox): boolean {
+  const b = boxOf(p)
+  const bleed = 6 // the garden already lets piles kiss the edge (overflow hidden)
+  let dx = 0
+  let dy = 0
+  if (b.left < -bleed) dx = -bleed - b.left
+  if (b.left + b.width > GARDEN_REF_W + bleed) dx = GARDEN_REF_W + bleed - (b.left + b.width)
+  if (b.top < -bleed) dy = -bleed - b.top
+  if (b.top + b.height > GARDEN_REF_H + bleed) dy = GARDEN_REF_H + bleed - (b.top + b.height)
+  p.cx += dx
+  p.cy += dy
+  return dx !== 0 || dy !== 0
+}
+
+/** Note on the well: cairns ring the well by construction (the
+ *  ring start), and a pile may kiss the well's stone rim — the
+ *  cairns stand in front of it, as in the founder's reference
+ *  garden. The layout's hard guarantee is the one the founder
+ *  named: the shown cairns' LABELS never overlap each other. */
+
+/** Deterministic de-overlap: push overlapping footprints apart
+ *  along their smaller overlap axis, keep every box out of the
+ *  well and inside the field, until nothing overlaps or the
+ *  iteration budget runs out. Returns true when overlap-free. */
+/** Total pairwise overlap (area, gap-inflated) one box has with
+ *  the rest — the penalty a placement pays. */
+function penaltyOf(placed: PlacedBox[], idx: number, gap: number): number {
+  let total = 0
+  for (let j = 0; j < placed.length; j++) {
+    if (j === idx) continue
+    const o = overlaps(placed[idx], placed[j], gap)
+    if (o) total += o.ox * o.oy
+  }
+  return total
+}
+
+/** Escape a local minimum: move the worst-overlapping box to
+ *  the field position (coarse grid) with the lowest penalty. */
+function shake(placed: PlacedBox[], gap: number): boolean {
+  let worst = -1
+  let worstPenalty = 0
+  for (let i = 0; i < placed.length; i++) {
+    const p = penaltyOf(placed, i, gap)
+    if (p > worstPenalty) {
+      worstPenalty = p
+      worst = i
+    }
+  }
+  if (worst < 0) return false
+  const box = placed[worst]
+  const home = { cx: box.cx, cy: box.cy }
+  let best = { cx: box.cx, cy: box.cy }
+  let bestPenalty = worstPenalty
+  for (let gx = box.w / 2 - 6; gx <= GARDEN_REF_W - box.w / 2 + 6; gx += 14) {
+    for (let gy = box.h * 0.56 - 6; gy <= GARDEN_REF_H - box.h * 0.44 + 6; gy += 14) {
+      box.cx = gx
+      box.cy = gy
+      const p = penaltyOf(placed, worst, gap)
+      if (p < bestPenalty) {
+        bestPenalty = p
+        best = { cx: gx, cy: gy }
+      }
+    }
+  }
+  box.cx = best.cx
+  box.cy = best.cy
+  return best.cx !== home.cx || best.cy !== home.cy
+}
+
+function relax(placed: PlacedBox[], gap: number): boolean {
+  const settled = () =>
+    placed.every((p, i) => placed.every((q, j) => i === j || !overlaps(p, q, gap)))
+  for (let round = 0; round < 8; round++) {
+    for (let iter = 0; iter < 400; iter++) {
+      let moved = false
+      for (let i = 0; i < placed.length; i++) {
+        for (let j = i + 1; j < placed.length; j++) {
+          const o = overlaps(placed[i], placed[j], gap)
+          if (!o) continue
+          moved = true
+          const a = placed[i]
+          const b = placed[j]
+          if (o.ox < o.oy) {
+            const dir = b.cx >= a.cx ? 1 : -1
+            a.cx -= (dir * o.ox) / 2
+            b.cx += (dir * o.ox) / 2
+          } else {
+            const dir = b.cy >= a.cy ? 1 : -1
+            a.cy -= (dir * o.oy) / 2
+            b.cy += (dir * o.oy) / 2
+          }
+        }
+      }
+      for (const p of placed) {
+        if (clampToField(p)) moved = true
+      }
+      if (!moved) break
+    }
+    if (settled()) return true
+    if (!shake(placed, gap)) break
+  }
+  return settled()
+}
+
+interface RingConfig {
+  twoRings: boolean
+  /** How items are dealt to the two rings: by balanced arc load,
+   *  in consecutive pairs, or strictly alternating. */
+  deal: 'load' | 'pairs' | 'alternate'
+  inner: { rx: number; ry: number }
+  /** Inner ring's start offset, in slots of its first item. */
+  innerOffsetSlots: number
+}
+
+/**
+ * Ring start by arc-length allocation: each item claims arc
+ * equal to its footprint width plus the gap, and stands at its
+ * claim's midpoint — neighbours start separated by construction,
+ * and the relaxation only has to polish. The inner ring starts
+ * offset, so its items sit in the outer ring's gaps rather than
+ * directly behind its piles.
+ */
+function ringStart(items: GardenFootprint[], cfg: RingConfig): PlacedBox[] {
+  const rings: number[][] = cfg.twoRings ? [[], []] : [[...items.keys()]]
+  if (cfg.twoRings) {
+    if (cfg.deal === 'load') {
+      const loads = [0, 0]
+      items.forEach((f, i) => {
+        const r = loads[0] <= loads[1] ? 0 : 1
+        rings[r].push(i)
+        loads[r] += f.widthPx + GARDEN_GAP
+      })
+    } else if (cfg.deal === 'pairs') {
+      items.forEach((_, i) => rings[Math.floor(i / 2) % 2].push(i))
+    } else {
+      items.forEach((_, i) => rings[i % 2].push(i))
+    }
+  }
+  const radii: Array<{ rx: number; ry: number }> = [{ rx: 133, ry: 140 }, cfg.inner]
+  const out: PlacedBox[] = new Array(items.length)
+  rings.forEach((idxs, ring) => {
+    const { rx, ry } = radii[ring]
+    const rEff = Math.sqrt((rx * rx + ry * ry) / 2)
+    const total = idxs.reduce((n, i) => n + items[i].widthPx + GARDEN_GAP, 0)
+    // A ring with room to spare spreads its items around the
+    // whole ellipse; a full ring packs from the top.
+    const spread = Math.min(total, 2 * Math.PI * rEff)
+    let cursor = -spread / 2
+    if (ring === 1 && idxs.length) {
+      cursor += cfg.innerOffsetSlots * (items[idxs[0]].widthPx + GARDEN_GAP)
+    }
+    for (const i of idxs) {
+      const demand = items[i].widthPx + GARDEN_GAP
+      const theta = -Math.PI / 2 + (cursor + demand / 2) / rEff
+      out[i] = {
+        cx: GARDEN_WELL.cx + rx * Math.cos(theta),
+        cy: GARDEN_WELL.cy + ry * Math.sin(theta),
+        w: items[i].widthPx,
+        h: items[i].heightPx,
+      }
+      cursor += demand
+    }
+  })
+  return out
+}
+
+/** Anchor start: items dealt to the field's lobes (corners and
+ *  edge midpoints, in reading order) — a strong start for the
+ *  small shown sets the rule produces, where ring starts can
+ *  trap the relaxation between the well and the rim. */
+function anchorStart(items: GardenFootprint[]): PlacedBox[] {
+  const anchors: Array<{ fx: number; fy: number }> = [
+    { fx: 0.23, fy: 0.15 },
+    { fx: 0.77, fy: 0.15 },
+    { fx: 0.23, fy: 0.85 },
+    { fx: 0.77, fy: 0.85 },
+    { fx: 0.5, fy: 0.09 },
+    { fx: 0.5, fy: 0.91 },
+    { fx: 0.09, fy: 0.47 },
+    { fx: 0.91, fy: 0.47 },
+  ]
+  return items.map((f, i) => {
+    const a = anchors[i % anchors.length]
+    const extra = Math.floor(i / anchors.length)
+    return {
+      cx: a.fx * GARDEN_REF_W + extra * 14,
+      cy: a.fy * GARDEN_REF_H + extra * 14,
+      w: f.widthPx,
+      h: f.heightPx,
+    }
+  })
+}
+
+/**
+ * Lay out the ring's shown items so their footprints — pile, name
+ * label, count line — NEVER overlap each other, and stay in the
+ * field. Several deterministic starts (ring allocations, field
+ * anchors) are relaxed in turn until the invariant holds. A
+ * garden that does not fit at full size is retried at a smaller
+ * uniform scale (the whole shown set shrinks together — a cairn
+ * is never dropped and labels never collide); the scale ladder
+ * bottoms out at 0.55, past which the tightest relaxed packing
+ * is returned. Pure and deterministic.
+ */
+export function gardenLayout(items: GardenFootprint[]): GardenPlacement[] {
+  if (items.length === 0) return []
+  const startMakers: Array<(scaled: GardenFootprint[]) => PlacedBox[]> = [
+    (scaled) => ringStart(scaled, { twoRings: false, deal: 'load', inner: { rx: 99, ry: 103 }, innerOffsetSlots: 0.5 }),
+    (scaled) => anchorStart(scaled),
+    (scaled) => ringStart(scaled, { twoRings: true, deal: 'load', inner: { rx: 99, ry: 103 }, innerOffsetSlots: 0.5 }),
+    (scaled) => ringStart(scaled, { twoRings: true, deal: 'pairs', inner: { rx: 99, ry: 103 }, innerOffsetSlots: 0.5 }),
+    (scaled) => ringStart(scaled, { twoRings: true, deal: 'alternate', inner: { rx: 88, ry: 92 }, innerOffsetSlots: 1 }),
+  ]
+  const finish = (placed: PlacedBox[], scale: number): GardenPlacement[] =>
+    placed.map((p) => {
+      const b = boxOf(p)
+      return { x: (p.cx / GARDEN_REF_W) * 100, y: (p.cy / GARDEN_REF_H) * 100, scale, box: b }
+    })
+  let last: { placed: PlacedBox[]; scale: number } | null = null
+  for (const scale of [1, 0.85, 0.72, 0.6, 0.55]) {
+    const scaled = items.map((f) => ({
+      widthPx: f.widthPx * scale,
+      heightPx: f.heightPx * scale,
+    }))
+    for (const make of startMakers) {
+      const placed = make(scaled)
+      if (relax(placed, GARDEN_GAP)) return finish(placed, scale)
+      last = { placed, scale }
+    }
+  }
+  return finish(last!.placed, last!.scale)
 }
 
 /* ------------------------------------------------------------------ */
@@ -386,6 +773,20 @@ export function rungOf(depth: number): number {
 /* ------------------------------------------------------------------ */
 /* The layer stack's channels                                          */
 /* ------------------------------------------------------------------ */
+
+/**
+ * How large the seven-voice formation stands in the cymatic bowl
+ * (founder, 2026-11-24: "Arias fractals should take up more of the
+ * Cymatic bowl"). The stack's height as a multiple of the bowl's
+ * inner diameter: at 1 the formation's box exactly spanned the
+ * bowl and the ink — which lives inside its PNGs' margins — read
+ * small in a wide ring of empty water. At 1.3 the box overflows
+ * the rim evenly on all sides (the bowl clips it), the ink fills
+ * substantially more of the diameter, and water still rims the
+ * formation. Scale only: z-order, the fill band, and ink opacity
+ * are untouched.
+ */
+export const FORMATION_SCALE = 1.3
 
 /** Resting order, back → front. */
 export const STACK_DEFAULT: Voice[] = ['rumi', 'valen', 'maeve', 'lucian', 'aria', 'jynx', 'severine']

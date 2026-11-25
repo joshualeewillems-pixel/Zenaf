@@ -445,9 +445,13 @@ export default function CampaignBoardView() {
 /* ================================================================== */
 
 /**
- * The overview is a single map, not a list: every project stands on
- * shared ground, nested under its initiative (the initiative's name
- * lettered on its ground, a camp marker at its head). Dated projects
+ * The overview is a single map, not a list — and it follows the
+ * standing display rule (founder, 2026-11-24: parents and loose
+ * items only). Each initiative stands as a ground (its name
+ * lettered on it, a camp marker at its head, its project count
+ * beside the name) with its project lanes HIDDEN until the ground
+ * is tapped open; the unanchored ground's camps — the loose
+ * projects — always stand. Inside an open ground, dated projects
  * run dotted routes whose length is their recorded span on the one
  * shared scale (key drawn on the map). Undated projects stand
  * UNSPANNED at their camp — camp, obstacle ticks, and the finish flag
@@ -479,24 +483,31 @@ function OverviewBoard({
   onFocus: (projectId: string) => void
 }) {
   const [popupId, setPopupId] = useState<string | null>(null)
+  const [openInitiativeId, setOpenInitiativeId] = useState<string | null>(null)
   const groups = groupOverviewByInitiative(overview, initiatives)
   const pxPerDay = computePxPerDay(overview, OV_W - OV_CAMP_X - 108)
 
-  // Lay out the grounds top to bottom; each project's lane sits
-  // inside its initiative's ground.
+  // Lay out the grounds top to bottom. An initiative's ground is
+  // closed by default — header only, no lanes — until tapped
+  // open; the unanchored ground (loose projects) always stands
+  // open. Lanes keep their board-order colours whether shown or
+  // not, so opening a ground never recolours another lane.
   let cursor = OV_TOP_PAD
   let colorSeq = 0
   const laidOut = groups.map((group, gi) => {
     const headH = group.initiative ? OV_GROUP_HEAD_H : 6
+    const isOpen = !group.initiative || openInitiativeId === group.initiative.id
+    const shown = isOpen ? group.projects : []
     const y = cursor
-    const height = headH + OV_GROUP_PAD_TOP + group.projects.length * OV_LANE_H + OV_GROUP_PAD_BOT
+    const height = headH + OV_GROUP_PAD_TOP + shown.length * OV_LANE_H + OV_GROUP_PAD_BOT
     cursor += height + OV_GROUP_GAP
-    const lanes = group.projects.map((o, li) => ({
+    const lanes = shown.map((o, li) => ({
       o,
       laneTop: y + headH + OV_GROUP_PAD_TOP + li * OV_LANE_H,
       color: PROJECT_COLORS[colorSeq++ % PROJECT_COLORS.length],
     }))
-    return { group, gi, y, height, lanes }
+    if (!isOpen) colorSeq += group.projects.length
+    return { group, gi, y, height, lanes, isOpen }
   })
   const height = Math.max(cursor - OV_GROUP_GAP + OV_KEY_STRIP, 200)
   const keyY = height - 18
@@ -526,7 +537,7 @@ function OverviewBoard({
               No projects yet — the board is empty.
             </text>
           )}
-          {laidOut.map(({ group, gi, y, height: groupH, lanes }) => (
+          {laidOut.map(({ group, gi, y, height: groupH, lanes, isOpen }) => (
             <g key={group.initiative?.id ?? 'unanchored'}>
               {/* the initiative's ground */}
               <rect
@@ -556,7 +567,40 @@ function OverviewBoard({
                   >
                     {group.initiative.title.toUpperCase()}
                   </text>
+                  {/* the ground's count — an aggregate fact about
+                      the parent, lettered beside its name */}
+                  <text
+                    x={OV_W - 24}
+                    y={y + 20}
+                    textAnchor="end"
+                    fontSize="10.5"
+                    fill="#6d5c22"
+                  >
+                    {group.projects.length} {group.projects.length === 1 ? 'project' : 'projects'}
+                  </text>
                 </g>
+              )}
+              {group.initiative && (
+                /* the ground is the door to its projects: tap
+                   toggles the ground open or closed. Lanes render
+                   after this rect, so their own tap targets stand
+                   above it when the ground is open. */
+                <rect
+                  x={10}
+                  y={y}
+                  width={OV_W - 20}
+                  height={groupH}
+                  fill="#000"
+                  fillOpacity={0}
+                  style={{ cursor: 'pointer' }}
+                  data-initiative-ground={group.initiative.id}
+                  aria-label={`${isOpen ? 'Close' : 'Open'} ${group.initiative.title}`}
+                  onClick={() =>
+                    setOpenInitiativeId((cur) =>
+                      cur === group.initiative!.id ? null : group.initiative!.id,
+                    )
+                  }
+                />
               )}
               {lanes.map(({ o, laneTop, color }) => {
                 const lineY = laneTop + 34

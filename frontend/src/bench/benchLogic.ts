@@ -733,9 +733,15 @@ const KIND_LABEL: Record<RootKind, string> = {
   task: 'Task',
 }
 
-/** The shelf holds every root the record holds — initiatives,
- *  projects, ideas, and loose tasks — each captioned with its TRUE
- *  kind, never flattened to "projects". */
+/** The shelf holds the record's roots under the standing display
+ *  rule (founder, 2026-11-24 — parents and loose items only):
+ *  initiatives, LOOSE projects (no initiative, or one the record
+ *  does not carry), ideas, and loose tasks — each captioned with
+ *  its TRUE kind, never flattened to "projects". A project under
+ *  a fetched initiative is not a shelf root: it stands as a
+ *  branch of its initiative's tree (branch = nested record) and
+ *  is brought to the bench from there, so it stays reachable
+ *  through its parent. */
 export function buildShelf(entities: BenchEntities): ShelfItem[] {
   const items: ShelfItem[] = []
   const noProposals = new Map<string, BenchProposal[]>()
@@ -752,6 +758,7 @@ export function buildShelf(entities: BenchEntities): ShelfItem[] {
     })
   }
   for (const p of entities.projects) {
+    if (p.initiative_id && entities.initiatives.some((i) => i.id === p.initiative_id)) continue
     const t = buildProjectTree(p, entities, noProposals)
     items.push({
       id: p.id,

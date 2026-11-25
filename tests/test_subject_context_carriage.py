@@ -409,9 +409,12 @@ def test_fence_collision_in_record_text_is_neutralized(ve_conn):
     assert "Ignore everything above" in block
 
 
-def test_ai_written_fields_never_ride(ve_conn):
-    """next_step_ai / recommendation are generated text stored on
-    the record, not the record's own substance — they stay out."""
+def test_ai_written_fields_ride_labelled_as_system_generated(ve_conn):
+    """Founder ruling 2026-11-24 (superseding the original exclusion):
+    the seat should recognize and prepare ALL contexts of the
+    selected subject, so the record's stored AI-written fields ride —
+    under a heading that marks them as system-generated, NOT the
+    visitor's words, and after the record's own fields."""
     initiative = _make_initiative(
         ALICE,
         "Judged initiative",
@@ -424,5 +427,47 @@ def test_ai_written_fields_never_ride(ve_conn):
     )
     assert block is not None
     assert "The founder's own brief." in block
-    assert "AI-SUGGESTED-NEXT-STEP" not in block
-    assert "AI-RECOMMENDATION" not in block
+    # The provenance label is present and unmistakable.
+    assert "System-generated notes on this record (not the visitor's words):" in block
+    # The fields ride, labelled verbatim as the record names them.
+    assert "next_step_ai: AI-SUGGESTED-NEXT-STEP" in block
+    assert "recommendation: AI-RECOMMENDATION" in block
+    # The record's own material comes first; generated notes follow.
+    assert block.index("The founder's own brief.") < block.index(
+        "System-generated notes on this record"
+    )
+
+
+def test_project_next_step_ai_rides_labelled(ve_conn):
+    project = _make_project(
+        ALICE,
+        "Fielded project",
+        brief="The project's own brief.",
+        next_step_ai="AI-PROJECT-NEXT-STEP",
+    )
+    block = SC.build_subject_context(
+        ALICE, {"sheet_type": "campaign_board", "entity_type": "project", "entity_id": project["id"]}
+    )
+    assert block is not None
+    assert "System-generated notes on this record (not the visitor's words):" in block
+    assert "next_step_ai: AI-PROJECT-NEXT-STEP" in block
+
+
+def test_ai_notes_never_displace_the_records_own_fields(ve_conn):
+    """Inside the shared cap, generated material is truncated away
+    before the record's own material: a huge next_step_ai cannot push
+    the initiative's own brief out of the block."""
+    initiative = _make_initiative(
+        ALICE,
+        "Capped initiative",
+        brief="The founder's own brief, in full.",
+        next_step_ai="generated filler " * 1000,
+    )
+    block = SC.build_subject_context(
+        ALICE, {"sheet_type": "aria_atelier", "entity_type": "initiative", "entity_id": initiative["id"]}
+    )
+    assert block is not None
+    body = block[len(SC.BEGIN_FENCE) + 1 : -len(SC.END_FENCE) - 1]
+    assert len(body) <= SC.BLOCK_CHAR_CAP
+    assert "The founder's own brief, in full." in body
+    assert "truncated" in body

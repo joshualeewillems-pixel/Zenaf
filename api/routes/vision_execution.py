@@ -1722,6 +1722,32 @@ def list_task_proposals_by_parent(
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@router.get("/bench-foliage/by-parent/{parent_type}/{parent_id}")
+def bench_foliage_by_parent(
+    parent_type: str,
+    parent_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Steward-reading foliage evidence for the Bench (rapid fire
+    item 5, 2026-11-25): for the caller's tasks under one parent
+    (initiative, project, or task), the seats whose steward
+    readings touch each task. Read-only — the read writes nothing,
+    anywhere. Fail-closed under the pencil layer's gates, mirrored
+    from context preparation (ZENAF_STEWARD_PENCIL master switch +
+    both steward consent flags + standing threads only): gate
+    closed, consent absent, a foreign parent id, or an unreadable
+    store all read as empty foliage, never an error, never a leak.
+    See local_ai/conversation/bench_foliage.py for the linkage and
+    attribution discipline."""
+    from local_ai.conversation import bench_foliage
+
+    return {
+        "foliage": bench_foliage.foliage_for_parent(
+            current_user["id"], parent_type, parent_id
+        )
+    }
+
+
 @router.get("/task-proposals/{proposal_id}")
 def get_task_proposal(proposal_id: str, current_user: dict = Depends(get_current_user)):
     """One task proposal, owner-scoped (Firebrand S1).

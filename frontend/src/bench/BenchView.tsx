@@ -14,10 +14,13 @@
  * twigs off the trunk). Wire is a recorded proposal awaiting a
  * verdict, in the proposing seat's colour, coiled on the record it
  * hangs on; jin is dropped material kept visible; foliage appears
- * ONLY where the record evidences discussion with another seat —
- * on twigs, because origin provenance is a task field — in that
- * seat's colour; the footing triangle is sized by the record's
- * prose and opens the notebook.
+ * ONLY where the record evidences another seat's material on the
+ * task — on twigs, because both sources live at the task level —
+ * in that seat's colour: the task's origin provenance (the
+ * discussion it came out of), and, fetched when a tree is opened,
+ * the seats whose steward readings name the task in their
+ * evidence, under the pencil layer's gates; the footing triangle
+ * is sized by the record's prose and opens the notebook.
  *
  * Verdicts take the existing governed path — the same approve /
  * decline proposal endpoints the chat proposal cards use. The Bench
@@ -32,13 +35,14 @@ import SplitShell from '../components/SplitShell'
 import { trunkPoint, PARAMS, type Pt } from './growth'
 import { hexToRgb, type SceneModel } from './paint'
 import BenchCanvas, { ShelfCanvas } from './BenchCanvas'
-import { approveProposal, declineProposal, fetchBenchEntities, fetchPendingProposals } from './benchApi'
+import { approveProposal, declineProposal, fetchBenchEntities, fetchBenchFoliage, fetchPendingProposals } from './benchApi'
 import {
   buildIdeaTree,
   buildInitiativeTree,
   buildLooseTaskTree,
   buildProjectTree,
   buildShelf,
+  NO_FOLIAGE,
   SEAT_COLOUR_BY_ARCHETYPE,
   SEAT_NAME_BY_ARCHETYPE,
   verdictLogEntry,
@@ -47,6 +51,7 @@ import {
   type BenchProposal,
   type BenchTreeModel,
   type BenchTwig,
+  type FoliageByTask,
   type RootKind,
   type ShelfItem,
   type VerdictLogEntry,
@@ -59,21 +64,22 @@ function buildModelFor(
   id: string,
   entities: BenchEntities,
   proposalsByParent: ReadonlyMap<string, BenchProposal[]>,
+  foliageByTask: FoliageByTask = NO_FOLIAGE,
 ): BenchTreeModel | null {
   if (kind === 'project') {
     const p = entities.projects.find((x) => x.id === id)
-    return p ? buildProjectTree(p, entities, proposalsByParent) : null
+    return p ? buildProjectTree(p, entities, proposalsByParent, foliageByTask) : null
   }
   if (kind === 'initiative') {
     const i = entities.initiatives.find((x) => x.id === id)
-    return i ? buildInitiativeTree(i, entities, proposalsByParent) : null
+    return i ? buildInitiativeTree(i, entities, proposalsByParent, foliageByTask) : null
   }
   if (kind === 'idea') {
     const i = entities.ideas.find((x) => x.id === id)
     return i ? buildIdeaTree(i, entities) : null
   }
   const t = entities.tasks.find((x) => x.id === id)
-  return t ? buildLooseTaskTree(t) : null
+  return t ? buildLooseTaskTree(t, foliageByTask) : null
 }
 
 /** §9: strand weight IS thickness — the painted width the weight
@@ -155,6 +161,7 @@ export default function BenchView() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [openRoot, setOpenRoot] = useState<{ kind: RootKind; id: string } | null>(null)
   const [proposalsByParent, setProposalsByParent] = useState<Map<string, BenchProposal[]>>(new Map())
+  const [foliageByRoot, setFoliageByRoot] = useState<Map<string, FoliageByTask>>(new Map())
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null)
   const [showExploratory, setShowExploratory] = useState(true)
   const [notebookOpen, setNotebookOpen] = useState(false)
@@ -193,7 +200,13 @@ export default function BenchView() {
 
   const tree = useMemo(() => {
     if (!entities || !openRoot) return null
-    const model = buildModelFor(openRoot.kind, openRoot.id, entities, proposalsByParent)
+    const model = buildModelFor(
+      openRoot.kind,
+      openRoot.id,
+      entities,
+      proposalsByParent,
+      foliageByRoot.get(`${openRoot.kind}:${openRoot.id}`) ?? NO_FOLIAGE,
+    )
     if (!model) return null
     // Wires decided this session stay off the tree even before the
     // refetch lands (the durable record is the proposal row itself).
@@ -206,7 +219,7 @@ export default function BenchView() {
       proposals: t.proposals.filter((p) => !decidedWireIds.has(p.id)),
     }))
     return { ...model, branches: filteredBranches, twigs: filteredTwigs }
-  }, [entities, openRoot, proposalsByParent, decidedWireIds])
+  }, [entities, openRoot, proposalsByParent, decidedWireIds, foliageByRoot])
 
   const openTree = useCallback(
     async (kind: RootKind, id: string) => {
@@ -215,6 +228,14 @@ export default function BenchView() {
       setOpenedWire(null)
       setNotebookOpen(false)
       if (!entities) return
+      // Reading foliage (§7's second source) hangs on tasks too:
+      // fetch it for the opened root alongside the wire. The read
+      // is fail-closed — a closed steward gate arrives as an empty
+      // map and the tree renders provenance foliage only.
+      if (kind === 'initiative' || kind === 'project' || kind === 'task') {
+        const foliage = await fetchBenchFoliage(kind, id)
+        setFoliageByRoot((prev) => new Map(prev).set(`${kind}:${id}`, foliage))
+      }
       // Wire hangs on tasks (twigs): fetch pending proposals for
       // every twig the opened tree will carry — a project's own
       // tasks, or every project's tasks under an initiative.
@@ -425,21 +446,21 @@ export default function BenchView() {
                 const dotFor = (rec: {
                   jin: boolean
                   proposals: BenchProposal[]
-                  discussion: { seatId: string } | null
+                  foliageSeats: Array<{ seatId: string }>
                 }) =>
                   rec.jin
                     ? '#ddd2b2'
                     : rec.proposals[0]
                       ? (SEAT_COLOUR_BY_ARCHETYPE[rec.proposals[0].seat] ?? '#b47333')
-                      : rec.discussion
-                        ? (SEAT_COLOUR_BY_ARCHETYPE[rec.discussion.seatId] ?? '#7a5638')
+                      : rec.foliageSeats[0]
+                        ? (SEAT_COLOUR_BY_ARCHETYPE[rec.foliageSeats[0].seatId] ?? '#7a5638')
                         : '#7a5638'
                 const branchRow = (b: BenchBranch) => (
                   <button
                     key={b.id}
                     type="button"
                     data-branch-row={b.id}
-                    data-foliage-seat={b.discussion?.seatId ?? ''}
+                    data-foliage-seat={b.foliageSeats.map((s) => s.seatId).join(',')}
                     onClick={() => {
                       setSelectedBranchId(b.id)
                       setOpenedWire(null)
@@ -459,7 +480,7 @@ export default function BenchView() {
                     key={t.id}
                     type="button"
                     data-twig-row={t.id}
-                    data-foliage-seat={t.discussion?.seatId ?? ''}
+                    data-foliage-seat={t.foliageSeats.map((s) => s.seatId).join(',')}
                     onClick={() => {
                       setSelectedBranchId(t.id)
                       setOpenedWire(null)
@@ -669,10 +690,14 @@ function BranchDetail({
   if (branch.sourceKind !== 'project') {
     // Foliage language belongs to tasks; a project branch's tasks
     // carry it on their twigs, so the branch itself says nothing.
-    if (branch.discussion) {
-      lines.push(
-        `It carries foliage in ${branch.discussion.seatName}’s colour, because it was discussed with ${branch.discussion.seatName} — the task came out of that recorded conversation.`,
-      )
+    if (branch.foliageSeats.length) {
+      for (const seat of branch.foliageSeats) {
+        lines.push(
+          seat.source === 'provenance'
+            ? `It carries foliage in ${seat.seatName}’s colour, because it was discussed with ${seat.seatName} — the task came out of that recorded conversation.`
+            : `It carries foliage in ${seat.seatName}’s colour — a steward reading in ${seat.seatName}’s voice names this task in its evidence.`,
+        )
+      }
     } else if (!branch.jin) {
       lines.push('It is bare — so far it has only been examined here, with Severine.')
     }
@@ -729,10 +754,14 @@ function TwigDetail({
   if (twig.jin) {
     lines.push('It stands pale — deadwood kept in the tree’s shape, not tidied away.')
   }
-  if (twig.discussion) {
-    lines.push(
-      `It carries foliage in ${twig.discussion.seatName}’s colour, because it was discussed with ${twig.discussion.seatName} — the task came out of that recorded conversation.`,
-    )
+  if (twig.foliageSeats.length) {
+    for (const seat of twig.foliageSeats) {
+      lines.push(
+        seat.source === 'provenance'
+          ? `It carries foliage in ${seat.seatName}’s colour, because it was discussed with ${seat.seatName} — the task came out of that recorded conversation.`
+          : `It carries foliage in ${seat.seatName}’s colour — a steward reading in ${seat.seatName}’s voice names this task in its evidence.`,
+      )
+    }
   } else if (!twig.jin) {
     lines.push('It is bare — so far it has only been examined here, with Severine.')
   }

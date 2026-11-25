@@ -6,7 +6,11 @@
  * Campaign Board uses). Wire (§2 of the definitions) reads pending
  * recorded proposals per branch through
  * GET /vision-execution/task-proposals/by-parent/{id} — a read-only
- * route over the existing owner-scoped storage query. Verdicts go
+ * route over the existing owner-scoped storage query. Reading
+ * foliage (§7's second source) reads
+ * GET /vision-execution/bench-foliage/by-parent/{type}/{id} — a
+ * read-only, fail-closed route over the steward's narrative store.
+ * Verdicts go
  * through the EXISTING governed endpoints the chat proposal cards
  * use: POST /vision-execution/task-proposals/{id}/approve (the
  * proposal becomes a task — wood) and .../decline (the proposed line
@@ -46,6 +50,46 @@ export async function fetchPendingProposals(parentTaskId: string): Promise<Bench
     return rows.filter((p) => p && typeof p.id === 'string' && p.state === 'pending')
   } catch {
     return []
+  }
+}
+
+/** Steward-reading foliage evidence for one parent (initiative,
+ *  project, or task): task id -> the archetype ids whose steward
+ *  readings touch that task (§7's second source). Degrades to
+ *  empty on failure, like the proposal read: the endpoint is
+ *  fail-closed under the pencil layer's gates, and an unreachable
+ *  read must render exactly like a closed gate — provenance
+ *  foliage only, never a broken Bench. */
+export async function fetchBenchFoliage(
+  parentType: 'initiative' | 'project' | 'task',
+  parentId: string,
+): Promise<Map<string, string[]>> {
+  try {
+    const res = await fetch(
+      `${VISION_EXECUTION_API}/bench-foliage/by-parent/${parentType}/${encodeURIComponent(parentId)}`,
+      { credentials: 'include' },
+    )
+    if (!res.ok) return new Map()
+    const data: unknown = await res.json()
+    const raw =
+      data &&
+      typeof data === 'object' &&
+      typeof (data as { foliage?: unknown }).foliage === 'object' &&
+      (data as { foliage?: unknown }).foliage !== null
+        ? (data as { foliage: Record<string, unknown> }).foliage
+        : {}
+    const out = new Map<string, string[]>()
+    for (const [taskId, seats] of Object.entries(raw)) {
+      if (Array.isArray(seats)) {
+        out.set(
+          taskId,
+          seats.filter((s): s is string => typeof s === 'string'),
+        )
+      }
+    }
+    return out
+  } catch {
+    return new Map()
   }
 }
 

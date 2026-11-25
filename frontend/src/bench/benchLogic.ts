@@ -102,6 +102,66 @@ export function discussionForTask(task: Task): DiscussionEvidence | null {
 }
 
 /* ------------------------------------------------------------------ */
+/* Reading foliage (§7, the second source)                             */
+/* ------------------------------------------------------------------ */
+
+/** Foliage evidence from steward readings, as the backend serves
+ *  it (GET /vision-execution/bench-foliage/by-parent/{type}/{id}):
+ *  task id -> the archetype ids whose steward readings touch that
+ *  task, under the pencil layer's gates. The endpoint is
+ *  fail-closed — a closed gate or absent consent arrives here as
+ *  simply no map entries, indistinguishable from no readings,
+ *  which is the honest rendering either way: bare. */
+export type FoliageByTask = ReadonlyMap<string, readonly string[]>
+
+export const NO_FOLIAGE: FoliageByTask = new Map()
+
+/** One seat's foliage on one task, with the source that evidences
+ *  it. The two sources render as ONE foliage (§7) — the pads do
+ *  not distinguish them — but the inspection keeps them distinct:
+ *  provenance is the discussion the task came out of; a reading
+ *  is a steward interpretation in that seat's voice naming the
+ *  task in its evidence. */
+export interface FoliageSeat {
+  seatId: string
+  seatName: string
+  source: 'provenance' | 'reading'
+}
+
+/**
+ * The merged §7 foliage for one task: origin provenance first
+ * (it is the discussion the task came out of), then the seats
+ * whose steward readings touch it. A seat named by both sources
+ * is still one seat's foliage. Severine never appears: the
+ * endpoint excludes her and discussionForTask already does —
+ * the guard here keeps the rule local to the merge as well.
+ */
+export function foliageSeatsForTask(
+  task: Task,
+  foliage: FoliageByTask,
+): FoliageSeat[] {
+  const out: FoliageSeat[] = []
+  const seen = new Set<string>()
+  const provenance = discussionForTask(task)
+  if (provenance) {
+    out.push({
+      seatId: provenance.seatId,
+      seatName: provenance.seatName,
+      source: 'provenance',
+    })
+    seen.add(provenance.seatId)
+  }
+  for (const seatId of foliage.get(task.id) ?? []) {
+    if (seen.has(seatId) || seatId === 'skeptic') continue
+    const seatName = SEAT_NAME_BY_ARCHETYPE[seatId]
+    if (!seatName) continue
+    out.push({ seatId, seatName, source: 'reading' })
+    seen.add(seatId)
+  }
+  return out
+}
+
+/* ------------------------------------------------------------------ */
 /* Strand weight (§9)                                                  */
 /* ------------------------------------------------------------------ */
 
@@ -164,6 +224,11 @@ export interface BenchBranch {
    *  Provenance lives on tasks, so on project branches this is
    *  always null: foliage renders on twigs, never on branches. */
   discussion: DiscussionEvidence | null
+  /** §7 foliage, both sources merged (provenance first, then
+   *  steward-reading seats) — empty means bare, honestly. On
+   *  project branches this is always empty: foliage renders on
+   *  twigs, never on branches. */
+  foliageSeats: FoliageSeat[]
   /** §2 wire: pending recorded proposals attached under this branch. */
   proposals: BenchProposal[]
   element: BenchElement
@@ -195,6 +260,9 @@ export interface BenchTwig {
   geometryRule: string
   /** §7 foliage evidence, or null — null means bare, honestly. */
   discussion: DiscussionEvidence | null
+  /** §7 foliage, both sources merged (provenance first, then
+   *  steward-reading seats) — empty means bare, honestly. */
+  foliageSeats: FoliageSeat[]
   /** §2 wire: pending recorded proposals attached under this task. */
   proposals: BenchProposal[]
   spec: BenchTwigSpec
@@ -462,6 +530,10 @@ function buildTree(args: {
   rootProse: number
   hasVerbatim: boolean
   notebook: NotebookEntry[]
+  /** §7 reading foliage for this tree's tasks, when the Bench
+   *  has fetched it for the opened root. Absent (the shelf, or a
+   *  failed/closed read) renders provenance foliage only. */
+  foliage?: FoliageByTask
 }): BenchTreeModel {
   const { register, rule: registerRule } = treeRegisterFor(args.rootKind, args.attached)
   const drafts = args.branchDrafts.map((d) => {
@@ -488,6 +560,7 @@ function buildTree(args: {
     geometryRegister: d.geometryRegister,
     geometryRule: d.geometryRule,
     discussion: d.task ? discussionForTask(d.task) : null,
+    foliageSeats: d.task ? foliageSeatsForTask(d.task, args.foliage ?? NO_FOLIAGE) : [],
     proposals: d.proposals,
     element: elements.get(d.id)!,
   }))
@@ -513,15 +586,18 @@ function buildTree(args: {
     geometryRegister: d.geometryRegister,
     geometryRule: d.geometryRule,
     discussion: discussionForTask(d.task),
+    foliageSeats: foliageSeatsForTask(d.task, args.foliage ?? NO_FOLIAGE),
     proposals: d.proposals,
     spec: twigSpecs.get(d.id)!,
   }))
   const discussion = new Map<string, string[]>()
   for (const b of branches) {
-    if (b.discussion) discussion.set(b.id, [b.discussion.seatName])
+    if (b.foliageSeats.length)
+      discussion.set(b.id, b.foliageSeats.map((s) => s.seatName))
   }
   for (const t of twigs) {
-    if (t.discussion) discussion.set(t.id, [t.discussion.seatName])
+    if (t.foliageSeats.length)
+      discussion.set(t.id, t.foliageSeats.map((s) => s.seatName))
   }
   const grown = growTree(
     branches.map((b) => b.element),
@@ -629,6 +705,7 @@ export function buildProjectTree(
   project: Project,
   entities: BenchEntities,
   proposalsByParent: ReadonlyMap<string, BenchProposal[]>,
+  foliage: FoliageByTask = NO_FOLIAGE,
 ): BenchTreeModel {
   // A project standing as its own tree (a loose project on the
   // shelf, or an initiative's branch brought forward): the project
@@ -723,6 +800,7 @@ export function buildProjectTree(
     rootProse,
     hasVerbatim,
     notebook,
+    foliage,
   })
 }
 
@@ -730,6 +808,7 @@ export function buildInitiativeTree(
   initiative: Initiative,
   entities: BenchEntities,
   proposalsByParent: ReadonlyMap<string, BenchProposal[]>,
+  foliage: FoliageByTask = NO_FOLIAGE,
 ): BenchTreeModel {
   // THE corrected grammar (founder, 2026-11-24): the initiative is
   // the TREE, its projects are the BRANCHES, and each project's
@@ -834,6 +913,7 @@ export function buildInitiativeTree(
     rootProse,
     hasVerbatim,
     notebook,
+    foliage,
   })
 }
 
@@ -887,7 +967,10 @@ export function buildIdeaTree(
   })
 }
 
-export function buildLooseTaskTree(task: Task): BenchTreeModel {
+export function buildLooseTaskTree(
+  task: Task,
+  foliage: FoliageByTask = NO_FOLIAGE,
+): BenchTreeModel {
   const notebook = branchNotebookEntries({
     name: task.title,
     task,
@@ -900,6 +983,7 @@ export function buildLooseTaskTree(task: Task): BenchTreeModel {
     title: task.title,
     state: task.status,
     attached: false,
+    foliage,
     branchDrafts: [
       {
         id: task.id,

@@ -22,8 +22,10 @@
  * fan when the initiative is opened; a project's stones appear in
  * its own fan, as before — every record stays reachable through
  * its parent. The ring's layout (gardenLayout) guarantees the
- * shown cairns' name labels never overlap: footprints are placed
- * on the ring and relaxed until no two touch, clear of the well.
+ * shown cairns' name labels never overlap AND no footprint —
+ * pile, label, count line — ever intersects the well disc: the
+ * water is water, and nothing stands on it (founder, 2026-11-25).
+ * The fans are placed under the same rule (fanPositionClear).
  *
  * Casting follows the accepted prototype (seven-interfaces, Aria
  * view): fan a cairn to see its stones; drag a stone to the well —
@@ -38,15 +40,27 @@
  * conversational behaviour in that grounded conversation, not a
  * stored panel. Quiet return via the rim.
  *
- * The stack's channels are the founder's rulings: layers ordered by
- * interaction recency; fill alpha moment-to-moment on a base-e
- * approach inside the 10%–80% band (the Discussion slider sets the
- * ceiling); ink always at 100%; complexity — how much the user has
- * talked with a seat about the selected subject — presented as
- * emergence replay depth. No emergence video plays inside the rim:
- * those renders are geometry on an opaque paper ground. No paper
- * anywhere — the layers are the transparent splits of the canonical
- * pure-composite exports, and the water shows through.
+ * The stack's channels are the founder's rulings, and the imagery
+ * is system data (founder, 2026-11-25: "build the real thing..
+ * there shouldn't be buttons to press, the imagery is supposed to
+ * represent system data"). The formations genuinely DRAW: each
+ * voice's ink is a ladder of transparent stage images generated
+ * from the canonical geometry in its true growth order (see
+ * ./stagegen and stage-manifest.json — every stage a true prefix
+ * of the next, the final stage the completed formation, verified
+ * against the canonical geometry by hash). When a seat responds,
+ * its formation re-draws from nothing to its recorded talk depth
+ * about the selected subject, holds there — what stands is the
+ * formation drawn to exactly that fraction — then completes, and
+ * its fill washes in beneath the ink. Layers are ordered by
+ * interaction recency; fill presence is graded per voice from the
+ * recorded data alone (who has spoken about this subject, and who
+ * spoke last — fillPresence in ./atelierLogic) on a base-e
+ * approach inside the ruled 10%–80% band; ink is always at 100%.
+ * There are NO manual imagery controls — no Discussion slider, no
+ * voice chips; the only interactions are choosing and casting a
+ * subject, and the conversation. No paper anywhere: the stages
+ * and fills are transparent, and the water shows through.
  *
  * Governing design: zenaf-aria-atelier-language-definitions-2026-11-23.md
  * and the founder's Well specification, 2026-11-24.
@@ -65,11 +79,9 @@ import { fetchAtelierData, fetchSeatTurnCounts, type AtelierData } from './ateli
 import {
   FORMATION_SCALE,
   STACK_DEFAULT,
+  STAGE_COUNT,
   VOICES,
   VOICE_BY_ARCHETYPE,
-  VOICE_COLORS,
-  VOICE_HOMES,
-  VOICE_NAMES,
   bringToFront,
   castInitiative,
   castLooseStone,
@@ -79,15 +91,17 @@ import {
   conversationIdFor,
   depthProjectId,
   depthsForSubject,
+  fanBoxFor,
+  fanPositionClear,
+  fillMultiplier,
   fillStep,
-  fillTarget,
-  floorMult,
   gardenFootprint,
   gardenLayout,
   looseCairns,
   ringInitiatives,
-  ceilingScale,
+  stageForDepth,
   REPLAY_BASE_MS,
+  REPLAY_COMPLETE_MS,
   REPLAY_HOLD_MS,
   REPLAY_RATES,
   type AtelierCairn,
@@ -98,32 +112,29 @@ import {
   type CastTarget,
   type Voice,
 } from './atelierLogic'
+import { STAGE_IMAGES } from './stageImages'
 import { ResonanceField } from './waterEngine'
 import './atelier.css'
 
 import ariaFill from './assets/layer-aria-fill.png'
-import ariaInk from './assets/layer-aria-ink.png'
 import jynxFill from './assets/layer-jynx-fill.png'
-import jynxInk from './assets/layer-jynx-ink.png'
 import lucianFill from './assets/layer-lucian-fill.png'
-import lucianInk from './assets/layer-lucian-ink.png'
 import maeveFill from './assets/layer-maeve-fill.png'
-import maeveInk from './assets/layer-maeve-ink.png'
 import rumiFill from './assets/layer-rumi-fill.png'
-import rumiInk from './assets/layer-rumi-ink.png'
 import severineFill from './assets/layer-severine-fill.png'
-import severineInk from './assets/layer-severine-ink.png'
 import valenFill from './assets/layer-valen-fill.png'
-import valenInk from './assets/layer-valen-ink.png'
 
-const LAYER_IMAGES: Record<Voice, { fill: string; ink: string }> = {
-  rumi: { fill: rumiFill, ink: rumiInk },
-  valen: { fill: valenFill, ink: valenInk },
-  maeve: { fill: maeveFill, ink: maeveInk },
-  lucian: { fill: lucianFill, ink: lucianInk },
-  aria: { fill: ariaFill, ink: ariaInk },
-  severine: { fill: severineFill, ink: severineInk },
-  jynx: { fill: jynxFill, ink: jynxInk },
+/** The voices' fill layers (the canonical fills, regenerated by
+ *  ./stagegen from build_pure's own construction). The ink above
+ *  them is the stage ladder — STAGE_IMAGES — not a single image. */
+const FILL_IMAGES: Record<Voice, string> = {
+  rumi: rumiFill,
+  valen: valenFill,
+  maeve: maeveFill,
+  lucian: lucianFill,
+  aria: ariaFill,
+  severine: severineFill,
+  jynx: jynxFill,
 }
 
 const NEUTRAL_WASH = '#a8a29e'
@@ -245,9 +256,18 @@ export default function AriaAtelierView() {
   const [ghost, setGhost] = useState<Ghost>(null)
   const [wellOver, setWellOver] = useState(false)
   const [turnCounts, setTurnCounts] = useState<Record<string, number> | null>(null)
-  const [selectedVoice, setSelectedVoice] = useState<Voice | 'all'>('all')
   const [order, setOrder] = useState<Voice[]>(STACK_DEFAULT)
-  const [ceiling, setCeiling] = useState(80)
+  /** Who spoke last in the subject conversation (recorded data —
+   *  the graded fill's recency input), or null when no seat has
+   *  spoken about the subject. */
+  const [lastVoice, setLastVoice] = useState<Voice | null>(null)
+  /** Each voice's currently drawn stage, 0..STAGE_COUNT. At rest
+   *  every formation stands complete (STAGE_COUNT); a responding
+   *  voice's stage runs the replay: 0 → its depth stage → hold →
+   *  complete. */
+  const [inkStages, setInkStages] = useState<Record<Voice, number>>(
+    Object.fromEntries(VOICES.map((v) => [v, STAGE_COUNT])) as Record<Voice, number>,
+  )
   const [formingKey, setFormingKey] = useState(0)
 
   const wellRef = useRef<HTMLButtonElement | null>(null)
@@ -264,7 +284,6 @@ export default function AriaAtelierView() {
   } | null>(null)
   const layoutsRef = useRef(new Map<string, PortedTowerLayout>())
   const fillImgRefs = useRef(new Map<Voice, HTMLImageElement>())
-  const layerRefs = useRef(new Map<Voice, HTMLDivElement>())
   const fillState = useRef<Record<Voice, number>>(
     Object.fromEntries(VOICES.map((v) => [v, 1])) as Record<Voice, number>,
   )
@@ -274,7 +293,7 @@ export default function AriaAtelierView() {
     replay: {
       voice: Voice
       depth: number
-      phase: 'reveal' | 'hold' | 'complete'
+      phase: 'draw' | 'hold' | 'complete'
       startedAt: number
       phaseAt: number
     } | null
@@ -339,11 +358,18 @@ export default function AriaAtelierView() {
     depthsRef.current = depths
   }, [depths])
 
+  const lastVoiceRef = useRef<Voice | null>(null)
+  useEffect(() => {
+    lastVoiceRef.current = lastVoice
+  }, [lastVoice])
+
   /* On a cast, load the subject conversation's recorded talk, then
-     Aria responds: her layer comes forward and re-forms to her depth. */
+     Aria responds: her layer comes forward and re-draws to her
+     recorded depth. */
   useEffect(() => {
     if (!cast) {
       setTurnCounts(null)
+      setLastVoice(null)
       respondedFor.current = null
       return
     }
@@ -352,31 +378,37 @@ export default function AriaAtelierView() {
     void fetchSeatTurnCounts(conversationId).then((turns) => {
       if (cancelled) return
       setTurnCounts(turns.counts)
+      setLastVoice(turns.lastArchetype ? (VOICE_BY_ARCHETYPE[turns.lastArchetype] ?? null) : null)
     })
     return () => {
       cancelled = true
     }
   }, [cast, conversationId])
 
-  const respond = useCallback(
-    (voice: Voice) => {
-      setSelectedVoice(voice)
-      setOrder((o) => bringToFront(o, voice))
-      /* Having something to say, made visible: the fill drops to the
-         floor and rises again on the base-e curve. */
-      fillState.current[voice] = floorMult(voice) * ceilingScale(ceiling)
-      if (!REDUCED_MOTION) {
-        stackAnim.current.replay = {
-          voice,
-          depth: depthsRef.current[voice],
-          phase: 'reveal',
-          startedAt: performance.now(),
-          phaseAt: performance.now(),
-        }
-      }
-    },
-    [ceiling],
-  )
+  /* A seat responds: its layer comes forward (z-order by recency)
+     and its formation re-draws — the stage ladder runs from
+     nothing to its recorded depth, holds, then completes, and
+     only then does its fill wash in (the animation loop owns the
+     fill while a replay runs). Reduced motion: the completed
+     formation simply stands, as it already does at rest. */
+  const respond = useCallback((voice: Voice) => {
+    setOrder((o) => bringToFront(o, voice))
+    if (REDUCED_MOTION) return
+    // Preload the ladder so the drawing's steps don't flicker
+    // while their images arrive.
+    for (const src of STAGE_IMAGES[voice]) {
+      const im = new Image()
+      im.src = src
+    }
+    setInkStages((s) => ({ ...s, [voice]: 0 }))
+    stackAnim.current.replay = {
+      voice,
+      depth: depthsRef.current[voice],
+      phase: 'draw',
+      startedAt: performance.now(),
+      phaseAt: performance.now(),
+    }
+  }, [])
 
   useEffect(() => {
     if (!cast || turnCounts === null) return
@@ -387,13 +419,16 @@ export default function AriaAtelierView() {
 
   /* --------------------- stack animation loop ----------------------- */
   /* One rAF loop drives both ruled motions while a cast is open:
-     the fills' base-e approach toward their targets, and the
-     responding layer's replay — a radial re-forming from the seat's
-     home, out to its talk-depth fraction, a held beat, then the
-     formation completes while the fill rises. (The true-prefix
-     emergence frames exist only as opaque-ground video, which never
-     plays inside the rim; the replay here is a reveal of the finished
-     transparent layer, and is named as such in the report.) */
+     the fills' base-e approach toward their graded targets, and
+     the responding voice's replay — its stage ladder stepping
+     from nothing out to its recorded talk-depth stage, a held
+     beat at exactly that stage, then the remaining stages to the
+     completed formation, at which point its fill target becomes
+     its graded presence and the fill washes in beneath the ink.
+     While a voice's replay runs, its fill target is 0: the fill
+     belongs to the completed formation (fill completes it). All
+     targets derive from the recorded depths + last speaker, read
+     through refs — no control state exists to read. */
 
   useEffect(() => {
     if (!cast) return
@@ -403,59 +438,56 @@ export default function AriaAtelierView() {
       anim.raf = requestAnimationFrame(step)
       const dt = Math.min(0.1, (now - anim.last) / 1000)
       anim.last = now
+      const replay = anim.replay
       for (const v of VOICES) {
         const img = fillImgRefs.current.get(v)
         if (!img) continue
-        const target = fillTarget(v, selectedVoice, ceiling)
+        const target =
+          replay && replay.voice === v
+            ? 0
+            : fillMultiplier(v, depthsRef.current, lastVoiceRef.current)
         const next = fillStep(fillState.current[v], target, dt)
         if (next !== fillState.current[v]) {
           fillState.current[v] = next
           img.style.opacity = next.toFixed(3)
         }
       }
-      const replay = anim.replay
-      const layer = replay ? layerRefs.current.get(replay.voice) : null
-      if (replay && layer) {
-        const home = VOICE_HOMES[replay.voice]
-        const rect = layer.getBoundingClientRect()
-        const hx = (home[0] / 1000) * rect.width
-        const hy = (home[1] / 1320) * rect.height
-        const cover = Math.hypot(Math.max(hx, rect.width - hx), Math.max(hy, rect.height - hy))
-        const duration = REPLAY_BASE_MS / REPLAY_RATES[replay.voice]
-        let frac: number | null = null
-        if (replay.phase === 'reveal') {
+      if (replay) {
+        const holdStage = stageForDepth(replay.depth)
+        let stage: number | null = null
+        if (replay.phase === 'draw') {
+          const duration = REPLAY_BASE_MS / REPLAY_RATES[replay.voice]
           const p = Math.min(1, (now - replay.startedAt) / duration)
-          frac = replay.depth * p
+          stage = Math.floor(p * holdStage)
           if (p >= 1) {
+            stage = holdStage
             replay.phase = 'hold'
             replay.phaseAt = now
           }
         } else if (replay.phase === 'hold') {
-          frac = replay.depth
+          stage = holdStage
           if (now - replay.phaseAt >= REPLAY_HOLD_MS) {
             replay.phase = 'complete'
             replay.phaseAt = now
           }
         } else {
-          const p = Math.min(1, (now - replay.phaseAt) / 400)
-          frac = replay.depth + (1 - replay.depth) * p
+          const p = Math.min(1, (now - replay.phaseAt) / REPLAY_COMPLETE_MS)
+          stage = holdStage + Math.floor(p * (STAGE_COUNT - holdStage))
           if (p >= 1) {
-            layer.style.maskImage = ''
-            layer.style.webkitMaskImage = ''
+            stage = STAGE_COUNT
             anim.replay = null
           }
         }
-        if (frac !== null && anim.replay) {
-          const r = Math.max(0.5, frac * cover)
-          const mask = `radial-gradient(circle at ${hx}px ${hy}px, black 0 ${r}px, transparent ${r + 24}px)`
-          layer.style.maskImage = mask
-          layer.style.webkitMaskImage = mask
+        if (stage !== null) {
+          const s = stage
+          const voice = replay.voice
+          setInkStages((prev) => (prev[voice] === s ? prev : { ...prev, [voice]: s }))
         }
       }
     }
     anim.raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(anim.raf)
-  }, [cast, selectedVoice, ceiling])
+  }, [cast])
 
   /* ------------------------------ casting --------------------------- */
 
@@ -485,13 +517,12 @@ export default function AriaAtelierView() {
 
   const returnToGarden = useCallback(() => {
     setCast(null)
-    setSelectedVoice('all')
     setOrder(STACK_DEFAULT)
+    setLastVoice(null)
     stackAnim.current.replay = null
-    for (const el of layerRefs.current.values()) {
-      el.style.maskImage = ''
-      el.style.webkitMaskImage = ''
-    }
+    setInkStages(
+      Object.fromEntries(VOICES.map((v) => [v, STAGE_COUNT])) as Record<Voice, number>,
+    )
   }, [])
 
   /* --------------------------- drag grammar -------------------------- */
@@ -700,6 +731,7 @@ export default function AriaAtelierView() {
       const keystone = depthProject ? data?.keystoneCounts.get(depthProject) : undefined
       depthsRef.current = depthsForSubject(turns.counts, keystone)
       const voice = turns.lastArchetype ? VOICE_BY_ARCHETYPE[turns.lastArchetype] : null
+      setLastVoice(voice ?? null)
       if (voice) respond(voice)
     })
   }, [cast, conversationId, respond, data, depthProject])
@@ -824,23 +856,7 @@ export default function AriaAtelierView() {
             castWaterRef={castWaterRef}
             order={order}
             fillImgRefs={fillImgRefs}
-            layerRefs={layerRefs}
-            selectedVoice={selectedVoice}
-            ceiling={ceiling}
-            setCeiling={setCeiling}
-            onSelectVoice={(v) => {
-              if (v === 'all') {
-                setSelectedVoice('all')
-                setOrder(STACK_DEFAULT)
-                stackAnim.current.replay = null
-                for (const el of layerRefs.current.values()) {
-                  el.style.maskImage = ''
-                  el.style.webkitMaskImage = ''
-                }
-              } else {
-                respond(v)
-              }
-            }}
+            inkStages={inkStages}
             onReturn={returnToGarden}
           />
         ) : (
@@ -1054,15 +1070,6 @@ export default function AriaAtelierView() {
 /* its projects                                                        */
 /* ================================================================== */
 
-/** Where a fan sits relative to its ring anchor: centred on the
- *  anchor, below it — or above it when the anchor stands low. */
-function fanPosition(anchor: { x: number; y: number }): { left: number; top: number } {
-  return {
-    left: Math.max(38, Math.min(62, anchor.x)),
-    top: anchor.y > 70 ? anchor.y - 24 : anchor.y + 7,
-  }
-}
-
 function FanView({
   cairn,
   anchor,
@@ -1082,7 +1089,9 @@ function FanView({
   dragHandlers: (p: DragPayload) => React.HTMLAttributes<HTMLButtonElement>
   layout: PortedTowerLayout | null
 }) {
-  const { left: fanX, top: fanTop } = fanPosition(anchor)
+  const stoneCount =
+    (returnTo ? 1 : 0) + (cairn.initiativeId ? 1 : 0) + cairn.stones.length
+  const { left: fanX, top: fanTop } = fanPositionClear(anchor, fanBoxFor(stoneCount))
   const pileLayout = layout ?? towerLayoutForMembers(cairn.cairnId, cairn.members)
   const initiative = castInitiative(cairn)
   return (
@@ -1150,7 +1159,10 @@ function InitiativeFan({
   picked: Picked
   dragHandlers: (p: DragPayload) => React.HTMLAttributes<HTMLButtonElement>
 }) {
-  const { left: fanX, top: fanTop } = fanPosition(anchor)
+  const { left: fanX, top: fanTop } = fanPositionClear(
+    anchor,
+    fanBoxFor(1 + pile.cairns.length),
+  )
   const representative = pile.cairns[0]
   return (
     <div className="atelier-fan-layer">
@@ -1199,11 +1211,7 @@ function CastView({
   castWaterRef,
   order,
   fillImgRefs,
-  layerRefs,
-  selectedVoice,
-  ceiling,
-  setCeiling,
-  onSelectVoice,
+  inkStages,
   onReturn,
 }: {
   cast: CastTarget
@@ -1212,11 +1220,8 @@ function CastView({
   castWaterRef: React.Ref<HTMLCanvasElement>
   order: Voice[]
   fillImgRefs: { current: Map<Voice, HTMLImageElement> }
-  layerRefs: { current: Map<Voice, HTMLDivElement> }
-  selectedVoice: Voice | 'all'
-  ceiling: number
-  setCeiling: (n: number) => void
-  onSelectVoice: (v: Voice | 'all') => void
+  /** Each voice's currently drawn stage (0 = nothing drawn yet). */
+  inkStages: Record<Voice, number>
   onReturn: () => void
 }) {
   return (
@@ -1243,20 +1248,23 @@ function CastView({
                     key={v}
                     className="atelier-voice-layer"
                     data-layer={v}
-                    ref={(el) => {
-                      if (el) layerRefs.current.set(v, el)
-                    }}
                     style={{ zIndex: order.indexOf(v) + 1 }}
                   >
                     <img
                       className="fill"
-                      src={LAYER_IMAGES[v].fill}
+                      src={FILL_IMAGES[v]}
                       alt=""
                       ref={(el) => {
                         if (el) fillImgRefs.current.set(v, el)
                       }}
                     />
-                    <img className="ink" src={LAYER_IMAGES[v].ink} alt="" />
+                    {inkStages[v] > 0 ? (
+                      <img
+                        className="ink"
+                        src={STAGE_IMAGES[v][inkStages[v] - 1]}
+                        alt=""
+                      />
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -1266,43 +1274,6 @@ function CastView({
         </div>
         <div className="atelier-cast-subject">{cast.title}</div>
         <div className="atelier-cast-cairn">{castSub}</div>
-      </div>
-
-      <div className="atelier-controls">
-        <div className="atelier-slider-row">
-          <span>Discussion</span>
-          <input
-            type="range"
-            min={10}
-            max={80}
-            value={ceiling}
-            aria-label="Discussion"
-            onChange={(e) => setCeiling(Number(e.target.value))}
-          />
-          <span>{ceiling}%</span>
-        </div>
-        <div className="atelier-voice-chips">
-          <button
-            type="button"
-            aria-pressed={selectedVoice === 'all'}
-            onClick={() => onSelectVoice('all')}
-          >
-            <span className="dot" style={{ background: '#9a917e' }} />
-            All seven
-          </button>
-          {VOICES.map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={selectedVoice === v}
-              onClick={() => onSelectVoice(v)}
-              style={{ '--voice': VOICE_COLORS[v] } as React.CSSProperties}
-            >
-              <span className="dot" style={{ background: VOICE_COLORS[v] }} />
-              {VOICE_NAMES[v]}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   )

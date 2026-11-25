@@ -1,0 +1,332 @@
+{
+ "generatedBy": "frontend/src/aria-atelier/stagegen/generate_stages.py",
+ "stagesPerVoice": 12,
+ "intermediateSize": [
+  400,
+  528
+ ],
+ "finalSize": [
+  1000,
+  1320
+ ],
+ "voices": {
+  "rumi": {
+   "finalDensitySha256": "fa59588ba3f0c338be95364c6116008d03673e35bb810a38d2461194df1aaaae",
+   "canonicalDensitySha256": "fa59588ba3f0c338be95364c6116008d03673e35bb810a38d2461194df1aaaae",
+   "finalDensityMatchesCanonical": true,
+   "densityLadderMonotone": true,
+   "renderedAlphaMaxDecrease": 0,
+   "stageFractions": [
+    0.0909,
+    0.1591,
+    0.25,
+    0.3409,
+    0.4091,
+    0.5,
+    0.5909,
+    0.6591,
+    0.75,
+    0.8409,
+    0.9091,
+    1.0
+   ],
+   "finalVsShippedInk": {
+    "meanAbsDiff": 3.927,
+    "alphaMeanAbsDiff": 1.164,
+    "pctPxOver8": 6.472,
+    "strongInkMeanAbsDiff": 1.495,
+    "supportIou": 0.9453
+   },
+   "finalCompositeVsCanonicalLayerMeanAbsDiff": 0.739,
+   "stageBytes": [
+    31412,
+    50242,
+    81489,
+    114001,
+    127035,
+    143853,
+    145486,
+    156365,
+    181854,
+    197978,
+    199730,
+    1308073
+   ],
+   "fillBytes": 90724
+  },
+  "valen": {
+   "finalDensitySha256": "c93d48ff4f9986cb4e1b31a1ee7e63385da025df5742f587ae26a2e04e9d15fd",
+   "canonicalDensitySha256": "c93d48ff4f9986cb4e1b31a1ee7e63385da025df5742f587ae26a2e04e9d15fd",
+   "finalDensityMatchesCanonical": true,
+   "densityLadderMonotone": true,
+   "renderedAlphaMaxDecrease": 0,
+   "stageFractions": [
+    0.0833,
+    0.1667,
+    0.25,
+    0.3333,
+    0.4167,
+    0.5,
+    0.5833,
+    0.6667,
+    0.75,
+    0.8333,
+    0.9167,
+    1.0
+   ],
+   "finalVsShippedInk": {
+    "meanAbsDiff": 0.353,
+    "alphaMeanAbsDiff": 0.064,
+    "pctPxOver8": 0.51,
+    "strongInkMeanAbsDiff": 0.675,
+    "supportIou": 0.8754
+   },
+   "finalCompositeVsCanonicalLayerMeanAbsDiff": 0.19,
+   "stageBytes": [
+    2481,
+    3905,
+    5386,
+    6835,
+    8254,
+    9624,
+    11014,
+    12362,
+    13714,
+    15081,
+    16387,
+    86159
+   ],
+   "fillBytes": 27936
+  },
+  "maeve": {
+   "finalDensitySha256": "084c842d2b13ef27b151af30a1153ba68e3074b69d6ee7670f210fe69262a36e",
+   "canonicalDensitySha256": "084c842d2b13ef27b151af30a1153ba68e3074b69d6ee7670f210fe69262a36e",
+   "finalDensityMatchesCanonical": true,
+   "densityLadderMonotone": true,
+   "renderedAlphaMaxDecrease": 0,
+   "stageFractions": [
+    0.0834,
+    0.1666,
+    0.25,
+    0.3334,
+    0.4166,
+    0.5,
+    0.5834,
+    0.6666,
+    0.75,
+    0.8334,
+    0.9166,
+    1.0
+   ],
+   "finalVsShippedInk": {
+    "meanAbsDiff": 1.004,
+    "alphaMeanAbsDiff": 0.103,
+    "pctPxOver8": 1.227,
+    "strongInkMeanAbsDiff": 0.904,
+    "supportIou": 0.8713
+   },
+   "finalCompositeVsCanonicalLayerMeanAbsDiff": 0.521,
+   "stageBytes": [
+    25957,
+    26655,
+    27219,
+    29047,
+    29106,
+    29650,
+    30271,
+    31513,
+    31467,
+    32140,
+    32734,
+    162294
+   ],
+   "fillBytes": 52060
+  },
+  "lucian": {
+   "finalDensitySha256": "e9ddf56a1ef48a397d2aa89d98adad6912d85aa59b4151b6da93c7e9dde1c1a5",
+   "canonicalDensitySha256": "e9ddf56a1ef48a397d2aa89d98adad6912d85aa59b4151b6da93c7e9dde1c1a5",
+   "finalDensityMatchesCanonical": true,
+   "densityLadderMonotone": true,
+   "renderedAlphaMaxDecrease": 0,
+   "stageFractions": [
+    0.0781,
+    0.1719,
+    0.25,
+    0.3281,
+    0.4219,
+    0.5,
+    0.5781,
+    0.6719,
+    0.75,
+    0.8281,
+    0.9219,
+    1.0
+   ],
+   "finalVsShippedInk": {
+    "meanAbsDiff": 2.193,
+    "alphaMeanAbsDiff": 0.284,
+    "pctPxOver8": 5.119,
+    "strongInkMeanAbsDiff": 1.178,
+    "supportIou": 0.9815
+   },
+   "finalCompositeVsCanonicalLayerMeanAbsDiff": 1.528,
+   "stageBytes": [
+    6946,
+    29252,
+    71963,
+    125463,
+    149506,
+    151115,
+    151255,
+    153513,
+    154632,
+    156324,
+    158487,
+    841630
+   ],
+   "fillBytes": 128465
+  },
+  "aria": {
+   "finalDensitySha256": "53c406deccc38434ec65a52f0e0ab26c9391443489028dd5631ec71600d0342a",
+   "canonicalDensitySha256": "53c406deccc38434ec65a52f0e0ab26c9391443489028dd5631ec71600d0342a",
+   "finalDensityMatchesCanonical": true,
+   "densityLadderMonotone": true,
+   "renderedAlphaMaxDecrease": 0,
+   "stageFractions": [
+    0.08,
+    0.1667,
+    0.2533,
+    0.3333,
+    0.4133,
+    0.5,
+    0.5867,
+    0.6667,
+    0.7467,
+    0.8333,
+    0.92,
+    1.0
+   ],
+   "finalVsShippedInk": {
+    "meanAbsDiff": 0.448,
+    "alphaMeanAbsDiff": 0.218,
+    "pctPxOver8": 1.186,
+    "strongInkMeanAbsDiff": 1.284,
+    "supportIou": 0.991
+   },
+   "finalCompositeVsCanonicalLayerMeanAbsDiff": 0.371,
+   "stageBytes": [
+    16804,
+    32797,
+    44795,
+    51872,
+    55159,
+    57096,
+    58887,
+    59792,
+    60188,
+    60490,
+    60502,
+    336940
+   ],
+   "fillBytes": 44705
+  },
+  "severine": {
+   "finalDensitySha256": "a8db0cc0b9190b7ebd7eeb2ce0fdba7588bd9e5e00344f37bf041d28ca6537e3",
+   "canonicalDensitySha256": "a8db0cc0b9190b7ebd7eeb2ce0fdba7588bd9e5e00344f37bf041d28ca6537e3",
+   "finalDensityMatchesCanonical": true,
+   "densityLadderMonotone": true,
+   "renderedAlphaMaxDecrease": 0,
+   "stageFractions": [
+    0.0839,
+    0.1677,
+    0.2516,
+    0.3355,
+    0.4194,
+    0.5032,
+    0.5806,
+    0.6645,
+    0.7484,
+    0.8323,
+    0.9161,
+    1.0
+   ],
+   "finalVsShippedInk": {
+    "meanAbsDiff": 0.889,
+    "alphaMeanAbsDiff": 0.053,
+    "pctPxOver8": 1.39,
+    "strongInkMeanAbsDiff": 0.718,
+    "supportIou": 0.9053
+   },
+   "finalCompositeVsCanonicalLayerMeanAbsDiff": 0.673,
+   "stageBytes": [
+    5016,
+    7741,
+    11588,
+    13787,
+    17641,
+    19769,
+    21341,
+    24660,
+    26792,
+    30008,
+    32021,
+    189490
+   ],
+   "fillBytes": 47853
+  },
+  "jynx": {
+   "finalDensitySha256": "c6c349acc5e9b9742c567193bb9873cda2f646b05145a7fd3e873a56cfbe813a",
+   "canonicalDensitySha256": "c6c349acc5e9b9742c567193bb9873cda2f646b05145a7fd3e873a56cfbe813a",
+   "finalDensityMatchesCanonical": true,
+   "densityLadderMonotone": true,
+   "renderedAlphaMaxDecrease": 0,
+   "stageFractions": [
+    0.0833,
+    0.1665,
+    0.2498,
+    0.3335,
+    0.4167,
+    0.5,
+    0.5833,
+    0.6665,
+    0.7502,
+    0.8335,
+    0.9167,
+    1.0
+   ],
+   "finalVsShippedInk": {
+    "meanAbsDiff": 3.098,
+    "alphaMeanAbsDiff": 0.262,
+    "pctPxOver8": 6.727,
+    "strongInkMeanAbsDiff": 1.547,
+    "supportIou": 0.9882
+   },
+   "finalCompositeVsCanonicalLayerMeanAbsDiff": 3.239,
+   "stageBytes": [
+    24920,
+    45096,
+    61687,
+    76066,
+    89551,
+    101169,
+    111866,
+    122483,
+    130770,
+    139847,
+    148430,
+    909689
+   ],
+   "fillBytes": 110408
+  }
+ },
+ "totals": {
+  "stageBytes": 8823609,
+  "fillBytes": 502151,
+  "previousInkBytes": 3547056,
+  "previousFillBytes": 119150
+ },
+ "resampling": {
+  "intermediate": "float-premultiplied bilinear",
+  "final": "float-premultiplied lanczos"
+ }
+}

@@ -12,12 +12,17 @@ import type { CairnEntry, CairnIndex } from '../vision-map/cairn'
 import type { MapNodePayload } from '../vision-map/ontology'
 import type { Initiative, Project, Task } from '../vision-execution/types'
 import {
+  FILL_BAKED,
+  FILL_FLOOR,
   FILL_TAU,
   FORMATION_SCALE,
   GARDEN_GAP,
   GARDEN_REF_H,
   GARDEN_REF_W,
+  GARDEN_WELL,
+  STAGE_COUNT,
   STACK_DEFAULT,
+  boxIntersectsWell,
   bringToFront,
   buildGarden,
   castInitiative,
@@ -28,18 +33,23 @@ import {
   conversationIdFor,
   depthProjectId,
   depthsForSubject,
+  fanBoxFor,
+  fanPositionClear,
+  fillMultiplier,
+  fillPresence,
   fillStep,
-  fillTarget,
-  floorMult,
   gardenFootprint,
   gardenLayout,
   gardenPositions,
   looseCairns,
   ringInitiatives,
   rungOf,
+  stageForDepth,
   talkDepth,
+  type FanBox,
   type GardenBundle,
   type GardenFootprint,
+  type Voice,
 } from './atelierLogic'
 
 const initiative = (over: Record<string, unknown>): Initiative =>
@@ -247,17 +257,61 @@ describe('the stack channels', () => {
     expect(bringToFront([...STACK_DEFAULT], 'severine')).toEqual(STACK_DEFAULT)
   })
 
-  it('fill targets: the selected voice at the ceiling scale, the rest at their floor', () => {
-    expect(fillTarget('aria', 'aria', 80)).toBe(1)
-    expect(fillTarget('aria', 'all', 80)).toBe(1)
-    expect(fillTarget('aria', 'aria', 40)).toBe(0.5)
-    // floorMult puts baked × mult at the 10% floor: Valen .5 → .2, Rumi .8 → .125.
-    expect(floorMult('valen')).toBeCloseTo(0.2)
-    expect(fillTarget('valen', 'aria', 80)).toBeCloseTo(0.2)
-    expect(fillTarget('rumi', 'aria', 80)).toBeCloseTo(0.125)
+  it('graded fill: the last speaker stands at full presence, whatever their depth', () => {
+    const depths = depthsForSubject({ champion: 1 }, undefined) // Valen depth 1/6
+    expect(depths.valen).toBeCloseTo(1 / 6)
+    expect(fillPresence('valen', depths, 'valen')).toBe(FILL_BAKED.valen)
+    expect(fillMultiplier('valen', depths, 'valen')).toBe(1)
+    // Even with no recorded depth at all, having just spoken is
+    // the recorded fact that carries full presence.
+    expect(fillPresence('jynx', depthsForSubject({}, undefined), 'jynx')).toBe(FILL_BAKED.jynx)
+  })
+
+  it('graded fill: recorded depth grades a voice between the floor and its baked level', () => {
+    const depths = depthsForSubject({ conductor: 3, mentor: 6 }, undefined)
+    // Aria depth 0.5, not the last speaker: .1 + (.5 − .1) × .5 = .3.
+    expect(fillPresence('aria', depths, 'rumi')).toBeCloseTo(0.3)
+    expect(fillMultiplier('aria', depths, 'rumi')).toBeCloseTo(0.3 / FILL_BAKED.aria)
+    // Rumi at full depth holds his full baked level without
+    // being selected — presence is data, not a selection.
+    expect(fillPresence('rumi', depths, 'aria')).toBeCloseTo(FILL_BAKED.rumi)
+  })
+
+  it('graded fill: no recorded talk about the subject sits at the floor', () => {
+    const depths = depthsForSubject({ conductor: 2 }, undefined)
+    expect(fillPresence('jynx', depths, 'aria')).toBe(FILL_FLOOR)
+    expect(fillMultiplier('jynx', depths, 'aria')).toBeCloseTo(FILL_FLOOR / FILL_BAKED.jynx)
+    expect(fillPresence('maeve', depths, null)).toBe(FILL_FLOOR)
+  })
+
+  it('graded fill: targets never leave the ruled band, for any data', () => {
+    const voices: Voice[] = ['rumi', 'valen', 'maeve', 'lucian', 'aria', 'severine', 'jynx']
+    for (const v of voices) {
+      for (const d of [0, 0.37, 1]) {
+        for (const last of [null, v, 'aria' as Voice]) {
+          const depths = Object.fromEntries(voices.map((x) => [x, d])) as Record<Voice, number>
+          const presence = fillPresence(v, depths, last)
+          expect(presence).toBeGreaterThanOrEqual(FILL_FLOOR)
+          expect(presence).toBeLessThanOrEqual(FILL_BAKED[v])
+          const mult = fillMultiplier(v, depths, last)
+          expect(mult).toBeGreaterThan(0)
+          expect(mult).toBeLessThanOrEqual(1)
+        }
+      }
+    }
     // Severine's baked level IS the floor — she recedes no further.
-    expect(fillTarget('severine', 'aria', 80)).toBe(1)
-    expect(fillTarget('valen', 'aria', 40)).toBeCloseTo(0.1)
+    expect(fillPresence('severine', depthsForSubject({}, undefined), null)).toBe(FILL_FLOOR)
+    expect(fillMultiplier('severine', depthsForSubject({}, undefined), null)).toBe(1)
+  })
+
+  it('stage mapping: the hold stage is the recorded depth of the ladder', () => {
+    expect(STAGE_COUNT).toBe(12)
+    expect(stageForDepth(0)).toBe(0)
+    expect(stageForDepth(1)).toBe(STAGE_COUNT)
+    expect(stageForDepth(0.5)).toBe(6)
+    expect(stageForDepth(1 / 3)).toBe(4)
+    expect(stageForDepth(2)).toBe(STAGE_COUNT)
+    expect(stageForDepth(-1)).toBe(0)
   })
 
   it('fill steps approach base-e and snap at the threshold', () => {
@@ -325,13 +379,18 @@ describe('parents + loose — the ring grouping', () => {
   })
 })
 
-describe('gardenLayout — shown labels never overlap', () => {
+describe('gardenLayout — shown labels never overlap, and nothing stands on the well', () => {
   const fp = (title: string, pileH = 90, count = true): GardenFootprint =>
     gardenFootprint({ title, pileWidthPx: 104, pileHeightPx: pileH, showCount: count })
 
   function expectLegible(items: GardenFootprint[]) {
     const placed = gardenLayout(items)
     expect(placed).toHaveLength(items.length)
+    // The water is water: no footprint — pile, name label, count
+    // line — intersects the well disc.
+    for (const [i, p] of placed.entries()) {
+      expect(boxIntersectsWell(p.box), `item ${i} stands on the well`).toBe(false)
+    }
     // Pairwise: no two footprint boxes come within the gap.
     for (let i = 0; i < placed.length; i++) {
       for (let j = i + 1; j < placed.length; j++) {
@@ -357,10 +416,11 @@ describe('gardenLayout — shown labels never overlap', () => {
   }
 
   it('lays out a small garden legibly and deterministically', () => {
-    const items = [fp('Zenaf — outsourced executive function', 95), fp('Meet your council', 80)]
+    const items = [fp('Zenaf — outsourced executive function', 55), fp('Meet your council', 50)]
     expect(gardenLayout(items)).toEqual(gardenLayout(items))
     const placed = expectLegible(items)
-    // A garden that fits stands at full size.
+    // A garden that fits — alongside the well, which is real
+    // space the layout may not use — stands at full size.
     expect(placed.every((p) => p.scale === 1)).toBe(true)
   })
 
@@ -400,6 +460,155 @@ describe('gardenLayout — shown labels never overlap', () => {
 
   it('an empty garden lays out empty', () => {
     expect(gardenLayout([])).toEqual([])
+  })
+
+  it('the founder’s garden: one large initiative, loose projects, loose stones — nothing on the water', () => {
+    // The shape of the founder's 2026-11-25 screenshot, where the
+    // 30-stone Zenaf cairn stood in the middle of the well and a
+    // loose stone sat on its rim: several initiatives (one large),
+    // loose projects, loose stones. Every placement's footprint +
+    // label box must be disjoint from the well disc.
+    const items = [
+      fp('Zenaf — outsourced executive function', 170),
+      fp('Meet your council', 95),
+      fp('Tier 0 — In flight, decide now', 80),
+      fp('Downstream builds (noting producer + Slice 2)', 75),
+      fp('Capability B trial — dentist follow-up', 70),
+      gardenFootprint({ title: 'W1 live test task', pileWidthPx: 54, pileHeightPx: 34, showCount: false }),
+      gardenFootprint({ title: 'Loose errand', pileWidthPx: 54, pileHeightPx: 30, showCount: false }),
+    ]
+    const placed = expectLegible(items)
+    for (const p of placed) {
+      // Disjointness stated geometrically, independent of the
+      // helper: the box's closest point to the disc centre lies
+      // at or beyond the radius.
+      const nx = Math.max(p.box.left, Math.min(GARDEN_WELL.cx, p.box.left + p.box.width))
+      const ny = Math.max(p.box.top, Math.min(GARDEN_WELL.cy, p.box.top + p.box.height))
+      expect(Math.hypot(nx - GARDEN_WELL.cx, ny - GARDEN_WELL.cy)).toBeGreaterThanOrEqual(
+        GARDEN_WELL.r - 0.001,
+      )
+    }
+  })
+
+  it('a single huge cairn still cannot be shaken onto the well', () => {
+    // The old failure in miniature: one oversized item whose
+    // lowest-overlap escape was the empty middle of the disc.
+    const placed = gardenLayout([fp('Zenaf — outsourced executive function', 200)])
+    expect(placed).toHaveLength(1)
+    expect(boxIntersectsWell(placed[0].box)).toBe(false)
+  })
+})
+
+describe('boxIntersectsWell', () => {
+  it('a box over the water intersects; a box at the field’s corner does not', () => {
+    expect(
+      boxIntersectsWell({ left: GARDEN_WELL.cx - 20, top: GARDEN_WELL.cy - 20, width: 40, height: 40 }),
+    ).toBe(true)
+    expect(boxIntersectsWell({ left: 0, top: 0, width: 40, height: 40 })).toBe(false)
+  })
+
+  it('a footprint that merely crosses the rim intersects; one tangent outside does not', () => {
+    // A box whose right edge reaches 10px into the disc from the left.
+    const crossing = {
+      left: GARDEN_WELL.cx - GARDEN_WELL.r - 30,
+      top: GARDEN_WELL.cy - 10,
+      width: 40,
+      height: 20,
+    }
+    expect(boxIntersectsWell(crossing)).toBe(true)
+    // The same box pulled 11px further out: its closest point is
+    // 1px beyond the radius.
+    expect(boxIntersectsWell({ ...crossing, left: crossing.left - 11 })).toBe(false)
+  })
+})
+
+describe('the fan — never on the water either', () => {
+  /** Independent check: dense sampling of the fan box against
+   *  the well ellipse in % space (centre 50/44, radii 23.5 ×
+   *  23.5·10/11). A sample strictly inside the ellipse is a
+   *  violation. */
+  function fanIntersectsWell(leftPct: number, topPct: number, box: FanBox): boolean {
+    const rx = 23.5
+    const ry = 23.5 * (10 / 11)
+    for (let i = 0; i <= 48; i++) {
+      for (let j = 0; j <= 48; j++) {
+        const x = leftPct - box.widthPct / 2 + (box.widthPct * i) / 48
+        const y = topPct + (box.heightPct * j) / 48
+        const q = ((x - 50) / rx) ** 2 + ((y - 44) / ry) ** 2
+        if (q < 0.99) return true
+      }
+    }
+    return false
+  }
+
+  /** The share of the fan box's sampled points inside the well
+   *  ellipse — the coverage a too-large fan cannot avoid. */
+  function fanWellCoverage(leftPct: number, topPct: number, box: FanBox): number {
+    const rx = 23.5
+    const ry = 23.5 * (10 / 11)
+    let inside = 0
+    let total = 0
+    for (let i = 0; i <= 48; i++) {
+      for (let j = 0; j <= 48; j++) {
+        const x = leftPct - box.widthPct / 2 + (box.widthPct * i) / 48
+        const y = topPct + (box.heightPct * j) / 48
+        const q = ((x - 50) / rx) ** 2 + ((y - 44) / ry) ** 2
+        total++
+        if (q < 1) inside++
+      }
+    }
+    return inside / total
+  }
+
+  it('places fans clear of the disc for anchors all around the well', () => {
+    const anchors = [
+      { x: 50, y: 16 },
+      { x: 50, y: 72 },
+      { x: 14, y: 44 },
+      { x: 86, y: 44 },
+      { x: 24, y: 22 },
+      { x: 76, y: 24 },
+      { x: 24, y: 66 },
+      { x: 76, y: 64 },
+      { x: 38, y: 30 },
+      { x: 62, y: 58 },
+    ]
+    for (const anchor of anchors) {
+      for (const count of [1, 3, 6, 8]) {
+        const box = fanBoxFor(count)
+        const pos = fanPositionClear(anchor, box)
+        expect(
+          fanIntersectsWell(pos.left, pos.top, box),
+          `anchor ${anchor.x},${anchor.y} count ${count}`,
+        ).toBe(false)
+        // And the fan stays inside the field.
+        expect(pos.left - box.widthPct / 2).toBeGreaterThanOrEqual(-0.001)
+        expect(pos.left + box.widthPct / 2).toBeLessThanOrEqual(100.001)
+        expect(pos.top).toBeGreaterThanOrEqual(-0.001)
+        expect(pos.top + box.heightPct).toBeLessThanOrEqual(100.001)
+      }
+    }
+  })
+
+  it('a twelve-stone fan at reference width cannot fully clear — and is placed to barely touch the water', () => {
+    // At 360px wide, a 12-stone fan is ~93% × ~47% of the field:
+    // no in-field placement is fully clear of a 47%-wide disc.
+    // The placement must hug the field's bottom, keeping the
+    // sampled coverage of the fan box by the disc small (the
+    // legacy placement covered ~3x this).
+    for (const anchor of [{ x: 50, y: 16 }, { x: 14, y: 44 }, { x: 86, y: 44 }, { x: 50, y: 72 }]) {
+      const box = fanBoxFor(12)
+      const pos = fanPositionClear(anchor, box)
+      expect(
+        fanWellCoverage(pos.left, pos.top, box),
+        `anchor ${anchor.x},${anchor.y}`,
+      ).toBeLessThanOrEqual(0.12)
+    }
+  })
+
+  it('is deterministic', () => {
+    const box = fanBoxFor(6)
+    expect(fanPositionClear({ x: 30, y: 30 }, box)).toEqual(fanPositionClear({ x: 30, y: 30 }, box))
   })
 })
 

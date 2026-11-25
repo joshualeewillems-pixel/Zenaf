@@ -25,10 +25,15 @@ assembler (local_ai/fellowship/evidence.py) pattern:
   status, the description/body/notes fields that exist on that
   record type, start/due dates, the parent (initiative/project)
   name, children (names + statuses, capped), and for tasks the
-  recorded completion criteria. No generated summary, no invented
-  fields; absent fields stay absent. Fields an AI wrote
-  (``next_step_ai``, ``recommendation``, evaluations) are NOT record
-  substance and never ride.
+  recorded completion criteria. No summary is composed here and no
+  fields are invented; absent fields stay absent. The record's
+  stored AI-written fields (``next_step_ai``, ``recommendation``,
+  any other ``*_ai`` field present on the record) ride too —
+  founder ruling 2026-11-24: the seat should recognize and prepare
+  ALL contexts of the selected subject — but only under a labelled
+  subsection that marks them as system-generated, placed after the
+  record's own material inside the same cap, so generated text is
+  truncated away before the visitor's own words ever are.
 * Record text is untrusted data: it is whitespace-collapsed to
   single lines and neutralized against the section fences before
   rendering, so a hostile title cannot terminate the section early.
@@ -80,6 +85,23 @@ _SUBJECT_TYPES = frozenset({"task", "project", "initiative", "idea"})
 
 _TRUNCATION_NOTE = "[record truncated — the full record is longer than this section carries]"
 
+#: Heading of the subsection carrying the record's stored AI-written
+#: fields. The wording is the provenance marker: these are the
+#: system's generated notes on the record, never the visitor's words,
+#: and the seat must be able to tell the difference at a glance.
+_AI_NOTES_HEADING = "System-generated notes on this record (not the visitor's words):"
+
+#: Preferred render order for the AI-written fields that exist today;
+#: any other ``*_ai`` key present on the record follows, alphabetically.
+#: Field labels render verbatim — the key exactly as the record names it.
+_AI_FIELD_ORDER = (
+    "next_step_ai",
+    "recommendation",
+    "estimated_cost_ai",
+    "estimated_timeframe_ai",
+    "philosophical_alignment_ai",
+)
+
 
 def _safe_line(value: Any) -> str:
     """One record-text value as a single line (whitespace collapsed)."""
@@ -129,6 +151,27 @@ def _children_lines(
     omitted = len(children) - CHILDREN_CAP
     if omitted > 0:
         lines.append(f"+{omitted} more {noun} not shown")
+
+
+def _ai_notes_lines(lines: list[str], row: dict[str, Any]) -> None:
+    """The record's stored AI-written fields, under their provenance
+    heading. A field rides only when it is present on the record and
+    non-empty; values pass through the same collapse + fence
+    neutralization as every other record-text value."""
+    present: dict[str, str] = {}
+    for key, value in row.items():
+        if key != "recommendation" and not str(key).endswith("_ai"):
+            continue
+        text = _clean(value)
+        if text:
+            present[str(key)] = text
+    if not present:
+        return
+    ordered = [k for k in _AI_FIELD_ORDER if k in present]
+    ordered += sorted(k for k in present if k not in _AI_FIELD_ORDER)
+    lines.append(_AI_NOTES_HEADING)
+    for key in ordered:
+        lines.append(f"{key}: {present[key]}")
 
 
 def _resolve_subject(
@@ -241,6 +284,10 @@ def _compose(
     label, children, noun = _children(user_id, row, entity_type)
     if label:
         _children_lines(lines, label, children, noun)
+    # Last, inside the same cap: the record's AI-written fields.
+    # The record's own material always outranks generated material —
+    # when the cap bites, the truncation below takes these first.
+    _ai_notes_lines(lines, row)
     body = "\n".join(lines)
     if len(body) > BLOCK_CHAR_CAP:
         # Cut at a line boundary where one survives inside the cap,
@@ -249,6 +296,10 @@ def _compose(
         budget = BLOCK_CHAR_CAP - len(_TRUNCATION_NOTE) - 1
         cut = body.rfind("\n", 0, budget)
         body = body[: cut if cut > 0 else budget].rstrip()
+        if body.endswith(_AI_NOTES_HEADING):
+            # The cut took every AI field but left their heading
+            # dangling; the heading never stands alone.
+            body = body[: -len(_AI_NOTES_HEADING)].rstrip()
         body = f"{body}\n{_TRUNCATION_NOTE}"
     return f"{BEGIN_FENCE}\n{body}\n{END_FENCE}"
 

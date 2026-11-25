@@ -392,7 +392,9 @@ class ConversationService:
         event_sink: EventSink | None = None,
         steward_context_provider: Callable[..., Any] | None = None,
         pencil_context_provider: Callable[..., Any] | None = None,
+        champion_pencil_context_provider: Callable[..., Any] | None = None,
         noting_writer: Any | None = None,
+        obligation_gate: Any | None = None,
     ) -> None:
         self.store = store
         self._generate_fn = generate_fn
@@ -405,6 +407,15 @@ class ConversationService:
         # everywhere); with capture off it is never called and no
         # noting code runs on the turn at all.
         self._noting_writer = noting_writer
+        # V4 obligation-block gate (governing §10): an optional gate
+        # object (local_ai/narrative/obligation_gate.py, wired by the
+        # routes like V1's noting writer — the service never imports
+        # the narrative package, per the Part XI turn-path pin) whose
+        # per-turn determination the gate call site below consults.
+        # It is consulted ONLY for champion turns where the slice is
+        # live (gate toggle on, or noting capture live for champion);
+        # otherwise no gate code runs on the turn at all.
+        self._obligation_gate = obligation_gate
         # Pencil-standing steward observations (founder ruling
         # 2026-11-21): an optional provider consulted ONLY for the
         # Jynx (archetype "maverick"), under its own master switch
@@ -412,6 +423,18 @@ class ConversationService:
         # Every other seat's path is identical with or without it,
         # and the Weaver's facts-only provider above is untouched.
         self._pencil_context_provider = pencil_context_provider
+        # V3 pencil carriage for the encountering seat (champion):
+        # an optional provider consulted ONLY for the champion
+        # (archetype "champion"), self-gated on the pencil master
+        # switch and the independent carriage toggle
+        # ZENAF_PENCIL_CHAMPION (both default off) inside the
+        # provider. It is handed the turn's conversation_id because
+        # encounter carriage is keyed to the encounter's own
+        # conversation. Every other seat's path is identical with
+        # or without it; the toggle gates rendering only and
+        # influences no other code path in this service — in
+        # particular not the obligation block below.
+        self._champion_pencil_context_provider = champion_pencil_context_provider
         # Native character development (N1): the developmental
         # service is created lazily on first flag-on use, so with
         # ZENAF_NATIVE_DEVELOPMENT off (the default everywhere) this
@@ -561,6 +584,38 @@ class ConversationService:
                 pencil_thread_ids = ()
                 pencil_reading_ids = ()
 
+        # V3: the encountering seat's own carriage — the champion
+        # consults the same pencil provider slot discipline through
+        # its dedicated provider, behind the independent carriage
+        # toggle (ZENAF_PENCIL_CHAMPION, default off, self-gated in
+        # the provider). With the toggle off the provider returns
+        # None before any store read and the turn is byte-identical
+        # to V1-head behavior.
+        if (
+            arch_id == "champion"
+            and self._champion_pencil_context_provider is not None
+        ):
+            try:
+                (
+                    pencil_block,
+                    pencil_thread_ids,
+                    pencil_reading_ids,
+                ) = _split_provider_result(
+                    self._champion_pencil_context_provider(
+                        user_id,
+                        message,
+                        history_turns,
+                        conversation_id=conversation_id,
+                    )
+                )
+            except Exception:
+                logger.exception(
+                    "steward: champion pencil context failed; continuing without it"
+                )
+                pencil_block = None
+                pencil_thread_ids = ()
+                pencil_reading_ids = ()
+
         # Weaver strand interviews (rev2 §6): a conductor turn in a
         # validated strand thread carries the strand guidance block —
         # strand identity, the §3 curiosity pattern, the §2.5 pressure
@@ -595,9 +650,51 @@ class ConversationService:
         # block, never an empty list; other seats get no block.
         obligation_context = None
         if arch_id == "champion":
-            obligation_context, _obligation_status = (
-                _obligations.build_obligation_context(user_id)
+            # V4 obligation-block gate (governing §10, scoping §3.5):
+            # the per-turn relevance determination is composed once,
+            # independently of BOTH toggles, wherever the slice is
+            # live (gate toggle on, or noting capture live for
+            # champion) — and every determination, firing or not, is
+            # recorded through the assessment path. The gate toggle
+            # (ZENAF_OBLIGATION_GATE, default off) gates RENDERING
+            # only: off ⇒ the apparatus renders unconditionally,
+            # exactly as before; on ⇒ it renders only when the
+            # determination fires. The capability awareness slice
+            # (capability_context below) is a different channel and
+            # is never touched by the gate. A failed determination
+            # degrades to today's unconditional rendering, never a
+            # broken turn.
+            gate_on = (
+                self._obligation_gate.enabled()
+                if self._obligation_gate is not None
+                else False
             )
+            determination = None
+            if self._obligation_gate is not None and (gate_on or noting_on):
+                try:
+                    determination = self._obligation_gate.determine_and_record(
+                        user_id,
+                        conversation_id=conversation_id,
+                        archetype_id=arch_id,
+                        message=message,
+                        history_texts=tuple(
+                            t["content"]
+                            for t in history_turns
+                            if t.get("role") == "user"
+                        ),
+                    )
+                except Exception:
+                    logger.exception(
+                        "obligation gate: determination failed; "
+                        "rendering apparatus unconditionally"
+                    )
+                    determination = None
+            if gate_on and determination is not None and not determination.fires:
+                obligation_context = None
+            else:
+                obligation_context, _obligation_status = (
+                    _obligations.build_obligation_context(user_id)
+                )
 
         # Bear evidence (S3): guardian-only, server-side, from the
         # caller's own scoped records — the client cannot inject or

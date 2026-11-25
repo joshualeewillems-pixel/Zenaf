@@ -69,6 +69,13 @@ from local_ai.conversation.upload_round import (
 from local_ai.council.archetypes import get_archetype, stock_archetype_ids
 from local_ai.council.naming import get_display_name
 from local_ai.fellowship.events import emit_event as fellowship_emit_event
+from local_ai.narrative.context import (
+    champion_context_provider,
+    jynx_context_provider,
+    weaver_context_provider,
+)
+from local_ai.narrative.noting import default_noting_writer
+from local_ai.narrative.obligation_gate import default_obligation_gate
 from local_ai.narrative.context import jynx_context_provider, weaver_context_provider
 from local_ai.narrative.noting import default_noting_writer
 
@@ -114,6 +121,15 @@ def _service() -> ConversationService:
         # so non-Jynx turns and switch-off deployments never pay
         # for it.
         pencil_context_provider=jynx_context_provider(with_selection=True),
+        # V3 pencil carriage for the encountering seat (champion):
+        # the provider self-gates on the pencil master switch AND
+        # the independent carriage toggle ZENAF_PENCIL_CHAMPION
+        # (both default off) before touching the narrative store,
+        # so champion turns in a switch-off deployment never pay
+        # for it and no other seat's path changes.
+        champion_pencil_context_provider=champion_context_provider(
+            with_selection=True
+        ),
         # V1 noting capture feed: the writer is handed notes only on
         # turns where capture is enabled for the replying seat
         # (ZENAF_NOTING_CAPTURE_SEATS, default off everywhere), and
@@ -121,6 +137,13 @@ def _service() -> ConversationService:
         # capture-off deployment never calls it and never touches
         # the narrative DB through this path.
         noting_writer=default_noting_writer(),
+        # V4 obligation-block gate: the gate object is consulted only
+        # on champion turns where the slice is live (ZENAF_OBLIGATION_GATE
+        # on, or noting capture live for champion), and its
+        # NarrativeStore builds lazily on first determination — so a
+        # slice-dark deployment never touches the narrative DB
+        # through this path.
+        obligation_gate=default_obligation_gate(),
     )
 
 

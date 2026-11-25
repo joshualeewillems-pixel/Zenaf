@@ -66,6 +66,36 @@ describe('fetchScrollDrawings', () => {
     await expect(fetchScrollDrawings()).rejects.toThrow()
   })
 
+  it('pins the endpoint’s exact served payload shape — a drift fails loudly, never silently', async () => {
+    // Exactly what list_chalk_drawings serves (api/routes/
+    // conversation_routes.py): the ScrollDrawing fields plus
+    // carriage provenance, oldest first.
+    const served = {
+      id: 'f244edde-9f7a-4260-b204-c68ba257b48c',
+      title: 'six flags under glass',
+      space: { w: 600, h: 800 },
+      marks: [{ type: 'stamp', stamp: 'ring', cx: 300, cy: 350, w: 240, tier: 0.95 }],
+      conversation_id: 'jynx-scroll:task:t1',
+      subject_type: 'task',
+      subject_id: 't1',
+      created_at: '2026-11-25T18:17:13+00:00',
+    }
+    vi.stubGlobal('fetch', stubFetch({ ok: true, status: 200, body: { drawings: [served] } }))
+    const drawings = await fetchScrollDrawings()
+    expect(drawings).toEqual([
+      { id: served.id, title: served.title, space: { w: 600, h: 800 }, marks: served.marks },
+    ])
+    // The narrowed shape carries exactly the four rendered fields.
+    expect(Object.keys(drawings[0]).sort()).toEqual(['id', 'marks', 'space', 'title'])
+
+    // Drift: a flattened space (space_w/space_h instead of the
+    // nested {w, h}) is NOT a drawing to this surface — dropped,
+    // never repaired into a guess.
+    const drifted = { ...served, space: undefined, space_w: 600, space_h: 800 }
+    vi.stubGlobal('fetch', stubFetch({ ok: true, status: 200, body: { drawings: [drifted] } }))
+    await expect(fetchScrollDrawings()).resolves.toEqual([])
+  })
+
   it('items that are not drawings are dropped, never repaired', async () => {
     vi.stubGlobal(
       'fetch',

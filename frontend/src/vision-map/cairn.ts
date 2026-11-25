@@ -549,6 +549,58 @@ export function subtreeCairnIds(
   return found
 }
 
+/** Node kinds that are CHILDREN of an initiative on the map: a project
+ *  branch and the tasks (flowers) / outcomes (fruit) beneath it, plus
+ *  the cairns those subtrees pile into. Seeds (the initiative's origin),
+ *  landmarks (reference points) and other trees are NOT children — they
+ *  stay visible beside a stacked initiative. */
+const STACK_CHILD_KINDS: ReadonlySet<string> = new Set(['branch', 'flower', 'fruit', 'cairn'])
+
+/**
+ * An initiative's descendant CHILD node ids (parents + loose rule,
+ * founder 2026-11-24/25): BFS over outgoing edges from the tree,
+ * collecting branch/flower/fruit/cairn nodes and traversing through
+ * branches (a project's tasks/outcomes sit one level below it).
+ * Unlike `subtreeCairnIds`, this also collects LONE children — a
+ * project with no tasks never piles into a cairn, so a cairns-only
+ * sweep left it standing flat beside its parent's stack in the
+ * default (nested) view. Traversal stops at non-child kinds: seeds,
+ * landmarks and trees are neither collected nor traversed. Pure.
+ */
+export function subtreeChildNodeIds(
+  treeId: string,
+  nodes: Node<MapNodePayload>[],
+  edges: Edge[],
+): string[] {
+  const byId = new Map(nodes.map((n) => [n.id, n]))
+  const outgoing = new Map<string, Edge[]>()
+  for (const e of edges) {
+    const list = outgoing.get(e.source)
+    if (list) list.push(e)
+    else outgoing.set(e.source, [e])
+  }
+  const seen = new Set<string>([treeId])
+  const found: string[] = []
+  const queue: string[] = [treeId]
+  while (queue.length > 0) {
+    const cur = queue.shift()!
+    for (const e of outgoing.get(cur) ?? []) {
+      const nid = e.target
+      if (seen.has(nid)) continue
+      seen.add(nid)
+      const n = byId.get(nid)
+      if (!n) continue
+      const kind = (n.data as MapNodePayload).kind
+      if (!STACK_CHILD_KINDS.has(kind)) continue
+      found.push(nid)
+      // Cairns are leaves in the base graph (their members live in the
+      // cairn index); branches carry their flowers/fruit one level down.
+      if (kind === 'branch') queue.push(nid)
+    }
+  }
+  return found
+}
+
 function cairnStoneCount(n: Node<MapNodePayload>): number {
   const c = (n.data as { cairnCount?: unknown }).cairnCount
   return typeof c === 'number' && Number.isFinite(c) ? c : 0
@@ -574,9 +626,23 @@ function cairnStoneCount(n: Node<MapNodePayload>): number {
 export function buildGardenStackNode(
   tree: Node<MapNodePayload>,
   subtreeCairns: Node<MapNodePayload>[],
+  /** Lone child stones that never piled into a cairn (e.g. a project
+   *  with no tasks yet). They nest into the stack as themselves —
+   *  counted, previewed and membered like cairn members — so the
+   *  default view shows parents + loose only (founder, 2026-11-24). */
+  extraChildNodes: Node<MapNodePayload>[] = [],
 ): Node<MapNodePayload> {
   const treeData = tree.data as MapNodePayload
   const previews: CairnPreviewStone[] = []
+  for (const x of extraChildNodes) {
+    const d = x.data as MapNodePayload
+    previews.push({
+      growth: d.growth,
+      kind: d.kind,
+      severity: effectiveConditionSeverity(d),
+      pulse: !!d.fertilizer_pulse,
+    })
+  }
   for (const c of subtreeCairns) {
     const cp = (c.data as { cairnPreview?: unknown }).cairnPreview
     if (Array.isArray(cp)) {
@@ -593,7 +659,9 @@ export function buildGardenStackNode(
   }
   previews.sort((a, b) => b.severity - a.severity)
   // +1: the tree's own stone is a member of the pile now, and is counted.
-  const totalStones = subtreeCairns.reduce((t, c) => t + cairnStoneCount(c), 0) + 1
+  // Lone children count one stone each — themselves.
+  const totalStones =
+    subtreeCairns.reduce((t, c) => t + cairnStoneCount(c), 0) + extraChildNodes.length + 1
   /* The stack's pile is built from the tree itself plus the subtree
      cairns' real members where the cairn-mode pass provided them.
      Aggregates that predate member threading (fixtures, sample graphs)
@@ -636,9 +704,15 @@ export function buildGardenStackNode(
       }
     }
   }
+  for (const m of cairnMembersOf(extraChildNodes)) {
+    // A lone branch is the parent of its own (empty) project pile,
+    // never of the stack — same parent-flag strip as cairn members.
+    const { parent: _loneParentFlag, ...rest } = m
+    stackMembers.push(rest)
+  }
   let maxSeverity: ConditionSeverity = 0
   let anyPulse = false
-  for (const c of subtreeCairns) {
+  for (const c of [...subtreeCairns, ...extraChildNodes]) {
     const s = effectiveConditionSeverity(c.data as MapNodePayload)
     if (s > maxSeverity) maxSeverity = s
     if ((c.data as MapNodePayload).fertilizer_pulse) anyPulse = true
@@ -685,11 +759,13 @@ export function defaultStackedTreeIds(nodes: Node<MapNodePayload>[]): Set<string
 
 /**
  * Per-initiative stack transform. For each stacked tree: its descendant
- * cairns (and only those) are hidden — not moved — and the tree node
- * itself is replaced by its garden-stack node: the pile sitting on the
- * parent stone as one object, keeping the tree's id, position, and edges.
- * Unstacked initiatives pass through untouched. Trees with no descendant
- * cairns are a no-op (no empty pile).
+ * child stones — its cairns AND any lone children that never piled
+ * (a taskless project and its kin) — are hidden, not moved, and the tree
+ * node itself is replaced by its garden-stack node: the pile sitting on
+ * the parent stone as one object, keeping the tree's id, position, and
+ * edges. Seeds, landmarks and other trees are not children and stay
+ * visible. Unstacked initiatives pass through untouched. Trees with no
+ * descendant children at all are a no-op (no empty pile).
  *
  * Pure — the view memoizes this, so hidden cairns' positions and the
  * expanded-cairn set survive the round trip untouched.
@@ -698,9 +774,17 @@ export function applyGardenStack(
   nodes: Node<MapNodePayload>[],
   edges: Edge[],
   stackedTreeIds: ReadonlySet<string>,
-): { nodes: Node<MapNodePayload>[]; edges: Edge[]; hiddenCairnIds: Set<string> } {
+): {
+  nodes: Node<MapNodePayload>[]
+  edges: Edge[]
+  hiddenCairnIds: Set<string>
+  /** Child stones hidden by the stacks that were never cairns (lone
+   *  projects and their kin) — the parents + loose default's other half. */
+  hiddenChildNodeIds: Set<string>
+} {
   const hiddenCairnIds = new Set<string>()
-  if (stackedTreeIds.size === 0) return { nodes, edges, hiddenCairnIds }
+  const hiddenChildNodeIds = new Set<string>()
+  if (stackedTreeIds.size === 0) return { nodes, edges, hiddenCairnIds, hiddenChildNodeIds }
   const byId = new Map(nodes.map((n) => [n.id, n]))
   // Work on a shrinking set so a cairn is never claimed by two trees.
   let liveNodes = [...nodes]
@@ -709,22 +793,29 @@ export function applyGardenStack(
   for (const treeId of stackedTreeIds) {
     const tree = byId.get(treeId)
     if (!tree || (tree.data as MapNodePayload).kind !== 'tree') continue
-    const cairnIds = subtreeCairnIds(treeId, liveNodes, liveEdges)
-    if (cairnIds.length === 0) continue
-    const cairnNodes = cairnIds
-      .map((id) => liveNodes.find((n) => n.id === id))
-      .filter((n): n is Node<MapNodePayload> => !!n)
-    const hidden = new Set(cairnIds)
-    for (const id of hidden) hiddenCairnIds.add(id)
+    const childIds = subtreeChildNodeIds(treeId, liveNodes, liveEdges)
+    if (childIds.length === 0) continue
+    const cairnIdSet = new Set(subtreeCairnIds(treeId, liveNodes, liveEdges))
+    const cairnNodes: Node<MapNodePayload>[] = []
+    const extraChildNodes: Node<MapNodePayload>[] = []
+    for (const id of childIds) {
+      const n = liveNodes.find((nn) => nn.id === id)
+      if (!n) continue
+      if (cairnIdSet.has(id)) cairnNodes.push(n)
+      else extraChildNodes.push(n)
+    }
+    const hidden = new Set(childIds)
+    for (const n of cairnNodes) hiddenCairnIds.add(n.id)
+    for (const n of extraChildNodes) hiddenChildNodeIds.add(n.id)
     liveNodes = liveNodes.filter((n) => !hidden.has(n.id))
     liveEdges = liveEdges.filter((e) => !hidden.has(e.source) && !hidden.has(e.target))
     // The parent stone is replaced by its stack — one object, not two.
     // Its edges reference the tree id, which the stack node keeps, so
     // they stay attached without rewriting.
     liveNodes = liveNodes.filter((n) => n.id !== treeId)
-    stacks.push(buildGardenStackNode(tree, cairnNodes))
+    stacks.push(buildGardenStackNode(tree, cairnNodes, extraChildNodes))
   }
-  return { nodes: [...liveNodes, ...stacks], edges: liveEdges, hiddenCairnIds }
+  return { nodes: [...liveNodes, ...stacks], edges: liveEdges, hiddenCairnIds, hiddenChildNodeIds }
 }
 
 /**
